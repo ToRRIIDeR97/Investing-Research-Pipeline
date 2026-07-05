@@ -1,0 +1,382 @@
+import postgres from "postgres";
+import { z } from "zod";
+
+// ============================================================
+// Staging service — §9.2
+// Agent outputs flow through staging → validation → accept/reject → final tables.
+// ============================================================
+
+export const evidenceClaimPayloadSchema = z.object({
+  claim_text: z.string().min(1),
+  claim_type: z.string().min(1),
+  claim_category: z.enum(["fact", "estimate", "assumption", "opinion"]),
+  polarity: z.string().optional(),
+  period_start: z.string().optional(),
+  period_end: z.string().optional(),
+  as_of_date: z.string().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  no_source_reason: z.string().optional(),
+  source_document_id: z.string().uuid().optional(),
+  document_chunk_id: z.string().uuid().optional(),
+  extracted_table_id: z.string().uuid().optional(),
+  page_start: z.number().int().optional(),
+  page_end: z.number().int().optional(),
+  char_start: z.number().int().optional(),
+  char_end: z.number().int().optional(),
+  quoted_text: z.string().optional(),
+  support_type: z.enum(["supports", "contradicts", "context", "calculation_source"]).optional(),
+});
+
+export const metricObservationPayloadSchema = z.object({
+  metric_key: z.string().min(1),
+  period_start: z.string().optional(),
+  period_end: z.string().optional(),
+  as_of_date: z.string().optional(),
+  value_numeric: z.number().optional(),
+  value_text: z.string().optional(),
+  unit: z.string().optional(),
+  currency: z.string().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  source_document_id: z.string().uuid().optional(),
+  evidence_claim_id: z.string().uuid().optional(),
+});
+
+export const valuationSignalPayloadSchema = z.object({
+  signal_key: z.string().min(1),
+  signal_name: z.string().min(1),
+  lens_family: z.string().min(1),
+  current_value: z.number().optional(),
+  current_value_text: z.string().optional(),
+  percentile: z.number().optional(),
+  z_score: z.number().optional(),
+  cheaper_when: z.string().optional(),
+  signal: z.enum([
+    "very_cheap",
+    "cheap",
+    "neutral",
+    "expensive",
+    "very_expensive",
+    "inconclusive",
+    "not_applicable",
+  ]),
+  cheapness_score: z.number().optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  valuation_method_id: z.string().uuid().optional(),
+  metric_definition_id: z.string().uuid().optional(),
+  source_document_id: z.string().uuid().optional(),
+  evidence_claim_id: z.string().uuid().optional(),
+});
+
+const SCHEMA_MAP: Record<string, z.ZodType> = {
+  evidence_claim: evidenceClaimPayloadSchema,
+  metric_observation: metricObservationPayloadSchema,
+  valuation_signal: valuationSignalPayloadSchema,
+};
+
+/**
+ * Stage an agent output for validation.
+ */
+export async function stageOutput(params: {
+  runId: string;
+  stageId: string;
+  taskId: string;
+  targetTable: string;
+  outputSchemaKey: string;
+  outputSchemaVersion: number;
+  payload: Record<string, unknown>;
+  createdByAgent: string;
+}): Promise<{ stagingId: string; validationStatus: string; errors: string[] }> {
+  const sql = postgres(process.env.DATABASE_URL!);
+
+  try {
+    // Validate against schema
+    const schema = SCHEMA_MAP[params.outputSchemaKey];
+    const errors: string[] = [];
+
+    if (schema) {
+      const result = schema.safeParse(params.payload);
+      if (!result.success) {
+        errors.push(...result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`));
+      }
+    }
+
+    const validationStatus = errors.length === 0 ? "valid" : "invalid";
+
+    const rows = await sql`
+      INSERT INTO agent_output_staging (
+        research_run_id, stage_id, task_id,
+        target_table, output_schema_key, output_schema_version,
+        payload_json, validation_status, validation_errors_json,
+        created_by_agent
+      ) VALUES (
+        ${params.runId}, ${params.stageId}, ${params.taskId},
+        ${params.targetTable}, ${params.outputSchemaKey}, ${params.outputSchemaVersion},
+        ${JSON.stringify(params.payload)}, ${validationStatus}, ${JSON.stringify(errors)},
+        ${params.createdByAgent}
+      )
+      RETURNING id
+    `;
+
+    return { stagingId: rows[0].id, validationStatus, errors };
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * Validate a staged output: schema validation + source link check.
+ */
+export async function validateStagedOutput(stagingId: string): Promise<{
+  valid: boolean;
+  errors: string[];
+}> {
+  const sql = postgres(process.env.DATABASE_URL!);
+
+  try {
+    const rows = await sql`
+      SELECT * FROM agent_output_staging WHERE id = ${stagingId}
+    `;
+
+    if (rows.length === 0) {
+      return { valid: false, errors: ["Staging record not found"] };
+    }
+
+    const staging = rows[0];
+    const errors: string[] = [...(staging.validation_errors_json || [])];
+
+    // Additional validation: source link check for evidence claims
+    if (staging.output_schema_key === "evidence_claim") {
+      const payload = staging.payload_json;
+      if (
+        payload.claim_category !== "assumption" &&
+        !payload.document_chunk_id &&
+        !payload.extracted_table_id &&
+        !payload.source_document_id &&
+        !payload.no_source_reason
+      ) {
+        errors.push(
+          "Non-assumption claims require a source location (document, chunk, or table) or no_source_reason"
+        );
+      }
+    }
+
+    const valid = errors.length === 0;
+
+    // Update validation status
+    await sql`
+      UPDATE agent_output_staging
+      SET validation_status = ${valid ? "valid" : "invalid"},
+          validation_errors_json = ${JSON.stringify(errors)}
+      WHERE id = ${stagingId}
+    `;
+
+    return { valid, errors };
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * Accept a staged output and promote it to the target table.
+ */
+export async function acceptStagedOutput(
+  stagingId: string
+): Promise<{ recordId: string }> {
+  const sql = postgres(process.env.DATABASE_URL!);
+
+  try {
+    const rows = await sql`
+      SELECT * FROM agent_output_staging WHERE id = ${stagingId}
+    `;
+    if (rows.length === 0) throw new Error("Staging record not found");
+
+    const staging = rows[0];
+    const payload = staging.payload_json;
+
+    let recordId: string;
+
+    switch (staging.output_schema_key) {
+      case "evidence_claim": {
+        const result = await sql.begin(async (tx) => {
+          const inserted = await tx`
+            INSERT INTO evidence_claims (
+              asset_id, research_run_id, claim_text, claim_type,
+              claim_category, polarity, period_start, period_end,
+              as_of_date, confidence, generated_by, review_status,
+              no_source_reason
+            ) VALUES (
+              (SELECT asset_id FROM research_runs WHERE id = ${staging.research_run_id}),
+              ${staging.research_run_id},
+              ${payload.claim_text}, ${payload.claim_type},
+              ${payload.claim_category}, ${payload.polarity || null},
+              ${payload.period_start || null}, ${payload.period_end || null},
+              ${payload.as_of_date || null}, ${payload.confidence || null},
+              ${staging.created_by_agent}, 'pending',
+              ${payload.no_source_reason || null}
+            )
+            RETURNING id
+          `;
+
+          const claimId = inserted[0].id;
+
+          if (payload.source_document_id || payload.document_chunk_id || payload.extracted_table_id) {
+            const sourceDocumentId =
+              payload.source_document_id ||
+              (payload.document_chunk_id
+                ? await tx`
+                    SELECT source_document_id
+                    FROM document_chunks
+                    WHERE id = ${payload.document_chunk_id}
+                  `.then((rows) => rows[0]?.source_document_id)
+                : null) ||
+              (payload.extracted_table_id
+                ? await tx`
+                    SELECT source_document_id
+                    FROM extracted_tables
+                    WHERE id = ${payload.extracted_table_id}
+                  `.then((rows) => rows[0]?.source_document_id)
+                : null);
+
+            if (!sourceDocumentId) {
+              throw new Error("Could not resolve source_document_id for evidence link");
+            }
+
+            const sourceLocation = await tx`
+              INSERT INTO source_locations (
+                source_document_id, document_chunk_id, extracted_table_id,
+                page_start, page_end, char_start, char_end
+              ) VALUES (
+                ${sourceDocumentId},
+                ${payload.document_chunk_id || null},
+                ${payload.extracted_table_id || null},
+                ${payload.page_start || null},
+                ${payload.page_end || null},
+                ${payload.char_start || null},
+                ${payload.char_end || null}
+              )
+              RETURNING id
+            `;
+
+            await tx`
+              INSERT INTO evidence_links (
+                evidence_claim_id, source_location_id, support_type,
+                quoted_text, confidence
+              ) VALUES (
+                ${claimId},
+                ${sourceLocation[0].id},
+                ${payload.support_type || "supports"},
+                ${payload.quoted_text || null},
+                ${payload.confidence || null}
+              )
+            `;
+          }
+
+          return claimId;
+        });
+
+        recordId = result;
+        break;
+      }
+      case "metric_observation": {
+        // Look up metric_definition_id from metric_key
+        const metricDef = await sql`
+          SELECT id FROM metric_definitions WHERE metric_key = ${payload.metric_key}
+        `;
+        if (metricDef.length === 0) throw new Error(`Unknown metric_key: ${payload.metric_key}`);
+
+        const inserted = await sql`
+          INSERT INTO metric_observations (
+            asset_id, research_run_id, metric_definition_id,
+            period_start, period_end, as_of_date,
+            value_numeric, value_text, unit, currency,
+            confidence, source_document_id, evidence_claim_id, review_status
+          ) VALUES (
+            (SELECT asset_id FROM research_runs WHERE id = ${staging.research_run_id}),
+            ${staging.research_run_id}, ${metricDef[0].id},
+            ${payload.period_start || null}, ${payload.period_end || null},
+            ${payload.as_of_date || null},
+            ${payload.value_numeric?.toString() || null}, ${payload.value_text || null},
+            ${payload.unit || null}, ${payload.currency || null},
+            ${payload.confidence?.toString() || null},
+            ${payload.source_document_id || null}, ${payload.evidence_claim_id || null},
+            'pending'
+          )
+          RETURNING id
+        `;
+        recordId = inserted[0].id;
+        break;
+      }
+      case "valuation_signal": {
+        const run = await sql`
+          SELECT asset_id, profile_id FROM research_runs WHERE id = ${staging.research_run_id}
+        `;
+        if (run.length === 0) throw new Error("Run not found");
+        if (!run[0].profile_id) throw new Error("Run has no profile_id; valuation signals require a research profile");
+
+        const inserted = await sql`
+          INSERT INTO valuation_signals (
+            asset_id, research_run_id, profile_id,
+            valuation_method_id, metric_definition_id,
+            signal_key, signal_name, lens_family,
+            current_value, current_value_text,
+            percentile, z_score, cheaper_when,
+            signal, cheapness_score, confidence,
+            source_document_id, evidence_claim_id,
+            review_status
+          ) VALUES (
+            ${run[0].asset_id}, ${staging.research_run_id}, ${run[0].profile_id || null},
+            ${payload.valuation_method_id || null}, ${payload.metric_definition_id || null},
+            ${payload.signal_key}, ${payload.signal_name}, ${payload.lens_family},
+            ${payload.current_value?.toString() || null}, ${payload.current_value_text || null},
+            ${payload.percentile?.toString() || null}, ${payload.z_score?.toString() || null}, ${payload.cheaper_when || null},
+            ${payload.signal}, ${payload.cheapness_score?.toString() || null}, ${payload.confidence?.toString() || null},
+            ${payload.source_document_id || null}, ${payload.evidence_claim_id || null},
+            'pending'
+          )
+          RETURNING id
+        `;
+        recordId = inserted[0].id;
+        break;
+      }
+      default:
+        throw new Error(`Unsupported schema key: ${staging.output_schema_key}`);
+    }
+
+    // Mark staging as accepted
+    await sql`
+      UPDATE agent_output_staging
+      SET validation_status = 'accepted',
+          review_status = 'accepted',
+          target_record_id = ${recordId},
+          accepted_at = NOW()
+      WHERE id = ${stagingId}
+    `;
+
+    return { recordId };
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * Reject a staged output.
+ */
+export async function rejectStagedOutput(
+  stagingId: string,
+  reason: string
+): Promise<void> {
+  const sql = postgres(process.env.DATABASE_URL!);
+
+  try {
+    await sql`
+      UPDATE agent_output_staging
+      SET validation_status = 'rejected',
+          review_status = 'rejected',
+          rejected_at = NOW(),
+          rejection_reason = ${reason}
+      WHERE id = ${stagingId}
+    `;
+  } finally {
+    await sql.end();
+  }
+}

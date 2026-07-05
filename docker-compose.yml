@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: research-os-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: research_os
+      POSTGRES_PASSWORD: research_os_dev
+      POSTGRES_DB: research_os
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U research_os -d research_os"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

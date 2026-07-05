@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Research OS | Private Market Intel Portal</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-base: #f4f7fa;
+      --bg-surface: rgba(255, 255, 255, 0.65);
+      --bg-card: rgba(255, 255, 255, 0.4);
+      
+      --border-subtle: rgba(0, 0, 0, 0.05);
+      --border-bright: rgba(0, 0, 0, 0.1);
+      
+      --text-main: #111111;
+      --text-muted: #666666;
+      --text-dark: #888888;
+      
+      /* Liquid Spring Easing inspired by Apple UI */
+      --ease-spring: cubic-bezier(0.25, 1.25, 0.35, 1.15);
+      --ease-swift: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: #f7f7f7;
+      color: var(--text-main);
+      font-family: 'Space Grotesk', sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.08);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 0, 0, 0.18);
+    }
+
+    /* Utility Styles */
+    .font-mono {
+      font-family: 'Space Mono', monospace;
+    }
+
+    /* Fixed global background container */
+    .global-fixed-background {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    .hero-bg-graphic {
+      position: absolute;
+      inset: 0;
+      background-image: url('hero_graphic.jpg');
+      background-size: cover;
+      background-position: center;
+      opacity: 0.06;
+      mix-blend-mode: multiply;
+      pointer-events: none;
+    }
+
+    .interactive-canvas {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      width: 100%;
+      height: 100%;
+      opacity: 0.35;
+    }
+
+    /* Interactive Refractive Button (Apple Liquid Glass design) */
+    .refractive-button {
+      position: relative;
+      background-color: rgba(0, 0, 0, 0.02);
+      color: #000;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      border-radius: 6px;
+      cursor: pointer;
+      overflow: hidden;
+      box-shadow: 
+        inset 0 1px 0 rgba(255, 255, 255, 0.6), 
+        0 1px 2px rgba(0, 0, 0, 0.02);
+      transition: 
+        transform 0.4s var(--ease-spring), 
+        box-shadow 0.4s var(--ease-spring), 
+        border-color 0.4s var(--ease-spring);
+      backdrop-filter: blur(12px);
+      --mx: 50%;
+      --my: 50%;
+    }
+
+    /* Refractive hover spotlight */
+    .refractive-button::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at var(--mx) var(--my), rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 65%);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .refractive-button:hover::before {
+      opacity: 1;
+    }
+
+    .refractive-button:hover {
+      transform: scale(1.025);
+      border-color: rgba(0, 0, 0, 0.2);
+      box-shadow: 
+        inset 0 1px 0 rgba(255, 255, 255, 0.8), 
+        0 8px 24px rgba(0, 0, 0, 0.05);
+    }
+
+    .refractive-button:active {
+      transform: scale(0.975);
+    }
+
+    /* Main Workspace Interface (Three-Column Kintsugi Style) */
+    .workspace-screen {
+      display: grid;
+      flex: 1;
+      height: 100vh;
+      grid-template-columns: 250px 1fr 380px;
+      background-color: rgba(244, 247, 250, 0.93);
+      position: relative;
+      z-index: 20;
+    }
+
+    .workspace-sidebar {
+      border-right: 1px solid var(--border-subtle);
+      background-color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 1.5rem;
+      z-index: 10;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.02);
+    }
+
+    .sidebar-header {
+      margin-bottom: 2rem;
+    }
+
+    .sidebar-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.08rem;
+      font-size: 0.95rem;
+      color: #000;
+    }
+
+    .sidebar-logo-icon {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background-color: #000;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: bold;
+    }
+
+    .sidebar-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 9px;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05rem;
+    }
+
+    .badge-dot {
+      width: 4px;
+      height: 4px;
+      background-color: #111;
+      border-radius: 50%;
+      animation: pulse 1s infinite alternate;
+    }
+
+    .sidebar-menu {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+
+    .menu-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.55rem 0.8rem;
+      font-size: 0.8rem;
+      color: #555;
+      text-decoration: none;
+      border-radius: 8px;
+      transition: all 0.3s var(--ease-spring);
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    .menu-item svg {
+      flex-shrink: 0;
+      color: #777;
+      transition: color 0.3s ease;
+      width: 16px;
+      height: 16px;
+    }
+
+    .menu-item:hover svg, .menu-item.active svg {
+      color: #000;
+    }
+
+    .menu-item:hover, .menu-item.active {
+      color: #000;
+      background-color: #f4f7fa;
+    }
+
+    .menu-item.active {
+      font-weight: 600;
+    }
+
+    .sidebar-sub-menu {
+      margin-left: 1.75rem;
+      margin-top: 0.25rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      border-left: 1px solid #eef2f6;
+      padding-left: 0.75rem;
+    }
+
+    .sub-menu-item {
+      font-size: 0.75rem;
+      color: #666;
+      padding: 0.35rem 0.5rem;
+      border-radius: 4px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sub-menu-item:hover, .sub-menu-item.active {
+      color: #000;
+      background-color: #f4f7fa;
+    }
+
+    .sub-menu-item.active {
+      font-weight: 600;
+      border-left: 2px solid #000;
+      padding-left: calc(0.5rem - 2px);
+      border-radius: 0 4px 4px 0;
+    }
+
+    .sidebar-footer {
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+    }
+
+    .profile-footer-box {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .profile-avatar-mock {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background-color: #e2e8f0;
+      color: #4a5568;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: bold;
+    }
+
+    /* Workspace Content Panel */
+    .workspace-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      z-index: 10;
+      padding: 1.5rem;
+    }
+
+    /* Folders grid styled like Kintsugi */
+    .folders-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+
+    .folder-card {
+      background-color: #fff;
+      border: 1px solid rgba(0, 0, 0, 0.05);
+      border-radius: 16px;
+      padding: 1.25rem;
+      padding-top: 2rem;
+      min-height: 130px;
+      position: relative;
+      cursor: pointer;
+      transition: all 0.4s var(--ease-spring);
+    }
+
+    .folder-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.02);
+      border-color: rgba(0,0,0,0.1);
+    }
+
+    .folder-card.active {
+      background: linear-gradient(135deg, #5996f7 0%, #2563eb 100%);
+      color: #fff;
+      border-color: transparent;
+      box-shadow: 0 10px 25px rgba(37, 99, 235, 0.15);
+    }
+
+    .folder-tab-lip {
+      position: absolute;
+      top: -8px;
+      left: 1rem;
+      height: 10px;
+      width: 60px;
+      background-color: #fff;
+      border-radius: 6px 6px 0 0;
+      border-top: 1px solid rgba(0, 0, 0, 0.05);
+      border-left: 1px solid rgba(0, 0, 0, 0.05);
+      border-right: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .folder-card.active .folder-tab-lip {
+      background-color: #5996f7;
+      border-color: transparent;
+    }
+
+    .folder-paper-peak {
+      position: absolute;
+      top: -6px;
+      right: 1.5rem;
+      height: 38px;
+      width: 55px;
+      background-color: rgba(255,255,255,0.12);
+      border-radius: 4px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      transform: rotate(6deg);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      padding: 4px;
+      overflow: hidden;
+    }
+
+    .folder-paper-line {
+      height: 2px;
+      background-color: rgba(255, 255, 255, 0.3);
+      border-radius: 1px;
+    }
+
+    .folder-card-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .folder-card-count {
+      font-size: 0.75rem;
+      color: var(--text-dark);
+      margin-top: 0.25rem;
+    }
+
+    .folder-card.active .folder-card-count {
+      color: rgba(255,255,255,0.8);
+    }
+
+    .folder-card-size {
+      font-size: 0.7rem;
+      font-family: 'Space Mono', monospace;
+      color: var(--text-dark);
+      margin-top: 1.5rem;
+    }
+
+    .folder-card.active .folder-card-size {
+      color: rgba(255,255,255,0.6);
+    }
+
+    /* Kintsugi Right Info panel */
+    .workspace-right-panel {
+      background-color: #fff;
+      border-left: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      z-index: 10;
+      box-shadow: -5px 0 15px rgba(0, 0, 0, 0.01);
+      overflow: hidden;
+    }
+
+    .panel-toggle-tabs {
+      display: flex;
+      border-bottom: 1px solid #eef2f6;
+    }
+
+    .panel-tab-btn {
+      flex: 1;
+      padding: 0.95rem;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05rem;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: #999;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+
+    .panel-tab-btn.active {
+      color: #000;
+      border-bottom-color: #000;
+    }
+
+    .panel-content-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    /* Info progress bars */
+    .metric-progress-card {
+      background-color: #fbfcfd;
+      border: 1px solid rgba(0,0,0,0.04);
+      border-radius: 12px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .progress-bar-track {
+      width: 100%;
+      height: 6px;
+      background-color: #edf2f7;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill-blue {
+      height: 100%;
+      background-color: #3b82f6;
+      border-radius: 3px;
+    }
+
+    .progress-bar-fill-red {
+      height: 100%;
+      background-color: #ef4444;
+      border-radius: 3px;
+    }
+
+    /* Colored pill tags */
+    .pill-tags-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .pill-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+    }
+
+    .tag-blue { background-color: #eff6ff; color: #1d4ed8; }
+    .tag-blue-dot { background-color: #3b82f6; width: 5px; height: 5px; border-radius: 50%; }
+
+    .tag-orange { background-color: #fcf2f2; color: #c2410c; }
+    .tag-orange-dot { background-color: #f97316; width: 5px; height: 5px; border-radius: 50%; }
+
+    .tag-green { background-color: #f0fdf4; color: #15803d; }
+    .tag-green-dot { background-color: #22c55e; width: 5px; height: 5px; border-radius: 50%; }
+  </style>
+</head>
+<body>
+
+  <!-- 1. Global background canvas networks -->
+  <div class="global-fixed-background">
+    <div class="hero-bg-graphic" id="hero-bg-graphic"></div>
+    <canvas class="interactive-canvas" id="canvas-grid"></canvas>
+  </div>
+
+  <!-- 2. Main Workspace Screen (Kintsugi remasters) -->
+  <div class="workspace-screen" id="workspace-screen">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="workspace-sidebar">
+      <div>
+        <div class="sidebar-header">
+          <div class="sidebar-logo">
+            <div class="sidebar-logo-icon">K</div>
+            <span>Kintsugi OS</span>
+          </div>
+          <div class="sidebar-badge font-mono">
+            <span class="badge-dot"></span>
+            Staging Pipeline Active
+          </div>
+        </div>
+
+        <nav class="sidebar-menu">
+          <div class="menu-item" onclick="switchTab(this, 'dashboard')">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+            </svg>
+            <span>Home</span>
+          </div>
+          <div>
+            <div class="menu-item active" onclick="switchTab(this, 'assets')">
+              <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+              </svg>
+              <span>Projects</span>
+            </div>
+            <!-- Submenu list mapping dynamically -->
+            <div class="sidebar-sub-menu">
+              <div class="sub-menu-item active" onclick="selectAsset(this, 'apple')">Apple Inc.</div>
+              <div class="sub-menu-item" onclick="selectAsset(this, 'bitcoin')">Bitcoin</div>
+              <div class="sub-menu-item" onclick="selectAsset(this, 'prologis')">Prologis</div>
+            </div>
+          </div>
+          <div class="menu-item" onclick="switchTab(this, 'orchestration')">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+            </svg>
+            <span>Stage Monitor</span>
+          </div>
+          <div class="menu-item" onclick="switchTab(this, 'review')">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138z"/>
+            </svg>
+            <span>Review Gate</span>
+          </div>
+          <div class="menu-item" onclick="switchTab(this, 'evidence')">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+            </svg>
+            <span>Evidence Audit</span>
+          </div>
+        </nav>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="menu-item" style="padding: 0.35rem 0.5rem; margin-bottom: 0.5rem;">
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+          <span>Settings</span>
+        </div>
+        <div class="menu-item" style="padding: 0.35rem 0.5rem; justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+            </svg>
+            <span>Notifications</span>
+          </div>
+          <span style="background-color: #ef4444; color: #fff; font-size: 9px; font-weight: bold;" class="font-mono px-1.5 py-0.5 rounded-full">10</span>
+        </div>
+
+        <div class="profile-footer-box" style="border-top: 1px solid var(--border-subtle); padding-top: 1rem; margin-top: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <div class="profile-avatar-mock">SL</div>
+            <div style="text-align: left; line-height: 1.2;">
+              <div style="font-size: 12px; font-weight: 600; color: #000;">Sophia Lane</div>
+              <div style="font-size: 10px; color: #999;">sophial@gmail.com</div>
+            </div>
+          </div>
+          <button style="background: transparent; border: none; cursor: pointer; color: #999;" title="Sign out">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="display: block;">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Panel (Middle Column) -->
+    <main class="workspace-main" id="workspace-main-panel">
+      <!-- Breadcrumbs -->
+      <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 500; color: #999; margin-bottom: 8px;">
+        <span>Projects</span>
+        <span>&rsaquo;</span>
+        <span style="color: #666; font-weight: 600;" id="breadcrumb-asset-name">Apple Inc.</span>
+      </div>
+
+      <!-- Action bar Title -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h2 style="font-size: 1.25rem; font-weight: 700; color: #000;" id="workspace-asset-title">Apple Inc.</h2>
+        <div style="display: flex; gap: 8px;">
+          <button class="refractive-button" style="padding: 0.4rem 0.8rem; font-size: 12px; font-weight: 500;" onclick="alert('Manage features activated')">Manage</button>
+          <button class="refractive-button" style="padding: 0.4rem 0.8rem; font-size: 12px; font-weight: 500;" onclick="alert('Shared workspace link copied')">Share</button>
+          <button class="refractive-button" style="padding: 0.4rem 0.8rem; font-size: 12px; font-weight: 500; background-color: #000; color: #fff; border-color: #000;" onclick="switchTab(null, 'orchestration')">New draft</button>
+        </div>
+      </div>
+
+      <!-- Search bar & filters toolbar -->
+      <div style="display: flex; gap: 10px; margin-bottom: 1.5rem;">
+        <div style="flex: 1; position: relative; display: flex; align-items: center;">
+          <span style="position: absolute; left: 16px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; justify-content: center;">
+            <svg width="15" height="15" fill="none" stroke="#aaa" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </span>
+          <input type="text" id="prototype-search-input" oninput="filterFolderItems()" placeholder="Search documents, runs, models..." style="width: 100%; height: 44px; padding-left: 44px; padding-right: 16px; border-radius: 9999px; border: 1px solid var(--border-subtle); background-color: #fff; font-size: 13.5px; font-family: 'Space Mono', monospace; outline: none; transition: all 0.3s ease;">
+        </div>
+        <button class="refractive-button" style="padding: 0 1.25rem; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; height: 44px; border-radius: 9999px;">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+          </svg>
+          <span>Filter</span>
+        </button>
+      </div>
+
+      <!-- Kintsugi Grid Folders -->
+      <div class="folders-grid" id="folders-grid-container">
+        <!-- Rendered dynamically by JS -->
+      </div>
+
+      <!-- In-folder files lister -->
+      <div style="background-color: #fff; border: 1px solid rgba(0,0,0,0.05); border-radius: 16px; padding: 1.5rem; box-shadow: 0 5px 15px rgba(0,0,0,0.01);">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f4f7fa; padding-bottom: 10px; margin-bottom: 12px;">
+          <h3 style="font-size: 14px; font-weight: 700; color: #000;" id="lister-folder-title">Files in Raw data</h3>
+          <span style="font-size: 11px; color: #999;" id="lister-folder-count">3 items found</span>
+        </div>
+        <div id="lister-items-container" style="display: flex; flex-direction: column; gap: 8px;">
+          <!-- Items injected dynamically -->
+        </div>
+      </div>
+    </main>
+
+    <!-- Workspace Sidebar Panel (Right Column) -->
+    <aside class="workspace-right-panel" id="workspace-right-sidebar">
+      <div class="panel-toggle-tabs">
+        <button class="panel-tab-btn active" id="btn-tab-info" onclick="toggleRightPanel('info')">Info</button>
+        <button class="panel-tab-btn" id="btn-tab-chat" onclick="toggleRightPanel('chat')">Assistant Chat</button>
+      </div>
+
+      <!-- Info Screen Contents -->
+      <div class="panel-content-body" id="panel-content-info">
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <h3 style="font-size: 15px; font-weight: 700; color: #000;" id="right-folder-title">Raw data</h3>
+            <span style="cursor: pointer; color: #999;">•••</span>
+          </div>
+          <p style="font-size: 12px; color: #999; line-height: 1.4;" id="right-folder-desc">
+            Raw filings, PDF documents, and investor call transcripts loaded into memory.
+          </p>
+        </div>
+
+        <!-- Ingestion metrics progress logs -->
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div class="metric-progress-card">
+            <div style="display: flex; justify-content: space-between; font-size: 11.5px; font-weight: 600;">
+              <span style="color: #999;">Documents</span>
+              <span style="color: #000;" id="progress-val-docs">48.5 GB</span>
+            </div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill-blue" id="progress-fill-docs" style="width: 90%;"></div>
+            </div>
+          </div>
+
+          <div class="metric-progress-card">
+            <div style="display: flex; justify-content: space-between; font-size: 11.5px; font-weight: 600;">
+              <span style="color: #999;">Model Runs</span>
+              <span style="color: #000;" id="progress-val-runs">12 runs</span>
+            </div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill-red" id="progress-fill-runs" style="width: 10%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metadata Properties Grid -->
+        <div>
+          <h4 style="font-size: 12.5px; font-weight: 700; color: #000; margin-bottom: 10px;">Properties</h4>
+          <div style="display: flex; flex-direction: column; gap: 8px; font-size: 12px;">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #999;">Size</span>
+              <span style="font-weight: 600; color: #000;" id="prop-size">180.2 MB</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #999;">Created</span>
+              <span style="font-weight: 600; color: #000;">12/03/2026</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #999;">Last modification</span>
+              <span style="font-weight: 600; color: #000;" id="prop-modified">06/12/2026</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: #999;">Home Profile</span>
+              <span style="font-weight: 600; color: #000; text-transform: uppercase;" id="prop-profile">EQUITY</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tag badges -->
+        <div>
+          <h4 style="font-size: 12.5px; font-weight: 700; color: #000; margin-bottom: 10px;">Tags</h4>
+          <div class="pill-tags-row">
+            <span class="pill-tag tag-blue">
+              <span class="tag-blue-dot"></span>
+              <span id="tag-kind">EQUITY</span>
+            </span>
+            <span class="pill-tag tag-orange">
+              <span class="tag-orange-dot"></span>
+              HIGH CONVICTION
+            </span>
+            <span class="pill-tag tag-green">
+              <span class="tag-green-dot"></span>
+              <span id="tag-sector">TECHNOLOGY</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- Pinned items / activity logs -->
+        <div style="margin-top: auto; border-top: 1px solid #f4f7fa; padding-top: 15px; display: flex; flex-direction: column; gap: 8px; font-size: 12px; font-weight: 600; color: #555;">
+          <div style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v2a2 2 0 01-2 2H7a2 2 0 01-2-2V5zm7 4v12m-3-3h6"/></svg>
+            <span>Pinned items</span>
+          </div>
+          <div style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z"/></svg>
+            <span>Activity stream</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chat Screen Contents (Hidden by default) -->
+      <div class="panel-content-body" id="panel-content-chat" style="display: none; height: 100%; overflow: hidden; padding: 0;">
+        <div id="chat-messages-log" style="flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 12px;">
+          <!-- Messages print here -->
+        </div>
+
+        <div style="padding: 1rem; border-top: 1px solid #eef2f6; background-color: #fafafa; display: flex; gap: 8px;">
+          <input type="text" id="chat-input-field" placeholder="Ask about research..." style="flex: 1; height: 34px; border-radius: 8px; border: 1px solid #e2e8f0; padding: 0 10px; font-size: 12px; font-family: 'Space Mono', monospace;">
+          <button onclick="sendChatMessage()" style="background-color: #000; color: #fff; border: none; font-size: 12px; font-weight: 600; cursor: pointer; padding: 0 12px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+            <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+          </button>
+        </div>
+      </div>
+
+    </aside>
+
+  </div>
+
+  <script>
+    // Refractive light coords update function for liquid glass button effects
+    function initRefractionEffects() {
+      document.body.addEventListener('mousemove', (e) => {
+        const buttons = document.querySelectorAll('.refractive-button');
+        buttons.forEach(btn => {
+          const rect = btn.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          btn.style.setProperty('--mx', `${x}px`);
+          btn.style.setProperty('--my', `${y}px`);
+        });
+      });
+    }
+    initRefractionEffects();
+
+    // 3D Canvas Accelerated Drifting Grid
+    const canvas = document.getElementById("canvas-grid");
+    const ctx = canvas.getContext("2d");
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
+
+    let mouseX = 0;
+    let mouseY = 0;
+    window.addEventListener("mousemove", (e) => {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+    });
+
+    const particles = [];
+    for (let i = 0; i < 45; i++) {
+      particles.push({
+        x: Math.random() * window.innerWidth,
+        y: Math.random() * window.innerHeight,
+        vx: (Math.random() - 0.5) * 0.35,
+        vy: (Math.random() - 0.5) * 0.35,
+        radius: Math.random() * 2 + 1
+      });
+    }
+
+    let continuousAngle = 0;
+    function animateGrid() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Update angles
+      continuousAngle += 0.0006;
+
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+      const size = 380;
+      
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.rotate(continuousAngle);
+      
+      // Draw 3D wireframe divisions
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.02)";
+      ctx.lineWidth = 1;
+      
+      const divisions = 4;
+      for (let i = -divisions; i <= divisions; i++) {
+        const offset = (size / divisions) * i;
+        ctx.beginPath();
+        ctx.moveTo(-size, offset);
+        ctx.lineTo(size, offset);
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.moveTo(offset, -size);
+        ctx.lineTo(offset, size);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Standard floating particles
+      ctx.fillStyle = "rgba(0, 0, 0, 0.04)";
+      particles.forEach((p, idx) => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+        if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
+
+        for (let j = idx + 1; j < particles.length; j++) {
+          const p2 = particles[j];
+          const pdx = p2.x - p.x;
+          const pdy = p2.y - p.y;
+          const pdist = Math.sqrt(pdx*pdx + pdy*pdy);
+          if (pdist < 100) {
+            ctx.beginPath();
+            ctx.strokeStyle = `rgba(0, 0, 0, ${0.03 * (1 - pdist/100)})`;
+            ctx.moveTo(p.x, p.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+          }
+        }
+
+        const dx = mouseX - p.x;
+        const dy = mouseY - p.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 180) {
+          ctx.beginPath();
+          ctx.strokeStyle = `rgba(0, 0, 0, ${0.04 * (1 - dist/180)})`;
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(mouseX, mouseY);
+          ctx.stroke();
+        }
+      });
+
+      requestAnimationFrame(animateGrid);
+    }
+    animateGrid();
+
+    // Prototype Workspace Logic (Dynamic Folders & Assets matching Kintsugi)
+    const mockAssets = {
+      apple: {
+        title: "Apple Inc.",
+        slug: "AAPL",
+        kind: "Equity",
+        sector: "Technology",
+        home_country: "United States",
+        desc: "Consumer electronics hardware leader expanding service ecosystems.",
+        folders: {
+          raw_data: {
+            name: "Raw data",
+            count: 3,
+            size: "180.2 MB",
+            desc: "Raw filings, PDF documents, and investor call transcripts loaded into memory.",
+            progressDocs: 90,
+            progressRuns: 10,
+            items: [
+              { name: "aapl-annual-filing-2025.pdf", detail: "10-K SEC Filing", type: "pdf", size: "142.1 MB" },
+              { name: "aapl-earnings-call-transcript.docx", detail: "Q4 Earnings Call Transcript", type: "doc", size: "18.5 MB" },
+              { name: "aapl-supply-estimates-report.xlsx", detail: "China Channel shipments dataset", type: "xls", size: "19.6 MB" }
+            ]
+          },
+          research_runs: {
+            name: "Research runs",
+            count: 3,
+            size: "490 KB",
+            desc: "LangGraph autonomous orchestrator executions and active staging runs.",
+            progressDocs: 15,
+            progressRuns: 85,
+            items: [
+              { name: "deep_dive_aapl_2026", detail: "Status: Completed · 06/12/2026", type: "run", size: "42 KB" },
+              { name: "fundamental_ratio_extraction_aapl", detail: "Status: Completed · 05/11/2026", type: "run", size: "12 KB" },
+              { name: "risk_profile_ingest_aapl", detail: "Status: Completed · 04/10/2026", type: "run", size: "15 KB" }
+            ]
+          },
+          valuation: {
+            name: "Valuation models",
+            count: 2,
+            size: "1.3 MB",
+            desc: "Discounted Cash Flows, reverse DCFs, and cap rate models constructed by agents.",
+            progressDocs: 50,
+            progressRuns: 60,
+            items: [
+              { name: "aapl_dcf_base_case.xlsx", detail: "Discounted Cash Flow Sheets", type: "xls", size: "850 KB" },
+              { name: "aapl_fundamental_multiples.xlsx", detail: "Valuation ratios & reverse metrics", type: "xls", size: "480 KB" }
+            ]
+          },
+          evidence: {
+            name: "Evidence claims",
+            count: 21,
+            size: "23.4 MB",
+            desc: "Structured claims linked directly to spatial page coordinates on source PDF sheets.",
+            progressDocs: 80,
+            progressRuns: 30,
+            items: [
+              { name: "Services Gross Margin expansion coordinates", detail: "AAPL 10-K P.42 -> coordinates: [30, 155, 420, 25]", type: "evidence", size: "Claim #1" },
+              { name: "Greater China shipment volumes estimate", detail: "Gartner Supply Q4 -> coordinates: [40, 80, 380, 40]", type: "evidence", size: "Claim #2" },
+              { name: "Silicon architecture R&D cost increments", detail: "AAPL 10-K P.18 -> coordinates: [30, 220, 440, 30]", type: "evidence", size: "Claim #3" }
+            ]
+          },
+          metrics: {
+            name: "Processed data",
+            count: 96,
+            size: "1.3 GB",
+            desc: "Normalized fundamental fundamental figures and observations stored in ChromaDB.",
+            progressDocs: 100,
+            progressRuns: 45,
+            items: [
+              { name: "Vector collection 'provenance_chunks'", detail: "Ingested chunks: 14,241", type: "db", size: "840 MB" },
+              { name: "Vector collection 'institutional_memory'", detail: "Ingested chunks: 2,421", type: "db", size: "480 MB" }
+            ]
+          },
+          memos: {
+            name: "Ideas and Insights",
+            count: 2,
+            size: "126.3 KB",
+            desc: "Final PowerPoint, Word, and Excel artifacts generated by the production agents.",
+            progressDocs: 30,
+            progressRuns: 95,
+            items: [
+              { name: "aapl_investment_thesis.docx", detail: "Completed investment brief", type: "doc", size: "82 KB" },
+              { name: "aapl_pitch_deck.pptx", detail: "Valuation presentation slides", type: "pptx", size: "44.3 KB" }
+            ]
+          }
+        }
+      },
+      bitcoin: {
+        title: "Bitcoin",
+        slug: "BTC",
+        kind: "Crypto",
+        sector: "Fixed Commodity",
+        home_country: "Decentralized",
+        desc: "Fixed supply digital ledger asset driven by blockchain hash securities.",
+        folders: {
+          raw_data: {
+            name: "Raw data",
+            count: 2,
+            size: "42.1 MB",
+            desc: "Raw filings, transaction ledgers, and hashrate graphs.",
+            progressDocs: 60,
+            progressRuns: 20,
+            items: [
+              { name: "bitcoin_whitepaper.pdf", detail: "Satoshi original release documentation", type: "pdf", size: "1.2 MB" },
+              { name: "block_halving_schedule_2026.docx", detail: "Supply trajectory charts", type: "doc", size: "40.9 MB" }
+            ]
+          },
+          research_runs: {
+            name: "Research runs",
+            count: 1,
+            size: "12 KB",
+            desc: "Hashrate security and wallet flow analysis pipeline traces.",
+            progressDocs: 10,
+            progressRuns: 90,
+            items: [
+              { name: "hashrate_difficulty_calibration_btc", detail: "Status: Completed · 06/01/2026", type: "run", size: "12 KB" }
+            ]
+          },
+          valuation: {
+            name: "Valuation models",
+            count: 1,
+            size: "94 KB",
+            desc: "MVRV Z-scores and realized capitalizations.",
+            progressDocs: 40,
+            progressRuns: 50,
+            items: [
+              { name: "btc_mvrv_z_score_models.xlsx", detail: "Realized price tracking sheets", type: "xls", size: "94 KB" }
+            ]
+          },
+          evidence: {
+            name: "Evidence claims",
+            count: 8,
+            size: "1.5 MB",
+            desc: "Verified claims mapped to node coordinates.",
+            progressDocs: 70,
+            progressRuns: 20,
+            items: [
+              { name: "Supply hard cap validation coordinates", detail: "Whitepaper P.4 -> coordinates: [10, 80, 240, 30]", type: "evidence", size: "Claim #1" }
+            ]
+          },
+          metrics: {
+            name: "Processed data",
+            count: 42,
+            size: "120 MB",
+            desc: "Wallet distributions and hashrate limits in database.",
+            progressDocs: 90,
+            progressRuns: 40,
+            items: [
+              { name: "Vector collection 'provenance_chunks'", detail: "Ingested chunks: 2,120", type: "db", size: "120 MB" }
+            ]
+          },
+          memos: {
+            name: "Ideas and Insights",
+            count: 1,
+            size: "24 KB",
+            desc: "Asset allocations and portfolios pitch sheets.",
+            progressDocs: 20,
+            progressRuns: 90,
+            items: [
+              { name: "btc_asset_allocation_brief.docx", detail: "Commodity allocation thesis", type: "doc", size: "24 KB" }
+            ]
+          }
+        }
+      },
+      prologis: {
+        title: "Prologis Inc.",
+        slug: "PLD",
+        kind: "REIT",
+        sector: "Real Estate",
+        home_country: "United States",
+        desc: "Logistics real estate investment trust focused on industrial warehousing occupancy.",
+        folders: {
+          raw_data: {
+            name: "Raw data",
+            count: 2,
+            size: "82.5 MB",
+            desc: "Occupancy files, lease tables, and debt calendars.",
+            progressDocs: 80,
+            progressRuns: 15,
+            items: [
+              { name: "pld-annual-report-2025.pdf", detail: "REIT annual property layout", type: "pdf", size: "75.1 MB" },
+              { name: "occupancy_logistics_lease_schedule.xlsx", detail: "Tenant lease timelines", type: "xls", size: "7.4 MB" }
+            ]
+          },
+          research_runs: {
+            name: "Research runs",
+            count: 1,
+            size: "15 KB",
+            desc: "Ingestion and NAV capitalization runs.",
+            progressDocs: 20,
+            progressRuns: 80,
+            items: [
+              { name: "reit_net_asset_value_modeling_pld", detail: "Status: Completed · 05/20/2026", type: "run", size: "15 KB" }
+            ]
+          },
+          valuation: {
+            name: "Valuation models",
+            count: 1,
+            size: "340 KB",
+            desc: "Cap rate evaluations and property capitalization sheets.",
+            progressDocs: 50,
+            progressRuns: 70,
+            items: [
+              { name: "pld_cap_rate_valuation_model.xlsx", detail: "NAV capitalization models", type: "xls", size: "340 KB" }
+            ]
+          },
+          evidence: {
+            name: "Evidence claims",
+            count: 12,
+            size: "4.8 MB",
+            desc: "Spatial coordinates of lease commitments.",
+            progressDocs: 80,
+            progressRuns: 40,
+            items: [
+              { name: "Occupancy ratios verification coordinates", detail: "Report P.12 -> coordinates: [15, 60, 420, 20]", type: "evidence", size: "Claim #1" }
+            ]
+          },
+          metrics: {
+            name: "Processed data",
+            count: 55,
+            size: "210 MB",
+            desc: "Lease maturities databases.",
+            progressDocs: 95,
+            progressRuns: 30,
+            items: [
+              { name: "Vector collection 'provenance_chunks'", detail: "Ingested chunks: 4,180", type: "db", size: "210 MB" }
+            ]
+          },
+          memos: {
+            name: "Ideas and Insights",
+            count: 1,
+            size: "18 KB",
+            desc: "Powerpoint briefings on property lists.",
+            progressDocs: 30,
+            progressRuns: 95,
+            items: [
+              { name: "pld_real_estate_cap_rate_brief.docx", detail: "Real estate investment brief", type: "doc", size: "18 KB" }
+            ]
+          }
+        }
+      }
+    };
+
+    let activeAssetKey = "apple";
+    let activeFolderKey = "raw_data";
+    let currentRightPanelTab = "info";
+
+    function switchTab(el, tabId) {
+      if (el) {
+        document.querySelectorAll(".menu-item").forEach(item => item.classList.remove("active"));
+        el.classList.add("active");
+      }
+      
+      if (tabId === 'orchestration') {
+        alert("Launching active Stage Monitor pipeline checks...");
+      } else if (tabId === 'review') {
+        alert("Launching Review check gates sizer panels...");
+      } else if (tabId === 'evidence') {
+        alert("Launching Evidence coordinates auditor viewer...");
+      }
+    }
+
+    function selectAsset(el, assetKey) {
+      document.querySelectorAll(".sub-menu-item").forEach(item => item.classList.remove("active"));
+      el.classList.add("active");
+      switchAsset(assetKey);
+    }
+
+    function switchAsset(assetKey) {
+      activeAssetKey = assetKey;
+      const asset = mockAssets[assetKey];
+      
+      // Update breadcrumbs and titles
+      document.getElementById("breadcrumb-asset-name").innerText = asset.title;
+      document.getElementById("workspace-asset-title").innerText = asset.title;
+
+      // Render Kintsugi Folders Grid
+      renderFoldersGrid();
+
+      // Render selected folder files & Right Panel details
+      selectFolder(activeFolderKey);
+    }
+
+    function renderFoldersGrid() {
+      const asset = mockAssets[activeAssetKey];
+      const gridContainer = document.getElementById("folders-grid-container");
+      gridContainer.innerHTML = "";
+
+      Object.entries(asset.folders).forEach(([key, folder]) => {
+        const isActive = activeFolderKey === key;
+        const card = document.createElement("div");
+        card.className = `folder-card ${isActive ? 'active' : ''}`;
+        card.onclick = () => selectFolder(key);
+
+        card.innerHTML = `
+          <div class="folder-tab-lip"></div>
+          ${isActive ? `
+            <div class="folder-paper-peak">
+              <div class="folder-paper-line" style="width: 80%;"></div>
+              <div class="folder-paper-line" style="width: 60%;"></div>
+              <div class="folder-paper-line" style="width: 70%;"></div>
+            </div>
+          ` : ''}
+          <div class="folder-card-title">${folder.name}</div>
+          <div class="folder-card-count">${folder.count} ${folder.count === 1 ? 'item' : 'items'}</div>
+          <div class="folder-card-size">${folder.size}</div>
+        `;
+        gridContainer.appendChild(card);
+      });
+    }
+
+    function selectFolder(folderKey) {
+      activeFolderKey = folderKey;
+      renderFoldersGrid();
+
+      const asset = mockAssets[activeAssetKey];
+      const folder = asset.folders[folderKey];
+
+      // Update folder items lister
+      document.getElementById("lister-folder-title").innerText = `Files in ${folder.name}`;
+      filterFolderItems();
+
+      // Update Right side-panel info
+      document.getElementById("right-folder-title").innerText = folder.name;
+      document.getElementById("right-folder-desc").innerText = folder.desc;
+      
+      // Storage bars
+      document.getElementById("progress-val-docs").innerText = `${folder.progressDocs}% size`;
+      document.getElementById("progress-fill-docs").style.width = `${folder.progressDocs}%`;
+      
+      document.getElementById("progress-val-runs").innerText = `${folder.progressRuns}% runs`;
+      document.getElementById("progress-fill-runs").style.width = `${folder.progressRuns}%`;
+
+      // Properties table
+      document.getElementById("prop-size").innerText = folder.size;
+      document.getElementById("prop-profile").innerText = asset.kind;
+      
+      // Tags
+      document.getElementById("tag-kind").innerText = asset.kind;
+      document.getElementById("tag-sector").innerText = asset.sector;
+    }
+
+    function filterFolderItems() {
+      const searchVal = document.getElementById("prototype-search-input").value.toLowerCase();
+      const asset = mockAssets[activeAssetKey];
+      const folder = asset.folders[activeFolderKey];
+      
+      const filtered = folder.items.filter(item => 
+        item.name.toLowerCase().includes(searchVal) || 
+        item.detail.toLowerCase().includes(searchVal)
+      );
+
+      const listContainer = document.getElementById("lister-items-container");
+      document.getElementById("lister-folder-count").innerText = `${filtered.length} items found`;
+      
+      listContainer.innerHTML = "";
+      if (filtered.length === 0) {
+        listContainer.innerHTML = `
+          <div style="text-align: center; padding: 2rem; color: #aaa; font-size: 13px;">
+            No items matching this query inside ${folder.name}.
+          </div>
+        `;
+        return;
+      }
+
+      filtered.forEach(item => {
+        const itemBox = document.createElement("div");
+        itemBox.style.cssText = "display: flex; justify-content: space-between; align-items: center; border: 1px solid #f0f4f8; background-color: #fafbfc; border-radius: 12px; padding: 10px 15px; cursor: pointer; transition: all 0.2s ease;";
+        
+        let svgIcon = "";
+        if (item.type === "pdf") {
+          svgIcon = `<svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>`;
+        } else if (item.type === "xls" || item.type === "pptx") {
+          svgIcon = `<svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z"/></svg>`;
+        } else if (item.type === "run") {
+          svgIcon = `<svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>`;
+        } else if (item.type === "db") {
+          svgIcon = `<svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg>`;
+        } else {
+          svgIcon = `<svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>`;
+        }
+
+        itemBox.innerHTML = `
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="height: 32px; width: 32px; border-radius: 8px; background-color: #f7f7f7; display: flex; align-items: center; justify-content: center;">${svgIcon}</div>
+            <div style="text-align: left; line-height: 1.3;">
+              <div style="font-size: 13px; font-weight: 600; color: #000;">${item.name}</div>
+              <div style="font-size: 11px; color: #999;">${item.detail}</div>
+            </div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 12px; font-size: 11px;">
+            <span style="color: #999;" class="font-mono">${item.size}</span>
+            <span style="background-color: #edf2f7; color: #718096; font-weight: bold; font-size: 9px; text-transform: uppercase; font-mono px-2 py-0.5 rounded-full" class="px-2 py-0.5 rounded-full">${item.type}</span>
+          </div>
+        `;
+        listContainer.appendChild(itemBox);
+      });
+    }
+
+    // Initialize asset apple immediately
+    switchAsset("apple");
+
+    function toggleRightPanel(tab) {
+      currentRightPanelTab = tab;
+      const infoBtn = document.getElementById("btn-tab-info");
+      const chatBtn = document.getElementById("btn-tab-chat");
+      const infoBox = document.getElementById("panel-content-info");
+      const chatBox = document.getElementById("panel-content-chat");
+
+      if (tab === 'info') {
+        infoBtn.classList.add("active");
+        chatBtn.classList.remove("active");
+        infoBox.style.display = "flex";
+        chatBox.style.display = "none";
+      } else {
+        infoBtn.classList.remove("active");
+        chatBtn.classList.add("active");
+        infoBox.style.display = "none";
+        chatBox.style.display = "flex";
+        
+        const messagesContainer = document.getElementById("chat-messages-log");
+        if (messagesContainer.children.length === 0) {
+          messagesContainer.innerHTML = `
+            <div style="display: flex; justify-content: flex-start;">
+              <div style="max-width: 85%; border-radius: 16px; border-bottom-left-radius: 0; padding: 10px 14px; font-size: 12px; background-color: #f7f7f7; color: #000; line-height: 1.4;">
+                Hi Sophia Lane, I am your Kintsugi AI assistant. Ask me anything about the research files, models, or evidence logs retrieved for ${mockAssets[activeAssetKey].title}.
+              </div>
+            </div>
+          `;
+        }
+      }
+    }
+
+    function sendChatMessage() {
+      const inputEl = document.getElementById("chat-input-field");
+      const query = inputEl.value.trim();
+      if (!query) return;
+
+      inputEl.value = "";
+      const messagesContainer = document.getElementById("chat-messages-log");
+
+      const userBox = document.createElement("div");
+      userBox.style.cssText = "display: flex; justify-content: flex-end;";
+      userBox.innerHTML = `
+        <div style="max-width: 85%; border-radius: 16px; border-bottom-right-radius: 0; padding: 10px 14px; font-size: 12px; background-color: #000; color: #fff; line-height: 1.4;">
+          ${query}
+        </div>
+      `;
+      messagesContainer.appendChild(userBox);
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+      setTimeout(() => {
+        const replyBox = document.createElement("div");
+        replyBox.style.cssText = "display: flex; justify-content: flex-start;";
+        replyBox.innerHTML = `
+          <div style="max-width: 85%; border-radius: 16px; border-bottom-left-radius: 0; padding: 10px 14px; font-size: 12px; background-color: #f7f7f7; color: #000; line-height: 1.4;">
+            I have analyzed the documents inside the Kintsugi database for ${mockAssets[activeAssetKey].title}. This is a simulated response to your question: "${query}". All inputs are verified against local ChromaDB spatial tag registries.
+          </div>
+        `;
+        messagesContainer.appendChild(replyBox);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }, 600);
+    }
+  </script>
+</body>
+</html>

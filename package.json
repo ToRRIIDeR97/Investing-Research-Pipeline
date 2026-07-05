@@ -1,0 +1,47 @@
+{
+  "name": "research-os",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:seed": "tsx src/db/seed.ts",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "next": "^15.3.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "drizzle-orm": "^0.44.2",
+    "postgres": "^3.4.5",
+    "pg": "^8.16.0",
+    "@types/pg": "^8.11.14",
+    "zod": "^3.25.67",
+    "nanoid": "^5.1.5",
+    "date-fns": "^4.1.0",
+    "recharts": "^2.15.4",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.3.1",
+    "lucide-react": "^0.513.0",
+    "marked": "^16.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "@types/node": "^22.15.34",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "drizzle-kit": "^0.31.1",
+    "tsx": "^4.19.4",
+    "tailwindcss": "^4.1.11",
+    "@tailwindcss/postcss": "^4.1.11",
+    "postcss": "^8.5.6",
+    "eslint": "^9.29.0",
+    "eslint-config-next": "^15.3.3",
+    "@eslint/eslintrc": "^3.3.1"
+  }
+}
