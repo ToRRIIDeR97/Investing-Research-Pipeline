@@ -1,10 +1,11 @@
 import { NextRequest } from "next/server";
 import { db } from "@/db";
 import { assets } from "@/db/schema/core";
+import { asset_profile_assignments, research_profiles } from "@/db/schema/profiles";
 import { research_runs } from "@/db/schema/workflow";
 import { handleApiError, successResponse, createdResponse, ApiError } from "@/lib/api/errors";
 import { createResearchRunSchema } from "@/lib/api/validation";
-import { eq, asc } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { createStagesForRun } from "@/lib/workflow/orchestrator";
 
 export async function GET(
@@ -35,7 +36,7 @@ export async function POST(
 
     // Verify the asset exists
     const [asset] = await db
-      .select({ id: assets.id })
+      .select({ id: assets.id, primary_profile_id: assets.primary_profile_id })
       .from(assets)
       .where(eq(assets.id, assetId))
       .limit(1);
@@ -46,6 +47,9 @@ export async function POST(
 
     const body = await request.json();
     const parsed = createResearchRunSchema.parse(body);
+    const profileId =
+      parsed.profile_id ?? asset.primary_profile_id ?? (await resolveActiveProfileId(assetId));
+    const profileVersion = profileId ? await resolveProfileVersion(profileId) : null;
 
     const [run] = await db
       .insert(research_runs)
@@ -54,7 +58,8 @@ export async function POST(
         run_type: parsed.run_type,
         research_question: parsed.research_question ?? null,
         requested_by: parsed.requested_by ?? null,
-        profile_id: parsed.profile_id ?? null,
+        profile_id: profileId,
+        profile_version: profileVersion,
         budget_limit_usd: parsed.budget_limit_usd?.toString() ?? null,
         source_cutoff_at: parsed.source_cutoff_at
           ? new Date(parsed.source_cutoff_at)
@@ -72,4 +77,31 @@ export async function POST(
   } catch (error) {
     return handleApiError(error);
   }
+}
+
+async function resolveActiveProfileId(assetId: string) {
+  const [assignment] = await db
+    .select({ profile_id: asset_profile_assignments.profile_id })
+    .from(asset_profile_assignments)
+    .where(
+      and(
+        eq(asset_profile_assignments.asset_id, assetId),
+        eq(asset_profile_assignments.status, "active"),
+        isNull(asset_profile_assignments.research_run_id)
+      )
+    )
+    .orderBy(desc(asset_profile_assignments.created_at))
+    .limit(1);
+
+  return assignment?.profile_id ?? null;
+}
+
+async function resolveProfileVersion(profileId: string) {
+  const [profile] = await db
+    .select({ version: research_profiles.version })
+    .from(research_profiles)
+    .where(eq(research_profiles.id, profileId))
+    .limit(1);
+
+  return profile?.version ?? null;
 }

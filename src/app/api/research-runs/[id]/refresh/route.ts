@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server";
 import { db } from "@/db";
-import { research_runs, research_stages } from "@/db/schema/workflow";
+import { research_runs } from "@/db/schema/workflow";
 import { handleApiError, createdResponse, ApiError } from "@/lib/api/errors";
 import { eq } from "drizzle-orm";
-import { getApplicableStages } from "@/lib/workflow/stages";
+import { createStagesForRun } from "@/lib/workflow/orchestrator";
 
 export async function POST(
   request: NextRequest,
@@ -40,6 +40,8 @@ export async function POST(
       .values({
         asset_id: originalRun.asset_id,
         run_type,
+        profile_id: originalRun.profile_id,
+        profile_version: originalRun.profile_version,
         source_cutoff_at: source_cutoff_at ? new Date(source_cutoff_at) : null,
         market_data_cutoff_at: market_data_cutoff_at
           ? new Date(market_data_cutoff_at)
@@ -47,21 +49,8 @@ export async function POST(
       })
       .returning();
 
-    // Create stages for the new run based on the run type
-    const applicableStages = getApplicableStages(run_type);
-    const stageValues = applicableStages.map((stage) => ({
-      research_run_id: newRun.id,
-      stage_key: stage.key,
-      stage_order: stage.order,
-      allowed_model_tiers: stage.allowedModelTiers,
-      max_retries: stage.maxRetries,
-      completion_criteria_json: {
-        requiredOutputs: stage.requiredOutputs,
-        requiresHumanApproval: stage.requiresHumanApproval,
-      },
-    }));
-
-    await db.insert(research_stages).values(stageValues);
+    // Create all workflow stages, including explicit skipped stages for auditability.
+    await createStagesForRun(newRun.id);
 
     return createdResponse(newRun);
   } catch (error) {

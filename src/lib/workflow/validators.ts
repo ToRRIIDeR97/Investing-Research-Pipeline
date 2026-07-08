@@ -222,6 +222,18 @@ export async function validateStageCompletion(
           break;
         }
 
+        case "backtest_results": {
+          const rows = await sql`
+            SELECT COUNT(*) as cnt FROM backtest_runs
+            WHERE research_run_id = ${runId}
+              AND status = 'completed'
+          `;
+          if (Number(rows[0].cnt) === 0) {
+            errors.push("No completed backtest results found for this run");
+          }
+          break;
+        }
+
         case "export_artifact": {
           const rows = await sql`
             SELECT COUNT(*) as cnt FROM exports
@@ -594,6 +606,20 @@ export async function validatePointInTime(
           `Metric observation ${obs.id} has available_at (${obs.available_at}) after market_data_cutoff_at (${run.market_data_cutoff_at})`
         );
       }
+
+      const futureBacktests = await sql`
+        SELECT id, symbol, end_date
+        FROM backtest_runs
+        WHERE research_run_id = ${runId}
+          AND end_date IS NOT NULL
+          AND end_date::timestamp > ${run.market_data_cutoff_at}
+      `;
+
+      for (const backtest of futureBacktests) {
+        errors.push(
+          `Backtest ${backtest.id} (${backtest.symbol}) ends at ${backtest.end_date}, after market_data_cutoff_at (${run.market_data_cutoff_at})`
+        );
+      }
     }
 
     // Check that metric observations with available_at have data_provider
@@ -608,6 +634,19 @@ export async function validatePointInTime(
     for (const obs of noProvider) {
       warnings.push(
         `Metric observation ${obs.id} has available_at but no data_provider — lineage is incomplete`
+      );
+    }
+
+    const backtestsWithoutProvider = await sql`
+      SELECT id, symbol
+      FROM backtest_runs
+      WHERE research_run_id = ${runId}
+        AND (data_provider IS NULL OR data_provider = '')
+    `;
+
+    for (const backtest of backtestsWithoutProvider) {
+      warnings.push(
+        `Backtest ${backtest.id} (${backtest.symbol}) has no data_provider — lineage is incomplete`
       );
     }
 

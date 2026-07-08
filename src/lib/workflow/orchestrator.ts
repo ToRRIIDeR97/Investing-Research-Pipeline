@@ -315,6 +315,140 @@ export async function advanceStage(
 }
 
 /**
+ * Approve the research plan human gate and resume the run.
+ */
+export async function approveResearchPlan(
+  runId: string,
+  approvedBy: string = "user"
+): Promise<{ success: boolean; nextStage?: string; error?: string }> {
+  const sql = postgres(process.env.DATABASE_URL!);
+
+  try {
+    const stages = await sql`
+      SELECT id, status
+      FROM research_stages
+      WHERE research_run_id = ${runId}
+        AND stage_key = 'research_plan'
+      LIMIT 1
+    `;
+
+    if (stages.length === 0) {
+      return { success: false, error: "Research plan stage not found" };
+    }
+
+    if (stages[0].status !== "waiting_for_human") {
+      return {
+        success: false,
+        error: `Research plan is not waiting for approval (status: ${stages[0].status})`,
+      };
+    }
+
+    const validation: ValidationResult = {
+      valid: true,
+      errors: [],
+      warnings: [],
+      checkedAt: new Date().toISOString(),
+    };
+
+    await sql`
+      UPDATE research_stages
+      SET status = 'completed',
+          completed_at = NOW(),
+          validation_result_json = ${JSON.stringify({
+            ...validation,
+            approvedBy,
+            approvalType: "research_plan",
+          })}::jsonb,
+          updated_at = NOW()
+      WHERE id = ${stages[0].id}
+    `;
+
+    await sql`
+      UPDATE research_runs
+      SET status = 'running',
+          metadata_json = metadata_json || ${JSON.stringify({
+            research_plan_approved_by: approvedBy,
+            research_plan_approved_at: new Date().toISOString(),
+          })}::jsonb,
+          updated_at = NOW()
+      WHERE id = ${runId}
+    `;
+  } finally {
+    await sql.end();
+  }
+
+  const nextStage = await startNextStage(runId);
+  return { success: true, nextStage };
+}
+
+/**
+ * Approve the final human review gate and resume the run.
+ */
+export async function approveHumanReview(
+  runId: string,
+  reviewedBy: string = "user"
+): Promise<{ success: boolean; nextStage?: string; error?: string }> {
+  const sql = postgres(process.env.DATABASE_URL!);
+
+  try {
+    const stages = await sql`
+      SELECT id, status
+      FROM research_stages
+      WHERE research_run_id = ${runId}
+        AND stage_key = 'human_review'
+      LIMIT 1
+    `;
+
+    if (stages.length === 0) {
+      return { success: false, error: "Human review stage not found" };
+    }
+
+    if (stages[0].status !== "waiting_for_human") {
+      return {
+        success: false,
+        error: `Human review is not waiting for approval (status: ${stages[0].status})`,
+      };
+    }
+
+    const validation: ValidationResult = {
+      valid: true,
+      errors: [],
+      warnings: [],
+      checkedAt: new Date().toISOString(),
+    };
+
+    await sql`
+      UPDATE research_stages
+      SET status = 'completed',
+          completed_at = NOW(),
+          validation_result_json = ${JSON.stringify({
+            ...validation,
+            reviewedBy,
+            approvalType: "human_review",
+          })}::jsonb,
+          updated_at = NOW()
+      WHERE id = ${stages[0].id}
+    `;
+
+    await sql`
+      UPDATE research_runs
+      SET status = 'running',
+          metadata_json = metadata_json || ${JSON.stringify({
+            human_review_approved_by: reviewedBy,
+            human_review_approved_at: new Date().toISOString(),
+          })}::jsonb,
+          updated_at = NOW()
+      WHERE id = ${runId}
+    `;
+  } finally {
+    await sql.end();
+  }
+
+  const nextStage = await startNextStage(runId);
+  return { success: true, nextStage };
+}
+
+/**
  * Helper: start the next pending stage. Returns the stage key or undefined.
  */
 async function startNextStage(
@@ -354,6 +488,14 @@ async function startNextStage(
                 failed_stages: failedKeys,
                 failure_summary: failedStages.map((s) => `${s.stage_key}: ${s.failure_reason}`),
               })}::jsonb
+          WHERE id = ${runId}
+        `;
+      } else {
+        await sql`
+          UPDATE research_runs
+          SET status = 'completed',
+              completed_at = COALESCE(completed_at, NOW()),
+              updated_at = NOW()
           WHERE id = ${runId}
         `;
       }

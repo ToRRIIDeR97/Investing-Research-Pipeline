@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { generateMemo } from "@/lib/export/memo-generator";
+import { generateResearchPackage } from "@/lib/export/research-package-generator";
 import { handleApiError, createdResponse, ApiError } from "@/lib/api/errors";
 import postgres from "postgres";
 
@@ -26,14 +27,19 @@ export async function POST(
         throw new ApiError("Research run not found", 404);
       }
 
-      // Generate the memo from database records
-      const result = await generateMemo({
+      const memo = await generateMemo({
         runId,
         assetId: run.asset_id,
         generatedBy: "api",
       });
 
-      return createdResponse(result);
+      const researchPackage = await generateResearchPackage({
+        runId,
+        assetId: run.asset_id,
+        generatedBy: "api",
+      });
+
+      return createdResponse({ memo, researchPackage });
     } finally {
       await sql.end();
     }

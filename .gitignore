@@ -31,6 +31,7 @@ storage/*
 *.tsbuildinfo
 .turbo/
 .vercel/
+.cache/
 
 # Python caches
 __pycache__/

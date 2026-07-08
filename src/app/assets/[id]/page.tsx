@@ -63,6 +63,29 @@ interface StageInfo {
   stage_order: number;
 }
 
+interface BacktestRun {
+  id: string;
+  status: string;
+  strategy_name: string | null;
+  strategy_prompt: string;
+  symbol: string;
+  benchmark_symbol: string | null;
+  metrics_json: Record<string, unknown>;
+  error_message: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+function formatPercent(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatNumber(value: unknown, digits = 2) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return value.toFixed(digits);
+}
+
 export default function AssetDetailPage() {
   const params = useParams();
   const assetId = params.id as string;
@@ -73,6 +96,7 @@ export default function AssetDetailPage() {
   const [signals, setSignals] = useState<ValuationSignalData[]>([]);
   const [costData, setCostData] = useState<CostSlice[]>([]);
   const [stages, setStages] = useState<StageInfo[]>([]);
+  const [backtests, setBacktests] = useState<BacktestRun[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -90,8 +114,23 @@ export default function AssetDetailPage() {
         if (assetRes.ok && runsRes.ok) {
           const assetData = await assetRes.json();
           const runsData = await runsRes.json();
+          const sortedRuns = Array.isArray(runsData)
+            ? [...runsData].sort(
+                (a, b) =>
+                  new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+              )
+            : [];
           setAsset(assetData);
-          setRuns(runsData);
+          setRuns(sortedRuns);
+
+          if (sortedRuns[0]) {
+            const backtestsRes = await fetch(
+              `/api/research-runs/${sortedRuns[0].id}/backtests`
+            );
+            if (backtestsRes.ok) {
+              setBacktests(await backtestsRes.json());
+            }
+          }
         }
         if (metricsRes.ok) setMetrics(await metricsRes.json());
         if (signalsRes.ok) setSignals(await signalsRes.json());
@@ -291,6 +330,108 @@ export default function AssetDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Backtests */}
+      {runs.length > 0 && (
+        <div className="mb-8 rounded-[16px] border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between border-b border-gray-100 pb-3">
+            <h3 className="font-bold text-[14px] text-black">
+              Latest Backtests
+            </h3>
+            <span className="font-mono text-[10px] uppercase tracking-wider text-gray-400">
+              {backtests.length} runs
+            </span>
+          </div>
+
+          {backtests.length === 0 ? (
+            <p className="text-[12px] leading-normal text-gray-400">
+              No backtests have been requested for the latest research run.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {backtests.slice(0, 4).map((backtest) => (
+                <div
+                  key={backtest.id}
+                  className="rounded-xl border border-gray-100/70 bg-[#fbfcfd] px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[13px] font-semibold text-black">
+                          {backtest.strategy_name || "Backtest request"}
+                        </span>
+                        <span className="font-mono text-[10px] text-gray-400">
+                          {backtest.symbol}
+                          {backtest.benchmark_symbol
+                            ? ` vs ${backtest.benchmark_symbol}`
+                            : ""}
+                        </span>
+                      </div>
+                      <p className="mt-1 max-w-xl truncate text-[11.5px] text-gray-400">
+                        {backtest.error_message || backtest.strategy_prompt}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                          backtest.status === "completed"
+                            ? "bg-green-50 text-green-700"
+                            : backtest.status === "failed"
+                            ? "bg-rose-50 text-rose-700"
+                            : "bg-yellow-50 text-yellow-700"
+                        }`}
+                      >
+                        {backtest.status}
+                      </span>
+                      <Link
+                        href={`/api/backtests/${backtest.id}/artifacts`}
+                        className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[10px] font-bold text-gray-500 transition-colors hover:border-gray-300 hover:text-black"
+                      >
+                        Artifacts
+                      </Link>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+                    <div>
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">
+                        Return
+                      </p>
+                      <p className="font-mono text-[12px] font-semibold text-black">
+                        {formatPercent(backtest.metrics_json?.total_return)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">
+                        Sharpe
+                      </p>
+                      <p className="font-mono text-[12px] font-semibold text-black">
+                        {formatNumber(backtest.metrics_json?.sharpe)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">
+                        Drawdown
+                      </p>
+                      <p className="font-mono text-[12px] font-semibold text-black">
+                        {formatPercent(backtest.metrics_json?.max_drawdown)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">
+                        Trades
+                      </p>
+                      <p className="font-mono text-[12px] font-semibold text-black">
+                        {formatNumber(backtest.metrics_json?.trade_count, 0)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Recent Runs list */}
       {runs.length > 0 && (

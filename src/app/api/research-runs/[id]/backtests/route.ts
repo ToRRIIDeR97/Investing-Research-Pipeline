@@ -1,8 +1,16 @@
 import { NextRequest } from "next/server";
 import { db } from "@/db";
-import { research_runs, research_tasks } from "@/db/schema/workflow";
-import { handleApiError, successResponse, ApiError } from "@/lib/api/errors";
-import { eq, and, asc } from "drizzle-orm";
+import { research_runs } from "@/db/schema/workflow";
+import { handleApiError, successResponse, createdResponse, ApiError } from "@/lib/api/errors";
+import {
+  createBacktestRequest,
+  listBacktestsForRun,
+} from "@/lib/backtesting/service";
+import { eq } from "drizzle-orm";
+import { ZodError } from "zod";
+
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function GET(
   _request: NextRequest,
@@ -10,6 +18,9 @@ export async function GET(
 ) {
   try {
     const { id: runId } = await params;
+    if (!uuidPattern.test(runId)) {
+      throw new ApiError("Invalid research run id", 400, "VALIDATION_ERROR");
+    }
 
     // Verify the research run exists
     const [run] = await db
@@ -22,19 +33,38 @@ export async function GET(
       throw new ApiError("Research run not found", 404, "NOT_FOUND");
     }
 
-    const tasks = await db
-      .select()
-      .from(research_tasks)
-      .where(
-        and(
-          eq(research_tasks.research_run_id, runId),
-          eq(research_tasks.task_type, "backtest")
-        )
-      )
-      .orderBy(asc(research_tasks.created_at));
+    const backtests = await listBacktestsForRun(runId);
 
-    return successResponse(tasks);
+    return successResponse(backtests);
   } catch (error) {
+    return handleApiError(error);
+  }
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: runId } = await params;
+    if (!uuidPattern.test(runId)) {
+      throw new ApiError("Invalid research run id", 400, "VALIDATION_ERROR");
+    }
+
+    const body = await request.json();
+    const backtest = await createBacktestRequest(runId, body);
+
+    return createdResponse(backtest);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return handleApiError(
+        new ApiError(error.issues[0]?.message || "Invalid backtest request", 400, "VALIDATION_ERROR")
+      );
+    }
+    if (error instanceof Error) {
+      const status = error.message.toLowerCase().includes("not found") ? 404 : 400;
+      return handleApiError(new ApiError(error.message, status, "BACKTEST_REQUEST_ERROR"));
+    }
     return handleApiError(error);
   }
 }

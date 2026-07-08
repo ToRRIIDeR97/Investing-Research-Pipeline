@@ -2,6 +2,10 @@ import { NextRequest } from "next/server";
 import { db } from "@/db";
 import { research_tasks } from "@/db/schema/workflow";
 import { handleApiError, successResponse, ApiError } from "@/lib/api/errors";
+import {
+  getBacktestRun,
+  listBacktestArtifacts,
+} from "@/lib/backtesting/service";
 import { eq } from "drizzle-orm";
 
 export async function GET(
@@ -10,6 +14,18 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+
+    const backtest = await getBacktestRun(id);
+    if (backtest) {
+      const artifacts = await listBacktestArtifacts(id);
+      return successResponse({
+        id: backtest.id,
+        research_run_id: backtest.research_run_id,
+        research_task_id: backtest.research_task_id,
+        status: backtest.status,
+        artifacts,
+      });
+    }
 
     const [task] = await db
       .select({

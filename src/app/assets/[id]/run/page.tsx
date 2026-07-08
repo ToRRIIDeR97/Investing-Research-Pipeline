@@ -2,6 +2,23 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+import {
+  Activity,
+  AlertTriangle,
+  Bot,
+  CheckCircle2,
+  Clock,
+  Database,
+  FileText,
+  Gauge,
+  GitBranch,
+  Layers3,
+  Radio,
+  ReceiptText,
+  ShieldCheck,
+  TerminalSquare,
+  Zap,
+} from "lucide-react";
 
 interface Message {
   role: "user" | "assistant" | "system";
@@ -13,19 +30,692 @@ interface RunProgress {
   status: string;
   currentStage: string | null;
   stages: {
+    id: string;
     key: string;
     order: number;
     status: string;
+    started_at?: string | null;
+    completed_at?: string | null;
+    failure_reason?: string | null;
+    validation_result_json?: Record<string, unknown> | null;
   }[];
   tasks: {
     id: string;
+    stage_id: string;
     agent_name: string | null;
+    task_key: string;
     task_type: string;
     status: string;
+    priority: number;
+    retry_count: number;
+    failure_reason: string | null;
+    started_at: string | null;
+    completed_at: string | null;
+    output_json: Record<string, unknown> | null;
   }[];
   sourceCount: number;
   exportCount: number;
   totalCost: number;
+  createdAt?: string;
+  marketDataCutoffAt?: string | null;
+}
+
+interface SourceDocument {
+  id: string;
+  title: string;
+  source_type: string;
+  publisher: string | null;
+  url: string | null;
+  created_at: string;
+}
+
+interface AgentTrace {
+  id: string;
+  task_id: string | null;
+  agent_name: string;
+  tool_name: string | null;
+  status: string;
+  created_at: string;
+}
+
+interface ModelCall {
+  id: string;
+  agent_name: string | null;
+  model_provider: string;
+  model_name: string;
+  model_tier: string;
+  status: string;
+  cost_usd: string | null;
+  latency_ms: number | null;
+  created_at: string;
+  error_message: string | null;
+}
+
+interface BacktestRun {
+  id: string;
+  status: string;
+  strategy_name: string | null;
+  strategy_prompt: string;
+  symbol: string;
+  benchmark_symbol: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+interface TheaterData {
+  sources: SourceDocument[];
+  traces: AgentTrace[];
+  modelCalls: ModelCall[];
+  backtests: BacktestRun[];
+}
+
+interface TimelineEvent {
+  id: string;
+  time: string;
+  type: "stage" | "task" | "source" | "trace" | "model" | "backtest" | "message";
+  title: string;
+  detail: string;
+  status: string;
+}
+
+function humanize(value: string | null | undefined) {
+  return value ? value.replace(/_/g, " ") : "unknown";
+}
+
+function compactId(value: string | null | undefined) {
+  return value ? value.slice(0, 8) : "—";
+}
+
+function formatMoney(value: string | number | null | undefined) {
+  const numeric = Number(value || 0);
+  return `$${numeric.toFixed(4)}`;
+}
+
+function formatTime(value: string | null | undefined) {
+  if (!value) return "—";
+  return new Date(value).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function statusTone(status: string) {
+  if (status === "completed" || status === "success") {
+    return "bg-emerald-50 text-emerald-700 border-emerald-100";
+  }
+  if (status === "running") return "bg-amber-50 text-amber-700 border-amber-100";
+  if (status === "failed" || status === "error") return "bg-rose-50 text-rose-700 border-rose-100";
+  if (status === "skipped") return "bg-gray-50 text-gray-500 border-gray-100";
+  return "bg-blue-50 text-blue-700 border-blue-100";
+}
+
+function dotTone(status: string) {
+  if (status === "completed" || status === "success") return "bg-emerald-500";
+  if (status === "running") return "bg-amber-500";
+  if (status === "failed" || status === "error") return "bg-rose-500";
+  if (status === "skipped") return "bg-gray-300";
+  return "bg-blue-400";
+}
+
+function buildTimeline(
+  progress: RunProgress | null,
+  theater: TheaterData,
+  messages: Message[]
+): TimelineEvent[] {
+  const events: TimelineEvent[] = [];
+
+  for (const stage of progress?.stages || []) {
+    events.push({
+      id: `stage-${stage.id}`,
+      time: stage.completed_at || stage.started_at || progress?.createdAt || new Date().toISOString(),
+      type: "stage",
+      title: humanize(stage.key),
+      detail: stage.failure_reason || `Stage is ${stage.status}`,
+      status: stage.status,
+    });
+  }
+
+  for (const task of progress?.tasks || []) {
+    events.push({
+      id: `task-${task.id}`,
+      time: task.completed_at || task.started_at || progress?.createdAt || new Date().toISOString(),
+      type: "task",
+      title: task.agent_name || humanize(task.task_type),
+      detail: task.failure_reason || humanize(task.task_key),
+      status: task.status,
+    });
+  }
+
+  for (const source of theater.sources) {
+    events.push({
+      id: `source-${source.id}`,
+      time: source.created_at,
+      type: "source",
+      title: source.title,
+      detail: humanize(source.source_type),
+      status: "completed",
+    });
+  }
+
+  for (const trace of theater.traces) {
+    events.push({
+      id: `trace-${trace.id}`,
+      time: trace.created_at,
+      type: "trace",
+      title: trace.agent_name,
+      detail: trace.tool_name || "agent trace",
+      status: trace.status,
+    });
+  }
+
+  for (const call of theater.modelCalls) {
+    events.push({
+      id: `model-${call.id}`,
+      time: call.created_at,
+      type: "model",
+      title: call.agent_name || call.model_tier,
+      detail: `${call.model_provider}/${call.model_name}`,
+      status: call.status,
+    });
+  }
+
+  for (const backtest of theater.backtests) {
+    events.push({
+      id: `backtest-${backtest.id}`,
+      time: backtest.created_at,
+      type: "backtest",
+      title: backtest.strategy_name || `${backtest.symbol} backtest`,
+      detail: backtest.error_message || backtest.strategy_prompt,
+      status: backtest.status,
+    });
+  }
+
+  messages.forEach((message, index) => {
+    if (message.role !== "system") return;
+    events.push({
+      id: `message-${index}`,
+      time: new Date().toISOString(),
+      type: "message",
+      title: "operator note",
+      detail: message.content,
+      status: "completed",
+    });
+  });
+
+  return events
+    .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+    .slice(0, 36);
+}
+
+function MetricTile({
+  label,
+  value,
+  detail,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  icon: typeof Activity;
+}) {
+  return (
+    <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+          {label}
+        </span>
+        <Icon className="h-4 w-4 text-gray-400" />
+      </div>
+      <div className="mt-2 font-mono text-[20px] font-bold text-black">{value}</div>
+      <div className="mt-1 truncate text-[11px] text-gray-400">{detail}</div>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  return (
+    <span
+      className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${statusTone(
+        status
+      )}`}
+    >
+      {status}
+    </span>
+  );
+}
+
+function StageRail({ progress }: { progress: RunProgress }) {
+  return (
+    <div className="rounded-md border border-gray-200 bg-white p-3 shadow-sm">
+      <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
+        {progress.stages.map((stage) => (
+          <div
+            key={stage.id}
+            className={`min-h-20 rounded-md border px-3 py-2 ${
+              stage.status === "running"
+                ? "border-amber-200 bg-amber-50/60"
+                : "border-gray-100 bg-[#fbfcfd]"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${dotTone(stage.status)}`} />
+                <span className="truncate text-[11px] font-bold uppercase tracking-wider text-gray-600">
+                  {humanize(stage.key)}
+                </span>
+              </div>
+              <span className="font-mono text-[10px] text-gray-400">
+                {String(stage.order).padStart(2, "0")}
+              </span>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <StatusBadge status={stage.status} />
+              <span className="font-mono text-[10px] text-gray-400">
+                {formatTime(stage.completed_at || stage.started_at)}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ActiveStagePanel({
+  progress,
+  theater,
+}: {
+  progress: RunProgress;
+  theater: TheaterData;
+}) {
+  const activeStage =
+    progress.stages.find((stage) => stage.status === "running") ||
+    progress.stages.find((stage) => stage.status === "pending") ||
+    progress.stages[progress.stages.length - 1];
+  const activeTasks = progress.tasks.filter((task) => task.stage_id === activeStage?.id);
+  const blockedTasks = progress.tasks.filter((task) => task.status === "failed");
+
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_1fr]">
+      <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Radio className="h-4 w-4 text-amber-600" />
+              <h3 className="text-[14px] font-bold text-black">
+                {humanize(activeStage?.key || "research stage")}
+              </h3>
+            </div>
+            <p className="mt-1 text-[11px] text-gray-400">
+              Stage-centered control surface for active work.
+            </p>
+          </div>
+          <StatusBadge status={activeStage?.status || "pending"} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              Tasks
+            </div>
+            <div className="mt-1 font-mono text-[18px] font-bold text-black">
+              {activeTasks.length}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              Blockers
+            </div>
+            <div className="mt-1 font-mono text-[18px] font-bold text-black">
+              {blockedTasks.length}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              Sources
+            </div>
+            <div className="mt-1 font-mono text-[18px] font-bold text-black">
+              {theater.sources.length}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              Calls
+            </div>
+            <div className="mt-1 font-mono text-[18px] font-bold text-black">
+              {theater.modelCalls.length}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 space-y-2">
+          {activeTasks.length === 0 ? (
+            <div className="rounded-md border border-dashed border-gray-200 bg-[#fbfcfd] px-3 py-4 text-[12px] text-gray-400">
+              No agent task is currently assigned to this stage.
+            </div>
+          ) : (
+            activeTasks.slice(0, 4).map((task) => (
+              <div
+                key={task.id}
+                className="flex items-center justify-between gap-3 rounded-md border border-gray-100 bg-[#fbfcfd] px-3 py-2"
+              >
+                <div className="min-w-0">
+                  <div className="truncate text-[12px] font-semibold text-black">
+                    {task.agent_name || humanize(task.task_type)}
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-[10px] text-gray-400">
+                    {humanize(task.task_key)} · retry {task.retry_count}
+                  </div>
+                </div>
+                <StatusBadge status={task.status} />
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-gray-400" />
+            <h3 className="text-[13px] font-bold text-black">Validation Gates</h3>
+          </div>
+          <span className="font-mono text-[10px] text-gray-400">
+            {compactId(progress.runId)}
+          </span>
+        </div>
+        <div className="space-y-2">
+          {progress.stages.slice(0, 6).map((stage) => (
+            <div key={stage.id} className="flex items-center justify-between gap-3 text-[12px]">
+              <div className="min-w-0 truncate text-gray-600">{humanize(stage.key)}</div>
+              <div className="flex items-center gap-2">
+                {stage.validation_result_json ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                ) : stage.status === "failed" ? (
+                  <AlertTriangle className="h-3.5 w-3.5 text-rose-500" />
+                ) : (
+                  <Clock className="h-3.5 w-3.5 text-gray-300" />
+                )}
+                <StatusBadge status={stage.status} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AgentConsole({ progress, theater }: { progress: RunProgress; theater: TheaterData }) {
+  const recentCalls = theater.modelCalls.slice(0, 5);
+  const recentTraces = theater.traces.slice(0, 5);
+
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+      <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center gap-2">
+          <Bot className="h-4 w-4 text-gray-400" />
+          <h3 className="text-[13px] font-bold text-black">Agent Queue</h3>
+        </div>
+        <div className="space-y-2">
+          {progress.tasks.length === 0 ? (
+            <div className="text-[12px] text-gray-400">No tasks have been queued.</div>
+          ) : (
+            progress.tasks.slice(0, 7).map((task) => (
+              <div key={task.id} className="rounded-md border border-gray-100 bg-[#fbfcfd] p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[12px] font-semibold text-black">
+                    {task.agent_name || humanize(task.task_type)}
+                  </span>
+                  <StatusBadge status={task.status} />
+                </div>
+                <div className="mt-1 truncate font-mono text-[10px] text-gray-400">
+                  p{task.priority} · {compactId(task.id)}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center gap-2">
+          <TerminalSquare className="h-4 w-4 text-gray-400" />
+          <h3 className="text-[13px] font-bold text-black">Tool Traces</h3>
+        </div>
+        <div className="space-y-2">
+          {recentTraces.length === 0 ? (
+            <div className="text-[12px] text-gray-400">No tool traces recorded.</div>
+          ) : (
+            recentTraces.map((trace) => (
+              <div key={trace.id} className="rounded-md border border-gray-100 bg-[#fbfcfd] p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[12px] font-semibold text-black">
+                    {trace.tool_name || "agent event"}
+                  </span>
+                  <StatusBadge status={trace.status} />
+                </div>
+                <div className="mt-1 truncate font-mono text-[10px] text-gray-400">
+                  {trace.agent_name} · {formatTime(trace.created_at)}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center gap-2">
+          <ReceiptText className="h-4 w-4 text-gray-400" />
+          <h3 className="text-[13px] font-bold text-black">Model Calls</h3>
+        </div>
+        <div className="space-y-2">
+          {recentCalls.length === 0 ? (
+            <div className="text-[12px] text-gray-400">No model calls recorded.</div>
+          ) : (
+            recentCalls.map((call) => (
+              <div key={call.id} className="rounded-md border border-gray-100 bg-[#fbfcfd] p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[12px] font-semibold text-black">
+                    {call.agent_name || call.model_tier}
+                  </span>
+                  <span className="font-mono text-[10px] font-bold text-gray-500">
+                    {formatMoney(call.cost_usd)}
+                  </span>
+                </div>
+                <div className="mt-1 truncate font-mono text-[10px] text-gray-400">
+                  {call.model_provider}/{call.model_name}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ArtifactDeck({ theater }: { theater: TheaterData }) {
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center gap-2">
+          <FileText className="h-4 w-4 text-gray-400" />
+          <h3 className="text-[13px] font-bold text-black">Source Intake</h3>
+        </div>
+        <div className="space-y-2">
+          {theater.sources.length === 0 ? (
+            <div className="text-[12px] text-gray-400">No sources attached yet.</div>
+          ) : (
+            theater.sources.slice(0, 5).map((source) => (
+              <div key={source.id} className="rounded-md border border-gray-100 bg-[#fbfcfd] p-2">
+                <div className="truncate text-[12px] font-semibold text-black">{source.title}</div>
+                <div className="mt-1 truncate font-mono text-[10px] text-gray-400">
+                  {humanize(source.source_type)} · {source.publisher || "unpublished"}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center gap-2">
+          <Gauge className="h-4 w-4 text-gray-400" />
+          <h3 className="text-[13px] font-bold text-black">Backtest Bench</h3>
+        </div>
+        <div className="space-y-2">
+          {theater.backtests.length === 0 ? (
+            <div className="text-[12px] text-gray-400">No backtests queued.</div>
+          ) : (
+            theater.backtests.slice(0, 5).map((backtest) => (
+              <div key={backtest.id} className="rounded-md border border-gray-100 bg-[#fbfcfd] p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[12px] font-semibold text-black">
+                    {backtest.strategy_name || `${backtest.symbol} strategy`}
+                  </span>
+                  <StatusBadge status={backtest.status} />
+                </div>
+                <div className="mt-1 truncate font-mono text-[10px] text-gray-400">
+                  {backtest.error_message || backtest.strategy_prompt}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Timeline({ events }: { events: TimelineEvent[] }) {
+  const iconFor = (type: TimelineEvent["type"]) => {
+    if (type === "stage") return GitBranch;
+    if (type === "task") return Bot;
+    if (type === "source") return FileText;
+    if (type === "trace") return TerminalSquare;
+    if (type === "model") return Zap;
+    if (type === "backtest") return Gauge;
+    return Activity;
+  };
+
+  return (
+    <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Activity className="h-4 w-4 text-gray-400" />
+          <h3 className="text-[13px] font-bold text-black">Event Stream</h3>
+        </div>
+        <span className="font-mono text-[10px] text-gray-400">{events.length} events</span>
+      </div>
+      <div className="space-y-2">
+        {events.length === 0 ? (
+          <div className="text-[12px] text-gray-400">No research events yet.</div>
+        ) : (
+          events.map((event) => {
+            const Icon = iconFor(event.type);
+            return (
+              <div key={event.id} className="grid grid-cols-[18px_1fr_auto] gap-3 rounded-md border border-gray-100 bg-[#fbfcfd] p-2">
+                <Icon className="mt-0.5 h-4 w-4 text-gray-400" />
+                <div className="min-w-0">
+                  <div className="truncate text-[12px] font-semibold text-black">
+                    {event.title}
+                  </div>
+                  <div className="mt-0.5 truncate text-[11px] text-gray-400">{event.detail}</div>
+                </div>
+                <div className="text-right">
+                  <StatusBadge status={event.status} />
+                  <div className="mt-1 font-mono text-[10px] text-gray-400">
+                    {formatTime(event.time)}
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ResearchTheater({
+  assetName,
+  progress,
+  theater,
+  messages,
+}: {
+  assetName: string;
+  progress: RunProgress;
+  theater: TheaterData;
+  messages: Message[];
+}) {
+  const completedStages = progress.stages.filter((stage) => stage.status === "completed").length;
+  const runningTasks = progress.tasks.filter((task) => task.status === "running").length;
+  const failedTasks = progress.tasks.filter((task) => task.status === "failed").length;
+  const events = buildTimeline(progress, theater, messages);
+
+  return (
+    <div className="flex-1 overflow-y-auto p-6">
+      <div className="mx-auto flex max-w-7xl flex-col gap-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-gray-400">
+              <Radio className="h-3.5 w-3.5" />
+              Mission Control
+            </div>
+            <h1 className="text-[24px] font-bold tracking-tight text-black">
+              {assetName || "Research Run"}
+            </h1>
+            <p className="mt-1 max-w-2xl text-[12px] leading-5 text-gray-500">
+              Run {compactId(progress.runId)} · {humanize(progress.status)}
+              {progress.marketDataCutoffAt
+                ? ` · data cutoff ${new Date(progress.marketDataCutoffAt).toLocaleDateString()}`
+                : ""}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <StatusBadge status={progress.status} />
+            <span className="rounded-full border border-gray-200 bg-white px-3 py-1 font-mono text-[11px] font-bold text-gray-600">
+              {formatMoney(progress.totalCost)}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <MetricTile
+            label="Stages"
+            value={`${completedStages}/${progress.stages.length}`}
+            detail="completed gates"
+            icon={Layers3}
+          />
+          <MetricTile
+            label="Agents"
+            value={String(runningTasks)}
+            detail={`${progress.tasks.length} tasks total`}
+            icon={Bot}
+          />
+          <MetricTile
+            label="Sources"
+            value={String(theater.sources.length)}
+            detail="attached to this run"
+            icon={Database}
+          />
+          <MetricTile
+            label="Blockers"
+            value={String(failedTasks)}
+            detail="failed tasks"
+            icon={AlertTriangle}
+          />
+        </div>
+
+        <StageRail progress={progress} />
+        <ActiveStagePanel progress={progress} theater={theater} />
+        <AgentConsole progress={progress} theater={theater} />
+        <ArtifactDeck theater={theater} />
+        <Timeline events={events} />
+      </div>
+    </div>
+  );
 }
 
 export default function RunResearchPage() {
@@ -41,22 +731,73 @@ export default function RunResearchPage() {
   const [runType, setRunType] = useState("deep_dive");
   const [runId, setRunId] = useState<string | null>(null);
   const [progress, setProgress] = useState<RunProgress | null>(null);
+  const [theater, setTheater] = useState<TheaterData>({
+    sources: [],
+    traces: [],
+    modelCalls: [],
+    backtests: [],
+  });
   const [isProcessing, setIsProcessing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isBacktestSubmitting, setIsBacktestSubmitting] = useState(false);
+  const [backtestPrompt, setBacktestPrompt] = useState("");
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch(`/api/assets/${assetId}`)
-      .then((r) => r.json())
-      .then((data) => setAssetName(data.canonical_name));
+    async function loadAssetContext() {
+      try {
+        const [assetRes, runsRes] = await Promise.all([
+          fetch(`/api/assets/${assetId}`),
+          fetch(`/api/assets/${assetId}/research-runs`),
+        ]);
+        if (assetRes.ok) {
+          const data = await assetRes.json();
+          setAssetName(data.canonical_name);
+        }
+        if (runsRes.ok) {
+          const runs = await runsRes.json();
+          const latestRun = Array.isArray(runs)
+            ? [...runs]
+                .sort(
+                  (a, b) =>
+                    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                )[0]
+            : null;
+          if (latestRun) {
+            setRunId(latestRun.id);
+            setPhase("pipeline");
+            setMessages((prev) =>
+              prev.length === 0
+                ? [
+                    {
+                      role: "system",
+                      content: `Loaded latest research run: ${latestRun.id}`,
+                    },
+                  ]
+                : prev
+            );
+            fetchProgress(latestRun.id);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load asset context:", error);
+      }
+    }
+    loadAssetContext();
   }, [assetId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (!runId || phase !== "pipeline") return;
+    const interval = window.setInterval(() => fetchProgress(runId), 5000);
+    return () => window.clearInterval(interval);
+  }, [runId, phase]);
 
   async function handleSend() {
     if (!input.trim() || isProcessing) return;
@@ -154,37 +895,61 @@ Ready to start research?`;
 
   async function fetchProgress(id: string) {
     try {
-      const res = await fetch(`/api/research-runs/${id}`);
-      const data = await res.json();
+      const [runRes, sourcesRes, tracesRes, modelCallsRes, backtestsRes] =
+        await Promise.all([
+          fetch(`/api/research-runs/${id}`),
+          fetch(`/api/research-runs/${id}/sources`),
+          fetch(`/api/research-runs/${id}/agent-traces`),
+          fetch(`/api/research-runs/${id}/model-calls`),
+          fetch(`/api/research-runs/${id}/backtests`),
+        ]);
 
-      // Fetch source count
-      let sourceCount = 0;
-      try {
-        const sourcesRes = await fetch(`/api/research-runs/${id}/sources`);
-        if (sourcesRes.ok) {
-          const sources = await sourcesRes.json();
-          sourceCount = Array.isArray(sources) ? sources.length : 0;
-        }
-      } catch { /* non-critical */ }
+      const data = await runRes.json();
+      const sources = sourcesRes.ok ? await sourcesRes.json() : [];
+      const traces = tracesRes.ok ? await tracesRes.json() : [];
+      const modelCalls = modelCallsRes.ok ? await modelCallsRes.json() : [];
+      const backtests = backtestsRes.ok ? await backtestsRes.json() : [];
 
       setProgress({
         runId: data.id,
         status: data.status,
         currentStage: data.stages?.find((s: any) => s.status === "running")?.stage_key || null,
         stages: data.stages?.map((s: any) => ({
+          id: s.id,
           key: s.stage_key,
           order: s.stage_order,
           status: s.status,
+          started_at: s.started_at,
+          completed_at: s.completed_at,
+          failure_reason: s.failure_reason,
+          validation_result_json: s.validation_result_json,
         })) || [],
         tasks: (data.tasks || []).map((t: any) => ({
           id: t.id,
+          stage_id: t.stage_id,
           agent_name: t.agent_name,
+          task_key: t.task_key,
           task_type: t.task_type,
           status: t.status,
+          priority: t.priority,
+          retry_count: t.retry_count,
+          failure_reason: t.failure_reason,
+          started_at: t.started_at,
+          completed_at: t.completed_at,
+          output_json: t.output_json,
         })),
-        sourceCount,
+        sourceCount: Array.isArray(sources) ? sources.length : 0,
         exportCount: data.metadata_json?.export_count || 0,
         totalCost: parseFloat(data.actual_cost_usd || "0"),
+        createdAt: data.created_at,
+        marketDataCutoffAt: data.market_data_cutoff_at,
+      });
+
+      setTheater({
+        sources: Array.isArray(sources) ? sources : [],
+        traces: Array.isArray(traces) ? traces : [],
+        modelCalls: Array.isArray(modelCalls) ? modelCalls : [],
+        backtests: Array.isArray(backtests) ? backtests : [],
       });
     } catch (error) {
       console.error("Failed to fetch progress:", error);
@@ -284,6 +1049,44 @@ Ready to start research?`;
     }
   }
 
+  async function handleBacktestRequest() {
+    if (!runId || !backtestPrompt.trim()) return;
+
+    setIsBacktestSubmitting(true);
+    try {
+      const res = await fetch(`/api/research-runs/${runId}/backtests`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          strategy_prompt: backtestPrompt.trim(),
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Backtest request failed");
+      }
+
+      const backtest = await res.json();
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "system",
+          content: `Backtest queued: ${backtest.symbol} (${backtest.id})`,
+        },
+      ]);
+      setBacktestPrompt("");
+      fetchProgress(runId);
+    } catch (error: any) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "system", content: `Backtest error: ${error.message}` },
+      ]);
+    } finally {
+      setIsBacktestSubmitting(false);
+    }
+  }
+
   return (
     <div className="flex flex-col h-screen bg-[#f4f7fa]">
       {/* Top Header */}
@@ -322,6 +1125,14 @@ Ready to start research?`;
         {/* Main Panel */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Conversation history view */}
+          {phase === "pipeline" && progress ? (
+            <ResearchTheater
+              assetName={assetName}
+              progress={progress}
+              theater={theater}
+              messages={messages}
+            />
+          ) : (
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
             {messages.length === 0 && (
               <div className="text-center py-16 max-w-xl mx-auto flex flex-col items-center">
@@ -380,6 +1191,7 @@ Ready to start research?`;
             ))}
             <div ref={messagesEndRef} />
           </div>
+          )}
 
           {/* User Input controls */}
           <div className="border-t border-[#eef2f6] bg-white p-4.5 shrink-0 shadow-sm">
@@ -576,6 +1388,34 @@ Ready to start research?`;
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Backtest request */}
+            {runId && (
+              <div className="rounded-xl border border-gray-100 bg-[#fbfcfd] p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
+                    Backtest
+                  </h4>
+                  <span className="font-mono text-[10px] text-gray-400">
+                    opencode
+                  </span>
+                </div>
+                <textarea
+                  value={backtestPrompt}
+                  onChange={(e) => setBacktestPrompt(e.target.value)}
+                  placeholder="Moving-average trend strategy with 50/200 day windows"
+                  className="min-h-20 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11.5px] text-gray-700 outline-none transition-all focus:border-blue-500"
+                  disabled={isBacktestSubmitting}
+                />
+                <button
+                  onClick={handleBacktestRequest}
+                  disabled={isBacktestSubmitting || !backtestPrompt.trim()}
+                  className="mt-2 w-full rounded-full bg-black px-4 py-2 text-[11px] font-bold text-white transition-all hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  {isBacktestSubmitting ? "Queueing..." : "Queue Backtest"}
+                </button>
               </div>
             )}
 

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import postgres from "postgres";
 import { handleApiError, successResponse, createdResponse, ApiError } from "@/lib/api/errors";
+import { approveHumanReview } from "@/lib/workflow/orchestrator";
 
 /**
  * POST /api/research-runs/:id/review
@@ -48,11 +49,24 @@ export async function POST(
         RETURNING *
       `;
 
+      const humanReviewStage = await sql`
+        SELECT status FROM research_stages
+        WHERE research_run_id = ${runId}
+          AND stage_key = 'human_review'
+        LIMIT 1
+      `;
+
       // Update run status if needed
       if (body.status === "needs_more_work") {
         await sql`
           UPDATE research_runs SET status = 'waiting_for_human' WHERE id = ${runId}
         `;
+      } else if (
+        body.status.startsWith("approved") &&
+        humanReviewStage[0]?.status === "waiting_for_human"
+      ) {
+        const approval = await approveHumanReview(runId, body.reviewedBy || "user");
+        return createdResponse({ ...rows[0], workflow: approval });
       } else if (body.status.startsWith("approved")) {
         await sql`
           UPDATE research_runs SET status = 'completed' WHERE id = ${runId}

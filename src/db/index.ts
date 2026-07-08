@@ -9,6 +9,7 @@ import * as metricsSchema from "./schema/metrics";
 import * as valuationSchema from "./schema/valuation";
 import * as thesisSchema from "./schema/thesis";
 import * as aiSchema from "./schema/ai";
+import * as backtestingSchema from "./schema/backtesting";
 
 const schema = {
   ...coreSchema,
@@ -20,6 +21,7 @@ const schema = {
   ...valuationSchema,
   ...thesisSchema,
   ...aiSchema,
+  ...backtestingSchema,
 };
 
 const connectionString = process.env.DATABASE_URL!;
