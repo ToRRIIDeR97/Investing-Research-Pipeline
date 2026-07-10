@@ -73,6 +73,24 @@ const nullableString = {
   type: ["string", "null"],
 };
 
+const evidenceClaimArray = {
+  type: "array",
+  minItems: 5,
+  items: {
+    type: "object",
+    additionalProperties: true,
+    required: ["claim_text", "claim_type", "claim_category", "confidence"],
+    properties: {
+      claim_text: { type: "string", minLength: 20 },
+      claim_type: { type: "string", minLength: 2 },
+      claim_category: { type: "string", enum: ["fact", "estimate", "assumption", "opinion"] },
+      as_of_date: nullableString,
+      period_end: nullableString,
+      confidence: { type: "number", minimum: 0, maximum: 1 },
+    },
+  },
+};
+
 function schema(required: string[], properties: Record<string, JsonSchema>): JsonSchema {
   return {
     type: "json_schema",
@@ -264,7 +282,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     outputFormat: schema(
       ["evidence_claims", "contradictions", "source_gaps", "low_confidence_items", "rejected_candidates"],
       {
-        evidence_claims: objectArray,
+        evidence_claims: evidenceClaimArray,
         contradictions: objectArray,
         source_gaps: objectArray,
         low_confidence_items: objectArray,

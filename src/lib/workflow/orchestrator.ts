@@ -1,6 +1,18 @@
 import postgres from "postgres";
 import { STAGE_CONFIGS, STAGE_CONFIG_MAP, getAllStagesForRun, getApplicableStages } from "./stages";
-import { validateStageCompletion, validateSourceLinks, validateAssetProfile, validatePointInTime, validateCompletionCriteria, ValidationResult } from "./validators";
+import { evaluateResearchQuality } from "./quality-gates";
+import {
+  validateStageCompletion,
+  validateSourceLinks,
+  validateAssetProfile,
+  validatePointInTime,
+  validateCompletionCriteria,
+  validateSourceDepth,
+  validateAnalysisCoverage,
+  validateValuationDepth,
+  validateReviewOutcome,
+  ValidationResult,
+} from "./validators";
 
 // ============================================================
 // Orchestrator — drives research runs through the stage FSM.
@@ -218,6 +230,18 @@ export async function advanceStage(
       for (const rule of config.validationRules) {
         let ruleResult: ValidationResult;
         switch (rule) {
+          case "source_validation":
+            ruleResult = await validateSourceDepth(runId);
+            break;
+          case "analysis_coverage_validation":
+            ruleResult = await validateAnalysisCoverage(runId);
+            break;
+          case "valuation_depth_validation":
+            ruleResult = await validateValuationDepth(runId);
+            break;
+          case "review_outcome_validation":
+            ruleResult = await validateReviewOutcome(runId);
+            break;
           case "source_link_validation":
             ruleResult = await validateSourceLinks(runId);
             break;
@@ -228,7 +252,12 @@ export async function advanceStage(
             ruleResult = await validatePointInTime(runId);
             break;
           default:
-            continue; // Unknown rule — skip
+            ruleResult = {
+              valid: false,
+              errors: [`Unknown validation rule "${rule}" on stage "${currentStage.stage_key}"`],
+              warnings: [],
+              checkedAt: new Date().toISOString(),
+            };
         }
 
         if (!ruleResult.valid) {
@@ -247,8 +276,11 @@ export async function advanceStage(
 
     if (!validation.valid) {
       // Handle retry — §26.1 retry logic
-      const retryCount =
-        Number(currentStage.validation_result_json?.retryCount ?? 0);
+      const previousValidation =
+        typeof currentStage.validation_result_json === "string"
+          ? JSON.parse(currentStage.validation_result_json)
+          : currentStage.validation_result_json;
+      const retryCount = Number(previousValidation?.retryCount ?? 0);
       const maxRetries = currentStage.max_retries || 2;
 
       if (retryCount < maxRetries) {
@@ -366,10 +398,10 @@ export async function approveResearchPlan(
     await sql`
       UPDATE research_runs
       SET status = 'running',
-          metadata_json = metadata_json || ${JSON.stringify({
+          metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
             research_plan_approved_by: approvedBy,
             research_plan_approved_at: new Date().toISOString(),
-          })}::jsonb,
+          })},
           updated_at = NOW()
       WHERE id = ${runId}
     `;
@@ -433,10 +465,10 @@ export async function approveHumanReview(
     await sql`
       UPDATE research_runs
       SET status = 'running',
-          metadata_json = metadata_json || ${JSON.stringify({
+          metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
             human_review_approved_by: reviewedBy,
             human_review_approved_at: new Date().toISOString(),
-          })}::jsonb,
+          })},
           updated_at = NOW()
       WHERE id = ${runId}
     `;
@@ -467,6 +499,7 @@ async function startNextStage(
     `;
 
     if (nextStages.length === 0) {
+      const quality = await evaluateResearchQuality(runId);
       // No more pending stages — check if any stages failed
       // §25.3: If required validators failed, status should be needs_more_work
       const failedStages = await sql`
@@ -476,7 +509,7 @@ async function startNextStage(
           AND status = 'failed'
       `;
 
-      if (failedStages.length > 0) {
+      if (failedStages.length > 0 || quality.status !== "pass") {
         // Some stages failed — mark run as needs_more_work
         const failedKeys = failedStages.map((s) => s.stage_key);
         await sql`
@@ -484,10 +517,11 @@ async function startNextStage(
           SET status = 'needs_more_work',
               completed_at = NOW(),
               updated_at = NOW(),
-              metadata_json = metadata_json || ${JSON.stringify({
+              metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
                 failed_stages: failedKeys,
                 failure_summary: failedStages.map((s) => `${s.stage_key}: ${s.failure_reason}`),
-              })}::jsonb
+                quality_gate: quality as any,
+              })}
           WHERE id = ${runId}
         `;
       } else {
@@ -495,6 +529,9 @@ async function startNextStage(
           UPDATE research_runs
           SET status = 'completed',
               completed_at = COALESCE(completed_at, NOW()),
+              metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
+                quality_gate: quality as any,
+              })},
               updated_at = NOW()
           WHERE id = ${runId}
         `;
@@ -626,10 +663,10 @@ export async function pauseForHumanReview(
     await sql`
       UPDATE research_runs
       SET status = 'waiting_for_human',
-          metadata_json = metadata_json || ${JSON.stringify({
+          metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
             human_review_reason: reason,
             human_review_requested_at: new Date().toISOString(),
-          })}::jsonb,
+          })},
           updated_at = NOW()
       WHERE id = ${runId}
     `;
@@ -696,6 +733,7 @@ export async function completeRun(runId: string): Promise<void> {
 
   try {
     const validation = await validateCompletionCriteria(runId);
+    const quality = await evaluateResearchQuality(runId);
 
     if (!validation.valid) {
       throw new Error(
@@ -703,14 +741,30 @@ export async function completeRun(runId: string): Promise<void> {
       );
     }
 
+    if (quality.status !== "pass") {
+      await sql`
+        UPDATE research_runs
+        SET status = 'needs_more_work',
+            completed_at = NOW(),
+            updated_at = NOW(),
+            metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
+              completion_validation: validation as any,
+              quality_gate: quality as any,
+            })}
+        WHERE id = ${runId}
+      `;
+      return;
+    }
+
     await sql`
       UPDATE research_runs
       SET status = 'completed',
           completed_at = NOW(),
           updated_at = NOW(),
-          metadata_json = metadata_json || ${JSON.stringify({
-            completion_validation: validation,
-          })}::jsonb
+          metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
+            completion_validation: validation as any,
+            quality_gate: quality as any,
+          })}
       WHERE id = ${runId}
     `;
   } finally {

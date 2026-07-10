@@ -102,6 +102,30 @@ interface BacktestRun {
   created_at: string;
 }
 
+interface ResearchQuality {
+  status: "pass" | "needs_more_work" | "fail";
+  actionReadiness: "triage_only" | "research_scaffold" | "review_ready" | "investment_ready";
+  errors: string[];
+  warnings: string[];
+  missingCoverage: {
+    key: string;
+    severity: "low" | "medium" | "high" | "critical";
+    area: string;
+    description: string;
+    requiredForCompletion: boolean;
+  }[];
+  counts: {
+    sources: number;
+    evidence: number;
+    metrics: number;
+    valuationSignals: number;
+    scenarios: number;
+    scenariosWithValueAnchors: number;
+    openSourceGaps: number;
+    reviewDecisions: number;
+  };
+}
+
 interface TheaterData {
   sources: SourceDocument[];
   traces: AgentTrace[];
@@ -317,6 +341,83 @@ function StageRail({ progress }: { progress: RunProgress }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function QualityGatesPanel({ quality }: { quality: ResearchQuality | null }) {
+  const blockers = quality?.missingCoverage.filter((item) => item.requiredForCompletion) || [];
+  const counts = quality?.counts;
+
+  return (
+    <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-gray-400" />
+            <h3 className="text-[14px] font-bold text-black">Quality Gates</h3>
+          </div>
+          <p className="mt-1 text-[11px] text-gray-400">
+            Research depth check for source breadth, evidence, valuation anchors, AI review, and human approval.
+          </p>
+        </div>
+        {quality ? (
+          <div className="flex flex-wrap gap-2">
+            <StatusBadge status={quality.status} />
+            <StatusBadge status={quality.actionReadiness} />
+          </div>
+        ) : (
+          <StatusBadge status="checking" />
+        )}
+      </div>
+
+      {quality ? (
+        <>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div className="rounded-md border border-gray-100 bg-[#fbfcfd] p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Sources</div>
+              <div className="mt-1 font-mono text-[18px] font-bold text-black">{counts?.sources ?? 0}</div>
+            </div>
+            <div className="rounded-md border border-gray-100 bg-[#fbfcfd] p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Evidence</div>
+              <div className="mt-1 font-mono text-[18px] font-bold text-black">{counts?.evidence ?? 0}</div>
+            </div>
+            <div className="rounded-md border border-gray-100 bg-[#fbfcfd] p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Valuation Anchors</div>
+              <div className="mt-1 font-mono text-[18px] font-bold text-black">{counts?.scenariosWithValueAnchors ?? 0}</div>
+            </div>
+            <div className="rounded-md border border-gray-100 bg-[#fbfcfd] p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Open Gaps</div>
+              <div className="mt-1 font-mono text-[18px] font-bold text-black">{counts?.openSourceGaps ?? 0}</div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-md border border-gray-100 bg-[#fbfcfd] p-3">
+            <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              Top Blockers
+            </div>
+            {blockers.length === 0 ? (
+              <div className="text-[12px] text-gray-500">No blocking quality gaps recorded.</div>
+            ) : (
+              <div className="space-y-2">
+                {blockers.slice(0, 5).map((item) => (
+                  <div key={`${item.key}-${item.description}`} className="grid grid-cols-[auto_1fr] gap-2 text-[12px]">
+                    <span className={`mt-0.5 h-2 w-2 rounded-full ${item.severity === "critical" || item.severity === "high" ? "bg-rose-500" : "bg-amber-500"}`} />
+                    <div>
+                      <span className="font-semibold text-gray-700">{humanize(item.area)}:</span>{" "}
+                      <span className="text-gray-500">{item.description}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="rounded-md border border-dashed border-gray-200 bg-[#fbfcfd] px-3 py-4 text-[12px] text-gray-400">
+          Quality gates have not been evaluated yet.
+        </div>
+      )}
     </div>
   );
 }
@@ -643,11 +744,13 @@ function ResearchTheater({
   progress,
   theater,
   messages,
+  quality,
 }: {
   assetName: string;
   progress: RunProgress;
   theater: TheaterData;
   messages: Message[];
+  quality: ResearchQuality | null;
 }) {
   const completedStages = progress.stages.filter((stage) => stage.status === "completed").length;
   const runningTasks = progress.tasks.filter((task) => task.status === "running").length;
@@ -708,6 +811,7 @@ function ResearchTheater({
           />
         </div>
 
+        <QualityGatesPanel quality={quality} />
         <StageRail progress={progress} />
         <ActiveStagePanel progress={progress} theater={theater} />
         <AgentConsole progress={progress} theater={theater} />
@@ -731,6 +835,7 @@ export default function RunResearchPage() {
   const [runType, setRunType] = useState("deep_dive");
   const [runId, setRunId] = useState<string | null>(null);
   const [progress, setProgress] = useState<RunProgress | null>(null);
+  const [quality, setQuality] = useState<ResearchQuality | null>(null);
   const [theater, setTheater] = useState<TheaterData>({
     sources: [],
     traces: [],
@@ -895,9 +1000,10 @@ Ready to start research?`;
 
   async function fetchProgress(id: string) {
     try {
-      const [runRes, sourcesRes, tracesRes, modelCallsRes, backtestsRes] =
+      const [runRes, qualityRes, sourcesRes, tracesRes, modelCallsRes, backtestsRes] =
         await Promise.all([
           fetch(`/api/research-runs/${id}`),
+          fetch(`/api/research-runs/${id}/quality`),
           fetch(`/api/research-runs/${id}/sources`),
           fetch(`/api/research-runs/${id}/agent-traces`),
           fetch(`/api/research-runs/${id}/model-calls`),
@@ -905,6 +1011,7 @@ Ready to start research?`;
         ]);
 
       const data = await runRes.json();
+      const qualityData = qualityRes.ok ? await qualityRes.json() : null;
       const sources = sourcesRes.ok ? await sourcesRes.json() : [];
       const traces = tracesRes.ok ? await tracesRes.json() : [];
       const modelCalls = modelCallsRes.ok ? await modelCallsRes.json() : [];
@@ -951,6 +1058,7 @@ Ready to start research?`;
         modelCalls: Array.isArray(modelCalls) ? modelCalls : [],
         backtests: Array.isArray(backtests) ? backtests : [],
       });
+      setQuality(qualityData);
     } catch (error) {
       console.error("Failed to fetch progress:", error);
     }
@@ -1131,6 +1239,7 @@ Ready to start research?`;
               progress={progress}
               theater={theater}
               messages={messages}
+              quality={quality}
             />
           ) : (
           <div className="flex-1 overflow-y-auto p-6 space-y-4">

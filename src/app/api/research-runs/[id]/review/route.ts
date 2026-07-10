@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import postgres from "postgres";
 import { handleApiError, successResponse, createdResponse, ApiError } from "@/lib/api/errors";
 import { approveHumanReview } from "@/lib/workflow/orchestrator";
+import { evaluateResearchQuality } from "@/lib/workflow/quality-gates";
 
 /**
  * POST /api/research-runs/:id/review
@@ -68,8 +69,13 @@ export async function POST(
         const approval = await approveHumanReview(runId, body.reviewedBy || "user");
         return createdResponse({ ...rows[0], workflow: approval });
       } else if (body.status.startsWith("approved")) {
+        const quality = await evaluateResearchQuality(runId);
         await sql`
-          UPDATE research_runs SET status = 'completed' WHERE id = ${runId}
+          UPDATE research_runs
+          SET status = ${quality.status === "pass" ? "completed" : "needs_more_work"},
+              metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({ quality_gate: quality as any })},
+              updated_at = NOW()
+          WHERE id = ${runId}
         `;
       }
 

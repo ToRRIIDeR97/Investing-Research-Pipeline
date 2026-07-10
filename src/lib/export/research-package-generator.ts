@@ -2,6 +2,8 @@ import postgres from "postgres";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { evaluateResearchQuality } from "@/lib/workflow/quality-gates";
+import type { ResearchQualityGateResult } from "@/lib/workflow/quality-gates";
 
 type Row = Record<string, any>;
 
@@ -31,6 +33,7 @@ interface ResearchPackageData {
   backtestArtifacts: Row[];
   modelCalls: Row[];
   tasks: Row[];
+  quality?: ResearchQualityGateResult;
 }
 
 interface IndicatorCandidate {
@@ -78,6 +81,7 @@ const CANONICAL_FILES = [
   "09_review_packet.md",
   "10_strategy_combinations.md",
   "sources.md",
+  "quality_gates.json",
 ];
 
 export async function generateResearchPackage(params: {
@@ -89,6 +93,7 @@ export async function generateResearchPackage(params: {
 
   try {
     const data = await loadPackageData(sql, params.runId, params.assetId);
+    data.quality = await evaluateResearchQuality(params.runId);
     const indicators = buildIndicators(data);
     const combinations = buildStrategyCombinations(indicators);
     const generatedAt = new Date().toISOString();
@@ -123,6 +128,7 @@ export async function generateResearchPackage(params: {
       "09_review_packet.md": renderReviewPacket(data, indicators, combinations),
       "10_strategy_combinations.md": renderCombinations(combinations),
       "sources.md": renderSources(data),
+      "quality_gates.json": `${JSON.stringify(data.quality, null, 2)}\n`,
       "source_intelligence/AGENT.md": renderSourceAgentInstructions(),
       "source_intelligence/source_inventory.md": renderSourceInventory(data),
       "source_intelligence/source_quality_scores.md": renderSourceQuality(data),
@@ -168,7 +174,10 @@ export async function generateResearchPackage(params: {
         backtest_artifacts: data.backtestArtifacts.length,
         sources: data.sources.length,
         inferred_source_gaps: inferredSourceGaps(data).length,
+        quality_status: data.quality.status,
+        action_readiness: data.quality.actionReadiness,
       },
+      quality_gates: data.quality,
       copied_artifacts: copiedArtifacts,
     };
     const manifestContent = `${JSON.stringify(manifest, null, 2)}\n`;
@@ -429,12 +438,13 @@ function renderAssetProfile(data: ResearchPackageData) {
 
 function renderSourceIntelligence(data: ResearchPackageData) {
   const inferredGaps = inferredSourceGaps(data);
+  const quality = data.quality;
   return [
     "# 02 Source Intelligence",
     "",
     "## Source Completeness Gate",
     "",
-    data.sources.length >= 5 && data.sourceGaps.length === 0 && inferredGaps.length === 0
+    quality?.status === "pass"
       ? "Source map is populated, but should still be reviewed before final action."
       : "Source completeness gate failed - additional source discovery required.",
     "",
@@ -444,6 +454,8 @@ function renderSourceIntelligence(data: ResearchPackageData) {
     `- Evidence claims recorded: ${data.evidence.length}`,
     `- Open source gaps recorded: ${data.sourceGaps.length}`,
     `- Inferred source gaps: ${inferredGaps.length}`,
+    `- Quality gate status: ${quality?.status || "not evaluated"}`,
+    `- Action readiness: ${quality?.actionReadiness || "not evaluated"}`,
     `- Model calls recorded: ${data.modelCalls.length}`,
     "",
     "## Open Source Gaps",
@@ -452,7 +464,9 @@ function renderSourceIntelligence(data: ResearchPackageData) {
     "",
     "## Inferred Source Gaps",
     "",
-    inferredGaps.map((gap) => `- **${gap.severity}** ${gap.area}: ${gap.description}`).join("\n") || "- No inferred gaps.",
+    (quality?.missingCoverage.length
+      ? quality.missingCoverage.map((gap) => `- **${gap.severity}** ${gap.area}: ${gap.description}`).join("\n")
+      : inferredGaps.map((gap) => `- **${gap.severity}** ${gap.area}: ${gap.description}`).join("\n")) || "- No inferred gaps.",
     "",
     "## Source Quality Notes",
     "",
@@ -688,6 +702,11 @@ function renderValuation(data: ResearchPackageData) {
     "",
     "## Valuation Limitations",
     "",
+    data.quality?.missingCoverage
+      .filter((item) => item.area.includes("valuation"))
+      .map((item) => `- **${item.severity}** ${item.description}`)
+      .join("\n") || "No valuation-specific quality gate blockers recorded.",
+    "",
     sourceGapList(data),
     "",
   ].join("\n");
@@ -818,7 +837,8 @@ function renderBacktests(data: ResearchPackageData, combinations: StrategyCombin
 
 function renderReviewPacket(data: ResearchPackageData, indicators: IndicatorCandidate[], combinations: StrategyCombination[]) {
   const inferredGaps = inferredSourceGaps(data);
-  const completeEnough = data.sources.length >= 5 && data.evidence.length >= 20 && data.backtests.length > 0 && inferredGaps.length === 0;
+  const quality = data.quality;
+  const completeEnough = quality?.status === "pass";
   const recommendation = completeEnough
     ? "Research further"
     : "Research further - incomplete source and artifact gates";
@@ -845,7 +865,15 @@ function renderReviewPacket(data: ResearchPackageData, indicators: IndicatorCand
     `- Backtest artifacts: ${data.backtestArtifacts.length}`,
     `- Open source gaps: ${data.sourceGaps.length}`,
     `- Inferred source gaps: ${inferredGaps.length}`,
+    `- Quality gate status: ${quality?.status || "not evaluated"}`,
+    `- Action readiness: ${quality?.actionReadiness || "not evaluated"}`,
     `- Gate verdict: ${completeEnough ? "Pass with review" : "Fail for investment action; usable for research direction only"}`,
+    "",
+    "## Quality Gate Blockers",
+    "",
+    quality?.missingCoverage.length
+      ? quality.missingCoverage.map((item) => `- **${item.severity}** ${item.area}: ${item.description}`).join("\n")
+      : "- No quality gate blockers recorded.",
     "",
     "## Main Thesis",
     "",

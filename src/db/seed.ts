@@ -27,6 +27,7 @@ interface ProfileSeed {
   optional_modules: string[];
   forbidden_methods: string[];
   required_valuation_lenses: string[];
+  completion_criteria: Record<string, unknown>;
 }
 
 const profiles: ProfileSeed[] = [
@@ -55,6 +56,23 @@ const profiles: ProfileSeed[] = [
     optional_modules: [],
     forbidden_methods: ["generic_revenue_growth", "single_multiple_cheapness"],
     required_valuation_lenses: ["dcf", "multiple", "cash_flow"],
+    completion_criteria: {
+      required_modules: [
+        "business_segments",
+        "revenue_drivers",
+        "margins",
+        "fcf",
+        "capex",
+        "working_capital",
+        "share_count",
+        "net_debt",
+        "driver_based_dcf",
+        "reverse_dcf",
+        "peer_multiple_context",
+      ],
+      required_value_anchors: ["bear", "base", "bull"],
+      required_source_families: ["filing", "investor_relations", "peer_industry"],
+    },
   },
   {
     profile_key: "bitcoin",
@@ -79,6 +97,20 @@ const profiles: ProfileSeed[] = [
     optional_modules: [],
     forbidden_methods: ["dcf"],
     required_valuation_lenses: ["crypto_onchain"],
+    completion_criteria: {
+      required_modules: [
+        "mvrv",
+        "realized_price",
+        "drawdown",
+        "network_value",
+        "hash_rate",
+        "etf_flows",
+        "liquidity_cycle",
+        "regulatory_regime",
+      ],
+      required_value_anchors: ["cycle_low", "base_cycle", "cycle_high"],
+      required_source_families: ["onchain_data", "market_data", "regulatory"],
+    },
   },
   {
     profile_key: "commodity_energy",
@@ -103,6 +135,18 @@ const profiles: ProfileSeed[] = [
     optional_modules: [],
     forbidden_methods: ["equity_dcf_for_spot"],
     required_valuation_lenses: ["commodity"],
+    completion_criteria: {
+      required_modules: [
+        "real_price_percentile",
+        "inventories",
+        "futures_curve",
+        "marginal_cost",
+        "spare_capacity",
+        "demand_growth",
+      ],
+      required_value_anchors: ["bear", "base", "bull"],
+      required_source_families: ["market_data", "supply_demand", "macro"],
+    },
   },
   {
     profile_key: "financials",
@@ -126,6 +170,20 @@ const profiles: ProfileSeed[] = [
     optional_modules: [],
     forbidden_methods: ["ev_ebitda"],
     required_valuation_lenses: ["residual_income"],
+    completion_criteria: {
+      required_modules: [
+        "tangible_book_value",
+        "roe_vs_coe",
+        "nim",
+        "credit_losses",
+        "cet1",
+        "deposit_mix",
+        "funding_mix",
+        "residual_income_valuation",
+      ],
+      required_value_anchors: ["bear", "base", "bull"],
+      required_source_families: ["filing", "regulatory", "peer_industry"],
+    },
   },
   {
     profile_key: "etf_fund",
@@ -151,6 +209,19 @@ const profiles: ProfileSeed[] = [
     optional_modules: [],
     forbidden_methods: [],
     required_valuation_lenses: ["multiple"],
+    completion_criteria: {
+      required_modules: [
+        "nav",
+        "nav_per_share",
+        "discount_premium_to_nav",
+        "portfolio_composition",
+        "leverage",
+        "buybacks",
+        "capital_allocation",
+      ],
+      required_value_anchors: ["bear", "base", "bull"],
+      required_source_families: ["issuer_report", "market_data", "portfolio_holdings"],
+    },
   },
 ];
 
@@ -376,7 +447,7 @@ async function seed(): Promise<void> {
         ${jsonbSql(p.forbidden_methods)},
         ${jsonbSql(p.required_valuation_lenses)},
         ${jsonbSql([])},
-        ${jsonbSql({})},
+        ${jsonbSql(p.completion_criteria)},
         ${jsonbSql({})},
         NOW(),
         NOW()

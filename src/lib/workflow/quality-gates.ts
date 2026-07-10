@@ -1,0 +1,623 @@
+import postgres from "postgres";
+
+type Row = Record<string, any>;
+
+export interface MissingCoverageItem {
+  key: string;
+  severity: "low" | "medium" | "high" | "critical";
+  area: string;
+  description: string;
+  requiredForCompletion: boolean;
+}
+
+export interface ResearchQualityGateResult {
+  status: "pass" | "needs_more_work" | "fail";
+  actionReadiness:
+    | "triage_only"
+    | "research_scaffold"
+    | "review_ready"
+    | "investment_ready";
+  errors: string[];
+  warnings: string[];
+  missingCoverage: MissingCoverageItem[];
+  counts: {
+    sources: number;
+    evidence: number;
+    metrics: number;
+    valuationSignals: number;
+    scenarios: number;
+    scenariosWithValueAnchors: number;
+    openSourceGaps: number;
+    reviewDecisions: number;
+  };
+}
+
+interface RunQualityData {
+  run: Row;
+  asset?: Row;
+  profile?: Row;
+  stages: Row[];
+  tasks: Row[];
+  sources: Row[];
+  evidence: Row[];
+  metrics: Row[];
+  signals: Row[];
+  scenarios: Row[];
+  sourceGaps: Row[];
+  reviewDecisions: Row[];
+}
+
+interface RunTypeThreshold {
+  minSources: number;
+  minEvidenceClaims: number;
+  requireValueAnchors: boolean;
+  requireHumanReview: boolean;
+}
+
+export const RUN_TYPE_THRESHOLDS: Record<string, RunTypeThreshold> = {
+  quick_scan: {
+    minSources: 1,
+    minEvidenceClaims: 5,
+    requireValueAnchors: false,
+    requireHumanReview: false,
+  },
+  deep_dive: {
+    minSources: 5,
+    minEvidenceClaims: 25,
+    requireValueAnchors: true,
+    requireHumanReview: true,
+  },
+  full_initiation_report: {
+    minSources: 8,
+    minEvidenceClaims: 40,
+    requireValueAnchors: true,
+    requireHumanReview: true,
+  },
+  valuation_refresh: {
+    minSources: 2,
+    minEvidenceClaims: 10,
+    requireValueAnchors: true,
+    requireHumanReview: true,
+  },
+  thesis_investigation: {
+    minSources: 2,
+    minEvidenceClaims: 8,
+    requireValueAnchors: false,
+    requireHumanReview: true,
+  },
+  source_update: {
+    minSources: 1,
+    minEvidenceClaims: 0,
+    requireValueAnchors: false,
+    requireHumanReview: false,
+  },
+};
+
+const REJECTING_REVIEW_STATUSES = new Set([
+  "needs_more_work",
+  "reject",
+  "rejected",
+  "archived",
+]);
+
+export async function evaluateResearchQuality(
+  runId: string
+): Promise<ResearchQualityGateResult> {
+  const sql = postgres(process.env.DATABASE_URL!);
+
+  try {
+    const data = await loadRunQualityData(sql, runId);
+    return evaluateLoadedResearchQuality(data);
+  } finally {
+    await sql.end();
+  }
+}
+
+export function inferMissingSourceCoverage(input: {
+  runType?: string;
+  sources: Row[];
+  evidence: Row[];
+  scenarios: Row[];
+  backtestArtifacts?: Row[];
+  backtests?: Row[];
+}): MissingCoverageItem[] {
+  const runType = input.runType || "deep_dive";
+  const threshold = thresholdFor(runType);
+  const gaps: MissingCoverageItem[] = [];
+
+  if (input.sources.length < threshold.minSources) {
+    gaps.push({
+      key: "source_breadth",
+      severity: threshold.minSources >= 5 ? "high" : "medium",
+      area: "source breadth",
+      description: `Only ${input.sources.length} source document(s) recorded; ${runType.replace(
+        /_/g,
+        " "
+      )} requires at least ${threshold.minSources}.`,
+      requiredForCompletion: runType !== "quick_scan",
+    });
+  }
+
+  if (!hasSource(input.sources, ["sec", "filing", "10-k", "10-q", "20-f", "40-f", "6-k", "annual report", "quarterly report"])) {
+    gaps.push({
+      key: "formal_reporting_source",
+      severity: runType === "quick_scan" ? "medium" : "high",
+      area: "formal reporting",
+      description:
+        "No filing, annual report, quarterly report, or equivalent formal issuer source is recorded.",
+      requiredForCompletion: runType !== "quick_scan",
+    });
+  }
+
+  if (!hasSource(input.sources, ["investor", "ir", "earnings", "presentation", "transcript"])) {
+    gaps.push({
+      key: "investor_relations_source",
+      severity: runType === "quick_scan" ? "medium" : "high",
+      area: "company investor relations",
+      description:
+        "No investor-relations, earnings presentation, or transcript source is recorded.",
+      requiredForCompletion: runType !== "quick_scan",
+    });
+  }
+
+  if (!hasSource(input.sources, ["peer", "industry", "sector", "fdic", "fred", "federal reserve", "macro"])) {
+    gaps.push({
+      key: "peer_industry_context",
+      severity: "medium",
+      area: "industry and peer context",
+      description:
+        "No peer, industry, macro, or asset-class context source is recorded.",
+      requiredForCompletion: runType !== "quick_scan",
+    });
+  }
+
+  if (input.evidence.length < threshold.minEvidenceClaims) {
+    gaps.push({
+      key: "evidence_depth",
+      severity: threshold.minEvidenceClaims >= 25 ? "high" : "medium",
+      area: "evidence depth",
+      description: `Only ${input.evidence.length} evidence claim(s) are recorded; ${runType.replace(
+        /_/g,
+        " "
+      )} requires at least ${threshold.minEvidenceClaims}.`,
+      requiredForCompletion: threshold.minEvidenceClaims > 0,
+    });
+  }
+
+  if (threshold.requireValueAnchors && !input.scenarios.some((scenario) => numericLike(scenario.value_anchor))) {
+    gaps.push({
+      key: "valuation_anchors",
+      severity: "high",
+      area: "valuation anchors",
+      description:
+        "No numeric scenario value anchors are populated, so upside/downside cannot be assessed.",
+      requiredForCompletion: true,
+    });
+  }
+
+  if ((input.backtests?.length || 0) > 0 && (input.backtestArtifacts?.length || 0) === 0) {
+    gaps.push({
+      key: "backtest_artifacts",
+      severity: "medium",
+      area: "backtest artifacts",
+      description:
+        "Backtest run exists, but no artifact records are attached for metrics, equity curve, trades, or generated code.",
+      requiredForCompletion: false,
+    });
+  }
+
+  return gaps;
+}
+
+function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQualityGateResult {
+  const threshold = thresholdFor(data.run.run_type);
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const missingCoverage: MissingCoverageItem[] = [];
+  const openSourceGaps = data.sourceGaps.filter((gap) => isOpenGap(gap));
+  const scenariosWithValueAnchors = data.scenarios.filter((scenario) =>
+    numericLike(scenario.value_anchor)
+  );
+  const inferredGaps = inferMissingSourceCoverage({
+    runType: data.run.run_type,
+    sources: data.sources,
+    evidence: data.evidence,
+    scenarios: data.scenarios,
+  });
+
+  missingCoverage.push(...inferredGaps);
+
+  if (data.sources.length < threshold.minSources) {
+    errors.push(
+      `Source depth is too thin: ${data.sources.length}/${threshold.minSources} required source documents.`
+    );
+  }
+
+  if (data.evidence.length < threshold.minEvidenceClaims) {
+    errors.push(
+      `Evidence depth is too thin: ${data.evidence.length}/${threshold.minEvidenceClaims} required evidence claims.`
+    );
+  }
+
+  if (!data.sources.length) {
+    errors.push("No source documents are attached to this run.");
+  }
+
+  const unscoredSources = data.sources.filter((source) => source.source_quality_score == null);
+  if (unscoredSources.length > 0) {
+    warnings.push(`${unscoredSources.length} source document(s) have no quality score.`);
+  }
+
+  if (openSourceGaps.some((gap) => ["high", "critical"].includes(String(gap.severity)))) {
+    missingCoverage.push(
+      ...openSourceGaps
+        .filter((gap) => ["high", "critical"].includes(String(gap.severity)))
+        .map((gap) => ({
+          key: String(gap.gap_key || gap.id),
+          severity: normalizeSeverity(gap.severity),
+          area: "recorded source gap",
+          description: String(gap.description),
+          requiredForCompletion: data.run.run_type !== "quick_scan",
+        }))
+    );
+  }
+
+  addAnalysisCoverage(data, errors, warnings, missingCoverage);
+  addValuationCoverage(
+    data,
+    threshold,
+    scenariosWithValueAnchors.length,
+    errors,
+    warnings,
+    missingCoverage
+  );
+  addAiReviewCoverage(data, errors, warnings, missingCoverage);
+  addHumanReviewCoverage(data, threshold, errors, warnings, missingCoverage);
+
+  const blockingMissingCoverage = missingCoverage.filter(
+    (item) => item.requiredForCompletion && ["high", "critical"].includes(item.severity)
+  );
+  const hasFailures = errors.length > 0 || blockingMissingCoverage.length > 0;
+  const status: ResearchQualityGateResult["status"] = hasFailures
+    ? "needs_more_work"
+    : warnings.length > 0 || missingCoverage.length > 0
+      ? "needs_more_work"
+      : "pass";
+  const actionReadiness = actionReadinessFor(data, threshold, status);
+
+  return {
+    status,
+    actionReadiness,
+    errors,
+    warnings,
+    missingCoverage,
+    counts: {
+      sources: data.sources.length,
+      evidence: data.evidence.length,
+      metrics: data.metrics.length,
+      valuationSignals: data.signals.length,
+      scenarios: data.scenarios.length,
+      scenariosWithValueAnchors: scenariosWithValueAnchors.length,
+      openSourceGaps: openSourceGaps.length,
+      reviewDecisions: data.reviewDecisions.length,
+    },
+  };
+}
+
+async function loadRunQualityData(
+  sql: ReturnType<typeof postgres>,
+  runId: string
+): Promise<RunQualityData> {
+  const [run] = await sql`SELECT * FROM research_runs WHERE id = ${runId}`;
+  if (!run) throw new Error(`Research run not found: ${runId}`);
+
+  const [asset] = await sql`SELECT * FROM assets WHERE id = ${run.asset_id}`;
+  const [profile] = run.profile_id
+    ? await sql`SELECT * FROM research_profiles WHERE id = ${run.profile_id}`
+    : [];
+
+  const [
+    stages,
+    tasks,
+    sources,
+    evidence,
+    metrics,
+    signals,
+    scenarios,
+    sourceGaps,
+    reviewDecisions,
+  ] = await Promise.all([
+    sql`SELECT * FROM research_stages WHERE research_run_id = ${runId} ORDER BY stage_order`,
+    sql`SELECT * FROM research_tasks WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM source_documents WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM evidence_claims WHERE research_run_id = ${runId} AND review_status != 'rejected' ORDER BY created_at DESC`,
+    sql`SELECT * FROM metric_observations WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM valuation_signals WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM scenarios WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM source_gaps WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM review_decisions WHERE research_run_id = ${runId} ORDER BY reviewed_at DESC`,
+  ]);
+
+  return {
+    run,
+    asset,
+    profile,
+    stages,
+    tasks,
+    sources: sources.filter(isSubstantiveSource),
+    evidence,
+    metrics,
+    signals,
+    scenarios,
+    sourceGaps,
+    reviewDecisions,
+  };
+}
+
+function isSubstantiveSource(source: Row) {
+  const metadata = typeof source.metadata_json === "string"
+    ? (() => { try { return JSON.parse(source.metadata_json); } catch { return {}; } })()
+    : source.metadata_json || {};
+  return metadata.collection_status !== "candidate_external_source" && metadata.fetch_status !== "failed";
+}
+
+function addAnalysisCoverage(
+  data: RunQualityData,
+  errors: string[],
+  warnings: string[],
+  missingCoverage: MissingCoverageItem[]
+) {
+  const requiredModules = jsonArray(data.profile?.required_modules_json);
+  const completionCriteria = data.profile?.completion_criteria_json || {};
+  const completionModules = jsonArray((completionCriteria as Row).required_modules);
+  const modules = completionModules.length ? completionModules : requiredModules;
+
+  if (!modules.length) {
+    warnings.push("Profile has no required analysis module list.");
+    return;
+  }
+
+  const taskText = data.tasks
+    .filter((task) => task.status === "completed")
+    .map((task) =>
+      [
+        task.task_key,
+        task.task_type,
+        stringifyBrief(task.output_json),
+        stringifyBrief(task.validation_result_json),
+      ].join(" ")
+    )
+    .join(" ")
+    .toLowerCase();
+  const evidenceText = data.evidence.map((claim) => claim.claim_text).join(" ").toLowerCase();
+  const metricsText = data.metrics
+    .map((metric) => [metric.metric_key, metric.display_name, metric.value_text].join(" "))
+    .join(" ")
+    .toLowerCase();
+
+  for (const moduleKey of modules) {
+    const normalized = String(moduleKey).toLowerCase();
+    const tokens = normalized.split(/[_\s-]+/).filter(Boolean);
+    const covered =
+      taskText.includes(normalized) ||
+      tokens.some((token) => evidenceText.includes(token) || metricsText.includes(token));
+
+    if (!covered) {
+      const item: MissingCoverageItem = {
+        key: `analysis_${moduleKey}`,
+        severity: data.run.run_type === "quick_scan" ? "medium" : "high",
+        area: "analysis coverage",
+        description: `Required analysis module "${moduleKey}" has no substantive task, evidence, metric, or explicit source-gap coverage.`,
+        requiredForCompletion: data.run.run_type !== "quick_scan",
+      };
+      missingCoverage.push(item);
+      errors.push(item.description);
+    }
+  }
+}
+
+function addValuationCoverage(
+  data: RunQualityData,
+  threshold: RunTypeThreshold,
+  scenariosWithValueAnchors: number,
+  errors: string[],
+  warnings: string[],
+  missingCoverage: MissingCoverageItem[]
+) {
+  const requiredLenses = jsonArray(data.profile?.required_valuation_lenses_json);
+  const coveredLenses = new Set(data.signals.map((signal) => signal.lens_family));
+
+  for (const lens of requiredLenses) {
+    if (!coveredLenses.has(lens)) {
+      const item: MissingCoverageItem = {
+        key: `valuation_lens_${lens}`,
+        severity: "high",
+        area: "valuation depth",
+        description: `Required valuation lens "${lens}" has no valuation signal.`,
+        requiredForCompletion: data.run.run_type !== "quick_scan",
+      };
+      missingCoverage.push(item);
+      errors.push(item.description);
+    }
+  }
+
+  const notApplicableWithoutReason = data.signals.filter(
+    (signal) =>
+      signal.signal === "not_applicable" &&
+      !signal.current_value_text &&
+      !stringifyBrief(signal.metadata_json).toLowerCase().includes("reason")
+  );
+  if (notApplicableWithoutReason.length > 0) {
+    warnings.push(
+      `${notApplicableWithoutReason.length} not-applicable valuation signal(s) lack an explicit reason.`
+    );
+  }
+
+  if (threshold.requireValueAnchors && scenariosWithValueAnchors === 0) {
+    const hasBlockingSourceGap = data.sourceGaps.some(
+      (gap) => isOpenGap(gap) && ["high", "critical"].includes(String(gap.severity))
+    );
+    const item: MissingCoverageItem = {
+      key: "scenario_value_anchors",
+      severity: "high",
+      area: "valuation depth",
+      description: hasBlockingSourceGap
+        ? "No numeric scenario value anchors are present; high-severity source gaps explain the blocker but the run is not action-ready."
+        : "No numeric scenario value anchors are present.",
+      requiredForCompletion: true,
+    };
+    missingCoverage.push(item);
+    errors.push(item.description);
+  }
+
+  const scenarioTypes = new Set(data.scenarios.map((scenario) => String(scenario.scenario_type).toLowerCase()));
+  if (data.run.run_type !== "quick_scan" && data.scenarios.length > 0) {
+    for (const scenarioType of ["bear", "base", "bull"]) {
+      if (!scenarioTypes.has(scenarioType)) {
+        warnings.push(`Scenario set is missing a ${scenarioType} case.`);
+      }
+    }
+  }
+}
+
+function addAiReviewCoverage(
+  data: RunQualityData,
+  errors: string[],
+  warnings: string[],
+  missingCoverage: MissingCoverageItem[]
+) {
+  const reviewTask = data.tasks.find(
+    (task) => task.task_type === "ai_review" && task.status === "completed"
+  );
+
+  if (!reviewTask) {
+    if (data.run.run_type !== "quick_scan") {
+      errors.push("Latest AI review task is missing.");
+      missingCoverage.push({
+        key: "ai_review_missing",
+        severity: "high",
+        area: "AI review",
+        description: "Latest AI review task is missing.",
+        requiredForCompletion: true,
+      });
+    }
+    return;
+  }
+
+  const output = normalizeReviewOutput(reviewTask.output_json);
+  const passFail = String(output.pass_fail || output.passFail || output.status || "").toLowerCase();
+
+  if (!passFail) {
+    warnings.push("AI review output has no parsed pass_fail/status field.");
+    return;
+  }
+
+  if (passFail === "needs_more_work" || passFail === "fail" || passFail === "failed") {
+    const description = `AI review outcome is ${passFail}.`;
+    errors.push(description);
+    missingCoverage.push({
+      key: "ai_review_outcome",
+      severity: passFail === "fail" || passFail === "failed" ? "critical" : "high",
+      area: "AI review",
+      description,
+      requiredForCompletion: true,
+    });
+  }
+}
+
+function addHumanReviewCoverage(
+  data: RunQualityData,
+  threshold: RunTypeThreshold,
+  errors: string[],
+  warnings: string[],
+  missingCoverage: MissingCoverageItem[]
+) {
+  if (!threshold.requireHumanReview) return;
+
+  const latestDecision = data.reviewDecisions[0];
+  if (!latestDecision) {
+    errors.push("Human review decision is required before completion.");
+    missingCoverage.push({
+      key: "human_review_decision",
+      severity: "high",
+      area: "human review",
+      description: "Human review decision is required before completion.",
+      requiredForCompletion: true,
+    });
+    return;
+  }
+
+  const status = String(latestDecision.status || "").toLowerCase();
+  if (REJECTING_REVIEW_STATUSES.has(status)) {
+    errors.push(`Human review decision is ${status}.`);
+  } else if (status === "approved_for_tracking") {
+    warnings.push("Human review approved tracking only; this is not position-ready.");
+  }
+}
+
+function actionReadinessFor(
+  data: RunQualityData,
+  threshold: RunTypeThreshold,
+  status: ResearchQualityGateResult["status"]
+): ResearchQualityGateResult["actionReadiness"] {
+  if (data.run.run_type === "quick_scan") return "triage_only";
+  if (status !== "pass") return "research_scaffold";
+  if (threshold.requireHumanReview && data.reviewDecisions.length === 0) return "review_ready";
+
+  const decision = String(data.reviewDecisions[0]?.status || "").toLowerCase();
+  if (decision === "approved_for_tracking") return "review_ready";
+  return "investment_ready";
+}
+
+function thresholdFor(runType: string): RunTypeThreshold {
+  return RUN_TYPE_THRESHOLDS[runType] || RUN_TYPE_THRESHOLDS.deep_dive;
+}
+
+function hasSource(sources: Row[], keywords: string[]) {
+  return sources.some((source) => {
+    const text = `${source.source_type || ""} ${source.title || ""} ${source.publisher || ""} ${source.url || ""}`.toLowerCase();
+    return keywords.some((keyword) => text.includes(keyword));
+  });
+}
+
+function numericLike(value: unknown) {
+  if (value === null || value === undefined || value === "") return false;
+  return Number.isFinite(Number(value));
+}
+
+function jsonArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
+function stringifyBrief(value: unknown) {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function normalizeReviewOutput(output: unknown): Row {
+  if (!output) return {};
+  if (typeof output === "string") {
+    try {
+      return JSON.parse(output);
+    } catch {
+      return { status: output };
+    }
+  }
+  return output as Row;
+}
+
+function isOpenGap(gap: Row) {
+  return !["closed", "resolved", "accepted"].includes(String(gap.status || "open").toLowerCase());
+}
+
+function normalizeSeverity(value: unknown): MissingCoverageItem["severity"] {
+  if (value === "critical" || value === "high" || value === "medium" || value === "low") {
+    return value;
+  }
+  return "medium";
+}

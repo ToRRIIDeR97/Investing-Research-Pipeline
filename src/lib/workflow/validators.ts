@@ -1,5 +1,6 @@
 import postgres from "postgres";
 import { STAGE_CONFIG_MAP } from "./stages";
+import { evaluateResearchQuality } from "./quality-gates";
 
 // ============================================================
 // Validators — deterministic checks on stage / run completion.
@@ -327,6 +328,105 @@ export async function validateSourceLinks(
   } finally {
     await sql.end();
   }
+}
+
+export async function validateSourceDepth(
+  runId: string
+): Promise<ValidationResult> {
+  const quality = await evaluateResearchQuality(runId);
+  const sourceItems = quality.missingCoverage.filter(
+    (item) =>
+      item.area.includes("source") ||
+      item.area.includes("formal") ||
+      item.area.includes("industry")
+  );
+  const sourceErrors =
+    quality.counts.sources === 0
+      ? ["No source documents are attached to this run."]
+      : [];
+  const sourceWarnings = [
+    ...quality.warnings.filter((warning) => /source/i.test(warning)),
+    ...sourceItems
+      .filter((item) => !item.requiredForCompletion)
+      .map((item) => item.description),
+  ];
+  const blockingSourceItems = sourceItems.filter((item) => item.requiredForCompletion);
+
+  return {
+    valid: sourceErrors.length === 0 && blockingSourceItems.length === 0,
+    errors: [
+      ...sourceErrors,
+      ...blockingSourceItems.map((item) => item.description),
+    ],
+    warnings: sourceWarnings,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+export async function validateAnalysisCoverage(
+  runId: string
+): Promise<ValidationResult> {
+  const quality = await evaluateResearchQuality(runId);
+  const analysisItems = quality.missingCoverage.filter(
+    (item) => item.area === "analysis coverage"
+  );
+
+  return {
+    valid: analysisItems.filter((item) => item.requiredForCompletion).length === 0,
+    errors: analysisItems
+      .filter((item) => item.requiredForCompletion)
+      .map((item) => item.description),
+    warnings: analysisItems
+      .filter((item) => !item.requiredForCompletion)
+      .map((item) => item.description),
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+export async function validateValuationDepth(
+  runId: string
+): Promise<ValidationResult> {
+  const quality = await evaluateResearchQuality(runId);
+  const valuationItems = quality.missingCoverage.filter(
+    (item) => item.area === "valuation depth" || item.area === "valuation anchors"
+  );
+
+  return {
+    valid: valuationItems.filter((item) => item.requiredForCompletion).length === 0,
+    errors: valuationItems
+      .filter((item) => item.requiredForCompletion)
+      .map((item) => item.description),
+    warnings: [
+      ...quality.warnings.filter((warning) => /valuation|scenario/i.test(warning)),
+      ...valuationItems
+        .filter((item) => !item.requiredForCompletion)
+        .map((item) => item.description),
+    ],
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+export async function validateReviewOutcome(
+  runId: string
+): Promise<ValidationResult> {
+  const quality = await evaluateResearchQuality(runId);
+  const reviewItems = quality.missingCoverage.filter(
+    (item) => item.area === "AI review" || item.area === "human review"
+  );
+
+  return {
+    valid: reviewItems.filter((item) => item.requiredForCompletion).length === 0,
+    errors: reviewItems
+      .filter((item) => item.requiredForCompletion)
+      .map((item) => item.description),
+    warnings: [
+      ...quality.warnings.filter((warning) => /review/i.test(warning)),
+      ...reviewItems
+        .filter((item) => !item.requiredForCompletion)
+        .map((item) => item.description),
+    ],
+    checkedAt: new Date().toISOString(),
+  };
 }
 
 /**

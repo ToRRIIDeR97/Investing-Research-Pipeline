@@ -29,6 +29,18 @@ export interface RunResearchAgentResult<TStructured = unknown> {
   config: ResearchAgentConfig;
 }
 
+export class ResearchAgentRunError extends Error {
+  usage: OpenCodeUsage;
+  responseMetadata: Record<string, unknown>;
+
+  constructor(message: string, usage: OpenCodeUsage, responseMetadata: Record<string, unknown> = {}) {
+    super(message);
+    this.name = "ResearchAgentRunError";
+    this.usage = usage;
+    this.responseMetadata = responseMetadata;
+  }
+}
+
 export function assertOk<T>(result: { data?: T; error?: unknown }, operation: string): T {
   if (result.error) {
     throw new Error(`${operation} failed: ${JSON.stringify(result.error)}`);
@@ -187,6 +199,14 @@ function buildTaskPrompt(input: RunResearchAgentInput, config: ResearchAgentConf
   ].join("\n");
 }
 
+function responseExcerpt(promptResult: unknown) {
+  const data = promptResult as { parts?: Array<{ text?: unknown }> };
+  return (data.parts || [])
+    .map((part) => typeof part.text === "string" ? part.text : "")
+    .join("\n")
+    .slice(0, 12000);
+}
+
 export async function runResearchAgent<TStructured = unknown>(
   input: RunResearchAgentInput
 ): Promise<RunResearchAgentResult<TStructured>> {
@@ -231,25 +251,72 @@ export async function runResearchAgent<TStructured = unknown>(
     "OpenCode session.prompt"
   );
 
-  const info = (promptResult as any).info || {};
+  let finalPromptResult = promptResult;
+  let repairAttempted = false;
+  try {
+    getStructuredOutput(promptResult, getRequiredOutputKeys(config.outputFormat));
+  } catch (firstError) {
+    repairAttempted = true;
+    finalPromptResult = assertOk(
+      await client.session.prompt({
+        path: { id: session.id },
+        query: { directory: process.cwd() },
+        body: {
+          agent: config.name,
+          model,
+          tools: config.tools,
+          parts: [{
+            type: "text",
+            text: [
+              "Your previous response did not satisfy the required structured-output schema.",
+              `Validation error: ${firstError instanceof Error ? firstError.message : String(firstError)}`,
+              "Repair it now. Return exactly one JSON object with every required top-level key.",
+              "Use empty arrays or objects where data is unavailable. Do not include Markdown or prose.",
+            ].join("\n"),
+          }],
+          format: config.outputFormat,
+        },
+      } as any),
+      "OpenCode structured-output repair prompt"
+    );
+  }
+
+  const info = (finalPromptResult as any).info || {};
   const tokens = info.tokens || {};
+  const usage: OpenCodeUsage = {
+    provider: info.providerID || model.providerID,
+    model: info.modelID || model.modelID,
+    inputTokens: typeof tokens.input === "number" ? tokens.input : undefined,
+    outputTokens: typeof tokens.output === "number" ? tokens.output : undefined,
+    costUsd: typeof info.cost === "number" ? info.cost : undefined,
+    latencyMs: Date.now() - started,
+    sessionId: session.id,
+    promptVersion: config.promptVersion,
+  };
+
+  let structured: TStructured;
+  try {
+    structured = getStructuredOutput(
+      finalPromptResult,
+      getRequiredOutputKeys(config.outputFormat)
+    ) as TStructured;
+  } catch (error) {
+    throw new ResearchAgentRunError(
+      error instanceof Error ? error.message : String(error),
+      usage,
+      {
+        session_id: session.id,
+        repair_attempted: repairAttempted,
+        initial_response_excerpt: responseExcerpt(promptResult),
+        final_response_excerpt: responseExcerpt(finalPromptResult),
+      }
+    );
+  }
 
   return {
-    structured: getStructuredOutput(
-      promptResult,
-      getRequiredOutputKeys(config.outputFormat)
-    ) as TStructured,
+    structured,
     config,
-    usage: {
-      provider: info.providerID || model.providerID,
-      model: info.modelID || model.modelID,
-      inputTokens: typeof tokens.input === "number" ? tokens.input : undefined,
-      outputTokens: typeof tokens.output === "number" ? tokens.output : undefined,
-      costUsd: typeof info.cost === "number" ? info.cost : undefined,
-      latencyMs: Date.now() - started,
-      sessionId: session.id,
-      promptVersion: config.promptVersion,
-    },
+    usage,
   };
 }
 
