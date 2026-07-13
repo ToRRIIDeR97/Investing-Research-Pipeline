@@ -10,6 +10,8 @@ import * as metricsSchema from "./schema/metrics";
 import * as valuationSchema from "./schema/valuation";
 import * as thesisSchema from "./schema/thesis";
 import * as aiSchema from "./schema/ai";
+import * as backtestingSchema from "./schema/backtesting";
+import * as researchV2Schema from "./schema/research-v2";
 
 const schema = {
   ...coreSchema,
@@ -21,6 +23,8 @@ const schema = {
   ...valuationSchema,
   ...thesisSchema,
   ...aiSchema,
+  ...backtestingSchema,
+  ...researchV2Schema,
 };
 
 async function main() {

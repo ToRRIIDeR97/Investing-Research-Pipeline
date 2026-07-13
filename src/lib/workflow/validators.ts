@@ -84,8 +84,10 @@ export async function validateStageCompletion(
 
         case "source_inventory": {
           const rows = await sql`
-            SELECT COUNT(*) as cnt FROM source_documents
-            WHERE research_run_id = ${runId}
+            SELECT COUNT(DISTINCT sd.id) as cnt
+            FROM source_documents sd
+            LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
+            WHERE sd.research_run_id = ${runId} OR rrs.research_run_id = ${runId}
           `;
           if (Number(rows[0].cnt) === 0) {
             errors.push("No source documents ingested for this run");
@@ -110,7 +112,8 @@ export async function validateStageCompletion(
           const rows = await sql`
             SELECT COUNT(*) as cnt FROM document_parses dp
             JOIN source_documents sd ON dp.source_document_id = sd.id
-            WHERE sd.research_run_id = ${runId}
+            LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
+            WHERE (sd.research_run_id = ${runId} OR rrs.research_run_id = ${runId})
               AND dp.status = 'completed'
           `;
           if (Number(rows[0].cnt) === 0) {

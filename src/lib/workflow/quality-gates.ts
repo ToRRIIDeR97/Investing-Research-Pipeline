@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { contractForProfile, sourceFamiliesPresent } from "@/lib/research/v2-contracts";
 
 type Row = Record<string, any>;
 
@@ -45,6 +46,13 @@ interface RunQualityData {
   scenarios: Row[];
   sourceGaps: Row[];
   reviewDecisions: Row[];
+  analysisSections: Row[];
+  valuationModels: Row[];
+  indicators: Row[];
+  combinations: Row[];
+  backtests: Row[];
+  backtestArtifacts: Row[];
+  unlinkedFactClaimCount: number;
 }
 
 interface RunTypeThreshold {
@@ -273,6 +281,7 @@ function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQualityGat
   );
   addAiReviewCoverage(data, errors, warnings, missingCoverage);
   addHumanReviewCoverage(data, threshold, errors, warnings, missingCoverage);
+  addV2ArtifactCoverage(data, errors, missingCoverage);
 
   const blockingMissingCoverage = missingCoverage.filter(
     (item) => item.requiredForCompletion && ["high", "critical"].includes(item.severity)
@@ -326,16 +335,50 @@ async function loadRunQualityData(
     scenarios,
     sourceGaps,
     reviewDecisions,
+    analysisSections,
+    valuationModels,
+    indicators,
+    combinations,
+    backtests,
+    backtestArtifacts,
+    unlinkedFactClaims,
   ] = await Promise.all([
     sql`SELECT * FROM research_stages WHERE research_run_id = ${runId} ORDER BY stage_order`,
     sql`SELECT * FROM research_tasks WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
-    sql`SELECT * FROM source_documents WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`
+      SELECT DISTINCT sd.*
+      FROM source_documents sd
+      LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
+      WHERE sd.research_run_id = ${runId} OR rrs.research_run_id = ${runId}
+      ORDER BY sd.created_at DESC
+    `,
     sql`SELECT * FROM evidence_claims WHERE research_run_id = ${runId} AND review_status != 'rejected' ORDER BY created_at DESC`,
-    sql`SELECT * FROM metric_observations WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`
+      SELECT mo.*, md.metric_key, md.display_name AS metric_display_name
+      FROM metric_observations mo
+      JOIN metric_definitions md ON md.id = mo.metric_definition_id
+      WHERE mo.research_run_id = ${runId}
+      ORDER BY mo.created_at DESC
+    `,
     sql`SELECT * FROM valuation_signals WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM scenarios WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM source_gaps WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM review_decisions WHERE research_run_id = ${runId} ORDER BY reviewed_at DESC`,
+    sql`SELECT * FROM analysis_sections WHERE research_run_id = ${runId} ORDER BY module_key`,
+    sql`SELECT * FROM valuation_model_runs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM indicator_definitions WHERE research_run_id = ${runId} ORDER BY indicator_key`,
+    sql`SELECT * FROM strategy_combinations WHERE research_run_id = ${runId} ORDER BY combination_key`,
+    sql`SELECT * FROM backtest_runs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM backtest_artifacts WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`
+      SELECT COUNT(*) AS cnt
+      FROM evidence_claims ec
+      LEFT JOIN evidence_links el ON el.evidence_claim_id = ec.id
+      WHERE ec.research_run_id = ${runId}
+        AND ec.claim_category = 'fact'
+        AND ec.review_status != 'rejected'
+        AND el.id IS NULL
+    `,
   ]);
 
   return {
@@ -351,7 +394,79 @@ async function loadRunQualityData(
     scenarios,
     sourceGaps,
     reviewDecisions,
+    analysisSections,
+    valuationModels,
+    indicators,
+    combinations,
+    backtests,
+    backtestArtifacts,
+    unlinkedFactClaimCount: Number(unlinkedFactClaims[0]?.cnt || 0),
   };
+}
+
+function addV2ArtifactCoverage(
+  data: RunQualityData,
+  errors: string[],
+  missingCoverage: MissingCoverageItem[]
+) {
+  if (Number(data.run.pipeline_version || 1) < 2 || data.run.run_type === "quick_scan") return;
+  const contract = contractForProfile(String(data.profile?.profile_key || ""), String(data.asset?.slug || ""));
+  if (!contract) {
+    errors.push("Research OS v2 has no contract for this profile.");
+    return;
+  }
+  const addMissing = (key: string, area: string, description: string) => {
+    errors.push(description);
+    missingCoverage.push({ key, area, description, severity: "high", requiredForCompletion: true });
+  };
+  const sourceFamilies = sourceFamiliesPresent(data.sources);
+  for (const family of contract.requiredSourceFamilies) {
+    if (!sourceFamilies.has(family)) {
+      addMissing(`v2_source_${family}`, "source coverage", `Research OS v2 requires a ${family} source family for ${contract.profileKey}.`);
+    }
+  }
+  if (data.unlinkedFactClaimCount > 0) {
+    addMissing("v2_unlinked_facts", "evidence provenance", `${data.unlinkedFactClaimCount} factual claim(s) have no evidence link.`);
+  }
+  const completedModules = new Set(
+    data.analysisSections.filter((section) => ["completed", "accepted"].includes(String(section.status))).map((section) => String(section.module_key))
+  );
+  for (const moduleKey of contract.requiredModules) {
+    if (!completedModules.has(moduleKey)) {
+      addMissing(`v2_module_${moduleKey}`, "analysis coverage", `Required v2 module "${moduleKey}" is not completed.`);
+    }
+  }
+  const metricKeys = new Set(data.metrics.map((metric) => String(metric.metric_key)));
+  for (const metricKey of contract.requiredMetricKeys) {
+    if (!metricKeys.has(metricKey)) {
+      addMissing(`v2_metric_${metricKey}`, "metric coverage", `Required v2 metric "${metricKey}" is missing.`);
+    }
+  }
+  const completedModels = new Set(
+    data.valuationModels
+      .filter((model) => String(model.status) === "completed" && Boolean(model.reproducible))
+      .map((model) => String(model.model_key))
+  );
+  for (const modelKey of contract.valuationModelKeys) {
+    if (!completedModels.has(modelKey)) {
+      addMissing(`v2_model_${modelKey}`, "valuation artifact", `Required executable valuation model "${modelKey}" is missing or not reproducible.`);
+    }
+  }
+  const modeledScenarios = data.scenarios.filter((scenario) => scenario.valuation_model_run_id);
+  if (!modeledScenarios.some((scenario) => scenario.value_anchor != null)) {
+    addMissing("v2_modeled_scenarios", "valuation artifact", "No numeric scenario is linked to an executed valuation model.");
+  }
+  const usableIndicators = data.indicators.filter((indicator) => ["accepted", "completed"].includes(String(indicator.status)));
+  if (usableIndicators.length < contract.minIndicators) {
+    addMissing("v2_indicators", "indicator coverage", `Only ${usableIndicators.length}/${contract.minIndicators} validated indicators are available.`);
+  }
+  const executedCombinations = data.combinations.filter((combination) => String(combination.status) === "completed" && combination.backtest_run_id);
+  if (executedCombinations.length < contract.minExecutedCombinations) {
+    addMissing("v2_backtest_combinations", "backtest coverage", `Only ${executedCombinations.length}/${contract.minExecutedCombinations} strategy combinations were executed.`);
+  }
+  if (!data.backtestArtifacts.length) {
+    addMissing("v2_backtest_artifacts", "backtest coverage", "No persisted backtest artifacts are available for this v2 run.");
+  }
 }
 
 function isSubstantiveSource(source: Row) {

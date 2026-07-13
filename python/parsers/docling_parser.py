@@ -27,6 +27,7 @@ def parse_with_docling(file_path: str) -> dict:
 
         # Extract text chunks
         chunk_index = 0
+        char_offset = 0
         for item in doc.texts:
             text = item.text if hasattr(item, 'text') else str(item)
             if text.strip():
@@ -36,8 +37,11 @@ def parse_with_docling(file_path: str) -> dict:
                     "tokenCount": len(text.split()) * 4 // 3,  # rough estimate
                     "sectionTitle": getattr(item, 'label', None),
                     "pageStart": getattr(item, 'prov', [{}])[0].get('page_no') if hasattr(item, 'prov') and item.prov else None,
+                    "charStart": char_offset,
+                    "charEnd": char_offset + len(text),
                 })
                 chunk_index += 1
+                char_offset += len(text)
 
         # Extract tables
         for i, table in enumerate(doc.tables):
@@ -83,6 +87,8 @@ def parse_basic(file_path: str) -> dict:
             "chunkIndex": i // chunk_size,
             "text": text,
             "tokenCount": len(text) // 4,
+            "charStart": i,
+            "charEnd": min(len(content), i + chunk_size),
         })
 
     return {

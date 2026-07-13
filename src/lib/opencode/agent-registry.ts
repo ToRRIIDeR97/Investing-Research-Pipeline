@@ -355,7 +355,9 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Synthesize accepted evidence into asset-specific analysis sections.",
     route: "asset-analyst",
     modelTier: "specialist",
-    defaultModel: "glm-5.2",
+    // GLM can still be selected explicitly, but DeepSeek Pro is the safe
+    // default after repeated GLM transport hangs during long research runs.
+    defaultModel: "deepseek-v4-pro",
     modelEnvVar: "OPENCODE_ASSET_ANALYST_MODEL",
     promptVersion: "asset-analyst-v1",
     tools: { bash: false, edit: false, write: false },
@@ -682,9 +684,9 @@ export function getAgentConfig(agentName: string): ResearchAgentConfig {
   return AGENT_CONFIGS[agentName];
 }
 
-export function resolveAgentModel(agentName: string): AgentModelRef {
+export function resolveAgentModel(agentName: string, modelOverride?: string): AgentModelRef {
   const config = getAgentConfig(agentName);
-  const configured = process.env[config.modelEnvVar] || config.defaultModel;
+  const configured = modelOverride || process.env[config.modelEnvVar] || config.defaultModel;
 
   return {
     providerID: process.env.OPENCODE_GO_PROVIDER_ID || OPENCODE_GO_PROVIDER_ID,
