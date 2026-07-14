@@ -391,7 +391,7 @@ export async function validateValuationDepth(
 ): Promise<ValidationResult> {
   const quality = await evaluateResearchQuality(runId);
   const valuationItems = quality.missingCoverage.filter(
-    (item) => item.area === "valuation depth" || item.area === "valuation anchors"
+    (item) => item.area === "valuation depth" || item.area === "valuation anchors" || item.area === "valuation artifact"
   );
 
   return {
@@ -413,9 +413,7 @@ export async function validateReviewOutcome(
   runId: string
 ): Promise<ValidationResult> {
   const quality = await evaluateResearchQuality(runId);
-  const reviewItems = quality.missingCoverage.filter(
-    (item) => item.area === "AI review" || item.area === "human review"
-  );
+  const reviewItems = reviewCoverageItems(quality.missingCoverage, "AI review");
 
   return {
     valid: reviewItems.filter((item) => item.requiredForCompletion).length === 0,
@@ -430,6 +428,21 @@ export async function validateReviewOutcome(
     ],
     checkedAt: new Date().toISOString(),
   };
+}
+
+export async function validateHumanReviewOutcome(runId: string): Promise<ValidationResult> {
+  const quality = await evaluateResearchQuality(runId);
+  const reviewItems = reviewCoverageItems(quality.missingCoverage, "human review");
+  return {
+    valid: reviewItems.filter((item) => item.requiredForCompletion).length === 0,
+    errors: reviewItems.filter((item) => item.requiredForCompletion).map((item) => item.description),
+    warnings: reviewItems.filter((item) => !item.requiredForCompletion).map((item) => item.description),
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+export function reviewCoverageItems<T extends { area: string }>(items: T[], area: "AI review" | "human review") {
+  return items.filter((item) => item.area === area);
 }
 
 /**

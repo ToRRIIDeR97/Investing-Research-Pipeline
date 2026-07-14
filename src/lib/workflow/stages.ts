@@ -255,7 +255,7 @@ export const STAGE_CONFIGS: StageConfig[] = [
     requiresHumanApproval: true,
     requiredOutputs: [],
     entryCriteria: ["ai_reviewer_completed"],
-    validationRules: [],
+    validationRules: ["human_review_validation"],
     failureState: "pause_for_human",
     skippable: true,
     skipForRunTypes: ["backtest_only"],

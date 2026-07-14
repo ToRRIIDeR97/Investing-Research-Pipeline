@@ -11,6 +11,7 @@ import {
   validateAnalysisCoverage,
   validateValuationDepth,
   validateReviewOutcome,
+  validateHumanReviewOutcome,
   ValidationResult,
 } from "./validators";
 
@@ -33,6 +34,17 @@ export interface RunProgress {
   percentComplete: number;
   totalCostUsd: number;
   validationResults: Record<string, ValidationResult>;
+}
+
+export const HUMAN_REVIEW_STATUSES = new Set([
+  "reject", "watchlist", "needs_more_work", "approved_for_tracking", "approved_for_position", "archived",
+]);
+export const HUMAN_APPROVAL_STATUSES = new Set(["approved_for_tracking", "approved_for_position"]);
+export function isKnownHumanDecision(status: unknown) {
+  return HUMAN_REVIEW_STATUSES.has(String(status || "").toLowerCase());
+}
+export function isApprovedHumanDecision(status: unknown) {
+  return HUMAN_APPROVAL_STATUSES.has(String(status || "").toLowerCase());
 }
 
 /**
@@ -201,7 +213,14 @@ export async function advanceStage(
       const limit = Number(currentStage.budget_limit_usd);
       if (spent > limit) {
         // Budget exceeded — fail based on failure_state
-        const failureState = config?.failureState || "skip_and_continue";
+        let failureState = config?.failureState || "skip_and_continue";
+        if (currentStage.stage_key === "asset_analysis") {
+          const run = await sql`SELECT run_type FROM research_runs WHERE id = ${runId} LIMIT 1`;
+          const runType = run[0]?.run_type;
+          if (runType === "deep_dive" || runType === "full_initiation_report") {
+            failureState = "fail_run";
+          }
+        }
         if (failureState === "fail_run") {
           await failRun(runId, `Stage "${currentStage.stage_key}" exceeded budget: $${spent.toFixed(2)} > $${limit.toFixed(2)}`);
           return { success: false, action: "fail_run", error: "Budget exceeded" };
@@ -241,6 +260,9 @@ export async function advanceStage(
             break;
           case "review_outcome_validation":
             ruleResult = await validateReviewOutcome(runId);
+            break;
+          case "human_review_validation":
+            ruleResult = await validateHumanReviewOutcome(runId);
             break;
           case "source_link_validation":
             ruleResult = await validateSourceLinks(runId);
@@ -304,7 +326,14 @@ export async function advanceStage(
       }
 
       // Retries exhausted — handle based on failure_state
-      const failureState = config?.failureState || "skip_and_continue";
+      let failureState = config?.failureState || "skip_and_continue";
+      if (currentStage.stage_key === "asset_analysis") {
+        const run = await sql`SELECT run_type FROM research_runs WHERE id = ${runId} LIMIT 1`;
+        const runType = run[0]?.run_type;
+        if (runType === "deep_dive" || runType === "full_initiation_report") {
+          failureState = "fail_run";
+        }
+      }
 
       if (failureState === "fail_run") {
         await failRun(runId, `Stage "${currentStage.stage_key}" failed after ${maxRetries} retries: ${validation.errors.join("; ")}`);
@@ -442,6 +471,18 @@ export async function approveHumanReview(
       };
     }
 
+    const decisions = await sql`
+      SELECT id, status FROM review_decisions
+      WHERE research_run_id = ${runId}
+      ORDER BY reviewed_at DESC LIMIT 1
+    `;
+    if (!decisions[0] || !isApprovedHumanDecision(decisions[0].status)) {
+      return {
+        success: false,
+        error: "A persisted approved human review decision is required before approving the human-review stage",
+      };
+    }
+
     const validation: ValidationResult = {
       valid: true,
       errors: [],
@@ -456,6 +497,7 @@ export async function approveHumanReview(
           validation_result_json = ${JSON.stringify({
             ...validation,
             reviewedBy,
+            reviewDecisionId: decisions[0].id,
             approvalType: "human_review",
           })}::jsonb,
           updated_at = NOW()
@@ -540,6 +582,32 @@ async function startNextStage(
     }
 
     const nextStage = nextStages[0];
+
+    // Enforce entry criteria for asset_valuation on deep_dive/full_initiation_report
+    if (nextStage.stage_key === "asset_valuation") {
+      const run = await sql`SELECT run_type, asset_id FROM research_runs WHERE id = ${runId} LIMIT 1`;
+      const runType = run[0]?.run_type;
+      if (runType === "deep_dive" || runType === "full_initiation_report") {
+        const analysisStage = await sql`
+          SELECT status FROM research_stages
+          WHERE research_run_id = ${runId} AND stage_key = 'asset_analysis'
+          LIMIT 1
+        `;
+        if (!analysisStage[0] || analysisStage[0].status !== "completed") {
+          await failRun(runId, "Asset valuation requires completed asset analysis for deep-dive equity profiles.");
+          return undefined;
+        }
+
+        // Also verify completed required analysis modules
+        const quality = await evaluateResearchQuality(runId);
+        const missingModules = quality.missingCoverage.filter(item => item.area === "analysis coverage");
+        if (missingModules.length > 0) {
+          await failRun(runId, `Asset valuation requires completed required analysis modules: ${missingModules.map(m => m.description).join("; ")}`);
+          return undefined;
+        }
+      }
+    }
+
     const config = STAGE_CONFIG_MAP[nextStage.stage_key];
 
     if (config?.requiresHumanApproval) {
@@ -710,6 +778,16 @@ export async function failRun(
           updated_at = NOW()
       WHERE research_run_id = ${runId}
         AND status IN ('running', 'waiting_for_human')
+    `;
+
+    await sql`
+      UPDATE research_tasks
+      SET status = 'failed',
+          failure_reason = ${reason},
+          completed_at = NOW(),
+          updated_at = NOW()
+      WHERE research_run_id = ${runId}
+        AND status = 'running'
     `;
 
     await sql`

@@ -1,3 +1,6 @@
+import { execSync } from "child_process";
+import fs from "fs";
+import path from "path";
 import {
   getAgentConfig,
   resolveAgentModel,
@@ -14,6 +17,7 @@ export interface OpenCodeUsage {
   latencyMs: number;
   sessionId?: string;
   promptVersion?: string;
+  compaction_occurred?: boolean;
 }
 
 export interface RunResearchAgentInput {
@@ -45,6 +49,52 @@ class OpenCodeTimeoutError extends Error {
   constructor(readonly timeoutMs: number, readonly sessionId?: string) {
     super(`OpenCode request timed out after ${timeoutMs}ms${sessionId ? ` (session ${sessionId})` : ""}`);
   }
+}
+
+function checkOpenCodeVersionCompatibility() {
+  let sdkVersion = "1.17.13";
+  try {
+    const pkgPath = path.join(process.cwd(), "node_modules", "@opencode-ai/sdk", "package.json");
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+      sdkVersion = pkg.version;
+    }
+  } catch (err) {
+    // Ignore and use default
+  }
+
+  let sidecarVersion = "";
+  try {
+    sidecarVersion = execSync("opencode --version", { encoding: "utf8" }).trim();
+  } catch (err) {
+    throw new Error(`Failed to query OpenCode sidecar version: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  if (sdkVersion !== sidecarVersion) {
+    throw new Error(
+      `OpenCode compatibility check failed: SDK version is ${sdkVersion} but sidecar version is ${sidecarVersion}. Please run 'opencode upgrade ${sdkVersion}' to align them.`
+    );
+  }
+}
+
+function classifyError(error: unknown): string {
+  if (error instanceof OpenCodeTimeoutError) {
+    return "provider_timeout";
+  }
+  if (error instanceof ResearchAgentRunError) {
+    if (error.message.includes("JSON") || error.message.includes("structured output") || error.message.includes("schema")) {
+      return "structured_output_validation_failure";
+    }
+    return "sidecar_protocol_failure";
+  }
+  const msg = error instanceof Error ? error.message : String(error);
+  if (/abort|cancel/i.test(msg)) {
+    return "operator_cancellation";
+  }
+  if (/timeout|timed out/i.test(msg)) {
+    return "provider_timeout";
+  }
+  return "sidecar_protocol_failure";
 }
 
 export function assertOk<T>(result: { data?: T; error?: unknown }, operation: string): T {
@@ -255,13 +305,18 @@ function shouldFallback(error: unknown) {
 async function withinDeadline<T>(
   operation: Promise<T>,
   timeoutMs: number,
+  sessionId?: string,
   onTimeout?: () => Promise<void> | void
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      Promise.resolve(onTimeout?.()).catch(() => undefined);
-      reject(new OpenCodeTimeoutError(timeoutMs));
+    timer = setTimeout(async () => {
+      try {
+        await Promise.resolve(onTimeout?.());
+      } catch (err) {
+        // ignore
+      }
+      reject(new OpenCodeTimeoutError(timeoutMs, sessionId));
     }, timeoutMs);
   });
   try {
@@ -277,7 +332,7 @@ async function promptWithinDeadline(
   request: Promise<unknown>,
   timeoutMs: number
 ) {
-  return withinDeadline(request, timeoutMs, async () => {
+  return withinDeadline(request, timeoutMs, sessionId, async () => {
     try {
       await client.session.abort({
         path: { id: sessionId },
@@ -293,6 +348,8 @@ async function promptWithinDeadline(
 export async function runResearchAgent<TStructured = unknown>(
   input: RunResearchAgentInput
 ): Promise<RunResearchAgentResult<TStructured>> {
+  checkOpenCodeVersionCompatibility();
+
   const baseUrl = process.env.OPENCODE_BASE_URL;
   if (!baseUrl) {
     throw new Error("OPENCODE_BASE_URL is required to run Research OS agents");
@@ -307,11 +364,32 @@ export async function runResearchAgent<TStructured = unknown>(
 
   await syncOpenCodeCredentials(client);
   const timeoutMs = agentTimeoutMs(input.agentName);
-  const failures: Array<{ model: string; message: string }> = [];
+  const failures: Array<{ model: string; provider: string; message: string; sessionId?: string; attempt: number; error_type: string; latencyMs: number }> = [];
 
+  let attempt = 0;
+  const loopStarted = Date.now();
   for (const candidate of modelCandidates(input.agentName)) {
+    attempt++;
     const started = Date.now();
     let sessionId: string | undefined;
+
+    let currentInput = input;
+    let compactionOccurred = false;
+    if (attempt > 1 && input.agentName === "asset-analyst") {
+      compactionOccurred = true;
+      const taskPacketCopy = { ...input.taskPacket };
+      if (Array.isArray(taskPacketCopy.evidence_claims)) {
+        taskPacketCopy.evidence_claims = taskPacketCopy.evidence_claims.slice(0, 15);
+      }
+      if (Array.isArray(taskPacketCopy.metrics)) {
+        taskPacketCopy.metrics = taskPacketCopy.metrics.slice(0, 20);
+      }
+      currentInput = {
+        ...input,
+        taskPacket: taskPacketCopy,
+      };
+    }
+
     try {
       const session = assertOk(
         await withinDeadline(
@@ -319,7 +397,8 @@ export async function runResearchAgent<TStructured = unknown>(
             body: { title: input.title },
             query: { directory: process.cwd() },
           }),
-          timeoutMs
+          timeoutMs,
+          undefined
         ),
         "OpenCode session.create"
       ) as { id: string };
@@ -336,7 +415,7 @@ export async function runResearchAgent<TStructured = unknown>(
               agent: config.name,
               model: candidate.model,
               tools: config.tools,
-              parts: [{ type: "text", text: buildTaskPrompt(input, config) }],
+              parts: [{ type: "text", text: buildTaskPrompt(currentInput, config) }],
               format: config.outputFormat,
             },
           } as any),
@@ -391,6 +470,7 @@ export async function runResearchAgent<TStructured = unknown>(
         latencyMs: Date.now() - started,
         sessionId: session.id,
         promptVersion: config.promptVersion,
+        compaction_occurred: compactionOccurred,
       };
       let structured: TStructured;
       try {
@@ -407,26 +487,54 @@ export async function runResearchAgent<TStructured = unknown>(
             repair_attempted: repairAttempted,
             initial_response_excerpt: responseExcerpt(promptResult),
             final_response_excerpt: responseExcerpt(finalPromptResult),
+            compaction_occurred: compactionOccurred,
           }
         );
       }
       return { structured, config, usage };
     } catch (error) {
+      const errorType = classifyError(error);
+      const elapsed = Date.now() - started;
+      const formattedMsg = `[Session: ${sessionId || "none"}, Model: ${candidate.model.modelID}, Provider: ${candidate.model.providerID}, Attempt: ${attempt}, Elapsed: ${elapsed}ms] ${error instanceof Error ? error.message : String(error)}`;
       failures.push({
         model: candidate.model.modelID,
-        message: error instanceof Error ? error.message : String(error),
+        provider: candidate.model.providerID,
+        message: formattedMsg,
+        sessionId,
+        attempt,
+        error_type: errorType,
+        latencyMs: elapsed,
       });
-      if (!shouldFallback(error)) throw error;
+
+      if (!shouldFallback(error)) {
+        const wrappedError = new Error(formattedMsg);
+        (wrappedError as any).usage = {
+          provider: candidate.model.providerID,
+          model: candidate.model.modelID,
+          latencyMs: elapsed,
+          sessionId,
+          promptVersion: config.promptVersion,
+          compaction_occurred: compactionOccurred,
+        };
+        (wrappedError as any).responseMetadata = {
+          session_id: sessionId,
+          attempt,
+          error_type: errorType,
+          compaction_occurred: compactionOccurred,
+        };
+        throw wrappedError;
+      }
     }
   }
 
   const last = failures[failures.length - 1];
+  const totalLatency = Date.now() - loopStarted;
   throw new ResearchAgentRunError(
     `OpenCode model attempts exhausted: ${failures.map((failure) => `${failure.model}: ${failure.message}`).join(" | ")}`,
     {
       provider: process.env.OPENCODE_GO_PROVIDER_ID || "opencode-go",
       model: last?.model || "unknown",
-      latencyMs: timeoutMs,
+      latencyMs: totalLatency,
       promptVersion: config.promptVersion,
     },
     { attempts: failures }

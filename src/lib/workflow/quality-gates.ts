@@ -1,5 +1,5 @@
 import postgres from "postgres";
-import { contractForProfile, sourceFamiliesPresent } from "@/lib/research/v2-contracts";
+import { canonicalResearchKey, contractForProfile, sourceFamiliesPresent } from "@/lib/research/v2-contracts";
 
 type Row = Record<string, any>;
 
@@ -106,6 +106,12 @@ const REJECTING_REVIEW_STATUSES = new Set([
   "reject",
   "rejected",
   "archived",
+]);
+const KNOWN_REVIEW_STATUSES = new Set([
+  ...REJECTING_REVIEW_STATUSES,
+  "watchlist",
+  "approved_for_tracking",
+  "approved_for_position",
 ]);
 
 export async function evaluateResearchQuality(
@@ -429,14 +435,14 @@ function addV2ArtifactCoverage(
     addMissing("v2_unlinked_facts", "evidence provenance", `${data.unlinkedFactClaimCount} factual claim(s) have no evidence link.`);
   }
   const completedModules = new Set(
-    data.analysisSections.filter((section) => ["completed", "accepted"].includes(String(section.status))).map((section) => String(section.module_key))
+    data.analysisSections.filter((section) => ["completed", "accepted"].includes(String(section.status))).map((section) => canonicalResearchKey(String(section.module_key)))
   );
   for (const moduleKey of contract.requiredModules) {
     if (!completedModules.has(moduleKey)) {
       addMissing(`v2_module_${moduleKey}`, "analysis coverage", `Required v2 module "${moduleKey}" is not completed.`);
     }
   }
-  const metricKeys = new Set(data.metrics.map((metric) => String(metric.metric_key)));
+  const metricKeys = new Set(data.metrics.filter((metric) => String(metric.review_status) === "accepted").map((metric) => canonicalResearchKey(String(metric.metric_key))));
   for (const metricKey of contract.requiredMetricKeys) {
     if (!metricKeys.has(metricKey)) {
       addMissing(`v2_metric_${metricKey}`, "metric coverage", `Required v2 metric "${metricKey}" is missing.`);
@@ -453,7 +459,7 @@ function addV2ArtifactCoverage(
     }
   }
   const modeledScenarios = data.scenarios.filter((scenario) => scenario.valuation_model_run_id);
-  if (!modeledScenarios.some((scenario) => scenario.value_anchor != null)) {
+  if (!modeledScenarios.some((scenario) => numericLike(scenario.value_anchor))) {
     addMissing("v2_modeled_scenarios", "valuation artifact", "No numeric scenario is linked to an executed valuation model.");
   }
   const usableIndicators = data.indicators.filter((indicator) => ["accepted", "completed"].includes(String(indicator.status)));
@@ -663,10 +669,20 @@ function addHumanReviewCoverage(
   }
 
   const status = String(latestDecision.status || "").toLowerCase();
-  if (REJECTING_REVIEW_STATUSES.has(status)) {
+  if (!KNOWN_REVIEW_STATUSES.has(status)) {
+    const description = `Human review decision has unknown status: ${status || "empty"}.`;
+    errors.push(description);
+    missingCoverage.push({
+      key: "human_review_status_invalid",
+      severity: "high",
+      area: "human review",
+      description,
+      requiredForCompletion: true,
+    });
+  } else if (REJECTING_REVIEW_STATUSES.has(status)) {
     errors.push(`Human review decision is ${status}.`);
-  } else if (status === "approved_for_tracking") {
-    warnings.push("Human review approved tracking only; this is not position-ready.");
+  } else if (status === "approved_for_tracking" || status === "watchlist") {
+    warnings.push("Human review permits tracking/watchlist use only; this is not position-ready.");
   }
 }
 
@@ -680,7 +696,7 @@ function actionReadinessFor(
   if (threshold.requireHumanReview && data.reviewDecisions.length === 0) return "review_ready";
 
   const decision = String(data.reviewDecisions[0]?.status || "").toLowerCase();
-  if (decision === "approved_for_tracking") return "review_ready";
+  if (decision === "approved_for_tracking" || decision === "watchlist") return "review_ready";
   return "investment_ready";
 }
 

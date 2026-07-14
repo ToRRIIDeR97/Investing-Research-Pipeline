@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import postgres from "postgres";
 import { handleApiError, successResponse, createdResponse, ApiError } from "@/lib/api/errors";
-import { approveHumanReview } from "@/lib/workflow/orchestrator";
+import { approveHumanReview, isApprovedHumanDecision, isKnownHumanDecision } from "@/lib/workflow/orchestrator";
 import { evaluateResearchQuality } from "@/lib/workflow/quality-gates";
 
 /**
@@ -27,6 +27,10 @@ export async function POST(
       }
 
       const run = runs[0];
+      const status = String(body.status || "").toLowerCase();
+      if (!isKnownHumanDecision(status)) {
+        throw new ApiError("Review status must be reject, watchlist, needs_more_work, approved_for_tracking, approved_for_position, or archived", 400);
+      }
 
       const rows = await sql`
         INSERT INTO review_decisions (
@@ -37,7 +41,7 @@ export async function POST(
         ) VALUES (
           ${body.assetId || run.asset_id},
           ${runId},
-          ${body.status},
+          ${status},
           ${body.conviction || null},
           ${body.priority || null},
           ${body.watchlistReason || null},
@@ -58,17 +62,17 @@ export async function POST(
       `;
 
       // Update run status if needed
-      if (body.status === "needs_more_work") {
+      if (status === "needs_more_work") {
         await sql`
           UPDATE research_runs SET status = 'waiting_for_human' WHERE id = ${runId}
         `;
       } else if (
-        body.status.startsWith("approved") &&
+        isApprovedHumanDecision(status) &&
         humanReviewStage[0]?.status === "waiting_for_human"
       ) {
         const approval = await approveHumanReview(runId, body.reviewedBy || "user");
         return createdResponse({ ...rows[0], workflow: approval });
-      } else if (body.status.startsWith("approved")) {
+      } else if (isApprovedHumanDecision(status)) {
         const quality = await evaluateResearchQuality(runId);
         await sql`
           UPDATE research_runs

@@ -67,10 +67,15 @@ const contracts: Record<V2ProfileKey, ResearchProfileContract> = {
 
 const fintechOverlay: Partial<ResearchProfileContract> = {
   requiredSourceFamilies: ["filing", "investor_relations", "market_data", "peer_industry"],
-  requiredModules: ["gmv", "tpv", "active_buyers", "fintech_mau", "loan_book", "provisions", "nimal", "customer_funds", "funding_liabilities"],
-  requiredMetricKeys: ["revenue", "gmv", "tpv", "fintech_mau", "loan_book", "provisions", "nimal", "customer_funds"],
+  requiredModules: ["gmv", "tpv", "active_buyers", "fintech_mau", "loan_book", "provisions", "net_interest_margin_after_losses", "customer_funds", "funding_liabilities"],
+  requiredMetricKeys: ["revenue", "gmv", "tpv", "fintech_mau", "loan_book", "provisions", "net_interest_margin_after_losses", "customer_funds"],
   valuationModelKeys: ["fintech_platform_sotp"],
 };
+
+/** Compatibility for v2 test runs written before the NIMAL typo was corrected. */
+export function canonicalResearchKey(key: string) {
+  return key === "nimal" ? "net_interest_margin_after_losses" : key;
+}
 
 export function contractForProfile(profileKey: string, assetSlug?: string): ResearchProfileContract | null {
   const contract = contracts[profileKey as V2ProfileKey];

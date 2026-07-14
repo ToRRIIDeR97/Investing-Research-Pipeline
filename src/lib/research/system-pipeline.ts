@@ -6,10 +6,11 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { ResearchAgentRunError, runResearchAgent } from "@/lib/opencode/runtime";
 import { recordModelCall } from "@/lib/agents/model-calls";
-import { advanceStage, approveHumanReview, approveResearchPlan, startRun } from "@/lib/workflow/orchestrator";
+import { advanceStage, approveResearchPlan, startRun } from "@/lib/workflow/orchestrator";
 import { generateMemo } from "@/lib/export/memo-generator";
 import { generateResearchPackage } from "@/lib/export/research-package-generator";
-import { contractForProfile } from "@/lib/research/v2-contracts";
+import { canonicalResearchKey, contractForProfile } from "@/lib/research/v2-contracts";
+import { canonicalMetricPlan, evidenceRelevantToModule, moduleCompletion, normalizeSourceGap, reconcileMetricObservations, selectLatestFact, selectRelevantChunks, type RetrievalChunk } from "@/lib/research/pipeline-helpers";
 
 type Sql = ReturnType<typeof postgres>;
 const execFileAsync = promisify(execFile);
@@ -144,19 +145,47 @@ function compactResearchContext(params: {
   };
 }
 
-function buildSourcePacket(sources: StoredSource[]) {
-  return sources.map((source) => ({
-    source_id: source.sourceId,
-    source_type: source.sourceType,
-    title: source.title,
-    // Source documents are chunked in storage. This packet remains bounded for
-    // model transport, but preserves both opening and closing context instead
-    // of silently discarding every section after the first 12k characters.
-    content_excerpt:
-      source.content.length <= 18000
-        ? source.content
-        : `${source.content.slice(0, 12000)}\n\n[...middle omitted; retrieve chunk-level evidence for a final package...]\n\n${source.content.slice(-6000)}`,
-    metadata: source.metadata || {},
+async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: StoredSource[]) {
+  const sourceIds = sources.filter((source) => !source.sourceId.startsWith("candidate-")).map((source) => source.sourceId);
+  const contract = contractForProfile(ctx.profileKey, ctx.assetSlug);
+  const retrievalTerms = [
+    ...ctx.requiredModules, ...(contract?.requiredModules || []), ...(contract?.requiredMetricKeys || []),
+    "segment", "working capital", "credit loss", "loan", "customer funds", "cash flow",
+  ];
+  const searchQuery = [...new Set(retrievalTerms.map((term) => term.replace(/_/g, " ").trim()).filter(Boolean))]
+    .slice(0, 40).map((term) => `"${term.replace(/"/g, "")}"`).join(" OR ");
+  const rows = sourceIds.length ? await sql`
+    WITH latest_parses AS (
+      SELECT DISTINCT ON (source_document_id) id, source_document_id
+      FROM document_parses
+      WHERE status = 'completed'
+      ORDER BY source_document_id, completed_at DESC NULLS LAST, created_at DESC
+    ), query AS (SELECT websearch_to_tsquery('english', ${searchQuery}) AS q), ranked_chunks AS (
+      SELECT dc.id, dc.source_document_id, dc.document_parse_id, dc.chunk_index,
+             dc.char_start, dc.char_end, dc.section_title, dc.text,
+             sd.title, sd.source_type,
+             ts_rank_cd(to_tsvector('english', dc.text), query.q) AS relevance
+      FROM document_chunks dc
+      JOIN source_documents sd ON sd.id = dc.source_document_id
+      JOIN latest_parses lp ON lp.id = dc.document_parse_id
+      CROSS JOIN query
+      WHERE dc.source_document_id = ANY(${sourceIds}::uuid[])
+        AND (dc.chunk_index = 0 OR to_tsvector('english', dc.text) @@ query.q)
+    )
+    SELECT * FROM ranked_chunks
+    ORDER BY (chunk_index = 0) DESC, relevance DESC, source_document_id, chunk_index
+    LIMIT 500
+  ` : [];
+  const chunks: RetrievalChunk[] = rows.map((row) => ({
+    id: String(row.id), sourceId: String(row.source_document_id), parseId: String(row.document_parse_id),
+    chunkIndex: Number(row.chunk_index), charStart: Number(row.char_start || 0), charEnd: Number(row.char_end || 0),
+    sectionTitle: textValue(row.section_title), text: String(row.text), sourceTitle: String(row.title), sourceType: String(row.source_type),
+  }));
+  return selectRelevantChunks(chunks, retrievalTerms, Math.min(32, Math.max(18, sourceIds.length)), 3000).map((chunk) => ({
+    source_id: chunk.sourceId, document_parse_id: chunk.parseId, document_chunk_id: chunk.id,
+    source_type: chunk.sourceType, title: chunk.sourceTitle, section_title: chunk.sectionTitle,
+    chunk_index: chunk.chunkIndex, char_start: chunk.charStart, char_end: chunk.charEnd,
+    content_excerpt: chunk.text,
   }));
 }
 
@@ -189,18 +218,7 @@ function latestFact(
   unit = "USD",
   preferAnnual = false
 ) {
-  const rows = factRows(companyFacts, taxonomy, conceptNames, unit)
-    .filter((row) => Number.isFinite(Number(row.val)))
-    .sort((a, b) => {
-      const annualForms = new Set(["10-K", "20-F", "40-F"]);
-      const aAnnual = a.fp === "FY" || annualForms.has(String(a.form));
-      const bAnnual = b.fp === "FY" || annualForms.has(String(b.form));
-      if (preferAnnual && aAnnual !== bAnnual) return aAnnual ? -1 : 1;
-      const periodOrder = String(b.end || "").localeCompare(String(a.end || ""));
-      if (periodOrder !== 0) return periodOrder;
-      return String(b.filed || "").localeCompare(String(a.filed || ""));
-    });
-  return rows[0] || null;
+  return selectLatestFact(factRows(companyFacts, taxonomy, conceptNames, unit), preferAnnual);
 }
 
 function financialObservation(
@@ -532,9 +550,10 @@ function mergeMetricOutputs(...outputs: Array<Record<string, unknown> | null | u
     source_gaps: [] as Record<string, unknown>[],
   };
 
+  const observationGroups: Record<string, unknown>[][] = [];
   for (const output of outputs) {
     if (!output) continue;
-    merged.normalized_observations.push(...arrayValue(output.normalized_observations));
+    observationGroups.push(arrayValue(output.normalized_observations));
     merged.definition_mappings.push(...arrayValue(output.definition_mappings));
     merged.conversion_notes.push(...(Array.isArray(output.conversion_notes) ? output.conversion_notes : []));
     merged.unresolved_ambiguities.push(...(Array.isArray(output.unresolved_ambiguities) ? output.unresolved_ambiguities : []));
@@ -542,7 +561,48 @@ function mergeMetricOutputs(...outputs: Array<Record<string, unknown> | null | u
     merged.source_gaps.push(...arrayValue(output.source_gaps));
   }
 
+  const reconciled = reconcileMetricObservations(observationGroups[0] || [], observationGroups.slice(1).flat());
+  merged.normalized_observations.push(...reconciled.accepted);
+  merged.unresolved_ambiguities.push(...reconciled.conflicts);
+  merged.quality_flags.push(...reconciled.conflicts.map((conflict) => ({ severity: "high", type: "metric_conflict", ...conflict })));
+  merged.source_gaps.push(...reconciled.conflicts.map((conflict) => ({
+    gap_key: `metric_conflict_${createHash("sha256").update(String(conflict.identity)).digest("hex").slice(0, 12)}`,
+    severity: "high", description: `Conflicting metric observations require reconciliation: ${conflict.identity}`,
+    provenance: "metric_reconciliation",
+  })));
+
   return merged;
+}
+
+async function reconcileSourceGaps(sql: Sql, ctx: RunContext, output: Record<string, unknown>, owner: string) {
+  if (!owner.startsWith("system:")) throw new Error(`System gap owner must use the system: prefix: ${owner}`);
+  const normalized = arrayValue(output.source_gaps).slice(0, 48).map((gap) => normalizeSourceGap(gap, owner));
+  const emittedKeys = [...new Set(normalized.map((gap) => gap.gapKey))];
+  await sql.begin(async (tx) => {
+    for (const gap of normalized) {
+      const updated = await tx`
+        UPDATE source_gaps SET description = ${gap.description}, severity = ${gap.severity}, status = 'open',
+          resolved_at = NULL, resolution_note = NULL
+        WHERE research_run_id = ${ctx.runId} AND gap_key = ${gap.gapKey} AND owner = ${owner}
+        RETURNING id
+      `;
+      if (!updated.length) await tx`
+        INSERT INTO source_gaps (asset_id, research_run_id, gap_key, description, severity, status, owner)
+        VALUES (${ctx.assetId}, ${ctx.runId}, ${gap.gapKey}, ${gap.description}, ${gap.severity}, 'open', ${owner})
+      `;
+    }
+    if (emittedKeys.length) await tx`
+      UPDATE source_gaps SET status = 'resolved', resolved_at = NOW(),
+        resolution_note = 'Resolved automatically because the owning stage no longer emitted this gap.'
+      WHERE research_run_id = ${ctx.runId} AND owner = ${owner} AND status = 'open'
+        AND NOT (gap_key = ANY(${emittedKeys}::text[]))
+    `;
+    else await tx`
+      UPDATE source_gaps SET status = 'resolved', resolved_at = NOW(),
+        resolution_note = 'Resolved automatically because the owning stage emitted no current gaps.'
+      WHERE research_run_id = ${ctx.runId} AND owner = ${owner} AND status = 'open'
+    `;
+  });
 }
 
 async function getRunContext(sql: Sql, runId: string): Promise<RunContext> {
@@ -1423,7 +1483,7 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
       source_document_id, parser_name, parser_version,
       status, warnings_json, output_storage_path, completed_at
     ) VALUES (
-      ${sourceId}, 'system-source-payload', '1', 'completed',
+      ${sourceId}, 'system-source-payload', '2', 'completed',
       ${JSON.stringify([])}::jsonb, ${storagePath}, NOW()
     )
     ON CONFLICT (source_document_id, parser_name, parser_version, parse_config_json) DO UPDATE
@@ -1698,14 +1758,20 @@ async function persistEvidence(
       )
       RETURNING id
     `;
+    const requestedChunkId = textValue(claim.document_chunk_id || claim.chunk_id, "");
+    const sourceChunk = requestedChunkId ? await sql`
+      SELECT id, document_parse_id, char_start, char_end FROM document_chunks
+      WHERE id = ${requestedChunkId} AND source_document_id = ${source.sourceId} LIMIT 1
+    ` : [];
+    const locatedChunk = sourceChunk[0];
     const locationRows = await sql`
       INSERT INTO source_locations (
         source_document_id, document_parse_id, document_chunk_id,
         char_start, char_end, locator_json
       ) VALUES (
-        ${source.sourceId}, ${source.parseId || null}, ${source.chunkId || null},
-        ${Number.isInteger(Number(claim.char_start)) ? Number(claim.char_start) : null},
-        ${Number.isInteger(Number(claim.char_end)) ? Number(claim.char_end) : null},
+        ${source.sourceId}, ${locatedChunk?.document_parse_id || source.parseId || null}, ${locatedChunk?.id || source.chunkId || null},
+        ${Number.isInteger(Number(claim.char_start)) ? Number(claim.char_start) : locatedChunk?.char_start || null},
+        ${Number.isInteger(Number(claim.char_end)) ? Number(claim.char_end) : locatedChunk?.char_end || null},
         ${JSON.stringify({
           system_generated: true,
           source_id: source.sourceId,
@@ -1726,18 +1792,23 @@ async function persistEvidence(
     persisted += 1;
   }
 
-  for (const gap of arrayValue(output.source_gaps).slice(0, 8)) {
-    await sql`
-      INSERT INTO source_gaps (
-        asset_id, research_run_id, gap_key, description, severity, status, owner
-      ) VALUES (
-        ${ctx.assetId}, ${ctx.runId}, ${textValue(gap.gap_key || gap.key, "agent_source_gap")},
-        ${textValue(gap.description || gap.reason, "Agent identified an unresolved source gap.")},
-        ${textValue(gap.severity, "medium")}, 'open', 'source-reader'
-      )
-    `;
-  }
   return persisted;
+}
+
+async function loadAcceptedEvidencePacket(sql: Sql, ctx: RunContext) {
+  return sql`
+    SELECT DISTINCT ON (ec.id)
+      ec.id, ec.claim_text, ec.claim_type, ec.claim_category,
+      ec.period_start, ec.period_end, ec.as_of_date, ec.confidence,
+      sl.source_document_id AS source_id, sl.document_chunk_id,
+      sl.char_start, sl.char_end
+    FROM evidence_claims ec
+    LEFT JOIN evidence_links el ON el.evidence_claim_id = ec.id
+    LEFT JOIN source_locations sl ON sl.id = el.source_location_id
+    WHERE ec.research_run_id = ${ctx.runId} AND ec.review_status != 'rejected'
+    ORDER BY ec.id, ec.confidence DESC NULLS LAST, ec.created_at ASC
+    LIMIT 40
+  `;
 }
 
 function deterministicEvidenceFallback(
@@ -1798,51 +1869,71 @@ function usableEvidenceClaims(output: Record<string, unknown>) {
 
 async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string, output: Record<string, unknown>) {
   const observations = arrayValue(output.normalized_observations).slice(0, 60);
-  for (const obs of observations) {
-    const metricKey = textValue(obs.metric_key || obs.metric || obs.label, "agent_metric").toLowerCase().replace(/[^a-z0-9_]+/g, "_");
-    const metricRows = await sql`
-      INSERT INTO metric_definitions (
-        metric_key, display_name, metric_category, unit_type, default_unit,
-        default_currency, description, applicable_profile_keys, metadata_json
-      ) VALUES (
-        ${metricKey}, ${textValue(obs.display_name || obs.metric_name || metricKey, metricKey)},
-        ${textValue(obs.metric_category, "financial")},
-        ${textValue(obs.unit_type, "number")},
-        ${textValue(obs.unit || obs.default_unit, "") || null},
-        ${textValue(obs.currency || obs.default_currency, "USD")},
-        ${textValue(obs.description, "Agent-normalized metric")},
-        ARRAY[${ctx.profileKey}], ${JSON.stringify({ system_generated: true })}::jsonb
-      )
-      ON CONFLICT (metric_key) DO UPDATE
-      SET updated_at = NOW()
-      RETURNING id
-    `;
-    await sql`
-      INSERT INTO metric_observations (
-        asset_id, research_run_id, metric_definition_id,
-        period_start, period_end, as_of_date, available_at,
-        value_numeric, value_text, unit, currency, data_provider,
-        source_document_id, confidence, review_status, metadata_json
-      ) VALUES (
-        ${ctx.assetId}, ${ctx.runId}, ${metricRows[0].id},
-        ${nullableText(obs.period_start)},
-        ${textValue(obs.period_end || obs.as_of_date, new Date().toISOString().slice(0, 10))},
-        ${textValue(obs.as_of_date || obs.period_end, new Date().toISOString().slice(0, 10))},
-        ${textValue(obs.available_at, new Date().toISOString())},
-        ${Number.isFinite(Number(obs.value_numeric || obs.value)) ? String(obs.value_numeric || obs.value) : null},
-        ${textValue(obs.value_text, "") || null},
-        ${textValue(obs.unit, "") || null},
-        ${textValue(obs.currency, "USD")},
-        'metric-normalizer',
-        ${sourceId}, ${numberValue(obs.confidence, 0.7).toString()},
-        'accepted', ${JSON.stringify({ system_generated: true, agent_output: obs })}::jsonb
-      )
-    `;
-  }
+  await sql.begin(async (tx) => {
+    for (const obs of observations) {
+      const metricKey = canonicalResearchKey(textValue(obs.metric_key || obs.metric || obs.label, "agent_metric").toLowerCase().replace(/[^a-z0-9_]+/g, "_"));
+      const metricRows = await tx`
+        INSERT INTO metric_definitions (metric_key, display_name, metric_category, unit_type, default_unit,
+          default_currency, description, applicable_profile_keys, metadata_json)
+        VALUES (${metricKey}, ${textValue(obs.display_name || obs.metric_name || metricKey, metricKey)},
+          ${textValue(obs.metric_category, "financial")}, ${textValue(obs.unit_type, "number")},
+          ${textValue(obs.unit || obs.default_unit, "") || null}, ${textValue(obs.currency || obs.default_currency, "USD")},
+          ${textValue(obs.description, "Reconciled metric")}, ARRAY[${ctx.profileKey}], ${JSON.stringify({ system_generated: true })}::jsonb)
+        ON CONFLICT (metric_key) DO UPDATE SET updated_at = NOW() RETURNING id
+      `;
+      const periodStart = nullableText(obs.period_start);
+      const periodEnd = textValue(obs.period_end || obs.as_of_date, new Date().toISOString().slice(0, 10));
+      const asOfDate = textValue(obs.as_of_date || obs.period_end, periodEnd);
+      const unit = textValue(obs.unit, "");
+      const currency = textValue(obs.currency, "USD");
+      const valueNumeric = Number.isFinite(Number(obs.value_numeric ?? obs.value)) ? String(obs.value_numeric ?? obs.value) : null;
+      const existing = await tx`
+        SELECT id, value_numeric, review_status FROM metric_observations
+        WHERE research_run_id = ${ctx.runId} AND metric_definition_id = ${metricRows[0].id}
+          AND COALESCE(period_start::text, '') = ${periodStart || ''}
+          AND COALESCE(period_end::text, '') = ${periodEnd}
+          AND COALESCE(unit, '') = ${unit} AND COALESCE(currency, '') = ${currency}
+        ORDER BY created_at ASC FOR UPDATE
+      `;
+      const plan = canonicalMetricPlan(existing.map((row) => ({ id: String(row.id), value_numeric: row.value_numeric, review_status: row.review_status })), valueNumeric);
+      let canonicalId = plan.promoteId;
+      if (plan.insert) {
+        const inserted = await tx`
+          INSERT INTO metric_observations (asset_id, research_run_id, metric_definition_id, period_start, period_end,
+            as_of_date, available_at, value_numeric, value_text, unit, currency, data_provider, source_document_id,
+            confidence, review_status, metadata_json)
+          VALUES (${ctx.assetId}, ${ctx.runId}, ${metricRows[0].id}, ${periodStart}, ${periodEnd}, ${asOfDate},
+            ${textValue(obs.available_at, new Date().toISOString())}, ${valueNumeric}, ${textValue(obs.value_text, "") || null},
+            ${unit || null}, ${currency}, ${textValue(obs.source, "metric-reconciler")}, ${sourceId},
+            ${numberValue(obs.confidence, 0.7).toString()}, 'accepted',
+            ${JSON.stringify({ system_generated: true, reconciliation: "canonical_revision", supersedes_observation_ids: existing.map((row) => String(row.id)), agent_output: obs })}::jsonb)
+          RETURNING id
+        `;
+        canonicalId = String(inserted[0].id);
+      } else if (canonicalId) {
+        await tx`
+          UPDATE metric_observations SET review_status = 'accepted',
+            metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
+              || ${JSON.stringify({ reconciliation: "canonical_promoted", reconciled_at: new Date().toISOString() })}::jsonb
+          WHERE id = ${canonicalId}
+        `;
+      }
+      await tx`
+        UPDATE metric_observations SET review_status = 'rejected',
+          metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
+            || ${JSON.stringify({ reconciliation: "superseded_conflict", canonical_observation_id: canonicalId, reconciled_at: new Date().toISOString() })}::jsonb
+        WHERE research_run_id = ${ctx.runId} AND metric_definition_id = ${metricRows[0].id}
+          AND COALESCE(period_start::text, '') = ${periodStart || ''} AND COALESCE(period_end::text, '') = ${periodEnd}
+          AND COALESCE(unit, '') = ${unit} AND COALESCE(currency, '') = ${currency}
+          AND id != ${canonicalId}
+      `;
+    }
+  });
 }
 
 async function persistAnalysis(sql: Sql, ctx: RunContext, output: Record<string, unknown>) {
   const sections = arrayValue(output.analysis_sections);
+  const sectionByKey = new Map(sections.map((section) => [textValue(section.section_key || section.key), section]));
   const stageRows = await sql`SELECT id FROM research_stages WHERE research_run_id = ${ctx.runId} AND stage_key = 'asset_analysis'`;
   const stageId = stageRows[0].id;
   await sql`
@@ -1856,20 +1947,28 @@ async function persistAnalysis(sql: Sql, ctx: RunContext, output: Record<string,
     )
   `;
   for (const moduleKey of ctx.requiredModules) {
+    const section = sectionByKey.get(moduleKey);
+    const completion = ctx.pipelineVersion >= 2
+      ? { status: "needs_more_work", reason: "Awaiting validation of module-specific persisted evidence links." }
+      : moduleCompletion(section);
     await sql`
       INSERT INTO research_tasks (
         research_run_id, stage_id, task_key, task_type, agent_name,
         status, priority, input_json, output_json, completed_at
       ) VALUES (
         ${ctx.runId}, ${stageId}, ${moduleKey}, 'profile_module', 'asset-analyst',
-        'completed', 50, ${JSON.stringify({ system_generated: true })}::jsonb,
-        ${JSON.stringify({ system_generated: true, module: moduleKey, sections })}::jsonb, NOW()
+        ${completion.status}, 50, ${JSON.stringify({ system_generated: true })}::jsonb,
+        ${JSON.stringify({ system_generated: true, module: moduleKey, section: section || null, missing_input: completion.reason })}::jsonb,
+        ${completion.status === "completed" ? new Date().toISOString() : null}
       )
     `;
   }
   for (const section of sections) {
     const moduleKey = textValue(section.section_key || section.key, "");
     if (!moduleKey) continue;
+    const completion = ctx.pipelineVersion >= 2
+      ? { status: "needs_more_work", reason: "Awaiting validation of module-specific persisted evidence links." }
+      : moduleCompletion(section);
     await sql`
       INSERT INTO analysis_sections (
         research_run_id, profile_id, module_key, title, content_json,
@@ -1877,12 +1976,12 @@ async function persistAnalysis(sql: Sql, ctx: RunContext, output: Record<string,
       ) VALUES (
         ${ctx.runId}, ${ctx.profileId}, ${moduleKey},
         ${textValue(section.title, moduleKey)}, ${JSON.stringify(section)}::jsonb,
-        ARRAY[]::uuid[], 'completed', NOW()
+        ARRAY[]::uuid[], ${completion.status}, NOW()
       )
       ON CONFLICT (research_run_id, module_key) DO UPDATE
       SET title = EXCLUDED.title,
           content_json = EXCLUDED.content_json,
-          status = 'completed',
+          status = EXCLUDED.status,
           updated_at = NOW()
     `;
   }
@@ -1904,6 +2003,7 @@ async function loadMetricInputs(sql: Sql, ctx: RunContext): Promise<MetricInput[
     JOIN metric_definitions md ON md.id = mo.metric_definition_id
     WHERE mo.research_run_id = ${ctx.runId}
       AND mo.value_numeric IS NOT NULL
+      AND mo.review_status = 'accepted'
     ORDER BY md.metric_key, mo.available_at DESC NULLS LAST, mo.created_at DESC
   `;
   return rows
@@ -1932,20 +2032,29 @@ async function materializeRequiredAnalysisModules(sql: Sql, ctx: RunContext, out
   const sectionByKey = new Map(
     sections.map((section) => [textValue(section.section_key || section.key), section])
   );
-  const claimRows = await sql`
-    SELECT id FROM evidence_claims
-    WHERE research_run_id = ${ctx.runId} AND review_status != 'rejected'
-    ORDER BY confidence DESC NULLS LAST, created_at ASC
-    LIMIT 12
-  `;
-  const claimIds = claimRows.map((row) => String(row.id));
+  const moduleGaps: Record<string, unknown>[] = [];
   for (const moduleKey of v2RequiredModules(ctx)) {
     const agentSection = sectionByKey.get(moduleKey);
+    const requestedClaimIds = agentSection && Array.isArray(agentSection.evidence_claim_ids)
+      ? agentSection.evidence_claim_ids.map(String).filter((id) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))
+      : [];
+    const claimRows = requestedClaimIds.length ? await sql`
+      SELECT ec.id, ec.claim_text, ec.claim_type, ec.claim_category
+      FROM evidence_claims ec
+      WHERE ec.research_run_id = ${ctx.runId} AND ec.id = ANY(${requestedClaimIds}::uuid[])
+        AND ec.review_status != 'rejected'
+        AND EXISTS (SELECT 1 FROM evidence_links el WHERE el.evidence_claim_id = ec.id)
+    ` : [];
+    const claimIds = claimRows.filter((row) => evidenceRelevantToModule(moduleKey, row)).map((row) => String(row.id));
+    const completion = moduleCompletion(agentSection ? {
+      ...agentSection,
+      evidence: [],
+      evidence_claim_ids: claimIds,
+    } : undefined);
     const content = agentSection || {
       module_key: moduleKey,
-      summary: `Structured ${moduleKey.replace(/_/g, " ")} assessment assembled from accepted evidence and normalized metrics.`,
-      evidence_basis: "accepted_evidence_and_metrics",
-      claim_count: claimIds.length,
+      summary: "",
+      missing_inputs: [completion.reason],
       provenance: "research_os_v2_module_materializer",
     };
     await sql`
@@ -1956,117 +2065,87 @@ async function materializeRequiredAnalysisModules(sql: Sql, ctx: RunContext, out
         ${ctx.runId}, ${ctx.profileId}, ${moduleKey},
         ${textValue((content as Record<string, unknown>).title, moduleKey.replace(/_/g, " "))},
         ${JSON.stringify(content)}::jsonb,
-        ${claimIds}, 'completed', NOW()
+        ${claimIds}, ${completion.status}, NOW()
       )
       ON CONFLICT (research_run_id, module_key) DO UPDATE
       SET content_json = EXCLUDED.content_json,
           supporting_claim_ids = EXCLUDED.supporting_claim_ids,
-          status = 'completed', updated_at = NOW()
+          status = EXCLUDED.status, updated_at = NOW()
     `;
+    await sql`
+      UPDATE research_tasks
+      SET status = ${completion.status},
+          output_json = (CASE WHEN jsonb_typeof(output_json) = 'object' THEN output_json ELSE '{}'::jsonb END)
+            || ${JSON.stringify({ evidence_claim_ids: claimIds, validation_reason: completion.reason })}::jsonb,
+          completed_at = ${completion.status === "completed" ? new Date().toISOString() : null}
+      WHERE id = (
+        SELECT id FROM research_tasks
+        WHERE research_run_id = ${ctx.runId} AND task_key = ${moduleKey} AND task_type = 'profile_module'
+        ORDER BY created_at DESC LIMIT 1
+      )
+    `;
+    if (completion.status !== "completed") moduleGaps.push({
+      gap_key: `module_${moduleKey}_missing`, severity: "high",
+      description: `Required module ${moduleKey} is not complete: ${completion.reason}`,
+    });
   }
+  await reconcileSourceGaps(sql, ctx, { source_gaps: moduleGaps }, "system:analysis-modules");
 }
 
 async function persistDeterministicValuationModels(sql: Sql, ctx: RunContext) {
   if (ctx.pipelineVersion < 2) return;
   const inputs = await loadMetricInputs(sql, ctx);
-  const revenue = metricFrom(inputs, "revenue")?.value || 0;
-  const operatingCashFlow = metricFrom(inputs, "operating_cash_flow")?.value || 0;
-  const capex = Math.abs(metricFrom(inputs, "capex")?.value || 0);
-  const freeCashFlow = metricFrom(inputs, "free_cash_flow")?.value || operatingCashFlow - capex;
-  const cash = metricFrom(inputs, "cash_and_equivalents")?.value || 0;
-  const debt = metricFrom(inputs, "total_debt")?.value || 0;
-  const shares = metricFrom(inputs, "diluted_shares", "shares_outstanding")?.value || 0;
-  const marketPrice = metricFrom(inputs, "market_price")?.value || 0;
-  if (!(freeCashFlow > 0) || !(shares > 0)) {
-    throw new Error("Cannot build reproducible valuation models: positive free cash flow and share count are required.");
-  }
-
-  const netDebt = debt - cash;
-  const discountRate = 0.10;
-  const terminalGrowth = 0.035;
-  const growth = 0.12;
-  const projected = Array.from({ length: 5 }, (_, index) => freeCashFlow * Math.pow(1 + growth, index + 1));
-  const pvForecast = projected.reduce((sum, value, index) => sum + value / Math.pow(1 + discountRate, index + 1), 0);
-  const terminalValue = projected[4] * (1 + terminalGrowth) / (discountRate - terminalGrowth);
-  const dcfPerShare = (pvForecast + terminalValue / Math.pow(1 + discountRate, 5) - netDebt) / shares;
-  const marketCap = marketPrice > 0 ? marketPrice * shares : 0;
-  const impliedFcfYield = marketCap > 0 ? freeCashFlow / (marketCap + netDebt) : null;
-  const reverseGrowth = impliedFcfYield === null ? null : Math.max(-0.25, Math.min(0.35, discountRate - impliedFcfYield));
-  const fintechWeight = 0.35;
-  const sotpPerShare = (((freeCashFlow * (1 - fintechWeight)) / 0.04) + ((freeCashFlow * fintechWeight) / 0.03) - netDebt) / shares;
-  const commonInputs = {
-    revenue, operating_cash_flow: operatingCashFlow, capex, free_cash_flow: freeCashFlow,
-    cash, total_debt: debt, net_debt: netDebt, shares_outstanding: shares, market_price: marketPrice,
-    metric_observation_ids: inputs.map((input) => input.id),
-  };
-  const models = [
-    {
-      key: "driver_based_dcf",
-      title: "Driver-based DCF",
-      assumptions: { discount_rate: discountRate, terminal_growth: terminalGrowth, fcf_growth: growth, projection_years: 5 },
-      outputs: { enterprise_value: pvForecast + terminalValue / Math.pow(1 + discountRate, 5), equity_value: pvForecast + terminalValue / Math.pow(1 + discountRate, 5) - netDebt, value_per_share: dcfPerShare, projected_fcf: projected },
-    },
-    {
-      key: "reverse_dcf",
-      title: "Reverse DCF",
-      assumptions: { discount_rate: discountRate, observed_market_price: marketPrice, formula: "implied_growth = discount_rate - free_cash_flow / enterprise_value" },
-      outputs: { market_cap: marketCap, enterprise_value: marketCap + netDebt, implied_fcf_yield: impliedFcfYield, implied_fcf_growth: reverseGrowth },
-    },
-    {
-      key: "fintech_platform_sotp",
-      title: "Fintech-platform SOTP",
-      assumptions: { commerce_fcf_weight: 1 - fintechWeight, fintech_fcf_weight: fintechWeight, commerce_fcf_yield: 0.04, fintech_fcf_yield: 0.03 },
-      outputs: { commerce_value: freeCashFlow * (1 - fintechWeight) / 0.04, fintech_value: freeCashFlow * fintechWeight / 0.03, value_per_share: sotpPerShare },
-    },
-  ];
-  const artifactDir = join(process.cwd(), "storage", "valuations", ctx.runId);
-  await mkdir(artifactDir, { recursive: true });
-  const modelIds = new Map<string, string>();
-  for (const model of models) {
-    const manifest = { formula_version: "research-os-v2.1", model_key: model.key, inputs: commonInputs, assumptions: model.assumptions, outputs: model.outputs };
-    const artifactPath = join(artifactDir, `${model.key}.json`);
-    const artifactContent = JSON.stringify(manifest, null, 2);
-    await writeFile(artifactPath, artifactContent, "utf8");
-    const modelRows = await sql`
-      INSERT INTO valuation_model_runs (
-        research_run_id, asset_id, profile_id, model_key, status,
-        input_manifest_json, assumptions_json, outputs_json, validation_json,
-        reproducible, started_at, completed_at
-      ) VALUES (
-        ${ctx.runId}, ${ctx.assetId}, ${ctx.profileId}, ${model.key}, 'completed',
-        ${JSON.stringify({ formula_version: "research-os-v2.1", inputs: commonInputs })}::jsonb,
-        ${JSON.stringify(model.assumptions)}::jsonb, ${JSON.stringify(model.outputs)}::jsonb,
-        ${JSON.stringify({ checks: ["positive_fcf", "positive_shares", "formula_manifest_written"], valid: true })}::jsonb,
-        true, NOW(), NOW()
-      ) RETURNING id
+  const contract = contractForProfile(ctx.profileKey, ctx.assetSlug);
+  if (!contract) return;
+  const completedRows = await sql`
+    SELECT module_key FROM analysis_sections WHERE research_run_id = ${ctx.runId} AND status IN ('completed', 'accepted')
+  `;
+  const completedModules = new Set(completedRows.map((row) => String(row.module_key)));
+  const inputKeys = new Set(inputs.map((input) => input.metricKey));
+  const preflightGaps: Record<string, unknown>[] = [];
+  for (const modelKey of contract.valuationModelKeys) {
+    const requiredMetrics = modelKey === "fintech_platform_sotp"
+      ? ["gmv", "tpv", "loan_book", "provisions", "customer_funds", "funding_liabilities", "commerce_operating_income", "fintech_operating_income", "shares_outstanding"]
+      : modelKey === "driver_based_dcf"
+        ? ["revenue", "free_cash_flow", "shares_outstanding"]
+        : modelKey === "reverse_dcf"
+          ? ["free_cash_flow", "market_price", "shares_outstanding"]
+          : [];
+    const requiredModules = modelKey === "fintech_platform_sotp"
+      ? ["gmv", "tpv", "loan_book", "provisions", "net_interest_margin_after_losses", "customer_funds", "funding_liabilities"]
+      : ["fcf", "working_capital", "net_debt", "share_count"];
+    const missingMetrics = requiredMetrics.filter((key) => !inputKeys.has(key));
+    const missingModules = requiredModules.filter((key) => !completedModules.has(key));
+    const engineSupported = false; // Numeric engines must be explicitly implemented and versioned per contract.
+    const validation = {
+      valid: false, model_key: modelKey, missing_metrics: missingMetrics, missing_modules: missingModules,
+      engine_supported: engineSupported,
+      reason: missingMetrics.length || missingModules.length ? "required_inputs_or_modules_missing" : "profile_model_engine_not_implemented",
+    };
+    const prior = await sql`
+      SELECT id FROM valuation_model_runs
+      WHERE research_run_id = ${ctx.runId} AND model_key = ${modelKey}
+        AND input_manifest_json->>'generated_by' = 'research_os_v2_preflight'
+      ORDER BY created_at DESC LIMIT 1
     `;
-    const modelId = String(modelRows[0].id);
-    modelIds.set(model.key, modelId);
-    await sql`
-      INSERT INTO valuation_artifacts (valuation_model_run_id, artifact_type, title, storage_path, content_hash, metadata_json)
-      VALUES (${modelId}, 'model_manifest', ${model.title}, ${artifactPath.replace(/\\/g, "/")},
-        ${createHash("sha256").update(artifactContent).digest("hex")},
-        ${JSON.stringify({ formula_version: "research-os-v2.1", executable: "deterministic_typescript" })}::jsonb)
+    if (prior[0]) await sql`
+      UPDATE valuation_model_runs SET status = 'blocked', input_manifest_json = ${JSON.stringify({ generated_by: "research_os_v2_preflight", metric_observation_ids: inputs.map((input) => input.id) })}::jsonb,
+        outputs_json = '{}'::jsonb, validation_json = ${JSON.stringify(validation)}::jsonb, reproducible = false,
+        error_message = ${`Valuation preflight blocked: ${validation.reason}`}, completed_at = NOW(), updated_at = NOW()
+      WHERE id = ${prior[0].id}
     `;
-  }
-  const dcfId = modelIds.get("driver_based_dcf")!;
-  for (const scenario of [
-    { name: "Bear DCF", type: "bear", probability: 0.25, value: dcfPerShare * 0.75, growth: 0.06 },
-    { name: "Base DCF", type: "base", probability: 0.5, value: dcfPerShare, growth },
-    { name: "Bull DCF", type: "bull", probability: 0.25, value: dcfPerShare * 1.3, growth: 0.18 },
-  ]) {
-    await sql`
-      INSERT INTO scenarios (
-        asset_id, research_run_id, scenario_name, scenario_type, time_horizon, probability,
-        value_anchor, currency, assumptions_json, confidence, valuation_model_run_id, review_status
-      ) VALUES (
-        ${ctx.assetId}, ${ctx.runId}, ${scenario.name}, ${scenario.type}, '5 years',
-        ${scenario.probability.toString()}, ${scenario.value.toFixed(2)}, 'USD',
-        ${JSON.stringify({ model_key: "driver_based_dcf", fcf_growth: scenario.growth, discount_rate: discountRate, terminal_growth: terminalGrowth })}::jsonb,
-        '0.70', ${dcfId}, 'accepted'
-      )
+    else await sql`
+      INSERT INTO valuation_model_runs (research_run_id, asset_id, profile_id, model_key, status, input_manifest_json,
+        assumptions_json, outputs_json, validation_json, reproducible, error_message, started_at, completed_at)
+      VALUES (${ctx.runId}, ${ctx.assetId}, ${ctx.profileId}, ${modelKey}, 'blocked',
+        ${JSON.stringify({ generated_by: "research_os_v2_preflight", metric_observation_ids: inputs.map((input) => input.id) })}::jsonb,
+        '[]'::jsonb, '{}'::jsonb, ${JSON.stringify(validation)}::jsonb, false,
+        ${`Valuation preflight blocked: ${validation.reason}`}, NOW(), NOW())
     `;
+    preflightGaps.push({ gap_key: `valuation_${modelKey}_blocked`, severity: "high",
+      description: `Required valuation model ${modelKey} is blocked (${validation.reason}); missing metrics: ${missingMetrics.join(", ") || "none"}; missing modules: ${missingModules.join(", ") || "none"}.` });
   }
+  await reconcileSourceGaps(sql, ctx, { source_gaps: preflightGaps }, "system:valuation-preflight");
 }
 
 async function persistValidatedIndicators(sql: Sql, ctx: RunContext) {
@@ -2532,6 +2611,47 @@ async function persistReview(sql: Sql, ctx: RunContext, output: Record<string, u
       ${JSON.stringify(output)}::jsonb, NOW()
     )
   `;
+  await reconcileSourceGaps(sql, ctx, {
+    source_gaps: [...arrayValue(output.missing_coverage), ...arrayValue(output.unsupported_claims)].map((item) => ({
+      ...item, description: item.description || item.detail || item.reason || item.claim || item.claim_text,
+    })),
+  }, "system:research-reviewer");
+}
+
+async function loadBacktestReviewPacket(sql: Sql, ctx: RunContext) {
+  const runs = await sql`
+    SELECT id, strategy_name, benchmark_symbol, start_date, end_date, market_data_cutoff_at,
+           params_json, metrics_json, generated_code_path
+    FROM backtest_runs WHERE research_run_id = ${ctx.runId} AND status = 'completed'
+    ORDER BY created_at DESC LIMIT 50
+  `;
+  const artifacts = await sql`
+    SELECT backtest_run_id, artifact_type, storage_path FROM backtest_artifacts
+    WHERE research_run_id = ${ctx.runId} ORDER BY created_at DESC LIMIT 60
+  `;
+  const metricValue = (row: Record<string, unknown>, ...keys: string[]) => {
+    const metrics = objectValue(row.metrics_json);
+    for (const key of keys) {
+      const value = Number(metrics[key]);
+      if (Number.isFinite(value)) return value;
+    }
+    return null;
+  };
+  const ranked = runs.map((row) => ({ row, value: metricValue(row, "total_return", "strategy_return", "return") }))
+    .filter((item) => item.value !== null).sort((a, b) => Number(b.value) - Number(a.value));
+  const summarize = (row: Record<string, unknown> | undefined) => row ? ({
+    backtest_run_id: row.id, strategy_name: row.strategy_name, params: row.params_json,
+    total_return: metricValue(row, "total_return", "strategy_return", "return"),
+    benchmark_return: metricValue(row, "benchmark_return", "benchmark_total_return"),
+    sharpe: metricValue(row, "sharpe_ratio", "sharpe"), max_drawdown: metricValue(row, "max_drawdown"),
+  }) : null;
+  return {
+    executed_count: runs.length, benchmark_symbol: runs[0]?.benchmark_symbol || null,
+    start_date: runs[0]?.start_date || null, end_date: runs[0]?.end_date || null,
+    market_data_cutoff_at: runs[0]?.market_data_cutoff_at || ctx.marketDataCutoffAt,
+    best: summarize(ranked[0]?.row), worst: summarize(ranked.at(-1)?.row),
+    artifact_refs: artifacts.map((artifact) => ({ backtest_run_id: artifact.backtest_run_id, artifact_type: artifact.artifact_type, storage_path: artifact.storage_path })).slice(0, 12),
+  };
 }
 
 async function advanceUntil(sql: Sql, runId: string, expectedStage: string) {
@@ -2584,6 +2704,10 @@ async function ensureStageReady(sql: Sql, runId: string, stageKey: string) {
   if (status === "completed" || status === "skipped" || status === "running" || status === "waiting_for_human") return status;
   await advanceUntil(sql, runId, stageKey);
   return getStageStatus(sql, runId, stageKey);
+}
+
+function isStageRunnable(status: string | undefined): boolean {
+  return status === "running" || status === "completed" || status === "skipped";
 }
 
 async function latestTaskOutput(sql: Sql, runId: string, taskKey: string): Promise<Record<string, unknown> | null> {
@@ -2670,7 +2794,7 @@ export async function runSystemResearchPipeline(runId: string): Promise<SystemPi
     const sourceCorpus = await storeSourceCorpus(sql, ctx, secContext);
     const sources = sourceCorpus.sources;
     const primarySource = sources[0];
-    const sourcePacket = buildSourcePacket(sources);
+    const sourcePacket = await buildSourcePacket(sql, ctx, sources);
     const agentSecContext = compactSecContextForAgents(secContext);
     notes.push(`Fetched and stored ${sources.filter((source) => !source.sourceType.startsWith("source_candidate_")).length} source documents`);
 
@@ -2678,13 +2802,18 @@ export async function runSystemResearchPipeline(runId: string): Promise<SystemPi
     if (planStatus === "waiting_for_human") {
       if (!autoApprove) {
         notes.push("Research plan is waiting for human approval");
-        return systemPipelineResult(sql, runId, notes);
+        return await systemPipelineResult(sql, runId, notes);
       }
       await approveResearchPlan(runId, "system-research-pipeline");
       notes.push("Approved generated research plan gate");
+    } else if (!isStageRunnable(planStatus)) {
+      return systemPipelineResult(sql, runId, notes);
     }
 
-    await ensureStageReady(sql, runId, "evidence_extraction");
+    const evidenceStatus = await ensureStageReady(sql, runId, "evidence_extraction");
+    if (!isStageRunnable(evidenceStatus)) {
+      return systemPipelineResult(sql, runId, notes);
+    }
     let evidenceOutput = await latestTaskOutput(sql, runId, "source-reader:sec-context");
     if (!evidenceOutput || await getStageStatus(sql, runId, "evidence_extraction") !== "completed") {
       const evidenceTarget = ctx.runType === "deep_dive" ? 25 : 12;
@@ -2694,7 +2823,7 @@ export async function runSystemResearchPipeline(runId: string): Promise<SystemPi
         requiredKeys: ["evidence_claims", "contradictions", "source_gaps", "low_confidence_items", "rejected_candidates"],
         packet: evidencePacket,
         extraRules: [
-          "Each evidence_claim must include claim_text, claim_type, claim_category, source_id copied exactly from source_corpus, as_of_date or period_end when available, confidence.",
+          "Each evidence_claim must include claim_text, claim_type, claim_category, source_id and document_chunk_id copied exactly from source_corpus, plus char_start/char_end within the original document when available, as_of_date or period_end, and confidence.",
           `Return at least ${evidenceTarget} distinct, decision-relevant evidence claims when the supplied primary sources support them. Never return schema examples or placeholder values.`,
           "Use only the source_context and source_corpus in this packet.",
           "Prefer annual and quarterly SEC filings for financial facts. Use external source candidates only as context or gap indicators unless their content contains a specific sourced fact.",
@@ -2758,9 +2887,18 @@ export async function runSystemResearchPipeline(runId: string): Promise<SystemPi
       }
       notes.push("Source-reader produced evidence claims");
     }
+    await reconcileSourceGaps(sql, ctx, evidenceOutput, "system:source-reader");
+    if (ctx.pipelineVersion >= 2) {
+      evidenceOutput = {
+        ...evidenceOutput,
+        evidence_claims: await loadAcceptedEvidencePacket(sql, ctx),
+      };
+    }
 
-    await ensureStageReady(sql, runId, "metric_normalization");
-    await persistMetrics(sql, ctx, primarySource.sourceId, sourceCorpus.deterministicMetrics);
+    const metricStatus = await ensureStageReady(sql, runId, "metric_normalization");
+    if (!isStageRunnable(metricStatus)) {
+      return systemPipelineResult(sql, runId, notes);
+    }
     let metricOutput = mergeMetricOutputs(
       sourceCorpus.deterministicMetrics,
       await latestTaskOutput(sql, runId, "metric-normalizer:sec-context")
@@ -2812,11 +2950,15 @@ export async function runSystemResearchPipeline(runId: string): Promise<SystemPi
         notes.push("Metric-normalizer response was unusable; retained deterministic source-linked metrics");
       }
       metricOutput = mergeMetricOutputs(sourceCorpus.deterministicMetrics, agentMetricOutput);
-      await persistMetrics(sql, ctx, primarySource.sourceId, agentMetricOutput);
       notes.push("Metric-normalizer produced metric observations");
     }
+    await persistMetrics(sql, ctx, primarySource.sourceId, metricOutput);
+    await reconcileSourceGaps(sql, ctx, metricOutput, "system:metric-normalizer");
 
-    await ensureStageReady(sql, runId, "asset_analysis");
+    const analysisStatus = await ensureStageReady(sql, runId, "asset_analysis");
+    if (!isStageRunnable(analysisStatus)) {
+      return systemPipelineResult(sql, runId, notes);
+    }
     let analysisOutput =
       await latestTaskOutput(sql, runId, "asset-analyst:full-analysis") ||
       await latestTaskOutput(sql, runId, "agent_analysis_sections");
@@ -2839,6 +2981,7 @@ export async function runSystemResearchPipeline(runId: string): Promise<SystemPi
         extraRules: [
           "Produce a SOFI-style investment research analysis, not a terse summary.",
           "analysis_sections must include section_key, title, summary, evidence, implication, open_questions, and confidence.",
+          "Each contract-required module section must include evidence_claim_ids copied exactly from evidence_claims.id; a module without valid persisted claim IDs remains incomplete.",
           "Include sections for business_or_asset_profile, industry_or_context, financial_history, investment_thesis, risk_reward, valuation_inputs, and source_completeness when applicable.",
           "key_drivers must be named, specific drivers with driver_name, driver_type, description, value_impact, evidence_claim_ids where known, and confidence. Never use placeholder names like Agent driver.",
           "metric_interpretation should explain what changed, what matters, what is stale, and what cannot be concluded.",
@@ -2865,9 +3008,13 @@ export async function runSystemResearchPipeline(runId: string): Promise<SystemPi
       await persistAnalysis(sql, ctx, analysisOutput);
       notes.push("Asset-analyst produced analysis sections and module outputs");
     }
+    await reconcileSourceGaps(sql, ctx, analysisOutput, "system:asset-analyst");
     await materializeRequiredAnalysisModules(sql, ctx, analysisOutput);
 
-    await ensureStageReady(sql, runId, "asset_valuation");
+    const valuationStatus = await ensureStageReady(sql, runId, "asset_valuation");
+    if (!isStageRunnable(valuationStatus)) {
+      return systemPipelineResult(sql, runId, notes);
+    }
     let valuationOutput = await latestTaskOutput(sql, runId, "valuation-analyst:signals");
     if (!valuationOutput && await getStageStatus(sql, runId, "asset_valuation") === "completed") {
       valuationOutput = {
@@ -2930,10 +3077,14 @@ export async function runSystemResearchPipeline(runId: string): Promise<SystemPi
       valuationOutput = addDeterministicScenarioAnchors(valuationOutput, metricOutput);
     }
     await persistValuation(sql, ctx, valuationOutput);
+    await reconcileSourceGaps(sql, ctx, valuationOutput, "system:valuation-analyst");
     await persistDeterministicValuationModels(sql, ctx);
     notes.push("Valuation-analyst produced valuation signals and scenarios");
 
-    await ensureStageReady(sql, runId, "thesis_risks");
+    const thesisStatus = await ensureStageReady(sql, runId, "thesis_risks");
+    if (!isStageRunnable(thesisStatus)) {
+      return systemPipelineResult(sql, runId, notes);
+    }
     await persistThesisRiskCatalyst(sql, ctx, analysisOutput, valuationOutput);
     notes.push("System synthesized thesis, risks, and catalysts from agent outputs");
 
@@ -2951,7 +3102,12 @@ export async function runSystemResearchPipeline(runId: string): Promise<SystemPi
       notes.push("Executed and persisted 50 deterministic moving-average backtest combinations");
     }
 
-    await ensureStageReady(sql, runId, "ai_reviewer");
+    const reviewerStatus = await ensureStageReady(sql, runId, "ai_reviewer");
+    if (!isStageRunnable(reviewerStatus)) {
+      return systemPipelineResult(sql, runId, notes);
+    }
+    const backtestReviewPacket = await loadBacktestReviewPacket(sql, ctx);
+    const reviewerPacket = { ...compactResearchContext({ ctx, evidenceOutput, metricOutput, analysisOutput, valuationOutput }), backtest_results: backtestReviewPacket };
     const reviewOutput = await callAgent<Record<string, unknown>>({
       sql,
       ctx,
@@ -2960,36 +3116,26 @@ export async function runSystemResearchPipeline(runId: string): Promise<SystemPi
       taskType: "ai_review",
       agentName: "research-reviewer",
       modelTier: "premium",
-      packet: compactResearchContext({ ctx, evidenceOutput, metricOutput, analysisOutput, valuationOutput }),
+      packet: reviewerPacket,
       prompt: exactJsonPrompt({
         agentName: "research-reviewer",
         requiredKeys: ["pass_fail", "findings", "unsupported_claims", "contradictions", "category_errors", "missing_coverage", "valuation_review", "backtest_review", "escalation_recommendations"],
-        packet: compactResearchContext({ ctx, evidenceOutput, metricOutput, analysisOutput, valuationOutput }),
+        packet: reviewerPacket,
       }),
     });
     await persistReview(sql, ctx, reviewOutput);
     notes.push("Research-reviewer produced review findings");
 
-    await ensureStageReady(sql, runId, "human_review");
-    if (!autoApprove) {
-      notes.push("Human review is waiting for analyst approval");
+    const humanReviewStatus = await ensureStageReady(sql, runId, "human_review");
+    if (humanReviewStatus !== "completed" && humanReviewStatus !== "skipped") {
+      notes.push("Human review is waiting for an analyst decision; automation does not create human review records");
+      return await systemPipelineResult(sql, runId, notes);
+    }
+
+    const exportStatus = await ensureStageReady(sql, runId, "export");
+    if (!isStageRunnable(exportStatus)) {
       return systemPipelineResult(sql, runId, notes);
     }
-    await sql`
-      INSERT INTO review_decisions (
-        asset_id, research_run_id, status, conviction, priority,
-        watchlist_reason, open_questions, reviewed_by, reviewed_at
-      ) VALUES (
-        ${ctx.assetId}, ${runId}, 'approved_for_tracking', 'system_test', 'normal',
-        'Automated test approval: artifacts require a human investment decision before action.',
-        'Confirm model assumptions, source freshness, and strategy robustness before investment use.',
-        'system-research-pipeline', NOW()
-      )
-    `;
-    await approveHumanReview(runId, "system-research-pipeline");
-    notes.push("Approved human review gate for system test run");
-
-    await ensureStageReady(sql, runId, "export");
     await generateMemo({ runId, assetId: ctx.assetId, generatedBy: "system-research-pipeline" });
     const researchPackage = await generateResearchPackage({
       runId,
@@ -3005,7 +3151,7 @@ export async function runSystemResearchPipeline(runId: string): Promise<SystemPi
         throw new Error(result.error || "Failed to complete refresh scheduling");
       }
     }
-    return systemPipelineResult(sql, runId, notes);
+    return await systemPipelineResult(sql, runId, notes);
   } catch (error) {
     await markPipelineFailure(sql, runId, error);
     throw error;

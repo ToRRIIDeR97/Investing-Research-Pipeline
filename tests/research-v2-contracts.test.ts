@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { contractForProfile, sourceFamiliesPresent } from "../src/lib/research/v2-contracts";
+import { canonicalResearchKey, contractForProfile, sourceFamiliesPresent } from "../src/lib/research/v2-contracts";
 import { selectResearchFilings } from "../src/lib/research/system-pipeline";
 
 test("MELI receives the fintech-platform operating-company overlay", () => {
   const contract = contractForProfile("operating_company", "mercado-libre");
   assert.ok(contract);
-  assert.ok(contract.requiredModules.includes("nimal"));
+  assert.ok(contract.requiredModules.includes("net_interest_margin_after_losses"));
   assert.ok(contract.requiredMetricKeys.includes("loan_book"));
   assert.deepEqual(contract.valuationModelKeys, ["fintech_platform_sotp"]);
+});
+
+test("legacy nimal records map to the corrected canonical key", () => {
+  assert.equal(canonicalResearchKey("nimal"), "net_interest_margin_after_losses");
 });
 
 test("v2 detects substantive source families rather than document counts", () => {
