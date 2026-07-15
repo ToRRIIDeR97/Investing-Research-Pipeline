@@ -4,13 +4,13 @@ import { execFile } from "node:child_process";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { ResearchAgentRunError, runResearchAgent } from "@/lib/opencode/runtime";
-import { recordModelCall } from "@/lib/agents/model-calls";
+import { runResearchAgent } from "@/lib/agent-harness/runner";
+import { assertModelBudgetAvailable, recordModelCall } from "@/lib/agents/model-calls";
 import { advanceStage, approveResearchPlan, startRun } from "@/lib/workflow/orchestrator";
 import { generateMemo } from "@/lib/export/memo-generator";
 import { generateResearchPackage } from "@/lib/export/research-package-generator";
 import { canonicalResearchKey, contractForProfile } from "@/lib/research/v2-contracts";
-import { canonicalMetricPlan, evidenceRelevantToModule, moduleCompletion, normalizeSourceGap, reconcileMetricObservations, selectLatestFact, selectRelevantChunks, type RetrievalChunk } from "@/lib/research/pipeline-helpers";
+import { canonicalMetricPlan, evidenceRelevantToModule, moduleCompletion, normalizeSourceGap, reconcileMetricObservations, selectLatestFact, selectRelevantChunks, MODULE_TERMS, type RetrievalChunk } from "@/lib/research/pipeline-helpers";
 
 type Sql = ReturnType<typeof postgres>;
 const execFileAsync = promisify(execFile);
@@ -103,18 +103,11 @@ function arrayValue(value: unknown): Record<string, unknown>[] {
 }
 
 function objectValue(value: unknown): Record<string, unknown> {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      return {};
-    }
+  let current = value;
+  for (let depth = 0; depth < 3; depth += 1) {
+    if (current && typeof current === "object" && !Array.isArray(current)) return current as Record<string, unknown>;
+    if (typeof current !== "string") return {};
+    try { current = JSON.parse(current); } catch { return {}; }
   }
   return {};
 }
@@ -143,6 +136,55 @@ function compactResearchContext(params: {
     required_modules: params.ctx.requiredModules,
     required_lenses: params.ctx.requiredLenses,
   };
+}
+
+export function mergeGroupOutputs(groups: Array<Record<string, any> | string>): Record<string, any> {
+  const merged: Record<string, any> = {
+    analysis_sections: [],
+    key_drivers: [],
+    metric_interpretation: [],
+    contradictions_or_tensions: [],
+    missing_modules: [],
+    source_gaps: [],
+    analyst_questions: [],
+    confidence: 0,
+  };
+
+  let totalConfidence = 0;
+  let count = 0;
+
+  for (const rawGroup of groups) {
+    const group = objectValue(rawGroup);
+    if (!Object.keys(group).length) continue;
+    if (Array.isArray(group.analysis_sections)) {
+      merged.analysis_sections.push(...group.analysis_sections);
+    }
+    if (Array.isArray(group.key_drivers)) {
+      merged.key_drivers.push(...group.key_drivers);
+    }
+    if (Array.isArray(group.metric_interpretation)) {
+      merged.metric_interpretation.push(...group.metric_interpretation);
+    }
+    if (Array.isArray(group.contradictions_or_tensions)) {
+      merged.contradictions_or_tensions.push(...group.contradictions_or_tensions);
+    }
+    if (Array.isArray(group.missing_modules)) {
+      merged.missing_modules.push(...group.missing_modules);
+    }
+    if (Array.isArray(group.source_gaps)) {
+      merged.source_gaps.push(...group.source_gaps);
+    }
+    if (Array.isArray(group.analyst_questions)) {
+      merged.analyst_questions.push(...group.analyst_questions);
+    }
+    if (typeof group.confidence === "number") {
+      totalConfidence += group.confidence;
+      count++;
+    }
+  }
+
+  merged.confidence = count > 0 ? Number((totalConfidence / count).toFixed(2)) : 0.5;
+  return merged;
 }
 
 async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: StoredSource[]) {
@@ -655,39 +697,6 @@ async function getRunContext(sql: Sql, runId: string): Promise<RunContext> {
   };
 }
 
-async function logAgentCall(params: {
-  runId: string;
-  stageId: string;
-  taskId: string;
-  agentName: string;
-  modelTier: string;
-  usage: Awaited<ReturnType<typeof runResearchAgent>>["usage"];
-  status: string;
-  errorMessage?: string;
-}) {
-  await recordModelCall({
-    researchRunId: params.runId,
-    stageId: params.stageId,
-    taskId: params.taskId,
-    agentName: params.agentName,
-    modelProvider: params.usage.provider,
-    modelName: params.usage.model,
-    modelTier: params.modelTier,
-    promptVersion: params.usage.promptVersion,
-    inputTokens: params.usage.inputTokens,
-    outputTokens: params.usage.outputTokens,
-    costUsd: params.usage.costUsd,
-    latencyMs: params.usage.latencyMs,
-    status: params.status,
-    errorMessage: params.errorMessage,
-    responseMetadata: { session_id: params.usage.sessionId },
-    escalationReason:
-      params.modelTier === "premium" || params.modelTier === "specialist"
-        ? "System research pipeline stage requires specialist reasoning"
-        : undefined,
-  });
-}
-
 async function createTask(sql: Sql, runId: string, stageKey: string, taskKey: string, taskType: string, agentName: string) {
   const rows = await sql`
     INSERT INTO research_tasks (
@@ -696,7 +705,7 @@ async function createTask(sql: Sql, runId: string, stageKey: string, taskKey: st
     )
     SELECT
       ${runId}, id, ${taskKey}, ${taskType}, ${agentName},
-      'running', 80, ${JSON.stringify({ system_generated: true })}::jsonb, NOW()
+      'running', 80, ${sql.json({ system_generated: true })}, NOW()
     FROM research_stages
     WHERE research_run_id = ${runId} AND stage_key = ${stageKey}
     RETURNING id, stage_id
@@ -709,7 +718,7 @@ async function completeTask(sql: Sql, taskId: string, output: unknown) {
   await sql`
     UPDATE research_tasks
     SET status = 'completed',
-        output_json = ${JSON.stringify(output)}::jsonb,
+        output_json = ${sql.json(output as any)},
         failure_reason = NULL,
         completed_at = NOW(),
         updated_at = NOW()
@@ -1459,7 +1468,7 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
       ${payload.publisher}, ${payload.url || null},
       ${payload.publishedAt || null}, ${payload.periodEnd || null},
       ${hash}, ${payload.mimeType}, 'en',
-      ${storagePath}, ${payload.qualityScore}, ${JSON.stringify(payload.metadata)}::jsonb
+      ${storagePath}, ${payload.qualityScore}, ${sql.json(payload.metadata as any)}
     )
     ON CONFLICT (file_hash) DO UPDATE
     SET retrieved_at = NOW()
@@ -1473,7 +1482,7 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
     ) VALUES (
       ${ctx.runId}, ${sourceId},
       ${textValue(payload.metadata.semanticRole || payload.metadata.attachmentType, "supporting_source")},
-      ${JSON.stringify(payload.metadata)}::jsonb
+      ${sql.json(payload.metadata as any)}
     )
     ON CONFLICT (research_run_id, source_document_id) DO NOTHING
   `;
@@ -1484,7 +1493,7 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
       status, warnings_json, output_storage_path, completed_at
     ) VALUES (
       ${sourceId}, 'system-source-payload', '2', 'completed',
-      ${JSON.stringify([])}::jsonb, ${storagePath}, NOW()
+      ${sql.json([])}, ${storagePath}, NOW()
     )
     ON CONFLICT (source_document_id, parser_name, parser_version, parse_config_json) DO UPDATE
     SET status = 'completed', completed_at = NOW()
@@ -1509,7 +1518,7 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
         ) VALUES (
           ${sourceId}, ${parseId}, ${chunkIndex}, ${payload.chunkTitle},
           ${start}, ${end}, ${content.slice(start, end)}, ${Math.ceil((end - start) / 4)},
-          ${JSON.stringify({ system_generated: true, source_payload: true })}::jsonb
+          ${sql.json({ system_generated: true, source_payload: true })}
         )
         RETURNING id
       `;
@@ -1592,7 +1601,7 @@ async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: unknown)
         parent_source_document_id, child_source_document_id, relationship_type, metadata_json
       ) VALUES (
         ${parent.sourceId}, ${attachment.sourceId}, 'filing_attachment',
-        ${JSON.stringify({ accession_number: accession, semantic_role: "earnings_exhibit" })}::jsonb
+        ${sql.json({ accession_number: accession, semantic_role: "earnings_exhibit" })}
       )
       ON CONFLICT (parent_source_document_id, child_source_document_id, relationship_type) DO NOTHING
     `;
@@ -1625,86 +1634,58 @@ async function callAgent<T>(params: {
   prompt?: string;
 }): Promise<T> {
   const task = await createTask(params.sql, params.ctx.runId, params.stageKey, params.taskKey, params.taskType, params.agentName);
-  const maxAttempts = Math.max(1, Number(process.env.RESEARCH_PIPELINE_AGENT_ATTEMPTS || 3));
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      const result = await runResearchAgent<T>({
-        agentName: params.agentName,
-        title: `${params.agentName} ${params.ctx.symbol} ${params.ctx.runId} attempt ${attempt}`,
-        taskPacket: params.packet,
-        prompt: params.prompt,
-      });
-      await logAgentCall({
-        runId: params.ctx.runId,
-        stageId: task.stage_id,
-        taskId: task.id,
-        agentName: params.agentName,
-        modelTier: params.modelTier,
-        usage: result.usage,
-        status: "success",
-      });
-      await completeTask(params.sql, task.id, result.structured);
-      return objectValue(result.structured) as T;
-    } catch (error) {
-    if (error instanceof ResearchAgentRunError) {
+  const escalationReason = params.modelTier === "premium" || params.modelTier === "specialist"
+    ? "System research pipeline stage requires specialist reasoning" : undefined;
+  let recordedAttempts = 0;
+  try {
+    const result = await runResearchAgent<T>({
+      agentName: params.agentName,
+      title: `${params.agentName} ${params.ctx.symbol} ${params.ctx.runId}`,
+      taskPacket: params.packet,
+      prompt: params.prompt,
+      hooks: {
+        beforeAttempt: async () => {
+          await assertModelBudgetAvailable({
+            researchRunId: params.ctx.runId, stageId: task.stage_id, taskId: task.id,
+            modelTier: params.modelTier, reserveUsd: Number(process.env.RESEARCH_ATTEMPT_BUDGET_RESERVE_USD || 0.1),
+          });
+        },
+        onAttemptComplete: async (attempt) => {
+          recordedAttempts += 1;
+          await recordModelCall({
+            researchRunId: params.ctx.runId, stageId: task.stage_id, taskId: task.id,
+            agentName: params.agentName, modelProvider: attempt.provider, modelName: attempt.model,
+            modelTier: params.modelTier, promptVersion: "local-harness-v1",
+            inputTokens: attempt.inputTokens, outputTokens: attempt.outputTokens, costUsd: attempt.costUsd,
+            latencyMs: attempt.latencyMs, status: attempt.status,
+            errorMessage: attempt.errorMessage,
+            requestMetadata: { attempt: attempt.attempt, fallback: attempt.fallback, compaction_occurred: attempt.compactionOccurred },
+            responseMetadata: {
+              request_id: attempt.requestId, started_at: attempt.startedAt, completed_at: attempt.completedAt,
+              error_category: attempt.errorCategory, timeout_type: attempt.timeoutType,
+              repair_attempted: attempt.repairAttempted, validation_errors: attempt.validationErrors,
+              raw_response_excerpt: attempt.rawResponseExcerpt, tool_calls: attempt.toolCalls,
+            },
+            escalationReason,
+          });
+        },
+      },
+    });
+    await completeTask(params.sql, task.id, result.structured);
+    return objectValue(result.structured) as T;
+  } catch (error) {
+    if (!recordedAttempts) {
       await recordModelCall({
-        researchRunId: params.ctx.runId,
-        stageId: task.stage_id,
-        taskId: task.id,
-        agentName: params.agentName,
-        modelProvider: error.usage.provider,
-        modelName: error.usage.model,
-        modelTier: params.modelTier,
-        promptVersion: error.usage.promptVersion,
-        inputTokens: error.usage.inputTokens,
-        outputTokens: error.usage.outputTokens,
-        costUsd: error.usage.costUsd,
-        latencyMs: error.usage.latencyMs,
-        status: "failed",
-        errorMessage: error.message,
-        responseMetadata: { ...error.responseMetadata, attempt, max_attempts: maxAttempts },
-        escalationReason:
-          params.modelTier === "premium" || params.modelTier === "specialist"
-            ? "System research pipeline stage requires specialist reasoning"
-            : undefined,
-      });
-    } else {
-      await recordModelCall({
-        researchRunId: params.ctx.runId,
-        stageId: task.stage_id,
-        taskId: task.id,
-        agentName: params.agentName,
-        modelProvider: "opencode",
-        modelName: "unknown",
-        modelTier: params.modelTier,
-        status: "failed",
+        researchRunId: params.ctx.runId, stageId: task.stage_id, taskId: task.id,
+        agentName: params.agentName, modelProvider: process.env.RESEARCH_MODEL_PROVIDER || "local-harness",
+        modelName: "not-started", modelTier: params.modelTier, status: "failed",
         errorMessage: error instanceof Error ? error.message : String(error),
-        responseMetadata: { transport_or_runtime_failure: true, attempt, max_attempts: maxAttempts },
-        escalationReason:
-          params.modelTier === "premium" || params.modelTier === "specialist"
-            ? "System research pipeline stage requires specialist reasoning"
-            : undefined,
+        responseMetadata: { pre_attempt_failure: true }, escalationReason,
       });
     }
-      const message = error instanceof Error ? error.message : String(error);
-      // `runResearchAgent` has already exhausted its alternate-model attempts.
-      // Retrying that terminal result at this outer layer would turn a four-minute
-      // timeout into several silent, duplicate pipeline attempts.
-      const exhaustedModelAttempts = /OpenCode model attempts exhausted/i.test(message);
-      const transient = !exhaustedModelAttempts && /fetch failed|timeout|timed out|ECONNRESET|ECONNREFUSED|socket|network/i.test(message);
-      if (transient && attempt < maxAttempts) {
-        await params.sql`
-          UPDATE research_tasks
-          SET retry_count = ${attempt}, failure_reason = ${`Attempt ${attempt}/${maxAttempts} failed: ${message}`}, updated_at = NOW()
-          WHERE id = ${task.id}
-        `;
-        continue;
-      }
-      await failTask(params.sql, task.id, error);
-      throw error;
-    }
+    await failTask(params.sql, task.id, error);
+    throw error;
   }
-  throw new Error(`Agent ${params.agentName} exhausted retries`);
 }
 
 function exactJsonPrompt(params: {
@@ -1754,7 +1735,7 @@ async function persistEvidence(
         ${nullableDate(claim.as_of_date || claim.period_end)},
         ${numberValue(claim.confidence, 0.75).toString()},
         'source-reader', 'accepted', NULL,
-        ${JSON.stringify({ system_generated: true, agent_output: claim })}::jsonb
+        ${sql.json({ system_generated: true, agent_output: claim } as any)}
       )
       RETURNING id
     `;
@@ -1772,12 +1753,12 @@ async function persistEvidence(
         ${source.sourceId}, ${locatedChunk?.document_parse_id || source.parseId || null}, ${locatedChunk?.id || source.chunkId || null},
         ${Number.isInteger(Number(claim.char_start)) ? Number(claim.char_start) : locatedChunk?.char_start || null},
         ${Number.isInteger(Number(claim.char_end)) ? Number(claim.char_end) : locatedChunk?.char_end || null},
-        ${JSON.stringify({
+        ${sql.json({
           system_generated: true,
           source_id: source.sourceId,
           source_type: source.sourceType,
           agent_locator: textValue(claim.source_locator || claim.section || claim.table_reference, ""),
-        })}::jsonb
+        })}
       )
       RETURNING id
     `;
@@ -1878,7 +1859,7 @@ async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string, outpu
         VALUES (${metricKey}, ${textValue(obs.display_name || obs.metric_name || metricKey, metricKey)},
           ${textValue(obs.metric_category, "financial")}, ${textValue(obs.unit_type, "number")},
           ${textValue(obs.unit || obs.default_unit, "") || null}, ${textValue(obs.currency || obs.default_currency, "USD")},
-          ${textValue(obs.description, "Reconciled metric")}, ARRAY[${ctx.profileKey}], ${JSON.stringify({ system_generated: true })}::jsonb)
+          ${textValue(obs.description, "Reconciled metric")}, ARRAY[${ctx.profileKey}], ${tx.json({ system_generated: true })})
         ON CONFLICT (metric_key) DO UPDATE SET updated_at = NOW() RETURNING id
       `;
       const periodStart = nullableText(obs.period_start);
@@ -1906,7 +1887,7 @@ async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string, outpu
             ${textValue(obs.available_at, new Date().toISOString())}, ${valueNumeric}, ${textValue(obs.value_text, "") || null},
             ${unit || null}, ${currency}, ${textValue(obs.source, "metric-reconciler")}, ${sourceId},
             ${numberValue(obs.confidence, 0.7).toString()}, 'accepted',
-            ${JSON.stringify({ system_generated: true, reconciliation: "canonical_revision", supersedes_observation_ids: existing.map((row) => String(row.id)), agent_output: obs })}::jsonb)
+            ${tx.json({ system_generated: true, reconciliation: "canonical_revision", supersedes_observation_ids: existing.map((row) => String(row.id)), agent_output: obs } as any)})
           RETURNING id
         `;
         canonicalId = String(inserted[0].id);
@@ -1914,14 +1895,14 @@ async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string, outpu
         await tx`
           UPDATE metric_observations SET review_status = 'accepted',
             metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
-              || ${JSON.stringify({ reconciliation: "canonical_promoted", reconciled_at: new Date().toISOString() })}::jsonb
+              || ${tx.json({ reconciliation: "canonical_promoted", reconciled_at: new Date().toISOString() })}
           WHERE id = ${canonicalId}
         `;
       }
       await tx`
         UPDATE metric_observations SET review_status = 'rejected',
           metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
-            || ${JSON.stringify({ reconciliation: "superseded_conflict", canonical_observation_id: canonicalId, reconciled_at: new Date().toISOString() })}::jsonb
+            || ${tx.json({ reconciliation: "superseded_conflict", canonical_observation_id: canonicalId, reconciled_at: new Date().toISOString() })}
         WHERE research_run_id = ${ctx.runId} AND metric_definition_id = ${metricRows[0].id}
           AND COALESCE(period_start::text, '') = ${periodStart || ''} AND COALESCE(period_end::text, '') = ${periodEnd}
           AND COALESCE(unit, '') = ${unit} AND COALESCE(currency, '') = ${currency}
@@ -1942,8 +1923,8 @@ async function persistAnalysis(sql: Sql, ctx: RunContext, output: Record<string,
       status, priority, input_json, output_json, completed_at
     ) VALUES (
       ${ctx.runId}, ${stageId}, 'agent_analysis_sections', 'analysis', 'asset-analyst',
-      'completed', 60, ${JSON.stringify({ system_generated: true })}::jsonb,
-      ${JSON.stringify(output)}::jsonb, NOW()
+      'completed', 60, ${sql.json({ system_generated: true })},
+      ${sql.json(output as any)}, NOW()
     )
   `;
   for (const moduleKey of ctx.requiredModules) {
@@ -1957,8 +1938,8 @@ async function persistAnalysis(sql: Sql, ctx: RunContext, output: Record<string,
         status, priority, input_json, output_json, completed_at
       ) VALUES (
         ${ctx.runId}, ${stageId}, ${moduleKey}, 'profile_module', 'asset-analyst',
-        ${completion.status}, 50, ${JSON.stringify({ system_generated: true })}::jsonb,
-        ${JSON.stringify({ system_generated: true, module: moduleKey, section: section || null, missing_input: completion.reason })}::jsonb,
+        ${completion.status}, 50, ${sql.json({ system_generated: true })},
+        ${sql.json({ system_generated: true, module: moduleKey, section: section || null, missing_input: completion.reason } as any)},
         ${completion.status === "completed" ? new Date().toISOString() : null}
       )
     `;
@@ -1975,7 +1956,7 @@ async function persistAnalysis(sql: Sql, ctx: RunContext, output: Record<string,
         supporting_claim_ids, status, updated_at
       ) VALUES (
         ${ctx.runId}, ${ctx.profileId}, ${moduleKey},
-        ${textValue(section.title, moduleKey)}, ${JSON.stringify(section)}::jsonb,
+        ${textValue(section.title, moduleKey)}, ${sql.json(section as any)},
         ARRAY[]::uuid[], ${completion.status}, NOW()
       )
       ON CONFLICT (research_run_id, module_key) DO UPDATE
@@ -2064,7 +2045,7 @@ async function materializeRequiredAnalysisModules(sql: Sql, ctx: RunContext, out
       ) VALUES (
         ${ctx.runId}, ${ctx.profileId}, ${moduleKey},
         ${textValue((content as Record<string, unknown>).title, moduleKey.replace(/_/g, " "))},
-        ${JSON.stringify(content)}::jsonb,
+        ${sql.json(content as any)},
         ${claimIds}, ${completion.status}, NOW()
       )
       ON CONFLICT (research_run_id, module_key) DO UPDATE
@@ -2076,7 +2057,7 @@ async function materializeRequiredAnalysisModules(sql: Sql, ctx: RunContext, out
       UPDATE research_tasks
       SET status = ${completion.status},
           output_json = (CASE WHEN jsonb_typeof(output_json) = 'object' THEN output_json ELSE '{}'::jsonb END)
-            || ${JSON.stringify({ evidence_claim_ids: claimIds, validation_reason: completion.reason })}::jsonb,
+            || ${sql.json({ evidence_claim_ids: claimIds, validation_reason: completion.reason })},
           completed_at = ${completion.status === "completed" ? new Date().toISOString() : null}
       WHERE id = (
         SELECT id FROM research_tasks
@@ -2129,8 +2110,8 @@ async function persistDeterministicValuationModels(sql: Sql, ctx: RunContext) {
       ORDER BY created_at DESC LIMIT 1
     `;
     if (prior[0]) await sql`
-      UPDATE valuation_model_runs SET status = 'blocked', input_manifest_json = ${JSON.stringify({ generated_by: "research_os_v2_preflight", metric_observation_ids: inputs.map((input) => input.id) })}::jsonb,
-        outputs_json = '{}'::jsonb, validation_json = ${JSON.stringify(validation)}::jsonb, reproducible = false,
+      UPDATE valuation_model_runs SET status = 'blocked', input_manifest_json = ${sql.json({ generated_by: "research_os_v2_preflight", metric_observation_ids: inputs.map((input) => input.id) })},
+        outputs_json = '{}'::jsonb, validation_json = ${sql.json(validation)}, reproducible = false,
         error_message = ${`Valuation preflight blocked: ${validation.reason}`}, completed_at = NOW(), updated_at = NOW()
       WHERE id = ${prior[0].id}
     `;
@@ -2138,8 +2119,8 @@ async function persistDeterministicValuationModels(sql: Sql, ctx: RunContext) {
       INSERT INTO valuation_model_runs (research_run_id, asset_id, profile_id, model_key, status, input_manifest_json,
         assumptions_json, outputs_json, validation_json, reproducible, error_message, started_at, completed_at)
       VALUES (${ctx.runId}, ${ctx.assetId}, ${ctx.profileId}, ${modelKey}, 'blocked',
-        ${JSON.stringify({ generated_by: "research_os_v2_preflight", metric_observation_ids: inputs.map((input) => input.id) })}::jsonb,
-        '[]'::jsonb, '{}'::jsonb, ${JSON.stringify(validation)}::jsonb, false,
+        ${sql.json({ generated_by: "research_os_v2_preflight", metric_observation_ids: inputs.map((input) => input.id) })},
+        '[]'::jsonb, '{}'::jsonb, ${sql.json(validation)}, false,
         ${`Valuation preflight blocked: ${validation.reason}`}, NOW(), NOW())
     `;
     preflightGaps.push({ gap_key: `valuation_${modelKey}_blocked`, severity: "high",
@@ -2175,7 +2156,7 @@ async function persistValidatedIndicators(sql: Sql, ctx: RunContext) {
       ) VALUES (
         ${ctx.runId}, ${ctx.profileId}, ${key}, ${name}, ${family},
         ${`${name} is evaluated only from source-linked metric observations available at the recorded timestamp.`},
-        ${JSON.stringify({ formula: metricKeys.join(" / "), metric_keys: metricKeys })}::jsonb,
+        ${sql.json({ formula: metricKeys.join(" / "), metric_keys: metricKeys })},
         ${matched.map((input) => input.id)}, ARRAY[]::uuid[],
         'Uses available_at from input observations; no future observations are permitted.',
         'validated_input_series', 'accepted'
@@ -2189,7 +2170,7 @@ async function persistValidatedIndicators(sql: Sql, ctx: RunContext) {
         indicator_definition_id, observed_at, available_at, value_numeric, input_observation_ids, metadata_json
       ) VALUES (
         ${definitionRows[0].id}, ${primary.asOfDate}, ${primary.availableAt}, ${value.toString()},
-        ${matched.map((input) => input.id)}, ${JSON.stringify({ derived: matched.length > 1, metric_keys: metricKeys })}::jsonb
+        ${matched.map((input) => input.id)}, ${sql.json({ derived: matched.length > 1, metric_keys: metricKeys })}
       )
     `;
   }
@@ -2263,9 +2244,9 @@ async function executeDeterministicStrategyGrid(sql: Sql, ctx: RunContext) {
         ${ctx.runId}, ${ctx.assetId}, 'completed', ${definition.name},
         'Deterministic moving-average strategy grid executed by Research OS.', ${ctx.symbol}, 'SPY',
         'yfinance', '2021-01-04', ${config.end_date}, ${ctx.marketDataCutoffAt}, '100000',
-        ${JSON.stringify(definition.params)}::jsonb,
-        ${JSON.stringify([{ source: "deterministic_grid", hypothesis: definition.hypothesis }])}::jsonb,
-        ${strategyPath.replace(/\\/g, "/")}, ${JSON.stringify(result.metrics || {})}::jsonb, NOW(), NOW()
+        ${sql.json(definition.params)},
+        ${sql.json([{ source: "deterministic_grid", hypothesis: definition.hypothesis }])},
+        ${strategyPath.replace(/\\/g, "/")}, ${sql.json((result.metrics || {}) as any)}, NOW(), NOW()
       ) RETURNING id
     `;
     const backtestId = String(backtestRows[0].id);
@@ -2275,7 +2256,7 @@ async function executeDeterministicStrategyGrid(sql: Sql, ctx: RunContext) {
       ) VALUES (
         ${backtestId}, ${ctx.runId}, 'deterministic_grid_result', ${definition.name},
         ${resultPath.replace(/\\/g, "/")}, 'application/json',
-        ${JSON.stringify({ combination_key: key, strategy_source_hash: createHash("sha256").update(source).digest("hex") })}::jsonb
+        ${sql.json({ combination_key: key, strategy_source_hash: createHash("sha256").update(source).digest("hex") })}
       )
     `;
     await sql`
@@ -2283,7 +2264,7 @@ async function executeDeterministicStrategyGrid(sql: Sql, ctx: RunContext) {
         research_run_id, combination_key, name, hypothesis, definition_json, status, backtest_run_id, completed_at
       ) VALUES (
         ${ctx.runId}, ${key}, ${definition.name}, ${definition.hypothesis},
-        ${JSON.stringify({ strategy: "moving_average_crossover", params: definition.params, input_data: "yfinance adjusted close" })}::jsonb,
+        ${sql.json({ strategy: "moving_average_crossover", params: definition.params, input_data: "yfinance adjusted close" })},
         'completed', ${backtestId}, NOW()
       ) ON CONFLICT (research_run_id, combination_key) DO UPDATE
       SET status = 'completed', backtest_run_id = EXCLUDED.backtest_run_id, completed_at = NOW(), definition_json = EXCLUDED.definition_json
@@ -2294,8 +2275,8 @@ async function executeDeterministicStrategyGrid(sql: Sql, ctx: RunContext) {
       research_run_id, stage_id, task_key, task_type, agent_name, status, priority, input_json, output_json, completed_at
     ) VALUES (
       ${ctx.runId}, ${stageId}, 'deterministic-strategy-grid', 'backtest', 'deterministic-backtest-grid',
-      'completed', 75, ${JSON.stringify(config)}::jsonb,
-      ${JSON.stringify({ combinations_executed: 50, artifact: resultPath.replace(/\\/g, "/") })}::jsonb, NOW()
+      'completed', 75, ${sql.json(config)},
+      ${sql.json({ combinations_executed: 50, artifact: resultPath.replace(/\\/g, "/") })}, NOW()
     )
   `;
 }
@@ -2473,12 +2454,12 @@ async function persistValuation(sql: Sql, ctx: RunContext, output: Record<string
         ${textValue(signal.signal_key || signal.key, `agent_${lens}`)},
         ${textValue(signal.signal_name || signal.name, `${lens} signal`)},
         ${lens}, ${textValue(signal.current_value_text || signal.current_value, "Agent-generated valuation signal")},
-        ${JSON.stringify(signal.comparison_range_json || {})}::jsonb,
+        ${sql.json((signal.comparison_range_json || {}) as any)},
         ${textValue(signal.cheaper_when, "lower")},
         ${textValue(signal.signal, "inconclusive")},
         ${numericTextOrNull(signal.cheapness_score)},
         ${numberValue(signal.confidence, 0.65).toString()},
-        ${JSON.stringify({ system_generated: true, agent_output: signal })}::jsonb,
+        ${sql.json({ system_generated: true, agent_output: signal } as any)},
         'accepted'
       )
     `;
@@ -2510,7 +2491,7 @@ async function persistValuation(sql: Sql, ctx: RunContext, output: Record<string
         ${numericTextOrNull(scenario.probability)},
         ${numericTextOrNull(scenario.value_anchor)},
         ${textValue(scenario.currency, "USD")},
-        ${JSON.stringify(scenario.assumptions_json || scenario.assumptions || [])}::jsonb,
+        ${sql.json((scenario.assumptions_json || scenario.assumptions || []) as any)},
         ${numberValue(scenario.confidence, 0.65).toString()},
         'accepted'
       )
@@ -2567,7 +2548,7 @@ async function persistThesisRiskCatalyst(sql: Sql, ctx: RunContext, analysis: Re
         ${textValue(risk.description || risk.reason, "Unresolved research risk identified by system agents.")},
         ${textValue(risk.severity, "medium")},
         ${textValue(risk.probability, "unknown")},
-        ${JSON.stringify(risk.mitigants_json || [])}::jsonb
+        ${sql.json((risk.mitigants_json || []) as any)}
       )
     `;
   }
@@ -2607,8 +2588,8 @@ async function persistReview(sql: Sql, ctx: RunContext, output: Record<string, u
       status, priority, input_json, output_json, completed_at
     ) VALUES (
       ${ctx.runId}, ${stageRows[0].id}, 'agent_review_findings', 'ai_review', 'research-reviewer',
-      'completed', 60, ${JSON.stringify({ system_generated: true })}::jsonb,
-      ${JSON.stringify(output)}::jsonb, NOW()
+      'completed', 60, ${sql.json({ system_generated: true })},
+      ${sql.json(output as any)}, NOW()
     )
   `;
   await reconcileSourceGaps(sql, ctx, {
@@ -2959,38 +2940,114 @@ export async function runSystemResearchPipeline(runId: string): Promise<SystemPi
     if (!isStageRunnable(analysisStatus)) {
       return systemPipelineResult(sql, runId, notes);
     }
-    let analysisOutput =
-      await latestTaskOutput(sql, runId, "asset-analyst:full-analysis") ||
-      await latestTaskOutput(sql, runId, "agent_analysis_sections");
-    if (!analysisOutput || await getStageStatus(sql, runId, "asset_analysis") !== "completed") {
-      const analysisPacket = compactResearchContext({ ctx, evidenceOutput, metricOutput });
-      try {
-        analysisOutput = await callAgent<Record<string, unknown>>({
-      sql,
-      ctx,
-      stageKey: "asset_analysis",
-      taskKey: "asset-analyst:full-analysis",
-      taskType: "analysis",
-      agentName: "asset-analyst",
-      modelTier: "specialist",
-      packet: analysisPacket,
-      prompt: exactJsonPrompt({
-        agentName: "asset-analyst",
-        requiredKeys: ["analysis_sections", "key_drivers", "metric_interpretation", "contradictions_or_tensions", "missing_modules", "source_gaps", "analyst_questions", "confidence"],
-        packet: analysisPacket,
-        extraRules: [
-          "Produce a SOFI-style investment research analysis, not a terse summary.",
-          "analysis_sections must include section_key, title, summary, evidence, implication, open_questions, and confidence.",
-          "Each contract-required module section must include evidence_claim_ids copied exactly from evidence_claims.id; a module without valid persisted claim IDs remains incomplete.",
-          "Include sections for business_or_asset_profile, industry_or_context, financial_history, investment_thesis, risk_reward, valuation_inputs, and source_completeness when applicable.",
-          "key_drivers must be named, specific drivers with driver_name, driver_type, description, value_impact, evidence_claim_ids where known, and confidence. Never use placeholder names like Agent driver.",
-          "metric_interpretation should explain what changed, what matters, what is stale, and what cannot be concluded.",
-          "Separate facts, assumptions, estimates, and opinions inside analysis_sections when relevant.",
-          "If recent primary-source data is missing, state the missing data as source_gaps with severity and why it matters.",
-        ],
-      }),
-        });
-      } catch (error) {
+    let analysisOutput: Record<string, any> | null = null;
+    const existingFullAnalysis = await latestTaskOutput(sql, runId, "asset-analyst:full-analysis") ||
+                                await latestTaskOutput(sql, runId, "agent_analysis_sections");
+
+    if (existingFullAnalysis && await getStageStatus(sql, runId, "asset_analysis") === "completed") {
+      analysisOutput = existingFullAnalysis;
+    } else {
+      const moduleGroups = [
+        {
+          id: "business_profile",
+          name: "Business segments and competitive position",
+          modules: ["business_segments", "business_or_asset_profile", "industry_or_context"]
+        },
+        {
+          id: "commerce",
+          name: "Commerce economics",
+          modules: ["revenue_drivers", "unit_economics", "margins", "gmv", "active_buyers"]
+        },
+        {
+          id: "fintech",
+          name: "Fintech platform economics",
+          modules: ["tpv", "fintech_mau", "customer_funds"]
+        },
+        {
+          id: "credit",
+          name: "Credit growth and loss quality",
+          modules: ["loan_book", "provisions", "funding_liabilities", "credit_losses"]
+        },
+        {
+          id: "financials",
+          name: "Financial statements and valuation prep",
+          modules: ["fcf", "capex", "working_capital", "net_debt", "share_count", "roic", "financial_history"]
+        },
+        {
+          id: "gaps_valuation",
+          name: "Valuation inputs and unresolved gaps",
+          modules: ["net_interest_margin_after_losses", "driver_based_dcf", "exit_multiple_dcf", "reverse_dcf", "valuation_inputs", "source_completeness", "investment_thesis", "risk_reward"]
+        }
+      ];
+
+      const groupResults: any[] = [];
+      let anyGroupFailed = false;
+      let groupError: any = null;
+
+      for (const group of moduleGroups) {
+        let groupOutput = await latestTaskOutput(sql, runId, "asset-analyst:analysis-" + group.id);
+        if (!groupOutput) {
+          const groupEvidenceClaims = arrayValue(evidenceOutput?.evidence_claims).filter((claim: any) =>
+            group.modules.some((mod) => evidenceRelevantToModule(mod, claim))
+          );
+
+          const groupMetrics = arrayValue(metricOutput?.normalized_observations).filter((obs: any) => {
+            const metricKey = String(obs.metric_key || obs.metric || "").toLowerCase();
+            return group.modules.some((mod) => {
+              const canonical = mod === "nimal" ? "net_interest_margin_after_losses" : mod;
+              const terms = MODULE_TERMS[canonical] || canonical.split("_").filter((t) => t.length >= 3);
+              return terms.some((term) => metricKey.includes(term));
+            });
+          });
+
+          const groupPacket = {
+            ...compactResearchContext({ ctx, evidenceOutput, metricOutput }),
+            evidence_claims: groupEvidenceClaims.slice(0, 24),
+            normalized_observations: groupMetrics.slice(0, 24),
+            required_modules: group.modules,
+          };
+
+          try {
+            groupOutput = await callAgent<Record<string, unknown>>({
+              sql,
+              ctx,
+              stageKey: "asset_analysis",
+              taskKey: "asset-analyst:analysis-" + group.id,
+              taskType: "analysis_group",
+              agentName: "asset-analyst",
+              modelTier: "specialist",
+              packet: groupPacket,
+              prompt: exactJsonPrompt({
+                agentName: "asset-analyst",
+                requiredKeys: ["analysis_sections", "key_drivers", "metric_interpretation", "contradictions_or_tensions", "missing_modules", "source_gaps", "analyst_questions", "confidence"],
+                packet: groupPacket,
+                extraRules: [
+                  "Produce a SOFI-style investment research analysis, not a terse summary.",
+                  `Focus ONLY on analyzing these specific modules: ${group.modules.join(", ")}.`,
+                  "analysis_sections must include section_key, title, summary, evidence, implication, open_questions, and confidence.",
+                  "Each contract-required module section must include evidence_claim_ids copied exactly from evidence_claims.id; a module without valid persisted claim IDs remains incomplete.",
+                  "Include sections for business_or_asset_profile, industry_or_context, financial_history, investment_thesis, risk_reward, valuation_inputs, and source_completeness when applicable.",
+                  "key_drivers must be named, specific drivers with driver_name, driver_type, description, value_impact, evidence_claim_ids where known, and confidence. Never use placeholder names like Agent driver.",
+                  "metric_interpretation should explain what changed, what matters, what is stale, and what cannot be concluded.",
+                  "Separate facts, assumptions, estimates, and opinions inside analysis_sections when relevant.",
+                  "If recent primary-source data is missing, state the missing data as source_gaps with severity and why it matters.",
+                ],
+              }),
+            });
+          } catch (error) {
+            anyGroupFailed = true;
+            groupError = error;
+            break;
+          }
+        }
+        groupResults.push(groupOutput);
+      }
+
+      if (anyGroupFailed) {
+        if (ctx.runType === "deep_dive" || ctx.runType === "full_initiation_report") {
+          throw groupError || new Error("Asset analysis stage failed");
+        }
+
         analysisOutput = {
           analysis_sections: [], key_drivers: [{
             driver_name: "Source-linked financial and market-data refresh",
@@ -2999,12 +3056,43 @@ export async function runSystemResearchPipeline(runId: string): Promise<SystemPi
             value_impact: "Updates to operating metrics may alter modeled per-share value.", confidence: 0.7,
           }], metric_interpretation: [],
           contradictions_or_tensions: [], missing_modules: [], source_gaps: [{
-            severity: "medium", description: error instanceof Error ? error.message : String(error),
+            severity: "medium", description: groupError instanceof Error ? groupError.message : String(groupError),
           }], analyst_questions: ["Validate deterministic module summaries against the linked filing evidence."],
           confidence: 0.5,
         };
         notes.push("Asset-analyst response was unusable; generated deterministic evidence-backed module baseline");
+      } else {
+        analysisOutput = mergeGroupOutputs(groupResults);
+
+        const stageRows = await sql`SELECT id FROM research_stages WHERE research_run_id = ${ctx.runId} AND stage_key = 'asset_analysis'`;
+        const stageId = stageRows[0].id;
+        const existingTasks = await sql`
+          SELECT id FROM research_tasks
+          WHERE research_run_id = ${ctx.runId} AND task_key = 'asset-analyst:full-analysis'
+        `;
+        if (existingTasks.length > 0) {
+          await sql`
+            UPDATE research_tasks
+            SET output_json = ${sql.json(analysisOutput)},
+                status = 'completed',
+                completed_at = NOW(),
+                updated_at = NOW()
+            WHERE id = ${existingTasks[0].id}
+          `;
+        } else {
+          await sql`
+            INSERT INTO research_tasks (
+              research_run_id, stage_id, task_key, task_type, agent_name,
+              status, priority, input_json, output_json, completed_at
+            ) VALUES (
+              ${ctx.runId}, ${stageId}, 'asset-analyst:full-analysis', 'analysis', 'asset-analyst',
+              'completed', 60, ${sql.json({ system_generated: true })},
+              ${sql.json(analysisOutput)}, NOW()
+            )
+          `;
+        }
       }
+
       await persistAnalysis(sql, ctx, analysisOutput);
       notes.push("Asset-analyst produced analysis sections and module outputs");
     }

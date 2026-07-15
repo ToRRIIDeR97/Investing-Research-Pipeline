@@ -196,7 +196,7 @@ export async function generateResearchPackage(params: {
       ) VALUES (
         ${params.assetId}, ${params.runId}, 'research_package',
         'sofi-folder-standard-v1', ${storagePath}, ${contentHash},
-        ${params.generatedBy}, NOW(), ${JSON.stringify(manifest)}::jsonb
+        ${params.generatedBy}, NOW(), ${sql.json(manifest as any)}
       )
       RETURNING id
     `;

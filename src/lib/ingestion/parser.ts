@@ -53,7 +53,7 @@ export async function storeParseResults(params: {
         ${params.parserName},
         ${params.parserVersion},
         'completed',
-        ${JSON.stringify(params.parseResult.warnings)},
+        ${sql.json(params.parseResult.warnings)},
         ${params.storagePath || null},
         NOW()
       )
@@ -97,7 +97,7 @@ export async function storeParseResults(params: {
           ${table.pageStart || null},
           ${table.pageEnd || null},
           ${table.title || null},
-          ${JSON.stringify(table.tableJson)},
+          ${sql.json(table.tableJson as any)},
           ${table.confidence || null}
         )
       `;

@@ -264,7 +264,7 @@ export async function validateStageCompletion(
     // Persist validation result on the stage record
     await sql`
       UPDATE research_stages
-      SET validation_result_json = ${JSON.stringify(result)}::jsonb,
+      SET validation_result_json = ${sql.json(result as any)},
           updated_at = NOW()
       WHERE research_run_id = ${runId} AND stage_key = ${stageKey}
     `;

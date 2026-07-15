@@ -65,7 +65,7 @@ export async function enqueueTask(input: EnqueueTaskInput): Promise<string> {
       await sql`
         UPDATE research_tasks
         SET status = 'pending',
-            input_json = ${JSON.stringify(input.inputJson || {})}::jsonb,
+            input_json = ${sql.json((input.inputJson || {}) as any)},
             priority = ${input.priority ?? 100},
             agent_name = ${input.agentName || null},
             retry_count = 0,
@@ -89,7 +89,7 @@ export async function enqueueTask(input: EnqueueTaskInput): Promise<string> {
       ) VALUES (
         ${input.runId}, ${input.stageId}, ${input.taskKey}, ${input.taskType},
         ${input.agentName || null}, 'pending', ${input.priority ?? 100},
-        ${JSON.stringify(input.inputJson || {})}::jsonb,
+        ${sql.json((input.inputJson || {}) as any)},
         ${idempotencyKey}
       )
       RETURNING id
@@ -164,7 +164,7 @@ export async function completeTask(
     await sql`
       UPDATE research_tasks
       SET status = 'completed',
-          output_json = ${JSON.stringify(outputJson)}::jsonb,
+          output_json = ${sql.json(outputJson as any)},
           completed_at = NOW(),
           updated_at = NOW()
       WHERE id = ${taskId}

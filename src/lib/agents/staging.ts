@@ -111,7 +111,7 @@ export async function stageOutput(params: {
       ) VALUES (
         ${params.runId}, ${params.stageId}, ${params.taskId},
         ${params.targetTable}, ${params.outputSchemaKey}, ${params.outputSchemaVersion},
-        ${JSON.stringify(params.payload)}, ${validationStatus}, ${JSON.stringify(errors)},
+        ${sql.json(params.payload as any)}, ${validationStatus}, ${sql.json(errors)},
         ${params.createdByAgent}
       )
       RETURNING id
@@ -166,7 +166,7 @@ export async function validateStagedOutput(stagingId: string): Promise<{
     await sql`
       UPDATE agent_output_staging
       SET validation_status = ${valid ? "valid" : "invalid"},
-          validation_errors_json = ${JSON.stringify(errors)}
+          validation_errors_json = ${sql.json(errors)}
       WHERE id = ${stagingId}
     `;
 

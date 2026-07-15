@@ -25,6 +25,14 @@ interface BudgetCheck {
   reason?: string;
 }
 
+export interface BudgetReservationInput {
+  researchRunId?: string;
+  stageId?: string;
+  taskId?: string;
+  modelTier: string;
+  reserveUsd: number;
+}
+
 async function checkBudget(
   sql: ReturnType<typeof postgres>,
   input: RecordModelCallInput
@@ -93,6 +101,22 @@ async function checkBudget(
   return { exceeded: false };
 }
 
+export async function assertModelBudgetAvailable(input: BudgetReservationInput): Promise<void> {
+  const sql = postgres(process.env.DATABASE_URL!);
+  try {
+    const result = await checkBudget(sql, {
+      modelProvider: "budget-preflight",
+      modelName: "pending",
+      status: "preflight",
+      ...input,
+      costUsd: input.reserveUsd,
+    });
+    if (result.exceeded) throw new Error(result.reason || "Model budget exhausted");
+  } finally {
+    await sql.end();
+  }
+}
+
 export async function recordModelCall(input: RecordModelCallInput): Promise<string> {
   if (input.modelTier === "premium" && !input.escalationReason) {
     throw new Error("Premium model calls require escalationReason");
@@ -134,8 +158,8 @@ export async function recordModelCall(input: RecordModelCallInput): Promise<stri
           ${input.latencyMs || null},
           ${input.status},
           ${input.errorMessage || null},
-          ${JSON.stringify(requestMetadata)}::jsonb,
-          ${JSON.stringify(input.responseMetadata || {})}::jsonb
+          ${sql.json(requestMetadata)},
+          ${sql.json((input.responseMetadata || {}) as any)}
         )
         RETURNING id
       `;

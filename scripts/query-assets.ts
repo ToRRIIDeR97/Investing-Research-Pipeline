@@ -1,3 +1,4 @@
+import postgres from "postgres";
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 
@@ -19,13 +20,22 @@ function loadEnvFile(fileName: string) {
 loadEnvFile(".env.local");
 loadEnvFile(".env");
 
-// We can extract agentTimeoutMs function or test it
-const agentName = "asset-analyst";
-const specific = process.env[`OPENCODE_${agentName.toUpperCase().replace(/-/g, "_")}_TIMEOUT_MS`];
-const configured = Number(specific || process.env.OPENCODE_AGENT_TIMEOUT_MS || 240000);
-const timeoutMs = Number.isFinite(configured) && configured >= 10000 ? configured : 240000;
+const sql = postgres(process.env.DATABASE_URL!);
 
-console.log("OPENCODE_ASSET_ANALYST_TIMEOUT_MS env:", specific);
-console.log("OPENCODE_AGENT_TIMEOUT_MS env:", process.env.OPENCODE_AGENT_TIMEOUT_MS);
-console.log("Configured value:", configured);
-console.log("Final timeoutMs:", timeoutMs);
+async function main() {
+  const rows = await sql`
+    SELECT DISTINCT ON (a.id) a.id, a.canonical_name, a.slug, a.primary_profile_id, l.symbol
+    FROM assets a
+    LEFT JOIN instruments i ON i.asset_id = a.id
+    LEFT JOIN listings l ON l.instrument_id = i.id AND l.is_primary = true
+    ORDER BY a.id
+  `;
+  console.log("Assets:", JSON.stringify(rows, null, 2));
+
+  const profiles = await sql`SELECT id, profile_key, name, version FROM research_profiles`;
+  console.log("Profiles:", JSON.stringify(profiles, null, 2));
+
+  await sql.end();
+}
+
+main().catch(console.error);

@@ -80,14 +80,14 @@ export async function createStagesForRun(runId: string): Promise<void> {
           ${stage.allowedModelTiers},
           ${stage.maxRetries},
           ${stage.maxBudgetUsd?.toString() || null},
-          ${JSON.stringify({
+          ${sql.json({
             requiredOutputs: stage.requiredOutputs,
             requiresHumanApproval: stage.requiresHumanApproval,
             entryCriteria: stage.entryCriteria,
             validationRules: stage.validationRules,
             failureState: stage.failureState,
-          })}::jsonb,
-          ${JSON.stringify({})}::jsonb
+          })},
+          ${sql.json({})}
         )
         ON CONFLICT (research_run_id, stage_key) DO NOTHING
       `;
@@ -108,11 +108,11 @@ export async function createStagesForRun(runId: string): Promise<void> {
           'skipped',
           ${stage.allowedModelTiers},
           ${stage.maxRetries},
-          ${JSON.stringify({
+          ${sql.json({
             requiredOutputs: stage.requiredOutputs,
             skipReason: stage.skipReason || `Skipped for run type: ${runType}`,
-          })}::jsonb,
-          ${JSON.stringify({})}::jsonb,
+          })},
+          ${sql.json({})},
           ${stage.skipReason || `Skipped for run type: ${runType}`}
         )
         ON CONFLICT (research_run_id, stage_key) DO NOTHING
@@ -314,7 +314,7 @@ export async function advanceStage(
         // Persist retry count in the validation payload; stage schema has no retry_count column.
         await sql`
           UPDATE research_stages
-          SET validation_result_json = ${JSON.stringify(retryValidation)}::jsonb,
+          SET validation_result_json = ${sql.json(retryValidation)},
               updated_at = NOW()
           WHERE id = ${currentStage.id}
         `;
@@ -347,7 +347,7 @@ export async function advanceStage(
           UPDATE research_stages
           SET status = 'failed',
               failure_reason = ${`Failed after ${maxRetries} retries: ${validation.errors.join("; ")}`},
-              validation_result_json = ${JSON.stringify(validation)}::jsonb,
+              validation_result_json = ${sql.json(validation as any)},
               completed_at = NOW(),
               updated_at = NOW()
           WHERE id = ${currentStage.id}
@@ -362,7 +362,7 @@ export async function advanceStage(
       UPDATE research_stages
       SET status = 'completed',
           completed_at = NOW(),
-          validation_result_json = ${JSON.stringify(validation)}::jsonb,
+          validation_result_json = ${sql.json(validation as any)},
           updated_at = NOW()
       WHERE id = ${currentStage.id}
     `;
@@ -415,11 +415,11 @@ export async function approveResearchPlan(
       UPDATE research_stages
       SET status = 'completed',
           completed_at = NOW(),
-          validation_result_json = ${JSON.stringify({
+          validation_result_json = ${sql.json({
             ...validation,
             approvedBy,
             approvalType: "research_plan",
-          })}::jsonb,
+          })},
           updated_at = NOW()
       WHERE id = ${stages[0].id}
     `;
@@ -494,12 +494,12 @@ export async function approveHumanReview(
       UPDATE research_stages
       SET status = 'completed',
           completed_at = NOW(),
-          validation_result_json = ${JSON.stringify({
+          validation_result_json = ${sql.json({
             ...validation,
             reviewedBy,
             reviewDecisionId: decisions[0].id,
             approvalType: "human_review",
-          })}::jsonb,
+          })},
           updated_at = NOW()
       WHERE id = ${stages[0].id}
     `;

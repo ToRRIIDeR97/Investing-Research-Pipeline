@@ -1,8 +1,3 @@
-type JsonSchema = Record<string, unknown>;
-
-export const OPENCODE_GO_PROVIDER_ID =
-  process.env.OPENCODE_GO_PROVIDER_ID || "opencode-go";
-
 export const RESEARCH_AGENT_NAMES = [
   "intake-planner",
   "asset-classifier",
@@ -35,11 +30,6 @@ export type AgentRoute =
   | "valuation-coder"
   | "backtest-coder";
 
-export interface AgentModelRef {
-  providerID: string;
-  modelID: string;
-}
-
 export interface ResearchAgentConfig {
   name: ResearchAgentName;
   description: string;
@@ -51,7 +41,7 @@ export interface ResearchAgentConfig {
   tools: Record<string, boolean>;
   outputSchemaKey: string;
   outputSchemaVersion: number;
-  outputFormat: JsonSchema;
+  outputFormat: Record<string, unknown>;
 }
 
 const objectValue = {
@@ -91,7 +81,7 @@ const evidenceClaimArray = {
   },
 };
 
-function schema(required: string[], properties: Record<string, JsonSchema>): JsonSchema {
+function schema(required: string[], properties: Record<string, any>): Record<string, any> {
   return {
     type: "json_schema",
     retryCount: 2,
@@ -104,7 +94,7 @@ function schema(required: string[], properties: Record<string, JsonSchema>): Jso
   };
 }
 
-function normalizeModelEnvValue(value: string): string {
+export function normalizeModelEnvValue(value: string): string {
   const trimmed = value.trim().replace(/^["']|["']$/g, "");
   if (!trimmed) return trimmed;
 
@@ -163,7 +153,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "mid",
     modelTier: "mid",
     defaultModel: "deepseek-v4-pro",
-    modelEnvVar: "OPENCODE_MID_MODEL",
+    modelEnvVar: "RESEARCH_MID_MODEL",
     promptVersion: "intake-planner-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "research_plan",
@@ -204,7 +194,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "cheap",
     modelTier: "cheap",
     defaultModel: "deepseek-v4-flash",
-    modelEnvVar: "OPENCODE_CHEAP_MODEL",
+    modelEnvVar: "RESEARCH_CHEAP_MODEL",
     promptVersion: "asset-classifier-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "profile_assignment",
@@ -242,7 +232,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "cheap",
     modelTier: "cheap",
     defaultModel: "deepseek-v4-flash",
-    modelEnvVar: "OPENCODE_CHEAP_MODEL",
+    modelEnvVar: "RESEARCH_CHEAP_MODEL",
     promptVersion: "source-discovery-agent-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "source_inventory",
@@ -274,7 +264,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "cheap",
     modelTier: "cheap",
     defaultModel: "deepseek-v4-flash",
-    modelEnvVar: "OPENCODE_CHEAP_MODEL",
+    modelEnvVar: "RESEARCH_CHEAP_MODEL",
     promptVersion: "source-reader-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "evidence_claim_batch",
@@ -296,7 +286,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "mid",
     modelTier: "mid",
     defaultModel: "deepseek-v4-pro",
-    modelEnvVar: "OPENCODE_MID_MODEL",
+    modelEnvVar: "RESEARCH_MID_MODEL",
     promptVersion: "table-normalizer-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "metric_observation_batch",
@@ -326,7 +316,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "cheap",
     modelTier: "cheap",
     defaultModel: "deepseek-v4-flash",
-    modelEnvVar: "OPENCODE_CHEAP_MODEL",
+    modelEnvVar: "RESEARCH_CHEAP_MODEL",
     promptVersion: "metric-normalizer-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "normalized_metric_batch",
@@ -355,10 +345,8 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Synthesize accepted evidence into asset-specific analysis sections.",
     route: "asset-analyst",
     modelTier: "specialist",
-    // GLM can still be selected explicitly, but DeepSeek Pro is the safe
-    // default after repeated GLM transport hangs during long research runs.
     defaultModel: "deepseek-v4-pro",
-    modelEnvVar: "OPENCODE_ASSET_ANALYST_MODEL",
+    modelEnvVar: "RESEARCH_ASSET_ANALYST_MODEL",
     promptVersion: "asset-analyst-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "analysis_sections",
@@ -392,7 +380,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "valuation-analyst",
     modelTier: "premium",
     defaultModel: "kimi-k2.7-code",
-    modelEnvVar: "OPENCODE_VALUATION_ANALYST_MODEL",
+    modelEnvVar: "RESEARCH_VALUATION_ANALYST_MODEL",
     promptVersion: "valuation-analyst-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "valuation_signal_batch",
@@ -426,7 +414,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "valuation-coder",
     modelTier: "premium",
     defaultModel: "kimi-k2.7-code",
-    modelEnvVar: "OPENCODE_VALUATION_CODER_MODEL",
+    modelEnvVar: "RESEARCH_VALUATION_CODER_MODEL",
     promptVersion: "valuation-coder-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "valuation_code_artifact",
@@ -460,7 +448,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "backtest-coder",
     modelTier: "premium",
     defaultModel: "kimi-k2.7-code",
-    modelEnvVar: "OPENCODE_BACKTEST_CODER_MODEL",
+    modelEnvVar: "RESEARCH_BACKTEST_CODER_MODEL",
     promptVersion: "backtest-coder-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "backtest_code_artifact",
@@ -473,7 +461,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "research-reviewer",
     modelTier: "premium",
     defaultModel: "deepseek-v4-pro",
-    modelEnvVar: "OPENCODE_RESEARCH_REVIEWER_MODEL",
+    modelEnvVar: "RESEARCH_RESEARCH_REVIEWER_MODEL",
     promptVersion: "research-reviewer-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "review_findings",
@@ -509,7 +497,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "mid",
     modelTier: "mid",
     defaultModel: "deepseek-v4-pro",
-    modelEnvVar: "OPENCODE_MID_MODEL",
+    modelEnvVar: "RESEARCH_MID_MODEL",
     promptVersion: "export-writer-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "export_artifact",
@@ -534,7 +522,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "vision",
     modelTier: "vision",
     defaultModel: "qwen3.7-plus",
-    modelEnvVar: "OPENCODE_VISION_MODEL",
+    modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "document-vision-agent-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "visual_regions",
@@ -557,7 +545,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "vision",
     modelTier: "vision",
     defaultModel: "qwen3.7-plus",
-    modelEnvVar: "OPENCODE_VISION_MODEL",
+    modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "chart-interpreter-agent-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "chart_interpretation",
@@ -591,7 +579,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "vision",
     modelTier: "vision",
     defaultModel: "qwen3.7-plus",
-    modelEnvVar: "OPENCODE_VISION_MODEL",
+    modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "table-vision-agent-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "visual_table",
@@ -615,7 +603,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "vision",
     modelTier: "vision",
     defaultModel: "qwen3.7-plus",
-    modelEnvVar: "OPENCODE_VISION_MODEL",
+    modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "visual-evidence-agent-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "visual_evidence_claim_batch",
@@ -645,7 +633,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     route: "vision",
     modelTier: "vision",
     defaultModel: "qwen3.7-plus",
-    modelEnvVar: "OPENCODE_VISION_MODEL",
+    modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "ui-output-qa-vision-agent-v1",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "visual_qa_findings",
@@ -684,14 +672,10 @@ export function getAgentConfig(agentName: string): ResearchAgentConfig {
   return AGENT_CONFIGS[agentName];
 }
 
-export function resolveAgentModel(agentName: string, modelOverride?: string): AgentModelRef {
+export function resolveAgentModel(agentName: ResearchAgentName, modelOverride?: string): string {
   const config = getAgentConfig(agentName);
   const configured = modelOverride || process.env[config.modelEnvVar] || config.defaultModel;
-
-  return {
-    providerID: process.env.OPENCODE_GO_PROVIDER_ID || OPENCODE_GO_PROVIDER_ID,
-    modelID: normalizeModelEnvValue(configured),
-  };
+  return normalizeModelEnvValue(configured);
 }
 
 export function listResearchAgents(): ResearchAgentConfig[] {

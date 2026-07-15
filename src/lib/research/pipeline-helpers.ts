@@ -98,7 +98,7 @@ export function normalizeSourceGap(gap: Record<string, unknown>, owner: string) 
   };
 }
 
-const MODULE_TERMS: Record<string, string[]> = {
+export const MODULE_TERMS: Record<string, string[]> = {
   provisions: ["provision", "credit loss", "allowance", "expected credit loss"],
   credit_losses: ["credit loss", "allowance", "charge-off", "delinquen"],
   loan_book: ["loan", "credit portfolio", "receivable", "delinquen", "non-performing"],
@@ -110,7 +110,7 @@ const MODULE_TERMS: Record<string, string[]> = {
   working_capital: ["working capital", "receivable", "payable", "inventory"],
   net_debt: ["net debt", "total debt", "borrowings", "cash and equivalents"],
   total_debt: ["debt", "borrowings", "notes payable"],
-  fcf: ["free cash flow", "operating cash flow", "capital expenditure", "capex"],
+  fcf: ["fcf", "free cash flow", "operating cash flow", "capital expenditure", "capex"],
   capex: ["capital expenditure", "capex", "property and equipment"],
 };
 
@@ -223,7 +223,10 @@ export function reconcileMetricObservations(deterministic: Record<string, unknow
 export function moduleCompletion(section: Record<string, unknown> | undefined) {
   if (!section) return { status: "needs_more_work", reason: "No module-specific analysis was returned." };
   const summary = String(section.summary || section.body || section.content || "").trim();
-  const evidence = Array.isArray(section.evidence) ? section.evidence : Array.isArray(section.evidence_claim_ids) ? section.evidence_claim_ids : [];
+  const evidence = [
+    ...(Array.isArray(section.evidence) ? section.evidence : []),
+    ...(Array.isArray(section.evidence_claim_ids) ? section.evidence_claim_ids : []),
+  ].filter(Boolean);
   if (summary.length < 80 || evidence.length === 0) {
     return { status: "needs_more_work", reason: "Module requires a substantive summary and module-specific evidence provenance." };
   }
