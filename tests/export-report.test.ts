@@ -89,6 +89,33 @@ describe("v3 report export (Component 15)", () => {
           human_approved_by: "John Doe",
         },
       },
+      backtest: {
+        framework_gate: {
+          combinations_tested: 50,
+          passed: true,
+          weak_or_failed_reviewed: 5,
+        },
+        top_ten: [{
+          rank: 1,
+          combination_key: "COMBO-001",
+          strategy_name: "Price confirmation",
+          status: "Promising",
+          final_score: 0.42,
+          cagr: 0.14,
+          max_drawdown: -0.22,
+          sharpe: 0.8,
+          out_of_sample_return: 0.06,
+          benchmark_relative_return: 0.03,
+        }],
+        weak_or_failed: [{
+          combination_key: "COMBO-050",
+          why_it_failed: "Negative out-of-sample return.",
+          lesson_for_thesis: "The signal did not generalize.",
+        }],
+        supported_conclusion: "Useful timing evidence.",
+        unsupported_conclusion: "Does not prove the fundamental thesis.",
+        next_robustness_test: "Add release-date fundamental history.",
+      },
     };
 
     const report = generateMarkdownReport(data);
@@ -117,7 +144,7 @@ describe("v3 report export (Component 15)", () => {
       "## 20. Risks and catalysts",
       "## 21. Thesis breakers",
       "## 22. Monitoring dashboard",
-      "## 23. Confidence assessment",
+      "## 23. Backtesting evidence and confidence assessment",
       "## 24. Human decision",
       "## 25. Limitations and open research",
     ];

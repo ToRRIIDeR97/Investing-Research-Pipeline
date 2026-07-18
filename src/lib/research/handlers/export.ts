@@ -169,6 +169,9 @@ export const exportHandler: StageHandler<Record<string, unknown>> = {
               },
             };
             break;
+          case "backtest_review":
+            reportData.backtest = content as ResearchReportData["backtest"];
+            break;
         }
       }
 

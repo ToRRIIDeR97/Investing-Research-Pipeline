@@ -75,9 +75,9 @@ describe("research v3 contracts", () => {
     }
   });
 
-  it("C2-T5: No timing hypothesis means backtest not applicable", () => {
+  it("C2-T5: No timing hypothesis still requires the framework backtest", () => {
     const status = isBacktestApplicable(undefined);
-    assert.equal(status, "not_applicable");
+    assert.equal(status, "pending");
   });
 
   it("C2-T6: Explicit timing hypothesis accepted makes backtest eligible", () => {

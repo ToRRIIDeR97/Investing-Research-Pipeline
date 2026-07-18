@@ -13,6 +13,15 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const taskKey = "asset-analyst:decision";
+      const [backtestReview] = await sql`
+        SELECT content_json
+        FROM research_artifacts
+        WHERE research_run_id = ${ctx.runId}
+          AND artifact_type = 'backtest_review'
+          AND status IN ('validated', 'accepted')
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
       const packet = {
         asset: {
           runId: ctx.runId,
@@ -22,6 +31,7 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           profileKey: ctx.profileKey,
         },
         required_modules: ["thesis_synthesis"],
+        backtest_review: backtestReview?.content_json || null,
         output_contract: "decision_synthesis",
       };
 
@@ -31,6 +41,8 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
         packet: p,
         extraRules: [
           "Synthesize the final investment decision, including a clear thesis statement, risk factors, and upcoming catalysts.",
+          "Use the backtest only as timing/risk evidence. Preserve its proxy-data limitations and do not claim that it proves the fundamental thesis.",
+          "If the backtest framework gate did not pass, state exactly: Conclusion withheld - research incomplete.",
         ],
       });
 

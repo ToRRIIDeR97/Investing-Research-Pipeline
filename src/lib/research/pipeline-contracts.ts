@@ -53,9 +53,11 @@ export function validateArchetypes(
 }
 
 export function isBacktestApplicable(
-  timingHypothesis?: ProfileSelectionIntent["timing_hypothesis"]
+  _timingHypothesis?: ProfileSelectionIntent["timing_hypothesis"]
 ): "not_applicable" | "pending" | "completed" | "failed" {
-  if (!timingHypothesis || !timingHypothesis.accepted) return "not_applicable";
+  // Full research now treats framework backtesting as a completion gate.
+  // A timing hypothesis can inform strategy design but no longer decides
+  // whether the evidence stage exists.
   return "pending";
 }
 

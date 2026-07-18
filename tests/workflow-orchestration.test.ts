@@ -58,10 +58,12 @@ describe("workflow orchestration and quality gates (Component 13)", () => {
     assert.ok(scenarioConfig.entryCriteria.includes("operating_model_exists"));
   });
 
-  it("C13-T5: Optional backtest is skipped for quick_scan run type", () => {
+  it("C13-T5: Framework backtest stages are skipped for quick_scan run type", () => {
     const { applicable, skipped } = getAllStagesForRun("quick_scan");
-    const isSkipped = skipped.some((s) => s.key === "optional_backtest");
-    assert.equal(isSkipped, true);
+    for (const key of ["indicator_design", "strategy_design", "backtest_execution", "backtest_review"]) {
+      assert.equal(skipped.some((stage) => stage.key === key), true);
+      assert.equal(applicable.some((stage) => stage.key === key), false);
+    }
   });
 
   it("C13-T6: V3 quality gates detect missing genesis, diagnosis, moat, operating model/scenarios", () => {

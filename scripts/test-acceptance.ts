@@ -182,6 +182,10 @@ async function main() {
       ...OPERATING_SCENARIOS_CONTRACT.requiredKeys,
       ...VALUATION_CONTRACT.requiredKeys,
       ...DECISION_SYNTHESIS_CONTRACT.requiredKeys,
+      "indicator_catalog",
+      "strategy_combination_catalog",
+      "backtest_execution_summary",
+      "backtest_review",
       "synthetic_report", "refresh_schedule"
     ];
 
@@ -208,6 +212,23 @@ async function main() {
     } else {
       fail("Synthetic report missing exportId");
     }
+
+    const [backtestCounts] = await sql`
+      SELECT
+        COUNT(*) FILTER (WHERE br.status = 'completed') AS completed,
+        COUNT(*) FILTER (
+          WHERE br.metrics_json ? 'in_sample'
+            AND br.metrics_json ? 'out_of_sample'
+            AND br.metrics_json ? 'out_of_sample_excess_return'
+            AND br.metrics_json ? 'parameter_stability'
+        ) AS robust
+      FROM backtest_runs br
+      WHERE br.research_run_id = ${runId}
+    `;
+    if (Number(backtestCounts?.completed || 0) === 50) pass("50 strategy combinations executed");
+    else fail(`Expected 50 completed strategy combinations; found ${backtestCounts?.completed || 0}`);
+    if (Number(backtestCounts?.robust || 0) === 50) pass("All backtests contain IS/OOS, excess-return, and stability evidence");
+    else fail(`Only ${backtestCounts?.robust || 0}/50 backtests contain robustness evidence`);
 
     // ---- 6. Final run status ----
     const [run] = await sql`

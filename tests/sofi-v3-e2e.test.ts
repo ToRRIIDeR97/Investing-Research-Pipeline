@@ -239,12 +239,19 @@ describe("SOFI Mock End-to-End Acceptance (Component WP12)", { skip: process.env
     `;
     assert.equal(finalStage?.status, "waiting_for_human");
 
-    // WP12-T4: No timing hypothesis -> Backtest not applicable
-    const [backtestStage] = await sql`
-      SELECT status, failure_reason FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'optional_backtest'
+    // WP12-T4: Framework backtest executes even without a separate timing hypothesis.
+    const backtestStages = await sql`
+      SELECT stage_key, status FROM research_stages
+      WHERE research_run_id = ${runId}
+        AND stage_key IN ('indicator_design', 'strategy_design', 'backtest_execution', 'backtest_review')
     `;
-    assert.equal(backtestStage?.status, "failed");
-    assert.ok(backtestStage?.failure_reason?.includes("not_applicable"));
+    assert.equal(backtestStages.length, 4);
+    assert.ok(backtestStages.every((stage) => stage.status === "completed"));
+    const [backtestCount] = await sql`
+      SELECT COUNT(*) AS count FROM backtest_runs
+      WHERE research_run_id = ${runId} AND status = 'completed'
+    `;
+    assert.equal(Number(backtestCount.count), 50);
 
     // WP12-T5: Artifact registry queried (Required current artifacts exist)
     const artifacts = await sql`
@@ -302,7 +309,7 @@ describe("SOFI Mock End-to-End Acceptance (Component WP12)", { skip: process.env
 
     // WP12-T7: AI review (No unresolved critical fixture issue)
     const [reviewStage] = await sql`
-      SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'ai_review'
+      SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'ai_reviewer'
     `;
     assert.equal(reviewStage?.status, "completed");
 
@@ -361,7 +368,7 @@ describe("SOFI Mock End-to-End Acceptance (Component WP12)", { skip: process.env
 
     const mdReport = generateMarkdownReport(reportData);
     assert.ok(mdReport.includes("TEST WATERMARK"));
-    assert.ok(mdReport.includes("# V3 Investment Research Report: SoFi Technologies, Inc."));
+    assert.ok(mdReport.includes("# Investment Research Report: SoFi Technologies, Inc."));
     // Ensure all 25 canonical sections are present
     for (let i = 1; i <= 25; i++) {
       assert.ok(mdReport.includes(`## ${i}. `), `Report missing section ${i}`);

@@ -13,6 +13,13 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const taskKey = "research-reviewer:review";
+      const artifacts = await sql`
+        SELECT artifact_type, content_json
+        FROM research_artifacts
+        WHERE research_run_id = ${ctx.runId}
+          AND status IN ('validated', 'accepted')
+        ORDER BY artifact_type
+      `;
       const packet = {
         asset: {
           runId: ctx.runId,
@@ -21,6 +28,9 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
           symbol: ctx.symbol,
           profileKey: ctx.profileKey,
         },
+        artifacts: Object.fromEntries(
+          artifacts.map((artifact) => [artifact.artifact_type, artifact.content_json])
+        ),
       };
 
       const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
@@ -28,7 +38,8 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
         requiredKeys: AI_REVIEWER_CONTRACT.requiredKeys,
         packet: p,
         extraRules: [
-          "Perform a comprehensive review checking consistency and rules compliance across all generated v3 artifacts.",
+          "Perform a comprehensive review checking consistency and rules compliance across all generated artifacts.",
+          "Verify that the backtest executed at least 50 thesis-distinct combinations, ranked a top 10, reviewed at least five weak or failed combinations, used shifted signals and transaction costs, and disclosed proxy-data limitations.",
         ],
       });
 

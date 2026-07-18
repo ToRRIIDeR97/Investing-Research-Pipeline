@@ -396,13 +396,19 @@ Workflow orchestration owner.
    - resume
 4. Required analysis stages must finish with their required accepted artifacts
    before valuation starts.
-5. `optional_backtest` without an approved timing hypothesis must be
-   `not_applicable`/skipped, not treated as a pipeline failure.
-6. Human review must not start if required current stages failed.
-7. A failed required stage must not leave later stages or tasks running.
-8. Remove duplicated transition logic between the pipeline runner and shared
+5. Full and deep research must execute the framework backtest even when no
+   separate timing hypothesis is supplied. The supported sequence is
+   `indicator_design` → `strategy_design` → `backtest_execution` →
+   `backtest_review` → `decision_synthesis`.
+6. The framework gate requires at least 10 documented indicators, 50
+   thesis-distinct combinations across five buckets, shifted signals,
+   transaction costs, benchmark comparisons, in/out-of-sample evidence, a top
+   10 ranking, and review of at least five weak or failed combinations.
+7. Human review must not start if required current stages failed.
+8. A failed required stage must not leave later stages or tasks running.
+9. Remove duplicated transition logic between the pipeline runner and shared
    orchestrator.
-9. Preserve two human gates:
+10. Preserve two human gates:
    - research-plan approval before research execution
    - final human review before export/final completion
 
@@ -433,12 +439,15 @@ Expected sequence:
 3. stops at `human_review`;
 4. resumes only after final human approval.
 
-### C5-T4 — Optional backtest
+### C5-T4 — Framework backtest gate
 
 Run without a timing hypothesis.
 
-Expected: optional backtest is explicitly skipped/not applicable and does not
-block human review.
+Expected: the run still designs at least 10 indicators, generates and executes
+50 thesis-distinct strategy combinations, persists IS/OOS and benchmark
+results, reviews the top 10 and at least five failures, and completes
+`backtest_review` before `decision_synthesis`. If any requirement is missing,
+the conclusion is withheld and human review does not start.
 
 ### C5-T5 — Terminal cleanup
 
