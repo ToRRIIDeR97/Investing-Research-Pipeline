@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import { runSystemResearchPipeline } from "../src/lib/research/system-pipeline";
 import { createStagesForRun, approveResearchPlan } from "../src/lib/workflow/orchestrator";
 import { evaluateQualityGates } from "../src/lib/workflow/quality-gates";
-import { generateV3MarkdownReport } from "../src/lib/export/v3-report-generator";
+import { generateMarkdownReport } from "../src/lib/export/report-generator";
 
 function loadLocalEnv() {
   if (!existsSync(".env.local")) return;
@@ -359,7 +359,7 @@ describe("SOFI Mock End-to-End Acceptance (Component WP12)", { skip: process.env
       }
     };
 
-    const mdReport = generateV3MarkdownReport(reportData);
+    const mdReport = generateMarkdownReport(reportData);
     assert.ok(mdReport.includes("TEST WATERMARK"));
     assert.ok(mdReport.includes("# V3 Investment Research Report: SoFi Technologies, Inc."));
     // Ensure all 25 canonical sections are present

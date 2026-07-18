@@ -1,8 +1,8 @@
-import type { V3RunContext, V3StageHandler, ValidationResult } from "../../v3-context";
-import { v3ValidationResult } from "../../v3-context";
-import { fetchProfileResearchContext, storeSourceCorpus, reconcileSourceGaps } from "../../system-pipeline";
-import { buildSourcePlan, planMissingRoles } from "../../sources/planner";
-import { SOURCE_ROLES, type SourceRole } from "../../sources/roles";
+import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
+import { makeValidationResult } from "../run-context";
+import { fetchProfileResearchContext, storeSourceCorpus, reconcileSourceGaps } from "../system-pipeline";
+import { buildSourcePlan, planMissingRoles } from "../sources/planner";
+import { SOURCE_ROLES, type SourceRole } from "../sources/roles";
 import postgres from "postgres";
 
 function mapToSourceRole(sourceType: string, title: string): SourceRole {
@@ -54,9 +54,9 @@ function mapToSourceRole(sourceType: string, title: string): SourceRole {
   return "regulatory_filing"; // Default fallback
 }
 
-export const sourceDiscoveryHandler: V3StageHandler<unknown> = {
+export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "source_discovery",
-  async execute(ctx: V3RunContext): Promise<unknown> {
+  async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       // 1. Map ctx to V2-style RunContext
@@ -140,7 +140,7 @@ export const sourceDiscoveryHandler: V3StageHandler<unknown> = {
       await sql.end();
     }
   },
-  async validate(ctx: V3RunContext, output: any): Promise<ValidationResult> {
+  async validate(ctx: ResearchRunContext, output: any): Promise<ValidationResult> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const rows = await sql`
@@ -153,7 +153,7 @@ export const sourceDiscoveryHandler: V3StageHandler<unknown> = {
       if (Number(rows[0].cnt) === 0) {
         errors.push("No source documents ingested for this run");
       }
-      return v3ValidationResult(errors);
+      return makeValidationResult(errors);
     } finally {
       await sql.end();
     }

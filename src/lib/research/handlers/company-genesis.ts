@@ -1,25 +1,15 @@
-import type { V3RunContext, V3StageHandler, ValidationResult } from "../../v3-context";
-import { v3ValidationResult } from "../../v3-context";
-import { callV3Agent, v3ExactJsonPrompt } from "../../v3-context";
-import { createArtifactRepository } from "../../artifacts/repository";
+import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
+import { makeValidationResult } from "../run-context";
+import { callResearchAgent, exactJsonPrompt } from "../run-context";
+import { COMPANY_GENESIS_CONTRACT } from "../stage-contracts";
+import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
-const ANALYST_OUTPUT_KEYS = [
-  "analysis_sections",
-  "key_drivers",
-  "metric_interpretation",
-  "contradictions_or_tensions",
-  "missing_modules",
-  "source_gaps",
-  "analyst_questions",
-  "confidence",
-];
-
-export const companyGenesisHandler: V3StageHandler<unknown> = {
+export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "company_genesis",
-  async execute(ctx: V3RunContext): Promise<unknown> {
+  async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const taskKey = `genesis-researcher:${ctx.symbol?.toLowerCase() || "asset"}-genesis`;
@@ -32,11 +22,12 @@ export const companyGenesisHandler: V3StageHandler<unknown> = {
           profileKey: ctx.profileKey,
         },
         required_modules: ["founder_and_company_history", "corporate_structure"],
+        output_contract: "company_genesis",
       };
 
-      const promptFactory = (p: Record<string, unknown>) => v3ExactJsonPrompt({
+      const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
         agentName: "asset-analyst",
-        requiredKeys: ANALYST_OUTPUT_KEYS,
+        requiredKeys: COMPANY_GENESIS_CONTRACT.requiredKeys,
         packet: p,
         extraRules: [
           "Provide a detailed synthesis of the company genesis, founders, and early corporate structure.",
@@ -44,17 +35,17 @@ export const companyGenesisHandler: V3StageHandler<unknown> = {
         ],
       });
 
-      const output = await callV3Agent<Record<string, any>>({
+      const output = await callResearchAgent<Record<string, any>>({
         sql, ctx, stageKey: "company_genesis", taskKey,
         taskType: "company_genesis", agentName: "asset-analyst", modelTier: "mid",
         packet, promptFactory,
+        outputFormat: COMPANY_GENESIS_CONTRACT,
       });
-      console.log("[company_genesis] DEBUG output keys:", Object.keys(output || {}).join(", "));
 
       // Persist generated sub-artifacts
       const db = drizzle(sql, { schema });
       const repo = createArtifactRepository(db);
-      const subKeys = ["company_genesis", "founder_profile", "strategic_history_timeline", "strategic_dna"];
+      const subKeys = COMPANY_GENESIS_CONTRACT.requiredKeys;
       for (const k of subKeys) {
         if (output[k]) {
           await repo.upsertArtifact({
@@ -63,12 +54,12 @@ export const companyGenesisHandler: V3StageHandler<unknown> = {
             profile_id: ctx.profileId || undefined,
             artifact_type: k,
             scope_key: `${ctx.assetSlug}-${k.replace(/_/g, "-")}`,
-            status: "accepted",
+            status: "validated",
             content_json: output[k],
             schema_version: "3.0.0",
             validator_version: "1.0.0",
-            prompt_version: "v3",
-            created_by: "system-v3",
+            prompt_version: "current",
+            created_by: "system-research-os",
             idempotency_key: `${ctx.runId}-${k}`,
           });
         }
@@ -79,20 +70,23 @@ export const companyGenesisHandler: V3StageHandler<unknown> = {
       await sql.end();
     }
   },
-  async validate(ctx: V3RunContext, output: any): Promise<ValidationResult> {
+  async validate(ctx: ResearchRunContext, _output: unknown): Promise<ValidationResult> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
-      const rows = await sql`
-        SELECT COUNT(*) as cnt FROM research_tasks
-        WHERE research_run_id = ${ctx.runId}
-          AND (task_key = ${`genesis-researcher:${ctx.symbol?.toLowerCase() || "asset"}-genesis`} OR task_type = 'company_genesis')
-          AND status = 'completed'
-      `;
       const errors: string[] = [];
-      if (Number(rows[0].cnt) === 0) {
-        errors.push("No completed company genesis artifact found");
+      const artifactKeys = COMPANY_GENESIS_CONTRACT.requiredKeys;
+      for (const k of artifactKeys) {
+        const rows = await sql`
+          SELECT COUNT(*) as cnt FROM research_artifacts
+          WHERE research_run_id = ${ctx.runId}
+            AND artifact_type = ${k}
+            AND status IN ('validated', 'accepted')
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          errors.push(`Missing required artifact: ${k}`);
+        }
       }
-      return v3ValidationResult(errors);
+      return makeValidationResult(errors);
     } finally {
       await sql.end();
     }

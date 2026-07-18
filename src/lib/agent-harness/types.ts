@@ -117,7 +117,13 @@ export interface AgentRequest<T = unknown> {
   policy?: Partial<ExecutionPolicy>;
   hooks?: AgentLifecycleHooks;
   provider?: ModelProvider;
+  outputFormat?: AgentOutputFormat;
   _outputType?: T;
+}
+
+export interface AgentOutputFormat {
+  requiredKeys: string[];
+  schema?: Record<string, unknown>;
 }
 
 export interface AgentUsage {

@@ -48,7 +48,7 @@ async function main() {
     ) VALUES (
       ${runId}, ${assetId}, 'deep_dive', 'pending', ${researchQuestion}, 'system-test-harness',
       ${profileId}, ${profileVersion}, ${cutoffAt}, ${cutoffAt},
-      ${process.env.RESEARCH_ACCEPTANCE_BUDGET_USD || "10.00"}, 2,
+      ${process.env.RESEARCH_ACCEPTANCE_BUDGET_USD || "10.00"}, 3,
       ${sql.json({ acceptance_provider: acceptanceProvider, cutoff_at_utc: cutoffAt })}
     )
   `;

@@ -34,38 +34,43 @@ const STATIC: Record<string, unknown> = {
       unit_type: "currency", unit: "USD", currency: "USD",
       value_numeric: 689000000, value_text: "$689M",
       period_start: "2024-07-01", period_end: "2024-09-30", as_of_date: "2024-10-29",
+      available_at: "2024-10-29T00:00:00Z",
       source: "sofi-10q-q3-2024", confidence: 0.95 },
     { metric_key: "net_income", display_name: "Net Income", metric_category: "income_statement",
       unit_type: "currency", unit: "USD", currency: "USD",
       value_numeric: 61000000, value_text: "$61M",
       period_start: "2024-07-01", period_end: "2024-09-30", as_of_date: "2024-10-29",
+      available_at: "2024-10-29T00:00:00Z",
       source: "sofi-10q-q3-2024", confidence: 0.95 },
     { metric_key: "total_members", display_name: "Total Members", metric_category: "operating",
       unit_type: "count", unit: "members", currency: "USD",
       value_numeric: 8600000, value_text: "8.6M",
       period_start: "2024-07-01", period_end: "2024-09-30", as_of_date: "2024-10-29",
+      available_at: "2024-10-29T00:00:00Z",
       source: "sofi-10q-q3-2024", confidence: 0.90 },
     { metric_key: "total_products", display_name: "Total Products", metric_category: "operating",
       unit_type: "count", unit: "products", currency: "USD",
       value_numeric: 12800000, value_text: "12.8M",
       period_start: "2024-07-01", period_end: "2024-09-30", as_of_date: "2024-10-29",
+      available_at: "2024-10-29T00:00:00Z",
       source: "sofi-10q-q3-2024", confidence: 0.90 },
     { metric_key: "adjusted_ebitda", display_name: "Adjusted EBITDA", metric_category: "income_statement",
       unit_type: "currency", unit: "USD", currency: "USD",
       value_numeric: 186000000, value_text: "$186M",
       period_start: "2024-07-01", period_end: "2024-09-30", as_of_date: "2024-10-29",
+      available_at: "2024-10-29T00:00:00Z",
       source: "sofi-10q-q3-2024", confidence: 0.93 }
   ], definition_mappings: [], conversion_notes: [], unresolved_ambiguities: [], quality_flags: [], source_gaps: [] },
   "backtest-coder": { strategy_name: "Mock strategy", strategy_description: "Mock backtest strategy", run_instructions: "Run it", assumptions: [], files: [{ path: "strategy.py", content: "def generate_signals(prices, params):\n    return prices" }] },
-  "research-reviewer": { pass_fail: "pass", findings: [], unsupported_claims: [], contradictions: [], category_errors: [], missing_coverage: [], valuation_review: [], backtest_review: [], escalation_recommendations: [] },
-  "export-writer": { artifact_type: "report", title: "MercadoLibre Deep Dive", sections: [], tables: [], charts: [], disclosures: [], source_index: [], open_questions: [] },
+  "research-reviewer": { review_summary: "All v3 artifacts are internally consistent.", findings: [{ severity: "info", message: "No issues found.", affected_artifact: "none" }], quality_score: 0.95, recommendations: [{ action: "continue", rationale: "All checks passed." }], review_verdict: "pass" },
+  "export-writer": { artifact_type: "report", title: "Investment Research Report", sections: [], tables: [], charts: [], disclosures: [], source_index: [], open_questions: [] },
 };
 
 function packetFromPrompt(prompt: string) {
   for (const value of extractJsonObjects(prompt)) {
     try {
       const parsed = JSON.parse(value) as Record<string, unknown>;
-      if (parsed.asset || parsed.source_corpus || parsed.evidence_claims || parsed.required_modules || parsed.required_lenses) return parsed;
+      if (parsed.asset || parsed.source_corpus || parsed.evidence_claims || parsed.required_modules || parsed.required_lenses || parsed.output_contract) return parsed;
     } catch {}
   }
   return {};
@@ -196,6 +201,12 @@ function v3CompanyGenesisResponse(packet: Record<string, unknown>) {
       historical_evidence: [
         {
           claim: "Focus on high-earning graduates",
+          evidence_weight: "contemporary_direct_founder_statement",
+          evidence_claim_ids: [claimId],
+          confidence: 0.9
+        },
+        {
+          claim: "Rapid expansion into personal lending",
           evidence_weight: "contemporary_direct_founder_statement",
           evidence_claim_ids: [claimId],
           confidence: 0.9
@@ -331,7 +342,7 @@ function v3BusinessProcessResponse(packet: Record<string, unknown>) {
       ]
     },
     bottleneck_map: {
-      artifact_type: "bottleneck_map",
+      artifact_type: "bottleneck_register",
       bottlenecks: [
         {
           process_node_key: "Lending origination",
@@ -551,6 +562,34 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
           operating_values: { revenue: 2000000000 },
           balance_sheet_values: { assets: 10000000000 },
           per_share_values: { eps: 0.10 }
+        },
+        {
+          fiscal_year: 2027,
+          target_date: "2027-12-31",
+          operating_values: { revenue: 2300000000 },
+          balance_sheet_values: { assets: 11500000000 },
+          per_share_values: { eps: 0.12 }
+        },
+        {
+          fiscal_year: 2028,
+          target_date: "2028-12-31",
+          operating_values: { revenue: 2645000000 },
+          balance_sheet_values: { assets: 13225000000 },
+          per_share_values: { eps: 0.14 }
+        },
+        {
+          fiscal_year: 2029,
+          target_date: "2029-12-31",
+          operating_values: { revenue: 3041750000 },
+          balance_sheet_values: { assets: 15208750000 },
+          per_share_values: { eps: 0.17 }
+        },
+        {
+          fiscal_year: 2030,
+          target_date: "2030-12-31",
+          operating_values: { revenue: 3498012500 },
+          balance_sheet_values: { assets: 17490062500 },
+          per_share_values: { eps: 0.20 }
         }
       ],
       price_target_path: [
@@ -591,6 +630,162 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
           price_target: 2.00,
           dividend_per_share: 0,
           total_return_target: 2.00,
+          is_interpolated: false
+        },
+        {
+          fiscal_year: 2027,
+          scenario_type: "bear",
+          valuation_method: "reverse_dcf",
+          operating_metric_key: "eps",
+          operating_metric_value: 0.12,
+          valuation_parameter_key: "pe_multiple",
+          valuation_parameter_value: 10,
+          price_target: 1.20,
+          dividend_per_share: 0,
+          total_return_target: 1.20,
+          is_interpolated: false
+        },
+        {
+          fiscal_year: 2027,
+          scenario_type: "base",
+          valuation_method: "reverse_dcf",
+          operating_metric_key: "eps",
+          operating_metric_value: 0.12,
+          valuation_parameter_key: "pe_multiple",
+          valuation_parameter_value: 15,
+          price_target: 1.80,
+          dividend_per_share: 0,
+          total_return_target: 1.80,
+          is_interpolated: false
+        },
+        {
+          fiscal_year: 2027,
+          scenario_type: "bull",
+          valuation_method: "reverse_dcf",
+          operating_metric_key: "eps",
+          operating_metric_value: 0.12,
+          valuation_parameter_key: "pe_multiple",
+          valuation_parameter_value: 20,
+          price_target: 2.40,
+          dividend_per_share: 0,
+          total_return_target: 2.40,
+          is_interpolated: false
+        },
+        {
+          fiscal_year: 2028,
+          scenario_type: "bear",
+          valuation_method: "reverse_dcf",
+          operating_metric_key: "eps",
+          operating_metric_value: 0.14,
+          valuation_parameter_key: "pe_multiple",
+          valuation_parameter_value: 10,
+          price_target: 1.40,
+          dividend_per_share: 0,
+          total_return_target: 1.40,
+          is_interpolated: false
+        },
+        {
+          fiscal_year: 2028,
+          scenario_type: "base",
+          valuation_method: "reverse_dcf",
+          operating_metric_key: "eps",
+          operating_metric_value: 0.14,
+          valuation_parameter_key: "pe_multiple",
+          valuation_parameter_value: 15,
+          price_target: 2.10,
+          dividend_per_share: 0,
+          total_return_target: 2.10,
+          is_interpolated: false
+        },
+        {
+          fiscal_year: 2028,
+          scenario_type: "bull",
+          valuation_method: "reverse_dcf",
+          operating_metric_key: "eps",
+          operating_metric_value: 0.14,
+          valuation_parameter_key: "pe_multiple",
+          valuation_parameter_value: 20,
+          price_target: 2.80,
+          dividend_per_share: 0,
+          total_return_target: 2.80,
+          is_interpolated: false
+        },
+        {
+          fiscal_year: 2029,
+          scenario_type: "bear",
+          valuation_method: "reverse_dcf",
+          operating_metric_key: "eps",
+          operating_metric_value: 0.17,
+          valuation_parameter_key: "pe_multiple",
+          valuation_parameter_value: 10,
+          price_target: 1.70,
+          dividend_per_share: 0,
+          total_return_target: 1.70,
+          is_interpolated: false
+        },
+        {
+          fiscal_year: 2029,
+          scenario_type: "base",
+          valuation_method: "reverse_dcf",
+          operating_metric_key: "eps",
+          operating_metric_value: 0.17,
+          valuation_parameter_key: "pe_multiple",
+          valuation_parameter_value: 15,
+          price_target: 2.55,
+          dividend_per_share: 0,
+          total_return_target: 2.55,
+          is_interpolated: false
+        },
+        {
+          fiscal_year: 2029,
+          scenario_type: "bull",
+          valuation_method: "reverse_dcf",
+          operating_metric_key: "eps",
+          operating_metric_value: 0.17,
+          valuation_parameter_key: "pe_multiple",
+          valuation_parameter_value: 20,
+          price_target: 3.40,
+          dividend_per_share: 0,
+          total_return_target: 3.40,
+          is_interpolated: false
+        },
+        {
+          fiscal_year: 2030,
+          scenario_type: "bear",
+          valuation_method: "reverse_dcf",
+          operating_metric_key: "eps",
+          operating_metric_value: 0.20,
+          valuation_parameter_key: "pe_multiple",
+          valuation_parameter_value: 10,
+          price_target: 2.00,
+          dividend_per_share: 0,
+          total_return_target: 2.00,
+          is_interpolated: false
+        },
+        {
+          fiscal_year: 2030,
+          scenario_type: "base",
+          valuation_method: "reverse_dcf",
+          operating_metric_key: "eps",
+          operating_metric_value: 0.20,
+          valuation_parameter_key: "pe_multiple",
+          valuation_parameter_value: 15,
+          price_target: 3.00,
+          dividend_per_share: 0,
+          total_return_target: 3.00,
+          is_interpolated: false
+        },
+        {
+          fiscal_year: 2030,
+          scenario_type: "bull",
+          valuation_method: "reverse_dcf",
+          operating_metric_key: "eps",
+          operating_metric_value: 0.20,
+          valuation_parameter_key: "pe_multiple",
+          valuation_parameter_value: 20,
+          price_target: 4.00,
+          dividend_per_share: 0,
+          total_return_target: 4.00,
           is_interpolated: false
         }
       ]
@@ -719,22 +914,28 @@ export class MockProvider implements ModelProvider {
     } else if (request.agentName === "valuation-analyst") {
       response = v3ValuationResponse(packet);
     } else if (request.agentName === "asset-analyst") {
-      const mods = Array.isArray(packet.required_modules) ? packet.required_modules.map(String) : [];
-      if (mods.includes("founder_and_company_history")) {
+      // Route on the explicit output_contract discriminator (set by stage-specific handlers).
+      const contract = packet.output_contract as string | undefined;
+      if (contract === "company_genesis") {
         response = v3CompanyGenesisResponse(packet);
-      } else if (mods.includes("historical_inflections")) {
+      } else if (contract === "historical_diagnosis") {
         response = v3HistoricalDiagnosisResponse(packet);
-      } else if (mods.includes("business_process_flow")) {
+      } else if (contract === "business_process_analysis") {
         response = v3BusinessProcessResponse(packet);
-      } else if (mods.includes("moat_durability")) {
+      } else if (contract === "moat_analysis") {
         response = v3MoatResponse(packet);
-      } else if (mods.includes("driver_tree")) {
+      } else if (contract === "operating_model") {
         response = v3OperatingModelResponse(packet);
-      } else if (mods.includes("operating_scenarios")) {
+      } else if (contract === "operating_scenarios") {
         response = v3OperatingScenariosResponse(packet);
-      } else if (mods.includes("thesis_synthesis")) {
+      } else if (contract === "asset_valuation") {
+        response = v3ValuationResponse(packet);
+      } else if (contract === "decision_synthesis") {
         response = v3DecisionResponse(packet);
+      } else if (contract === "ai_reviewer") {
+        response = STATIC["research-reviewer"];
       } else {
+        // Fall back to generic analyst response for unrecognized contracts
         response = analystResponse(packet);
       }
     }

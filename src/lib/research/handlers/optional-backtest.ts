@@ -1,10 +1,10 @@
-import type { V3RunContext, V3StageHandler, ValidationResult } from "../../v3-context";
-import { v3ValidationResult } from "../../v3-context";
+import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
+import { makeValidationResult } from "../run-context";
 import postgres from "postgres";
 
-export const optionalBacktestHandler: V3StageHandler<unknown> = {
+export const optionalBacktestHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "optional_backtest",
-  async execute(ctx: V3RunContext): Promise<unknown> {
+  async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const isApplicable = ctx.timingHypothesis && ctx.timingHypothesis.accepted;
@@ -42,7 +42,7 @@ export const optionalBacktestHandler: V3StageHandler<unknown> = {
       await sql.end();
     }
   },
-  async validate(ctx: V3RunContext, output: any): Promise<ValidationResult> {
+  async validate(ctx: ResearchRunContext, output: any): Promise<ValidationResult> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const rows = await sql`
@@ -54,7 +54,7 @@ export const optionalBacktestHandler: V3StageHandler<unknown> = {
       if (Number(rows[0].cnt) === 0) {
         errors.push("No completed backtest results found for this run");
       }
-      return v3ValidationResult(errors);
+      return makeValidationResult(errors);
     } finally {
       await sql.end();
     }

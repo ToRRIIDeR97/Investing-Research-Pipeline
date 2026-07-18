@@ -1,26 +1,15 @@
-import type { V3RunContext, V3StageHandler, ValidationResult } from "../../v3-context";
-import { v3ValidationResult } from "../../v3-context";
-import { callV3Agent, v3ExactJsonPrompt } from "../../v3-context";
-import { createArtifactRepository } from "../../artifacts/repository";
+import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
+import { makeValidationResult } from "../run-context";
+import { callResearchAgent, exactJsonPrompt } from "../run-context";
+import { VALUATION_CONTRACT } from "../stage-contracts";
+import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
-const VALUATION_OUTPUT_KEYS = [
-  "applicable_methods",
-  "not_applicable_methods",
-  "valuation_signals",
-  "scenarios",
-  "method_proposals",
-  "assumptions",
-  "sensitivity_notes",
-  "method_risks",
-  "source_gaps",
-];
-
-export const assetValuationHandler: V3StageHandler<unknown> = {
+export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "asset_valuation",
-  async execute(ctx: V3RunContext): Promise<unknown> {
+  async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const taskKey = "valuation-analyst:valuation";
@@ -38,9 +27,9 @@ export const assetValuationHandler: V3StageHandler<unknown> = {
         },
       };
 
-      const promptFactory = (p: Record<string, unknown>) => v3ExactJsonPrompt({
+      const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
         agentName: "valuation-analyst",
-        requiredKeys: VALUATION_OUTPUT_KEYS,
+        requiredKeys: VALUATION_CONTRACT.requiredKeys,
         packet: p,
         extraRules: [
           "Execute valuation lenses appropriate to the asset profile.",
@@ -48,13 +37,14 @@ export const assetValuationHandler: V3StageHandler<unknown> = {
         ],
       });
 
-      const output = await callV3Agent<Record<string, any>>({
+      const output = await callResearchAgent<Record<string, any>>({
         sql, ctx, stageKey: "asset_valuation", taskKey,
         taskType: "asset_valuation", agentName: "valuation-analyst", modelTier: "mid",
         packet, promptFactory,
+        outputFormat: VALUATION_CONTRACT,
       });
 
-      // 4. Persist to valuation_signals table
+      // Persist to valuation_signals table
       const signals = Array.isArray(output.valuation_signals) ? output.valuation_signals : [];
       for (const sig of signals) {
         await sql`
@@ -69,7 +59,7 @@ export const assetValuationHandler: V3StageHandler<unknown> = {
         `;
       }
 
-      // 5. Persist to scenarios table
+      // Persist to scenarios table
       const scens = Array.isArray(output.scenarios) ? output.scenarios : [];
       for (const scen of scens) {
         await sql`
@@ -83,10 +73,10 @@ export const assetValuationHandler: V3StageHandler<unknown> = {
         `;
       }
 
-      // Persist valuation artifacts
+      // Persist generated sub-artifacts
       const db = drizzle(sql, { schema });
       const repo = createArtifactRepository(db);
-      const subKeys = ["valuation_scenario_set", "reverse_valuation", "annual_price_target_path"];
+      const subKeys = VALUATION_CONTRACT.requiredKeys;
       for (const k of subKeys) {
         if (output[k]) {
           await repo.upsertArtifact({
@@ -95,12 +85,12 @@ export const assetValuationHandler: V3StageHandler<unknown> = {
             profile_id: ctx.profileId || undefined,
             artifact_type: k,
             scope_key: `${ctx.assetSlug}-${k.replace(/_/g, "-")}`,
-            status: "accepted",
+            status: "validated",
             content_json: output[k],
             schema_version: "3.0.0",
             validator_version: "1.0.0",
-            prompt_version: "v3",
-            created_by: "system-v3",
+            prompt_version: "current",
+            created_by: "system-research-os",
             idempotency_key: `${ctx.runId}-${k}`,
           });
         }
@@ -111,23 +101,23 @@ export const assetValuationHandler: V3StageHandler<unknown> = {
       await sql.end();
     }
   },
-  async validate(ctx: V3RunContext, output: any): Promise<ValidationResult> {
+  async validate(ctx: ResearchRunContext, _output: unknown): Promise<ValidationResult> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
-      const sigs = await sql`
-        SELECT COUNT(*) as cnt FROM valuation_signals WHERE research_run_id = ${ctx.runId}
-      `;
-      const scens = await sql`
-        SELECT COUNT(*) as cnt FROM scenarios WHERE research_run_id = ${ctx.runId}
-      `;
       const errors: string[] = [];
-      if (Number(sigs[0].cnt) === 0) {
-        errors.push("No valuation signals generated for this run");
+      const artifactKeys = VALUATION_CONTRACT.requiredKeys;
+      for (const k of artifactKeys) {
+        const rows = await sql`
+          SELECT COUNT(*) as cnt FROM research_artifacts
+          WHERE research_run_id = ${ctx.runId}
+            AND artifact_type = ${k}
+            AND status IN ('validated', 'accepted')
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          errors.push(`Missing required artifact: ${k}`);
+        }
       }
-      if (Number(scens[0].cnt) === 0) {
-        errors.push("No scenarios generated for this run");
-      }
-      return v3ValidationResult(errors);
+      return makeValidationResult(errors);
     } finally {
       await sql.end();
     }

@@ -1,12 +1,12 @@
-import type { V3RunContext, V3StageHandler, ValidationResult } from "../../v3-context";
-import { v3ValidationResult } from "../../v3-context";
-import { callV3Agent, v3ExactJsonPrompt } from "../../v3-context";
+import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
+import { makeValidationResult } from "../run-context";
+import { callResearchAgent, exactJsonPrompt } from "../run-context";
 import {
   loadAcceptedEvidencePacket,
   persistMetrics,
-} from "../../system-pipeline";
-import { buildHistoricalRecord } from "../../history/normalizer";
-import { createArtifactRepository } from "../../artifacts/repository";
+} from "../system-pipeline";
+import { buildHistoricalRecord } from "../history/normalizer";
+import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -20,9 +20,9 @@ const NORMALIZER_OUTPUT_KEYS = [
   "source_gaps",
 ];
 
-export const historicalRecordHandler: V3StageHandler<unknown> = {
+export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "historical_record",
-  async execute(ctx: V3RunContext): Promise<unknown> {
+  async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     const db = drizzle(sql, { schema });
     try {
@@ -58,7 +58,7 @@ export const historicalRecordHandler: V3StageHandler<unknown> = {
           evidence_claims: evidenceClaims,
           required_modules: v2Ctx.requiredModules,
         };
-        const promptFactory = (packet: Record<string, unknown>) => v3ExactJsonPrompt({
+        const promptFactory = (packet: Record<string, unknown>) => exactJsonPrompt({
           agentName: "metric-normalizer",
           requiredKeys: NORMALIZER_OUTPUT_KEYS,
           packet,
@@ -69,7 +69,7 @@ export const historicalRecordHandler: V3StageHandler<unknown> = {
           ],
         });
 
-        output = await callV3Agent<Record<string, unknown>>({
+        output = await callResearchAgent<Record<string, unknown>>({
           sql, ctx, stageKey: "historical_record", taskKey,
           taskType: "metric_normalization", agentName: "metric-normalizer", modelTier: "cheap",
           packet, promptFactory,
@@ -137,12 +137,12 @@ export const historicalRecordHandler: V3StageHandler<unknown> = {
         profile_id: ctx.profileId || undefined,
         artifact_type: "historical_record",
         scope_key: `${ctx.assetSlug}-historical-record`,
-        status: "accepted",
+        status: "validated",
         content_json: record as any,
         schema_version: "3.0.0",
         validator_version: "1.0.0",
-        prompt_version: "v3",
-        created_by: "system-v3",
+        prompt_version: "current",
+        created_by: "system-research-os",
         idempotency_key: `${ctx.runId}-historical-record`,
       });
 
@@ -155,7 +155,7 @@ export const historicalRecordHandler: V3StageHandler<unknown> = {
       await sql.end();
     }
   },
-  async validate(ctx: V3RunContext, output: any): Promise<ValidationResult> {
+  async validate(ctx: ResearchRunContext, output: any): Promise<ValidationResult> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const rows = await sql`
@@ -166,7 +166,7 @@ export const historicalRecordHandler: V3StageHandler<unknown> = {
       if (Number(rows[0].cnt) === 0) {
         errors.push("No metric observations recorded for this run");
       }
-      return v3ValidationResult(errors);
+      return makeValidationResult(errors);
     } finally {
       await sql.end();
     }

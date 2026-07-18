@@ -1,14 +1,14 @@
-import type { V3RunContext, V3StageHandler, ValidationResult } from "../../v3-context";
-import { v3ValidationResult } from "../../v3-context";
-import { callV3Agent, v3ExactJsonPrompt } from "../../v3-context";
+import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
+import { makeValidationResult } from "../run-context";
+import { callResearchAgent, exactJsonPrompt } from "../run-context";
 import {
   buildSourcePacket,
   persistEvidence,
   deterministicEvidenceFallback,
   loadAcceptedEvidencePacket,
   reconcileSourceGaps,
-} from "../../system-pipeline";
-import { createSourceReaderBatches, mergeSourceReaderOutputs } from "../../source-reader-batching";
+} from "../system-pipeline";
+import { createSourceReaderBatches, mergeSourceReaderOutputs } from "../source-reader-batching";
 import postgres from "postgres";
 
 const SOURCE_READER_OUTPUT_KEYS = [
@@ -19,9 +19,9 @@ const SOURCE_READER_OUTPUT_KEYS = [
   "rejected_candidates",
 ];
 
-export const evidenceExtractionHandler: V3StageHandler<unknown> = {
+export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "evidence_extraction",
-  async execute(ctx: V3RunContext): Promise<unknown> {
+  async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       // 1. Build RunContext
@@ -77,7 +77,7 @@ export const evidenceExtractionHandler: V3StageHandler<unknown> = {
 
       const batchTarget = Math.max(5, Math.ceil(evidenceTarget / batches.length) + 1);
       const outputs: Record<string, unknown>[] = [];
-      const promptFactory = (target: number) => (packet: Record<string, unknown>) => v3ExactJsonPrompt({
+      const promptFactory = (target: number) => (packet: Record<string, unknown>) => exactJsonPrompt({
         agentName: "source-reader",
         requiredKeys: [...SOURCE_READER_OUTPUT_KEYS],
         packet,
@@ -102,7 +102,7 @@ export const evidenceExtractionHandler: V3StageHandler<unknown> = {
             batch: { id: batch.id, count: batches.length, claim_target: batchTarget },
             source_corpus: batch.chunks,
           };
-          output = await callV3Agent<Record<string, unknown>>({
+          output = await callResearchAgent<Record<string, unknown>>({
             sql, ctx, stageKey: "evidence_extraction", taskKey,
             taskType: "evidence_extraction_batch", agentName: "source-reader", modelTier: "cheap",
             packet, promptFactory: promptFactory(batchTarget),
@@ -127,7 +127,7 @@ export const evidenceExtractionHandler: V3StageHandler<unknown> = {
             batch: { id: batch.id, count: batches.length, claim_target: gapTarget, gap_retry: true },
             source_corpus: batch.chunks,
           };
-          const gapOutput = await callV3Agent<Record<string, unknown>>({
+          const gapOutput = await callResearchAgent<Record<string, unknown>>({
             sql, ctx, stageKey: "evidence_extraction", taskKey: `source-reader:batch:${batch.id}:gap`,
             taskType: "evidence_extraction_gap", agentName: "source-reader", modelTier: "cheap",
             packet: gapPacket, promptFactory: promptFactory(gapTarget),
@@ -161,7 +161,7 @@ export const evidenceExtractionHandler: V3StageHandler<unknown> = {
       await sql.end();
     }
   },
-  async validate(ctx: V3RunContext, output: any): Promise<ValidationResult> {
+  async validate(ctx: ResearchRunContext, output: any): Promise<ValidationResult> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const rows = await sql`
@@ -172,7 +172,7 @@ export const evidenceExtractionHandler: V3StageHandler<unknown> = {
       if (Number(rows[0].cnt) === 0) {
         errors.push("No evidence claims extracted for this run");
       }
-      return v3ValidationResult(errors);
+      return makeValidationResult(errors);
     } finally {
       await sql.end();
     }

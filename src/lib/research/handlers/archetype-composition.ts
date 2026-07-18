@@ -1,11 +1,11 @@
-import type { V3RunContext, V3StageHandler, ValidationResult } from "../../v3-context";
-import { v3ValidationResult } from "../../v3-context";
-import { persistV3Composition } from "../../v3-context";
+import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
+import { makeValidationResult } from "../run-context";
+import { persistV3Composition } from "../run-context";
 import postgres from "postgres";
 
-export const archetypeCompositionHandler: V3StageHandler<unknown> = {
+export const archetypeCompositionHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "archetype_composition",
-  async execute(ctx: V3RunContext): Promise<unknown> {
+  async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       let archetypes: string[] = [];
@@ -43,19 +43,23 @@ export const archetypeCompositionHandler: V3StageHandler<unknown> = {
       await sql.end();
     }
   },
-  async validate(ctx: V3RunContext, output: any): Promise<ValidationResult> {
+  async validate(ctx: ResearchRunContext, output: any): Promise<ValidationResult> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const runs = await sql`
         SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}
       `;
       const metadata = runs[0]?.metadata_json as Record<string, any>;
-      const archetypes = metadata?.v3_archetypes || [];
+      console.log("[archetype.validate] metadata:", JSON.stringify(metadata));
+      const archetypes = Array.isArray(metadata?.v3_archetypes) ? metadata.v3_archetypes : [];
       const errors: string[] = [];
       if (!Array.isArray(archetypes) || archetypes.length === 0) {
         errors.push("No archetypes composed/persisted for this run");
       }
-      return v3ValidationResult(errors);
+      return makeValidationResult(errors);
+    } catch (e: any) {
+      console.error("[archetype.validate] error:", e.message);
+      return makeValidationResult([e.message]);
     } finally {
       await sql.end();
     }

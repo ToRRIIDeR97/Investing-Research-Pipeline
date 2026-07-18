@@ -1,9 +1,9 @@
-import type { V3RunContext, V3StageHandler, ValidationResult } from "../../v3-context";
-import { v3ValidationResult } from "../../v3-context";
+import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
+import { makeValidationResult } from "../run-context";
 
-export const intakeHandler: V3StageHandler<unknown> = {
+export const intakeHandler: StageHandler<unknown> = {
   stageKey: "intake",
-  async execute(ctx: V3RunContext): Promise<unknown> {
+  async execute(ctx: ResearchRunContext): Promise<unknown> {
     if (!ctx.assetId) {
       throw new Error("Intake failed: missing assetId");
     }
@@ -15,11 +15,11 @@ export const intakeHandler: V3StageHandler<unknown> = {
     }
     return { status: "success", validatedAt: new Date().toISOString() };
   },
-  async validate(ctx: V3RunContext, output: any): Promise<ValidationResult> {
+  async validate(ctx: ResearchRunContext, output: any): Promise<ValidationResult> {
     const errors: string[] = [];
     if (!ctx.assetId) errors.push("Missing assetId");
     if (!ctx.runType) errors.push("Missing runType");
     if (!ctx.researchQuestion) errors.push("Missing researchQuestion");
-    return v3ValidationResult(errors);
+    return makeValidationResult(errors);
   }
 };

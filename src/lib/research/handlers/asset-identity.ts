@@ -1,10 +1,10 @@
-import type { V3RunContext, V3StageHandler, ValidationResult } from "../../v3-context";
-import { v3ValidationResult } from "../../v3-context";
+import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
+import { makeValidationResult } from "../run-context";
 import postgres from "postgres";
 
-export const assetIdentityHandler: V3StageHandler<unknown> = {
+export const assetIdentityHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "asset_identity",
-  async execute(ctx: V3RunContext): Promise<unknown> {
+  async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const assetRows = await sql`
@@ -43,7 +43,7 @@ export const assetIdentityHandler: V3StageHandler<unknown> = {
       await sql.end();
     }
   },
-  async validate(ctx: V3RunContext, output: any): Promise<ValidationResult> {
+  async validate(ctx: ResearchRunContext, output: any): Promise<ValidationResult> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const existing = await sql`
@@ -57,7 +57,7 @@ export const assetIdentityHandler: V3StageHandler<unknown> = {
       if (existing.length === 0) {
         errors.push("No active profile assignment found for asset");
       }
-      return v3ValidationResult(errors);
+      return makeValidationResult(errors);
     } finally {
       await sql.end();
     }

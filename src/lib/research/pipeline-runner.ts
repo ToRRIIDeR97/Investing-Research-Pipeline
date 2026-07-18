@@ -1,8 +1,7 @@
 /**
- * Research OS v3 orchestrated runner.
+ * Research OS orchestrated runner.
  *
- * Explicitly separate from the v1/v2 monolith. The runner walks the v3
- * stage FSM in order, executes the registered bounded handler for each
+ * Walks the stage FSM in order, executes the registered bounded handler for each
  * stage, persists handler validation, and delegates stage advancement to
  * the deterministic workflow orchestrator. It never approves human gates,
  * never silently skips stages, and fails closed when a stage has no
@@ -18,9 +17,9 @@ import {
   getRunProgress,
 } from "@/lib/workflow/orchestrator";
 import { getStageConfig } from "@/lib/workflow/stages";
-import { loadV3RunContext, type V3RunContext } from "./v3-context";
-import { getV3StageHandler } from "./v3-stage-registry";
-import { registerCoreV3Handlers } from "./v3/handlers";
+import { loadRunContext, type ResearchRunContext } from "./run-context";
+import { getStageHandler } from "./stage-registry";
+import { registerCoreHandlers } from "./handlers";
 
 export interface SystemPipelineResult {
   runId: string;
@@ -28,6 +27,7 @@ export interface SystemPipelineResult {
   completedStages: number;
   totalStages: number;
   notes: string[];
+  failure_reason?: string | null;
 }
 
 type StageRow = {
@@ -63,7 +63,7 @@ async function getRunStatus(sql: ReturnType<typeof postgres>, runId: string): Pr
   return String(rows[0].status);
 }
 
-async function markV3PipelineFailure(sql: ReturnType<typeof postgres>, runId: string, error: unknown): Promise<void> {
+async function markPipelineFailure(sql: ReturnType<typeof postgres>, runId: string, error: unknown): Promise<void> {
   console.error("V3 Pipeline failure error stack:", error);
   const message = (error instanceof Error ? error.message : String(error)).slice(0, 4000);
   await sql.begin(async (tx) => {
@@ -106,12 +106,13 @@ async function finalizeIfComplete(sql: ReturnType<typeof postgres>, runId: strin
 async function result(sql: ReturnType<typeof postgres>, runId: string, notes: string[]): Promise<SystemPipelineResult> {
   const rows = await sql`
     SELECT rr.status,
+           rr.failure_reason,
            count(rs.*) FILTER (WHERE rs.status = 'completed') AS completed,
            count(rs.*) AS total
     FROM research_runs rr
     JOIN research_stages rs ON rs.research_run_id = rr.id
     WHERE rr.id = ${runId}
-    GROUP BY rr.status
+    GROUP BY rr.status, rr.failure_reason
   `;
   return {
     runId,
@@ -119,14 +120,15 @@ async function result(sql: ReturnType<typeof postgres>, runId: string, notes: st
     completedStages: Number(rows[0]?.completed || 0),
     totalStages: Number(rows[0]?.total || 0),
     notes,
+    failure_reason: rows[0]?.failure_reason ? String(rows[0].failure_reason) : null,
   };
 }
 
 /**
  * Execute (or resume) a pipeline_version = 3 research run.
  */
-export async function runResearchPipelineV3(runId: string): Promise<SystemPipelineResult> {
-  registerCoreV3Handlers();
+export async function runResearchPipeline(runId: string): Promise<SystemPipelineResult> {
+  registerCoreHandlers();
   const sql = postgres(process.env.DATABASE_URL!);
   const notes: string[] = [];
 
@@ -199,7 +201,7 @@ export async function runResearchPipelineV3(runId: string): Promise<SystemPipeli
           continue;
         }
 
-        const config = getStageConfig(next.stage_key, 3);
+        const config = getStageConfig(next.stage_key);
         if (config?.requiresHumanApproval) {
           await sql.begin(async (tx) => [
             await tx`
@@ -223,17 +225,17 @@ export async function runResearchPipelineV3(runId: string): Promise<SystemPipeli
         active = { ...next, status: "running" };
       }
 
-      const handler = getV3StageHandler(active.stage_key);
+      const handler = getStageHandler(active.stage_key);
       if (!handler) {
-        const message = `No v3 stage handler registered for stage "${active.stage_key}"; failing closed`;
-        await markV3PipelineFailure(sql, runId, new Error(message));
+        const message = `No stage handler registered for stage "${active.stage_key}"; failing closed`;
+        await markPipelineFailure(sql, runId, new Error(message));
         notes.push(message);
         return await result(sql, runId, notes);
       }
 
-      let ctx: V3RunContext;
+      let ctx: ResearchRunContext;
       try {
-        ctx = await loadV3RunContext(sql, runId);
+        ctx = await loadRunContext(sql, runId);
         const output = await handler.execute(ctx);
         const handlerValidation = await handler.validate(ctx, output);
 
@@ -243,7 +245,7 @@ export async function runResearchPipelineV3(runId: string): Promise<SystemPipeli
           if (retryCount < maxRetries) {
             await sql`
               UPDATE research_stages
-              SET validation_result_json = ${sql.unsafe(`'${JSON.stringify({ ...handlerValidation, retryCount: retryCount + 1, handler: handler.stageKey }).replace(/'/g, "''")}'::jsonb`)},
+              SET validation_result_json = ${sql.json({ ...handlerValidation, retryCount: retryCount + 1, handler: handler.stageKey })},
                   updated_at = NOW()
               WHERE id = ${active.id}
             `;
@@ -251,7 +253,7 @@ export async function runResearchPipelineV3(runId: string): Promise<SystemPipeli
             continue;
           }
 
-          const config = getStageConfig(active.stage_key, 3);
+          const config = getStageConfig(active.stage_key);
           const failureState = config?.failureState || "fail_run";
           const reason = `Stage "${active.stage_key}" handler validation failed after ${maxRetries} retries: ${handlerValidation.errors.join("; ")}`;
           if (failureState === "fail_run") {
@@ -262,7 +264,7 @@ export async function runResearchPipelineV3(runId: string): Promise<SystemPipeli
             await sql`
               UPDATE research_stages
               SET status = 'failed', failure_reason = ${reason},
-                  validation_result_json = ${sql.unsafe(`'${JSON.stringify(handlerValidation).replace(/'/g, "''")}'::jsonb`)},
+                  validation_result_json = ${sql.json(handlerValidation as any)},
                   completed_at = NOW(), updated_at = NOW()
               WHERE id = ${active.id}
             `;
@@ -284,7 +286,7 @@ export async function runResearchPipelineV3(runId: string): Promise<SystemPipeli
           continue;
         }
       } catch (error) {
-        await markV3PipelineFailure(sql, runId, error);
+        await markPipelineFailure(sql, runId, error);
         notes.push(`Stage ${active.stage_key} execution failed: ${error instanceof Error ? error.message : String(error)}`);
         return await result(sql, runId, notes);
       }
@@ -301,11 +303,11 @@ export async function runResearchPipelineV3(runId: string): Promise<SystemPipeli
       notes.push(`Completed stage ${active.stage_key}`);
     }
 
-    throw new Error(`V3 pipeline exceeded ${MAX_ITERATIONS} stage iterations for run ${runId}`);
+    throw new Error(`pipeline exceeded ${MAX_ITERATIONS} stage iterations for run ${runId}`);
   } catch (error) {
     const status = await getRunStatus(sql, runId).catch(() => "unknown");
     if (!["completed", "failed", "needs_more_work", "waiting_for_human", "cancelled"].includes(status)) {
-      await markV3PipelineFailure(sql, runId, error);
+      await markPipelineFailure(sql, runId, error);
     }
     notes.push(error instanceof Error ? error.message : String(error));
     return await result(sql, runId, notes);

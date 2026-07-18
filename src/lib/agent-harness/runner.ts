@@ -67,8 +67,10 @@ function buildTaskPrompt(input: AgentRequest, config: ReturnType<typeof getAgent
   ].join("\n\n");
 }
 
-function requiredKeys(outputFormat: Record<string, unknown>) {
-  const schema = outputFormat.schema as { required?: unknown } | undefined;
+function requiredKeys(outputFormat: Record<string, unknown> | { requiredKeys?: string[]; schema?: unknown }) {
+  if ("requiredKeys" in outputFormat && Array.isArray(outputFormat.requiredKeys)) return outputFormat.requiredKeys;
+  const fmt = outputFormat as Record<string, unknown>;
+  const schema = fmt.schema as { required?: unknown } | undefined;
   return Array.isArray(schema?.required) ? schema.required.filter((key): key is string => typeof key === "string") : [];
 }
 
@@ -358,7 +360,10 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
   const providerType = process.env.RESEARCH_MODEL_PROVIDER || "direct-openai-compatible";
   const provider = input.provider || getProvider(providerType);
   const attempts: AgentAttempt[] = [];
-  const keys = requiredKeys(config.outputFormat);
+
+  // Use request-level output format override if provided; otherwise fall back to agent config
+  const effectiveOutputFormat: Record<string, unknown> = (input.outputFormat as unknown as Record<string, unknown>) || config.outputFormat;
+  const keys = requiredKeys(effectiveOutputFormat);
   const candidates = modelCandidates(input.agentName as ResearchAgentName, policy.maxAttempts);
   const primaryModel = candidates[0];
   const originalPromptBytes = Buffer.byteLength(buildTaskPrompt(input, config), "utf8");
@@ -392,11 +397,11 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         if ((timeoutReason === "total" || timeoutReason === "inactivity") && partial?.rawText.trim()) {
           try {
             let candidate = parseStructuredOutput(partial.rawText, keys);
-            let candidateErrors = validateSchema(candidate, config.outputFormat);
+            let candidateErrors = validateSchema(candidate, effectiveOutputFormat);
             if (candidateErrors.length) {
-              const coerced = coerceStructuredOutput(candidate, config.outputFormat);
+              const coerced = coerceStructuredOutput(candidate, effectiveOutputFormat);
               if (coerced.changed) {
-                const coercedErrors = validateSchema(coerced.value, config.outputFormat);
+                const coercedErrors = validateSchema(coerced.value, effectiveOutputFormat);
                 if (coercedErrors.length < candidateErrors.length) {
                   candidate = coerced.value;
                   candidateErrors = coercedErrors;
@@ -418,11 +423,11 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
       let parsed: unknown;
       try {
         parsed = parseStructuredOutput(pass.rawText, keys);
-        validationErrors = validateSchema(parsed, config.outputFormat);
+        validationErrors = validateSchema(parsed, effectiveOutputFormat);
         if (validationErrors.length) {
-          const coerced = coerceStructuredOutput(parsed, config.outputFormat);
+          const coerced = coerceStructuredOutput(parsed, effectiveOutputFormat);
           if (coerced.changed) {
-            const coercedErrors = validateSchema(coerced.value, config.outputFormat);
+            const coercedErrors = validateSchema(coerced.value, effectiveOutputFormat);
             if (coercedErrors.length < validationErrors.length) {
               parsed = coerced.value;
               localCoercionApplied = true;
@@ -442,8 +447,15 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
       if (validationErrors.length && policy.maxRepairAttempts > 0) {
         repairAttempted = true;
         const repairPrompt = [
-          "Repair the following response into exactly one JSON object with all required keys.",
+          `REPAIR TASK: ${input.title}`,
+          "",
+          "The previous model output failed schema validation. Repair it into exactly one JSON object.",
+          `Required top-level keys: ${keys.join(", ")}`,
           `Validation errors: ${validationErrors.map((error) => `${error.path}: ${error.message}`).join(" | ").slice(0, 4000)}`,
+          "",
+          "Original task context (compact):",
+          JSON.stringify({ title: input.title, agentName: input.agentName, output_contract: (input.taskPacket as any).output_contract, providedKeys: Object.keys(input.taskPacket).slice(0, 20) }),
+          "",
           `Previous response: ${pass.rawText.slice(0, 12_000)}`,
         ].join("\n\n");
         if (deadline.remainingMs() < 10_000) {
@@ -486,11 +498,11 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         };
         try {
           parsed = parseStructuredOutput(repair.rawText, keys);
-          validationErrors = validateSchema(parsed, config.outputFormat);
+          validationErrors = validateSchema(parsed, effectiveOutputFormat);
           if (validationErrors.length) {
-            const coerced = coerceStructuredOutput(parsed, config.outputFormat);
+            const coerced = coerceStructuredOutput(parsed, effectiveOutputFormat);
             if (coerced.changed) {
-              const coercedErrors = validateSchema(coerced.value, config.outputFormat);
+              const coercedErrors = validateSchema(coerced.value, effectiveOutputFormat);
               if (coercedErrors.length < validationErrors.length) {
                 const originalErrors = validationErrors;
                 parsed = coerced.value;

@@ -1,10 +1,10 @@
-import type { V3RunContext, V3StageHandler, ValidationResult } from "../../v3-context";
-import { v3ValidationResult } from "../../v3-context";
+import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
+import { makeValidationResult } from "../run-context";
 import postgres from "postgres";
 
-export const sourceIngestionHandler: V3StageHandler<unknown> = {
+export const sourceIngestionHandler: StageHandler<unknown> = {
   stageKey: "source_ingestion",
-  async execute(ctx: V3RunContext): Promise<unknown> {
+  async execute(ctx: ResearchRunContext): Promise<unknown> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const rows = await sql`
@@ -20,7 +20,7 @@ export const sourceIngestionHandler: V3StageHandler<unknown> = {
       await sql.end();
     }
   },
-  async validate(ctx: V3RunContext, output: any): Promise<ValidationResult> {
+  async validate(ctx: ResearchRunContext, output: any): Promise<ValidationResult> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const rows = await sql`
@@ -34,7 +34,7 @@ export const sourceIngestionHandler: V3StageHandler<unknown> = {
       if (Number(rows[0].cnt) === 0) {
         errors.push("No completed document parses for this run");
       }
-      return v3ValidationResult(errors);
+      return makeValidationResult(errors);
     } finally {
       await sql.end();
     }

@@ -1,10 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
-import { createV3Profile, validateV3Archetypes, isBacktestApplicable } from "@/lib/research/v3-contracts";
+import { createProfile, validateArchetypes, isBacktestApplicable } from "@/lib/research/pipeline-contracts";
 
 describe("research v3 contracts", () => {
   it("C2-T1: Compose MELI archetypes", () => {
-    const result = createV3Profile("meli-test", {
+    const result = createProfile("meli-test", {
       asset_id: "meli",
       archetypes: [
         "operating_company_core",
@@ -37,7 +37,7 @@ describe("research v3 contracts", () => {
   });
 
   it("C2-T2: Compose a plain industrial company", () => {
-    const result = createV3Profile("industrial-test", {
+    const result = createProfile("industrial-test", {
       asset_id: "industrial",
       archetypes: ["operating_company_core", "industrial_hardware"],
       overlays: [],
@@ -50,7 +50,7 @@ describe("research v3 contracts", () => {
   });
 
   it("C2-T3: Compose conflicting valuation rules", () => {
-    const result = createV3Profile("conflict-test", {
+    const result = createProfile("conflict-test", {
       asset_id: "conflict",
       archetypes: ["operating_company_core", "holding_company", "etf_fund"],
       overlays: [],
@@ -59,7 +59,7 @@ describe("research v3 contracts", () => {
   });
 
   it("C2-T4: Compose duplicate modules from two archetypes", () => {
-    const result = createV3Profile("dup-test", {
+    const result = createProfile("dup-test", {
       asset_id: "dup",
       archetypes: ["operating_company_core", "marketplace"],
       overlays: [],
@@ -90,10 +90,10 @@ describe("research v3 contracts", () => {
     assert.equal(status, "pending");
   });
 
-  it("C2-T7: No asset-slug branches in v3 contracts", () => {
+  it("C2-T7: No asset-slug branches in pipeline contracts", () => {
     const { readFileSync } = require("node:fs");
     const paths = [
-      "src/lib/research/v3-contracts.ts",
+      "src/lib/research/pipeline-contracts.ts",
       "src/lib/research/archetypes/registry.ts",
       "src/lib/research/archetypes/compose.ts",
       "src/lib/research/archetypes/types.ts",

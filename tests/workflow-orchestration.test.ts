@@ -3,7 +3,7 @@ import assert from "node:assert";
 import {
   getAllStagesForRun,
   getStageConfig,
-  STAGE_CONFIGS_V3,
+  STAGE_CONFIGS,
 } from "@/lib/workflow/stages";
 import {
   evaluateLoadedResearchQuality,
@@ -32,34 +32,34 @@ describe("workflow orchestration and quality gates (Component 13)", () => {
   });
 
   it("C13-T2: Entry criteria dependency chain exists for historical record", () => {
-    const modelConfig = getStageConfig("operating_model", 3);
+    const modelConfig = getStageConfig("operating_model");
     assert.ok(modelConfig);
     // Operating model requires moat assessment and historical diagnosis
     assert.ok(modelConfig.entryCriteria.includes("historical_diagnosis_exists"));
     assert.ok(modelConfig.entryCriteria.includes("moat_assessment_exists"));
 
-    const diagConfig = getStageConfig("historical_diagnosis", 3);
+    const diagConfig = getStageConfig("historical_diagnosis");
     assert.ok(diagConfig);
     // Historical diagnosis requires metric observations
     assert.ok(diagConfig.entryCriteria.includes("metric_observations_exist"));
   });
 
   it("C13-T3: Moat artifact missing blocks operating model and operating scenarios", () => {
-    const moatConfig = getStageConfig("moat_analysis", 3);
+    const moatConfig = getStageConfig("moat_analysis");
     assert.ok(moatConfig);
     assert.deepEqual(moatConfig.requiredOutputs, ["moat_assessment"]);
 
-    const modelConfig = getStageConfig("operating_model", 3);
+    const modelConfig = getStageConfig("operating_model");
     assert.ok(modelConfig);
     assert.ok(modelConfig.entryCriteria.includes("moat_assessment_exists"));
 
-    const scenarioConfig = getStageConfig("operating_scenarios", 3);
+    const scenarioConfig = getStageConfig("operating_scenarios");
     assert.ok(scenarioConfig);
     assert.ok(scenarioConfig.entryCriteria.includes("operating_model_exists"));
   });
 
   it("C13-T5: Optional backtest is skipped for quick_scan run type", () => {
-    const { applicable, skipped } = getAllStagesForRun("quick_scan", 3);
+    const { applicable, skipped } = getAllStagesForRun("quick_scan");
     const isSkipped = skipped.some((s) => s.key === "optional_backtest");
     assert.equal(isSkipped, true);
   });

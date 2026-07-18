@@ -20,15 +20,14 @@ export interface ValidationResult {
  */
 export async function validateStageCompletion(
   runId: string,
-  stageKey: string,
-  pipelineVersion: number = 1
+  stageKey: string
 ): Promise<ValidationResult> {
   const sql = postgres(process.env.DATABASE_URL!);
   const errors: string[] = [];
   const warnings: string[] = [];
 
   try {
-    const config = getStageConfig(stageKey, pipelineVersion);
+    const config = getStageConfig(stageKey);
     if (!config) {
       return {
         valid: false,
@@ -888,7 +887,7 @@ export async function validatePointInTime(
 // Research OS v3 stage artifact validators.
 //
 // Each v3 analytical stage declares a deterministic validation rule in
-// STAGE_CONFIGS_V3. These validators load the accepted typed artifacts for
+// STAGE_CONFIGS. These validators load the accepted typed artifacts for
 // the run and apply the module-level contract validators. Unknown or
 // missing artifacts fail closed.
 // ============================================================
@@ -950,7 +949,7 @@ async function validateV3ArtifactSet(
       SELECT artifact_type, scope_key, content_json
       FROM research_artifacts
       WHERE research_run_id = ${runId}
-        AND status = 'accepted'
+        AND status IN ('validated', 'accepted')
     `;
     const byType = new Map<string, Record<string, unknown>[]>();
     for (const row of rows) {

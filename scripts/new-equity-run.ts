@@ -29,10 +29,10 @@ if (acceptanceProvider !== "mock" && process.env.RUN_PAID_RESEARCH !== "1") {
 process.env.RESEARCH_MODEL_PROVIDER = acceptanceProvider;
 
 const requestedAsset = (process.env.RESEARCH_ASSET || "SOFI").trim();
-const requestedPipelineVersion = Number(process.env.RESEARCH_PIPELINE_VERSION || "2");
-if (requestedPipelineVersion !== 2 && requestedPipelineVersion !== 3) {
+const requestedPipelineVersion = 3;
+if (process.env.RESEARCH_PIPELINE_VERSION && Number(process.env.RESEARCH_PIPELINE_VERSION) < 3) {
   throw new Error(
-    "The executable system pipeline currently supports pipeline version 2 and 3 only"
+    "The current pipeline only supports pipeline version 3. Versions 1 and 2 are deprecated."
   );
 }
 

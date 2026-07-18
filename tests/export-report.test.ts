@@ -1,13 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import {
-  generateV3MarkdownReport,
-  V3ReportData,
-} from "@/lib/export/v3-report-generator";
+  generateMarkdownReport,
+  ResearchReportData,
+} from "@/lib/export/report-generator";
 
 describe("v3 report export (Component 15)", () => {
   it("C15-T1: Accepted complete fixture renders all 25 canonical sections in order", () => {
-    const data: V3ReportData = {
+    const data: ResearchReportData = {
       runId: "run-123",
       asset: {
         canonical_name: "MercadoLibre",
@@ -91,7 +91,7 @@ describe("v3 report export (Component 15)", () => {
       },
     };
 
-    const report = generateV3MarkdownReport(data);
+    const report = generateMarkdownReport(data);
 
     // Verify all canonical headings exist and are in order
     const headings = [
@@ -132,7 +132,7 @@ describe("v3 report export (Component 15)", () => {
   });
 
   it("C15-T2: Missing genesis artifact displays a visible incomplete section and no filler", () => {
-    const data: V3ReportData = {
+    const data: ResearchReportData = {
       runId: "run-123",
       asset: {
         canonical_name: "MercadoLibre",
@@ -142,14 +142,14 @@ describe("v3 report export (Component 15)", () => {
       // genesis omitted
     };
 
-    const report = generateV3MarkdownReport(data);
+    const report = generateMarkdownReport(data);
     assert.ok(report.includes("Incomplete Section"));
     assert.ok(report.includes("Missing Company Genesis"));
     assert.equal(report.includes("Galperin"), false); // no filler Marcos Galperin info
   });
 
   it("C15-T4: Price-target path with non-monotonic bear case renders accurately", () => {
-    const data: V3ReportData = {
+    const data: ResearchReportData = {
       runId: "run-123",
       asset: {
         canonical_name: "MercadoLibre",
@@ -166,7 +166,7 @@ describe("v3 report export (Component 15)", () => {
       },
     };
 
-    const report = generateV3MarkdownReport(data);
+    const report = generateMarkdownReport(data);
     assert.ok(report.includes("2025 | bear | 80"));
     assert.ok(report.includes("2026 | bear | 70"));
     assert.ok(report.includes("2027 | bear | 90"));

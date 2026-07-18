@@ -28,7 +28,7 @@ export type ProfileSelectionResult = {
   valid: boolean;
 };
 
-export function createV3Profile(
+export function createProfile(
   profileId: string,
   intent: ProfileSelectionIntent
 ): ProfileSelectionResult {
@@ -45,7 +45,7 @@ export function createV3Profile(
   return { profile_id: profileId, composed: profile, errors, valid };
 }
 
-export function validateV3Archetypes(
+export function validateArchetypes(
   archetypes: string[],
   overlays: string[] = []
 ): ArchetypeCompositionError[] {

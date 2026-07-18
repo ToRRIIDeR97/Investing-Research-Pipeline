@@ -1,9 +1,9 @@
 /**
  * Research OS v3 run context and stage-handler shared services.
  *
- * The v3 runtime is deliberately separate from the v1/v2 monolith:
- * each stage handler receives a V3RunContext and produces one bounded
- * artifact family. Model access goes through callV3Agent, which enforces
+ * The research runtime is deliberately separate from the legacy monolith:
+ * each stage handler receives a ResearchRunContext and produces one bounded
+ * artifact family. Model access goes through callResearchAgent, which enforces
  * budget preflight and per-attempt ledger recording identically to v2.
  */
 
@@ -17,12 +17,12 @@ export type { ValidationResult };
 
 export type Sql = ReturnType<typeof postgres>;
 
-export const V3_HANDLER_VERSION = "3.0.0";
-export const V3_SCHEMA_VERSION = "3.0.0";
-export const V3_VALIDATOR_VERSION = "1.0.0";
-export const V3_PROMPT_VERSION = "v3-runtime-v1";
+export const HANDLER_VERSION = "3.0.0";
+export const SCHEMA_VERSION = "3.0.0";
+export const VALIDATOR_VERSION = "1.0.0";
+export const PROMPT_VERSION = "v3-runtime-v1";
 
-export interface V3RunContext {
+export interface ResearchRunContext {
   runId: string;
   assetId: string;
   assetName: string;
@@ -51,10 +51,10 @@ export interface V3RunContext {
   } | null;
 }
 
-export interface V3StageHandler<TOutput = unknown> {
+export interface StageHandler<TOutput = unknown> {
   stageKey: string;
-  execute(context: V3RunContext): Promise<TOutput>;
-  validate(context: V3RunContext, output: TOutput): Promise<ValidationResult>;
+  execute(context: ResearchRunContext): Promise<TOutput>;
+  validate(context: ResearchRunContext, output: TOutput): Promise<ValidationResult>;
 }
 
 type RunRow = {
@@ -84,12 +84,12 @@ function asObject(value: unknown): Record<string, unknown> {
 }
 
 /**
- * Load the run-scoped context for a v3 execution. The composed profile is
+ * Load the run-scoped context for a execution. The composed profile is
  * rebuilt from run metadata when an archetype composition has already been
  * accepted; otherwise it is composed on demand from the requested archetypes
  * so later handlers can rely on it without re-deriving asset identity.
  */
-export async function loadV3RunContext(sql: Sql, runId: string): Promise<V3RunContext> {
+export async function loadRunContext(sql: Sql, runId: string): Promise<ResearchRunContext> {
   const rows = await sql<RunRow[]>`
     SELECT
       rr.id, rr.run_type, rr.status, rr.asset_id, rr.profile_id,
@@ -111,7 +111,7 @@ export async function loadV3RunContext(sql: Sql, runId: string): Promise<V3RunCo
   if (!row) throw new Error(`Research run not found: ${runId}`);
   const pipelineVersion = Number(row.pipeline_version || 1);
   if (pipelineVersion < 3) {
-    throw new Error(`Run ${runId} is pipeline_version ${pipelineVersion}; the v3 runtime only executes version 3 runs`);
+    throw new Error(`Run ${runId} has unsupported pipeline_version ${pipelineVersion}. Only pipeline_version >= 3 is supported.`);
   }
 
   const metadata = asObject(row.metadata_json);
@@ -122,7 +122,7 @@ export async function loadV3RunContext(sql: Sql, runId: string): Promise<V3RunCo
     ? (metadata.v3_overlays as unknown[]).map(String)
     : [];
   const timingHypothesis = metadata.timing_hypothesis && typeof metadata.timing_hypothesis === "object"
-    ? (metadata.timing_hypothesis as V3RunContext["timingHypothesis"])
+    ? (metadata.timing_hypothesis as ResearchRunContext["timingHypothesis"])
     : null;
 
   let composedProfile: ComposedProfile | null = null;
@@ -180,12 +180,13 @@ export async function persistV3Composition(
   archetypes: string[],
   overlays: string[]
 ): Promise<void> {
-  // Use raw JSON literal to avoid postgres.js v3.4.5 sql.json() / ::jsonb bugs
-  const payload = JSON.stringify({ v3_archetypes: archetypes, v3_overlays: overlays });
+  // JSONB || concatenation requires a raw SQL literal; use JSON.stringify
+  // with proper SQL string escaping (double single quotes).
+  const value = JSON.stringify({ v3_archetypes: archetypes, v3_overlays: overlays }).replace(/'/g, "''");
   await sql`
     UPDATE research_runs
     SET metadata_json = coalesce(metadata_json, '{}'::jsonb)
-                         || ${sql.unsafe(`'${payload.replace(/'/g, "''")}'::jsonb`)},
+                         || ${sql.unsafe(`'${value}'::jsonb`)},
         updated_at = NOW()
     WHERE id = ${runId}
   `;
@@ -248,12 +249,11 @@ export async function latestV3TaskOutput(
 }
 
 export async function completeV3Task(sql: Sql, taskId: string, output: unknown): Promise<void> {
-  // Use raw JSON literal to avoid postgres.js v3.4.5 sql.json() / ::jsonb bugs
-  const jsonLiteral = JSON.stringify(output).replace(/'/g, "''");
+  const safe = JSON.stringify(output ?? {});
   await sql`
     UPDATE research_tasks
     SET status = 'completed',
-        output_json = '${sql.unsafe(jsonLiteral)}'::jsonb,
+        output_json = ${safe}::jsonb,
         failure_reason = NULL,
         completed_at = NOW(),
         updated_at = NOW()
@@ -273,7 +273,7 @@ export async function failV3Task(sql: Sql, taskId: string, error: unknown): Prom
   `;
 }
 
-export function v3ExactJsonPrompt(params: {
+export function exactJsonPrompt(params: {
   agentName: string;
   requiredKeys: string[];
   packet: Record<string, unknown>;
@@ -296,9 +296,9 @@ export function v3ExactJsonPrompt(params: {
  * Bounded agent call for v3 handlers. Mirrors the v2 callAgent behavior:
  * budget preflight before every attempt and a per-attempt model-call ledger.
  */
-export async function callV3Agent<T extends Record<string, unknown>>(params: {
+export async function callResearchAgent<T extends Record<string, unknown>>(params: {
   sql: Sql;
-  ctx: V3RunContext;
+  ctx: ResearchRunContext;
   stageKey: string;
   taskKey: string;
   taskType: string;
@@ -307,6 +307,7 @@ export async function callV3Agent<T extends Record<string, unknown>>(params: {
   packet: Record<string, unknown>;
   prompt?: string;
   promptFactory?: (packet: Record<string, unknown>) => string;
+  outputFormat?: Parameters<typeof runResearchAgent>[0]["outputFormat"];
 }): Promise<T> {
   const task = await createV3Task(params.sql, params.ctx.runId, params.stageKey, params.taskKey, params.taskType, params.agentName);
   const prior = await latestV3TaskOutput(params.sql, params.ctx.runId, params.taskKey);
@@ -323,6 +324,7 @@ export async function callV3Agent<T extends Record<string, unknown>>(params: {
       taskPacket: params.packet,
       prompt: params.prompt,
       promptFactory: params.promptFactory,
+      outputFormat: params.outputFormat,
       hooks: {
         beforeAttempt: async () => {
           await assertModelBudgetAvailable({
@@ -343,7 +345,7 @@ export async function callV3Agent<T extends Record<string, unknown>>(params: {
             modelProvider: attempt.provider,
             modelName: attempt.model,
             modelTier: params.modelTier,
-            promptVersion: V3_PROMPT_VERSION,
+            promptVersion: PROMPT_VERSION,
             inputTokens: attempt.inputTokens,
             outputTokens: attempt.outputTokens,
             costUsd: attempt.costUsd,
@@ -401,7 +403,7 @@ export async function callV3Agent<T extends Record<string, unknown>>(params: {
   }
 }
 
-export function v3ValidationResult(errors: string[] = [], warnings: string[] = []): ValidationResult {
+export function makeValidationResult(errors: string[] = [], warnings: string[] = []): ValidationResult {
   return {
     valid: errors.length === 0,
     errors,

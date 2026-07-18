@@ -1,22 +1,15 @@
-import type { V3RunContext, V3StageHandler, ValidationResult } from "../../v3-context";
-import { v3ValidationResult } from "../../v3-context";
-import { callV3Agent, v3ExactJsonPrompt } from "../../v3-context";
-import { createArtifactRepository } from "../../artifacts/repository";
+import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
+import { makeValidationResult } from "../run-context";
+import { callResearchAgent, exactJsonPrompt } from "../run-context";
+import { DECISION_SYNTHESIS_CONTRACT } from "../stage-contracts";
+import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
-const DECISION_OUTPUT_KEYS = [
-  "thesis",
-  "risks",
-  "catalysts",
-  "expected_returns",
-  "monitoring_thresholds",
-];
-
-export const decisionSynthesisHandler: V3StageHandler<unknown> = {
+export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "decision_synthesis",
-  async execute(ctx: V3RunContext): Promise<unknown> {
+  async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const taskKey = "asset-analyst:decision";
@@ -29,36 +22,39 @@ export const decisionSynthesisHandler: V3StageHandler<unknown> = {
           profileKey: ctx.profileKey,
         },
         required_modules: ["thesis_synthesis"],
+        output_contract: "decision_synthesis",
       };
 
-      const promptFactory = (p: Record<string, unknown>) => v3ExactJsonPrompt({
+      const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
         agentName: "asset-analyst",
-        requiredKeys: DECISION_OUTPUT_KEYS,
+        requiredKeys: DECISION_SYNTHESIS_CONTRACT.requiredKeys,
         packet: p,
         extraRules: [
           "Synthesize the final investment decision, including a clear thesis statement, risk factors, and upcoming catalysts.",
         ],
       });
 
-      const output = await callV3Agent<Record<string, any>>({
+      const output = await callResearchAgent<Record<string, any>>({
         sql, ctx, stageKey: "decision_synthesis", taskKey,
         taskType: "decision_synthesis", agentName: "asset-analyst", modelTier: "mid",
         packet, promptFactory,
+        outputFormat: DECISION_SYNTHESIS_CONTRACT,
       });
 
-      // 4. Persist to theses table
-      const thesis = output.thesis as any || {};
+      // Persist to theses table
+      const thesis = output.investment_thesis as any || {};
       await sql`
         INSERT INTO theses (
           asset_id, research_run_id, one_sentence_thesis, why_now, market_missing, status, created_by
         ) VALUES (
           ${ctx.assetId}, ${ctx.runId}, ${thesis.one_sentence_thesis || "Thesis statement"},
-          ${thesis.why_now || null}, ${thesis.market_missing || null}, 'draft', 'system-v3'
+          ${thesis.why_now || null}, ${thesis.market_missing || null}, 'draft', 'system-research-os'
         )
       `;
 
-      // 5. Persist to risks table
-      const risks = Array.isArray(output.risks) ? output.risks : [];
+      // Persist to risks table
+      const riskAssessment = output.risk_assessment as any || {};
+      const risks = Array.isArray(riskAssessment.risks) ? riskAssessment.risks : [];
       for (const r of risks) {
         await sql`
           INSERT INTO risks (
@@ -72,8 +68,9 @@ export const decisionSynthesisHandler: V3StageHandler<unknown> = {
         `;
       }
 
-      // 6. Persist to catalysts table
-      const catalysts = Array.isArray(output.catalysts) ? output.catalysts : [];
+      // Persist to catalysts table
+      const catalystTimeline = output.catalyst_timeline as any || {};
+      const catalysts = Array.isArray(catalystTimeline.catalysts) ? catalystTimeline.catalysts : [];
       for (const cat of catalysts) {
         await sql`
           INSERT INTO catalysts (
@@ -85,19 +82,10 @@ export const decisionSynthesisHandler: V3StageHandler<unknown> = {
         `;
       }
 
-      // Persist decision artifacts
+      // Persist generated sub-artifacts
       const db = drizzle(sql, { schema });
       const repo = createArtifactRepository(db);
-      const subKeys = [
-        "investment_thesis",
-        "risk_register",
-        "catalyst_register",
-        "expected_return_matrix",
-        "thesis_breakers",
-        "monitoring_dashboard",
-        "confidence_assessment",
-        "decision_record"
-      ];
+      const subKeys = DECISION_SYNTHESIS_CONTRACT.requiredKeys;
       for (const k of subKeys) {
         if (output[k]) {
           await repo.upsertArtifact({
@@ -106,12 +94,12 @@ export const decisionSynthesisHandler: V3StageHandler<unknown> = {
             profile_id: ctx.profileId || undefined,
             artifact_type: k,
             scope_key: `${ctx.assetSlug}-${k.replace(/_/g, "-")}`,
-            status: "accepted",
+            status: "validated",
             content_json: output[k],
             schema_version: "3.0.0",
             validator_version: "1.0.0",
-            prompt_version: "v3",
-            created_by: "system-v3",
+            prompt_version: "current",
+            created_by: "system-research-os",
             idempotency_key: `${ctx.runId}-${k}`,
           });
         }
@@ -122,17 +110,23 @@ export const decisionSynthesisHandler: V3StageHandler<unknown> = {
       await sql.end();
     }
   },
-  async validate(ctx: V3RunContext, output: any): Promise<ValidationResult> {
+  async validate(ctx: ResearchRunContext, _output: unknown): Promise<ValidationResult> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
-      const ts = await sql`SELECT COUNT(*) as cnt FROM theses WHERE research_run_id = ${ctx.runId}`;
-      const rs = await sql`SELECT COUNT(*) as cnt FROM risks WHERE research_run_id = ${ctx.runId}`;
-      const cs = await sql`SELECT COUNT(*) as cnt FROM catalysts WHERE research_run_id = ${ctx.runId}`;
       const errors: string[] = [];
-      if (Number(ts[0].cnt) === 0) errors.push("No thesis created for this run");
-      if (Number(rs[0].cnt) === 0) errors.push("No risks documented for this run");
-      if (Number(cs[0].cnt) === 0) errors.push("No catalysts documented for this run");
-      return v3ValidationResult(errors);
+      const artifactKeys = DECISION_SYNTHESIS_CONTRACT.requiredKeys;
+      for (const k of artifactKeys) {
+        const rows = await sql`
+          SELECT COUNT(*) as cnt FROM research_artifacts
+          WHERE research_run_id = ${ctx.runId}
+            AND artifact_type = ${k}
+            AND status IN ('validated', 'accepted')
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          errors.push(`Missing required artifact: ${k}`);
+        }
+      }
+      return makeValidationResult(errors);
     } finally {
       await sql.end();
     }
