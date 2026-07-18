@@ -223,7 +223,7 @@ export function inferMissingSourceCoverage(input: {
   return gaps;
 }
 
-function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQualityGateResult {
+export function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQualityGateResult {
   const threshold = thresholdFor(data.run.run_type);
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -287,7 +287,11 @@ function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQualityGat
   );
   addAiReviewCoverage(data, errors, warnings, missingCoverage);
   addHumanReviewCoverage(data, threshold, errors, warnings, missingCoverage);
-  addV2ArtifactCoverage(data, errors, missingCoverage);
+  if (Number(data.run.pipeline_version || 1) >= 3) {
+    addV3ArtifactCoverage(data, errors, missingCoverage);
+  } else {
+    addV2ArtifactCoverage(data, errors, missingCoverage);
+  }
 
   const blockingMissingCoverage = missingCoverage.filter(
     (item) => item.requiredForCompletion && ["high", "critical"].includes(item.severity)
@@ -410,6 +414,82 @@ async function loadRunQualityData(
   };
 }
 
+function addV3ArtifactCoverage(
+  data: RunQualityData,
+  errors: string[],
+  missingCoverage: MissingCoverageItem[]
+) {
+  if (Number(data.run.pipeline_version || 1) < 3) return;
+
+  const addMissing = (key: string, area: string, description: string) => {
+    errors.push(description);
+    missingCoverage.push({ key, area, description, severity: "high", requiredForCompletion: true });
+  };
+
+  const runType = data.run.run_type;
+  const isFullOrDeep = ["deep_dive", "full_initiation_report"].includes(runType);
+
+  if (!isFullOrDeep) return;
+
+  // 1. Genesis Check
+  const hasGenesis = data.tasks.some(
+    (t) => t.status === "completed" && (t.task_key === "genesis-researcher:meli-genesis" || t.task_type === "company_genesis")
+  );
+  if (!hasGenesis) {
+    addMissing("v3_genesis", "company genesis", "Required v3 Company Genesis artifact is missing or incomplete.");
+  }
+
+  // 2. Historical Diagnosis Check
+  const hasDiagnosis = data.tasks.some(
+    (t) => t.status === "completed" && (t.task_key === "historical-diagnostician:diagnosis" || t.task_type === "historical_diagnosis")
+  );
+  if (!hasDiagnosis) {
+    addMissing("v3_diagnosis", "historical diagnosis", "Required v3 Historical Diagnosis artifact is missing or incomplete.");
+  }
+
+  // 3. Business Process Analysis Check
+  const hasProcessMap = data.tasks.some(
+    (t) => t.status === "completed" && (t.task_key === "business-model-analyst:process-map" || t.task_type === "business_process_analysis")
+  );
+  if (!hasProcessMap) {
+    addMissing("v3_process_map", "business process map", "Required v3 Business Process Map is missing or incomplete.");
+  }
+
+  // 4. Moat Analysis Check
+  const hasMoat = data.tasks.some(
+    (t) => t.status === "completed" && (t.task_key === "moat-analyst:assessment" || t.task_type === "moat_analysis")
+  );
+  if (!hasMoat) {
+    addMissing("v3_moat", "moat analysis", "Required v3 Moat Assessment is missing or incomplete.");
+  }
+
+  // 5. Operating Model Check
+  const hasOperatingModel = data.tasks.some(
+    (t) => t.status === "completed" && (t.task_key === "forecast-analyst:operating-model" || t.task_type === "operating_model")
+  );
+  if (!hasOperatingModel) {
+    addMissing("v3_operating_model", "operating model", "Required v3 Operating Model is missing or incomplete.");
+  }
+
+  // 6. Operating Scenarios Check
+  const hasScenarios = data.tasks.some(
+    (t) => t.status === "completed" && (t.task_key === "forecast-analyst:scenarios" || t.task_type === "operating_scenarios")
+  );
+  if (!hasScenarios) {
+    addMissing("v3_operating_scenarios", "operating scenarios", "Required v3 Operating Scenario Set is missing or incomplete.");
+  }
+
+  // 7. Decision Synthesis Check (only for full_initiation_report)
+  if (runType === "full_initiation_report") {
+    const hasThesis = data.tasks.some(
+      (t) => t.status === "completed" && (t.task_key === "decision-synthesizer:thesis" || t.task_type === "decision_synthesis")
+    );
+    if (!hasThesis) {
+      addMissing("v3_decision_synthesis", "decision synthesis", "Required v3 Decision Synthesis (Thesis/Risks/Expected Return) is missing or incomplete.");
+    }
+  }
+}
+
 function addV2ArtifactCoverage(
   data: RunQualityData,
   errors: string[],
@@ -472,6 +552,20 @@ function addV2ArtifactCoverage(
   }
   if (!data.backtestArtifacts.length) {
     addMissing("v2_backtest_artifacts", "backtest coverage", "No persisted backtest artifacts are available for this v2 run.");
+  }
+  const robustBacktests = data.backtests.filter((backtest) => {
+    const metrics = typeof backtest.metrics_json === "string"
+      ? (() => { try { return JSON.parse(backtest.metrics_json); } catch { return {}; } })()
+      : backtest.metrics_json || {};
+    return metrics.in_sample && metrics.out_of_sample && metrics.parameter_stability
+      && Number.isFinite(Number(metrics.out_of_sample_excess_return));
+  });
+  if (executedCombinations.length && robustBacktests.length < executedCombinations.length) {
+    addMissing(
+      "v2_backtest_robustness",
+      "backtest coverage",
+      `Only ${robustBacktests.length}/${executedCombinations.length} completed combinations include in-sample, out-of-sample, benchmark-excess, and parameter-stability results.`
+    );
   }
 }
 
@@ -696,8 +790,18 @@ function actionReadinessFor(
   if (threshold.requireHumanReview && data.reviewDecisions.length === 0) return "review_ready";
 
   const decision = String(data.reviewDecisions[0]?.status || "").toLowerCase();
-  if (decision === "approved_for_tracking" || decision === "watchlist") return "review_ready";
-  return "investment_ready";
+  const baseReadiness = (decision === "approved_for_tracking" || decision === "watchlist") ? "review_ready" : "investment_ready";
+
+  const metadata = typeof data.run.metadata_json === "string"
+    ? JSON.parse(data.run.metadata_json)
+    : data.run.metadata_json || {};
+  const isSynthetic = metadata.acceptance_provider === "mock" || process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock";
+
+  if (isSynthetic && baseReadiness === "investment_ready") {
+    return "review_ready";
+  }
+
+  return baseReadiness;
 }
 
 function thresholdFor(runType: string): RunTypeThreshold {
@@ -751,4 +855,33 @@ function normalizeSeverity(value: unknown): MissingCoverageItem["severity"] {
     return value;
   }
   return "medium";
+}
+
+/**
+ * Convenience wrapper for evaluateLoadedResearchQuality that accepts a
+ * partial data shape and fills sensible defaults for missing fields.
+ * Used by test harnesses that pre-load only the data they need.
+ */
+export function evaluateQualityGates(data: Partial<RunQualityData> & Record<string, unknown>): ResearchQualityGateResult {
+  return evaluateLoadedResearchQuality({
+    run: (data.run ?? {}) as Row,
+    stages: (data.stages ?? []) as Row[],
+    tasks: (data.tasks ?? []) as Row[],
+    sources: (data.sources ?? []) as Row[],
+    evidence: (data.evidence ?? []) as Row[],
+    metrics: (data.metrics ?? []) as Row[],
+    signals: (data.signals ?? []) as Row[],
+    scenarios: (data.scenarios ?? []) as Row[],
+    sourceGaps: (data.sourceGaps ?? []) as Row[],
+    reviewDecisions: (data.reviewDecisions ?? []) as Row[],
+    analysisSections: (data.analysisSections ?? data.artifacts ?? []) as Row[],
+    valuationModels: (data.valuationModels ?? []) as Row[],
+    indicators: (data.indicators ?? []) as Row[],
+    combinations: (data.combinations ?? []) as Row[],
+    backtests: (data.backtests ?? []) as Row[],
+    backtestArtifacts: (data.backtestArtifacts ?? []) as Row[],
+    unlinkedFactClaimCount: (data.unlinkedFactClaimCount ?? 0) as number,
+    ...(data.asset ? { asset: data.asset as Row } : {}),
+    ...(data.profile ? { profile: data.profile as Row } : {}),
+  });
 }

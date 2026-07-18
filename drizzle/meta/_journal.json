@@ -22,6 +22,27 @@
       "when": 1783852800000,
       "tag": "0002_research_os_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784279706814,
+      "tag": "0003_research_os_v3",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784280870174,
+      "tag": "0004_source_intelligence_v3",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784281355568,
+      "tag": "0005_market_data_v3",
+      "breakpoints": true
     }
   ]
 }

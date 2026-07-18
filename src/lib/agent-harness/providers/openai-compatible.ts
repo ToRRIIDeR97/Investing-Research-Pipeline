@@ -95,8 +95,8 @@ export class OpenAICompatibleProvider implements ModelProvider {
           messages: [{ role: "user", content: request.prompt }],
           stream: true,
           stream_options: { include_usage: true },
-          temperature: request.temperature ?? 0.2,
-          max_tokens: request.maxTokens,
+          ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+          ...(request.maxTokens !== undefined ? { max_tokens: request.maxTokens } : {}),
           ...(request.tools?.length ? { tools: request.tools } : {}),
         }),
         signal,
@@ -173,6 +173,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
         events.push({ type: "usage", usage: {
           inputTokens: payload.usage.prompt_tokens,
           outputTokens: payload.usage.completion_tokens,
+          reasoningTokens: payload.usage.completion_tokens_details?.reasoning_tokens,
         } });
       }
       if (choice?.finish_reason) {

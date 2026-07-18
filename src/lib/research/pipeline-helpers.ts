@@ -73,6 +73,36 @@ export function selectRelevantChunks(chunks: RetrievalChunk[], terms: string[], 
     .sort((a, b) => a.sourceId.localeCompare(b.sourceId) || a.chunkIndex - b.chunkIndex);
 }
 
+/** Ensures primary annual and quarterly filing families survive relevance ranking. */
+export function ensureFilingFamilyCoverage(
+  selected: RetrievalChunk[],
+  allChunks: RetrievalChunk[],
+  terms: string[],
+  maxChunks: number,
+  excerptChars = 5000
+) {
+  const families = [
+    /(?:10-k|20-f|40-f)/i,
+    /(?:10-q|6-k)/i,
+    /(?:8-k|earnings)/i,
+  ];
+  const required = families.flatMap((pattern) => {
+    const candidates = allChunks.filter((chunk) => pattern.test(chunk.sourceType));
+    return candidates.length ? selectRelevantChunks(candidates, terms, 2, excerptChars) : [];
+  });
+  const merged = new Map<string, RetrievalChunk>();
+  for (const chunk of [...required, ...selected]) {
+    if (!merged.has(chunk.id) && merged.size < maxChunks) merged.set(chunk.id, chunk);
+  }
+  return [...merged.values()].sort((a, b) => a.sourceId.localeCompare(b.sourceId) || a.chunkIndex - b.chunkIndex);
+}
+
+export function positiveFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
 function observationIdentity(obs: Record<string, unknown>) {
   return [obs.metric_key || obs.metric || obs.label, obs.period_start || "", obs.period_end || obs.as_of_date || "", obs.unit || "", obs.currency || ""].join("|").toLowerCase();
 }
@@ -99,15 +129,21 @@ export function normalizeSourceGap(gap: Record<string, unknown>, owner: string) 
 }
 
 export const MODULE_TERMS: Record<string, string[]> = {
+  business_segments: ["commerce", "fintech", "marketplace", "mercado pago", "revenue segment"],
+  revenue_drivers: ["revenue", "gmv", "gross merchandise volume", "tpv", "total payment volume", "growth"],
+  margins: ["margin", "gross profit", "operating income", "adjusted ebitda", "net income", "profitability"],
+  unit_economics: ["gmv", "tpv", "take rate", "credit portfolio", "nimal", "margin"],
+  active_buyers: ["active buyer", "unique buyer", "buyers", "items sold"],
+  fintech_mau: ["monthly active", "mau", "active users", "fintech users"],
   provisions: ["provision", "credit loss", "allowance", "expected credit loss"],
   credit_losses: ["credit loss", "allowance", "charge-off", "delinquen"],
   loan_book: ["loan", "credit portfolio", "receivable", "delinquen", "non-performing"],
-  customer_funds: ["customer fund", "customer balance", "wallet balance", "funds payable"],
-  funding_liabilities: ["funding liabil", "borrowings", "funding mix", "deposits"],
+  customer_funds: ["customer fund", "customer balance", "wallet balance", "funds payable", "assets under management", "aum"],
+  funding_liabilities: ["funding liabil", "borrowings", "funding mix", "deposits", "loans payable", "financial liabilities"],
   net_interest_margin_after_losses: ["net interest margin", "interest margin after loss", "nimal"],
   gmv: ["gmv", "gross merchandise volume"],
   tpv: ["tpv", "total payment volume"],
-  working_capital: ["working capital", "receivable", "payable", "inventory"],
+  working_capital: ["working capital", "receivable", "payable", "inventory", "current assets", "current liabilities"],
   net_debt: ["net debt", "total debt", "borrowings", "cash and equivalents"],
   total_debt: ["debt", "borrowings", "notes payable"],
   fcf: ["fcf", "free cash flow", "operating cash flow", "capital expenditure", "capex"],

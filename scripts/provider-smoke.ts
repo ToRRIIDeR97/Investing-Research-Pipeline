@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
+import { parseStructuredOutput } from "../src/lib/agent-harness/output-parser";
 import { getProvider } from "../src/lib/agent-harness/providers/provider";
-import { runResearchAgent } from "../src/lib/agent-harness/runner";
 
 function loadEnv() {
   if (!existsSync(".env.local")) return;
@@ -17,12 +17,26 @@ async function main() {
   const provider = getProvider();
   const health = await provider.healthCheck?.();
   if (health?.status !== "healthy") throw new Error(`Provider health check failed: ${health?.message || "unknown"}`);
-  const result = await runResearchAgent<any>({
-    agentName: "asset-classifier", title: "Provider smoke test", provider,
-    taskPacket: { asset: { symbol: "MELI", kind: "equity" }, instruction: "Classify the asset with minimal output." },
-    policy: { totalTimeoutMs: 60_000, inactivityTimeoutMs: 20_000, maxOutputTokens: 800, maxResponseBytes: 20_000, maxAttempts: 1 },
-  });
-  console.log(JSON.stringify({ provider: result.usage.provider, model: result.usage.model, requestId: result.usage.requestId, latencyMs: result.usage.latencyMs, outputTokens: result.usage.outputTokens, valid: Boolean(result.structured) }, null, 2));
+  const model = process.env.RESEARCH_SMOKE_MODEL || process.env.RESEARCH_CHEAP_MODEL;
+  if (!model) throw new Error("RESEARCH_SMOKE_MODEL or RESEARCH_CHEAP_MODEL is required");
+  const started = Date.now();
+  let rawText = "";
+  let requestId: string | undefined;
+  let outputTokens = 0;
+  let completed = false;
+  for await (const event of provider.stream({
+    model,
+    prompt: 'Return exactly this JSON object and no Markdown: {"ok":true}',
+    temperature: 0,
+  }, AbortSignal.timeout(60_000))) {
+    if (event.type === "response.started") requestId = event.requestId;
+    if (event.type === "text.delta") rawText += event.text;
+    if (event.type === "usage") outputTokens += event.usage.outputTokens || 0;
+    if (event.type === "response.completed") completed = true;
+  }
+  const parsed = parseStructuredOutput(rawText, ["ok"]) as { ok?: unknown };
+  if (!completed || parsed.ok !== true) throw new Error("Provider did not complete the structured JSON smoke response");
+  console.log(JSON.stringify({ provider: provider.id, model, requestId, latencyMs: Date.now() - started, outputTokens, valid: true }, null, 2));
 }
 
 main().catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exit(1); });

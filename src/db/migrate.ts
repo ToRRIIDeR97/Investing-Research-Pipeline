@@ -1,6 +1,8 @@
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { existsSync, readFileSync } from "fs";
+import { resolve } from "path";
 import * as coreSchema from "./schema/core";
 import * as profilesSchema from "./schema/profiles";
 import * as workflowSchema from "./schema/workflow";
@@ -12,6 +14,27 @@ import * as thesisSchema from "./schema/thesis";
 import * as aiSchema from "./schema/ai";
 import * as backtestingSchema from "./schema/backtesting";
 import * as researchV2Schema from "./schema/research-v2";
+import * as researchArtifactsSchema from "./schema/research-artifacts";
+import * as sourceIntelligenceSchema from "./schema/source-intelligence";
+import * as marketDataSchema from "./schema/market-data";
+
+function loadEnvFile(fileName: string) {
+  const path = resolve(process.cwd(), fileName);
+  if (!existsSync(path)) return;
+
+  const contents = readFileSync(path, "utf8");
+  for (const line of contents.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) continue;
+    const [key, ...valueParts] = trimmed.split("=");
+    if (process.env[key]) continue;
+    const rawValue = valueParts.join("=").trim();
+    process.env[key] = rawValue.replace(/^['"]|['"]$/g, "");
+  }
+}
+
+loadEnvFile(".env.local");
+loadEnvFile(".env");
 
 const schema = {
   ...coreSchema,
@@ -25,6 +48,9 @@ const schema = {
   ...aiSchema,
   ...backtestingSchema,
   ...researchV2Schema,
+  ...researchArtifactsSchema,
+  ...sourceIntelligenceSchema,
+  ...marketDataSchema,
 };
 
 async function main() {

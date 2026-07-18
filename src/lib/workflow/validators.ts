@@ -1,5 +1,5 @@
 import postgres from "postgres";
-import { STAGE_CONFIG_MAP } from "./stages";
+import { STAGE_CONFIG_MAP, getStageConfig } from "./stages";
 import { evaluateResearchQuality } from "./quality-gates";
 
 // ============================================================
@@ -20,14 +20,15 @@ export interface ValidationResult {
  */
 export async function validateStageCompletion(
   runId: string,
-  stageKey: string
+  stageKey: string,
+  pipelineVersion: number = 1
 ): Promise<ValidationResult> {
   const sql = postgres(process.env.DATABASE_URL!);
   const errors: string[] = [];
   const warnings: string[] = [];
 
   try {
-    const config = STAGE_CONFIG_MAP[stageKey];
+    const config = getStageConfig(stageKey, pipelineVersion);
     if (!config) {
       return {
         valid: false,
@@ -141,6 +142,18 @@ export async function validateStageCompletion(
           if (Number(rows[0].cnt) === 0) {
             errors.push("No metric observations recorded for this run");
           }
+          const invalidMarketMetrics = await sql`
+            SELECT md.metric_key, mo.value_numeric
+            FROM metric_observations mo
+            JOIN metric_definitions md ON md.id = mo.metric_definition_id
+            WHERE mo.research_run_id = ${runId}
+              AND mo.review_status = 'accepted'
+              AND md.metric_key IN ('market_price', 'market_cap')
+              AND (mo.value_numeric IS NULL OR mo.value_numeric::numeric <= 0)
+          `;
+          for (const metric of invalidMarketMetrics) {
+            errors.push(`Accepted ${metric.metric_key} must be positive; received ${metric.value_numeric ?? "null"}`);
+          }
           break;
         }
 
@@ -234,6 +247,84 @@ export async function validateStageCompletion(
           `;
           if (Number(rows[0].cnt) === 0) {
             errors.push("No completed backtest results found for this run");
+          }
+          break;
+        }
+
+        case "genesis_artifacts": {
+          const rows = await sql`
+            SELECT COUNT(*) as cnt FROM research_tasks
+            WHERE research_run_id = ${runId}
+              AND (task_key = 'genesis-researcher:meli-genesis' OR task_type = 'company_genesis')
+              AND status = 'completed'
+          `;
+          if (Number(rows[0].cnt) === 0) {
+            errors.push("No completed company genesis artifact found");
+          }
+          break;
+        }
+
+        case "historical_diagnosis": {
+          const rows = await sql`
+            SELECT COUNT(*) as cnt FROM research_tasks
+            WHERE research_run_id = ${runId}
+              AND (task_key = 'historical-diagnostician:diagnosis' OR task_type = 'historical_diagnosis')
+              AND status = 'completed'
+          `;
+          if (Number(rows[0].cnt) === 0) {
+            errors.push("No completed historical diagnosis artifact found");
+          }
+          break;
+        }
+
+        case "business_process_map": {
+          const rows = await sql`
+            SELECT COUNT(*) as cnt FROM research_tasks
+            WHERE research_run_id = ${runId}
+              AND (task_key = 'business-model-analyst:process-map' OR task_type = 'business_process_analysis')
+              AND status = 'completed'
+          `;
+          if (Number(rows[0].cnt) === 0) {
+            errors.push("No completed business process map found");
+          }
+          break;
+        }
+
+        case "moat_assessment": {
+          const rows = await sql`
+            SELECT COUNT(*) as cnt FROM research_tasks
+            WHERE research_run_id = ${runId}
+              AND (task_key = 'moat-analyst:assessment' OR task_type = 'moat_analysis')
+              AND status = 'completed'
+          `;
+          if (Number(rows[0].cnt) === 0) {
+            errors.push("No completed moat assessment found");
+          }
+          break;
+        }
+
+        case "operating_model": {
+          const rows = await sql`
+            SELECT COUNT(*) as cnt FROM research_tasks
+            WHERE research_run_id = ${runId}
+              AND (task_key = 'forecast-analyst:operating-model' OR task_type = 'operating_model')
+              AND status = 'completed'
+          `;
+          if (Number(rows[0].cnt) === 0) {
+            errors.push("No completed operating model found");
+          }
+          break;
+        }
+
+        case "operating_scenario_set": {
+          const rows = await sql`
+            SELECT COUNT(*) as cnt FROM research_tasks
+            WHERE research_run_id = ${runId}
+              AND (task_key = 'forecast-analyst:scenarios' OR task_type = 'operating_scenarios')
+              AND status = 'completed'
+          `;
+          if (Number(rows[0].cnt) === 0) {
+            errors.push("No completed operating scenario set found");
           }
           break;
         }
@@ -522,13 +613,14 @@ export async function validateAssetProfile(
       }
     }
 
-    // Check required modules — at least one task per module should exist
+    // Check required modules — at least one task per module should exist. A
+    // needs_more_work/failed task still proves that the module was attempted;
+    // module completion is enforced separately by the v2 analysis gate.
     if (requiredModules.length > 0) {
       const taskRows = await sql`
         SELECT DISTINCT task_key
         FROM research_tasks
         WHERE research_run_id = ${runId}
-          AND status IN ('completed', 'running', 'pending')
       `;
       const attemptedModules = new Set(taskRows.map((r) => r.task_key));
       for (const mod of requiredModules) {
@@ -790,4 +882,174 @@ export async function validatePointInTime(
   } finally {
     await sql.end();
   }
+}
+
+// ============================================================
+// Research OS v3 stage artifact validators.
+//
+// Each v3 analytical stage declares a deterministic validation rule in
+// STAGE_CONFIGS_V3. These validators load the accepted typed artifacts for
+// the run and apply the module-level contract validators. Unknown or
+// missing artifacts fail closed.
+// ============================================================
+
+import {
+  validateGenesisArtifact,
+  validateFounderProfile,
+  validateStrategicHistoryTimeline,
+  validateStrategicDNA,
+} from "@/lib/research/genesis/validation";
+import { validateHistoricalDiagnosis } from "@/lib/research/diagnosis/contracts";
+import {
+  validateSegmentModel,
+  validateCustomerDecisionMap,
+  validateBusinessProcessMap,
+  validateBottleneckRegister,
+  validateCompetitiveResponseMatrix,
+} from "@/lib/research/business/validation";
+import {
+  validateMoatAssessment,
+  validateMoatAttackMatrix,
+  validateNoMoatCounterfactual,
+} from "@/lib/research/moat/validation";
+import {
+  validateDriverTree,
+  validateOperatingModel,
+  validateOperatingScenarioSet,
+} from "@/lib/research/forecast/validation";
+import {
+  validateInvestmentThesis,
+  validateRiskRegister,
+  validateCatalystRegister,
+  validateThesisBreakers,
+  validateMonitoringDashboard,
+  validateExpectedReturnMatrix,
+} from "@/lib/research/decision/validation";
+import {
+  validateValuationScenarioSet,
+  validateReverseValuation,
+} from "@/lib/research/valuation/validation";
+
+type ModuleValidation = { valid: boolean; errors: string[]; warnings: string[] };
+type ArtifactRequirement = {
+  artifactType: string;
+  label: string;
+  validate?: (content: unknown) => ModuleValidation;
+};
+
+async function validateV3ArtifactSet(
+  runId: string,
+  requirements: ArtifactRequirement[]
+): Promise<ValidationResult> {
+  const sql = postgres(process.env.DATABASE_URL!);
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  try {
+    const rows = await sql`
+      SELECT artifact_type, scope_key, content_json
+      FROM research_artifacts
+      WHERE research_run_id = ${runId}
+        AND status = 'accepted'
+    `;
+    const byType = new Map<string, Record<string, unknown>[]>();
+    for (const row of rows) {
+      const list = byType.get(String(row.artifact_type)) || [];
+      list.push(row.content_json as Record<string, unknown>);
+      byType.set(String(row.artifact_type), list);
+    }
+
+    for (const requirement of requirements) {
+      const artifacts = byType.get(requirement.artifactType) || [];
+      if (artifacts.length === 0) {
+        errors.push(`Missing accepted v3 artifact: ${requirement.label} (${requirement.artifactType})`);
+        continue;
+      }
+      if (requirement.validate) {
+        for (const content of artifacts) {
+          const result = requirement.validate(content);
+          if (!result.valid) {
+            errors.push(
+              ...result.errors.map((error) => `${requirement.label}: ${error}`)
+            );
+          }
+          warnings.push(...result.warnings.map((warning) => `${requirement.label}: ${warning}`));
+        }
+      }
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+      warnings,
+      checkedAt: new Date().toISOString(),
+    };
+  } finally {
+    await sql.end();
+  }
+}
+
+export async function validateV3Genesis(runId: string): Promise<ValidationResult> {
+  return validateV3ArtifactSet(runId, [
+    { artifactType: "company_genesis", label: "Company genesis", validate: validateGenesisArtifact },
+    { artifactType: "founder_profile", label: "Founder profile", validate: validateFounderProfile },
+    { artifactType: "strategic_history_timeline", label: "Strategic history timeline", validate: validateStrategicHistoryTimeline },
+    { artifactType: "strategic_dna", label: "Strategic DNA", validate: validateStrategicDNA },
+  ]);
+}
+
+export async function validateV3Diagnosis(runId: string): Promise<ValidationResult> {
+  return validateV3ArtifactSet(runId, [
+    { artifactType: "historical_diagnosis", label: "Historical diagnosis", validate: validateHistoricalDiagnosis },
+  ]);
+}
+
+export async function validateV3BusinessProcess(runId: string): Promise<ValidationResult> {
+  return validateV3ArtifactSet(runId, [
+    { artifactType: "segment_model", label: "Segment model", validate: validateSegmentModel },
+    { artifactType: "customer_decision_map", label: "Customer decision map", validate: validateCustomerDecisionMap },
+    { artifactType: "business_process_map", label: "Business process map", validate: validateBusinessProcessMap },
+    { artifactType: "bottleneck_map", label: "Bottleneck map", validate: validateBottleneckRegister },
+    { artifactType: "competitive_response_matrix", label: "Competitive response matrix", validate: validateCompetitiveResponseMatrix },
+  ]);
+}
+
+export async function validateV3Moat(runId: string): Promise<ValidationResult> {
+  return validateV3ArtifactSet(runId, [
+    { artifactType: "moat_assessment", label: "Moat assessment", validate: validateMoatAssessment },
+    { artifactType: "moat_attack_matrix", label: "Moat attack matrix", validate: validateMoatAttackMatrix },
+    { artifactType: "no_moat_counterfactual", label: "No-moat counterfactual", validate: validateNoMoatCounterfactual },
+  ]);
+}
+
+export async function validateV3OperatingModel(runId: string): Promise<ValidationResult> {
+  return validateV3ArtifactSet(runId, [
+    { artifactType: "driver_tree", label: "Driver tree", validate: validateDriverTree },
+    { artifactType: "operating_model", label: "Operating model", validate: validateOperatingModel },
+  ]);
+}
+
+export async function validateV3OperatingScenarios(runId: string): Promise<ValidationResult> {
+  return validateV3ArtifactSet(runId, [
+    { artifactType: "operating_scenario_set", label: "Operating scenario set", validate: validateOperatingScenarioSet },
+  ]);
+}
+
+export async function validateV3Valuation(runId: string): Promise<ValidationResult> {
+  return validateV3ArtifactSet(runId, [
+    { artifactType: "valuation_scenario_set", label: "Valuation scenario set", validate: validateValuationScenarioSet },
+    { artifactType: "reverse_valuation", label: "Reverse valuation", validate: validateReverseValuation },
+    { artifactType: "annual_price_target_path", label: "Annual price target path" },
+  ]);
+}
+
+export async function validateV3Decision(runId: string): Promise<ValidationResult> {
+  return validateV3ArtifactSet(runId, [
+    { artifactType: "investment_thesis", label: "Investment thesis", validate: validateInvestmentThesis },
+    { artifactType: "risk_register", label: "Risk register", validate: validateRiskRegister },
+    { artifactType: "catalyst_register", label: "Catalyst register", validate: validateCatalystRegister },
+    { artifactType: "thesis_breakers", label: "Thesis breakers", validate: validateThesisBreakers },
+    { artifactType: "monitoring_dashboard", label: "Monitoring dashboard", validate: validateMonitoringDashboard },
+    { artifactType: "expected_return_matrix", label: "Expected return matrix", validate: validateExpectedReturnMatrix },
+  ]);
 }

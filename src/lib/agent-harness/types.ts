@@ -7,6 +7,7 @@ export interface ToolCall {
 export interface ModelUsage {
   inputTokens?: number;
   outputTokens?: number;
+  reasoningTokens?: number;
   costUsd?: number;
 }
 
@@ -44,23 +45,27 @@ export interface ExecutionPolicy {
   totalTimeoutMs: number;
   inactivityTimeoutMs: number;
   maxResponseBytes: number;
-  maxOutputTokens: number;
+  /** Omitted by default so providers may complete naturally. */
+  maxOutputTokens?: number;
   maxRepairAttempts: number;
   maxToolTurns: number;
   maxToolCalls: number;
   maxAttempts: number;
+  retryBaseDelayMs: number;
 }
 
 export interface AgentAttempt {
   attempt: number;
   provider: string;
   model: string;
+  modelAttempt?: number;
   requestId?: string;
   startedAt: string;
   completedAt: string;
   latencyMs: number;
   inputTokens: number;
   outputTokens: number;
+  reasoningTokens?: number;
   costUsd: number;
   status: "success" | "failed" | "cancelled";
   errorCategory?: string;
@@ -69,9 +74,32 @@ export interface AgentAttempt {
   repairAttempted: boolean;
   fallback: boolean;
   compactionOccurred: boolean;
+  inputBytes?: number;
+  originalInputBytes?: number;
   rawResponseExcerpt: string;
   validationErrors: Array<{ path: string; message: string }>;
   toolCalls: Array<{ name: string; status: "success" | "failed" }>;
+  passes?: AgentPassTelemetry[];
+  localCoercionApplied?: boolean;
+  completionRecoveredAtTimeout?: boolean;
+}
+
+export interface AgentPassTelemetry {
+  kind: "generation" | "repair";
+  startedAt: string;
+  completedAt: string;
+  latencyMs: number;
+  requestId?: string;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  costUsd: number;
+  status: "success" | "failed";
+  errorCategory?: string;
+  errorMessage?: string;
+  validationErrors?: Array<{ path: string; message: string }>;
+  localCoercionApplied?: boolean;
+  completionRecoveredAtTimeout?: boolean;
 }
 
 export interface AgentLifecycleHooks {
@@ -84,6 +112,7 @@ export interface AgentRequest<T = unknown> {
   title: string;
   taskPacket: Record<string, unknown>;
   prompt?: string;
+  promptFactory?: (packet: Record<string, unknown>) => string;
   signal?: AbortSignal;
   policy?: Partial<ExecutionPolicy>;
   hooks?: AgentLifecycleHooks;
@@ -96,6 +125,7 @@ export interface AgentUsage {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  reasoningTokens?: number;
   costUsd: number;
   latencyMs: number;
   requestId?: string;

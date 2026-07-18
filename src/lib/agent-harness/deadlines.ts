@@ -4,6 +4,7 @@ export interface DeadlineController {
   signal: AbortSignal;
   resetInactivity(): void;
   reason(): DeadlineReason | null;
+  remainingMs(): number;
   cleanup(): void;
 }
 
@@ -13,6 +14,7 @@ export function createDeadlineController(
   inactivityTimeoutMs: number
 ): DeadlineController {
   const controller = new AbortController();
+  const expiresAt = Date.now() + totalTimeoutMs;
   let deadlineReason: DeadlineReason | null = null;
   let inactivityTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -26,6 +28,10 @@ export function createDeadlineController(
 
   const totalTimer = setTimeout(() => abort("total"), totalTimeoutMs);
   const resetInactivity = () => {
+    if (Date.now() >= expiresAt) {
+      abort("total");
+      return;
+    }
     if (inactivityTimer) clearTimeout(inactivityTimer);
     inactivityTimer = setTimeout(() => abort("inactivity"), inactivityTimeoutMs);
   };
@@ -35,6 +41,7 @@ export function createDeadlineController(
     signal: controller.signal,
     resetInactivity,
     reason: () => deadlineReason,
+    remainingMs: () => Math.max(0, expiresAt - Date.now()),
     cleanup: () => {
       clearTimeout(totalTimer);
       if (inactivityTimer) clearTimeout(inactivityTimer);

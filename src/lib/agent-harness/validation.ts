@@ -3,6 +3,77 @@ export interface SchemaValidationError {
   message: string;
 }
 
+/** Conservative schema-directed coercions for common model JSON shape mistakes. */
+export function coerceStructuredOutput(value: unknown, schemaFormat: any): { value: unknown; changed: boolean } {
+  const schema = schemaFormat?.schema || schemaFormat;
+  if (!schema) return { value, changed: false };
+
+  if (schema.type === "array") {
+    let arrayValue = value;
+    let changed = false;
+    if (typeof arrayValue === "string" && schema.items?.type === "string") {
+      arrayValue = [arrayValue];
+      changed = true;
+    }
+    if (arrayValue && typeof arrayValue === "object" && !Array.isArray(arrayValue)) {
+      arrayValue = [arrayValue];
+      changed = true;
+    }
+    if (!Array.isArray(arrayValue)) return { value, changed: false };
+    const items = arrayValue.map((item) => {
+      let candidate = item;
+      if (typeof candidate === "string" && schema.items?.type === "object") {
+        candidate = { description: candidate };
+        changed = true;
+      }
+      const coerced = coerceStructuredOutput(candidate, schema.items);
+      changed ||= coerced.changed;
+      return coerced.value;
+    });
+    return { value: changed ? items : value, changed };
+  }
+
+  if (schema.type === "object") {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return { value, changed: false };
+    const properties = schema.properties;
+    if (!properties || typeof properties !== "object") return { value, changed: false };
+    const output = { ...(value as Record<string, unknown>) };
+    let changed = false;
+    // Valuation models commonly label the protocol's formula graph as
+    // `ordered_formulas`. It is structurally identical to `formulas`; accept
+    // the alias locally while continuing to reject free-form expressions.
+    if (!("formulas" in output) && Array.isArray(output.ordered_formulas) && "formulas" in properties) {
+      output.formulas = output.ordered_formulas;
+      changed = true;
+    }
+    if (!("protocol_version" in output) && "protocol_version" in properties && "method_key" in output) {
+      output.protocol_version = "1.0";
+      changed = true;
+    }
+    if (output.origin === "valuation_analyst" && "origin" in properties) {
+      output.origin = "proposed";
+      changed = true;
+    }
+    for (const [key, property] of Object.entries(properties)) {
+      if (!(key in output)) continue;
+      const coerced = coerceStructuredOutput(output[key], property);
+      if (coerced.changed) {
+        output[key] = coerced.value;
+        changed = true;
+      }
+    }
+    return { value: changed ? output : value, changed };
+  }
+
+  if (schema.type === "number" && typeof value === "string") {
+    const label = value.trim().toLowerCase().replace(/[ -]+/g, "_");
+    const labels: Record<string, number> = { very_low: 0.1, low: 0.25, medium: 0.5, moderate: 0.5, high: 0.75, very_high: 0.9 };
+    const numeric = label in labels ? labels[label] : Number(value);
+    if (Number.isFinite(numeric)) return { value: numeric, changed: true };
+  }
+  return { value, changed: false };
+}
+
 export function validateSchema(
   value: unknown,
   schemaFormat: any,

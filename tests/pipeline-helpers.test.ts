@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canonicalMetricPlan, evidenceRelevantToModule, moduleCompletion, normalizeSourceGap, reconcileMetricObservations, selectLatestFact, selectRelevantChunks } from "../src/lib/research/pipeline-helpers";
+import { canonicalMetricPlan, ensureFilingFamilyCoverage, evidenceRelevantToModule, moduleCompletion, normalizeSourceGap, positiveFiniteNumber, reconcileMetricObservations, selectLatestFact, selectRelevantChunks } from "../src/lib/research/pipeline-helpers";
 import { isApprovedHumanDecision, isKnownHumanDecision } from "../src/lib/workflow/orchestrator";
 import { inferMissingSourceCoverage } from "../src/lib/workflow/quality-gates";
 import { reviewCoverageItems } from "../src/lib/workflow/validators";
@@ -44,6 +44,23 @@ test("many source openings cannot crowd relevant middle-document evidence out of
   assert.ok(selected.filter((chunk) => chunk.chunkIndex === 0).length < selected.length);
 });
 
+test("filing-family coverage retains annual and quarterly primary filings", () => {
+  const chunks = [
+    { id: "a", sourceId: "annual", parseId: "p", chunkIndex: 0, charStart: 0, charEnd: 10, text: "annual revenue", sourceTitle: "10-K", sourceType: "sec_filing_10-k" },
+    { id: "q", sourceId: "quarter", parseId: "p", chunkIndex: 0, charStart: 0, charEnd: 10, text: "quarter credit", sourceTitle: "10-Q", sourceType: "sec_filing_10-q" },
+    { id: "e", sourceId: "earnings", parseId: "p", chunkIndex: 0, charStart: 0, charEnd: 10, text: "earnings", sourceTitle: "8-K", sourceType: "sec_filing_8-k" },
+  ];
+  const covered = ensureFilingFamilyCoverage([chunks[2]], chunks, ["revenue", "credit"], 3);
+  assert.deepEqual(new Set(covered.map((chunk) => chunk.sourceType)), new Set(["sec_filing_10-k", "sec_filing_10-q", "sec_filing_8-k"]));
+});
+
+test("positive finite metrics reject null, zero, and negative values", () => {
+  assert.equal(positiveFiniteNumber(null), null);
+  assert.equal(positiveFiniteNumber(0), null);
+  assert.equal(positiveFiniteNumber(-1), null);
+  assert.equal(positiveFiniteNumber("12.5"), 12.5);
+});
+
 test("metric reconciliation preserves dimensions and rejects conflicting alternatives", () => {
   const base = { metric_key: "revenue", period_start: "2025-01-01", period_end: "2025-12-31", unit: "USD", currency: "USD" };
   const result = reconcileMetricObservations([{ ...base, value_numeric: 20 }], [
@@ -81,6 +98,14 @@ test("unrelated revenue evidence cannot complete provisions or loan-book modules
   assert.equal(evidenceRelevantToModule("provisions", revenue), false);
   assert.equal(evidenceRelevantToModule("loan_book", revenue), false);
   assert.equal(evidenceRelevantToModule("provisions", { claim_text: "Credit loss provisions increased with the loan portfolio" }), true);
+});
+
+test("MELI module evidence terms recognize disclosed commerce, customer-fund, and funding facts", () => {
+  assert.equal(evidenceRelevantToModule("revenue_drivers", { claim_text: "Gross Merchandise Volume reached $19.9 billion" }), true);
+  assert.equal(evidenceRelevantToModule("margins", { claim_text: "Income from operations was $825 million with a 12.2% margin" }), true);
+  assert.equal(evidenceRelevantToModule("customer_funds", { claim_text: "Assets under management reached $13.8 billion" }), true);
+  assert.equal(evidenceRelevantToModule("funding_liabilities", { claim_text: "Current loans payable and financial liabilities were $5.3 billion" }), true);
+  assert.equal(evidenceRelevantToModule("active_buyers", { claim_text: "Gross Merchandise Volume reached $19.9 billion" }), false);
 });
 
 test("human approval uses an explicit allowlist", () => {
@@ -139,4 +164,3 @@ test("quarterly reconciliation flags material annual discrepancies and demotes t
   assert.equal(resultErr.conflicts[0].rejected_value, 3000);
   assert.equal(resultErr.conflicts[0].accepted_value, 2600);
 });
-

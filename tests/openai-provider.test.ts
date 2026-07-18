@@ -4,6 +4,7 @@ import test from "node:test";
 import { once } from "node:events";
 import { ProviderError } from "../src/lib/agent-harness/errors";
 import { OpenAICompatibleProvider } from "../src/lib/agent-harness/providers/openai-compatible";
+import { OpenCodeGoProvider } from "../src/lib/agent-harness/providers/opencode-go";
 import { runResearchAgent } from "../src/lib/agent-harness/runner";
 
 async function fixture(handler: (response: ServerResponse) => void) {
@@ -26,7 +27,7 @@ test("local provider parses fragmented SSE, usage, request IDs, and health", asy
   const { server, url } = await fixture((response) => {
     response.writeHead(200, { "content-type": "text/event-stream", "x-request-id": "req-fixture" });
     response.write('data: {"choices":[{"delta":{"content":"{\\"ok\\":"}}]}\n');
-    response.write('\ndata: {"choices":[{"delta":{"content":"true}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2}}\n\n');
+    response.write('\ndata: {"choices":[{"delta":{"content":"true}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"completion_tokens_details":{"reasoning_tokens":1}}}\n\n');
     response.end('data: [DONE]\n\n');
   });
   try {
@@ -38,6 +39,7 @@ test("local provider parses fragmented SSE, usage, request IDs, and health", asy
     assert.equal((events.find((event) => event.type === "response.started") as any)?.requestId, "req-fixture");
     assert.equal(events.filter((event: any) => event.type === "text.delta").map((event: any) => event.text).join(""), '{"ok":true}');
     assert.ok(events.some((event: any) => event.type === "usage" && event.usage.outputTokens === 2));
+    assert.ok(events.some((event: any) => event.type === "usage" && event.usage.reasoningTokens === 1));
   } finally { server.close(); }
 });
 
@@ -127,7 +129,7 @@ test("real HTTP stream is aborted by the inactivity deadline", async () => {
   const slow = await fixture((response) => {
     response.writeHead(200, { "content-type": "text/event-stream", "x-request-id": "slow-request" });
     response.write('data: {"choices":[{"delta":{"content":"{\\"selected_profile_key\\":\\"partial"}}]}\n\n');
-    const timer = setTimeout(() => response.end("data: [DONE]\n\n"), 100);
+    const timer = setTimeout(() => response.end("data: [DONE]\n\n"), 500);
     response.on("close", () => clearTimeout(timer));
   });
   try {
@@ -135,7 +137,7 @@ test("real HTTP stream is aborted by the inactivity deadline", async () => {
     await assert.rejects(
       () => runResearchAgent({
         agentName: "asset-classifier", title: "slow fixture", taskPacket: {}, provider,
-        policy: { totalTimeoutMs: 1_000, inactivityTimeoutMs: 20, maxAttempts: 1 },
+        policy: { totalTimeoutMs: 1_000, inactivityTimeoutMs: 100, maxAttempts: 1 },
       }),
       (error: any) => error.attempts?.[0]?.timeoutType === "inactivity" && error.attempts[0].rawResponseExcerpt.includes("partial")
     );
@@ -146,4 +148,40 @@ test("direct provider requires HTTPS, API key, and exact host allowlist", () => 
   assert.throws(() => new OpenAICompatibleProvider({ mode: "direct", baseUrl: "http://example.com/v1", apiKey: "x", allowedHosts: ["example.com"] }), /HTTPS/);
   assert.throws(() => new OpenAICompatibleProvider({ mode: "direct", baseUrl: "https://example.com/v1", allowedHosts: ["example.com"] }), /API_KEY/);
   assert.throws(() => new OpenAICompatibleProvider({ mode: "direct", baseUrl: "https://evil.example/v1", apiKey: "x", allowedHosts: ["example.com"] }), /allowlisted/);
+});
+
+test("OpenCode Go router uses Anthropic messages for Qwen and OpenAI chat for GLM", async () => {
+  const originalFetch = globalThis.fetch;
+  const requested: string[] = [];
+  const bodies: any[] = [];
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    requested.push(url);
+    bodies.push(JSON.parse(String(init?.body || "{}")));
+    const sse = url.endsWith("/messages")
+      ? [
+          'event: message_start\ndata: {"type":"message_start","message":{"id":"msg-1","usage":{"input_tokens":2}}}',
+          'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"{\\"ok\\":true}"}}',
+          'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}',
+          'event: message_stop\ndata: {"type":"message_stop"}',
+        ].join("\n\n") + "\n\n"
+      : [
+          'data: {"choices":[{"delta":{"content":"{\\"ok\\":true}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3}}',
+          "data: [DONE]",
+        ].join("\n\n") + "\n\n";
+    return new Response(sse, { status: 200, headers: { "content-type": "text/event-stream", "request-id": "fixture-request" } });
+  }) as typeof fetch;
+  try {
+    const provider = new OpenCodeGoProvider("https://opencode.ai/zen/go/v1", "fixture-key", ["opencode.ai"]);
+    for await (const _ of provider.stream({ model: "qwen3.7-plus", prompt: "x" }, new AbortController().signal)) {}
+    for await (const _ of provider.stream({ model: "glm-5.2", prompt: "x" }, new AbortController().signal)) {}
+    for await (const _ of provider.stream({ model: "kimi-k2.7-code", prompt: "x", temperature: 0.2 }, new AbortController().signal)) {}
+    assert.ok(requested[0].endsWith("/messages"));
+    assert.ok(requested[1].endsWith("/chat/completions"));
+    assert.equal(bodies[0].max_tokens, 65_536);
+    assert.equal(bodies[1].max_tokens, undefined);
+    assert.equal(bodies[2].temperature, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

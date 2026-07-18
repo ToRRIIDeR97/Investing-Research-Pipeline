@@ -63,6 +63,87 @@ const nullableString = {
   type: ["string", "null"],
 };
 
+const valuationMethodInput = {
+  type: "object",
+  additionalProperties: false,
+  required: ["key", "label", "source", "unit"],
+  properties: {
+    key: { type: "string" }, label: { type: "string" }, source: { type: "string" },
+    metric_key: { type: "string" }, value: { type: "number" }, unit: { type: "string" },
+    currency: { type: "string" }, evidence_claim_ids: stringArray, rationale: { type: "string" },
+  },
+};
+
+const valuationFormulaNode = {
+  type: "object",
+  additionalProperties: false,
+  required: ["key", "label", "operation", "args", "unit"],
+  properties: {
+    key: { type: "string" }, label: { type: "string" }, operation: { type: "string" },
+    args: { type: "array", items: { type: ["string", "number"] } },
+    unit: { type: "string" }, currency: { type: "string" },
+  },
+};
+
+const valuationScenario = {
+  type: "object",
+  additionalProperties: false,
+  required: ["scenario_name", "scenario_type", "probability", "overrides", "confidence", "rationale"],
+  properties: {
+    scenario_name: { type: "string" }, scenario_type: { type: "string" },
+    probability: { type: "number" }, overrides: objectValue,
+    confidence: { type: "number" }, rationale: { type: "string" },
+  },
+};
+
+const valuationTable = {
+  type: "object",
+  additionalProperties: false,
+  required: ["table_key", "title", "columns", "rows"],
+  properties: {
+    table_key: { type: "string" }, title: { type: "string" }, columns: stringArray,
+    rows: {
+      type: "array",
+      items: {
+        type: "object", additionalProperties: false, required: ["label", "cells"],
+        properties: { label: { type: "string" }, cells: objectValue },
+      },
+    },
+  },
+};
+
+const valuationMethodProposal = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "protocol_version", "method_key", "method_name", "method_version",
+    "method_family", "origin", "rationale", "replaces_method_keys",
+    "inputs", "formulas", "outputs", "scenarios", "tables", "limitations",
+  ],
+  properties: {
+    protocol_version: { type: "string" },
+    method_key: { type: "string" },
+    method_name: { type: "string" },
+    method_version: { type: "string" },
+    method_family: { type: "string" },
+    origin: { type: "string" },
+    rationale: { type: "string" },
+    replaces_method_keys: stringArray,
+    inputs: { type: "array", items: valuationMethodInput },
+    formulas: { type: "array", items: valuationFormulaNode },
+    outputs: {
+      type: "object", additionalProperties: false, required: ["per_share_value"],
+      properties: {
+        enterprise_value: { type: "string" }, equity_value: { type: "string" },
+        per_share_value: { type: "string" },
+      },
+    },
+    scenarios: { type: "array", items: valuationScenario },
+    tables: { type: "array", items: valuationTable },
+    limitations: stringArray,
+  },
+};
+
 const evidenceClaimArray = {
   type: "array",
   minItems: 5,
@@ -381,16 +462,17 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     modelTier: "premium",
     defaultModel: "kimi-k2.7-code",
     modelEnvVar: "RESEARCH_VALUATION_ANALYST_MODEL",
-    promptVersion: "valuation-analyst-v1",
+    promptVersion: "valuation-analyst-v2",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "valuation_signal_batch",
-    outputSchemaVersion: 1,
+    outputSchemaVersion: 2,
     outputFormat: schema(
       [
         "applicable_methods",
         "not_applicable_methods",
         "valuation_signals",
         "scenarios",
+        "method_proposals",
         "assumptions",
         "sensitivity_notes",
         "method_risks",
@@ -401,6 +483,10 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
         not_applicable_methods: objectArray,
         valuation_signals: objectArray,
         scenarios: objectArray,
+        method_proposals: {
+          type: "array",
+          items: valuationMethodProposal,
+        },
         assumptions: objectArray,
         sensitivity_notes: objectArray,
         method_risks: objectArray,
@@ -674,7 +760,8 @@ export function getAgentConfig(agentName: string): ResearchAgentConfig {
 
 export function resolveAgentModel(agentName: ResearchAgentName, modelOverride?: string): string {
   const config = getAgentConfig(agentName);
-  const configured = modelOverride || process.env[config.modelEnvVar] || config.defaultModel;
+  const agentModelKey = `RESEARCH_${agentName.toUpperCase().replace(/-/g, "_")}_MODEL`;
+  const configured = modelOverride || process.env[agentModelKey] || process.env[config.modelEnvVar] || config.defaultModel;
   return normalizeModelEnvValue(configured);
 }
 

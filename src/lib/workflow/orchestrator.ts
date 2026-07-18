@@ -1,5 +1,5 @@
 import postgres from "postgres";
-import { STAGE_CONFIGS, STAGE_CONFIG_MAP, getAllStagesForRun, getApplicableStages } from "./stages";
+import { STAGE_CONFIGS, STAGE_CONFIG_MAP, getAllStagesForRun, getApplicableStages, getStageConfig } from "./stages";
 import { evaluateResearchQuality } from "./quality-gates";
 import {
   validateStageCompletion,
@@ -12,6 +12,14 @@ import {
   validateValuationDepth,
   validateReviewOutcome,
   validateHumanReviewOutcome,
+  validateV3Genesis,
+  validateV3Diagnosis,
+  validateV3BusinessProcess,
+  validateV3Moat,
+  validateV3OperatingModel,
+  validateV3OperatingScenarios,
+  validateV3Valuation,
+  validateV3Decision,
   ValidationResult,
 } from "./validators";
 
@@ -56,14 +64,15 @@ export async function createStagesForRun(runId: string): Promise<void> {
 
   try {
     const runs = await sql`
-      SELECT id, run_type FROM research_runs WHERE id = ${runId}
+      SELECT id, run_type, pipeline_version FROM research_runs WHERE id = ${runId}
     `;
     if (runs.length === 0) {
       throw new Error(`Research run not found: ${runId}`);
     }
 
     const runType = runs[0].run_type;
-    const { applicable, skipped } = getAllStagesForRun(runType);
+    const pipelineVersion = Number(runs[0].pipeline_version || 1);
+    const { applicable, skipped } = getAllStagesForRun(runType, pipelineVersion);
 
     // Insert applicable stages as pending
     for (const stage of applicable) {
@@ -200,7 +209,11 @@ export async function advanceStage(
     }
 
     const currentStage = runningStages[0];
-    const config = STAGE_CONFIG_MAP[currentStage.stage_key];
+    const runs = await sql`
+      SELECT pipeline_version FROM research_runs WHERE id = ${runId} LIMIT 1
+    `;
+    const pipelineVersion = Number(runs[0]?.pipeline_version || 1);
+    const config = getStageConfig(currentStage.stage_key, pipelineVersion);
 
     // Check budget — §26.1 cost tracking
     if (currentStage.budget_limit_usd) {
@@ -241,7 +254,7 @@ export async function advanceStage(
     }
 
     // Validate stage completion
-    let validation = await validateStageCompletion(runId, currentStage.stage_key);
+    let validation = await validateStageCompletion(runId, currentStage.stage_key, pipelineVersion);
 
     // Run stage-specific validation rules — §28
     // Each stage declares which validators to run in validationRules[]
@@ -272,6 +285,30 @@ export async function advanceStage(
             break;
           case "point_in_time_validation":
             ruleResult = await validatePointInTime(runId);
+            break;
+          case "genesis_validation":
+            ruleResult = await validateV3Genesis(runId);
+            break;
+          case "diagnosis_validation":
+            ruleResult = await validateV3Diagnosis(runId);
+            break;
+          case "business_process_validation":
+            ruleResult = await validateV3BusinessProcess(runId);
+            break;
+          case "moat_validation":
+            ruleResult = await validateV3Moat(runId);
+            break;
+          case "operating_model_validation":
+            ruleResult = await validateV3OperatingModel(runId);
+            break;
+          case "operating_scenario_validation":
+            ruleResult = await validateV3OperatingScenarios(runId);
+            break;
+          case "valuation_path_validation":
+            ruleResult = await validateV3Valuation(runId);
+            break;
+          case "decision_validation":
+            ruleResult = await validateV3Decision(runId);
             break;
           default:
             ruleResult = {
@@ -583,10 +620,18 @@ async function startNextStage(
 
     const nextStage = nextStages[0];
 
+    const runRows = await sql`
+      SELECT run_type, asset_id, pipeline_version
+      FROM research_runs
+      WHERE id = ${runId}
+      LIMIT 1
+    `;
+    const run = runRows[0];
+    const runType = run?.run_type;
+    const pipelineVersion = Number(run?.pipeline_version || 1);
+
     // Enforce entry criteria for asset_valuation on deep_dive/full_initiation_report
     if (nextStage.stage_key === "asset_valuation") {
-      const run = await sql`SELECT run_type, asset_id FROM research_runs WHERE id = ${runId} LIMIT 1`;
-      const runType = run[0]?.run_type;
       if (runType === "deep_dive" || runType === "full_initiation_report") {
         const analysisStage = await sql`
           SELECT status FROM research_stages
@@ -608,7 +653,23 @@ async function startNextStage(
       }
     }
 
-    const config = STAGE_CONFIG_MAP[nextStage.stage_key];
+    const config = getStageConfig(nextStage.stage_key, pipelineVersion);
+
+    if (nextStage.stage_key === "human_review") {
+      const failedRequiredStages = await sql`
+        SELECT stage_key, failure_reason FROM research_stages
+        WHERE research_run_id = ${runId} AND status = 'failed'
+      `;
+      if (failedRequiredStages.length) {
+        await sql`
+          UPDATE research_runs
+          SET status = 'needs_more_work', completed_at = NOW(), updated_at = NOW(),
+              failure_reason = ${`Cannot enter human review with failed stages: ${failedRequiredStages.map((stage) => stage.stage_key).join(", ")}`}
+          WHERE id = ${runId}
+        `;
+        return undefined;
+      }
+    }
 
     if (config?.requiresHumanApproval) {
       await sql`
