@@ -3,8 +3,9 @@ import { existsSync, readFileSync } from "node:fs";
 import test, { before, after, describe } from "node:test";
 import postgres from "postgres";
 import crypto from "node:crypto";
+import { runResearchPipeline } from "../src/lib/research/pipeline-runner";
 import { runSystemResearchPipeline } from "../src/lib/research/system-pipeline";
-import { createStagesForRun, approveResearchPlan } from "../src/lib/workflow/orchestrator";
+import { createStagesForRun, approveResearchPlan, approveHumanReview } from "../src/lib/workflow/orchestrator";
 import { evaluateQualityGates } from "../src/lib/workflow/quality-gates";
 import { generateMarkdownReport } from "../src/lib/export/report-generator";
 
@@ -20,12 +21,8 @@ function loadLocalEnv() {
 /**
  * Fully delete an asset and all related rows in FK-safe order.
  * Used by test setup/teardown to ensure a clean slate.
- *
- * The delete order is determined by the FK dependency graph:
- * we delete children before parents so no FK constraint is violated.
  */
 async function deleteAssetCascade(sql: ReturnType<typeof postgres>, targetAssetId: string) {
-  // Subquery helpers
   const runQ = sql`SELECT id FROM research_runs WHERE asset_id = ${targetAssetId}`;
   const docQ = sql`SELECT id FROM source_documents WHERE asset_id = ${targetAssetId}`;
   const stageQ = sql`SELECT id FROM research_stages WHERE research_run_id IN (${runQ})`;
@@ -42,7 +39,7 @@ async function deleteAssetCascade(sql: ReturnType<typeof postgres>, targetAssetI
   const artifactQ = sql`SELECT id FROM research_artifacts WHERE research_run_id IN (${runQ})`;
   const assumptionQ = sql`SELECT id FROM research_assumptions WHERE research_run_id IN (${runQ})`;
 
-  // === Phase 1: deepest leaf tables ===
+  // Phase 1: deepest leaf tables
   await sql`DELETE FROM thesis_drivers WHERE thesis_id IN (SELECT id FROM theses WHERE research_run_id IN (${runQ}))`;
   await sql`DELETE FROM research_artifact_claim_links WHERE artifact_id IN (${artifactQ})`;
   await sql`DELETE FROM research_artifact_dependencies WHERE artifact_id IN (${artifactQ})`;
@@ -57,20 +54,20 @@ async function deleteAssetCascade(sql: ReturnType<typeof postgres>, targetAssetI
   await sql`DELETE FROM note_blocks WHERE notebook_id IN (${nbQ})`;
   await sql`DELETE FROM evidence_links WHERE evidence_claim_id IN (${evQ})`;
 
-  // === Phase 2: tables depending only on source_docs / runs (no deeper children) ===
+  // Phase 2: source_docs / runs dependents
   await sql`DELETE FROM source_role_assignments WHERE source_document_id IN (${docQ})`;
   await sql`DELETE FROM source_document_metadata WHERE source_document_id IN (${docQ})`;
   await sql`DELETE FROM source_document_relations WHERE parent_source_document_id IN (${docQ}) OR child_source_document_id IN (${docQ})`;
   await sql`DELETE FROM source_retrieval_attempts WHERE research_run_id IN (${runQ})`;
 
-  // === Phase 3: agent/execution infrastructure (depends on tasks/stages/runs) ===
+  // Phase 3: agent/execution infrastructure
   await sql`DELETE FROM agent_output_staging WHERE task_id IN (${taskQ})`;
   await sql`DELETE FROM agent_traces WHERE task_id IN (${taskQ})`;
   await sql`DELETE FROM stage_validation_results WHERE stage_id IN (${stageQ})`;
   await sql`DELETE FROM model_budget_ledger WHERE stage_id IN (${stageQ})`;
   await sql`DELETE FROM model_call_logs WHERE stage_id IN (${stageQ})`;
 
-  // === Phase 4: mid-layer tables ===
+  // Phase 4: mid-layer tables
   await sql`DELETE FROM strategy_combinations WHERE backtest_run_id IN (${btQ})`;
   await sql`DELETE FROM backtest_artifacts WHERE backtest_run_id IN (${btQ})`;
   await sql`DELETE FROM scenarios WHERE valuation_model_run_id IN (${vmQ})`;
@@ -81,13 +78,13 @@ async function deleteAssetCascade(sql: ReturnType<typeof postgres>, targetAssetI
   await sql`DELETE FROM source_role_coverage WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM research_run_sources WHERE research_run_id IN (${runQ})`;
 
-  // === Phase 5: document content layer (children of source_documents) ===
+  // Phase 5: document content layer
   await sql`DELETE FROM source_locations WHERE source_document_id IN (${docQ})`;
   await sql`DELETE FROM document_chunks WHERE source_document_id IN (${docQ})`;
   await sql`DELETE FROM extracted_tables WHERE source_document_id IN (${docQ})`;
   await sql`DELETE FROM document_parses WHERE source_document_id IN (${docQ})`;
 
-  // === Phase 6: core entity tables with both source_doc and run FKs ===
+  // Phase 6: core entity tables
   await sql`DELETE FROM metric_observations WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM valuation_signals WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM evidence_claims WHERE research_run_id IN (${runQ})`;
@@ -102,13 +99,13 @@ async function deleteAssetCascade(sql: ReturnType<typeof postgres>, targetAssetI
   await sql`DELETE FROM source_gaps WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM review_decisions WHERE research_run_id IN (${runQ})`;
 
-  // === Phase 7: infrastructure ===
+  // Phase 7: infrastructure
   await sql`DELETE FROM research_tasks WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM research_stages WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM asset_profile_assignments WHERE asset_id = ${targetAssetId}`;
   await sql`DELETE FROM research_runs WHERE asset_id = ${targetAssetId}`;
 
-  // === Phase 8: asset/listing hierarchy ===
+  // Phase 8: asset hierarchy
   await sql`DELETE FROM listings WHERE instrument_id IN (SELECT id FROM instruments WHERE asset_id = ${targetAssetId})`;
   await sql`DELETE FROM asset_entities WHERE asset_id = ${targetAssetId}`;
   await sql`DELETE FROM asset_classifications WHERE asset_id = ${targetAssetId}`;
@@ -116,20 +113,19 @@ async function deleteAssetCascade(sql: ReturnType<typeof postgres>, targetAssetI
   await sql`DELETE FROM assets WHERE id = ${targetAssetId}`;
 }
 
-describe("SOFI Mock End-to-End Acceptance (Component WP12)", { skip: process.env.RUN_DB_INTEGRATION !== "1" }, () => {
+describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.env.RUN_DB_INTEGRATION !== "1" }, () => {
   loadLocalEnv();
   const sql = postgres(process.env.DATABASE_URL!);
-  const assetId = crypto.randomUUID();
-  const instrumentId = crypto.randomUUID();
+  
+  // Unique test asset IDs for isolation (C9-T2: Never mutate real SOFI asset)
+  const testAssetId = crypto.randomUUID();
+  const testInstrumentId = crypto.randomUUID();
+  const testSlug = `sofi-e2e-${testAssetId.slice(0, 8)}`;
   let financialsProfileId: string;
+  let preExistingSofiId: string | null = null;
+  let preExistingSofiCreatedAt: string | null = null;
 
   before(async () => {
-    // Pre-cleanup to ensure a clean slate and avoid assets_slug_unique errors
-    const existing = await sql`SELECT id FROM assets WHERE slug = 'sofi'`;
-    if (existing.length > 0) {
-      await deleteAssetCascade(sql, existing[0].id);
-    }
-
     // 1. Get seeded profile
     const profileRows = await sql`
       SELECT id FROM research_profiles WHERE profile_key = 'financials' LIMIT 1
@@ -137,40 +133,71 @@ describe("SOFI Mock End-to-End Acceptance (Component WP12)", { skip: process.env
     assert.ok(profileRows.length > 0, "financials profile must be seeded");
     financialsProfileId = profileRows[0].id;
 
-    // 2. Insert mock SOFI asset, instrument, listing
+    // 2. Ensure pre-existing real SOFI asset exists (C9-T2 safety check seed)
+    const existingSofi = await sql`SELECT id, created_at FROM assets WHERE slug = 'sofi' LIMIT 1`;
+    if (existingSofi.length > 0) {
+      preExistingSofiId = existingSofi[0].id;
+      preExistingSofiCreatedAt = String(existingSofi[0].created_at);
+    } else {
+      preExistingSofiId = crypto.randomUUID();
+      const preInstId = crypto.randomUUID();
+      await sql`
+        INSERT INTO assets (id, canonical_name, slug, primary_profile_id, status, asset_kind, base_currency)
+        VALUES (${preExistingSofiId}, 'Pre-existing SoFi', 'sofi', ${financialsProfileId}, 'active', 'equity', 'USD')
+      `;
+      await sql`
+        INSERT INTO instruments (id, asset_id, name, instrument_type)
+        VALUES (${preInstId}, ${preExistingSofiId}, 'Pre-existing SoFi common', 'equity')
+      `;
+      await sql`
+        INSERT INTO listings (id, instrument_id, exchange, symbol, is_primary)
+        VALUES (${crypto.randomUUID()}, ${preInstId}, 'NASDAQ', 'SOFI', true)
+      `;
+      const created = await sql`SELECT created_at FROM assets WHERE id = ${preExistingSofiId}`;
+      preExistingSofiCreatedAt = String(created[0].created_at);
+    }
+
+    // 3. Insert isolated test asset for this acceptance suite
     await sql`
       INSERT INTO assets (id, canonical_name, slug, primary_profile_id, status, asset_kind, base_currency)
-      VALUES (${assetId}, 'SoFi Technologies, Inc.', 'sofi', ${financialsProfileId}, 'active', 'equity', 'USD')
-      ON CONFLICT (id) DO NOTHING
+      VALUES (${testAssetId}, 'SoFi Technologies, Inc. (Test)', ${testSlug}, ${financialsProfileId}, 'active', 'equity', 'USD')
     `;
     await sql`
       INSERT INTO instruments (id, asset_id, name, instrument_type)
-      VALUES (${instrumentId}, ${assetId}, 'SoFi common stock', 'equity')
-      ON CONFLICT (id) DO NOTHING
+      VALUES (${testInstrumentId}, ${testAssetId}, 'SoFi common stock (Test)', 'equity')
     `;
     await sql`
       INSERT INTO listings (id, instrument_id, exchange, symbol, is_primary)
-      VALUES (${crypto.randomUUID()}, ${instrumentId}, 'NASDAQ', 'SOFI', true)
+      VALUES (${crypto.randomUUID()}, ${testInstrumentId}, 'NASDAQ', ${`SOFI_TEST_${testAssetId.slice(0, 4)}`}, true)
     `;
   });
 
   after(async () => {
-    await deleteAssetCascade(sql, assetId);
+    // Teardown test asset
+    await deleteAssetCascade(sql, testAssetId);
+
+    // C9-T2 assertion: assert pre-existing SOFI asset still exists untouched
+    if (preExistingSofiId) {
+      const checkPre = await sql`SELECT id, created_at FROM assets WHERE id = ${preExistingSofiId}`;
+      assert.equal(checkPre.length, 1, "Pre-existing SOFI asset must not be deleted by tests");
+      assert.equal(String(checkPre[0].created_at), preExistingSofiCreatedAt, "Pre-existing SOFI asset must not be mutated by tests");
+    }
+
     await sql.end();
   });
 
-  test("Run through SOFI v3 e2e flow completely", async () => {
+  test("C9-T1: Full research flow through all three pipeline invocations and gates", async () => {
     const runId = crypto.randomUUID();
-    const cutoffAt = new Date(Date.now() + 365 * 24 * 60 * 1000).toISOString(); // far future so all mocked observations are "before" cutoff
+    // Fixed historical cutoff date (Component 8/9 non-negotiable requirement)
+    const cutoffAt = "2026-01-01T00:00:00.000Z";
 
-    // WP12-T1: Fresh deterministic SOFI v3 run
     await sql`
       INSERT INTO research_runs (
         id, asset_id, run_type, status, research_question, requested_by,
         profile_id, profile_version, source_cutoff_at, market_data_cutoff_at,
         budget_limit_usd, pipeline_version, metadata_json
       ) VALUES (
-        ${runId}, ${assetId}, 'deep_dive', 'pending', 'Mock SOFI Deep Dive?', 'system-test-harness',
+        ${runId}, ${testAssetId}, 'deep_dive', 'pending', 'Mock SOFI Deep Dive?', 'system-test-harness',
         ${financialsProfileId}, 1, ${cutoffAt}, ${cutoffAt},
         100.00, 3, ${sql.json({ acceptance_provider: "mock" })}
       )
@@ -181,30 +208,17 @@ describe("SOFI Mock End-to-End Acceptance (Component WP12)", { skip: process.env
         asset_id, research_run_id, profile_id, assignment_reason,
         assigned_by, confidence, status
       ) VALUES (
-        ${assetId}, ${runId}, ${financialsProfileId},
+        ${testAssetId}, ${runId}, ${financialsProfileId},
         'Run-scoped assignment', 'system-test-harness', '1.0', 'active'
       )
     `;
 
     await createStagesForRun(runId);
 
-    // Assert that it remains pipeline version 3
-    const [runRow] = await sql`SELECT pipeline_version FROM research_runs WHERE id = ${runId}`;
-    assert.equal(Number(runRow.pipeline_version), 3);
-
-    // Dispatch system pipeline. Should stop at research_plan stage.
-    let state = await runSystemResearchPipeline(runId);
-    // DEBUG: always dump
-    const stages = await sql`
-      SELECT stage_key, status, failure_reason, stage_order
-      FROM research_stages WHERE research_run_id = ${runId}
-      ORDER BY stage_order
-    `;
-    console.log('# STAGE STATUSES:');
-    for (const s of stages) {
-      console.log(`#   ${s.stage_key} → ${s.status}${s.failure_reason ? ` (${s.failure_reason.substring(0, 120)})` : ''}`);
-    }
-    console.log(`# Pipeline status: ${state.status}, failure_reason: ${state.failure_reason?.substring(0, 200) || 'none'}`);
+    // ==========================================
+    // Invocation 1: Reach research-plan gate
+    // ==========================================
+    let state = await runResearchPipeline(runId);
     assert.equal(state.status, "waiting_for_human");
 
     const [planStage] = await sql`
@@ -212,26 +226,19 @@ describe("SOFI Mock End-to-End Acceptance (Component WP12)", { skip: process.env
     `;
     assert.equal(planStage?.status, "waiting_for_human");
 
-    // WP12-T2: Research-plan test approval (clearly marked test-only)
+    // Zero non-human running work
+    const runningTasks1 = await sql`SELECT id FROM research_tasks WHERE research_run_id = ${runId} AND status = 'running'`;
+    assert.equal(runningTasks1.length, 0);
+
+    // ==========================================
+    // Gate 1 Approval: Approve Research Plan
+    // ==========================================
     await approveResearchPlan(runId, "system-test-harness");
 
-    // WP12-T3: All required stages execute (Correct order and dependencies)
-    // Dispatch system pipeline again to execute all stages
-    state = await runSystemResearchPipeline(runId);
-
-    // DEBUG: dump second call results
-    const stages2 = await sql`
-      SELECT stage_key, status, failure_reason, stage_order
-      FROM research_stages WHERE research_run_id = ${runId}
-      ORDER BY stage_order
-    `;
-    console.log('# STAGE STATUSES (2nd call):');
-    for (const s of stages2) {
-      console.log(`#   ${s.stage_key} → ${s.status}${s.failure_reason ? ` (${s.failure_reason.substring(0, 120)})` : ''}`);
-    }
-    console.log(`# Pipeline status (2nd): ${state.status}, failure_reason: ${state.failure_reason?.substring(0, 200) || 'none'}`);
-
-    // WP12-T8: Final state before human approval -> waiting_for_human
+    // ==========================================
+    // Invocation 2: Execute research through decision synthesis & AI review to human_review gate
+    // ==========================================
+    state = await runResearchPipeline(runId);
     assert.equal(state.status, "waiting_for_human");
 
     const [finalStage] = await sql`
@@ -239,93 +246,80 @@ describe("SOFI Mock End-to-End Acceptance (Component WP12)", { skip: process.env
     `;
     assert.equal(finalStage?.status, "waiting_for_human");
 
-    // WP12-T4: Framework backtest executes even without a separate timing hypothesis.
+    // Framework backtest executed 50 thesis-distinct combinations
     const backtestStages = await sql`
       SELECT stage_key, status FROM research_stages
       WHERE research_run_id = ${runId}
         AND stage_key IN ('indicator_design', 'strategy_design', 'backtest_execution', 'backtest_review')
     `;
     assert.equal(backtestStages.length, 4);
-    assert.ok(backtestStages.every((stage) => stage.status === "completed"));
+    assert.ok(backtestStages.every((s) => s.status === "completed"));
+
     const [backtestCount] = await sql`
-      SELECT COUNT(*) AS count FROM backtest_runs
-      WHERE research_run_id = ${runId} AND status = 'completed'
+      SELECT COUNT(*) AS count FROM backtest_runs WHERE research_run_id = ${runId} AND status = 'completed'
     `;
     assert.equal(Number(backtestCount.count), 50);
 
-    // WP12-T5: Artifact registry queried (Required current artifacts exist)
+    // Query persisted artifacts
     const artifacts = await sql`
-      SELECT artifact_type, status, content_json FROM research_artifacts
-      WHERE research_run_id = ${runId}
+      SELECT artifact_type, status, content_json FROM research_artifacts WHERE research_run_id = ${runId}
     `;
-    assert.ok(artifacts.length > 0, "No artifacts were persisted in the registry");
+    assert.ok(artifacts.length > 0);
 
     const artifactTypes = artifacts.map((a) => a.artifact_type);
     const expectedTypes = [
-      "company_genesis",
-      "founder_profile",
-      "strategic_history_timeline",
-      "strategic_dna",
-      "historical_diagnosis",
-      "segment_model",
-      "customer_decision_map",
-      "business_process_map",
-      "bottleneck_register",
-      "competitive_response_matrix",
-      "moat_assessment",
-      "moat_attack_matrix",
-      "no_moat_counterfactual",
-      "driver_tree",
-      "operating_model",
-      "operating_scenario_set",
-      "valuation_scenario_set",
-      "reverse_valuation",
-      "annual_price_target_path",
-      "investment_thesis",
-      "risk_register",
-      "catalyst_register",
-      "expected_return_matrix",
-      "thesis_breakers",
-      "monitoring_dashboard",
-      "confidence_assessment",
-      "decision_record"
+      "company_genesis", "founder_profile", "strategic_history_timeline", "strategic_dna",
+      "historical_diagnosis", "segment_model", "customer_decision_map", "business_process_map",
+      "bottleneck_register", "competitive_response_matrix", "moat_assessment", "moat_attack_matrix",
+      "no_moat_counterfactual", "driver_tree", "operating_model", "operating_scenario_set",
+      "valuation_scenario_set", "reverse_valuation", "annual_price_target_path", "investment_thesis",
+      "risk_register", "catalyst_register", "expected_return_matrix", "thesis_breakers",
+      "monitoring_dashboard", "confidence_assessment", "decision_record"
     ];
 
     for (const type of expectedTypes) {
-      assert.ok(artifactTypes.includes(type), `Missing expected V3 artifact in registry: ${type}`);
+      assert.ok(artifactTypes.includes(type), `Missing expected artifact in registry: ${type}`);
     }
 
-    // WP12-T6: Annual targets queried (Every year has bear/base/bull)
+    // ==========================================
+    // Annual Price Target Acceptance Table Validation
+    // ==========================================
     const pathArtifact = artifacts.find((a) => a.artifact_type === "annual_price_target_path");
-    assert.ok(pathArtifact);
+    assert.ok(pathArtifact, "annual_price_target_path artifact must exist");
     const pathContent = pathArtifact.content_json as any;
-    assert.ok(Array.isArray(pathContent.price_target_path));
-    const targetYears = pathContent.price_target_path.map((pt: any) => pt.fiscal_year);
-    const targetScenarios = pathContent.price_target_path.map((pt: any) => pt.scenario_type);
-    assert.ok(targetYears.includes(2026));
-    assert.ok(targetScenarios.includes("bear"));
-    assert.ok(targetScenarios.includes("base"));
-    assert.ok(targetScenarios.includes("bull"));
+    assert.ok(Array.isArray(pathContent.price_target_path), "price_target_path must be an array");
 
-    // WP12-T7: AI review (No unresolved critical fixture issue)
+    const targets: Array<{ fiscal_year: number; scenario_type: string; price_target: number; currency: string }> = pathContent.price_target_path;
+    
+    // Check years range 2026..2030 and scenarios bear/base/bull
+    const years = [2026, 2027, 2028, 2029, 2030];
+    const scenariosList = ["bear", "base", "bull"];
+    const seenPairs = new Set<string>();
+
+    for (const yr of years) {
+      for (const sc of scenariosList) {
+        const pairKey = `${yr}:${sc}`;
+        assert.ok(!seenPairs.has(pairKey), `Duplicate (fiscal_year, scenario_type) pair found: ${pairKey}`);
+        seenPairs.add(pairKey);
+
+        const target = targets.find((t) => t.fiscal_year === yr && t.scenario_type === sc);
+        assert.ok(target, `Missing required target for year ${yr}, scenario ${sc}`);
+        assert.ok(Number.isFinite(target.price_target) && target.price_target > 0, `Price target for ${pairKey} must be finite positive`);
+        assert.equal(target.currency || "USD", "USD", `Currency for ${pairKey} must be USD`);
+      }
+    }
+
+    // AI reviewer completed
     const [reviewStage] = await sql`
       SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'ai_reviewer'
     `;
     assert.equal(reviewStage?.status, "completed");
 
-    // WP12-T9: Running work query (Zero non-human running tasks/stages)
-    const runningStages = await sql`
-      SELECT id FROM research_stages WHERE research_run_id = ${runId} AND status = 'running'
-    `;
-    assert.equal(runningStages.length, 0);
+    // Zero running non-human work
+    const runningStages2 = await sql`SELECT id FROM research_stages WHERE research_run_id = ${runId} AND status = 'running'`;
+    assert.equal(runningStages2.length, 0);
 
-    const runningTasks = await sql`
-      SELECT id FROM research_tasks WHERE research_run_id = ${runId} AND status = 'running'
-    `;
-    assert.equal(runningTasks.length, 0);
-
-    // WP12-T10: Synthetic readiness (Never investment_ready)
-    // Construct mock quality data to evaluate quality gates
+    // Synthetic data is never investment_ready
     const [runData] = await sql`SELECT * FROM research_runs WHERE id = ${runId}`;
     const sources = await sql`SELECT * FROM source_documents WHERE research_run_id = ${runId}`;
     const evidence = await sql`SELECT * FROM evidence_claims WHERE research_run_id = ${runId}`;
@@ -335,46 +329,50 @@ describe("SOFI Mock End-to-End Acceptance (Component WP12)", { skip: process.env
     const reviewDecisions = await sql`SELECT * FROM review_decisions WHERE research_run_id = ${runId}`;
 
     const qualityGateResult = evaluateQualityGates({
-      run: runData,
-      sources,
-      evidence,
-      metrics,
-      signals,
-      scenarios,
-      artifacts,
-      reviewDecisions
+      run: runData, sources, evidence, metrics, signals, scenarios, artifacts, reviewDecisions
     });
-
     assert.notEqual(qualityGateResult.actionReadiness, "investment_ready");
 
-    // WP12-T11: Test export (Watermarked and structurally complete)
-    const reportData = {
-      runId,
-      asset: {
-        canonical_name: "SoFi Technologies, Inc.",
-        slug: "sofi",
-        asset_kind: "equity"
-      },
-      genesis: {
-        strategic_identity: "Mock identity",
-        founder_profile: "Mock founder",
-        origin_history: "Founded in 2011"
-      },
-      decision: {
-        thesis_statement: "Mock thesis statement",
-        expected_return_matrix: { bear_return: 0.05, base_return: 0.15, bull_return: 0.25 }
-      }
-    };
+    // ==========================================
+    // Gate 2 Approval: Persist decision & approve Human Review
+    // ==========================================
+    const decisionId = crypto.randomUUID();
+    await sql`
+      INSERT INTO review_decisions (
+        id, research_run_id, reviewer_id, status, notes, reviewed_at
+      ) VALUES (
+        ${decisionId}, ${runId}, 'human-reviewer-1', 'approved_for_tracking',
+        'Approved after reviewing thesis and valuation models', NOW()
+      )
+    `;
 
-    const mdReport = generateMarkdownReport(reportData);
-    assert.ok(mdReport.includes("TEST WATERMARK"));
-    assert.ok(mdReport.includes("# Investment Research Report: SoFi Technologies, Inc."));
-    // Ensure all 25 canonical sections are present
-    for (let i = 1; i <= 25; i++) {
-      assert.ok(mdReport.includes(`## ${i}. `), `Report missing section ${i}`);
-    }
+    const approvalRes = await approveHumanReview(runId, "system-test-harness");
+    assert.ok(approvalRes.success, `approveHumanReview failed: ${approvalRes.error}`);
 
-    // Clean up this run
+    // ==========================================
+    // Invocation 3: Execute terminal export and refresh_schedule stages
+    // ==========================================
+    state = await runResearchPipeline(runId);
+    assert.equal(state.status, "completed");
+
+    const [exportStage] = await sql`SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'export'`;
+    assert.equal(exportStage?.status, "completed");
+
+    const [refreshStage] = await sql`SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'refresh_schedule'`;
+    assert.equal(refreshStage?.status, "completed");
+
+    // Check synthetic report artifact created
+    const [syntheticArtifact] = await sql`
+      SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId} AND artifact_type = 'synthetic_report'
+    `;
+    assert.ok(syntheticArtifact, "synthetic_report artifact must be created by export handler");
+
+    const [refreshArtifact] = await sql`
+      SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId} AND artifact_type = 'refresh_schedule'
+    `;
+    assert.ok(refreshArtifact, "refresh_schedule artifact must be created by refresh handler");
+
+    // Clean up run
     await sql`DELETE FROM asset_profile_assignments WHERE research_run_id = ${runId}`;
     await sql`DELETE FROM research_stages WHERE research_run_id = ${runId}`;
     await sql`DELETE FROM research_artifacts WHERE research_run_id = ${runId}`;
@@ -384,62 +382,63 @@ describe("SOFI Mock End-to-End Acceptance (Component WP12)", { skip: process.env
     await sql`DELETE FROM catalysts WHERE research_run_id = ${runId}`;
     await sql`DELETE FROM valuation_signals WHERE research_run_id = ${runId}`;
     await sql`DELETE FROM scenarios WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM review_decisions WHERE research_run_id = ${runId}`;
     await sql`DELETE FROM research_runs WHERE id = ${runId}`;
   });
 
-  test("WP12-T12: Repeat full run with same fixture key prevents duplicate logical artifacts", async () => {
-    const runId1 = crypto.randomUUID();
-    const runId2 = crypto.randomUUID();
-    const cutoffAt = new Date(Date.now() + 365 * 24 * 60 * 1000).toISOString();
+  test("C9-T3: Failure cleanup on forced required stage failure", async () => {
+    const runId = crypto.randomUUID();
+    const cutoffAt = "2026-01-01T00:00:00.000Z";
 
-    const createRun = async (runId: string) => {
-      await sql`
-        INSERT INTO research_runs (
-          id, asset_id, run_type, status, research_question, requested_by,
-          profile_id, profile_version, source_cutoff_at, market_data_cutoff_at,
-          budget_limit_usd, pipeline_version, metadata_json
-        ) VALUES (
-          ${runId}, ${assetId}, 'deep_dive', 'pending', 'Idempotent run?', 'system-test-harness',
-          ${financialsProfileId}, 1, ${cutoffAt}, ${cutoffAt},
-          100.00, 3, ${sql.json({ acceptance_provider: "mock" })}
-        )
-      `;
+    await sql`
+      INSERT INTO research_runs (
+        id, asset_id, run_type, status, research_question, requested_by,
+        profile_id, profile_version, source_cutoff_at, market_data_cutoff_at,
+        budget_limit_usd, pipeline_version, metadata_json
+      ) VALUES (
+        ${runId}, ${testAssetId}, 'deep_dive', 'pending', 'Failure cleanup test?', 'system-test-harness',
+        ${financialsProfileId}, 1, ${cutoffAt}, ${cutoffAt},
+        100.00, 3, ${sql.json({ acceptance_provider: "mock" })}
+      )
+    `;
+    await sql`
+      INSERT INTO asset_profile_assignments (
+        asset_id, research_run_id, profile_id, assignment_reason,
+        assigned_by, confidence, status
+      ) VALUES (
+        ${testAssetId}, ${runId}, ${financialsProfileId},
+        'Run-scoped assignment', 'system-test-harness', '1.0', 'active'
+      )
+    `;
 
-      await sql`
-        INSERT INTO asset_profile_assignments (
-          asset_id, research_run_id, profile_id, assignment_reason,
-          assigned_by, confidence, status
-        ) VALUES (
-          ${assetId}, ${runId}, ${financialsProfileId},
-          'Run-scoped assignment', 'system-test-harness', '1.0', 'active'
-        )
-      `;
+    await createStagesForRun(runId);
 
-      await createStagesForRun(runId);
-      await approveResearchPlan(runId, "system-test-harness");
-      await runSystemResearchPipeline(runId);
-    };
+    // Fail one required stage directly
+    await sql`
+      UPDATE research_stages
+      SET status = 'failed', failure_reason = 'Simulated stage failure'
+      WHERE research_run_id = ${runId} AND stage_key = 'source_discovery'
+    `;
 
-    // Run first time
-    await createRun(runId1);
+    const state = await runResearchPipeline(runId);
+    assert.ok(["failed", "needs_more_work"].includes(state.status));
 
-    // Run second time on same symbol/fixture key
-    await assert.doesNotReject(async () => {
-      await createRun(runId2);
-    });
+    // Zero running stages and tasks remain
+    const runningStages = await sql`SELECT id FROM research_stages WHERE research_run_id = ${runId} AND status = 'running'`;
+    assert.equal(runningStages.length, 0);
 
-    // Cleanup both runs
-    for (const runId of [runId1, runId2]) {
-      await sql`DELETE FROM asset_profile_assignments WHERE research_run_id = ${runId}`;
-      await sql`DELETE FROM research_stages WHERE research_run_id = ${runId}`;
-      await sql`DELETE FROM research_artifacts WHERE research_run_id = ${runId}`;
-      await sql`DELETE FROM research_tasks WHERE research_run_id = ${runId}`;
-      await sql`DELETE FROM theses WHERE research_run_id = ${runId}`;
-      await sql`DELETE FROM risks WHERE research_run_id = ${runId}`;
-      await sql`DELETE FROM catalysts WHERE research_run_id = ${runId}`;
-      await sql`DELETE FROM valuation_signals WHERE research_run_id = ${runId}`;
-      await sql`DELETE FROM scenarios WHERE research_run_id = ${runId}`;
-      await sql`DELETE FROM research_runs WHERE id = ${runId}`;
-    }
+    const runningTasks = await sql`SELECT id FROM research_tasks WHERE research_run_id = ${runId} AND status = 'running'`;
+    assert.equal(runningTasks.length, 0);
+
+    // No export artifact created
+    const exports = await sql`SELECT id FROM research_artifacts WHERE research_run_id = ${runId} AND artifact_type = 'synthetic_report'`;
+    assert.equal(exports.length, 0);
+
+    // Cleanup
+    await sql`DELETE FROM asset_profile_assignments WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM research_stages WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM research_artifacts WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM research_tasks WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM research_runs WHERE id = ${runId}`;
   });
 });

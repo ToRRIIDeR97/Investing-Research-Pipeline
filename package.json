@@ -13,7 +13,7 @@
     "test:source-reader-smoke": "tsx scripts/source-reader-smoke.ts",
     "test:meli-mock": "tsx scripts/new-meli-run.ts",
     "test:sofi-mock": "RESEARCH_ASSET=SOFI tsx scripts/new-equity-run.ts",
-    "test:sofi-v3": "RUN_DB_INTEGRATION=1 DATABASE_URL=postgresql://research_os:research_os_dev@localhost:5433/research_os tsx --test tests/sofi-v3-e2e.test.ts",
+    "test:sofi-v3": "RUN_DB_INTEGRATION=1 DATABASE_URL=postgresql://research_os:research_os_dev@localhost:5433/research_os tsx --test tests/sofi-research-e2e.test.ts",
     "test:sofi-backtest": "tsx scripts/test-live-backtester.ts",
     "test:live-backtest": "tsx scripts/test-live-backtester.ts",
     "run:research:resume": "tsx scripts/resume-research-run.ts",

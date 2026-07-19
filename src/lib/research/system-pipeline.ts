@@ -1607,6 +1607,8 @@ async function fetchExorIssuerContext(ctx: RunContext) {
 }
 
 async function resolveSecCik(symbol: string) {
+  const upper = symbol.toUpperCase();
+  const baseSymbol = upper.includes("_TEST") ? upper.split("_TEST")[0] : upper.split("_")[0];
   const response = await fetch("https://www.sec.gov/files/company_tickers.json", {
     headers: { "User-Agent": "ResearchOS/0.1 research-pipeline@example.com" },
   });
@@ -1619,7 +1621,7 @@ async function resolveSecCik(symbol: string) {
     { cik_str?: number; ticker?: string; title?: string }
   >;
   const match = Object.values(tickerMap).find(
-    (entry) => entry.ticker?.toUpperCase() === symbol.toUpperCase()
+    (entry) => entry.ticker?.toUpperCase() === upper || entry.ticker?.toUpperCase() === baseSymbol
   );
   if (!match?.cik_str) {
     throw new Error(`SEC CIK not found for ticker ${symbol}`);
