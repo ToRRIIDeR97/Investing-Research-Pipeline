@@ -14,26 +14,40 @@ import {
 
 const SOFI_BENCHMARKS = ["QQQ", "XLF", "KRE", "SPY"] as const;
 
+export interface FrameworkBenchmarkConfig {
+  symbols: string[];
+  primaryBenchmark: string;
+  sectorBenchmark: string;
+  broadBenchmark: string;
+}
+
 export async function loadFrameworkMarketDataset(
-  ctx: ResearchRunContext
+  ctx: ResearchRunContext,
+  benchmarkConfig: FrameworkBenchmarkConfig = {
+    symbols: [...SOFI_BENCHMARKS],
+    primaryBenchmark: "QQQ",
+    sectorBenchmark: "XLF",
+    broadBenchmark: "SPY",
+  }
 ): Promise<MarketDataset> {
   const end = ctx.marketDataCutoffAt || ctx.cutoffAt || new Date();
   const start = new Date(end);
   start.setUTCFullYear(start.getUTCFullYear() - 6);
 
   if (ctx.testMode || process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock") {
+    const benchmarks = Object.fromEntries(
+      benchmarkConfig.symbols.map((symbol, index) => [
+        symbol,
+        syntheticSeries(symbol, 35 + index * 40, 1550, 7 + index * 6),
+      ])
+    );
     return {
       symbol: ctx.symbol,
       asset: syntheticSeries(ctx.symbol, 11, 1550, 0),
-      benchmarks: {
-        QQQ: syntheticSeries("QQQ", 100, 1550, 7),
-        XLF: syntheticSeries("XLF", 35, 1550, 13),
-        KRE: syntheticSeries("KRE", 45, 1550, 19),
-        SPY: syntheticSeries("SPY", 300, 1550, 29),
-      },
-      primaryBenchmark: "QQQ",
-      sectorBenchmark: "XLF",
-      broadBenchmark: "SPY",
+      benchmarks,
+      primaryBenchmark: benchmarkConfig.primaryBenchmark,
+      sectorBenchmark: benchmarkConfig.sectorBenchmark,
+      broadBenchmark: benchmarkConfig.broadBenchmark,
       source: "synthetic_fixture",
     };
   }
@@ -41,17 +55,17 @@ export async function loadFrameworkMarketDataset(
   const yahoo = createYahooMarketDataProvider();
   const [asset, ...benchmarks] = await Promise.all([
     yahoo.getPriceHistory(ctx.symbol, start, end, "1d"),
-    ...SOFI_BENCHMARKS.map((symbol) => yahoo.getPriceHistory(symbol, start, end, "1d")),
+    ...benchmarkConfig.symbols.map((symbol) => yahoo.getPriceHistory(symbol, start, end, "1d")),
   ]);
   return {
     symbol: ctx.symbol,
     asset,
     benchmarks: Object.fromEntries(
-      SOFI_BENCHMARKS.map((symbol, index) => [symbol, benchmarks[index]])
+      benchmarkConfig.symbols.map((symbol, index) => [symbol, benchmarks[index]])
     ),
-    primaryBenchmark: "QQQ",
-    sectorBenchmark: "XLF",
-    broadBenchmark: "SPY",
+    primaryBenchmark: benchmarkConfig.primaryBenchmark,
+    sectorBenchmark: benchmarkConfig.sectorBenchmark,
+    broadBenchmark: benchmarkConfig.broadBenchmark,
     source: "yahoo",
   };
 }
@@ -81,7 +95,8 @@ function syntheticSeries(
 
 export async function executeFrameworkBacktest(
   ctx: ResearchRunContext,
-  combinations?: StrategyCombination[]
+  combinations?: StrategyCombination[],
+  benchmarkConfig?: FrameworkBenchmarkConfig
 ): Promise<{
   dataset: MarketDataset;
   combinations: StrategyCombination[];
@@ -94,7 +109,7 @@ export async function executeFrameworkBacktest(
     metadata_json: Record<string, unknown>;
   }>;
 }> {
-  const dataset = await loadFrameworkMarketDataset(ctx);
+  const dataset = await loadFrameworkMarketDataset(ctx, benchmarkConfig);
   const catalog = combinations || generateStrategyCombinations(ctx.researchQuestion || ctx.assetName);
   const result = runFrameworkBacktest(dataset, catalog);
   const artifactDir = join(process.cwd(), "storage", "backtests", ctx.runId, "framework");

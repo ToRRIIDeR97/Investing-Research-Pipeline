@@ -1,34 +1,60 @@
-import { executeFrameworkBacktest } from "../src/lib/backtesting/framework-runner";
+import {
+  executeFrameworkBacktest,
+  type FrameworkBenchmarkConfig,
+} from "../src/lib/backtesting/framework-runner";
 import { generateStrategyCombinations } from "../src/lib/backtesting/framework";
 import type { ResearchRunContext } from "../src/lib/research/run-context";
 
 async function main() {
   const cutoff = new Date();
+  const symbol = String(process.env.RESEARCH_ASSET || "SOFI").trim().toUpperCase();
+  const assetName = String(process.env.RESEARCH_ASSET_NAME || "SoFi Technologies").trim();
+  const benchmarkSymbols = String(process.env.RESEARCH_BENCHMARKS || "QQQ,XLF,KRE,SPY")
+    .split(",")
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean);
+  const benchmarkConfig: FrameworkBenchmarkConfig = {
+    symbols: [...new Set(benchmarkSymbols)],
+    primaryBenchmark: String(process.env.RESEARCH_PRIMARY_BENCHMARK || benchmarkSymbols[0] || "SPY").toUpperCase(),
+    sectorBenchmark: String(process.env.RESEARCH_SECTOR_BENCHMARK || benchmarkSymbols[1] || benchmarkSymbols[0] || "SPY").toUpperCase(),
+    broadBenchmark: String(process.env.RESEARCH_BROAD_BENCHMARK || "SPY").toUpperCase(),
+  };
+  for (const required of [
+    benchmarkConfig.primaryBenchmark,
+    benchmarkConfig.sectorBenchmark,
+    benchmarkConfig.broadBenchmark,
+  ]) {
+    if (!benchmarkConfig.symbols.includes(required)) benchmarkConfig.symbols.push(required);
+  }
   const context: ResearchRunContext = {
-    runId: "sofi-live-validation",
+    runId: `${symbol.toLowerCase()}-live-validation`,
     assetId: "validation-only",
-    assetName: "SoFi Technologies",
-    assetSlug: "sofi",
-    symbol: "SOFI",
+    assetName,
+    assetSlug: symbol.toLowerCase(),
+    symbol,
     runType: "full_initiation_report",
     pipelineVersion: 3,
     cutoffAt: cutoff,
     marketDataCutoffAt: cutoff,
     profileId: null,
-    profileKey: "fintech-platform",
-    researchQuestion: "Test whether SOFI thesis and risk regimes produce robust timing evidence.",
+    profileKey: "live-backtest-validation",
+    researchQuestion: `Test whether the documented ${assetName} thesis and risk regimes produce robust timing evidence.`,
     budgetLimitUsd: 0,
     budgetSpentUsd: 0,
     budgetRemainingUsd: 0,
     testMode: false,
     syntheticFixtureId: null,
     composedProfile: null,
-    archetypeKeys: ["operating_company_core", "lender", "payments_network"],
+    archetypeKeys: ["operating_company_core"],
     overlayKeys: [],
     timingHypothesis: null,
   };
   const combinations = generateStrategyCombinations(context.researchQuestion);
-  const { result, artifacts } = await executeFrameworkBacktest(context, combinations);
+  const { result, artifacts } = await executeFrameworkBacktest(
+    context,
+    combinations,
+    benchmarkConfig
+  );
   const top = result.rankings[0];
   const statusCounts = Object.fromEntries(
     ["Robust", "Promising", "Needs review", "Weak", "Rejected"].map((status) => [
