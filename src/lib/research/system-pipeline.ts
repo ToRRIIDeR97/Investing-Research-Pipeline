@@ -2248,6 +2248,29 @@ export async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string
   await sql.begin(async (tx) => {
     for (const obs of observations) {
       const metricKey = canonicalResearchKey(textValue(obs.metric_key || obs.metric || obs.label, "agent_metric").toLowerCase().replace(/[^a-z0-9_]+/g, "_"));
+      const requestedSourceId = textValue(obs.source_id, "");
+      const sourceRows = requestedSourceId
+        ? await tx`
+            SELECT id, published_at, retrieved_at
+            FROM source_documents
+            WHERE id = ${requestedSourceId}
+            LIMIT 1
+          `
+        : await tx`
+            SELECT id, published_at, retrieved_at
+            FROM source_documents
+            WHERE id = ${sourceId}
+            LIMIT 1
+          `;
+      const observationSourceId = sourceRows[0]?.id || sourceId;
+      const sourceAvailableAt =
+        sourceRows[0]?.published_at ||
+        nullableText(obs.as_of_date || obs.period_end) ||
+        sourceRows[0]?.retrieved_at;
+      const availableAt = textValue(
+        obs.available_at,
+        sourceAvailableAt ? new Date(sourceAvailableAt).toISOString() : ctx.marketDataCutoffAt || new Date().toISOString()
+      );
       const metricRows = await tx`
         INSERT INTO metric_definitions (metric_key, display_name, metric_category, unit_type, default_unit,
           default_currency, description, applicable_profile_keys, metadata_json)
@@ -2279,8 +2302,8 @@ export async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string
             as_of_date, available_at, value_numeric, value_text, unit, currency, data_provider, source_document_id,
             confidence, review_status, metadata_json)
           VALUES (${ctx.assetId}, ${ctx.runId}, ${metricRows[0].id}, ${periodStart}, ${periodEnd}, ${asOfDate},
-            ${textValue(obs.available_at, new Date().toISOString())}, ${valueNumeric}, ${textValue(obs.value_text, "") || null},
-            ${unit || null}, ${currency}, ${textValue(obs.source, "metric-reconciler")}, ${sourceId},
+            ${availableAt}, ${valueNumeric}, ${textValue(obs.value_text, "") || null},
+            ${unit || null}, ${currency}, ${textValue(obs.source, "metric-reconciler")}, ${observationSourceId},
             ${numberValue(obs.confidence, 0.7).toString()}, 'accepted',
             ${tx.unsafe(`'${JSON.stringify({ system_generated: true, reconciliation: "canonical_revision", supersedes_observation_ids: existing.map((row) => String(row.id)), agent_output: obs } as any).replace(/'/g, "''")}'::jsonb`)})
           RETURNING id

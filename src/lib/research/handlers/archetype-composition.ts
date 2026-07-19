@@ -21,15 +21,8 @@ export const archetypeCompositionHandler: StageHandler<Record<string, unknown>> 
           archetypes = ["bank", "lender", "marketplace", "payments_network"];
           overlays = [];
         } else if (profileKey === "operating_company") {
-          archetypes = [
-            "operating_company_core",
-            "marketplace",
-            "payments_network",
-            "lender",
-            "logistics_network",
-            "advertising_platform",
-          ];
-          overlays = ["emerging_market_multi_country"];
+          archetypes = ["operating_company_core"];
+          overlays = [];
         } else {
           // Default to operating company core
           archetypes = ["operating_company_core"];

@@ -2,6 +2,7 @@ import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-
 import { makeValidationResult } from "../run-context";
 import { callResearchAgent, exactJsonPrompt } from "../run-context";
 import { COMPANY_GENESIS_CONTRACT } from "../stage-contracts";
+import { loadAcceptedEvidencePacket } from "../system-pipeline";
 import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -12,7 +13,21 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
-      const taskKey = `genesis-researcher:${ctx.symbol?.toLowerCase() || "asset"}-genesis`;
+      const taskKey = `genesis-researcher:${ctx.symbol?.toLowerCase() || "asset"}-genesis:v2`;
+      const evidenceClaims = await loadAcceptedEvidencePacket(sql, {
+        runId: ctx.runId,
+        runType: ctx.runType,
+        assetId: ctx.assetId,
+        assetName: ctx.assetName,
+        assetSlug: ctx.assetSlug,
+        symbol: ctx.symbol,
+        profileId: ctx.profileId || "",
+        profileKey: ctx.profileKey || "",
+        requiredModules: [],
+        requiredLenses: [],
+        marketDataCutoffAt: ctx.marketDataCutoffAt?.toISOString() || null,
+        pipelineVersion: 3,
+      });
       const packet = {
         asset: {
           runId: ctx.runId,
@@ -23,6 +38,38 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
         },
         required_modules: ["founder_and_company_history", "corporate_structure"],
         output_contract: "company_genesis",
+        evidence_claims: evidenceClaims,
+        artifact_shape: {
+          company_genesis: {
+            artifact_type: "company_genesis",
+            required_fields: [
+              "pre_founding_environment", "customer_problem", "incumbent_failure",
+              "enabling_change", "founder_background", "founder_motivations",
+              "alternative_motivation_interpretations", "original_product",
+              "original_customer", "original_geography", "original_revenue_model",
+              "initial_funding", "early_constraints", "first_proof_point",
+              "present_day_implications", "material_claims",
+            ],
+          },
+          founder_profile: {
+            artifact_type: "founder_profile",
+            required_fields: [
+              "founder_name", "background_summary", "motivations",
+              "alternative_interpretations", "control_evolution", "influence_today",
+            ],
+          },
+          strategic_history_timeline: {
+            artifact_type: "strategic_history_timeline",
+            required_fields: ["events", "major_pivots"],
+          },
+          strategic_dna: {
+            artifact_type: "strategic_dna",
+            required_fields: [
+              "persistent_behaviors", "decision_patterns", "capital_allocation_habits",
+              "talent_and_organization_patterns", "historical_evidence", "current_implications",
+            ],
+          },
+        },
       };
 
       const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
@@ -31,7 +78,12 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
         packet: p,
         extraRules: [
           "Provide a detailed synthesis of the company genesis, founders, and early corporate structure.",
-          "Link analysis to available evidence via evidence_claim_ids.",
+          "Return each nested artifact as an object with the exact artifact_type and required_fields supplied in artifact_shape.",
+          "founder_motivations and motivations entries require motivation, evidence_claim_ids, and numeric confidence.",
+          "material_claims and historical_evidence entries require claim, evidence_weight, evidence_claim_ids, and numeric confidence.",
+          "Timeline events require date_or_period, event, objective_at_the_time, decision, evidence_claim_ids, immediate_effect, lasting_consequence, strategy_changed, mission_changed, and confidence.",
+          "Use only UUID evidence claim IDs present in evidence_claims. Never invent citation IDs.",
+          "When founder evidence is unavailable, state the limitation and use motivation=unknown rather than inventing history.",
         ],
       });
 

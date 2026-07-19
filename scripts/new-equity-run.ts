@@ -30,6 +30,15 @@ process.env.RESEARCH_MODEL_PROVIDER = acceptanceProvider;
 
 const requestedAsset = (process.env.RESEARCH_ASSET || "SOFI").trim();
 const requestedPipelineVersion = 3;
+const requestedRunType = process.env.RESEARCH_RUN_TYPE || "full_initiation_report";
+const requestedArchetypes = (process.env.RESEARCH_ARCHETYPES || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const requestedOverlays = (process.env.RESEARCH_OVERLAYS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 if (process.env.RESEARCH_PIPELINE_VERSION && Number(process.env.RESEARCH_PIPELINE_VERSION) < 3) {
   throw new Error(
     "The current pipeline only supports pipeline version 3. Versions 1 and 2 are deprecated."
@@ -88,13 +97,15 @@ async function main() {
       profile_id, profile_version, source_cutoff_at, market_data_cutoff_at,
       budget_limit_usd, pipeline_version, metadata_json
     ) VALUES (
-      ${runId}, ${asset.id}, 'deep_dive', 'pending', ${researchQuestion}, 'system-test-harness',
+      ${runId}, ${asset.id}, ${requestedRunType}, 'pending', ${researchQuestion}, 'system-test-harness',
       ${asset.primary_profile_id}, ${Number(asset.profile_version || 1)}, ${cutoffAt}, ${cutoffAt},
       ${process.env.RESEARCH_ACCEPTANCE_BUDGET_USD || "10.00"}, ${requestedPipelineVersion},
       ${sql.json({
         acceptance_provider: acceptanceProvider,
         cutoff_at_utc: cutoffAt,
         acceptance_asset: symbol,
+        ...(requestedArchetypes.length > 0 ? { v3_archetypes: requestedArchetypes } : {}),
+        ...(requestedOverlays.length > 0 ? { v3_overlays: requestedOverlays } : {}),
       })}
     )
   `;

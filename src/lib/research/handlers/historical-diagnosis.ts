@@ -1,8 +1,8 @@
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
 import { makeValidationResult } from "../run-context";
-import { callResearchAgent, exactJsonPrompt } from "../run-context";
 import { HISTORICAL_DIAGNOSIS_CONTRACT } from "../stage-contracts";
 import { createArtifactRepository } from "../artifacts/repository";
+import { buildHistoricalDiagnosis } from "../diagnosis/diagnosis";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -12,34 +12,58 @@ export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> =
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
-      const taskKey = "historical-diagnostician:diagnosis";
-      const packet = {
-        asset: {
-          runId: ctx.runId,
-          assetId: ctx.assetId,
-          assetName: ctx.assetName,
-          symbol: ctx.symbol,
-          profileKey: ctx.profileKey,
-        },
-        required_modules: ["historical_performance_diagnosis", "level_shifts", "historical_inflections"],
-        output_contract: "historical_diagnosis",
+      const observationRows = await sql`
+        SELECT md.metric_key, mo.value_numeric, mo.period_end, mo.as_of_date,
+               mo.confidence, mo.unit, mo.currency
+        FROM metric_observations mo
+        JOIN metric_definitions md ON md.id = mo.metric_definition_id
+        WHERE mo.research_run_id = ${ctx.runId}
+          AND mo.review_status = 'accepted'
+          AND mo.value_numeric IS NOT NULL
+        ORDER BY md.metric_key, COALESCE(mo.period_end, mo.as_of_date)
+      `;
+      const claimRows = await sql`
+        SELECT id FROM evidence_claims
+        WHERE research_run_id = ${ctx.runId} AND review_status = 'accepted'
+        ORDER BY created_at
+      `;
+      const fallbackClaimIds = claimRows.slice(0, 3).map((row) => String(row.id));
+      if (fallbackClaimIds.length === 0) {
+        throw new Error("Historical diagnosis requires at least one accepted evidence claim");
+      }
+      const observations = observationRows.map((row) => {
+        const date = new Date(row.period_end || row.as_of_date);
+        return {
+          metric_key: String(row.metric_key),
+          fiscal_year: date.getUTCFullYear(),
+          fiscal_quarter: Math.floor(date.getUTCMonth() / 3) + 1,
+          periodicity: "quarterly" as const,
+          reporting_basis: "gaap" as const,
+          metric_type: "reported" as const,
+          value_numeric: Number(row.value_numeric),
+          unit: String(row.unit || ""),
+          currency: String(row.currency || "USD"),
+          confidence: Number(row.confidence || 0.7),
+          restatement_version: 0,
+          comparability_status: "comparable" as const,
+          metadata_json: {},
+        };
+      });
+      const metricKeys = [...new Set(observations.map((row) => row.metric_key))];
+      const supportingClaims = Object.fromEntries(
+        metricKeys.map((metricKey) => [metricKey, fallbackClaimIds])
+      );
+      const output: Record<string, any> = {
+        historical_diagnosis: buildHistoricalDiagnosis({
+          asset_id: ctx.assetId,
+          run_id: ctx.runId,
+          observations,
+          materialMetricKeys: metricKeys,
+          supportingClaims,
+          endFiscalYear: new Date().getUTCFullYear(),
+          endFiscalQuarter: 4,
+        }),
       };
-
-      const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
-        agentName: "asset-analyst",
-        requiredKeys: HISTORICAL_DIAGNOSIS_CONTRACT.requiredKeys,
-        packet: p,
-        extraRules: [
-          "Perform a rigorous statistical level-shift and growth inflection analysis of the twenty-quarter historical record.",
-        ],
-      });
-
-      const output = await callResearchAgent<Record<string, any>>({
-        sql, ctx, stageKey: "historical_diagnosis", taskKey,
-        taskType: "historical_diagnosis", agentName: "asset-analyst", modelTier: "mid",
-        packet, promptFactory,
-        outputFormat: HISTORICAL_DIAGNOSIS_CONTRACT,
-      });
 
       // Persist generated sub-artifacts
       const db = drizzle(sql, { schema });
