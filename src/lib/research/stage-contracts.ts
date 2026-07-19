@@ -16,13 +16,118 @@ function contract(requiredKeys: string[]): AgentOutputFormat {
   };
 }
 
+type JsonSchema = Record<string, unknown>;
+const stringSchema = (): JsonSchema => ({ type: "string" });
+const enumStringSchema = (values: string[]): JsonSchema => ({ type: "string", enum: values });
+const literalStringSchema = (value: string): JsonSchema => ({ type: "string", const: value });
+const numberSchema = (): JsonSchema => ({ type: "number" });
+const booleanSchema = (): JsonSchema => ({ type: "boolean" });
+const arraySchema = (items: JsonSchema, minItems = 1): JsonSchema => ({
+  type: "array",
+  minItems,
+  items,
+});
+const objectSchema = (
+  properties: Record<string, JsonSchema>,
+  required = Object.keys(properties)
+): JsonSchema => ({
+  type: "object",
+  properties,
+  required,
+  additionalProperties: true,
+});
+const typedContract = (properties: Record<string, JsonSchema>): AgentOutputFormat => ({
+  requiredKeys: Object.keys(properties),
+  schema: objectSchema(properties),
+});
+const stringArray = () => arraySchema(stringSchema());
+const evidenceIds = () => arraySchema(stringSchema());
+const historicalClaim = () => objectSchema({
+  claim: stringSchema(),
+  evidence_weight: enumStringSchema([
+    "contemporary_direct_founder_statement",
+    "later_retrospective_founder_statement",
+    "contemporary_third_party_observation",
+    "documented_company_action",
+    "analyst_inference",
+    "disputed_corporate_account",
+  ]),
+  evidence_claim_ids: evidenceIds(),
+  confidence: numberSchema(),
+}, ["claim", "evidence_weight", "evidence_claim_ids", "confidence"]);
+const motivation = () => objectSchema({
+  motivation: enumStringSchema([
+    "personal_problem",
+    "mission_or_cause",
+    "technical_conviction",
+    "commercial_opportunity",
+    "financial_ambition",
+    "competitive_ambition",
+    "professional_frustration",
+    "status_or_legacy",
+    "mixed",
+    "unknown",
+  ]),
+  evidence_claim_ids: evidenceIds(),
+  confidence: numberSchema(),
+});
+
 /** Contract: company-genesis output */
-export const COMPANY_GENESIS_CONTRACT = contract([
-  "company_genesis",
-  "founder_profile",
-  "strategic_history_timeline",
-  "strategic_dna",
-]);
+export const COMPANY_GENESIS_CONTRACT = typedContract({
+  company_genesis: objectSchema({
+    artifact_type: literalStringSchema("company_genesis"),
+    pre_founding_environment: stringSchema(),
+    customer_problem: stringSchema(),
+    incumbent_failure: stringSchema(),
+    enabling_change: stringSchema(),
+    founder_background: stringSchema(),
+    founder_motivations: arraySchema(motivation()),
+    alternative_motivation_interpretations: stringArray(),
+    original_product: stringSchema(),
+    original_customer: stringSchema(),
+    original_geography: stringSchema(),
+    original_revenue_model: stringSchema(),
+    initial_funding: stringSchema(),
+    early_constraints: stringSchema(),
+    first_proof_point: stringSchema(),
+    present_day_implications: stringArray(),
+    material_claims: arraySchema(historicalClaim()),
+  }),
+  founder_profile: objectSchema({
+    artifact_type: literalStringSchema("founder_profile"),
+    founder_name: stringSchema(),
+    background_summary: stringSchema(),
+    motivations: arraySchema(motivation()),
+    alternative_interpretations: stringArray(),
+    control_evolution: stringSchema(),
+    influence_today: stringSchema(),
+  }),
+  strategic_history_timeline: objectSchema({
+    artifact_type: literalStringSchema("strategic_history_timeline"),
+    events: arraySchema(objectSchema({
+      date_or_period: stringSchema(),
+      event: stringSchema(),
+      objective_at_the_time: stringSchema(),
+      decision: stringSchema(),
+      evidence_claim_ids: evidenceIds(),
+      immediate_effect: stringSchema(),
+      lasting_consequence: stringSchema(),
+      strategy_changed: booleanSchema(),
+      mission_changed: booleanSchema(),
+      confidence: numberSchema(),
+    })),
+    major_pivots: stringArray(),
+  }),
+  strategic_dna: objectSchema({
+    artifact_type: literalStringSchema("strategic_dna"),
+    persistent_behaviors: stringArray(),
+    decision_patterns: stringArray(),
+    capital_allocation_habits: stringArray(),
+    talent_and_organization_patterns: stringArray(),
+    historical_evidence: arraySchema(historicalClaim()),
+    current_implications: stringArray(),
+  }),
+});
 
 /** Contract: historical-diagnosis output */
 export const HISTORICAL_DIAGNOSIS_CONTRACT = contract([
@@ -30,50 +135,325 @@ export const HISTORICAL_DIAGNOSIS_CONTRACT = contract([
 ]);
 
 /** Contract: business-process-analysis output */
-export const BUSINESS_PROCESS_CONTRACT = contract([
-  "segment_model",
-  "customer_decision_map",
-  "business_process_map",
-  "bottleneck_map",
-  "competitive_response_matrix",
-]);
+export const BUSINESS_PROCESS_CONTRACT = typedContract({
+  segment_model: objectSchema({
+    artifact_type: stringSchema(),
+    segments: arraySchema(objectSchema({
+      segment_name: stringSchema(),
+      product_or_service: stringSchema(),
+      customer_or_end_user: stringSchema(),
+      revenue_model: stringSchema(),
+      contract_structure: stringSchema(),
+      pricing_unit: stringSchema(),
+      costs_and_reinvestment: stringSchema(),
+      working_capital_mechanics: stringSchema(),
+      suppliers_or_complements: stringArray(),
+      competitors_or_substitutes: stringArray(),
+      regulation: stringSchema(),
+      revenue_recognition_and_cash_conversion_chain: stringSchema(),
+    })),
+  }),
+  customer_decision_map: objectSchema({
+    artifact_type: stringSchema(),
+    customer_groups: arraySchema(objectSchema({
+      customer_group: stringSchema(),
+      problem_initiating_demand: stringSchema(),
+      economic_value_or_roi: stringSchema(),
+      budget_owner: stringSchema(),
+      alternatives: stringArray(),
+      purchase_criteria: stringArray(),
+      deployment_constraints: stringArray(),
+      renewal_replacement_or_repeat_purchase_mechanism: stringSchema(),
+      churn_or_cancellation_triggers: stringArray(),
+      switching_or_multihoming_path: stringSchema(),
+      time_to_financial_effect: stringSchema(),
+    })),
+  }),
+  business_process_map: objectSchema({
+    artifact_type: stringSchema(),
+    process_nodes: arraySchema(objectSchema({
+      process_node: stringSchema(),
+      starting_condition: stringSchema(),
+      decision_maker: stringSchema(),
+      trigger: stringSchema(),
+      economic_incentive: stringSchema(),
+      required_resources: stringArray(),
+      main_constraint: stringSchema(),
+      downside_central_upside_outcomes: objectSchema({
+        downside: stringSchema(),
+        central: stringSchema(),
+        upside: stringSchema(),
+      }),
+      competitive_response: stringSchema(),
+      time_lag: stringSchema(),
+      financial_line_affected: stringSchema(),
+      leading_indicator: stringSchema(),
+      failure_condition: stringSchema(),
+      supporting_claim_ids: evidenceIds(),
+      confidence: numberSchema(),
+    })),
+  }),
+  bottleneck_register: objectSchema({
+    artifact_type: stringSchema(),
+    bottlenecks: arraySchema(objectSchema({
+      name: stringSchema(),
+      description: stringSchema(),
+      capacity_limit: numberSchema(),
+      unit: stringSchema(),
+      current_utilization: numberSchema(),
+      mitigation_strategy: stringSchema(),
+    })),
+  }),
+  competitive_response_matrix: objectSchema({
+    artifact_type: stringSchema(),
+    competitors: arraySchema(objectSchema({
+      competitor_name: stringSchema(),
+      market_share: numberSchema(),
+      main_advantages: stringArray(),
+      response_scenarios: arraySchema(objectSchema({
+        scenario_name: stringSchema(),
+        threat_description: stringSchema(),
+        response_mechanism: stringSchema(),
+        time_to_response: stringSchema(),
+        financial_impact: stringSchema(),
+      })),
+    })),
+  }),
+});
 
 /** Contract: moat-analysis output */
-export const MOAT_CONTRACT = contract([
-  "moat_assessment",
-  "moat_attack_matrix",
-  "no_moat_counterfactual",
-]);
+export const MOAT_CONTRACT = typedContract({
+  moat_assessment: objectSchema({
+    artifact_type: stringSchema(),
+    assessments: arraySchema(objectSchema({
+      claimed_moat: stringSchema(),
+      moat_source: stringSchema(),
+      protected_profit_pool: stringSchema(),
+      customer_consequence: stringSchema(),
+      competitor_consequence: stringSchema(),
+      company_value_capture: stringSchema(),
+      financial_evidence: stringArray(),
+      operating_evidence: stringArray(),
+      maintenance_requirement: stringSchema(),
+      current_strength: stringSchema(),
+      durability: stringSchema(),
+      decay_velocity: stringSchema(),
+      failure_indicators: stringArray(),
+      confidence: numberSchema(),
+    })),
+  }),
+  moat_attack_matrix: objectSchema({
+    artifact_type: stringSchema(),
+    attacks: arraySchema(objectSchema({
+      primary_attacker: stringSchema(),
+      attack_mechanism: stringSchema(),
+      capital_and_time_required: stringSchema(),
+      first_vulnerable_customer: stringSchema(),
+      switching_path: stringSchema(),
+      incumbent_defense: stringSchema(),
+      leading_indicators: stringArray(),
+      financial_translation: stringSchema(),
+      residual_moat: stringSchema(),
+    })),
+  }),
+  no_moat_counterfactual: objectSchema({
+    artifact_type: stringSchema(),
+    expected_margin_no_moat: numberSchema(),
+    expected_growth_no_moat: numberSchema(),
+    expected_reinvestment_no_moat: numberSchema(),
+    changed_economics_description: stringSchema(),
+    bear_case_margin_reconciliation: stringSchema(),
+  }),
+});
 
 /** Contract: operating-model output */
-export const OPERATING_MODEL_CONTRACT = contract([
-  "driver_tree",
-  "operating_model",
-]);
+export const OPERATING_MODEL_CONTRACT = typedContract({
+  driver_tree: objectSchema({
+    artifact_type: stringSchema(),
+    drivers: arraySchema(objectSchema({
+      driver_key: stringSchema(),
+      historical_metric_key: stringSchema(),
+      historical_diagnosis_key: stringSchema(),
+      process_node_key: stringSchema(),
+      assumption_key: stringSchema(),
+      time_lag: stringSchema(),
+      failure_condition: stringSchema(),
+      financial_line_affected: stringSchema(),
+    })),
+  }),
+  operating_model: objectSchema({
+    artifact_type: stringSchema(),
+    segments: arraySchema(objectSchema({
+      segment_name: stringSchema(),
+      forecast_revenue: numberSchema(),
+      forecast_operating_income: numberSchema(),
+    })),
+    consolidated_revenue: numberSchema(),
+    consolidated_operating_income: numberSchema(),
+    credit_capital_required: numberSchema(),
+    balance_sheet_effect_present: booleanSchema(),
+  }),
+});
 
 /** Contract: operating-scenarios output */
-export const OPERATING_SCENARIOS_CONTRACT = contract([
-  "operating_scenario_set",
-]);
+export const OPERATING_SCENARIOS_CONTRACT = typedContract({
+  operating_scenario_set: objectSchema({
+    artifact_type: stringSchema(),
+    probability_bear: numberSchema(),
+    probability_base: numberSchema(),
+    probability_bull: numberSchema(),
+    scenarios: arraySchema(objectSchema({
+      scenario_type: stringSchema(),
+      end_market: stringSchema(),
+      customer_economics: stringSchema(),
+      customer_spending: stringSchema(),
+      competitive_response: stringSchema(),
+      capacity: stringSchema(),
+      pricing_mix: stringSchema(),
+      moat_state: stringSchema(),
+      margin_formation: stringSchema(),
+      reinvestment: stringSchema(),
+      working_capital: stringSchema(),
+      balance_sheet: stringSchema(),
+      resulting_financial_statements_json: objectSchema({}, []),
+    }), 3),
+  }),
+});
 
 /** Contract: asset-valuation output */
-export const VALUATION_CONTRACT = contract([
-  "valuation_scenario_set",
-  "reverse_valuation",
-  "annual_price_target_path",
-]);
+export const VALUATION_CONTRACT = typedContract({
+  valuation_scenario_set: objectSchema({
+    artifact_type: stringSchema(),
+    terminal_year: numberSchema(),
+    terminal_anchor_bear: numberSchema(),
+    terminal_anchor_base: numberSchema(),
+    terminal_anchor_bull: numberSchema(),
+    uses_adjusted_fcf: booleanSchema(),
+    segments_reconciled: booleanSchema(),
+  }),
+  reverse_valuation: objectSchema({
+    artifact_type: stringSchema(),
+    implied_growth: numberSchema(),
+    implied_margin: numberSchema(),
+  }),
+  annual_price_target_path: objectSchema({
+    artifact_type: stringSchema(),
+    currency: stringSchema(),
+    market_price_currency: stringSchema(),
+    annual_projections: arraySchema(objectSchema({
+      fiscal_year: numberSchema(),
+      target_date: stringSchema(),
+      operating_values: objectSchema({}, []),
+      balance_sheet_values: objectSchema({}, []),
+      per_share_values: objectSchema({}, []),
+    })),
+    price_target_path: arraySchema(objectSchema({
+      fiscal_year: numberSchema(),
+      scenario_type: stringSchema(),
+      valuation_method: stringSchema(),
+      operating_metric_key: stringSchema(),
+      operating_metric_value: numberSchema(),
+      valuation_parameter_key: stringSchema(),
+      valuation_parameter_value: numberSchema(),
+      price_target: numberSchema(),
+      dividend_per_share: numberSchema(),
+      total_return_target: numberSchema(),
+      is_interpolated: booleanSchema(),
+    })),
+  }),
+});
 
 /** Contract: decision-synthesis output */
-export const DECISION_SYNTHESIS_CONTRACT = contract([
-  "investment_thesis",
-  "risk_register",
-  "catalyst_register",
-  "expected_return_matrix",
-  "thesis_breakers",
-  "monitoring_dashboard",
-  "confidence_assessment",
-  "decision_record",
-]);
+export const DECISION_SYNTHESIS_CONTRACT = typedContract({
+  investment_thesis: objectSchema({
+    artifact_type: literalStringSchema("investment_thesis"),
+    thesis_statement: stringSchema(),
+    causal_chain: stringSchema(),
+    market_mispricing: stringSchema(),
+    must_be_true: stringArray(),
+    disproving_evidence: stringArray(),
+    horizon: stringSchema(),
+    expected_return_linkage: stringSchema(),
+    valuation_accepted_first: booleanSchema(),
+  }),
+  risk_register: objectSchema({
+    artifact_type: literalStringSchema("risk_register"),
+    risks: arraySchema(objectSchema({
+      risk_name: stringSchema(),
+      causal_mechanism: stringSchema(),
+      probability: numberSchema(),
+      severity: numberSchema(),
+      exposure: numberSchema(),
+      leading_indicator: stringSchema(),
+      failure_threshold: stringSchema(),
+      financial_consequence: stringSchema(),
+      model_input_affected: stringSchema(),
+      mitigants: stringArray(),
+      supporting_claim_ids: evidenceIds(),
+      confidence: numberSchema(),
+    })),
+  }),
+  catalyst_register: objectSchema({
+    artifact_type: literalStringSchema("catalyst_register"),
+    catalysts: arraySchema(objectSchema({
+      catalyst_name: stringSchema(),
+      expected_date_range: stringSchema(),
+      event_mechanism: stringSchema(),
+      probability: numberSchema(),
+      direction: enumStringSchema(["upside", "downside"]),
+      model_input_affected: stringSchema(),
+      evidence: stringSchema(),
+    })),
+  }),
+  expected_return_matrix: objectSchema({
+    artifact_type: literalStringSchema("expected_return_matrix"),
+    bear_return: numberSchema(),
+    base_return: numberSchema(),
+    bull_return: numberSchema(),
+    probability_weighted_return: numberSchema(),
+    no_rerating_return: numberSchema(),
+    weak_stock_outcome: numberSchema(),
+    permanent_loss_limit: numberSchema(),
+    dilution_omitted: booleanSchema(),
+  }),
+  thesis_breakers: objectSchema({
+    artifact_type: literalStringSchema("thesis_breakers"),
+    breakers: arraySchema(objectSchema({
+      name: stringSchema(),
+      threshold: stringSchema(),
+      model_consequence: stringSchema(),
+    })),
+  }),
+  monitoring_dashboard: objectSchema({
+    artifact_type: literalStringSchema("monitoring_dashboard"),
+    items: arraySchema(objectSchema({
+      kpi: stringSchema(),
+      process_node: stringSchema(),
+      current_level: numberSchema(),
+      bear_threshold: numberSchema(),
+      base_range: stringSchema(),
+      bull_threshold: numberSchema(),
+      reporting_frequency: stringSchema(),
+      model_input_affected: stringSchema(),
+      source_role: stringSchema(),
+    })),
+  }),
+  confidence_assessment: objectSchema({
+    artifact_type: literalStringSchema("confidence_assessment"),
+    data: numberSchema(),
+    history: numberSchema(),
+    process: numberSchema(),
+    moat: numberSchema(),
+    forecast: numberSchema(),
+    valuation: numberSchema(),
+    downside: numberSchema(),
+  }),
+  decision_record: objectSchema({
+    artifact_type: literalStringSchema("decision_record"),
+    decision: enumStringSchema(["approve", "reject", "pending"]),
+    rationale: stringSchema(),
+  }),
+});
 
 /** Contract: ai-reviewer output */
 export const AI_REVIEWER_CONTRACT = contract([

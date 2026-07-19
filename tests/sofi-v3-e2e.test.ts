@@ -270,7 +270,7 @@ describe("SOFI Mock End-to-End Acceptance (Component WP12)", { skip: process.env
       "segment_model",
       "customer_decision_map",
       "business_process_map",
-      "bottleneck_map",
+      "bottleneck_register",
       "competitive_response_matrix",
       "moat_assessment",
       "moat_attack_matrix",

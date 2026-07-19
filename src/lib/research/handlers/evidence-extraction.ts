@@ -8,7 +8,11 @@ import {
   loadAcceptedEvidencePacket,
   reconcileSourceGaps,
 } from "../system-pipeline";
-import { createSourceReaderBatches, mergeSourceReaderOutputs } from "../source-reader-batching";
+import {
+  createSourceReaderBatches,
+  mergeSourceReaderOutputs,
+  sourceReaderBatchFingerprint,
+} from "../source-reader-batching";
 import postgres from "postgres";
 
 const SOURCE_READER_OUTPUT_KEYS = [
@@ -86,11 +90,15 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
           `Return up to ${target} distinct, decision-relevant evidence claims supported by this batch. Never return schema examples or placeholder values.`,
           "Use only source_corpus in this packet. Do not invent or alter source or chunk identifiers.",
           "Prefer annual and quarterly SEC filings for financial facts.",
+          "Extract at least one decision-relevant claim from every substantive source_corpus chunk before taking additional claims from the same chunk.",
+          "For source_role=founder_and_company_history, prioritize the founder's identity, background, stated motivation, problem being solved, company origin, early constraints, and first proof point.",
+          "For source_role=industry_primary or peer_company_primary, prioritize independent industry structure and comparative evidence rather than repeating issuer claims.",
         ],
       });
 
       for (const batch of batches) {
-        const taskKey = `source-reader:batch:${batch.id}`;
+        const fingerprint = sourceReaderBatchFingerprint(batch);
+        const taskKey = `source-reader:batch:${batch.id}:${fingerprint}`;
         let output = await sql`
           SELECT output_json FROM research_tasks
           WHERE research_run_id = ${ctx.runId} AND task_key = ${taskKey} AND status = 'completed'
@@ -114,6 +122,17 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       let evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
 
       const usableClaims = (out: any) => Array.isArray(out?.evidence_claims) ? out.evidence_claims : [];
+      const hasFounderOriginClaim = (out: any) => usableClaims(out).some((claim: any) =>
+        claim?.source_role === "founder_and_company_history" ||
+        (
+          (sourcePacket as any[]).some(
+            (chunk) =>
+              chunk.source_role === "founder_and_company_history" &&
+              chunk.source_id === claim?.source_id
+          ) &&
+          /founder|founded|motivat|origin|professor|research program/i.test(String(claim?.claim_text || ""))
+        )
+      );
 
       if (usableClaims(evidenceOutput).length < evidenceTarget) {
         for (let index = 0; index < batches.length && usableClaims(evidenceOutput).length < evidenceTarget; index += 1) {
@@ -128,11 +147,58 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
             source_corpus: batch.chunks,
           };
           const gapOutput = await callResearchAgent<Record<string, unknown>>({
-            sql, ctx, stageKey: "evidence_extraction", taskKey: `source-reader:batch:${batch.id}:gap`,
+            sql, ctx, stageKey: "evidence_extraction",
+            taskKey: `source-reader:batch:${batch.id}:${sourceReaderBatchFingerprint(batch)}:gap`,
             taskType: "evidence_extraction_gap", agentName: "source-reader", modelTier: "cheap",
             packet: gapPacket, promptFactory: promptFactory(gapTarget),
           });
           outputs.push(gapOutput);
+          evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
+        }
+      }
+
+      if (!hasFounderOriginClaim(evidenceOutput)) {
+        const founderChunks = (sourcePacket as any[]).filter(
+          (chunk) => chunk.source_role === "founder_and_company_history"
+        );
+        if (founderChunks.length > 0) {
+          const [founderBatch] = createSourceReaderBatches(founderChunks, {
+            maxChunks: Math.max(1, founderChunks.length),
+            maxBytes: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_BYTES || 36_000),
+          });
+          const roleBatch = { ...founderBatch, id: "founder-origin" };
+          const founderOutput = await callResearchAgent<Record<string, unknown>>({
+            sql,
+            ctx,
+            stageKey: "evidence_extraction",
+            taskKey: `source-reader:role:founder-origin:${sourceReaderBatchFingerprint(roleBatch)}`,
+            taskType: "evidence_extraction_role_gap",
+            agentName: "source-reader",
+            modelTier: "cheap",
+            packet: {
+              asset: v2Ctx,
+              batch: {
+                id: roleBatch.id,
+                claim_target: Math.max(3, founderChunks.length),
+                required_source_role: "founder_and_company_history",
+              },
+              source_corpus: roleBatch.chunks,
+            },
+            promptFactory: (packet) => exactJsonPrompt({
+              agentName: "source-reader",
+              requiredKeys: [...SOURCE_READER_OUTPUT_KEYS],
+              packet,
+              extraRules: [
+                "Extract only directly supported founder and company-origin facts from source_corpus.",
+                "At least one claim must identify the founder or founding team and why the relevant technology or company was pursued.",
+                "Prioritize contemporary statements and university archives over later corporate narrative.",
+                "Each claim must copy source_id and document_chunk_id exactly and include claim_text, claim_type, claim_category, confidence, and the most precise available date.",
+                "Do not infer a financial, mission, status, or other motivation unless the source text directly supports it.",
+              ],
+            }),
+          });
+          outputs.push(founderOutput);
+          batches.push(roleBatch);
           evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
         }
       }
@@ -171,6 +237,29 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       const errors: string[] = [];
       if (Number(rows[0].cnt) === 0) {
         errors.push("No evidence claims extracted for this run");
+      }
+      const founderRows = await sql`
+        SELECT COUNT(DISTINCT ec.id) AS cnt
+        FROM evidence_claims ec
+        JOIN evidence_links el ON el.evidence_claim_id = ec.id
+        JOIN source_locations sl ON sl.id = el.source_location_id
+        JOIN source_role_assignments sra ON sra.source_document_id = sl.source_document_id
+        WHERE ec.research_run_id = ${ctx.runId}
+          AND ec.review_status = 'accepted'
+          AND sra.role = 'founder_and_company_history'
+          AND (
+            LOWER(ec.claim_text) LIKE '%founder%'
+            OR LOWER(ec.claim_text) LIKE '%josé%'
+            OR LOWER(ec.claim_text) LIKE '%jose%'
+            OR LOWER(ec.claim_text) LIKE '%motivat%'
+            OR LOWER(ec.claim_text) LIKE '%professor%'
+            OR LOWER(ec.claim_text) LIKE '%mission%'
+            OR LOWER(ec.claim_text) LIKE '%sacrifice%'
+            OR LOWER(ec.claim_text) LIKE '%lab to the market%'
+          )
+      `;
+      if (Number(founderRows[0]?.cnt || 0) === 0) {
+        errors.push("No accepted founder/origin evidence was extracted from founder_and_company_history sources");
       }
       return makeValidationResult(errors);
     } finally {

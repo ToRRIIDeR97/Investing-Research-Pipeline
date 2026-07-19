@@ -47,6 +47,27 @@ test("schema validation detects missing keys and wrong types", () => {
   assert.ok(validateSchema({ name: "x" }, schema).some((error) => error.path === "confidence"));
 });
 
+test("schema validation enforces enum and literal values", () => {
+  const format = {
+    schema: {
+      type: "object",
+      required: ["scenario_type", "artifact_type"],
+      properties: {
+        scenario_type: { type: "string", enum: ["bear", "base", "bull"] },
+        artifact_type: { type: "string", const: "operating_scenario_set" },
+      },
+    },
+  };
+  assert.equal(validateSchema({
+    scenario_type: "optimistic",
+    artifact_type: "scenario",
+  }, format).length, 2);
+  assert.equal(validateSchema({
+    scenario_type: "bull",
+    artifact_type: "operating_scenario_set",
+  }, format).length, 0);
+});
+
 test("local schema coercion wraps object arrays and maps confidence labels", () => {
   const schema = { schema: { type: "object", properties: {
     notes: { type: "array", items: { type: "object" } },

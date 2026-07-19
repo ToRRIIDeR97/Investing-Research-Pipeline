@@ -11,6 +11,7 @@ export interface SourceReaderChunk {
   document_parse_id?: string;
   document_chunk_id: string;
   source_type?: string;
+  source_role?: string;
   title?: string;
   section_title?: string;
   chunk_index?: number;
@@ -29,6 +30,13 @@ export interface SourceReaderBatch {
 export interface SourceReaderBatchOptions {
   maxChunks?: number;
   maxBytes?: number;
+}
+
+export function sourceReaderBatchFingerprint(batch: SourceReaderBatch): string {
+  return createHash("sha256")
+    .update(JSON.stringify(batch.chunks))
+    .digest("hex")
+    .slice(0, 12);
 }
 
 function records(value: unknown): Record<string, unknown>[] {
@@ -171,3 +179,4 @@ export function mergeSourceReaderOutputs(
     rejected_invalid_citations: rejected,
   };
 }
+import { createHash } from "node:crypto";

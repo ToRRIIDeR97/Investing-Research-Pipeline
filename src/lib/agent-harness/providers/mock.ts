@@ -266,11 +266,8 @@ function v3BusinessProcessResponse(packet: Record<string, unknown>) {
           regulation: "Banking rules",
           revenue_recognition_and_cash_conversion_chain: "Interest accrual",
           lender_details: {
-            loan_portfolio_type: "unsecured_personal_and_student",
-            interest_income_model: "fixed_and_variable_interest_income",
-            funding_cost_model: "deposit_interest_and_warehouse_fees",
-            credit_risk_model: "expected_credit_loss_and_charge_offs",
-            regulatory_capital_model: "cet1_ratio_requirements"
+            funding_cost: "Deposit interest and warehouse fees",
+            credit_losses: "Expected credit loss and charge-offs"
           }
         },
         {
@@ -287,12 +284,10 @@ function v3BusinessProcessResponse(packet: Record<string, unknown>) {
           regulation: "PCI DSS",
           revenue_recognition_and_cash_conversion_chain: "Monthly SaaS",
           marketplace_details: {
-            buyer_segment: "Fintech enterprise accounts",
-            seller_segment: "Galileo API consumers",
-            transaction_type: "digital_payment_clearing",
-            take_rate_model: "per_api_call_pricing",
-            frequency_model: "recurring_monthly_volume",
-            platform_value_add: "Core banking"
+            buyers: "Fintech enterprise accounts",
+            transactions: "Digital payment clearing",
+            gmv: "Payment volume processed",
+            take_rate: "Per API call pricing"
           }
         }
       ]
@@ -341,16 +336,16 @@ function v3BusinessProcessResponse(packet: Record<string, unknown>) {
         }
       ]
     },
-    bottleneck_map: {
+    bottleneck_register: {
       artifact_type: "bottleneck_register",
       bottlenecks: [
         {
-          process_node_key: "Lending origination",
-          constraint_description: "Underwriting rules",
-          impacted_metric_key: "lending_volume",
+          name: "Underwriting capacity",
+          description: "Manual and automated underwriting rules constrain throughput.",
+          capacity_limit: 100000,
+          unit: "applications per month",
+          current_utilization: 0.8,
           mitigation_strategy: "Machine learning model",
-          capital_required: 1000000,
-          time_to_resolve: "6 months"
         }
       ]
     },

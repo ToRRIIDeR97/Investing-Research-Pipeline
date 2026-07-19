@@ -245,15 +245,25 @@ export async function latestV3TaskOutput(
     LIMIT 1
   `;
   const output = rows[0]?.output_json;
-  return output && typeof output === "object" ? (output as Record<string, unknown>) : null;
+  if (output && typeof output === "object") return output as Record<string, unknown>;
+  if (typeof output === "string") {
+    try {
+      const parsed = JSON.parse(output);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 export async function completeV3Task(sql: Sql, taskId: string, output: unknown): Promise<void> {
-  const safe = JSON.stringify(output ?? {});
   await sql`
     UPDATE research_tasks
     SET status = 'completed',
-        output_json = ${safe}::jsonb,
+        output_json = ${sql.json((output ?? {}) as any)},
         failure_reason = NULL,
         completed_at = NOW(),
         updated_at = NOW()
@@ -284,6 +294,7 @@ export function exactJsonPrompt(params: {
     "",
     "Return exactly one JSON object. Do not return Markdown, prose, code fences, or nested wrapper objects.",
     `The top-level object must contain exactly these required keys: ${params.requiredKeys.join(", ")}.`,
+    "For every top-level artifact object, artifact_type must exactly equal its enclosing top-level key.",
     "If evidence is insufficient, return empty arrays for the relevant fields and explain gaps in source_gaps or unresolved fields.",
     ...(params.extraRules || []),
     "",

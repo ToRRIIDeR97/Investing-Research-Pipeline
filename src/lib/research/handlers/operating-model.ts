@@ -12,7 +12,7 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
-      const taskKey = "forecast-analyst:operating-model";
+      const taskKey = "forecast-analyst:operating-model:v2";
       const packet = {
         asset: {
           runId: ctx.runId,
@@ -23,6 +23,7 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
         },
         required_modules: ["operating_model_structure", "driver_tree_specification", "driver_tree"],
         output_contract: "operating_model",
+        output_schema: OPERATING_MODEL_CONTRACT.schema,
       };
 
       const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
@@ -31,6 +32,7 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
         packet: p,
         extraRules: [
           "Construct a driver-based forecast tree structure, mapping historical inputs to future drivers.",
+          "Follow output_schema exactly, including every nested required field and primitive type.",
         ],
       });
 

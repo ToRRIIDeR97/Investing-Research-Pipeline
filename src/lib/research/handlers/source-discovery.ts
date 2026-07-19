@@ -5,7 +5,13 @@ import { buildSourcePlan, planMissingRoles } from "../sources/planner";
 import { SOURCE_ROLES, type SourceRole } from "../sources/roles";
 import postgres from "postgres";
 
-function mapToSourceRole(sourceType: string, title: string): SourceRole {
+function mapToSourceRole(
+  sourceType: string,
+  title: string,
+  metadata?: Record<string, unknown>
+): SourceRole {
+  const explicitRole = String(metadata?.source_role || "");
+  if (SOURCE_ROLES.includes(explicitRole as SourceRole)) return explicitRole as SourceRole;
   const normType = sourceType.toLowerCase();
   const normTitle = title.toLowerCase();
 
@@ -89,8 +95,30 @@ export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
       const coveredRoles = new Set<SourceRole>();
       for (const source of sourceCorpus.sources) {
         if (source.sourceId.startsWith("candidate-")) continue;
-        const role = mapToSourceRole(source.sourceType, source.title || "");
+        const role = mapToSourceRole(source.sourceType, source.title || "", source.metadata);
         coveredRoles.add(role);
+
+        await sql`
+          INSERT INTO source_retrieval_attempts (
+            research_run_id, source_role, source_url, source_title,
+            attempt_status, attempt_metadata_json
+          )
+          SELECT
+            ${ctx.runId}, ${role}, ${source.url || null},
+            ${source.title || null}, 'fetched',
+            ${sql.json({
+              source_document_id: source.sourceId,
+              fetch_status: String(source.metadata?.fetch_status || "fetched"),
+              substantive: true,
+            })}
+          WHERE NOT EXISTS (
+            SELECT 1 FROM source_retrieval_attempts
+            WHERE research_run_id = ${ctx.runId}
+              AND source_role = ${role}
+              AND attempt_status = 'fetched'
+              AND source_title = ${source.title || null}
+          )
+        `;
 
         await sql`
           INSERT INTO source_role_assignments (
@@ -104,18 +132,20 @@ export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
 
         // Populate source_role_coverage
         for (const art of requiredArtifacts) {
-          const isRoleLinked = art.rationale?.toLowerCase().includes(role) || art.rationale?.toLowerCase().includes(role.replace(/_/g, " "));
-          const coverageStatus = isRoleLinked ? "covered" : "uncovered";
           await sql`
             INSERT INTO source_role_coverage (
               research_run_id, source_role, artifact_type, source_document_id,
               coverage_status, confidence, rationale, blocked_artifact_types
             ) VALUES (
               ${ctx.runId}, ${role}, ${art.artifact_type}, ${source.sourceId},
-              ${coverageStatus}, 100, 'Source document assigned', ${sql.json([])}
+              'covered', 100, 'Substantive source document assigned to role', ${sql.json([])}
             )
             ON CONFLICT (research_run_id, source_role, artifact_type) DO UPDATE
-            SET coverage_status = ${coverageStatus}, source_document_id = ${source.sourceId}
+            SET coverage_status = 'covered',
+                source_document_id = ${source.sourceId},
+                confidence = 100,
+                rationale = 'Substantive source document assigned to role',
+                updated_at = NOW()
           `;
         }
       }
@@ -127,6 +157,28 @@ export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
         description: `Required source role '${role}' is not covered by any fetched documents`,
         severity: "high",
       }));
+      for (const role of missingRoles) {
+        const planItem = sourcePlan.items.find((item) => item.source_role === role);
+        await sql`
+          INSERT INTO source_retrieval_attempts (
+            research_run_id, source_role, attempt_status,
+            failure_reason, attempt_metadata_json
+          )
+          SELECT
+            ${ctx.runId}, ${role}, 'unavailable', 'no_substantive_source_fetched',
+            ${sql.json({
+              generated_queries: planItem?.search_keywords || [],
+              artifact_types: planItem?.artifact_types || [],
+            })}
+          WHERE NOT EXISTS (
+            SELECT 1 FROM source_retrieval_attempts
+            WHERE research_run_id = ${ctx.runId}
+              AND source_role = ${role}
+              AND attempt_status = 'unavailable'
+              AND failure_reason = 'no_substantive_source_fetched'
+          )
+        `;
+      }
 
       await reconcileSourceGaps(sql, v2Ctx, { source_gaps: gaps }, "system:source-reader");
 

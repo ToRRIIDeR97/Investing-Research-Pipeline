@@ -12,7 +12,7 @@ export const moatAnalysisHandler: StageHandler<Record<string, unknown>> = {
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
-      const taskKey = "moat-analyst:assessment";
+      const taskKey = "moat-analyst:assessment:v2";
       const packet = {
         asset: {
           runId: ctx.runId,
@@ -23,6 +23,7 @@ export const moatAnalysisHandler: StageHandler<Record<string, unknown>> = {
         },
         required_modules: ["moat_durability", "competitive_advantage_sources"],
         output_contract: "moat_analysis",
+        output_schema: MOAT_CONTRACT.schema,
       };
 
       const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
@@ -31,6 +32,7 @@ export const moatAnalysisHandler: StageHandler<Record<string, unknown>> = {
         packet: p,
         extraRules: [
           "Assess moat sources: network effects, high switching costs, cost advantages, intangible assets.",
+          "Follow output_schema exactly, including every nested required field and primitive type.",
         ],
       });
 

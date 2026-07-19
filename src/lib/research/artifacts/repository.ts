@@ -70,7 +70,27 @@ export function createArtifactRepository(db: Db) {
         )
         .limit(1);
       if (existing.length > 0) {
-        return existing[0];
+        const current = existing[0];
+        if (["accepted", "superseded", "rejected"].includes(current.status)) {
+          return current;
+        }
+        const [updated] = await db
+          .update(research_artifacts)
+          .set({
+            profile_id: input.profile_id,
+            status: input.status,
+            content_json: input.content_json,
+            schema_version: input.schema_version,
+            validator_version: input.validator_version,
+            prompt_version: input.prompt_version,
+            validation_result_json: input.validation_result_json ?? {},
+            created_by: input.created_by,
+            supersedes_artifact_id: input.supersedes_artifact_id,
+            updated_at: new Date(),
+          })
+          .where(eq(research_artifacts.id, current.id))
+          .returning();
+        return updated;
       }
     }
 

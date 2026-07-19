@@ -12,7 +12,7 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
-      const taskKey = "forecast-analyst:scenarios";
+      const taskKey = "forecast-analyst:scenarios:v2";
       const packet = {
         asset: {
           runId: ctx.runId,
@@ -23,6 +23,7 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
         },
         required_modules: ["scenario_specifications", "bear_base_bull_ranges", "operating_scenarios"],
         output_contract: "operating_scenarios",
+        output_schema: OPERATING_SCENARIOS_CONTRACT.schema,
       };
 
       const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
@@ -31,6 +32,7 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
         packet: p,
         extraRules: [
           "Establish probabilistic base, bull, and bear scenario assumptions for all forecast drivers.",
+          "Follow output_schema exactly and return exactly one bear, one base, and one bull scenario.",
         ],
       });
 

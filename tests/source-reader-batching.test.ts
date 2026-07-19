@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   createSourceReaderBatches,
   mergeSourceReaderOutputs,
+  sourceReaderBatchFingerprint,
   type SourceReaderChunk,
 } from "../src/lib/research/source-reader-batching";
 
@@ -26,6 +27,16 @@ test("source-reader batching is stable and obeys chunk and byte ceilings", () =>
   assert.deepEqual(first.map((batch) => batch.id), ["01", "02", "03"]);
   assert.deepEqual(first.map((batch) => batch.chunks.length), [3, 3, 1]);
   assert.ok(first.every((batch) => batch.inputBytes <= 10_000));
+});
+
+test("source-reader task fingerprints reuse identical corpora and invalidate changed batches", () => {
+  const first = createSourceReaderBatches([chunk(0), chunk(1)])[0];
+  const same = createSourceReaderBatches([chunk(0), chunk(1)])[0];
+  const changedChunk = chunk(1);
+  changedChunk.content_excerpt = `${changedChunk.content_excerpt} new source material`;
+  const changed = createSourceReaderBatches([chunk(0), changedChunk])[0];
+  assert.equal(sourceReaderBatchFingerprint(first), sourceReaderBatchFingerprint(same));
+  assert.notEqual(sourceReaderBatchFingerprint(first), sourceReaderBatchFingerprint(changed));
 });
 
 test("source-reader merge rejects invented citations and deduplicates valid claims", () => {

@@ -25,6 +25,8 @@ import {
   SOURCE_READER_OUTPUT_KEYS,
   type SourceReaderChunk,
 } from "@/lib/research/source-reader-batching";
+import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
+import type { SourceRole } from "@/lib/research/sources/roles";
 
 type Sql = ReturnType<typeof postgres>;
 const execFileAsync = promisify(execFile);
@@ -73,6 +75,7 @@ export interface StoredSource {
   content: string;
   title: string;
   sourceType: string;
+  url?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -251,6 +254,8 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
   const retrievalTerms = [
     ...ctx.requiredModules, ...(contract?.requiredModules || []), ...(contract?.requiredMetricKeys || []),
     "segment", "working capital", "credit loss", "loan", "customer funds", "cash flow",
+    "founder", "founded", "company origin", "founder motivation", "company history",
+    "mission", "move from lab to market", "early funding", "first customer",
   ];
   const searchQuery = [...new Set(retrievalTerms.map((term) => term.replace(/_/g, " ").trim()).filter(Boolean))]
     .slice(0, 40).map((term) => `"${term.replace(/"/g, "")}"`).join(" OR ");
@@ -263,11 +268,18 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
     ), query AS (SELECT websearch_to_tsquery('english', ${searchQuery}) AS q), ranked_chunks AS (
       SELECT dc.id, dc.source_document_id, dc.document_parse_id, dc.chunk_index,
              dc.char_start, dc.char_end, dc.section_title, dc.text,
-             sd.title, sd.source_type,
+             sd.title, sd.source_type, role_assignment.role AS source_role,
              ts_rank_cd(to_tsvector('english', dc.text), query.q) AS relevance
       FROM document_chunks dc
       JOIN source_documents sd ON sd.id = dc.source_document_id
       JOIN latest_parses lp ON lp.id = dc.document_parse_id
+      LEFT JOIN LATERAL (
+        SELECT role
+        FROM source_role_assignments
+        WHERE source_document_id = sd.id
+        ORDER BY confidence DESC NULLS LAST, assigned_at ASC
+        LIMIT 1
+      ) role_assignment ON TRUE
       CROSS JOIN query
       WHERE dc.source_document_id = ANY(${sourceIds}::uuid[])
         AND (dc.chunk_index = 0 OR to_tsvector('english', dc.text) @@ query.q)
@@ -285,7 +297,9 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
   const selected = selectRelevantChunks(chunks, retrievalTerms, packetLimit, 3000);
   return ensureFilingFamilyCoverage(selected, chunks, retrievalTerms, packetLimit, 3000).map((chunk) => ({
     source_id: chunk.sourceId, document_parse_id: chunk.parseId, document_chunk_id: chunk.id,
-    source_type: chunk.sourceType, title: chunk.sourceTitle, section_title: chunk.sectionTitle,
+    source_type: chunk.sourceType,
+    source_role: String((rows.find((row) => String(row.id) === chunk.id)?.source_role) || ""),
+    title: chunk.sourceTitle, section_title: chunk.sectionTitle,
     chunk_index: chunk.chunkIndex, char_start: chunk.charStart, char_end: chunk.charEnd,
     content_excerpt: chunk.text,
   }));
@@ -968,6 +982,8 @@ async function fetchSecContext(ctx: RunContext) {
     cik,
     source: "SEC companyfacts and submissions APIs",
     entityName: companyFacts.entityName,
+    website: submissions.website || null,
+    investorWebsite: submissions.investorWebsite || null,
     companyFacts,
     revenue,
     netIncome,
@@ -1695,6 +1711,7 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
     content: content.slice(0, 60000),
     title: payload.title,
     sourceType: payload.sourceType,
+    url: payload.url,
     metadata: payload.metadata,
   };
 }
@@ -1702,10 +1719,45 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
 export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: unknown): Promise<StoredSourceCorpus> {
   const context = objectValue(secContext);
   const publisher = textValue(context.source, "Primary source context");
-  const [marketPayload, macroPayload, industryPayload] = await Promise.all([
+  const discoveryRoles: SourceRole[] = [
+    "company_investor_relations",
+    "earnings_release",
+    "founder_and_company_history",
+    "peer_company_primary",
+    "industry_primary",
+    "customer_or_channel",
+    "supplier_or_partner",
+    "regulatory_or_government",
+  ];
+  const configuredSeedUrls = String(process.env.RESEARCH_SOURCE_SEED_URLS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  let roleSeedUrls: Partial<Record<SourceRole, string[]>> = {};
+  try {
+    const configuredRoleSeeds = JSON.parse(process.env.RESEARCH_SOURCE_ROLE_SEEDS || "{}");
+    if (configuredRoleSeeds && typeof configuredRoleSeeds === "object" && !Array.isArray(configuredRoleSeeds)) {
+      roleSeedUrls = configuredRoleSeeds;
+    }
+  } catch {
+    throw new Error("RESEARCH_SOURCE_ROLE_SEEDS must be a JSON object of source-role URL arrays");
+  }
+  const seedUrls = [
+    textValue(context.investorWebsite),
+    textValue(context.website),
+    ...configuredSeedUrls,
+  ].filter(Boolean);
+  const [marketPayload, macroPayload, industryPayload, discoveredRolePayloads] = await Promise.all([
     marketSourcePayload(ctx),
     macroSourcePayload(ctx),
     industrySourcePayload(ctx),
+    discoverRoleSources({
+      assetName: ctx.assetName,
+      symbol: ctx.symbol,
+      cutoffAt: ctx.marketDataCutoffAt,
+      seedUrls,
+      roleSeedUrls,
+    }, discoveryRoles),
   ]);
   const basePayload: SourcePayload = {
     sourceType: "primary_source_context",
@@ -1740,6 +1792,7 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
     basePayload,
     ...filingPayloads,
     ...supplementalPayloads,
+    ...discoveredRolePayloads,
     ...(marketPayload ? [marketPayload] : []),
     ...(macroPayload ? [macroPayload] : []),
     ...(industryPayload ? [industryPayload] : []),
@@ -1872,6 +1925,7 @@ function exactJsonPrompt(params: {
     "",
     "Return exactly one JSON object. Do not return Markdown, prose, code fences, or nested wrapper objects.",
     `The top-level object must contain exactly these required keys: ${params.requiredKeys.join(", ")}.`,
+    "For every top-level artifact object, artifact_type must exactly equal its enclosing top-level key.",
     "If evidence is insufficient, return empty arrays for the relevant fields and explain gaps in source_gaps or unresolved fields.",
     ...(params.extraRules || []),
     "",

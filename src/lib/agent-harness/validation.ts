@@ -155,6 +155,16 @@ export function validateSchema(
         path,
         message: `Expected type ${JSON.stringify(schema.type)}, got ${typeof value} (${value})`,
       });
+    } else if (Array.isArray(schema.enum) && !schema.enum.includes(value)) {
+      errors.push({
+        path,
+        message: `Expected one of ${JSON.stringify(schema.enum)}, got ${JSON.stringify(value)}`,
+      });
+    } else if ("const" in schema && value !== schema.const) {
+      errors.push({
+        path,
+        message: `Expected literal ${JSON.stringify(schema.const)}, got ${JSON.stringify(value)}`,
+      });
     }
   }
 

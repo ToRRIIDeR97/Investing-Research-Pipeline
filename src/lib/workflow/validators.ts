@@ -551,7 +551,7 @@ export async function validateAssetProfile(
   try {
     // Get run + profile
     const runs = await sql`
-      SELECT rr.asset_id, rr.profile_id
+      SELECT rr.asset_id, rr.profile_id, rr.pipeline_version
       FROM research_runs rr
       WHERE rr.id = ${runId}
     `;
@@ -563,7 +563,7 @@ export async function validateAssetProfile(
         checkedAt: new Date().toISOString(),
       };
     }
-    const { profile_id } = runs[0];
+    const { profile_id, pipeline_version } = runs[0];
 
     // Fetch profile config
     const profiles = await sql`
@@ -622,8 +622,32 @@ export async function validateAssetProfile(
         WHERE research_run_id = ${runId}
       `;
       const attemptedModules = new Set(taskRows.map((r) => r.task_key));
+      const v3ModuleTaskTypes: Record<string, string[]> = {
+        business_segments: ["business_process_analysis"],
+        revenue_drivers: ["business_process_analysis", "operating_model"],
+        unit_economics: ["business_process_analysis"],
+        margins: ["historical_record", "operating_model"],
+        roic: ["historical_record", "operating_model"],
+        fcf: ["historical_record", "operating_model"],
+        capex: ["historical_record", "operating_model"],
+        working_capital: ["historical_record", "operating_model"],
+        net_debt: ["historical_record", "asset_valuation"],
+        share_count: ["historical_record", "asset_valuation"],
+        driver_based_dcf: ["asset_valuation"],
+        exit_multiple_dcf: ["asset_valuation"],
+        reverse_dcf: ["asset_valuation"],
+      };
+      const taskTypeRows = Number(pipeline_version || 1) >= 3
+        ? await sql`
+            SELECT DISTINCT task_type
+            FROM research_tasks
+            WHERE research_run_id = ${runId} AND status = 'completed'
+          `
+        : [];
+      const attemptedTaskTypes = new Set(taskTypeRows.map((row) => String(row.task_type)));
       for (const mod of requiredModules) {
-        if (!attemptedModules.has(mod)) {
+        const v3Covered = (v3ModuleTaskTypes[mod] || []).some((taskType) => attemptedTaskTypes.has(taskType));
+        if (!attemptedModules.has(mod) && !v3Covered) {
           errors.push(`Required module "${mod}" has no task created for this run`);
         }
       }
@@ -1008,7 +1032,7 @@ export async function validateV3BusinessProcess(runId: string): Promise<Validati
     { artifactType: "segment_model", label: "Segment model", validate: validateSegmentModel },
     { artifactType: "customer_decision_map", label: "Customer decision map", validate: validateCustomerDecisionMap },
     { artifactType: "business_process_map", label: "Business process map", validate: validateBusinessProcessMap },
-    { artifactType: "bottleneck_map", label: "Bottleneck map", validate: validateBottleneckRegister },
+    { artifactType: "bottleneck_register", label: "Bottleneck register", validate: validateBottleneckRegister },
     { artifactType: "competitive_response_matrix", label: "Competitive response matrix", validate: validateCompetitiveResponseMatrix },
   ]);
 }

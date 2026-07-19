@@ -6,13 +6,13 @@ import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { createHash } from "node:crypto";
 
 export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "ai_reviewer",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
-      const taskKey = "research-reviewer:review";
       const artifacts = await sql`
         SELECT artifact_type, content_json
         FROM research_artifacts
@@ -32,6 +32,10 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
           artifacts.map((artifact) => [artifact.artifact_type, artifact.content_json])
         ),
       };
+      const taskKey = `research-reviewer:review:v2:${createHash("sha256")
+        .update(JSON.stringify(packet))
+        .digest("hex")
+        .slice(0, 12)}`;
 
       const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
         agentName: "research-reviewer",
