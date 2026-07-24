@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { ResearchRunQueueError } from "@/lib/research/run-queue";
+import { ZodError } from "zod";
 
 export class ApiError extends Error {
   constructor(
@@ -16,6 +18,20 @@ export function handleApiError(error: unknown) {
     return NextResponse.json(
       { error: error.message, code: error.code },
       { status: error.statusCode }
+    );
+  }
+
+  if (error instanceof ResearchRunQueueError) {
+    return NextResponse.json(
+      { error: error.message, code: error.code },
+      { status: error.statusCode }
+    );
+  }
+
+  if (error instanceof ZodError) {
+    return NextResponse.json(
+      { error: "Validation failed", code: "VALIDATION_ERROR", details: error.flatten() },
+      { status: 400 }
     );
   }
 

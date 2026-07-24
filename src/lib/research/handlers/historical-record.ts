@@ -10,6 +10,7 @@ import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { CURRENT_PIPELINE_VERSION } from "../version";
 
 const NORMALIZER_OUTPUT_KEYS = [
   "normalized_observations",
@@ -39,7 +40,7 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
         requiredModules: ctx.composedProfile?.required_artifacts.map((a: any) => a.artifact_type) || [],
         requiredLenses: ctx.composedProfile?.valuation_methods.map((m: any) => m.method) || [],
         marketDataCutoffAt: ctx.marketDataCutoffAt ? ctx.marketDataCutoffAt.toISOString() : null,
-        pipelineVersion: 3,
+        pipelineVersion: CURRENT_PIPELINE_VERSION,
       };
 
       // 2. Load evidence claims

@@ -8,6 +8,7 @@ import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { createHash } from "node:crypto";
+import { CURRENT_PIPELINE_VERSION } from "../version";
 
 export const businessProcessAnalysisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "business_process_analysis",
@@ -26,7 +27,7 @@ export const businessProcessAnalysisHandler: StageHandler<Record<string, unknown
         requiredModules: [],
         requiredLenses: [],
         marketDataCutoffAt: ctx.marketDataCutoffAt?.toISOString() || null,
-        pipelineVersion: 3,
+        pipelineVersion: CURRENT_PIPELINE_VERSION,
       });
       const evidenceFingerprint = createHash("sha256")
         .update(JSON.stringify(evidenceClaims))

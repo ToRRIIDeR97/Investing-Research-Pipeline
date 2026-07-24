@@ -13,6 +13,7 @@ import { assertModelBudgetAvailable, recordModelCall } from "@/lib/agents/model-
 import { composeProfile } from "./archetypes/compose";
 import type { ComposedProfile } from "./archetypes/types";
 import type { ValidationResult } from "@/lib/workflow/validators";
+import { CURRENT_PIPELINE_VERSION } from "./version";
 export type { ValidationResult };
 
 export type Sql = ReturnType<typeof postgres>;
@@ -29,7 +30,7 @@ export interface ResearchRunContext {
   assetSlug: string;
   symbol: string;
   runType: string;
-  pipelineVersion: 3;
+  pipelineVersion: typeof CURRENT_PIPELINE_VERSION;
   cutoffAt: Date;
   marketDataCutoffAt: Date | null;
   profileId: string | null;
@@ -110,8 +111,8 @@ export async function loadRunContext(sql: Sql, runId: string): Promise<ResearchR
   const row = rows[0];
   if (!row) throw new Error(`Research run not found: ${runId}`);
   const pipelineVersion = Number(row.pipeline_version || 1);
-  if (pipelineVersion < 3) {
-    throw new Error(`Run ${runId} has unsupported pipeline_version ${pipelineVersion}. Only pipeline_version >= 3 is supported.`);
+  if (pipelineVersion !== CURRENT_PIPELINE_VERSION) {
+    throw new Error(`Run ${runId} has unsupported pipeline_version ${pipelineVersion}. Only pipeline_version ${CURRENT_PIPELINE_VERSION} is supported.`);
   }
 
   const metadata = asObject(row.metadata_json);
@@ -150,7 +151,7 @@ export async function loadRunContext(sql: Sql, runId: string): Promise<ResearchR
     assetSlug: row.slug,
     symbol: String(row.symbol || row.slug).toUpperCase(),
     runType: row.run_type,
-    pipelineVersion: 3,
+    pipelineVersion: CURRENT_PIPELINE_VERSION,
     cutoffAt,
     marketDataCutoffAt: row.market_data_cutoff_at ? new Date(row.market_data_cutoff_at) : null,
     profileId: row.profile_id,
@@ -222,7 +223,7 @@ export async function createV3Task(
       status, priority, input_json, started_at
     ) VALUES (
       ${runId}, ${stage[0].id}, ${taskKey}, ${taskType}, ${agentName},
-      'running', 80, '{"system_generated":true,"pipeline_version":3}'::jsonb, NOW()
+      'running', 80, ${JSON.stringify({ system_generated: true, pipeline_version: CURRENT_PIPELINE_VERSION })}::jsonb, NOW()
     )
     RETURNING id, stage_id
   `;
@@ -263,7 +264,7 @@ export async function completeV3Task(sql: Sql, taskId: string, output: unknown):
   await sql`
     UPDATE research_tasks
     SET status = 'completed',
-        output_json = ${sql.json((output ?? {}) as any)},
+        output_json = ${JSON.stringify(output ?? {})}::jsonb,
         failure_reason = NULL,
         completed_at = NOW(),
         updated_at = NOW()

@@ -4,6 +4,7 @@ import { fetchProfileResearchContext, storeSourceCorpus, reconcileSourceGaps } f
 import { buildSourcePlan, planMissingRoles } from "../sources/planner";
 import { SOURCE_ROLES, type SourceRole } from "../sources/roles";
 import postgres from "postgres";
+import { CURRENT_PIPELINE_VERSION } from "../version";
 
 function mapToSourceRole(
   sourceType: string,
@@ -78,7 +79,7 @@ export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
         requiredModules: ctx.composedProfile?.required_artifacts.map((a: any) => a.artifact_type) || [],
         requiredLenses: ctx.composedProfile?.valuation_methods.map((m: any) => m.method) || [],
         marketDataCutoffAt: ctx.marketDataCutoffAt ? ctx.marketDataCutoffAt.toISOString() : null,
-        pipelineVersion: 3,
+        pipelineVersion: CURRENT_PIPELINE_VERSION,
       };
 
       // 2. Fetch public/SEC context

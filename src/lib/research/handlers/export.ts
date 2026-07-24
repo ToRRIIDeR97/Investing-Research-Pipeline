@@ -3,6 +3,7 @@ import { makeValidationResult } from "../run-context";
 import { generateReport } from "@/lib/export/report-generator";
 import type { ResearchReportData } from "@/lib/export/report-generator";
 import postgres from "postgres";
+import { CURRENT_PIPELINE_VERSION } from "../version";
 
 export const exportHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "export",
@@ -180,6 +181,24 @@ export const exportHandler: StageHandler<Record<string, unknown>> = {
         data: reportData,
         generatedBy: "system-research-os",
       });
+
+      // Keep the durable export index in sync with the report artifact. The
+      // index is the compatibility/read-model surface used by workflow gates
+      // and downstream package builders.
+      await sql`
+        INSERT INTO exports (
+          asset_id, research_run_id, export_type, template_version,
+          storage_path, content_hash, generated_by, generated_at, metadata_json
+        )
+        SELECT
+          ${ctx.assetId}, ${ctx.runId}, 'markdown_memo', '3.0.0',
+          ${result.storagePath}, ${result.contentHash}, 'system-research-os', NOW(),
+          ${JSON.stringify({ exportId: result.exportId, pipelineVersion: CURRENT_PIPELINE_VERSION })}::jsonb
+        WHERE NOT EXISTS (
+          SELECT 1 FROM exports
+          WHERE research_run_id = ${ctx.runId} AND export_type = 'markdown_memo'
+        )
+      `;
 
       // Idempotent: only insert if no synthetic report exists for this run
       const existing = await sql`

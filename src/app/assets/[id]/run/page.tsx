@@ -27,7 +27,18 @@ interface Message {
 
 interface RunProgress {
   runId: string;
+  pipelineVersion: number;
   status: string;
+  latestJob: {
+    id: string;
+    status: string;
+    attempt_count: number;
+    failure_reason: string | null;
+    result_json: Record<string, unknown> | null;
+  } | null;
+  workerHealthy: boolean;
+  sourceRoleCount: number;
+  budgetLimit: number | null;
   currentStage: string | null;
   stages: {
     id: string;
@@ -739,6 +750,66 @@ function Timeline({ events }: { events: TimelineEvent[] }) {
   );
 }
 
+function ResearchPlanCard({ plan }: { plan: Record<string, any> | null }) {
+  if (!plan) {
+    return <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">Research plan is still being prepared.</div>;
+  }
+  const list = (value: unknown) => Array.isArray(value) ? value : [];
+  return (
+    <div className="flex-1 overflow-y-auto p-6">
+      <div className="mx-auto max-w-5xl space-y-4">
+        <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Research plan gate</div>
+              <h1 className="mt-1 text-xl font-bold text-black">Review the persisted v3 plan</h1>
+              <p className="mt-2 text-sm text-gray-500">{plan.research_question || "No research question recorded."}</p>
+            </div>
+            <StatusBadge status="waiting_for_human" />
+          </div>
+          <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+            <MetricTile label="Stages" value={String(list(plan.applicable_stages).length)} detail="profile-derived" icon={Layers3} />
+            <MetricTile label="Source roles" value={String(list(plan.required_source_roles).length)} detail="required roles" icon={Database} />
+            <MetricTile label="Modules" value={String(list(plan.required_analysis_modules).length)} detail="analysis outputs" icon={FileText} />
+            <MetricTile label="Budget" value={plan.budget?.limit_usd ? `$${plan.budget.limit_usd}` : "Open"} detail="server-stored limit" icon={Gauge} />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <PlanList title="Composed profile" values={[...(list(plan.composed_archetypes).map(String)), ...(list(plan.overlays).map((value) => `Overlay: ${value}`))]} />
+          <PlanList title="Valuation methods" values={list(plan.valuation_methods).map((method) => `${method.method || method.method_key || "method"}: ${method.allowed === false ? "forbidden" : "allowed"}`)} />
+          <PlanList title="Required source roles" values={list(plan.required_source_roles).map((role) => `${role.role} — ${role.required === false ? "optional" : "required"}`)} />
+          <PlanList title="Required analysis modules" values={list(plan.required_analysis_modules).map((module) => `${module.artifact_type} — ${module.required === false ? "optional" : "required"}`)} />
+        </div>
+        <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">Applicable stages</div>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            {list(plan.applicable_stages).map((stage) => (
+              <div key={stage.key} className="flex items-center gap-2 rounded border border-gray-100 bg-[#fbfcfd] px-3 py-2 text-xs">
+                <span className="font-mono text-gray-400">{String(stage.order).padStart(2, "0")}</span>
+                <span className="font-semibold text-gray-700">{stage.name || humanize(stage.key)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 text-xs text-gray-500">
+            Source cutoff: {plan.cutoffs?.source_cutoff_at ? new Date(plan.cutoffs.source_cutoff_at).toLocaleString() : "not set"} · Market cutoff: {plan.cutoffs?.market_data_cutoff_at ? new Date(plan.cutoffs.market_data_cutoff_at).toLocaleString() : "not set"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlanList({ title, values }: { title: string; values: string[] }) {
+  return (
+    <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-gray-400">{title}</div>
+      {values.length === 0 ? <div className="text-xs text-gray-400">No persisted entries.</div> : (
+        <ul className="space-y-1 text-xs text-gray-600">{values.map((value, index) => <li key={`${value}-${index}`}>• {value}</li>)}</ul>
+      )}
+    </div>
+  );
+}
+
 function ResearchTheater({
   assetName,
   progress,
@@ -770,7 +841,8 @@ function ResearchTheater({
               {assetName || "Research Run"}
             </h1>
             <p className="mt-1 max-w-2xl text-[12px] leading-5 text-gray-500">
-              Run {compactId(progress.runId)} · {humanize(progress.status)}
+              Run {compactId(progress.runId)} · v{progress.pipelineVersion} · {humanize(progress.status)} · {progress.latestJob ? `job ${humanize(progress.latestJob.status)}` : "no job"}
+              {!progress.workerHealthy && progress.latestJob?.status === "queued" ? " · waiting for worker" : ""}
               {progress.marketDataCutoffAt
                 ? ` · data cutoff ${new Date(progress.marketDataCutoffAt).toLocaleDateString()}`
                 : ""}
@@ -831,7 +903,11 @@ export default function RunResearchPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [assetName, setAssetName] = useState("");
-  const [researchPlan, setResearchPlan] = useState<string | null>(null);
+  const [researchPlan, setResearchPlan] = useState<Record<string, any> | null>(null);
+  const [planChangeNotes, setPlanChangeNotes] = useState("");
+  const [sourceCutoffAt, setSourceCutoffAt] = useState("");
+  const [marketDataCutoffAt, setMarketDataCutoffAt] = useState("");
+  const [budgetLimitUsd, setBudgetLimitUsd] = useState("");
   const [runType, setRunType] = useState("deep_dive");
   const [runId, setRunId] = useState<string | null>(null);
   const [progress, setProgress] = useState<RunProgress | null>(null);
@@ -912,56 +988,16 @@ export default function RunResearchPage() {
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setIsProcessing(true);
 
-    if (phase === "intake") {
-      // Generate a research plan based on user input
-      const plan = generateResearchPlan(userMessage);
-      setResearchPlan(plan);
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: plan },
-      ]);
-      setPhase("plan");
-    }
+    if (phase === "intake") await createAndStartRun(userMessage);
 
     setIsProcessing(false);
   }
 
-  function generateResearchPlan(userInput: string): string {
-    const isDCF = !userInput.toLowerCase().includes("bitcoin") &&
-      !userInput.toLowerCase().includes("crypto");
-
-    return `## Research Plan
-
-**Asset**: ${assetName}
-**Run Type**: ${runType.replace(/_/g, " ")}
-**Detected Profile**: ${isDCF ? "Operating Company" : "Bitcoin / Crypto Asset"}
-
-### Planned Stages:
-1. **Intake** — Understand research intent ✓
-2. **Asset Identity** — Confirm asset profile and classification
-3. **Research Plan** — Approve this plan
-4. **Source Discovery** — Find relevant filings, reports, data sources
-5. **Source Ingestion** — Parse and extract text/tables from sources
-6. **Evidence Extraction** — Extract fact/estimate/assumption/opinion claims with source links
-7. **Metric Normalization** — Standardize financial metrics and observations
-8. **Asset Analysis** — ${isDCF ? "Business segments, revenue drivers, margins, competitive position" : "Network metrics, adoption, liquidity cycle, regulatory landscape"}
-9. **Asset Valuation** — ${isDCF ? "DCF, reverse DCF, PE, EV/EBITDA signals" : "MVRV, realized price, drawdown, flow signals (DCF not applicable)"}
-10. **Thesis & Risks** — Synthesize investment thesis, drivers, and key risks
-11. **Review** — AI reviewer checks, then human approval
-12. **Export** — Generate research memo
-
-### Research Question:
-${userInput}
-
-Ready to start research?`;
-  }
-
-  async function handleApprovePlan() {
-    setPhase("pipeline");
+  async function createAndStartRun(userMessage: string) {
     setIsProcessing(true);
     setMessages((prev) => [
       ...prev,
-      { role: "system", content: "Starting research pipeline..." },
+      { role: "system", content: "Creating v3 run and queueing the durable worker job..." },
     ]);
 
     try {
@@ -971,18 +1007,31 @@ Ready to start research?`;
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           run_type: runType,
-          research_question: messages.find((m) => m.role === "user")?.content || "",
+          research_question: userMessage,
           requested_by: "user",
+          ...(sourceCutoffAt ? { source_cutoff_at: new Date(sourceCutoffAt).toISOString() } : {}),
+          ...(marketDataCutoffAt ? { market_data_cutoff_at: new Date(marketDataCutoffAt).toISOString() } : {}),
+          ...(budgetLimitUsd ? { budget_limit_usd: Number(budgetLimitUsd) } : {}),
         }),
       });
+      if (!res.ok) throw new Error((await res.json()).error || "Unable to create run");
       const run = await res.json();
       setRunId(run.id);
+      setPhase("pipeline");
+
+      const startRes = await fetch(`/api/research-runs/${run.id}/run-system-pipeline`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requested_by: "user" }),
+      });
+      if (!startRes.ok) throw new Error((await startRes.json()).error || "Unable to queue run");
+      const queued = await startRes.json();
 
       setMessages((prev) => [
         ...prev,
         {
           role: "system",
-          content: `Research run created: ${run.id}\nStatus: ${run.status}\nStages initialized.`,
+          content: `Research run created: ${run.id}\nPipeline version: ${run.pipeline_version}\nJob queued: ${queued.jobId}`,
         },
       ]);
 
@@ -998,9 +1047,51 @@ Ready to start research?`;
     }
   }
 
+  async function handleApprovePlan() {
+    if (!runId) return;
+    setIsProcessing(true);
+    try {
+      const res = await fetch(`/api/research-runs/${runId}/approve-plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approved_by: "user" }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Unable to approve plan");
+      setPhase("pipeline");
+      setMessages((prev) => [...prev, { role: "system", content: `Plan approved. Resume job queued: ${body.jobId}` }]);
+      fetchProgress(runId);
+    } catch (error) {
+      setMessages((prev) => [...prev, { role: "system", content: `Plan approval error: ${error instanceof Error ? error.message : String(error)}` }]);
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
+  async function handleRequestPlanChanges() {
+    if (!runId || !planChangeNotes.trim()) return;
+    setIsProcessing(true);
+    try {
+      const res = await fetch(`/api/research-runs/${runId}/request-plan-changes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: planChangeNotes.trim(), requested_by: "user" }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Unable to save plan changes");
+      setMessages((prev) => [...prev, { role: "system", content: "Plan-change notes saved. The run remains at the research-plan gate." }]);
+      setPlanChangeNotes("");
+      fetchProgress(runId);
+    } catch (error) {
+      setMessages((prev) => [...prev, { role: "system", content: `Plan-change error: ${error instanceof Error ? error.message : String(error)}` }]);
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
   async function fetchProgress(id: string) {
     try {
-      const [runRes, qualityRes, sourcesRes, tracesRes, modelCallsRes, backtestsRes] =
+      const [runRes, qualityRes, sourcesRes, tracesRes, modelCallsRes, backtestsRes, jobsRes, artifactsRes] =
         await Promise.all([
           fetch(`/api/research-runs/${id}`),
           fetch(`/api/research-runs/${id}/quality`),
@@ -1008,6 +1099,8 @@ Ready to start research?`;
           fetch(`/api/research-runs/${id}/agent-traces`),
           fetch(`/api/research-runs/${id}/model-calls`),
           fetch(`/api/research-runs/${id}/backtests`),
+          fetch(`/api/research-runs/${id}/jobs`),
+          fetch(`/api/research-runs/${id}/artifacts`),
         ]);
 
       const data = await runRes.json();
@@ -1016,10 +1109,22 @@ Ready to start research?`;
       const traces = tracesRes.ok ? await tracesRes.json() : [];
       const modelCalls = modelCallsRes.ok ? await modelCallsRes.json() : [];
       const backtests = backtestsRes.ok ? await backtestsRes.json() : [];
+      const jobsData = jobsRes.ok ? await jobsRes.json() : { latestJob: null, workers: [] };
+      const artifactsData = artifactsRes.ok ? await artifactsRes.json() : { artifacts: [] };
+      const planArtifact = (artifactsData.artifacts || []).find((artifact: any) => artifact.type === "research_plan");
+      const planWaiting = data.stages?.some((stage: any) => stage.stage_key === "research_plan" && stage.status === "waiting_for_human");
+      if (planArtifact) setResearchPlan(planArtifact.content || planArtifact.content_json || null);
+      if (planWaiting) setPhase("plan");
+      else if (phase === "plan") setPhase("pipeline");
 
       setProgress({
         runId: data.id,
+        pipelineVersion: Number(data.pipeline_version || 0),
         status: data.status,
+        latestJob: jobsData.latestJob || data.latest_job || null,
+        workerHealthy: Boolean(data.worker_health?.healthy || (jobsData.workers || []).some((worker: any) => worker.status === "healthy" && !worker.stale)),
+        sourceRoleCount: Number(data.source_role_count || new Set((data.source_role_coverage || []).map((row: any) => row.source_role)).size),
+        budgetLimit: data.budget_limit_usd ? Number(data.budget_limit_usd) : null,
         currentStage: data.stages?.find((s: any) => s.status === "running")?.stage_key || null,
         stages: data.stages?.map((s: any) => ({
           id: s.id,
@@ -1226,6 +1331,11 @@ Ready to start research?`;
             <option value="thesis_investigation">Thesis Investigation</option>
             <option value="full_initiation_report">Full Initiation Report</option>
           </select>
+          <div className="mt-2 grid grid-cols-3 gap-1">
+            <input type="datetime-local" value={sourceCutoffAt} onChange={(event) => setSourceCutoffAt(event.target.value)} title="Source cutoff" className="w-full rounded border border-gray-200 px-2 py-1 text-[10px] text-gray-500" />
+            <input type="datetime-local" value={marketDataCutoffAt} onChange={(event) => setMarketDataCutoffAt(event.target.value)} title="Market-data cutoff" className="w-full rounded border border-gray-200 px-2 py-1 text-[10px] text-gray-500" />
+            <input type="number" min="0" step="0.01" value={budgetLimitUsd} onChange={(event) => setBudgetLimitUsd(event.target.value)} placeholder="Budget $" className="w-full rounded border border-gray-200 px-2 py-1 text-[10px] text-gray-500" />
+          </div>
         </div>
       </div>
 
@@ -1241,6 +1351,8 @@ Ready to start research?`;
               messages={messages}
               quality={quality}
             />
+          ) : phase === "plan" && progress ? (
+            <ResearchPlanCard plan={researchPlan} />
           ) : (
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
             {messages.length === 0 && (
@@ -1305,7 +1417,15 @@ Ready to start research?`;
           {/* User Input controls */}
           <div className="border-t border-[#eef2f6] bg-white p-4.5 shrink-0 shadow-sm">
             {phase === "plan" && (
-              <div className="mb-4 flex gap-2">
+              <div className="mb-4 space-y-2">
+                <textarea
+                  value={planChangeNotes}
+                  onChange={(event) => setPlanChangeNotes(event.target.value)}
+                  placeholder="Optional notes for requested plan changes"
+                  className="min-h-16 w-full rounded-md border border-gray-200 bg-[#fbfcfd] px-3 py-2 text-xs outline-none focus:border-gray-400"
+                  disabled={isProcessing}
+                />
+                <div className="flex gap-2">
                 <button
                   onClick={handleApprovePlan}
                   className="rounded-full bg-emerald-600 px-5 py-2 text-[12px] font-bold text-white hover:bg-emerald-700 shadow-sm transition-all flex items-center gap-1.5"
@@ -1317,14 +1437,13 @@ Ready to start research?`;
                   <span>Approve & Start Research</span>
                 </button>
                 <button
-                  onClick={() => {
-                    setPhase("intake");
-                    setResearchPlan(null);
-                  }}
+                  onClick={handleRequestPlanChanges}
+                  disabled={isProcessing || !planChangeNotes.trim()}
                   className="rounded-full border border-gray-200 bg-white px-5 py-2 text-[12px] font-bold text-gray-600 hover:text-black hover:border-gray-300 transition-all"
                 >
-                  Modify Plan
+                  Request Changes
                 </button>
+                </div>
               </div>
             )}
             

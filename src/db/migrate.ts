@@ -17,6 +17,7 @@ import * as researchV2Schema from "./schema/research-v2";
 import * as researchArtifactsSchema from "./schema/research-artifacts";
 import * as sourceIntelligenceSchema from "./schema/source-intelligence";
 import * as marketDataSchema from "./schema/market-data";
+import * as researchRunJobsSchema from "./schema/research-run-jobs";
 
 function loadEnvFile(fileName: string) {
   const path = resolve(process.cwd(), fileName);
@@ -51,6 +52,7 @@ const schema = {
   ...researchArtifactsSchema,
   ...sourceIntelligenceSchema,
   ...marketDataSchema,
+  ...researchRunJobsSchema,
 };
 
 async function main() {

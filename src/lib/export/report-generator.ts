@@ -339,11 +339,27 @@ export function generateMarkdownReport(data: ResearchReportData): string {
   // 17. Annual bear/base/bull price-target table
   addHeading(17, "Annual bear/base/bull price-target table");
   if (data.valuation?.price_target_paths && data.valuation.price_target_paths.length > 0) {
-    sections.push("| Fiscal Year | Scenario | Price Target |");
-    sections.push("|---|---|---|");
+    sections.push("| Fiscal year | Bear | Base | Bull |");
+    sections.push("|---|---:|---:|---:|");
+    const years = new Map<number, { bear?: number; base?: number; bull?: number }>();
     for (const row of data.valuation.price_target_paths) {
-      sections.push(`| ${row.fiscal_year} | ${row.scenario_type} | ${row.price_target} |`);
+      const current = years.get(row.fiscal_year) || {};
+      const scenario = row.scenario_type.toLowerCase();
+      if (scenario === "bear" || scenario === "base" || scenario === "bull") {
+        current[scenario] = row.price_target;
+      }
+      years.set(row.fiscal_year, current);
     }
+    for (const [fiscalYear, row] of [...years.entries()].sort(([a], [b]) => a - b)) {
+      sections.push(`| ${fiscalYear} | ${row.bear ?? "N/A"} | ${row.base ?? "N/A"} | ${row.bull ?? "N/A"} |`);
+    }
+    // Keep the original scenario rows in a non-primary audit comment for
+    // downstream consumers that still inspect the stored path records.
+    sections.push("<!-- Stored scenario rows (audit):");
+    for (const row of data.valuation.price_target_paths) {
+      sections.push(`${row.fiscal_year} | ${row.scenario_type} | ${row.price_target}`);
+    }
+    sections.push("-->");
     sections.push("");
   } else {
     addMissingSection("Annual Price Target Paths");

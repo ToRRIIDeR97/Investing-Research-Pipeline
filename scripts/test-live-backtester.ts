@@ -4,6 +4,7 @@ import {
 } from "../src/lib/backtesting/framework-runner";
 import { generateStrategyCombinations } from "../src/lib/backtesting/framework";
 import type { ResearchRunContext } from "../src/lib/research/run-context";
+import { CURRENT_PIPELINE_VERSION } from "../src/lib/research/version";
 
 async function main() {
   const cutoff = new Date();
@@ -33,7 +34,7 @@ async function main() {
     assetSlug: symbol.toLowerCase(),
     symbol,
     runType: "full_initiation_report",
-    pipelineVersion: 3,
+    pipelineVersion: CURRENT_PIPELINE_VERSION,
     cutoffAt: cutoff,
     marketDataCutoffAt: cutoff,
     profileId: null,

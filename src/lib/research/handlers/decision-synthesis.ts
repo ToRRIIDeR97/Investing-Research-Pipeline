@@ -9,6 +9,7 @@ import postgres from "postgres";
 import { loadAcceptedEvidencePacket } from "../system-pipeline";
 import { createHash } from "node:crypto";
 import { validateArtifactCitationIds } from "../sources/artifact-evidence";
+import { CURRENT_PIPELINE_VERSION } from "../version";
 
 export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "decision_synthesis",
@@ -21,7 +22,7 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
         profileId: ctx.profileId || "", profileKey: ctx.profileKey || "",
         requiredModules: [], requiredLenses: [],
         marketDataCutoffAt: ctx.marketDataCutoffAt?.toISOString() || null,
-        pipelineVersion: 3,
+        pipelineVersion: CURRENT_PIPELINE_VERSION,
       });
       const [backtestReview] = await sql`
         SELECT content_json

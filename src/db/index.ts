@@ -12,6 +12,7 @@ import * as aiSchema from "./schema/ai";
 import * as backtestingSchema from "./schema/backtesting";
 import * as researchV2Schema from "./schema/research-v2";
 import * as researchArtifactsSchema from "./schema/research-artifacts";
+import * as researchRunJobsSchema from "./schema/research-run-jobs";
 
 export const schema = {
   ...coreSchema,
@@ -26,6 +27,7 @@ export const schema = {
   ...backtestingSchema,
   ...researchV2Schema,
   ...researchArtifactsSchema,
+  ...researchRunJobsSchema,
 };
 
 const connectionString = process.env.DATABASE_URL!;

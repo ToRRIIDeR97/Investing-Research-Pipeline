@@ -27,6 +27,7 @@ import {
 } from "@/lib/research/source-reader-batching";
 import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
 import type { SourceRole } from "@/lib/research/sources/roles";
+import { CURRENT_PIPELINE_VERSION } from "@/lib/research/version";
 
 type Sql = ReturnType<typeof postgres>;
 const execFileAsync = promisify(execFile);
@@ -3472,10 +3473,10 @@ export async function runSystemResearchPipeline(runId: string): Promise<SystemPi
     `;
     if (!rows[0]) throw new Error(`Research run not found: ${runId}`);
     const pipelineVersion = Number(rows[0].pipeline_version || 1);
-    if (pipelineVersion < 3) {
+    if (pipelineVersion !== CURRENT_PIPELINE_VERSION) {
       throw new Error(
         `Run ${runId} has unsupported pipeline_version ${pipelineVersion}. ` +
-        `Only pipeline_version >= 3 is supported. Please create a new research run.`
+        `Only pipeline_version ${CURRENT_PIPELINE_VERSION} is supported. Please create a new research run.`
       );
     }
     const { runResearchPipeline } = await import("./pipeline-runner");

@@ -87,6 +87,19 @@ function assetFromPacket(packet: Record<string, unknown>) {
   return { name, requiredModules };
 }
 
+function evidenceClaimIdFromPacket(packet: Record<string, unknown>) {
+  const allowedClaimIds = Array.isArray(packet.allowed_evidence_claim_ids)
+    ? packet.allowed_evidence_claim_ids.map(String).filter(Boolean)
+    : [];
+  const packetClaimIds = Array.isArray(packet.evidence_claims)
+    ? packet.evidence_claims
+      .filter((claim): claim is Record<string, unknown> => Boolean(claim) && typeof claim === "object")
+      .map((claim) => String(claim.id || ""))
+      .filter(Boolean)
+    : [];
+  return allowedClaimIds[0] || packetClaimIds[0] || "00000000-0000-4000-8000-000000000001";
+}
+
 function sourceReaderResponse(packet: Record<string, unknown>) {
   const sources = Array.isArray(packet.source_corpus) ? packet.source_corpus as Array<Record<string, unknown>> : [];
   const asset = assetFromPacket(packet);
@@ -133,7 +146,7 @@ function analystResponse(packet: Record<string, unknown>) {
 
 function v3CompanyGenesisResponse(packet: Record<string, unknown>) {
   const asset = assetFromPacket(packet);
-  const claimId = "00000000-0000-4000-8000-000000000001";
+  const claimId = evidenceClaimIdFromPacket(packet);
   return {
     company_genesis: {
       artifact_type: "company_genesis",
@@ -218,7 +231,7 @@ function v3CompanyGenesisResponse(packet: Record<string, unknown>) {
 }
 
 function v3HistoricalDiagnosisResponse(packet: Record<string, unknown>) {
-  const claimId = "00000000-0000-4000-8000-000000000001";
+  const claimId = evidenceClaimIdFromPacket(packet);
   return {
     historical_diagnosis: {
       artifact_type: "historical_diagnosis",
@@ -247,7 +260,7 @@ function v3HistoricalDiagnosisResponse(packet: Record<string, unknown>) {
 }
 
 function v3BusinessProcessResponse(packet: Record<string, unknown>) {
-  const claimId = "00000000-0000-4000-8000-000000000001";
+  const claimId = evidenceClaimIdFromPacket(packet);
   return {
     segment_model: {
       artifact_type: "segment_model",
@@ -366,7 +379,7 @@ function v3BusinessProcessResponse(packet: Record<string, unknown>) {
             },
             {
               scenario_name: "Market share loss response",
-              threat_description: "Peer loses market share",
+              threat_description: "Peer loses share",
               response_mechanism: "Peer cuts prices",
               time_to_response: "2 months",
               financial_impact: "-2% NIM"
@@ -455,7 +468,7 @@ function v3OperatingModelResponse(packet: Record<string, unknown>) {
           forecast_operating_income: 400000000
         }
       ],
-      consolidated_revenue: 2000000000,
+      consolidated_revenue: 1200000000,
       consolidated_operating_income: 500000000,
       credit_capital_required: 150000000,
       balance_sheet_effect_present: true
@@ -789,7 +802,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
 }
 
 function v3DecisionResponse(packet: Record<string, unknown>) {
-  const claimId = "00000000-0000-4000-8000-000000000001";
+  const claimId = evidenceClaimIdFromPacket(packet);
   return {
     investment_thesis: {
       artifact_type: "investment_thesis",

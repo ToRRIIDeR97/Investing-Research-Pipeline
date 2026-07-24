@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { research_runs } from "@/db/schema/workflow";
 import { handleApiError, createdResponse, ApiError } from "@/lib/api/errors";
 import { eq } from "drizzle-orm";
-import { createStagesForRun } from "@/lib/workflow/orchestrator";
+import { createResearchRunWithStages } from "@/lib/research/run-service";
 
 export async function POST(
   request: NextRequest,
@@ -35,22 +35,17 @@ export async function POST(
     };
 
     // Create a new research run, copying asset_id from the original
-    const [newRun] = await db
-      .insert(research_runs)
-      .values({
-        asset_id: originalRun.asset_id,
-        run_type,
-        profile_id: originalRun.profile_id,
-        profile_version: originalRun.profile_version,
-        source_cutoff_at: source_cutoff_at ? new Date(source_cutoff_at) : null,
-        market_data_cutoff_at: market_data_cutoff_at
-          ? new Date(market_data_cutoff_at)
-          : null,
-      })
-      .returning();
-
-    // Create all workflow stages, including explicit skipped stages for auditability.
-    await createStagesForRun(newRun.id);
+    const newRun = await createResearchRunWithStages({
+      assetId: originalRun.asset_id,
+      runType: run_type,
+      researchQuestion: originalRun.research_question,
+      requestedBy: "refresh",
+      profileId: originalRun.profile_id,
+      profileVersion: originalRun.profile_version,
+      budgetLimitUsd: originalRun.budget_limit_usd ? Number(originalRun.budget_limit_usd) : null,
+      sourceCutoffAt: source_cutoff_at ? new Date(source_cutoff_at) : null,
+      marketDataCutoffAt: market_data_cutoff_at ? new Date(market_data_cutoff_at) : null,
+    });
 
     return createdResponse(newRun);
   } catch (error) {

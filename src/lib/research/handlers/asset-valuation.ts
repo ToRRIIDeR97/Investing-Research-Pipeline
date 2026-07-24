@@ -1,3 +1,4 @@
+import { completeV3Task, createV3Task } from "../run-context";
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
 import { makeValidationResult } from "../run-context";
 import { callResearchAgent, exactJsonPrompt } from "../run-context";
@@ -7,6 +8,7 @@ import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { createHash } from "node:crypto";
+import { CURRENT_PIPELINE_VERSION } from "../version";
 
 export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "asset_valuation",
@@ -15,7 +17,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
     try {
       const [profile] = ctx.profileId
         ? await sql`
-            SELECT required_valuation_lenses_json
+            SELECT required_valuation_lenses_json, required_modules_json
             FROM research_profiles
             WHERE id = ${ctx.profileId}
             LIMIT 1
@@ -24,6 +26,9 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       const requiredLenses = Array.isArray(profile?.required_valuation_lenses_json)
         ? profile.required_valuation_lenses_json.map(String)
         : (ctx.composedProfile?.valuation_methods.map((method: any) => String(method.method)) || ["reverse_dcf"]);
+      const requiredModules = Array.isArray(profile?.required_modules_json)
+        ? profile.required_modules_json.map(String)
+        : [];
       const upstreamRows = await sql`
         SELECT artifact_type, content_json
         FROM research_artifacts
@@ -248,6 +253,26 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
             idempotency_key: `${ctx.runId}-${k}`,
           });
         }
+      }
+
+      // Preserve the run-scoped module-attempt contract used by the profile
+      // gate. The v3 valuation handler produces the consolidated artifacts in
+      // one bounded call, so each required module is recorded as covered by
+      // that completed valuation task.
+      for (const moduleKey of requiredModules) {
+        const moduleTask = await createV3Task(
+          sql,
+          ctx.runId,
+          "asset_valuation",
+          moduleKey,
+          "profile_module",
+          "valuation-analyst"
+        );
+        await completeV3Task(sql, moduleTask.id, {
+          module_key: moduleKey,
+          covered_by: "asset_valuation",
+          pipeline_version: CURRENT_PIPELINE_VERSION,
+        });
       }
 
       return output;
