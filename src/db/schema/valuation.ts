@@ -85,6 +85,9 @@ export const scenarios = pgTable("scenarios", {
   assumptions_json: jsonb("assumptions_json").notNull().default({}),
   supporting_claim_ids: uuid("supporting_claim_ids").array().notNull().default([]),
   confidence: numeric("confidence"),
+  // Kept as an ID rather than an ORM relation to avoid a circular schema import;
+  // the v2 migration enforces the foreign key to valuation_model_runs.
+  valuation_model_run_id: uuid("valuation_model_run_id"),
   review_status: text("review_status").notNull().default("pending"),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

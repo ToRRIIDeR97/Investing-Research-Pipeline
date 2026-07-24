@@ -42,6 +42,16 @@ export async function ingestSourceFile(params: {
     `;
 
     if (existing.length > 0) {
+      if (params.researchRunId) {
+        await sql`
+          INSERT INTO research_run_sources (
+            research_run_id, source_document_id, role, discovery_metadata_json
+          ) VALUES (
+            ${params.researchRunId}, ${existing[0].id}, 'uploaded_source', '{}'::jsonb
+          )
+          ON CONFLICT (research_run_id, source_document_id) DO NOTHING
+        `;
+      }
       return { sourceDocumentId: existing[0].id, isNew: false };
     }
 
@@ -71,6 +81,16 @@ export async function ingestSourceFile(params: {
       RETURNING id
     `;
 
+    if (params.researchRunId) {
+      await sql`
+        INSERT INTO research_run_sources (
+          research_run_id, source_document_id, role, discovery_metadata_json
+        ) VALUES (
+          ${params.researchRunId}, ${result[0].id}, 'uploaded_source', '{}'::jsonb
+        )
+        ON CONFLICT (research_run_id, source_document_id) DO NOTHING
+      `;
+    }
     return { sourceDocumentId: result[0].id, isNew: true };
   } finally {
     await sql.end();

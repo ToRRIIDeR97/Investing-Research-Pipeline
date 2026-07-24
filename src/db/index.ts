@@ -10,8 +10,10 @@ import * as valuationSchema from "./schema/valuation";
 import * as thesisSchema from "./schema/thesis";
 import * as aiSchema from "./schema/ai";
 import * as backtestingSchema from "./schema/backtesting";
+import * as researchV2Schema from "./schema/research-v2";
+import * as researchArtifactsSchema from "./schema/research-artifacts";
 
-const schema = {
+export const schema = {
   ...coreSchema,
   ...profilesSchema,
   ...workflowSchema,
@@ -22,6 +24,8 @@ const schema = {
   ...thesisSchema,
   ...aiSchema,
   ...backtestingSchema,
+  ...researchV2Schema,
+  ...researchArtifactsSchema,
 };
 
 const connectionString = process.env.DATABASE_URL!;

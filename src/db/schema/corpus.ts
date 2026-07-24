@@ -45,6 +45,53 @@ export const source_documents = pgTable(
   (table) => [unique("source_documents_file_hash_unique").on(table.file_hash)]
 );
 
+// A raw document may support many research runs. The legacy research_run_id on
+// source_documents is retained for v1 compatibility; v2 uses this association
+// instead of moving a shared document to the latest run that encountered it.
+export const research_run_sources = pgTable(
+  "research_run_sources",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    research_run_id: uuid("research_run_id").notNull().references(() => research_runs.id),
+    source_document_id: uuid("source_document_id").notNull().references(() => source_documents.id),
+    role: text("role").notNull().default("supporting_source"),
+    discovery_metadata_json: jsonb("discovery_metadata_json").notNull().default({}),
+    created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("research_run_sources_run_document_unique").on(
+      table.research_run_id,
+      table.source_document_id
+    ),
+    index("research_run_sources_run_idx").on(table.research_run_id),
+  ]
+);
+
+// Makes filing indexes, exhibits, amendments, translations, and other derived
+// documents navigable without encoding lineage only in JSON metadata.
+export const source_document_relations = pgTable(
+  "source_document_relations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    parent_source_document_id: uuid("parent_source_document_id")
+      .notNull()
+      .references(() => source_documents.id),
+    child_source_document_id: uuid("child_source_document_id")
+      .notNull()
+      .references(() => source_documents.id),
+    relationship_type: text("relationship_type").notNull(),
+    metadata_json: jsonb("metadata_json").notNull().default({}),
+    created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("source_document_relations_unique").on(
+      table.parent_source_document_id,
+      table.child_source_document_id,
+      table.relationship_type
+    ),
+  ]
+);
+
 // ============================================================
 // document_parses — §27.7
 // Versioned parse outputs for a source document.
@@ -170,6 +217,18 @@ export const sourceDocumentsRelations = relations(source_documents, ({ many }) =
   chunks: many(document_chunks),
   tables: many(extracted_tables),
   locations: many(source_locations),
+  run_sources: many(research_run_sources),
+}));
+
+export const researchRunSourcesRelations = relations(research_run_sources, ({ one }) => ({
+  run: one(research_runs, {
+    fields: [research_run_sources.research_run_id],
+    references: [research_runs.id],
+  }),
+  source_document: one(source_documents, {
+    fields: [research_run_sources.source_document_id],
+    references: [source_documents.id],
+  }),
 }));
 
 export const documentParsesRelations = relations(document_parses, ({ one, many }) => ({

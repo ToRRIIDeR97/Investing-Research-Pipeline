@@ -123,7 +123,7 @@ export async function createBacktestRequest(
           ${parsed.end_date || toDateOnly(runs[0].market_data_cutoff_at)},
           ${runs[0].market_data_cutoff_at || null},
           ${parsed.initial_capital.toString()},
-          ${JSON.stringify(parsed.params)}::jsonb
+          ${tx.json(parsed.params as any)}
         )
         RETURNING *
       `;
@@ -141,7 +141,7 @@ export async function createBacktestRequest(
           'backtest-coder',
           'pending',
           75,
-          ${JSON.stringify({ backtestRunId: backtest.id })}::jsonb,
+          ${tx.json({ backtestRunId: backtest.id })},
           ${`${runId}:${stages[0].id}:backtest:${backtest.id}`}
         )
         RETURNING id

@@ -15,6 +15,8 @@ export interface ParsedChunk {
   sectionTitle?: string;
   pageStart?: number;
   pageEnd?: number;
+  charStart?: number;
+  charEnd?: number;
   text: string;
   tokenCount?: number;
 }
@@ -51,7 +53,7 @@ export async function storeParseResults(params: {
         ${params.parserName},
         ${params.parserVersion},
         'completed',
-        ${JSON.stringify(params.parseResult.warnings)},
+        ${sql.json(params.parseResult.warnings)},
         ${params.storagePath || null},
         NOW()
       )
@@ -64,7 +66,7 @@ export async function storeParseResults(params: {
       await sql`
         INSERT INTO document_chunks (
           source_document_id, document_parse_id, chunk_index,
-          section_title, page_start, page_end,
+          section_title, page_start, page_end, char_start, char_end,
           text, token_count
         ) VALUES (
           ${params.sourceDocumentId},
@@ -73,6 +75,8 @@ export async function storeParseResults(params: {
           ${chunk.sectionTitle || null},
           ${chunk.pageStart || null},
           ${chunk.pageEnd || null},
+          ${chunk.charStart ?? null},
+          ${chunk.charEnd ?? null},
           ${chunk.text},
           ${chunk.tokenCount || null}
         )
@@ -93,7 +97,7 @@ export async function storeParseResults(params: {
           ${table.pageStart || null},
           ${table.pageEnd || null},
           ${table.title || null},
-          ${JSON.stringify(table.tableJson)},
+          ${sql.json(table.tableJson as any)},
           ${table.confidence || null}
         )
       `;
@@ -149,6 +153,8 @@ async function basicTextExtraction(filePath: string): Promise<ParseResult> {
       chunkIndex: Math.floor(i / chunkSize),
       text: content.slice(i, i + chunkSize),
       tokenCount: Math.ceil(content.slice(i, i + chunkSize).length / 4),
+      charStart: i,
+      charEnd: Math.min(content.length, i + chunkSize),
     });
   }
 

@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { canonicalResearchKey, contractForProfile, sourceFamiliesPresent } from "@/lib/research/v2-contracts";
 
 type Row = Record<string, any>;
 
@@ -45,6 +46,13 @@ interface RunQualityData {
   scenarios: Row[];
   sourceGaps: Row[];
   reviewDecisions: Row[];
+  analysisSections: Row[];
+  valuationModels: Row[];
+  indicators: Row[];
+  combinations: Row[];
+  backtests: Row[];
+  backtestArtifacts: Row[];
+  unlinkedFactClaimCount: number;
 }
 
 interface RunTypeThreshold {
@@ -98,6 +106,12 @@ const REJECTING_REVIEW_STATUSES = new Set([
   "reject",
   "rejected",
   "archived",
+]);
+const KNOWN_REVIEW_STATUSES = new Set([
+  ...REJECTING_REVIEW_STATUSES,
+  "watchlist",
+  "approved_for_tracking",
+  "approved_for_position",
 ]);
 
 export async function evaluateResearchQuality(
@@ -209,7 +223,7 @@ export function inferMissingSourceCoverage(input: {
   return gaps;
 }
 
-function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQualityGateResult {
+export function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQualityGateResult {
   const threshold = thresholdFor(data.run.run_type);
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -273,6 +287,11 @@ function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQualityGat
   );
   addAiReviewCoverage(data, errors, warnings, missingCoverage);
   addHumanReviewCoverage(data, threshold, errors, warnings, missingCoverage);
+  if (Number(data.run.pipeline_version || 1) >= 3) {
+    addV3ArtifactCoverage(data, errors, missingCoverage);
+  } else {
+    addV2ArtifactCoverage(data, errors, missingCoverage);
+  }
 
   const blockingMissingCoverage = missingCoverage.filter(
     (item) => item.requiredForCompletion && ["high", "critical"].includes(item.severity)
@@ -326,16 +345,50 @@ async function loadRunQualityData(
     scenarios,
     sourceGaps,
     reviewDecisions,
+    analysisSections,
+    valuationModels,
+    indicators,
+    combinations,
+    backtests,
+    backtestArtifacts,
+    unlinkedFactClaims,
   ] = await Promise.all([
     sql`SELECT * FROM research_stages WHERE research_run_id = ${runId} ORDER BY stage_order`,
     sql`SELECT * FROM research_tasks WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
-    sql`SELECT * FROM source_documents WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`
+      SELECT DISTINCT sd.*
+      FROM source_documents sd
+      LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
+      WHERE sd.research_run_id = ${runId} OR rrs.research_run_id = ${runId}
+      ORDER BY sd.created_at DESC
+    `,
     sql`SELECT * FROM evidence_claims WHERE research_run_id = ${runId} AND review_status != 'rejected' ORDER BY created_at DESC`,
-    sql`SELECT * FROM metric_observations WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`
+      SELECT mo.*, md.metric_key, md.display_name AS metric_display_name
+      FROM metric_observations mo
+      JOIN metric_definitions md ON md.id = mo.metric_definition_id
+      WHERE mo.research_run_id = ${runId}
+      ORDER BY mo.created_at DESC
+    `,
     sql`SELECT * FROM valuation_signals WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM scenarios WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM source_gaps WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM review_decisions WHERE research_run_id = ${runId} ORDER BY reviewed_at DESC`,
+    sql`SELECT * FROM analysis_sections WHERE research_run_id = ${runId} ORDER BY module_key`,
+    sql`SELECT * FROM valuation_model_runs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM indicator_definitions WHERE research_run_id = ${runId} ORDER BY indicator_key`,
+    sql`SELECT * FROM strategy_combinations WHERE research_run_id = ${runId} ORDER BY combination_key`,
+    sql`SELECT * FROM backtest_runs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM backtest_artifacts WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`
+      SELECT COUNT(*) AS cnt
+      FROM evidence_claims ec
+      LEFT JOIN evidence_links el ON el.evidence_claim_id = ec.id
+      WHERE ec.research_run_id = ${runId}
+        AND ec.claim_category = 'fact'
+        AND ec.review_status != 'rejected'
+        AND el.id IS NULL
+    `,
   ]);
 
   return {
@@ -351,7 +404,169 @@ async function loadRunQualityData(
     scenarios,
     sourceGaps,
     reviewDecisions,
+    analysisSections,
+    valuationModels,
+    indicators,
+    combinations,
+    backtests,
+    backtestArtifacts,
+    unlinkedFactClaimCount: Number(unlinkedFactClaims[0]?.cnt || 0),
   };
+}
+
+function addV3ArtifactCoverage(
+  data: RunQualityData,
+  errors: string[],
+  missingCoverage: MissingCoverageItem[]
+) {
+  if (Number(data.run.pipeline_version || 1) < 3) return;
+
+  const addMissing = (key: string, area: string, description: string) => {
+    errors.push(description);
+    missingCoverage.push({ key, area, description, severity: "high", requiredForCompletion: true });
+  };
+
+  const runType = data.run.run_type;
+  const isFullOrDeep = ["deep_dive", "full_initiation_report"].includes(runType);
+
+  if (!isFullOrDeep) return;
+
+  // 1. Genesis Check
+  const hasGenesis = data.tasks.some(
+    (t) => t.status === "completed" && (t.task_key === "genesis-researcher:meli-genesis" || t.task_type === "company_genesis")
+  );
+  if (!hasGenesis) {
+    addMissing("v3_genesis", "company genesis", "Required v3 Company Genesis artifact is missing or incomplete.");
+  }
+
+  // 2. Historical Diagnosis Check
+  const hasDiagnosis = data.tasks.some(
+    (t) => t.status === "completed" && (t.task_key === "historical-diagnostician:diagnosis" || t.task_type === "historical_diagnosis")
+  );
+  if (!hasDiagnosis) {
+    addMissing("v3_diagnosis", "historical diagnosis", "Required v3 Historical Diagnosis artifact is missing or incomplete.");
+  }
+
+  // 3. Business Process Analysis Check
+  const hasProcessMap = data.tasks.some(
+    (t) => t.status === "completed" && (t.task_key === "business-model-analyst:process-map" || t.task_type === "business_process_analysis")
+  );
+  if (!hasProcessMap) {
+    addMissing("v3_process_map", "business process map", "Required v3 Business Process Map is missing or incomplete.");
+  }
+
+  // 4. Moat Analysis Check
+  const hasMoat = data.tasks.some(
+    (t) => t.status === "completed" && (t.task_key === "moat-analyst:assessment" || t.task_type === "moat_analysis")
+  );
+  if (!hasMoat) {
+    addMissing("v3_moat", "moat analysis", "Required v3 Moat Assessment is missing or incomplete.");
+  }
+
+  // 5. Operating Model Check
+  const hasOperatingModel = data.tasks.some(
+    (t) => t.status === "completed" && (t.task_key === "forecast-analyst:operating-model" || t.task_type === "operating_model")
+  );
+  if (!hasOperatingModel) {
+    addMissing("v3_operating_model", "operating model", "Required v3 Operating Model is missing or incomplete.");
+  }
+
+  // 6. Operating Scenarios Check
+  const hasScenarios = data.tasks.some(
+    (t) => t.status === "completed" && (t.task_key === "forecast-analyst:scenarios" || t.task_type === "operating_scenarios")
+  );
+  if (!hasScenarios) {
+    addMissing("v3_operating_scenarios", "operating scenarios", "Required v3 Operating Scenario Set is missing or incomplete.");
+  }
+
+  // 7. Decision Synthesis Check (only for full_initiation_report)
+  if (runType === "full_initiation_report") {
+    const hasThesis = data.tasks.some(
+      (t) => t.status === "completed" && (t.task_key === "decision-synthesizer:thesis" || t.task_type === "decision_synthesis")
+    );
+    if (!hasThesis) {
+      addMissing("v3_decision_synthesis", "decision synthesis", "Required v3 Decision Synthesis (Thesis/Risks/Expected Return) is missing or incomplete.");
+    }
+  }
+}
+
+function addV2ArtifactCoverage(
+  data: RunQualityData,
+  errors: string[],
+  missingCoverage: MissingCoverageItem[]
+) {
+  if (Number(data.run.pipeline_version || 1) < 2 || data.run.run_type === "quick_scan") return;
+  const contract = contractForProfile(String(data.profile?.profile_key || ""), String(data.asset?.slug || ""));
+  if (!contract) {
+    errors.push("Research OS v2 has no contract for this profile.");
+    return;
+  }
+  const addMissing = (key: string, area: string, description: string) => {
+    errors.push(description);
+    missingCoverage.push({ key, area, description, severity: "high", requiredForCompletion: true });
+  };
+  const sourceFamilies = sourceFamiliesPresent(data.sources);
+  for (const family of contract.requiredSourceFamilies) {
+    if (!sourceFamilies.has(family)) {
+      addMissing(`v2_source_${family}`, "source coverage", `Research OS v2 requires a ${family} source family for ${contract.profileKey}.`);
+    }
+  }
+  if (data.unlinkedFactClaimCount > 0) {
+    addMissing("v2_unlinked_facts", "evidence provenance", `${data.unlinkedFactClaimCount} factual claim(s) have no evidence link.`);
+  }
+  const completedModules = new Set(
+    data.analysisSections.filter((section) => ["completed", "accepted"].includes(String(section.status))).map((section) => canonicalResearchKey(String(section.module_key)))
+  );
+  for (const moduleKey of contract.requiredModules) {
+    if (!completedModules.has(moduleKey)) {
+      addMissing(`v2_module_${moduleKey}`, "analysis coverage", `Required v2 module "${moduleKey}" is not completed.`);
+    }
+  }
+  const metricKeys = new Set(data.metrics.filter((metric) => String(metric.review_status) === "accepted").map((metric) => canonicalResearchKey(String(metric.metric_key))));
+  for (const metricKey of contract.requiredMetricKeys) {
+    if (!metricKeys.has(metricKey)) {
+      addMissing(`v2_metric_${metricKey}`, "metric coverage", `Required v2 metric "${metricKey}" is missing.`);
+    }
+  }
+  const completedModels = new Set(
+    data.valuationModels
+      .filter((model) => String(model.status) === "completed" && Boolean(model.reproducible))
+      .map((model) => String(model.model_key))
+  );
+  for (const modelKey of contract.valuationModelKeys) {
+    if (!completedModels.has(modelKey)) {
+      addMissing(`v2_model_${modelKey}`, "valuation artifact", `Required executable valuation model "${modelKey}" is missing or not reproducible.`);
+    }
+  }
+  const modeledScenarios = data.scenarios.filter((scenario) => scenario.valuation_model_run_id);
+  if (!modeledScenarios.some((scenario) => numericLike(scenario.value_anchor))) {
+    addMissing("v2_modeled_scenarios", "valuation artifact", "No numeric scenario is linked to an executed valuation model.");
+  }
+  const usableIndicators = data.indicators.filter((indicator) => ["accepted", "completed"].includes(String(indicator.status)));
+  if (usableIndicators.length < contract.minIndicators) {
+    addMissing("v2_indicators", "indicator coverage", `Only ${usableIndicators.length}/${contract.minIndicators} validated indicators are available.`);
+  }
+  const executedCombinations = data.combinations.filter((combination) => String(combination.status) === "completed" && combination.backtest_run_id);
+  if (executedCombinations.length < contract.minExecutedCombinations) {
+    addMissing("v2_backtest_combinations", "backtest coverage", `Only ${executedCombinations.length}/${contract.minExecutedCombinations} strategy combinations were executed.`);
+  }
+  if (!data.backtestArtifacts.length) {
+    addMissing("v2_backtest_artifacts", "backtest coverage", "No persisted backtest artifacts are available for this v2 run.");
+  }
+  const robustBacktests = data.backtests.filter((backtest) => {
+    const metrics = typeof backtest.metrics_json === "string"
+      ? (() => { try { return JSON.parse(backtest.metrics_json); } catch { return {}; } })()
+      : backtest.metrics_json || {};
+    return metrics.in_sample && metrics.out_of_sample && metrics.parameter_stability
+      && Number.isFinite(Number(metrics.out_of_sample_excess_return));
+  });
+  if (executedCombinations.length && robustBacktests.length < executedCombinations.length) {
+    addMissing(
+      "v2_backtest_robustness",
+      "backtest coverage",
+      `Only ${robustBacktests.length}/${executedCombinations.length} completed combinations include in-sample, out-of-sample, benchmark-excess, and parameter-stability results.`
+    );
+  }
 }
 
 function isSubstantiveSource(source: Row) {
@@ -548,10 +763,20 @@ function addHumanReviewCoverage(
   }
 
   const status = String(latestDecision.status || "").toLowerCase();
-  if (REJECTING_REVIEW_STATUSES.has(status)) {
+  if (!KNOWN_REVIEW_STATUSES.has(status)) {
+    const description = `Human review decision has unknown status: ${status || "empty"}.`;
+    errors.push(description);
+    missingCoverage.push({
+      key: "human_review_status_invalid",
+      severity: "high",
+      area: "human review",
+      description,
+      requiredForCompletion: true,
+    });
+  } else if (REJECTING_REVIEW_STATUSES.has(status)) {
     errors.push(`Human review decision is ${status}.`);
-  } else if (status === "approved_for_tracking") {
-    warnings.push("Human review approved tracking only; this is not position-ready.");
+  } else if (status === "approved_for_tracking" || status === "watchlist") {
+    warnings.push("Human review permits tracking/watchlist use only; this is not position-ready.");
   }
 }
 
@@ -565,8 +790,18 @@ function actionReadinessFor(
   if (threshold.requireHumanReview && data.reviewDecisions.length === 0) return "review_ready";
 
   const decision = String(data.reviewDecisions[0]?.status || "").toLowerCase();
-  if (decision === "approved_for_tracking") return "review_ready";
-  return "investment_ready";
+  const baseReadiness = (decision === "approved_for_tracking" || decision === "watchlist") ? "review_ready" : "investment_ready";
+
+  const metadata = typeof data.run.metadata_json === "string"
+    ? JSON.parse(data.run.metadata_json)
+    : data.run.metadata_json || {};
+  const isSynthetic = metadata.acceptance_provider === "mock" || process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock";
+
+  if (isSynthetic && baseReadiness === "investment_ready") {
+    return "review_ready";
+  }
+
+  return baseReadiness;
 }
 
 function thresholdFor(runType: string): RunTypeThreshold {
@@ -620,4 +855,33 @@ function normalizeSeverity(value: unknown): MissingCoverageItem["severity"] {
     return value;
   }
   return "medium";
+}
+
+/**
+ * Convenience wrapper for evaluateLoadedResearchQuality that accepts a
+ * partial data shape and fills sensible defaults for missing fields.
+ * Used by test harnesses that pre-load only the data they need.
+ */
+export function evaluateQualityGates(data: Partial<RunQualityData> & Record<string, unknown>): ResearchQualityGateResult {
+  return evaluateLoadedResearchQuality({
+    run: (data.run ?? {}) as Row,
+    stages: (data.stages ?? []) as Row[],
+    tasks: (data.tasks ?? []) as Row[],
+    sources: (data.sources ?? []) as Row[],
+    evidence: (data.evidence ?? []) as Row[],
+    metrics: (data.metrics ?? []) as Row[],
+    signals: (data.signals ?? []) as Row[],
+    scenarios: (data.scenarios ?? []) as Row[],
+    sourceGaps: (data.sourceGaps ?? []) as Row[],
+    reviewDecisions: (data.reviewDecisions ?? []) as Row[],
+    analysisSections: (data.analysisSections ?? data.artifacts ?? []) as Row[],
+    valuationModels: (data.valuationModels ?? []) as Row[],
+    indicators: (data.indicators ?? []) as Row[],
+    combinations: (data.combinations ?? []) as Row[],
+    backtests: (data.backtests ?? []) as Row[],
+    backtestArtifacts: (data.backtestArtifacts ?? []) as Row[],
+    unlinkedFactClaimCount: (data.unlinkedFactClaimCount ?? 0) as number,
+    ...(data.asset ? { asset: data.asset as Row } : {}),
+    ...(data.profile ? { profile: data.profile as Row } : {}),
+  });
 }

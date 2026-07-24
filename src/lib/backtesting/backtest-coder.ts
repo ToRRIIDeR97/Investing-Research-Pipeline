@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { isResearchAgentName } from "./agent-registry";
-import { runResearchAgent } from "./runtime";
+import { isResearchAgentName } from "../agent-harness/registry";
+import { runResearchAgent } from "../agent-harness/runner";
 
 const generatedFileSchema = z.object({
   path: z.string().min(1),
@@ -24,7 +24,6 @@ export type BacktestCodegenResult = z.infer<typeof backtestCodegenSchema> & {
     outputTokens?: number;
     costUsd?: number;
     latencyMs: number;
-    sessionId?: string;
     promptVersion?: string;
   };
 };
@@ -115,7 +114,7 @@ function buildTaskPacket(input: GenerateBacktestCodeInput): Record<string, unkno
     allowed_tools: [],
     budget_and_timeout: {
       timeout_ms: Number(process.env.BACKTEST_TIMEOUT_MS || 120000),
-      model_tier: process.env.OPENCODE_MODEL_TIER || "premium",
+      model_tier: process.env.RESEARCH_MODEL_TIER || "premium",
     },
   };
 }
@@ -123,9 +122,9 @@ function buildTaskPacket(input: GenerateBacktestCodeInput): Record<string, unkno
 export async function generateBacktestCode(
   input: GenerateBacktestCodeInput
 ): Promise<BacktestCodegenResult> {
-  const agent = process.env.OPENCODE_BACKTEST_AGENT || "backtest-coder";
+  const agent = process.env.RESEARCH_BACKTEST_AGENT || "backtest-coder";
   if (!isResearchAgentName(agent) || agent !== "backtest-coder") {
-    throw new Error(`Unknown OPENCODE_BACKTEST_AGENT: ${agent}`);
+    throw new Error(`Unknown RESEARCH_BACKTEST_AGENT: ${agent}`);
   }
 
   const result = await runResearchAgent({

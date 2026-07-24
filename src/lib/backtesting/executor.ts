@@ -4,7 +4,7 @@ import { dirname, join, normalize, relative } from "node:path";
 import { promisify } from "node:util";
 import postgres from "postgres";
 import { z } from "zod";
-import { generateBacktestCode } from "@/lib/opencode/backtest-coder";
+import { generateBacktestCode } from "./backtest-coder";
 import { recordModelCall } from "@/lib/agents/model-calls";
 import type { ResearchTask } from "@/lib/workflow/task-queue";
 import { completeTask, failTask } from "@/lib/workflow/task-queue";
@@ -106,7 +106,7 @@ async function insertArtifacts(
         ${artifact.title},
         ${artifact.storage_path},
         ${artifact.mime_type || null},
-        ${JSON.stringify(artifact.metadata_json || {})}::jsonb
+        ${sql.json(artifact.metadata_json || {})}
       )
     `;
   }
@@ -186,7 +186,7 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
         agentName: task.agent_name || "backtest-coder",
         modelProvider: codegen.usage.provider,
         modelName: codegen.usage.model,
-        modelTier: process.env.OPENCODE_MODEL_TIER || "premium",
+        modelTier: process.env.RESEARCH_MODEL_TIER || "premium",
         promptVersion: codegen.usage.promptVersion,
         inputTokens: codegen.usage.inputTokens,
         outputTokens: codegen.usage.outputTokens,
@@ -195,7 +195,6 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
         status: "success",
         escalationReason: "backtest code generation",
         requestMetadata: {
-          opencode_session_id: codegen.usage.sessionId,
           backtest_run_id: backtest.id,
         },
       });
@@ -207,9 +206,9 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
           stageId: task.stage_id,
           taskId: task.id,
           agentName: task.agent_name || "backtest-coder",
-          modelProvider: "opencode",
-          modelName: process.env.OPENCODE_BACKTEST_AGENT || "backtest-coder",
-          modelTier: process.env.OPENCODE_MODEL_TIER || "premium",
+          modelProvider: process.env.RESEARCH_MODEL_PROVIDER || "local-harness",
+          modelName: process.env.RESEARCH_BACKTEST_MODEL || "backtest-coder",
+          modelTier: process.env.RESEARCH_MODEL_TIER || "premium",
           costUsd: 0,
           status: "failed",
           errorMessage: message,
@@ -304,9 +303,9 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
         UPDATE backtest_runs
         SET status = 'completed',
             strategy_name = ${codegen.strategy_name},
-            assumptions_json = ${JSON.stringify(codegen.assumptions)}::jsonb,
+            assumptions_json = ${tx.json(codegen.assumptions)},
             generated_code_path = ${relativeStoragePath(strategyPath!)},
-            metrics_json = ${JSON.stringify(result.metrics)}::jsonb,
+            metrics_json = ${tx.json(result.metrics as any)},
             error_message = NULL,
             completed_at = NOW(),
             updated_at = NOW()

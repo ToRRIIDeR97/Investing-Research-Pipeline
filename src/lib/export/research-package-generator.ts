@@ -196,7 +196,7 @@ export async function generateResearchPackage(params: {
       ) VALUES (
         ${params.assetId}, ${params.runId}, 'research_package',
         'sofi-folder-standard-v1', ${storagePath}, ${contentHash},
-        ${params.generatedBy}, NOW(), ${JSON.stringify(manifest)}::jsonb
+        ${params.generatedBy}, NOW(), ${sql.json(manifest as any)}
       )
       RETURNING id
     `;
@@ -264,7 +264,13 @@ async function loadPackageData(sql: ReturnType<typeof postgres>, runId: string, 
     sql`SELECT * FROM valuation_signals WHERE research_run_id = ${runId} ORDER BY lens_family, signal_name`,
     sql`SELECT * FROM scenarios WHERE research_run_id = ${runId} ORDER BY probability DESC NULLS LAST, scenario_type`,
     sql`SELECT * FROM source_gaps WHERE research_run_id = ${runId} ORDER BY severity DESC, created_at DESC`,
-    sql`SELECT * FROM source_documents WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`
+      SELECT DISTINCT sd.*
+      FROM source_documents sd
+      LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
+      WHERE sd.research_run_id = ${runId} OR rrs.research_run_id = ${runId}
+      ORDER BY sd.created_at DESC
+    `,
     sql`SELECT * FROM backtest_runs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM backtest_artifacts WHERE research_run_id = ${runId} ORDER BY artifact_type, created_at DESC`,
     sql`SELECT * FROM model_call_logs WHERE research_run_id = ${runId} ORDER BY created_at ASC`,
