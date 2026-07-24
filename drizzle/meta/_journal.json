@@ -43,6 +43,13 @@
       "when": 1784281355568,
       "tag": "0005_market_data_v3",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784283000000,
+      "tag": "0006_backend_ui_stitch",
+      "breakpoints": true
     }
   ]
 }

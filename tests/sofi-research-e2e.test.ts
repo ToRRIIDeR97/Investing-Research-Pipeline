@@ -22,8 +22,10 @@ function loadLocalEnv() {
  * Fully delete an asset and all related rows in FK-safe order.
  * Used by test setup/teardown to ensure a clean slate.
  */
-async function deleteAssetCascade(sql: ReturnType<typeof postgres>, targetAssetId: string) {
-  const runQ = sql`SELECT id FROM research_runs WHERE asset_id = ${targetAssetId}`;
+async function deleteAssetCascade(sql: ReturnType<typeof postgres>, targetAssetId: string, targetRunId?: string) {
+  const runQ = targetRunId
+    ? sql`SELECT id FROM research_runs WHERE id = ${targetRunId} AND asset_id = ${targetAssetId}`
+    : sql`SELECT id FROM research_runs WHERE asset_id = ${targetAssetId}`;
   const docQ = sql`SELECT id FROM source_documents WHERE asset_id = ${targetAssetId}`;
   const stageQ = sql`SELECT id FROM research_stages WHERE research_run_id IN (${runQ})`;
   const taskQ = sql`SELECT id FROM research_tasks WHERE research_run_id IN (${runQ})`;
@@ -70,6 +72,7 @@ async function deleteAssetCascade(sql: ReturnType<typeof postgres>, targetAssetI
   // Phase 4: mid-layer tables
   await sql`DELETE FROM strategy_combinations WHERE backtest_run_id IN (${btQ})`;
   await sql`DELETE FROM backtest_artifacts WHERE backtest_run_id IN (${btQ})`;
+  await sql`DELETE FROM scenarios WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM scenarios WHERE valuation_model_run_id IN (${vmQ})`;
   await sql`DELETE FROM analysis_sections WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM indicator_definitions WHERE research_run_id IN (${runQ})`;
@@ -102,10 +105,11 @@ async function deleteAssetCascade(sql: ReturnType<typeof postgres>, targetAssetI
   // Phase 7: infrastructure
   await sql`DELETE FROM research_tasks WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM research_stages WHERE research_run_id IN (${runQ})`;
-  await sql`DELETE FROM asset_profile_assignments WHERE asset_id = ${targetAssetId}`;
-  await sql`DELETE FROM research_runs WHERE asset_id = ${targetAssetId}`;
+  await sql`DELETE FROM asset_profile_assignments WHERE ${targetRunId ? sql`research_run_id IN (${runQ})` : sql`asset_id = ${targetAssetId}`}`;
+  await sql`DELETE FROM research_runs WHERE ${targetRunId ? sql`id IN (${runQ})` : sql`asset_id = ${targetAssetId}`}`;
 
   // Phase 8: asset hierarchy
+  if (targetRunId) return;
   await sql`DELETE FROM listings WHERE instrument_id IN (SELECT id FROM instruments WHERE asset_id = ${targetAssetId})`;
   await sql`DELETE FROM asset_entities WHERE asset_id = ${targetAssetId}`;
   await sql`DELETE FROM asset_classifications WHERE asset_id = ${targetAssetId}`;
@@ -339,10 +343,10 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     const decisionId = crypto.randomUUID();
     await sql`
       INSERT INTO review_decisions (
-        id, research_run_id, reviewer_id, status, notes, reviewed_at
+        id, asset_id, research_run_id, status, reviewed_by, reviewed_at
       ) VALUES (
-        ${decisionId}, ${runId}, 'human-reviewer-1', 'approved_for_tracking',
-        'Approved after reviewing thesis and valuation models', NOW()
+        ${decisionId}, ${testAssetId}, ${runId}, 'approved_for_tracking',
+        'human-reviewer-1', NOW()
       )
     `;
 
@@ -372,18 +376,8 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     `;
     assert.ok(refreshArtifact, "refresh_schedule artifact must be created by refresh handler");
 
-    // Clean up run
-    await sql`DELETE FROM asset_profile_assignments WHERE research_run_id = ${runId}`;
-    await sql`DELETE FROM research_stages WHERE research_run_id = ${runId}`;
-    await sql`DELETE FROM research_artifacts WHERE research_run_id = ${runId}`;
-    await sql`DELETE FROM research_tasks WHERE research_run_id = ${runId}`;
-    await sql`DELETE FROM theses WHERE research_run_id = ${runId}`;
-    await sql`DELETE FROM risks WHERE research_run_id = ${runId}`;
-    await sql`DELETE FROM catalysts WHERE research_run_id = ${runId}`;
-    await sql`DELETE FROM valuation_signals WHERE research_run_id = ${runId}`;
-    await sql`DELETE FROM scenarios WHERE research_run_id = ${runId}`;
-    await sql`DELETE FROM review_decisions WHERE research_run_id = ${runId}`;
-    await sql`DELETE FROM research_runs WHERE id = ${runId}`;
+    // Clean up run in FK-safe order without deleting the shared test asset.
+    await deleteAssetCascade(sql, testAssetId, runId);
   });
 
   test("C9-T3: Failure cleanup on forced required stage failure", async () => {

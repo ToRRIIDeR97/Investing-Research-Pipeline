@@ -62,6 +62,8 @@ interface ResearchData {
   backtests: ResearchRecord[];
   sources: ResearchRecord[];
   modelCalls: ResearchRecord[];
+  report: ResearchRecord | null;
+  artifacts: ResearchRecord[];
 }
 
 const emptyResearchData: ResearchData = {
@@ -79,6 +81,8 @@ const emptyResearchData: ResearchData = {
   backtests: [],
   sources: [],
   modelCalls: [],
+  report: null,
+  artifacts: [],
 };
 
 const tabs = [
@@ -111,10 +115,11 @@ export default function ViewResearchPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
   useEffect(() => {
     void loadResearch();
-  }, [assetId]);
+  }, [assetId, selectedRunId]);
 
   async function loadResearch() {
     setLoading(true);
@@ -130,7 +135,7 @@ export default function ViewResearchPage() {
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
       const activeRun =
-        sortedRuns.find((run) => run.status === "completed") ?? sortedRuns[0] ?? null;
+        sortedRuns.find((run) => run.id === selectedRunId) ?? sortedRuns[0] ?? null;
 
       if (!activeRun) {
         setData({ ...emptyResearchData, asset, runs: sortedRuns });
@@ -138,31 +143,22 @@ export default function ViewResearchPage() {
       }
 
       const runId = activeRun.id;
-      const [
-        runDetail,
-        evidence,
-        metrics,
-        signals,
-        scenarios,
-        theses,
-        risks,
-        catalysts,
-        backtests,
-        sources,
-        modelCalls,
-      ] = await Promise.all([
+      const [runDetail, report] = await Promise.all([
         fetchJson<ResearchRecord | null>(`/api/research-runs/${runId}`, null),
-        fetchJson<ResearchRecord[]>(`/api/research-runs/${runId}/evidence`, []),
-        fetchJson<ResearchRecord[]>(`/api/research-runs/${runId}/metrics`, []),
-        fetchJson<ResearchRecord[]>(`/api/research-runs/${runId}/valuation-signals`, []),
-        fetchJson<ResearchRecord[]>(`/api/research-runs/${runId}/scenarios`, []),
-        fetchJson<ResearchRecord[]>(`/api/research-runs/${runId}/thesis`, []),
-        fetchJson<ResearchRecord[]>(`/api/research-runs/${runId}/risks`, []),
-        fetchJson<ResearchRecord[]>(`/api/research-runs/${runId}/catalysts`, []),
-        fetchJson<ResearchRecord[]>(`/api/research-runs/${runId}/backtests`, []),
-        fetchJson<ResearchRecord[]>(`/api/research-runs/${runId}/sources`, []),
-        fetchJson<ResearchRecord[]>(`/api/research-runs/${runId}/model-calls`, []),
+        fetchJson<ResearchRecord | null>(`/api/research-runs/${runId}/report`, null),
       ]);
+      const readModels = report?.read_models ?? {};
+      const artifacts = Array.isArray(report?.artifacts) ? report.artifacts : [];
+      const evidence = Array.isArray(readModels.evidence) ? readModels.evidence : [];
+      const metrics = Array.isArray(readModels.metrics) ? readModels.metrics : [];
+      const signals = Array.isArray(readModels.valuation_signals) ? readModels.valuation_signals : [];
+      const scenarios = Array.isArray(readModels.scenarios) ? readModels.scenarios : [];
+      const theses = Array.isArray(readModels.theses) ? readModels.theses : [];
+      const risks = Array.isArray(readModels.risks) ? readModels.risks : [];
+      const catalysts = Array.isArray(readModels.catalysts) ? readModels.catalysts : [];
+      const backtests = Array.isArray(readModels.backtests) ? readModels.backtests : [];
+      const sources = Array.isArray(readModels.sources) ? readModels.sources : [];
+      const modelCalls = Array.isArray(readModels.model_calls) ? readModels.model_calls : [];
 
       setData({
         asset,
@@ -179,6 +175,8 @@ export default function ViewResearchPage() {
         backtests,
         sources,
         modelCalls,
+        report,
+        artifacts,
       });
     } catch (loadError) {
       console.error(loadError);
@@ -267,6 +265,25 @@ export default function ViewResearchPage() {
             </div>
           </div>
 
+          <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3">
+            <label className="text-xs font-semibold text-slate-500">
+              Run
+              <select
+                value={data.activeRun?.id ?? ""}
+                onChange={(event) => setSelectedRunId(event.target.value || null)}
+                className="ml-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 font-mono text-xs text-slate-700"
+              >
+                {data.runs.map((run) => (
+                  <option key={run.id} value={run.id}>
+                    {shortId(run.id)} · v{run.pipeline_version ?? "?"} · {cleanLabel(run.status)} · {formatDate(run.created_at)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="text-xs text-slate-500">Pipeline v{data.activeRun?.pipeline_version ?? "?"}</span>
+            {data.report?.incomplete && <StatusPill value="incomplete sections" />}
+          </div>
+
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-1">
               {tabs.map((tab) => {
@@ -312,6 +329,7 @@ export default function ViewResearchPage() {
           />
         ) : (
           <>
+            <CanonicalReportSummary report={data.report} artifacts={data.artifacts} />
             {activeTab === "overview" && (
               <OverviewSection
                 thesis={primaryThesis}
@@ -353,6 +371,83 @@ export default function ViewResearchPage() {
       </main>
     </div>
   );
+}
+
+function CanonicalReportSummary({ report, artifacts }: { report: ResearchRecord | null; artifacts: ResearchRecord[] }) {
+  const byType = new Map<string, ResearchRecord>();
+  for (const artifact of artifacts) {
+    if (!byType.has(String(artifact.type || artifact.artifact_type))) byType.set(String(artifact.type || artifact.artifact_type), artifact);
+  }
+  const content = (type: string) => asRecord(byType.get(type)?.content ?? byType.get(type)?.content_json);
+  const genesis = content("company_genesis");
+  const founder = content("founder_profile");
+  const thesis = content("investment_thesis");
+  const targetContent = content("annual_price_target_path");
+  const targetRows = Array.isArray(targetContent.price_target_paths)
+    ? targetContent.price_target_paths as ResearchRecord[]
+    : Array.isArray(targetContent.annual_price_targets)
+      ? targetContent.annual_price_targets as ResearchRecord[]
+      : [];
+  const missing = Array.isArray(report?.missing_sections) ? report.missing_sections : [];
+  return (
+    <section className="mb-6 space-y-4">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
+          <SectionHeader icon={BookOpen} title="Canonical decision" count={thesis ? 1 : 0} />
+          {thesis ? <LongText value={thesis.thesis || thesis.investment_thesis || thesis.thesis_statement} /> : <IncompleteState label="Executive decision" />}
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
+            <span>Run status: {cleanLabel(report?.run?.status || "unknown")}</span>
+            <span>Pipeline: v{report?.run?.pipeline_version ?? "?"}</span>
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <SectionHeader icon={AlertTriangle} title="Incomplete sections" count={missing.length} />
+          {missing.length === 0 ? <div className="text-sm text-emerald-700">All canonical sections have artifacts.</div> : (
+            <div className="space-y-1 text-xs text-amber-700">{missing.map((item: ResearchRecord) => <div key={item.type}>• {item.label}</div>)}</div>
+          )}
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <SectionHeader icon={Brain} title="Company genesis" count={genesis || founder ? 1 : 0} />
+          {genesis || founder ? (
+            <div className="space-y-3 text-sm text-slate-600">
+              <InsightBlock label="Why the company started" value={genesis.customer_problem || genesis.pre_founding_environment || genesis.original_product} />
+              <InsightBlock label="Founder identity and motivation" value={founder.background_summary || founder.motivations || genesis.founder_background || genesis.founder_motivations} />
+              <InsightBlock label="Strategic implication" value={genesis.present_day_implications || genesis.current_strategic_implication} />
+            </div>
+          ) : <IncompleteState label="Company genesis" />}
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <SectionHeader icon={CircleDollarSign} title="Annual bear / base / bull price targets" count={targetRows.length} />
+          {targetRows.length ? (
+            <table className="w-full text-left text-xs"><thead><tr className="border-b border-slate-100 text-slate-400"><th className="py-2">Fiscal year</th><th className="py-2">Bear</th><th className="py-2">Base</th><th className="py-2">Bull</th></tr></thead><tbody>
+              {groupPriceTargets(targetRows).map((row) => <tr key={row.year} className="border-b border-slate-50"><td className="py-2 font-semibold">{row.year}</td><td className="py-2">{formatCurrency(row.bear, "USD")}</td><td className="py-2">{formatCurrency(row.base, "USD")}</td><td className="py-2">{formatCurrency(row.bull, "USD")}</td></tr>)}
+            </tbody></table>
+          ) : <IncompleteState label="Annual price target path" />}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function IncompleteState({ label }: { label: string }) {
+  return <div className="rounded-md border border-dashed border-amber-200 bg-amber-50/50 px-3 py-3 text-sm text-amber-800">{label} is incomplete: no canonical artifact was persisted.</div>;
+}
+
+function groupPriceTargets(rows: ResearchRecord[]) {
+  const grouped = new Map<string, { year: string; bear: unknown; base: unknown; bull: unknown }>();
+  for (const row of rows) {
+    const year = String(row.fiscal_year ?? row.year ?? row.fiscalYear ?? "unknown");
+    const item = grouped.get(year) || { year, bear: null, base: null, bull: null };
+    const scenario = String(row.scenario_type ?? row.scenario ?? "").toLowerCase();
+    const value = row.price_target ?? row.target ?? row.value_anchor ?? null;
+    if (scenario === "bear") item.bear = value;
+    if (scenario === "base") item.base = value;
+    if (scenario === "bull") item.bull = value;
+    grouped.set(year, item);
+  }
+  return [...grouped.values()].sort((a, b) => a.year.localeCompare(b.year));
 }
 
 function OverviewSection({

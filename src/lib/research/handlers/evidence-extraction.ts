@@ -14,6 +14,7 @@ import {
   sourceReaderBatchFingerprint,
 } from "../source-reader-batching";
 import postgres from "postgres";
+import { CURRENT_PIPELINE_VERSION } from "../version";
 
 const SOURCE_READER_OUTPUT_KEYS = [
   "evidence_claims",
@@ -41,7 +42,7 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
         requiredModules: ctx.composedProfile?.required_artifacts.map((a: any) => a.artifact_type) || [],
         requiredLenses: ctx.composedProfile?.valuation_methods.map((m: any) => m.method) || [],
         marketDataCutoffAt: ctx.marketDataCutoffAt ? ctx.marketDataCutoffAt.toISOString() : null,
-        pipelineVersion: 3,
+        pipelineVersion: CURRENT_PIPELINE_VERSION,
       };
 
       // 2. Fetch Stored Sources for this run from DB

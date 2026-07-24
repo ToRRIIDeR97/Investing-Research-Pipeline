@@ -6,7 +6,8 @@ import { research_runs } from "@/db/schema/workflow";
 import { handleApiError, successResponse, createdResponse, ApiError } from "@/lib/api/errors";
 import { createResearchRunSchema } from "@/lib/api/validation";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
-import { createStagesForRun } from "@/lib/workflow/orchestrator";
+import { createResearchRunWithStages } from "@/lib/research/run-service";
+import { CURRENT_PIPELINE_VERSION } from "@/lib/research/version";
 
 export async function GET(
   _request: NextRequest,
@@ -51,29 +52,21 @@ export async function POST(
       parsed.profile_id ?? asset.primary_profile_id ?? (await resolveActiveProfileId(assetId));
     const profileVersion = profileId ? await resolveProfileVersion(profileId) : null;
 
-    const [run] = await db
-      .insert(research_runs)
-      .values({
-        asset_id: assetId,
-        run_type: parsed.run_type,
-        research_question: parsed.research_question ?? null,
-        requested_by: parsed.requested_by ?? null,
-        profile_id: profileId,
-        profile_version: profileVersion,
-        budget_limit_usd: parsed.budget_limit_usd?.toString() ?? null,
-        source_cutoff_at: parsed.source_cutoff_at
-          ? new Date(parsed.source_cutoff_at)
-          : null,
-        market_data_cutoff_at: parsed.market_data_cutoff_at
-          ? new Date(parsed.market_data_cutoff_at)
-          : null,
-      })
-      .returning();
+    const run = await createResearchRunWithStages({
+      assetId,
+      runType: parsed.run_type,
+      researchQuestion: parsed.research_question ?? null,
+      requestedBy: parsed.requested_by ?? null,
+      profileId,
+      profileVersion,
+      budgetLimitUsd: parsed.budget_limit_usd ?? null,
+      sourceCutoffAt: parsed.source_cutoff_at ? new Date(parsed.source_cutoff_at) : null,
+      marketDataCutoffAt: parsed.market_data_cutoff_at
+        ? new Date(parsed.market_data_cutoff_at)
+        : null,
+    });
 
-    // Create all workflow stages, including explicit skipped stages for auditability.
-    await createStagesForRun(run.id);
-
-    return createdResponse(run);
+    return createdResponse({ ...run, pipeline_version: CURRENT_PIPELINE_VERSION });
   } catch (error) {
     return handleApiError(error);
   }

@@ -30,9 +30,8 @@ export const research_runs = pgTable("research_runs", {
   market_data_cutoff_at: timestamp("market_data_cutoff_at", { withTimezone: true }),
   budget_limit_usd: numeric("budget_limit_usd"),
   actual_cost_usd: numeric("actual_cost_usd").notNull().default("0"),
-  // v1 runs remain readable. New system-pipeline runs are explicitly stamped v2
-  // so their stricter provenance and artifact gates can evolve independently.
-  pipeline_version: integer("pipeline_version").notNull().default(1),
+  // Historical v1/v2 rows remain readable. New runs use the current server-owned pipeline.
+  pipeline_version: integer("pipeline_version").notNull().default(3),
   started_at: timestamp("started_at", { withTimezone: true }),
   completed_at: timestamp("completed_at", { withTimezone: true }),
   failure_reason: text("failure_reason"),

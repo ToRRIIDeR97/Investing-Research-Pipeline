@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { createStagesForRun, approveResearchPlan } from "../src/lib/workflow/orchestrator";
 import { runSystemResearchPipeline } from "../src/lib/research/system-pipeline";
+import { CURRENT_PIPELINE_VERSION } from "../src/lib/research/version";
 
 function loadEnvFile(fileName: string) {
   const path = resolve(process.cwd(), fileName);
@@ -29,7 +30,7 @@ if (acceptanceProvider !== "mock" && process.env.RUN_PAID_RESEARCH !== "1") {
 process.env.RESEARCH_MODEL_PROVIDER = acceptanceProvider;
 
 const requestedAsset = (process.env.RESEARCH_ASSET || "SOFI").trim();
-const requestedPipelineVersion = 3;
+const requestedPipelineVersion = CURRENT_PIPELINE_VERSION;
 const requestedRunType = process.env.RESEARCH_RUN_TYPE || "full_initiation_report";
 const requestedArchetypes = (process.env.RESEARCH_ARCHETYPES || "")
   .split(",")
@@ -39,9 +40,9 @@ const requestedOverlays = (process.env.RESEARCH_OVERLAYS || "")
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
-if (process.env.RESEARCH_PIPELINE_VERSION && Number(process.env.RESEARCH_PIPELINE_VERSION) < 3) {
+if (process.env.RESEARCH_PIPELINE_VERSION && Number(process.env.RESEARCH_PIPELINE_VERSION) < CURRENT_PIPELINE_VERSION) {
   throw new Error(
-    "The current pipeline only supports pipeline version 3. Versions 1 and 2 are deprecated."
+    `The current pipeline only supports pipeline version ${CURRENT_PIPELINE_VERSION}. Older versions are deprecated.`
   );
 }
 

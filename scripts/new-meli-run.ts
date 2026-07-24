@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
 import { createStagesForRun, approveResearchPlan } from "../src/lib/workflow/orchestrator";
 import { runSystemResearchPipeline } from "../src/lib/research/system-pipeline";
+import { CURRENT_PIPELINE_VERSION } from "../src/lib/research/version";
 
 function loadEnvFile(fileName: string) {
   const path = resolve(process.cwd(), fileName);
@@ -48,7 +49,7 @@ async function main() {
     ) VALUES (
       ${runId}, ${assetId}, 'deep_dive', 'pending', ${researchQuestion}, 'system-test-harness',
       ${profileId}, ${profileVersion}, ${cutoffAt}, ${cutoffAt},
-      ${process.env.RESEARCH_ACCEPTANCE_BUDGET_USD || "10.00"}, 3,
+      ${process.env.RESEARCH_ACCEPTANCE_BUDGET_USD || "10.00"}, ${CURRENT_PIPELINE_VERSION},
       ${sql.json({ acceptance_provider: acceptanceProvider, cutoff_at_utc: cutoffAt })}
     )
   `;

@@ -20,6 +20,7 @@ import { getStageConfig } from "@/lib/workflow/stages";
 import { loadRunContext, type ResearchRunContext } from "./run-context";
 import { getStageHandler } from "./stage-registry";
 import { registerCoreHandlers } from "./handlers";
+import { CURRENT_PIPELINE_VERSION } from "./version";
 
 export interface SystemPipelineResult {
   runId: string;
@@ -35,6 +36,7 @@ type StageRow = {
   stage_key: string;
   stage_order: number;
   status: string;
+  failure_reason: string | null;
   max_retries: number | null;
   validation_result_json: unknown;
 };
@@ -50,7 +52,7 @@ function retryCountOf(stage: StageRow): number {
 
 async function getStages(sql: ReturnType<typeof postgres>, runId: string): Promise<StageRow[]> {
   return sql<StageRow[]>`
-    SELECT id, stage_key, stage_order, status, max_retries, validation_result_json
+    SELECT id, stage_key, stage_order, status, failure_reason, max_retries, validation_result_json
     FROM research_stages
     WHERE research_run_id = ${runId}
     ORDER BY stage_order ASC
@@ -125,7 +127,7 @@ async function result(sql: ReturnType<typeof postgres>, runId: string, notes: st
 }
 
 /**
- * Execute (or resume) a pipeline_version = 3 research run.
+ * Execute (or resume) a current-version research run.
  */
 export async function runResearchPipeline(runId: string): Promise<SystemPipelineResult> {
   registerCoreHandlers();
@@ -137,8 +139,8 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
       SELECT pipeline_version, status FROM research_runs WHERE id = ${runId}
     `;
     if (!versionRows[0]) throw new Error(`Research run not found: ${runId}`);
-    if (Number(versionRows[0].pipeline_version || 1) < 3) {
-      throw new Error(`Run ${runId} is not a v3 run (pipeline_version=${versionRows[0].pipeline_version})`);
+    if (Number(versionRows[0].pipeline_version || 1) !== CURRENT_PIPELINE_VERSION) {
+      throw new Error(`Run ${runId} is not a current v3 run (pipeline_version=${versionRows[0].pipeline_version})`);
     }
 
     if (String(versionRows[0].status) === "pending") {
@@ -157,6 +159,15 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
       }
 
       const stages = await getStages(sql, runId);
+      const manuallyFailed = stages.find(
+        (stage) => stage.status === "failed" && !String(stage.failure_reason || "").startsWith("Failed after")
+      );
+      if (manuallyFailed) {
+        const reason = `Run contains a failed stage (${manuallyFailed.stage_key}): ${manuallyFailed.failure_reason || "stage failure"}`;
+        await markPipelineFailure(sql, runId, new Error(reason));
+        notes.push(reason);
+        return await result(sql, runId, notes);
+      }
       const waiting = stages.find((stage) => stage.status === "waiting_for_human");
       if (waiting) {
         notes.push(`Stage ${waiting.stage_key} is waiting for human approval`);
@@ -165,44 +176,39 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
 
       let active = stages.find((stage) => stage.status === "running");
       if (!active) {
+        const failed = stages.filter((stage) => stage.status === "failed");
+        const fatalFailed = failed.find((stage) => getStageConfig(stage.stage_key)?.failureState === "fail_run");
+        if (fatalFailed) {
+          const reason = `Run contains a failed required stage (${fatalFailed.stage_key}): ${fatalFailed.failure_reason || "stage failure"}`;
+          await markPipelineFailure(sql, runId, new Error(reason));
+          notes.push(reason);
+          return await result(sql, runId, notes);
+        }
         const next = stages.find((stage) => stage.status === "pending");
         if (!next) {
-          const failed = stages.filter((stage) => stage.status === "failed");
-          if (failed.length === 0) {
-            const done = await finalizeIfComplete(sql, runId);
-            if (done) return await result(sql, runId, notes);
-            return await result(sql, runId, notes);
-          }
-          // Resume the earliest failed stage; reset everything after it.
-          const target = failed[0];
-          await sql.begin(async (tx) => {
-            await tx`
-              UPDATE research_stages
-              SET status = 'running', failure_reason = NULL, completed_at = NULL,
-                  started_at = NOW(), validation_result_json = NULL, updated_at = NOW()
-              WHERE id = ${target.id}
-            `;
-            await tx`
-              UPDATE research_stages
-              SET status = 'pending', failure_reason = NULL, completed_at = NULL,
-                  started_at = NULL, validation_result_json = NULL, updated_at = NOW()
-              WHERE research_run_id = ${runId}
-                AND stage_order > ${target.stage_order}
-                AND status IN ('failed', 'cancelled', 'skipped')
-                AND stage_key != ${target.stage_key}
-            `;
-            await tx`
-              UPDATE research_runs
-              SET status = 'running', failure_reason = NULL, completed_at = NULL, updated_at = NOW()
-              WHERE id = ${runId} AND status IN ('needs_more_work', 'waiting_for_human', 'running')
-            `;
-          });
-          notes.push(`Resuming failed stage ${target.stage_key}`);
-          continue;
+          const done = await finalizeIfComplete(sql, runId);
+          if (done) return await result(sql, runId, notes);
+          return await result(sql, runId, notes);
         }
 
         const config = getStageConfig(next.stage_key);
         if (config?.requiresHumanApproval) {
+          // Human gates are entered only after their durable gate artifact exists.
+          // The research plan is deterministic and is generated from the persisted
+          // profile composition before the UI is allowed to approve it.
+          if (next.stage_key === "research_plan") {
+            const gateHandler = getStageHandler(next.stage_key);
+            if (!gateHandler) {
+              throw new Error("Research plan handler is not registered");
+            }
+            const gateContext = await loadRunContext(sql, runId);
+            const gateOutput = await gateHandler.execute(gateContext);
+            const gateValidation = await gateHandler.validate(gateContext, gateOutput);
+            if (!gateValidation.valid) {
+              await markPipelineFailure(sql, runId, new Error(gateValidation.errors.join("; ")));
+              return await result(sql, runId, notes);
+            }
+          }
           await sql.begin(async (tx) => [
             await tx`
               UPDATE research_stages

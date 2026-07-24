@@ -1,3 +1,4 @@
+import { completeV3Task, createV3Task, failV3Task } from "../run-context";
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
 import { makeValidationResult } from "../run-context";
 import { HISTORICAL_DIAGNOSIS_CONTRACT } from "../stage-contracts";
@@ -11,6 +12,15 @@ export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> =
   stageKey: "historical_diagnosis",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
+    const taskKey = "historical-diagnostician:diagnosis";
+    const task = await createV3Task(
+      sql,
+      ctx.runId,
+      "historical_diagnosis",
+      taskKey,
+      "historical_diagnosis",
+      "historical-diagnostician"
+    );
     try {
       const observationRows = await sql`
         SELECT md.metric_key, mo.value_numeric, mo.period_end, mo.as_of_date,
@@ -88,7 +98,11 @@ export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> =
         }
       }
 
+      await completeV3Task(sql, task.id, output);
       return output;
+    } catch (error) {
+      await failV3Task(sql, task.id, error);
+      throw error;
     } finally {
       await sql.end();
     }

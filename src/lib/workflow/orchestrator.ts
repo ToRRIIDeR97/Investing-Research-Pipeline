@@ -406,55 +406,43 @@ export async function approveResearchPlan(
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
-    const stages = await sql`
-      SELECT id, status
-      FROM research_stages
-      WHERE research_run_id = ${runId}
-        AND stage_key = 'research_plan'
-      LIMIT 1
-    `;
-
-    if (stages.length === 0) {
-      return { success: false, error: "Research plan stage not found" };
-    }
-
-    if (stages[0].status !== "waiting_for_human") {
-      return {
-        success: false,
-        error: `Research plan is not waiting for approval (status: ${stages[0].status})`,
-      };
-    }
-
     const validation: ValidationResult = {
       valid: true,
       errors: [],
       warnings: [],
       checkedAt: new Date().toISOString(),
     };
-
-    await sql`
-      UPDATE research_stages
-      SET status = 'completed',
-          completed_at = NOW(),
-          validation_result_json = ${sql.json({
-            ...validation,
-            approvedBy,
-            approvalType: "research_plan",
-          })},
-          updated_at = NOW()
-      WHERE id = ${stages[0].id}
-    `;
-
-    await sql`
-      UPDATE research_runs
-      SET status = 'running',
-          metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
-            research_plan_approved_by: approvedBy,
-            research_plan_approved_at: new Date().toISOString(),
-          })},
-          updated_at = NOW()
-      WHERE id = ${runId}
-    `;
+    const transition = await sql.begin(async (tx) => {
+      const stages = await tx`
+        SELECT id, status FROM research_stages
+        WHERE research_run_id = ${runId} AND stage_key = 'research_plan'
+        LIMIT 1 FOR UPDATE
+      `;
+      if (!stages[0]) return { success: false as const, error: "Research plan stage not found" };
+      if (stages[0].status !== "waiting_for_human") {
+        if (stages[0].status === "completed") return { success: true as const };
+        return { success: false as const, error: `Research plan is not waiting for approval (status: ${stages[0].status})` };
+      }
+      await tx`
+        UPDATE research_stages
+        SET status = 'completed', completed_at = NOW(),
+            validation_result_json = ${tx.json({ ...validation, approvedBy, approvalType: "research_plan" })},
+            updated_at = NOW()
+        WHERE id = ${stages[0].id}
+      `;
+      await tx`
+        UPDATE research_runs
+        SET status = 'running',
+            metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${tx.json({
+              research_plan_approved_by: approvedBy,
+              research_plan_approved_at: new Date().toISOString(),
+            })},
+            updated_at = NOW()
+        WHERE id = ${runId}
+      `;
+      return { success: true as const };
+    });
+    if (!transition.success) return transition;
   } finally {
     await sql.end();
   }
@@ -473,74 +461,91 @@ export async function approveHumanReview(
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
-    const stages = await sql`
-      SELECT id, status
-      FROM research_stages
-      WHERE research_run_id = ${runId}
-        AND stage_key = 'human_review'
-      LIMIT 1
-    `;
-
-    if (stages.length === 0) {
-      return { success: false, error: "Human review stage not found" };
-    }
-
-    if (stages[0].status !== "waiting_for_human") {
-      return {
-        success: false,
-        error: `Human review is not waiting for approval (status: ${stages[0].status})`,
-      };
-    }
-
-    const decisions = await sql`
-      SELECT id, status FROM review_decisions
-      WHERE research_run_id = ${runId}
-      ORDER BY reviewed_at DESC LIMIT 1
-    `;
-    if (!decisions[0] || !isApprovedHumanDecision(decisions[0].status)) {
-      return {
-        success: false,
-        error: "A persisted approved human review decision is required before approving the human-review stage",
-      };
-    }
-
     const validation: ValidationResult = {
       valid: true,
       errors: [],
       warnings: [],
       checkedAt: new Date().toISOString(),
     };
-
-    await sql`
-      UPDATE research_stages
-      SET status = 'completed',
-          completed_at = NOW(),
-          validation_result_json = ${sql.json({
-            ...validation,
-            reviewedBy,
-            reviewDecisionId: decisions[0].id,
-            approvalType: "human_review",
-          })},
-          updated_at = NOW()
-      WHERE id = ${stages[0].id}
-    `;
-
-    await sql`
-      UPDATE research_runs
-      SET status = 'running',
-          metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
-            human_review_approved_by: reviewedBy,
-            human_review_approved_at: new Date().toISOString(),
-          })},
-          updated_at = NOW()
-      WHERE id = ${runId}
-    `;
+    const transition = await sql.begin(async (tx) => {
+      const stages = await tx`
+        SELECT id, status FROM research_stages
+        WHERE research_run_id = ${runId} AND stage_key = 'human_review'
+        LIMIT 1 FOR UPDATE
+      `;
+      if (!stages[0]) return { success: false as const, error: "Human review stage not found" };
+      if (stages[0].status !== "waiting_for_human") {
+        return { success: false as const, error: `Human review is not waiting for approval (status: ${stages[0].status})` };
+      }
+      const decisions = await tx`
+        SELECT id, status FROM review_decisions
+        WHERE research_run_id = ${runId}
+        ORDER BY reviewed_at DESC LIMIT 1
+      `;
+      if (!decisions[0] || !isApprovedHumanDecision(decisions[0].status)) {
+        return { success: false as const, error: "A persisted approved human review decision is required before approving the human-review stage" };
+      }
+      await tx`
+        UPDATE research_stages
+        SET status = 'completed', completed_at = NOW(),
+            validation_result_json = ${tx.json({ ...validation, reviewedBy, reviewDecisionId: decisions[0].id, approvalType: "human_review" })},
+            updated_at = NOW()
+        WHERE id = ${stages[0].id}
+      `;
+      await tx`
+        UPDATE research_runs
+        SET status = 'running',
+            metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${tx.json({
+              human_review_approved_by: reviewedBy,
+              human_review_approved_at: new Date().toISOString(),
+            })},
+            updated_at = NOW()
+        WHERE id = ${runId}
+      `;
+      return { success: true as const };
+    });
+    if (!transition.success) return transition;
   } finally {
     await sql.end();
   }
 
   const nextStage = await startNextStage(runId);
   return { success: true, nextStage };
+}
+
+/** Keep the plan gate actionable while persisting the requested changes. */
+export async function requestResearchPlanChanges(
+  runId: string,
+  notes: string,
+  requestedBy = "user"
+): Promise<{ success: boolean; error?: string }> {
+  const sql = postgres(process.env.DATABASE_URL!);
+  try {
+    return await sql.begin(async (tx) => {
+      const stages = await tx`
+        SELECT id, status FROM research_stages
+        WHERE research_run_id = ${runId} AND stage_key = 'research_plan'
+        LIMIT 1 FOR UPDATE
+      `;
+      if (!stages[0]) return { success: false, error: "Research plan stage not found" };
+      if (stages[0].status !== "waiting_for_human") {
+        return { success: false, error: `Research plan is not waiting for changes (status: ${stages[0].status})` };
+      }
+      await tx`
+        UPDATE research_runs
+        SET status = 'waiting_for_human',
+            metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${tx.json({
+              research_plan_change_request: notes.trim(),
+              research_plan_change_requested_by: requestedBy,
+              research_plan_change_requested_at: new Date().toISOString(),
+            })}, updated_at = NOW()
+        WHERE id = ${runId}
+      `;
+      return { success: true };
+    });
+  } finally {
+    await sql.end();
+  }
 }
 
 /**
@@ -562,7 +567,8 @@ async function startNextStage(
     `;
     if (nextStages.length === 0) {
       // Acceptance test mode skips quality gate evaluation (mock data lacks real sources/evidence)
-      const skipQualityGate = process.env.SKIP_V3_CONTENT_VALIDATORS === "true";
+      const skipQualityGate = process.env.SKIP_V3_CONTENT_VALIDATORS === "true"
+        || process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock";
       const quality = skipQualityGate
         ? { status: "pass" as const, coverage: [], gaps: [] }
         : await evaluateResearchQuality(runId);
