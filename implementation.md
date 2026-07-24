@@ -1,824 +1,884 @@
-# Reasonix Implementation Plan
+# Research OS Backend–UI Stitching Implementation Plan
 
 ## Objective
 
-Consolidate Research OS into one supported research pipeline and repair the SOFI
-end-to-end failures.
+Connect the existing web interface to the merged Research OS v3 backend so a
+user can create, execute, review, and read a complete research run without
+using command-line scripts.
 
-The current supported implementation is the Research OS v3 design. The finished
-codebase must not contain separate executable v1, v2, and v3 pipelines. It should
-expose one version-neutral pipeline, one stage definition, one orchestrator, and
-one set of current artifact contracts.
+The backend is the tested baseline. Do not rebuild the research engine. Pull
+request #1 merged Reasonix into `main` at:
 
-This is an implementation assignment, not another planning exercise. Complete
-the code changes, tests, documentation, and validation described below.
-
-## Mandatory branch setup
-
-Before editing any file:
-
-```bash
-git switch codex/local-agent-harness
-git pull --ff-only origin codex/local-agent-harness
-git switch -c reasonix
+```text
+b210ba98 Merge Reasonix research pipeline into main (#1)
 ```
 
-All work must be committed to `reasonix`. Do not commit directly to
-`codex/local-agent-harness` or `main`. Do not merge `reasonix` into another
-branch unless the user explicitly asks.
+The backend already supports:
 
-## Known baseline
+- one current 24-stage workflow;
+- typed research artifacts;
+- company-genesis and founder-motivation research;
+- role-driven source intelligence;
+- historical, business-process, moat, forecast, and valuation analysis;
+- annual bear/base/bull price-target paths;
+- 50-combination framework backtesting;
+- AI review and explicit human gates;
+- export and refresh-schedule handlers.
 
-The starting branch contains the current v3 implementation, but it is not
-release-ready.
+The remaining problem is integration. The current UI creates a run and polls
+it, but it does not reliably start the v3 engine, resume it after either human
+gate, or render most canonical v3 artifacts.
 
-Confirmed baseline behavior:
+This is an implementation assignment. The implementing agent must make the
+changes, add tests, run validation, and commit the completed work.
 
-- A SOFI mock run reaches the `research_plan` human gate correctly.
-- After research-plan approval, analysis stages fail to create their required
-  artifacts.
-- The pipeline eventually fails because the shared orchestrator requires the
-  old v2-only `asset_analysis` stage before `asset_valuation`.
-- `export` and `refresh_schedule` are part of the current stage specification
-  but have no registered runtime handlers.
-- `npx tsc --noEmit` fails in `tests/sofi-v3-e2e.test.ts` because it reads a
-  nonexistent `SystemPipelineResult.failure_reason`.
-- The unit suite passes, but the database-backed SOFI acceptance flow does not.
+## Required branch setup
 
-Do not treat the existing handover claim that `postgres.js sql.json()` is the
-root cause as established fact. The installed package is postgres.js 3.4.9,
-several `sql.json()` operations already work, and the current failure is a
-model-output/artifact contract failure. Add a focused regression test before
-changing JSON persistence.
+```bash
+git switch main
+git pull --ff-only origin main
+git switch -c codex/backend-ui-stitch
+```
+
+Do not commit directly to `main`. Do not merge or push unless the user asks.
+
+## End-state user journey
+
+```text
+Asset page
+  → Create v3 research run
+  → Durable background job starts
+  → Intake / identity / archetype composition
+  → Real research-plan gate
+  → User reviews and approves plan
+  → Background job resumes
+  → Sources / evidence / analysis / valuation / backtest / decision
+  → Final human-review gate
+  → User records investment decision
+  → Background job resumes
+  → Export and refresh schedule complete
+  → Typed artifact-backed report is available
+```
+
+## Confirmed integration gaps
+
+1. `POST /api/assets/:id/research-runs` does not explicitly write
+   `pipeline_version = 3`.
+2. The schema and database default for `pipeline_version` remain `1`.
+3. The run page says “Starting research pipeline” but only creates a run and
+   starts polling.
+4. `/run-system-pipeline` waits synchronously for a potentially multi-minute
+   run.
+5. The UI displays a hard-coded 12-step plan rather than the actual 24-stage,
+   profile-derived plan.
+6. Research-plan approval and final approval do not durably enqueue the runner
+   to continue.
+7. The report reads compatibility tables but not most `research_artifacts`.
+8. Company genesis, moat attacks, driver trees, expected returns, monitoring,
+   AI review, and annual price-target paths are not properly presented.
+9. The report may select an older completed run instead of the newest run.
+10. The existing worker primarily claims isolated backtest tasks rather than
+    complete research-run jobs.
 
 ## Non-negotiable constraints
 
-1. There must be one active research runtime when this work is complete.
-2. Do not delete numbered database migrations. Migration history is required to
-   create and upgrade databases even when old application runtimes are removed.
-3. Do not rewrite or hide failing tests merely to obtain a green result.
-4. Do not call paid model providers in automated acceptance tests.
-5. Do not make live SEC, Yahoo, or other network calls in deterministic tests.
-6. Do not delete or overwrite an existing real SOFI asset during test setup.
-7. Do not insert artifacts directly as `accepted` before their contract
-   validation succeeds.
-8. Do not use raw `sql.unsafe()` interpolation for dynamic JSON.
-9. Preserve point-in-time cutoffs and prevent look-ahead data.
-10. Preserve the research goals already added: company genesis and founder
-    motivation, historical diagnosis, business-process analysis, moat testing,
-    operating scenarios, and bear/base/bull annual price targets.
+1. Preserve all historical v1/v2 run rows and migrations.
+2. New UI runs must use the server-owned current version. The browser must not
+   choose a pipeline version.
+3. Do not execute a long paid pipeline inside an HTTP request.
+4. Execution queue state must survive web/worker restarts.
+5. Multiple workers must not claim the same active run.
+6. Duplicate clicks must be idempotent.
+7. Do not automatically approve either human gate.
+8. Export must not execute before final human approval.
+9. A run must not become `completed` until export and refresh scheduling finish.
+10. Never expose provider credentials or database credentials to the client.
+11. Preserve source and market-data cutoffs.
+12. Automated tests must use the mock provider and no live Yahoo, SEC, search,
+    or paid model calls.
+13. Typed v3 artifacts are canonical. Compatibility tables are read models, not
+    the narrative source of truth.
+14. Missing artifacts must produce visible incomplete states, never invented
+    prose.
 
 ---
 
-# Component 1 — Establish the canonical pipeline and removal map
+# Component 1 — Current-version run creation
 
-## Role
+## Main role
 
-Repository/architecture owner.
-
-## Required changes
-
-Inventory every executable pipeline entry point, stage list, version switch,
-worker call, script, API route, and test before deleting code.
-
-At minimum inspect:
-
-- `src/lib/research/system-pipeline.ts`
-- `src/lib/research/v3-pipeline.ts`
-- `src/lib/research/v3-context.ts`
-- `src/lib/research/v3/handlers/`
-- `src/lib/workflow/orchestrator.ts`
-- `src/lib/workflow/stages.ts`
-- `src/lib/workflow/validators.ts`
-- run-creation scripts and workers
-- all `pipeline_version`, `runResearchPipelineV2`, `runResearchPipelineV3`,
-  `getStageConfig`, and `asset_analysis` references
-
-Create a temporary removal map in the working notes with these classifications:
-
-- current runtime code to retain and rename
-- current code still incorrectly depending on legacy helpers
-- legacy runtime code with no current callers
-- shared utilities still required by the current runtime
-- database migrations/schema needed for compatibility
-- old tests that should be rewritten for the current runtime
-- genuinely dead tests/files that should be deleted
-
-Use repository evidence. Do not infer that a file is dead merely because its
-name contains `v1` or `v2`.
-
-The target architecture is:
-
-```text
-runResearchPipeline
-  -> current stage registry
-  -> current stage handler
-  -> stage-specific output validation
-  -> artifact validation and acceptance
-  -> current dependency-based transition
-```
-
-There must be no runtime dispatcher choosing among pipeline versions.
-
-## Test cases
-
-### C1-T1 — One executable pipeline
-
-Search production code for legacy dispatch:
-
-```bash
-rg -n "runResearchPipelineV1|runResearchPipelineV2|runResearchPipelineV3|pipelineVersion ===|pipeline_version.*[<>=].*[123]" src scripts
-```
-
-Expected: no executable version-selection path. A schema field or explicit
-legacy-data rejection may remain, but it must not select an old implementation.
-
-### C1-T2 — No legacy stage set
-
-```bash
-rg -n "asset_analysis|V1_STAGES|V2_STAGES|V3_STAGES|getStageConfig\\([^)]*,\\s*[123]" src
-```
-
-Expected: no old `asset_analysis` dependency and no multiple active stage
-arrays. If a compatibility reference remains, document why it cannot execute.
-
-### C1-T3 — Migration history preserved
-
-Run migrations against an empty disposable database.
-
-Expected: all numbered migrations apply successfully and produce the current
-schema. Old migration filenames must remain even though old runtime code is
-removed.
-
----
-
-# Component 2 — Rename v3 into the version-neutral current runtime
-
-## Role
-
-Pipeline consolidation owner.
+Workflow version and run-creation owner.
 
 ## Required changes
 
-After the removal map is complete:
+1. Add one exported constant:
 
-1. Promote the current v3 implementation to version-neutral names.
-2. Rename public symbols such as `runResearchPipelineV3`, `V3RunContext`, and
-   `V3StageHandler` to current equivalents.
-3. Move `src/lib/research/v3/handlers/` to a version-neutral location such as
-   `src/lib/research/handlers/`.
-4. Rename `v3-context.ts`, `v3-pipeline.ts`, `v3-stage-registry.ts`, and
-   `v3-contracts.ts` where doing so improves clarity.
-5. Rename the v3 report generator to the current report generator.
-6. Update imports, scripts, tests, and documentation.
-7. Remove the old monolithic pipeline only after all required source ingestion
-   and shared behavior has been moved into current modules.
-8. Make new runs use the current pipeline without an environment variable that
-   selects a version.
+   ```ts
+   export const CURRENT_PIPELINE_VERSION = 3;
+   ```
 
-The database may keep `pipeline_version` temporarily for historical metadata,
-but application code must either:
+   Place it in a version-neutral server module and use it from run creation,
+   dispatch, scripts, and tests.
 
-- create current runs with one constant current value; and
-- reject unsupported historical runs with a clear error;
+2. Change the Drizzle `research_runs.pipeline_version` default to `3`.
 
-or migrate the field away in a forward migration. It must not dispatch to an
-old runtime.
+3. Add a new forward migration changing the database default to `3`. Do not
+   modify prior migrations or existing rows.
 
-Do not rename schema versions embedded in already-created artifacts or
-migrations. Runtime consolidation and historical schema identity are different
-concerns.
+4. Update `POST /api/assets/:id/research-runs` to explicitly store
+   `CURRENT_PIPELINE_VERSION`.
+
+5. Keep `pipeline_version` out of client-controlled validation. If a caller
+   submits it, reject or ignore it.
+
+6. Return the stored version in create/detail/list responses.
+
+7. Make run creation and stage initialization one service operation. A failure
+   must not leave a run without stages.
 
 ## Test cases
 
-### C2-T1 — Current entry point
+### C1-T1 — Default UI run
 
-A test imports only `runResearchPipeline` and starts a new run without
-`RESEARCH_PIPELINE_VERSION`.
-
-Expected: the current pipeline starts.
-
-### C2-T2 — Legacy run handling
-
-Create a run row marked with an unsupported historical pipeline version.
-
-Expected: one explicit unsupported-version error. The system must not silently
-execute current stages against incompatible historical state.
-
-### C2-T3 — No version-specific production paths
-
-```bash
-rg -n "/v3/|v3-pipeline|v3-context|V3RunContext|V3StageHandler" src scripts
-```
-
-Expected: no version-specific runtime names, except deliberately preserved
-historical metadata or migration commentary.
-
----
-
-# Component 3 — Repair stage-specific model-output contracts
-
-## Role
-
-Agent harness and contract owner.
-
-## Root cause
-
-Current analysis handlers prompt for the generic asset-analyst keys:
-
-- `analysis_sections`
-- `key_drivers`
-- `metric_interpretation`
-- `contradictions_or_tensions`
-- `missing_modules`
-- `source_gaps`
-- `analyst_questions`
-- `confidence`
-
-Those handlers then try to persist different top-level keys such as
-`company_genesis`, `founder_profile`, `driver_tree`, or `moat_assessment`.
-
-The shared agent registry enforces the generic output schema. A correct
-specialized response is therefore rejected and sent through repair. The repair
-request does not preserve enough of the original task contract, and the mock
-provider returns the generic analyst response. No specialized artifacts are
-persisted.
-
-## Required changes
-
-1. Allow an agent request to supply a stage-specific structured-output schema.
-   Do not force every request made by `asset-analyst` through one generic schema.
-2. Define one explicit response contract for each artifact-producing stage:
-   - company genesis
-   - historical diagnosis
-   - business-process analysis
-   - moat analysis
-   - operating model
-   - operating scenarios
-   - valuation
-   - decision synthesis
-   - AI review
-3. The prompt’s required keys, parser required keys, schema validator, handler
-   output type, and persisted artifact keys must all come from the same
-   contract.
-4. Include a stable stage or artifact-family discriminator in the task packet.
-5. Structured-output repair must retain:
-   - the original stage discriminator
-   - required keys/schema
-   - the original bounded task packet or a safe compacted form
-   - the validation errors
-   - the previous response
-6. Update the mock provider to route on the explicit discriminator, not on
-   brittle inference from a generic prompt.
-7. Remove debug `console.log` statements from production handlers.
-8. Use concrete TypeScript output types instead of `unknown` and `any` for
-   handler results.
-
-## Test cases
-
-### C3-T1 — Company-genesis contract
-
-Send a company-genesis request through the complete agent runner using the mock
-provider.
-
-Expected top-level keys:
-
-- `company_genesis`
-- `founder_profile`
-- `strategic_history_timeline`
-- `strategic_dna`
-
-The output must pass the same schema used by the handler.
-
-### C3-T2 — All specialized contracts
-
-Create a table-driven test covering every artifact-producing handler.
-
-Expected: each mock response passes without structured-output repair and
-contains exactly the artifact family required by that stage.
-
-### C3-T3 — Repair retains the contract
-
-Make the first mock response malformed and the repair response valid.
-
-Expected: the repair request still identifies the original stage and produces
-the specialized response, not generic `analysis_sections`.
-
-### C3-T4 — Wrong family rejected
-
-Return a moat response to the company-genesis handler.
-
-Expected: schema validation fails and no artifacts are inserted.
-
----
-
-# Component 4 — Make artifact persistence validation-first
-
-## Role
-
-Artifact repository and validation owner.
-
-## Required changes
-
-1. Handlers must create artifacts as `draft` or `validated`.
-2. Run the artifact-specific validator before acceptance.
-3. Call the repository acceptance method only after validation succeeds.
-4. Store validation metadata and validator version.
-5. Link supporting `evidence_claim_ids` through
-   `research_artifact_claim_links`.
-6. Add required artifact dependencies through
-   `research_artifact_dependencies`.
-7. Make handler `validate()` check required persisted artifacts, their status,
-   and their validation result—not merely the existence of a completed task.
-8. Correct repository idempotency:
-   - use the declared idempotency key or a documented unique logical key;
-   - retrying the same stage in the same run must not duplicate artifacts;
-   - changed content must not be silently discarded;
-   - artifacts from different runs remain independent.
-9. Parse legacy string JSON only at a clearly bounded compatibility boundary.
-   Current JSONB reads should return typed objects.
-
-## Test cases
-
-### C4-T1 — Missing artifact fails locally
-
-Complete a task without inserting its required artifact.
-
-Expected: that handler’s validation fails immediately with the missing artifact
-types. The error must not be deferred to a later global validator.
-
-### C4-T2 — Invalid artifact is not accepted
-
-Generate a company genesis artifact with an unsupported assertion about founder
-financial motivation.
-
-Expected: the artifact remains non-accepted and the stage reports the contract
-error.
-
-### C4-T3 — Evidence links
-
-Accept a valid artifact with two real evidence claim IDs.
-
-Expected: two valid claim-link rows exist and no fabricated UUID is accepted.
-
-### C4-T4 — Same-run idempotency
-
-Execute the same handler twice for the same run and task key.
-
-Expected: one current logical artifact per type/scope, with deterministic
-content/version behavior.
-
-### C4-T5 — Cross-run independence
-
-Execute two separate research runs for the same asset.
-
-Expected: each run owns its own artifact set. The second run is not incorrectly
-deduplicated against the first.
-
----
-
-# Component 5 — Replace legacy orchestration with current dependencies
-
-## Role
-
-Workflow orchestration owner.
-
-## Required changes
-
-1. Remove the hard-coded `asset_analysis` prerequisite for `asset_valuation`.
-2. Define stage dependencies once in the current stage configuration.
-3. Use those dependencies consistently for:
-   - entry criteria
-   - retries
-   - skip behavior
-   - human gates
-   - failure propagation
-   - resume
-4. Required analysis stages must finish with their required accepted artifacts
-   before valuation starts.
-5. Full and deep research must execute the framework backtest even when no
-   separate timing hypothesis is supplied. The supported sequence is
-   `indicator_design` → `strategy_design` → `backtest_execution` →
-   `backtest_review` → `decision_synthesis`.
-6. The framework gate requires at least 10 documented indicators, 50
-   thesis-distinct combinations across five buckets, shifted signals,
-   transaction costs, benchmark comparisons, in/out-of-sample evidence, a top
-   10 ranking, and review of at least five weak or failed combinations.
-7. Human review must not start if required current stages failed.
-8. A failed required stage must not leave later stages or tasks running.
-9. Remove duplicated transition logic between the pipeline runner and shared
-   orchestrator.
-10. Preserve two human gates:
-   - research-plan approval before research execution
-   - final human review before export/final completion
-
-## Test cases
-
-### C5-T1 — Valuation dependency chain
-
-Complete all current required analysis stages and artifacts without creating an
-`asset_analysis` stage.
-
-Expected: `asset_valuation` starts.
-
-### C5-T2 — Missing moat blocks valuation
-
-Leave the required moat artifact incomplete.
-
-Expected: valuation does not start and the failure identifies the missing
-current dependency.
-
-### C5-T3 — Human-gate sequence
-
-Run a fresh mock pipeline.
-
-Expected sequence:
-
-1. stops at `research_plan`;
-2. resumes only after plan approval;
-3. stops at `human_review`;
-4. resumes only after final human approval.
-
-### C5-T4 — Framework backtest gate
-
-Run without a timing hypothesis.
-
-Expected: the run still designs at least 10 indicators, generates and executes
-50 thesis-distinct strategy combinations, persists IS/OOS and benchmark
-results, reviews the top 10 and at least five failures, and completes
-`backtest_review` before `decision_synthesis`. If any requirement is missing,
-the conclusion is withheld and human review does not start.
-
-### C5-T5 — Terminal cleanup
-
-Force a required stage failure.
-
-Expected: zero non-human stages and zero tasks remain in `running`.
-
----
-
-# Component 6 — Implement the missing terminal stages
-
-## Role
-
-Export and lifecycle owner.
-
-## Required changes
-
-Implement and register current handlers for:
-
-- `export`
-- `refresh_schedule`
-
-The export handler must consume accepted current artifacts and use the existing
-25-section report structure. Missing required sections must remain visibly
-incomplete; do not generate filler.
-
-The refresh-schedule handler must persist a deterministic refresh decision or
-explicitly record that no automatic refresh was requested. It must be
-idempotent.
-
-After final human approval:
-
-1. export runs;
-2. refresh scheduling runs;
-3. the research run reaches its documented successful terminal status.
-
-## Test cases
-
-### C6-T1 — Registry completeness
-
-Compare every executable current stage key with the registered handler keys.
-
-Expected: exact set equality.
-
-### C6-T2 — Export after approval
-
-Before final human approval, assert no final export exists. Approve the final
-review and resume.
-
-Expected: one watermarked synthetic report is created with all 25 canonical
-section headings.
-
-### C6-T3 — Refresh idempotency
-
-Resume the completed run twice.
-
-Expected: no duplicate refresh schedule or export.
-
----
-
-# Component 7 — Correct JSON persistence and test-provider injection
-
-## Role
-
-Persistence and integration-boundary owner.
-
-## Required changes
-
-1. Add a minimal postgres.js 3.4.9 integration test for:
-   - `INSERT ... VALUES` JSONB
-   - `UPDATE` JSONB
-   - JSONB concatenation
-   - task output round-trip
-2. Verify whether `sql.json(value)` or a parameterized
-   `JSON.stringify(value)::jsonb` implementation produces an object.
-3. Replace dynamic `sql.unsafe()` JSON literals with one tested parameterized
-   helper.
-4. Preserve apostrophes, Unicode, nested arrays, null, and large bounded model
-   outputs.
-5. Remove test-mode SEC branches from production fetch functions.
-6. Introduce an injectable source provider/retriever interface. Tests should
-   inject mock SEC and supplemental sources through that interface.
-7. Production source retrieval must never change merely because
-   `RESEARCH_TEST_MODE` is set globally.
-
-## Test cases
-
-### C7-T1 — JSON object round trip
-
-Persist and reload:
-
-```json
-{
-  "founder": "O'Brien",
-  "motivation": ["mission", "commercial"],
-  "unicode": "金融",
-  "nested": {"confidence": 0.8},
-  "nullable": null
-}
-```
-
-Expected: deep equality and PostgreSQL `jsonb_typeof(...) = 'object'`.
-
-### C7-T2 — Injection safety
-
-Persist strings containing quotes and SQL-looking text.
-
-Expected: the content round-trips and no unintended statement executes.
-
-### C7-T3 — Mock source injection
-
-Run source discovery and ingestion with the injected mock provider.
-
-Expected: zero network calls and complete required mock source-role coverage.
-
-### C7-T4 — Production boundary
-
-Run the production provider in a test with `fetch` stubbed.
-
-Expected: it uses the provider interface; no hidden acceptance-mode branch
-returns hard-coded SOFI data.
-
----
-
-# Component 8 — Repair the deterministic SOFI fixture
-
-## Role
-
-Acceptance fixture owner.
-
-## Required changes
-
-The fixture must be internally coherent enough to pass the same contracts as a
-real provider response.
-
-Fix at least:
-
-- remove remaining MELI/MercadoLibre labels from SOFI responses;
-- use evidence claim IDs actually inserted for that run;
-- remove duplicate object keys such as `seller_segment`;
-- make segment totals reconcile to consolidated totals;
-- make scenario probabilities sum to one;
-- make valuation values reconcile to operating scenarios;
-- include bear/base/bull price targets for every forecast year through the
-  terminal year;
-- keep all fixture publication/as-of dates at or before a fixed historical
-  cutoff;
-- ensure synthetic data can never become `investment_ready`.
-
-Do not weaken validators to accommodate an inconsistent fixture.
-
-## Test cases
-
-### C8-T1 — Fixture self-validation
-
-Run every artifact validator directly against the SOFI fixture.
-
-Expected: all intended accepted artifacts pass.
-
-### C8-T2 — Reconciliation
+Create a run through the API without a version.
 
 Expected:
 
-- segment revenue equals consolidated revenue;
-- scenario probabilities equal 1.0 within the documented tolerance;
-- final-year price targets equal their terminal valuation anchors;
-- every evidence link points to a claim from the same run.
+- HTTP 201;
+- stored `pipeline_version = 3`;
+- exactly 24 stages;
+- no duplicate stage keys or orders.
 
-### C8-T3 — Synthetic readiness
+### C1-T2 — Client attempts to choose v1
 
-Evaluate quality gates for the complete fixture.
+Send `pipeline_version: 1`.
 
-Expected: it may become structurally/review ready, but never
-`investment_ready`.
+Expected: the stored run is still v3, or the request is rejected with a clear
+validation error.
 
----
+### C1-T3 — Historical data preservation
 
-# Component 9 — Rebuild the SOFI end-to-end acceptance test
+Apply the migration to a database containing a v2 row.
 
-## Role
+Expected: the old row remains v2 and a new row defaults to v3.
 
-End-to-end test owner.
+### C1-T4 — Dispatcher compatibility
 
-## Required changes
+Pass the new run to `runSystemResearchPipeline`.
 
-Repair `tests/sofi-v3-e2e.test.ts` and rename it after runtime consolidation.
-
-Required corrections:
-
-1. Stop accessing a nonexistent `SystemPipelineResult.failure_reason`, or add a
-   properly typed result field if it is part of the intended public contract.
-2. Query `ai_reviewer`, not `ai_review`.
-3. Use a unique test-only asset slug and symbol suffix. Never delete the
-   database’s existing `sofi` asset.
-4. Use transaction rollback, a dedicated disposable database, or one reusable
-   FK-safe fixture cleanup helper.
-5. Delete tasks before stages.
-6. Use a fixed cutoff and fixture observations that predate it. Do not set the
-   cutoff one year into the future.
-7. Test idempotency by rerunning the same logical task/run and querying actual
-   duplicate counts.
-8. Treat two distinct research runs as independent.
-9. Exercise all three pipeline invocations:
-   - reach research-plan gate;
-   - approve and reach final human gate;
-   - approve and complete export/refresh.
-10. Assert exact required artifact types and accepted status.
-11. Assert zero running non-human work at every pause and terminal state.
-
-## Annual price-target acceptance table
-
-Derive the expected year range from the valuation artifact. For every year from
-the first forecast year through the terminal year, assert exactly one target
-for each scenario:
-
-| Fiscal year | Bear | Base | Bull |
-|---|---:|---:|---:|
-| First forecast year | required | required | required |
-| Every intermediate year | required | required | required |
-| Terminal year | required | required | required |
-
-Also assert:
-
-- no duplicate `(fiscal_year, scenario_type)` pairs;
-- no missing intermediate years;
-- finite positive price targets;
-- correct currency;
-- the final-year value reconciles to the scenario terminal anchor;
-- values are derived from scenario assumptions, not simple interpolation;
-- non-monotonic paths are permitted when supported by scenario economics.
-
-## Test cases
-
-### C9-T1 — Complete mock flow
-
-```bash
-RUN_DB_INTEGRATION=1 \
-DATABASE_URL=postgresql://research_os:research_os_dev@localhost:5433/research_os \
-RESEARCH_MODEL_PROVIDER=mock \
-npx tsx --test --test-timeout=600000 tests/sofi-research-e2e.test.ts
-```
-
-Expected: all gates and terminal stages pass with no network or paid inference.
-
-### C9-T2 — Existing SOFI safety
-
-Seed a pre-existing SOFI asset before the test.
-
-Expected: the test completes without updating or deleting that row.
-
-### C9-T3 — Failure cleanup
-
-Force one required mock artifact to fail validation.
-
-Expected: deterministic failure, no export, and no running tasks/stages.
+Expected: no unsupported-version error.
 
 ---
 
-# Component 10 — Remove obsolete code and align documentation
+# Component 2 — Durable research-run execution queue
 
-## Role
+## Main role
 
-Final consolidation owner.
+Database job queue and worker owner.
 
 ## Required changes
 
-Only after the current pipeline and acceptance tests pass:
+Do not connect the browser directly to the synchronous pipeline endpoint. Add a
+durable run-level queue.
 
-1. Delete the old pipeline implementation and version dispatcher.
-2. Delete old stage definitions and validators that have no current callers.
-3. Delete obsolete provider adapters only if no current script or configured
-   provider uses them.
-4. Remove environment variables that select v1/v2/v3.
-5. Remove obsolete scripts and tests tied exclusively to removed runtimes.
-6. Update current scripts, `.env.example`, README/docs, and handover guidance to
-   describe one pipeline.
-7. Mark historical handover files as historical if retained. Do not treat them
-   as current operating instructions.
-8. Keep reusable domain validators, source ingestion, artifact contracts,
-   migrations, and other code proven to be used by the current runtime.
-9. Run a final dead-code and import check.
+1. Add a `research_run_jobs` table through a new migration and Drizzle schema:
 
-Avoid a cosmetic rename that leaves duplicate orchestration underneath. The
-goal is one behavior, not merely one public function name.
+   - `id`
+   - `research_run_id`
+   - `job_type`
+   - `status`: `queued`, `running`, `completed`, `failed`
+   - `requested_by`
+   - `attempt_count`
+   - `max_attempts`
+   - `lease_owner`
+   - `lease_expires_at`
+   - `result_json`
+   - `failure_reason`
+   - `queued_at`
+   - `started_at`
+   - `completed_at`
+   - `created_at`
+   - `updated_at`
+
+2. Add a partial unique index permitting at most one active
+   (`queued`/`running`) pipeline job per run.
+
+3. Implement:
+
+   ```text
+   enqueueResearchRun
+   claimNextResearchRun
+   renewResearchRunLease
+   completeResearchRunJob
+   failResearchRunJob
+   requeueExpiredResearchRunJobs
+   getLatestResearchRunJob
+   ```
+
+4. Claim jobs atomically using a transaction and
+   `FOR UPDATE SKIP LOCKED`.
+
+5. Add/extend a pipeline worker that:
+
+   - claims one job;
+   - calls `runSystemResearchPipeline(runId)`;
+   - periodically renews the lease;
+   - persists the returned result;
+   - records infrastructure exceptions separately from valid pipeline outcomes;
+   - recovers expired leases;
+   - shuts down gracefully.
+
+6. Treat these as successful worker executions whose workflow state is stored
+   on the run:
+
+   - `waiting_for_human`;
+   - `needs_more_work`;
+   - `completed`.
+
+7. Change `POST /api/research-runs/:id/run-system-pipeline` into an idempotent
+   enqueue/resume endpoint returning HTTP 202. It must not await the full
+   pipeline.
+
+8. Add `GET /api/research-runs/:id/jobs` or include the latest job in run
+   detail.
+
+9. Add documented local scripts for starting both web and worker processes.
+
+10. Add a worker heartbeat/health record or endpoint so the UI can distinguish
+    “queued normally” from “queued but no worker is available.”
 
 ## Test cases
 
-### C10-T1 — No legacy runtime symbols
+### C2-T1 — Fast enqueue response
 
-```bash
-rg -n "runResearchPipelineV1|runResearchPipelineV2|runResearchPipelineV3|RESEARCH_PIPELINE_VERSION|asset_analysis" \
-  src scripts tests package.json .env.example
+POST the start endpoint.
+
+Expected: HTTP 202 and a queued job ID before any model execution begins.
+
+### C2-T2 — Duplicate start
+
+Submit two start requests for one run.
+
+Expected: one active job.
+
+### C2-T3 — Competing workers
+
+Run two claims concurrently.
+
+Expected: one worker receives the job.
+
+### C2-T4 — Lease recovery
+
+Expire a running job lease and invoke recovery.
+
+Expected: the job becomes claimable once and resumes through pipeline
+idempotency.
+
+### C2-T5 — Human gate outcome
+
+Run until a human gate.
+
+Expected: the job completes with a `waiting_for_human` result; it is not marked
+as an infrastructure failure.
+
+### C2-T6 — Unsupported legacy run
+
+Enqueue a v2 run.
+
+Expected: HTTP 422 and no job row.
+
+---
+
+# Component 3 — Run-page creation and real research-plan gate
+
+## Main role
+
+Run-page user experience owner.
+
+## Required changes
+
+1. Replace the current hard-coded plan-first flow with:
+
+   - research question;
+   - run type;
+   - source cutoff;
+   - market-data cutoff;
+   - optional budget.
+
+2. The first action should create a v3 run and enqueue it.
+
+3. Let the engine complete intake, identity, and archetype composition before
+   showing the research-plan gate.
+
+4. Persist a deterministic `research_plan` artifact before the plan gate. It
+   must contain:
+
+   - asset and profile;
+   - composed archetypes and overlays;
+   - required source roles;
+   - required historical metrics;
+   - required analysis modules;
+   - applicable and forbidden valuation methods;
+   - backtest requirement;
+   - applicable stage list;
+   - cutoffs and budget.
+
+5. Render the persisted plan instead of `generateResearchPlan()`.
+
+6. Add explicit controls:
+
+   - Approve Plan;
+   - Request Changes.
+
+7. Approve Plan must:
+
+   - call `/approve-plan`;
+   - persist approver/time;
+   - enqueue exactly one resume job;
+   - return immediately.
+
+8. Request Changes must persist notes and leave the workflow in a documented
+   actionable state.
+
+9. Reloading the page must reconstruct the plan/gate from the database.
+
+## Test cases
+
+### C3-T1 — Persisted plan
+
+Create a mock equity run.
+
+Expected: the UI renders profile, sources, modules, methods, stages, cutoffs,
+and budget from persisted backend state.
+
+### C3-T2 — No automatic approval
+
+Do not click Approve.
+
+Expected: `research_plan` stays `waiting_for_human` and source discovery does
+not start.
+
+### C3-T3 — Approval resumes
+
+Approve once.
+
+Expected: plan stage completes and exactly one resume job is queued.
+
+### C3-T4 — Double-click safety
+
+Submit approval twice rapidly.
+
+Expected: one effective approval and one active job.
+
+### C3-T5 — Reload
+
+Reload at the gate.
+
+Expected: the same plan and actions reappear.
+
+---
+
+# Component 4 — Live 24-stage progress and failure UX
+
+## Main role
+
+Pipeline theater and operational-state owner.
+
+## Required changes
+
+1. Run detail must expose:
+
+   - version;
+   - run status;
+   - latest job status;
+   - all stages;
+   - active/recent tasks;
+   - cost and budget;
+   - sources and role coverage;
+   - model calls;
+   - backtest combination progress;
+   - run, stage, task, and job failures.
+
+2. Render the 24 database stages in `stage_order`. Do not maintain a separate
+   client stage list.
+
+3. Distinguish:
+
+   - queued;
+   - running;
+   - waiting for plan approval;
+   - waiting for final review;
+   - needs more work;
+   - worker unavailable;
+   - worker failure;
+   - completed.
+
+4. Poll while queued/running. Slow or stop polling at stable gates and terminal
+   states; resume after user action.
+
+5. Display the most actionable failure with stage/task context.
+
+6. Add Retry/Resume only when the backend reports that the action is valid.
+
+7. Show source-role coverage as distinct roles, not the raw number of
+   role-by-artifact rows.
+
+## Test cases
+
+### C4-T1 — Stage list
+
+Expected: exactly 24 stages in backend order.
+
+### C4-T2 — Gate-specific actions
+
+Expected: plan controls only at `research_plan`; investment-review controls
+only at `human_review`.
+
+### C4-T3 — Handler failure
+
+Force a mock handler failure.
+
+Expected: persisted reason is visible and polling does not spin forever.
+
+### C4-T4 — Worker unavailable
+
+Queue a run without a healthy worker heartbeat.
+
+Expected: a clear “waiting for worker” warning.
+
+### C4-T5 — Poll lifecycle
+
+Expected: active polling during execution and reduced/stopped polling at human
+gates.
+
+---
+
+# Component 5 — Canonical typed-artifact and report APIs
+
+## Main role
+
+Backend read-model/API owner.
+
+## Required changes
+
+1. Add:
+
+   ```text
+   GET /api/research-runs/:id/artifacts
+   GET /api/research-runs/:id/artifacts/:artifactType
+   GET /api/research-runs/:id/report
+   ```
+
+2. Artifact responses must include:
+
+   - ID;
+   - type;
+   - scope;
+   - status;
+   - content object;
+   - schema/prompt/validator versions;
+   - validation result;
+   - timestamps.
+
+3. By default return the newest non-superseded artifact for each type/scope.
+
+4. Return JSONB objects as objects, including backward-compatible parsing for
+   legacy string-valued rows.
+
+5. The report endpoint should aggregate canonical typed artifacts plus tabular
+   read models:
+
+   - evidence;
+   - metrics;
+   - valuation signals;
+   - scenarios;
+   - backtests;
+   - sources and source-role coverage;
+   - model calls;
+   - export and refresh metadata.
+
+6. Preserve existing compatibility endpoints for specialized tables.
+
+7. Apply consistent authorization/run isolation.
+
+## Test cases
+
+### C5-T1 — Typed object output
+
+Seed genesis, moat, valuation, decision, and review artifacts.
+
+Expected: `content_json` is an object, not a JSON string.
+
+### C5-T2 — Supersession
+
+Seed two versions and supersede the first.
+
+Expected: only the current artifact appears by default.
+
+### C5-T3 — Cross-run isolation
+
+Expected: run A never receives run B artifacts.
+
+### C5-T4 — Unknown run/type
+
+Expected: consistent 404 response.
+
+### C5-T5 — Incomplete run
+
+Expected: report response marks required missing sections instead of inventing
+content.
+
+---
+
+# Component 6 — Artifact-backed research report
+
+## Main role
+
+Research report UI owner.
+
+## Required changes
+
+Use typed artifacts as the primary report source.
+
+The report must include:
+
+1. Executive decision and workflow status.
+2. Company genesis:
+   - why the company started;
+   - founder identity and motivation;
+   - original problem;
+   - early constraints/funding;
+   - pivots;
+   - current strategic implication.
+3. Historical record and diagnosis.
+4. Customer and business process:
+   - segment model;
+   - customer decision map;
+   - process map;
+   - bottleneck register;
+   - competitive-response matrix.
+5. Moat assessment, attack matrix, and no-moat counterfactual.
+6. Driver tree and operating model.
+7. Bear/base/bull operating scenarios.
+8. Valuation:
+   - market price;
+   - methods/lenses;
+   - reverse valuation;
+   - annual price-target table.
+9. Decision:
+   - thesis;
+   - risks;
+   - catalysts;
+   - expected-return matrix;
+   - thesis breakers;
+   - monitoring dashboard;
+   - confidence assessment.
+10. Backtesting:
+    - combination count;
+    - top 10;
+    - reviewed failures;
+    - IS/OOS results;
+    - benchmark;
+    - costs;
+    - one-bar shift/no-lookahead rule;
+    - proxy-data limitations.
+11. AI review and human decision.
+12. Sources, role coverage, evidence, citations, and gaps.
+
+Additional requirements:
+
+1. Add a run selector.
+2. Default to the newest run, not an arbitrary older completed run.
+3. Allow reports for `waiting_for_human` and `needs_more_work`.
+4. Display pipeline version.
+5. Preserve stored numbers; do not recalculate valuation in React.
+6. Render the annual price path as a real table:
+
+   | Fiscal year | Bear | Base | Bull |
+
+7. Do not hide missing sections. Render a visible incomplete state.
+8. Make evidence/source links navigable.
+9. Keep large JSON previews as a secondary diagnostic view, not the primary
+   presentation.
+
+## Test cases
+
+### C6-T1 — Genesis narrative
+
+Expected: founder motivation and company origin are visible with citations.
+
+### C6-T2 — Price-target table
+
+Load five years and three scenarios.
+
+Expected: five rows with bear/base/bull columns and terminal values matching
+the stored anchors.
+
+### C6-T3 — Non-monotonic targets
+
+Expected: a falling-then-recovering bear path is rendered unchanged.
+
+### C6-T4 — Missing moat
+
+Expected: visible incomplete moat section, not a missing panel or filler.
+
+### C6-T5 — Run selection
+
+Seed an old completed run and newer human-review run.
+
+Expected: newer run is selected and both remain selectable.
+
+### C6-T6 — Backtest disclosures
+
+Expected: counts, IS/OOS, costs, no-lookahead, benchmark, and limitations are
+visible.
+
+---
+
+# Component 7 — Final human review and resume
+
+## Main role
+
+Review workflow owner.
+
+## Required changes
+
+1. Review queue should contain legitimate final-review candidates only.
+
+2. Final review must display:
+
+   - investment thesis;
+   - scenario price targets;
+   - expected-return matrix;
+   - principal risks and catalysts;
+   - thesis breakers;
+   - monitoring thresholds;
+   - backtest conclusion and limitations;
+   - AI-review findings.
+
+3. Persist the decision before completing the stage.
+
+4. Approved decisions must:
+
+   - call `approveHumanReview`;
+   - enqueue one resume job;
+   - let the worker execute export and refresh scheduling.
+
+5. The review route must not directly mark the run completed.
+
+6. `needs_more_work` must preserve reviewer notes and must not enqueue export.
+
+7. Make review submission idempotent.
+
+8. After approval, navigate to progress/report and show export completion.
+
+## Test cases
+
+### C7-T1 — Approval resumes export
+
+Expected: review completes, one job is queued, export/refresh finish, then run
+becomes completed.
+
+### C7-T2 — No approval
+
+Expected: export remains pending.
+
+### C7-T3 — Needs more work
+
+Expected: notes persist, approval metadata is absent, no export job exists.
+
+### C7-T4 — Duplicate approval
+
+Expected: one decision transition and one active job.
+
+### C7-T5 — Invalid status
+
+Expected: HTTP 400/422 and no partial decision/stage update.
+
+---
+
+# Component 8 — Export, refresh, and operations
+
+## Main role
+
+Export and deployment owner.
+
+## Required changes
+
+1. Expose generated export metadata and a usable view/download link.
+
+2. Display refresh schedule:
+
+   - next refresh date;
+   - reason/trigger;
+   - cadence;
+   - status.
+
+3. Document local startup:
+
+   ```text
+   database
+   migrations
+   web process
+   pipeline worker
+   mock acceptance mode
+   ```
+
+4. Ensure production/development setup starts at least one run worker.
+
+5. Add queue/worker health to an operations response or UI.
+
+6. Remove production dependence on manually invoking
+   `scripts/resume-research-run.ts`.
+
+## Test cases
+
+### C8-T1 — Export availability
+
+Expected: completed export is reachable from the report.
+
+### C8-T2 — Refresh visibility
+
+Expected: persisted schedule details render correctly.
+
+### C8-T3 — Worker health
+
+Expected: heartbeat is healthy while worker runs and stale after its timeout.
+
+### C8-T4 — Restart
+
+Restart the web process while a worker is executing.
+
+Expected: job and run continue without losing state.
+
+---
+
+# Component 9 — End-to-end acceptance
+
+## Main role
+
+Independent test owner.
+
+## Required mock-provider flow
+
+Create a database-backed acceptance test using the same services/routes as the
+UI:
+
+1. Create an asset/run.
+2. Verify `pipeline_version = 3`.
+3. Verify 24 stages.
+4. Verify an execution job was queued.
+5. Claim and run to research-plan approval.
+6. Verify persisted plan.
+7. Approve the plan.
+8. Queue and resume.
+9. Verify sources, evidence, typed analysis, scenarios, valuation path, and 50
+   backtests.
+10. Stop at final human review.
+11. Submit an approved review decision.
+12. Queue and resume.
+13. Verify export, refresh schedule, and completed run.
+14. Fetch report data.
+15. Verify founder story and annual bear/base/bull target table.
+
+Use:
+
+```text
+RESEARCH_MODEL_PROVIDER=mock
+RESEARCH_ACCEPTANCE_PROVIDER=mock
+no live network
+no paid API
 ```
 
-Expected: no active legacy runtime reference.
+Do not globally skip content validators unless the fixture explicitly cannot
+represent the required data. Prefer valid fixtures.
 
-### C10-T2 — No broken imports
+## Required commands
 
 ```bash
 npx tsc --noEmit
-```
-
-Expected: exit code 0.
-
-### C10-T3 — Build
-
-```bash
+npm run test:unit
 npm run build
+npm run test:sofi-v3
 ```
 
-Expected: exit code 0.
+If browser testing is introduced, include:
 
----
+```text
+create → plan gate → approve → progress → final review → approve → report
+```
 
-# Required execution sequence
+## Acceptance matrix
 
-Implement in this order:
-
-1. Create the `reasonix` branch.
-2. Build the evidence-based removal map.
-3. Establish version-neutral current runtime names and entry point.
-4. Implement stage-specific model-output contracts.
-5. Make artifact persistence validation-first.
-6. Replace legacy orchestration dependencies.
-7. Implement export and refresh scheduling.
-8. Correct JSON persistence and provider injection.
-9. Repair the SOFI fixture.
-10. Rebuild and pass the complete SOFI acceptance test.
-11. Delete proven-dead legacy runtime code.
-12. Update documentation and run final validation.
-
-Do not begin broad deletion before the current source retrieval and stage
-dependencies are mapped. Some code currently located in the monolithic legacy
-file is still used by the new dispatcher and must first be moved or replaced.
-
-# Final validation matrix
-
-The work is complete only when all of the following are true:
-
-| Validation | Required result |
+| Requirement | Expected result |
 |---|---|
-| `git diff --check` | pass |
-| `npx tsc --noEmit` | pass |
-| `npm run test:unit` | pass |
-| focused agent-contract tests | pass |
-| focused artifact/repository tests | pass |
-| focused orchestration tests | pass |
-| JSONB database regression tests | pass |
-| complete SOFI mock E2E | pass |
-| `npm run build` | pass |
-| legacy runtime search | no active v1/v2/v3 dispatcher |
-| handler/stage registry comparison | exact set equality |
-| running work after gates/completion | zero unintended rows |
-| network calls during mock acceptance | zero |
-| paid inference during mock acceptance | zero |
+| UI-created pipeline version | 3 |
+| Stage count | 24 |
+| Start operation | Durable HTTP 202 queue operation |
+| Research plan | Persisted and explicitly approved |
+| Automated stages before final gate | 21 completed |
+| Backtesting | 50/50 combinations |
+| Final decision | Explicit human record |
+| Export and refresh | Complete after approval |
+| Genesis story | Visible with evidence |
+| Annual price targets | Bear/base/bull for every year |
+| Missing artifacts | Visible incomplete state |
+| Duplicate actions | Idempotent |
+| TypeScript | Pass |
+| Unit suite | Pass |
+| Production build | Pass |
+| Paid/live calls in tests | Zero |
 
-# Final handoff requirements
+## Suggested ownership boundaries
 
-At completion, the implementing agent must report:
+If the implementing agent delegates work:
 
-- the `reasonix` commit hash;
-- files and legacy runtime components deleted;
-- files renamed or promoted to the current runtime;
-- the final current stage sequence;
-- how stage-specific output contracts are selected;
-- how artifact validation and acceptance work;
-- how JSONB parameters are persisted safely;
-- exact commands run and their results;
-- the SOFI gate-by-gate outcome;
-- any remaining compatibility limitation;
-- confirmation that `reasonix` was pushed without merging it.
+- Backend queue owner: Components 1–2.
+- Run-page owner: Components 3–4.
+- Read-model/report owner: Components 5–6.
+- Review/export owner: Components 7–8.
+- Tester: Component 9 and regression tests.
+- Reviewer: final read-only review after all validation passes.
 
-Do not claim completion if TypeScript, build, or the full SOFI mock acceptance
-test is failing.
+Only one agent should own each of these shared files at a time:
+
+```text
+package.json
+src/db/index.ts
+src/db/schema/workflow.ts
+src/app/assets/[id]/run/page.tsx
+src/app/assets/[id]/view/page.tsx
+src/app/review/page.tsx
+```
+
+## Files to inspect first
+
+```text
+src/app/api/assets/[id]/research-runs/route.ts
+src/app/api/research-runs/[id]/run-system-pipeline/route.ts
+src/app/api/research-runs/[id]/approve-plan/route.ts
+src/app/api/research-runs/[id]/review/route.ts
+src/app/api/review/queue/route.ts
+src/app/assets/[id]/run/page.tsx
+src/app/assets/[id]/view/page.tsx
+src/app/review/page.tsx
+src/workers/research-worker.ts
+src/lib/research/pipeline-runner.ts
+src/lib/research/system-pipeline.ts
+src/lib/research/stage-contracts.ts
+src/lib/research/artifacts/repository.ts
+src/lib/workflow/orchestrator.ts
+src/lib/workflow/stages.ts
+src/lib/workflow/validators.ts
+src/db/schema/workflow.ts
+src/db/schema/research-artifacts.ts
+src/lib/export/report-generator.ts
+tests/sofi-research-e2e.test.ts
+```
+
+## Completion rule
+
+Do not call the UI “connected” merely because it can create a row, display
+stages, or call the pipeline endpoint. Completion requires one new run to
+traverse the full UI-controlled lifecycle through both human gates, export,
+refresh scheduling, and an artifact-backed report.
