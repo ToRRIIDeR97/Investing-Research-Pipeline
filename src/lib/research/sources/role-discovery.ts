@@ -42,7 +42,10 @@ const ROLE_QUERY_TERMS: Record<SourceRole, string[]> = {
   earnings_presentation: ["earnings presentation investor deck"],
   earnings_transcript: ["earnings call transcript prepared remarks"],
   proxy_and_governance: ["proxy statement corporate governance"],
-  founder_and_company_history: ["founder interview company history", "founded origin university archive"],
+  founder_and_company_history: [
+    "founder interview why started motivation problem",
+    "founding story original problem university archive",
+  ],
   peer_company_primary: ["competitor investor relations annual report", "peer company regulatory filing"],
   industry_primary: ["industry regulator report market outlook", "government industry report"],
   customer_or_channel: ["customer project announcement", "customer partnership case study"],
@@ -68,6 +71,10 @@ const ROLE_LINK_TERMS: Record<SourceRole, RegExp> = {
   macro_dataset: /(data|dataset|statistics|series)/i,
   market_data: /(historical|market|price|quote)/i,
 };
+
+const FOUNDER_ORIGIN_SOURCE_PATTERN = /\b(founder|co[-\s]?founder|founded|founding team|company origin|origin story)\b/i;
+const FOUNDER_MOTIVATION_SOURCE_PATTERN = /\b(motivat|mission|why|problem|broken|affordable|lower (?:loan|interest) rates?|help(?:ing)?|challeng(?:e|ed)|need|opportunity)\b/i;
+const FOUNDER_RECOVERY_TERMS = "founder interview why started motivation problem founding story";
 
 const BLOCKED_HOSTS = [
   "facebook.com",
@@ -222,6 +229,15 @@ export async function discoverRoleSources(
         }
       }
     }
+
+    if (role === "founder_and_company_history" && !discovered.some((source) => source.metadata.source_role === role)) {
+      const recoveryQuery = `"${context.assetName}" ${context.symbol} ${FOUNDER_RECOVERY_TERMS}`;
+      for (const candidate of dedupeCandidates(await searchWeb(recoveryQuery, fetchImpl))) {
+        if (discovered.filter((source) => source.metadata.source_role === role).length >= maxPerRole) break;
+        const source = await fetchCandidate(candidate, role, context.cutoffAt, fetchImpl);
+        if (source) discovered.push(source);
+      }
+    }
   }
   return discovered;
 }
@@ -279,6 +295,27 @@ async function searchWeb(query: string, fetchImpl: typeof fetch): Promise<Search
     if (!response.ok) return [];
     const payload = await response.json();
     return parseSearchPayload(payload, query);
+  }
+
+  const tavilyApiKey = process.env.TAVILY_API_KEY;
+  if (tavilyApiKey) {
+    const response = await safeFetch("https://api.tavily.com/search", fetchImpl, {
+      Accept: "application/json",
+      Authorization: `Bearer ${tavilyApiKey}`,
+      "Content-Type": "application/json",
+    }, {
+      method: "POST",
+      body: JSON.stringify({
+        query,
+        search_depth: "basic",
+        max_results: 10,
+        topic: "general",
+        include_answer: false,
+        include_raw_content: false,
+      }),
+    });
+    if (!response.ok) return [];
+    return parseSearchPayload(await response.json(), query);
   }
 
   const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
@@ -407,12 +444,14 @@ async function fetchCandidate(
 async function safeFetch(
   value: string,
   fetchImpl: typeof fetch,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  init: Pick<RequestInit, "method" | "body"> = {}
 ): Promise<Response> {
   let current = value;
   for (let redirects = 0; redirects <= 3; redirects += 1) {
     if (!isSafePublicUrl(current)) throw new Error("Unsafe discovery URL");
     const response = await fetchImpl(current, {
+      ...init,
       redirect: "manual",
       headers: {
         "User-Agent": "ResearchOS/0.3 role-driven-source-discovery research-pipeline@example.com",
@@ -551,6 +590,10 @@ function isRelevantForRole(
       .filter((token) => token.length >= 4 && !genericCompanyTokens.has(token));
     if (tokens.length > 0 && !tokens.some((token) => searchable.includes(token))) return false;
   }
+  if (role === "founder_and_company_history" && (
+    !FOUNDER_ORIGIN_SOURCE_PATTERN.test(searchable) ||
+    !FOUNDER_MOTIVATION_SOURCE_PATTERN.test(searchable)
+  )) return false;
   return ROLE_LINK_TERMS[role].test(searchable);
 }
 

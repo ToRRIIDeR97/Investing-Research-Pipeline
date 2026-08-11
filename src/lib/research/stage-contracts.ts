@@ -40,6 +40,19 @@ const typedContract = (properties: Record<string, JsonSchema>): AgentOutputForma
   requiredKeys: Object.keys(properties),
   schema: objectSchema(properties),
 });
+
+/** Extract one independently executable top-level artifact contract. */
+export function contractForArtifact(contract: AgentOutputFormat, artifactKey: string): AgentOutputFormat {
+  const schema = contract.schema as { properties?: Record<string, JsonSchema> } | undefined;
+  const artifactSchema = schema?.properties?.[artifactKey];
+  if (!contract.requiredKeys.includes(artifactKey) || !artifactSchema) {
+    throw new Error(`Artifact ${artifactKey} is not declared by the output contract`);
+  }
+  return {
+    requiredKeys: [artifactKey],
+    schema: objectSchema({ [artifactKey]: artifactSchema }, [artifactKey]),
+  };
+}
 const stringArray = () => arraySchema(stringSchema());
 const evidenceIds = () => arraySchema(stringSchema());
 const historicalClaim = () => objectSchema({
@@ -137,7 +150,7 @@ export const HISTORICAL_DIAGNOSIS_CONTRACT = contract([
 /** Contract: business-process-analysis output */
 export const BUSINESS_PROCESS_CONTRACT = typedContract({
   segment_model: objectSchema({
-    artifact_type: stringSchema(),
+    artifact_type: literalStringSchema("segment_model"),
     segments: arraySchema(objectSchema({
       segment_name: stringSchema(),
       product_or_service: stringSchema(),
@@ -151,10 +164,25 @@ export const BUSINESS_PROCESS_CONTRACT = typedContract({
       competitors_or_substitutes: stringArray(),
       regulation: stringSchema(),
       revenue_recognition_and_cash_conversion_chain: stringSchema(),
-    })),
+      marketplace_details: objectSchema({
+        buyers: stringSchema(),
+        transactions: stringSchema(),
+        gmv: stringSchema(),
+        take_rate: stringSchema(),
+      }),
+      lender_details: objectSchema({
+        funding_cost: stringSchema(),
+        credit_losses: stringSchema(),
+      }),
+    }, [
+      "segment_name", "product_or_service", "customer_or_end_user", "revenue_model",
+      "contract_structure", "pricing_unit", "costs_and_reinvestment",
+      "working_capital_mechanics", "suppliers_or_complements", "competitors_or_substitutes",
+      "regulation", "revenue_recognition_and_cash_conversion_chain",
+    ])),
   }),
   customer_decision_map: objectSchema({
-    artifact_type: stringSchema(),
+    artifact_type: literalStringSchema("customer_decision_map"),
     customer_groups: arraySchema(objectSchema({
       customer_group: stringSchema(),
       problem_initiating_demand: stringSchema(),
@@ -170,7 +198,7 @@ export const BUSINESS_PROCESS_CONTRACT = typedContract({
     })),
   }),
   business_process_map: objectSchema({
-    artifact_type: stringSchema(),
+    artifact_type: literalStringSchema("business_process_map"),
     process_nodes: arraySchema(objectSchema({
       process_node: stringSchema(),
       starting_condition: stringSchema(),
@@ -194,7 +222,7 @@ export const BUSINESS_PROCESS_CONTRACT = typedContract({
     })),
   }),
   bottleneck_register: objectSchema({
-    artifact_type: stringSchema(),
+    artifact_type: literalStringSchema("bottleneck_register"),
     bottlenecks: arraySchema(objectSchema({
       name: stringSchema(),
       description: stringSchema(),
@@ -205,7 +233,7 @@ export const BUSINESS_PROCESS_CONTRACT = typedContract({
     })),
   }),
   competitive_response_matrix: objectSchema({
-    artifact_type: stringSchema(),
+    artifact_type: literalStringSchema("competitive_response_matrix"),
     competitors: arraySchema(objectSchema({
       competitor_name: stringSchema(),
       market_share: numberSchema(),
@@ -272,6 +300,7 @@ export const OPERATING_MODEL_CONTRACT = typedContract({
     artifact_type: stringSchema(),
     drivers: arraySchema(objectSchema({
       driver_key: stringSchema(),
+      formula_decomposition: stringSchema(),
       historical_metric_key: stringSchema(),
       historical_diagnosis_key: stringSchema(),
       process_node_key: stringSchema(),
@@ -414,8 +443,14 @@ export const DECISION_SYNTHESIS_CONTRACT = typedContract({
     no_rerating_return: numberSchema(),
     weak_stock_outcome: numberSchema(),
     permanent_loss_limit: numberSchema(),
+    prediction_date: stringSchema(),
+    prediction_price: numberSchema(),
+    horizon_months: { type: "number", const: 12 },
+    return_unit: literalStringSchema("decimal"),
+    benchmark_symbol: stringSchema(),
+    currency: stringSchema(),
     dilution_omitted: booleanSchema(),
-  }),
+  }, ["artifact_type", "bear_return", "base_return", "bull_return", "probability_weighted_return", "no_rerating_return", "weak_stock_outcome", "permanent_loss_limit", "dilution_omitted"]),
   thesis_breakers: objectSchema({
     artifact_type: literalStringSchema("thesis_breakers"),
     breakers: arraySchema(objectSchema({
@@ -455,14 +490,20 @@ export const DECISION_SYNTHESIS_CONTRACT = typedContract({
   }),
 });
 
-/** Contract: ai-reviewer output */
-export const AI_REVIEWER_CONTRACT = contract([
-  "review_summary",
-  "findings",
-  "quality_score",
-  "recommendations",
-  "review_verdict",
-]);
+/** Canonical, fail-closed reviewer result for pipeline V4. */
+export const AI_REVIEWER_CONTRACT = typedContract({
+  pass_fail: enumStringSchema(["pass", "needs_more_work", "fail"]),
+  review_summary: { type: "string", minLength: 1 },
+  quality_score: { type: "number", minimum: 0, maximum: 100 },
+  findings: arraySchema(objectSchema({
+    severity: enumStringSchema(["info", "warning", "blocker"]),
+    category: stringSchema(),
+    message: stringSchema(),
+    artifact_refs: arraySchema(stringSchema(), 0),
+    evidence_claim_ids: arraySchema(stringSchema(), 0),
+  }, ["severity", "category", "message"]), 0),
+  recommendations: arraySchema(stringSchema(), 0),
+});
 
 /** Map from stage key to its output contract */
 export const STAGE_OUTPUT_CONTRACTS: Record<string, AgentOutputFormat> = {

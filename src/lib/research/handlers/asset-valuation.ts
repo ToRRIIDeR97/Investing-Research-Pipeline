@@ -1,4 +1,3 @@
-import { completeV3Task, createV3Task } from "../run-context";
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
 import { makeValidationResult } from "../run-context";
 import { callResearchAgent, exactJsonPrompt } from "../run-context";
@@ -9,6 +8,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { createHash } from "node:crypto";
 import { CURRENT_PIPELINE_VERSION } from "../version";
+import { missingRequiredValuationMethods } from "../valuation/contracts";
 
 export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "asset_valuation",
@@ -95,6 +95,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
           profileKey: ctx.profileKey,
         },
         required_lenses: requiredLenses,
+        required_modules: requiredModules,
         current_market_snapshot: marketSnapshot,
         accepted_historical_metrics: metricRows,
         operating_model: upstream.operating_model || null,
@@ -114,7 +115,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         requiredKeys: VALUATION_CONTRACT.requiredKeys,
         packet: p,
         extraRules: [
-          "Execute valuation lenses appropriate to the asset profile.",
+          "Every method named in required_lenses must be used explicitly as valuation_method in annual_price_target_path. A cross-check method cannot substitute for a required primary lens.",
           "Provide per-share valuation targets and probabilistic scenarios.",
           "Follow output_schema exactly, including every nested required field and primitive type.",
           "annual_price_target_path must include bear, base, and bull price targets for every fiscal year through terminal_year.",
@@ -133,6 +134,10 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
 
       const scenarioSet = output.valuation_scenario_set || {};
       const targetPath = output.annual_price_target_path || {};
+      const missingLenses = missingRequiredValuationMethods(requiredLenses, targetPath.price_target_path || []);
+      if (missingLenses.length) {
+        throw new Error(`Valuation omitted required method(s): ${missingLenses.join(", ")}`);
+      }
       const derivedScenarios = ["bear", "base", "bull"].map((scenarioType) => ({
         scenario_name: `${scenarioType} valuation`,
         scenario_type: scenarioType,
@@ -152,6 +157,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       const comparisonRange = Object.fromEntries(
         derivedScenarios.map((scenario) => [scenario.scenario_type, scenario.value_anchor])
       );
+      const usedMethods = [...new Set((targetPath.price_target_path || []).map((row: any) => String(row.valuation_method)))] as string[];
       const derivedSignals = derivedScenarios.length === 3
         ? [
             {
@@ -164,7 +170,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
               cheapness_score: 0.5,
               confidence: 0.7,
             },
-            ...requiredLenses.map((lens) => ({
+            ...usedMethods.map((lens) => ({
               signal_key: `${lens}_scenario_price_target`,
               signal_name: `${lens} scenario price target`,
               lens_family: lens,
@@ -253,26 +259,6 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
             idempotency_key: `${ctx.runId}-${k}`,
           });
         }
-      }
-
-      // Preserve the run-scoped module-attempt contract used by the profile
-      // gate. The v3 valuation handler produces the consolidated artifacts in
-      // one bounded call, so each required module is recorded as covered by
-      // that completed valuation task.
-      for (const moduleKey of requiredModules) {
-        const moduleTask = await createV3Task(
-          sql,
-          ctx.runId,
-          "asset_valuation",
-          moduleKey,
-          "profile_module",
-          "valuation-analyst"
-        );
-        await completeV3Task(sql, moduleTask.id, {
-          module_key: moduleKey,
-          covered_by: "asset_valuation",
-          pipeline_version: CURRENT_PIPELINE_VERSION,
-        });
       }
 
       return output;

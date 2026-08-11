@@ -4,10 +4,16 @@ import { createDeadlineController, withDeadlines } from "../src/lib/agent-harnes
 import { ProviderError, ResearchAgentRunError } from "../src/lib/agent-harness/errors";
 import { parseStructuredOutput } from "../src/lib/agent-harness/output-parser";
 import { runResearchAgent } from "../src/lib/agent-harness/runner";
-import { calculateCost } from "../src/lib/agent-harness/telemetry";
+import { calculateCost, estimateCost } from "../src/lib/agent-harness/telemetry";
 import { clearRegisteredTools, registerTool } from "../src/lib/agent-harness/tools";
 import type { ModelEvent, ModelProvider, ModelRequest } from "../src/lib/agent-harness/types";
-import { getAgentConfig } from "../src/lib/agent-harness/registry";
+import {
+  AGENT_CONFIGS,
+  DEFAULT_RESEARCH_MODEL,
+  RESEARCH_AGENT_NAMES,
+  getAgentConfig,
+  resolveAgentModel,
+} from "../src/lib/agent-harness/registry";
 import { coerceStructuredOutput, validateSchema } from "../src/lib/agent-harness/validation";
 
 const classifierOutput = {
@@ -15,6 +21,60 @@ const classifierOutput = {
   asset_kind: "equity", identity_resolution: {}, required_modules: [], rejected_profiles: [],
   classification_evidence: [], ambiguities: [], recommended_next_tasks: [],
 };
+
+test("model resolution is env-first and every registry default is DeepSeek V4 Flash", () => {
+  const keys = [
+    "RESEARCH_DEFAULT_MODEL",
+    "RESEARCH_MID_MODEL",
+    "RESEARCH_RESEARCH_ASSISTANT_MODEL",
+  ];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  try {
+    for (const agentName of RESEARCH_AGENT_NAMES) {
+      assert.equal(AGENT_CONFIGS[agentName].defaultModel, DEFAULT_RESEARCH_MODEL);
+    }
+
+    process.env.RESEARCH_DEFAULT_MODEL = DEFAULT_RESEARCH_MODEL;
+    process.env.RESEARCH_MID_MODEL = "configured-mid-model";
+    delete process.env.RESEARCH_RESEARCH_ASSISTANT_MODEL;
+    assert.equal(resolveAgentModel("research-assistant"), "configured-mid-model");
+
+    process.env.RESEARCH_RESEARCH_ASSISTANT_MODEL = "explicit-assistant-model";
+    assert.equal(resolveAgentModel("research-assistant"), "explicit-assistant-model");
+
+    delete process.env.RESEARCH_MID_MODEL;
+    delete process.env.RESEARCH_RESEARCH_ASSISTANT_MODEL;
+    assert.equal(resolveAgentModel("research-assistant"), DEFAULT_RESEARCH_MODEL);
+  } finally {
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+});
+
+test("schema validation enforces bounds, finite numbers, and closed objects", () => {
+  const schema = {
+    type: "object",
+    additionalProperties: false,
+    required: ["label", "score", "items"],
+    properties: {
+      label: { type: "string", minLength: 3, maxLength: 5 },
+      score: { type: "number", minimum: 0, maximum: 1 },
+      items: { type: "array", minItems: 1, maxItems: 2, items: { type: "string" } },
+    },
+  };
+  const errors = validateSchema({ label: "x", score: Number.NaN, items: ["a", "b", "c"], extra: true }, schema);
+  assert.ok(errors.some((error) => error.path === "label" && error.message.includes("too short")));
+  assert.ok(errors.some((error) => error.path === "score" && error.message.includes("Expected type")));
+  assert.ok(errors.some((error) => error.path === "items" && error.message.includes("too many")));
+  assert.ok(errors.some((error) => error.path === "extra" && error.message.includes("Additional")));
+});
+
+test("cost telemetry distinguishes provider, catalog, and unknown pricing", () => {
+  assert.equal(estimateCost("deepseek-v4-pro", 1_000_000, 0).costSource, "catalog_estimate");
+  assert.equal(estimateCost("unlisted-model", 1_000_000, 0).costSource, "unknown");
+});
 
 class ScriptedProvider implements ModelProvider {
   readonly id = "scripted";
@@ -105,6 +165,26 @@ test("local schema coercion maps nested confidence labels", () => {
   assert.equal(validateSchema(result.value, schema).length, 0);
 });
 
+test("local schema coercion accepts cited source-reader claim aliases", () => {
+  const schema = getAgentConfig("source-reader").outputFormat;
+  const value = {
+    evidence_claims: Array.from({ length: 5 }, (_, index) => ({
+      claim: `A sufficiently detailed claim alias number ${index} from a cited source.`,
+      source_quote: "A sufficiently detailed supporting source quotation.",
+      claim_type: "source_fact", claim_category: "fact", confidence: 0.8,
+      source_id: "source-1", document_chunk_id: "chunk-1",
+      char_start: 0, char_end: 100,
+    })),
+    contradictions: [], source_gaps: [], low_confidence_items: [], rejected_candidates: [],
+  };
+  const result = coerceStructuredOutput(value, schema);
+  const claim = (result.value as any).evidence_claims[0];
+  assert.equal(result.changed, true);
+  assert.match(claim.claim_text, /claim alias number 0/);
+  assert.equal(claim.quoted_text, "A sufficiently detailed supporting source quotation.");
+  assert.equal(validateSchema(result.value, schema).length, 0);
+});
+
 test("local schema coercion normalizes valuation protocol aliases", () => {
   const schema = getAgentConfig("valuation-analyst").outputFormat;
   const value = {
@@ -146,6 +226,21 @@ test("deadline controller distinguishes inactivity, total, and caller cancellati
   }, 20, 500), (error: any) => error.name === "TimeoutError" && /total/.test(error.message));
 });
 
+test("provider queue wait pauses the total request deadline", async () => {
+  const deadline = createDeadlineController(undefined, 30, 1_000);
+  const before = deadline.remainingMs();
+  deadline.pauseTotal();
+  deadline.pauseInactivity();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(deadline.reason(), null);
+  assert.ok(deadline.remainingMs() >= before - 5);
+  deadline.resumeTotal();
+  deadline.resumeInactivity();
+  await new Promise((resolve) => setTimeout(resolve, 35));
+  assert.equal(deadline.reason(), "total");
+  deadline.cleanup();
+});
+
 test("runner returns validated output, raw text, attempts, and aggregate usage", async () => {
   const provider = new ScriptedProvider(() => textResponse(JSON.stringify(classifierOutput)));
   const result = await runResearchAgent<any>({ agentName: "asset-classifier", title: "test", taskPacket: {}, provider });
@@ -154,6 +249,30 @@ test("runner returns validated output, raw text, attempts, and aggregate usage",
   assert.equal(result.attempts[0].requestId, "req-test");
   assert.equal(result.usage.costUsd, 0.01);
   assert.match(result.rawText, /selected_profile_key/);
+});
+
+test("source-reader requests omit max tokens unless explicitly configured", async () => {
+  const previous = process.env.RESEARCH_SOURCE_READER_MAX_OUTPUT_TOKENS;
+  delete process.env.RESEARCH_SOURCE_READER_MAX_OUTPUT_TOKENS;
+  let maxTokens: number | undefined;
+  const provider = new ScriptedProvider((request) => {
+    maxTokens = request.maxTokens;
+    return textResponse('{"ok":true}');
+  });
+  try {
+    await runResearchAgent({
+      agentName: "source-reader",
+      title: "bounded source reader",
+      taskPacket: {},
+      provider,
+      outputFormat: { requiredKeys: ["ok"], schema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } } },
+      policy: { maxAttempts: 1 },
+    });
+    assert.equal(maxTokens, undefined);
+  } finally {
+    if (previous === undefined) delete process.env.RESEARCH_SOURCE_READER_MAX_OUTPUT_TOKENS;
+    else process.env.RESEARCH_SOURCE_READER_MAX_OUTPUT_TOKENS = previous;
+  }
 });
 
 test("runner preserves an explicit zero provider cost", async () => {
@@ -180,7 +299,39 @@ test("runner repairs malformed schema once with a bounded repair prompt", async 
   assert.ok((result.attempts[0].passes?.[0].validationErrors?.length || 0) > 0);
   assert.equal(result.attempts[0].passes?.[1].validationErrors?.length, 0);
   assert.ok(repairPrompt.length < 20_000, `repair prompt was ${repairPrompt.length} bytes`);
+  assert.match(repairPrompt, /Required JSON schema:/);
+  assert.match(repairPrompt, /Previous parsed response:/);
   assert.equal(provider.calls, 2);
+});
+
+test("runner honors multiple bounded repair attempts", async () => {
+  const provider = new ScriptedProvider((_request, call) => textResponse(
+    call < 3 ? '{"selected_profile_key":"x"}' : JSON.stringify(classifierOutput)
+  ));
+  const result = await runResearchAgent<any>({
+    agentName: "asset-classifier", title: "two repairs", taskPacket: {}, provider,
+    policy: { maxAttempts: 1, maxRepairAttempts: 2 },
+  });
+  assert.equal(provider.calls, 3);
+  assert.deepEqual(result.attempts[0].passes?.map((pass) => pass.kind), ["generation", "repair", "repair"]);
+});
+
+test("domain validation participates in schema-aware repair", async () => {
+  let repairPrompt = "";
+  const provider = new ScriptedProvider((request, call) => {
+    if (call === 2) repairPrompt = request.prompt;
+    return textResponse(JSON.stringify(call === 1
+      ? { ...classifierOutput, selected_profile_key: "unsupported" }
+      : classifierOutput));
+  });
+  const result = await runResearchAgent<any>({
+    agentName: "asset-classifier", title: "domain repair", taskPacket: {}, provider,
+    validateStructured: (value) => (value as any).selected_profile_key === "operating_company"
+      ? []
+      : [{ path: "selected_profile_key", message: "Unsupported profile" }],
+  });
+  assert.equal(result.structured.selected_profile_key, "operating_company");
+  assert.match(repairPrompt, /selected_profile_key: Unsupported profile/);
 });
 
 test("empty completed output skips repair and uses the bounded fallback", async () => {
@@ -192,6 +343,7 @@ test("empty completed output skips repair and uses the bounded fallback", async 
       claim_text: `A sufficiently detailed fallback evidence claim number ${index}.`,
       claim_type: "source_fact", claim_category: "fact",
       source_id: "s", document_chunk_id: "c", confidence: 0.8,
+      quoted_text: "A sufficiently detailed source excerpt.", char_start: 0, char_end: 40,
     })),
     contradictions: [], source_gaps: [], low_confidence_items: [], rejected_candidates: [],
   };
@@ -256,12 +408,66 @@ test("hard total deadline does not wait for an uncooperative stream iterator", a
   assert.ok(Date.now() - started < 250);
 });
 
-test("schema repair exhaustion is non-retryable", async () => {
+test("schema repair exhaustion gets one bounded model retry", async () => {
   const provider = new ScriptedProvider(() => textResponse('{"wrong":true}'));
   await assert.rejects(
     () => runResearchAgent({ agentName: "asset-classifier", title: "test", taskPacket: {}, provider }),
-    (error: any) => error instanceof ResearchAgentRunError && error.attempts.length === 1 && error.attempts[0].errorCategory === "schema_validation"
+    (error: any) => error instanceof ResearchAgentRunError &&
+      error.attempts.length === 2 &&
+      error.attempts.every((attempt: any) => attempt.errorCategory === "schema_validation")
   );
+});
+
+test("source-reader retries a citation schema failure with its fallback model", async () => {
+  const oldFallback = process.env.RESEARCH_SOURCE_READER_FALLBACK_MODEL;
+  process.env.RESEARCH_SOURCE_READER_FALLBACK_MODEL = "fallback-model";
+  let repairPrompt = "";
+  const malformed = {
+    evidence_claims: Array.from({ length: 5 }, (_, index) => ({
+      claim: `A detailed but uncited founder-origin claim number ${index} from the source corpus.`,
+      source_quote: "A source quote that needs a real source identifier.",
+      confidence: 0.8,
+    })),
+    contradictions: [], source_gaps: [], low_confidence_items: [], rejected_candidates: [],
+  };
+  const valid = {
+    evidence_claims: Array.from({ length: 5 }, (_, index) => ({
+      claim_text: `A sufficiently detailed and cited source-reader claim number ${index}.`,
+      claim_type: "source_fact", claim_category: "fact", confidence: 0.8,
+      source_id: "source-1", document_chunk_id: "chunk-1",
+      quoted_text: "A sufficiently detailed source excerpt used to repair a missing citation.",
+      char_start: 0, char_end: 100,
+    })),
+    contradictions: [], source_gaps: [], low_confidence_items: [], rejected_candidates: [],
+  };
+  const provider = new ScriptedProvider((request, call) => {
+    if (call === 2) repairPrompt = request.prompt;
+    return textResponse(JSON.stringify(call < 3 ? malformed : valid));
+  });
+  try {
+    const result = await runResearchAgent<any>({
+      agentName: "source-reader",
+      title: "source-reader schema fallback",
+      taskPacket: {
+        source_corpus: [{
+          source_id: "source-1", document_chunk_id: "chunk-1", char_start: 0, char_end: 400,
+          content_excerpt: "A sufficiently detailed source excerpt used to repair a missing citation.",
+        }],
+      },
+      provider,
+      policy: { maxAttempts: 2, retryBaseDelayMs: 1 },
+    });
+    assert.equal(result.attempts.length, 2);
+    assert.equal(result.attempts[0].errorCategory, "schema_validation");
+    assert.equal(result.attempts[1].fallback, true);
+    assert.equal(result.attempts[1].model, "fallback-model");
+    assert.match(repairPrompt, /source_id, document_chunk_id/);
+    assert.match(repairPrompt, /"source_id":"source-1"/);
+    assert.match(repairPrompt, /Do not use aliases such as claim or source_quote/);
+  } finally {
+    if (oldFallback === undefined) delete process.env.RESEARCH_SOURCE_READER_FALLBACK_MODEL;
+    else process.env.RESEARCH_SOURCE_READER_FALLBACK_MODEL = oldFallback;
+  }
 });
 
 test("truncated generation and failed repair use the alternate model", async () => {
@@ -358,6 +564,55 @@ test("retry schedule revisits primary and fallback models with backoff", async (
   }
 });
 
+test("source-reader has an agent-specific retry ceiling", async () => {
+  const previous = process.env.RESEARCH_SOURCE_READER_MAX_MODEL_ATTEMPTS;
+  process.env.RESEARCH_SOURCE_READER_MAX_MODEL_ATTEMPTS = "2";
+  const provider = new ScriptedProvider(() => (async function* () {
+    throw new ProviderError("fetch failed", "connection");
+  })());
+  try {
+    await assert.rejects(() => runResearchAgent({
+      agentName: "source-reader", title: "bounded retries", taskPacket: {}, provider,
+      policy: { retryBaseDelayMs: 1 },
+    }));
+    assert.equal(provider.calls, 2);
+  } finally {
+    if (previous === undefined) delete process.env.RESEARCH_SOURCE_READER_MAX_MODEL_ATTEMPTS;
+    else process.env.RESEARCH_SOURCE_READER_MAX_MODEL_ATTEMPTS = previous;
+  }
+});
+
+test("same-model source-reader retries compact the packet", async () => {
+  const quote = "SoFi was founded by students seeking better access to financial services.";
+  const packet = { source_corpus: [{ source_id: "s", document_chunk_id: "c", char_start: 0, char_end: 8_000, content_excerpt: `${quote}${" x".repeat(3_900)}` }] };
+  const prompts: string[] = [];
+  const provider = new ScriptedProvider((request, call) => {
+    prompts.push(request.prompt);
+    if (call === 1) return (async function* () { throw new ProviderError("stream ended", "malformed_stream"); })();
+    return textResponse(JSON.stringify({
+      evidence_claims: [{
+        claim_text: quote,
+        claim_type: "source_fact",
+        claim_category: "fact",
+        source_id: "s",
+        document_chunk_id: "c",
+        quoted_text: quote,
+        char_start: 0,
+        char_end: quote.length,
+        confidence: 0.8,
+      }],
+      contradictions: [], source_gaps: [], low_confidence_items: [], rejected_candidates: [],
+    }));
+  });
+  const result = await runResearchAgent({
+    agentName: "source-reader", title: "compact retry", taskPacket: packet, provider,
+    policy: { maxAttempts: 2, retryBaseDelayMs: 1 },
+  });
+  assert.equal(result.attempts.length, 2);
+  assert.equal(result.attempts[1].compactionOccurred, true);
+  assert.ok(prompts[1].length < prompts[0].length);
+});
+
 test("caller cancellation propagates and response limits fail closed", async () => {
   const hanging = new ScriptedProvider((_request, _call, signal) => (async function* () {
     yield { type: "response.started" } as ModelEvent;
@@ -405,6 +660,38 @@ test("runner recovers complete schema-valid JSON at the inactivity boundary", as
   assert.equal(result.attempts[0].status, "success");
   assert.equal(result.attempts[0].completionRecoveredAtTimeout, true);
   assert.equal(result.attempts[0].passes?.[0].completionRecoveredAtTimeout, true);
+});
+
+test("runner recovers complete schema-valid JSON without a completion marker", async () => {
+  const provider = new ScriptedProvider(() => (async function* () {
+    yield { type: "response.started", requestId: "missing-marker" } as ModelEvent;
+    yield { type: "text.delta", text: JSON.stringify(classifierOutput) } as ModelEvent;
+    yield { type: "usage", usage: { inputTokens: 10, outputTokens: 20, costUsd: 0.01 } } as ModelEvent;
+  })());
+  const result = await runResearchAgent<any>({
+    agentName: "asset-classifier", title: "missing marker", taskPacket: {}, provider,
+    policy: { maxAttempts: 1 },
+  });
+  assert.equal(result.structured.selected_profile_key, "operating_company");
+  assert.equal(provider.calls, 1);
+  assert.equal(result.attempts[0].status, "success");
+  assert.equal(result.attempts[0].completionRecoveredWithoutMarker, true);
+  assert.equal(result.attempts[0].passes?.[0].completionRecoveredWithoutMarker, true);
+});
+
+test("runner recovers schema-valid JSON when the provider terminates after the payload", async () => {
+  const provider = new ScriptedProvider(() => (async function* () {
+    yield { type: "response.started", requestId: "terminated-after-json" } as ModelEvent;
+    yield { type: "text.delta", text: JSON.stringify(classifierOutput) } as ModelEvent;
+    throw new ProviderError("Provider stream failed: terminated", "malformed_stream");
+  })());
+  const result = await runResearchAgent<any>({
+    agentName: "asset-classifier", title: "terminated stream", taskPacket: {}, provider,
+    policy: { maxAttempts: 1 },
+  });
+  assert.equal(result.structured.selected_profile_key, "operating_company");
+  assert.equal(result.attempts[0].status, "success");
+  assert.equal(result.attempts[0].completionRecoveredWithoutMarker, true);
 });
 
 test("tools are deny-by-default and enforce call limits", async () => {

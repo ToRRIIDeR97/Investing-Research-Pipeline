@@ -71,6 +71,17 @@ export function buildHistoricalRecord(input: BuildHistoricalRecordInput): Histor
   };
 }
 
+export function isRecurringHistoricalObservation(observation: Record<string, unknown>): boolean {
+  const metricKey = String(observation.metric_key || observation.metric || observation.label || "").toLowerCase();
+  const value = observation.value_numeric ?? observation.value;
+  const hasMeasurementDate = Boolean(observation.period_end || observation.as_of_date);
+  return metricKey.length > 0 && value != null && value !== "" && Number.isFinite(Number(value)) && hasMeasurementDate && !isEventLikeHistoricalMetricKey(metricKey);
+}
+
+export function isEventLikeHistoricalMetricKey(metricKey: string): boolean {
+  return /(^|_)(date|day|month|year|announcement|launch|founded|founding|acquisition|merger|transaction|commitment|funding_round|deadline|duration|spac_merger)(_|$)/.test(metricKey.toLowerCase());
+}
+
 export function buildCoverageMatrix(
   asset_id: string,
   run_id: string | null,
@@ -91,7 +102,7 @@ export function buildCoverageMatrix(
   for (const metricKey of requiredMetricKeys) {
     for (const q of quarters) {
       const obs = findObservation(observations, metricKey, q.fiscal_year, q.fiscal_quarter);
-      const present = obs != null;
+      const present = obs?.value_numeric != null;
       if (present) quartersPresent++;
       cells.push({
         metric_key: metricKey,

@@ -86,6 +86,7 @@ const emptyResearchData: ResearchData = {
 };
 
 const tabs = [
+  { id: "report", label: "Report", icon: FileText },
   { id: "overview", label: "Overview", icon: BookOpen },
   { id: "evidence", label: "Evidence", icon: ListChecks },
   { id: "metrics", label: "Metrics", icon: BarChart3 },
@@ -113,9 +114,14 @@ export default function ViewResearchPage() {
   const [data, setData] = useState<ResearchData>(emptyResearchData);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [activeTab, setActiveTab] = useState<TabId>("report");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const requestedRunId = new URLSearchParams(window.location.search).get("run");
+    if (requestedRunId) setSelectedRunId(requestedRunId);
+  }, [assetId]);
 
   useEffect(() => {
     void loadResearch();
@@ -200,6 +206,8 @@ export default function ViewResearchPage() {
       signal: signal.signal,
     }));
   const runStatus = data.runDetail?.status ?? data.activeRun?.status ?? "unknown";
+  const reviewDecision = data.report?.read_models?.review_decisions?.[0] ?? null;
+  const preDecision = !reviewDecision || runStatus === "waiting_for_human";
   const completedStages = (data.runDetail?.stages ?? []).filter(
     (stage: ResearchRecord) => stage.status === "completed" || stage.status === "skipped"
   ).length;
@@ -284,6 +292,18 @@ export default function ViewResearchPage() {
             {data.report?.incomplete && <StatusPill value="incomplete sections" />}
           </div>
 
+          {preDecision && (
+            <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="font-bold">Automated research preview — no human investment decision recorded.</div>
+                <div className="mt-1 text-amber-800">The parsed evidence, metrics, scenarios, and thesis are reviewable, but this is not position-ready.</div>
+              </div>
+              <Link href="/review" className="shrink-0 rounded-md border border-amber-300 bg-white px-3 py-2 font-bold text-amber-900 hover:bg-amber-100">
+                Open review queue
+              </Link>
+            </div>
+          )}
+
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-1">
               {tabs.map((tab) => {
@@ -292,6 +312,8 @@ export default function ViewResearchPage() {
                 return (
                   <button
                     key={tab.id}
+                    type="button"
+                    aria-selected={active}
                     onClick={() => setActiveTab(tab.id)}
                     className={`flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition ${
                       active
@@ -329,7 +351,30 @@ export default function ViewResearchPage() {
           />
         ) : (
           <>
-            <CanonicalReportSummary report={data.report} artifacts={data.artifacts} />
+            {activeTab === "report" && data.report?.canonical_markdown && (
+              <CanonicalMarkdownReport markdown={data.report.canonical_markdown} />
+            )}
+            {activeTab === "report" && !data.report?.canonical_markdown && (
+              <div className="space-y-5">
+                <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+                  The final export is still gated, but the current research artifacts are available below for review.
+                </div>
+                <CanonicalReportSummary report={data.report} artifacts={data.artifacts} />
+                <OverviewSection
+                  thesis={primaryThesis}
+                  evidence={filtered.evidence.slice(0, 6)}
+                  metrics={numericMetrics}
+                  signals={data.signals}
+                  scenarios={data.scenarios}
+                  risks={data.risks}
+                  backtests={data.backtests}
+                  valuationChartData={valuationChartData}
+                />
+              </div>
+            )}
+            {activeTab === "overview" && (
+              <CanonicalReportSummary report={data.report} artifacts={data.artifacts} />
+            )}
             {activeTab === "overview" && (
               <OverviewSection
                 thesis={primaryThesis}
@@ -373,6 +418,17 @@ export default function ViewResearchPage() {
   );
 }
 
+function CanonicalMarkdownReport({ markdown }: { markdown?: string | null }) {
+  if (!markdown) {
+    return <IncompleteState label="Canonical markdown report" />;
+  }
+  return (
+    <article className="mx-auto max-w-5xl rounded-lg border border-slate-200 bg-white p-6 shadow-sm lg:p-10">
+      <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-7 text-slate-700">{markdown}</pre>
+    </article>
+  );
+}
+
 function CanonicalReportSummary({ report, artifacts }: { report: ResearchRecord | null; artifacts: ResearchRecord[] }) {
   const byType = new Map<string, ResearchRecord>();
   for (const artifact of artifacts) {
@@ -383,8 +439,10 @@ function CanonicalReportSummary({ report, artifacts }: { report: ResearchRecord 
   const founder = content("founder_profile");
   const thesis = content("investment_thesis");
   const targetContent = content("annual_price_target_path");
-  const targetRows = Array.isArray(targetContent.price_target_paths)
-    ? targetContent.price_target_paths as ResearchRecord[]
+  const targetRows = Array.isArray(targetContent.price_target_path)
+    ? targetContent.price_target_path as ResearchRecord[]
+    : Array.isArray(targetContent.price_target_paths)
+      ? targetContent.price_target_paths as ResearchRecord[]
     : Array.isArray(targetContent.annual_price_targets)
       ? targetContent.annual_price_targets as ResearchRecord[]
       : [];

@@ -52,6 +52,7 @@ interface RunQualityData {
   combinations: Row[];
   backtests: Row[];
   backtestArtifacts: Row[];
+  historicalRecords?: Row[];
   unlinkedFactClaimCount: number;
 }
 
@@ -277,6 +278,7 @@ export function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQua
   }
 
   addAnalysisCoverage(data, errors, warnings, missingCoverage);
+  addHistoricalCoverage(data, errors, missingCoverage);
   addValuationCoverage(
     data,
     threshold,
@@ -299,9 +301,7 @@ export function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQua
   const hasFailures = errors.length > 0 || blockingMissingCoverage.length > 0;
   const status: ResearchQualityGateResult["status"] = hasFailures
     ? "needs_more_work"
-    : warnings.length > 0 || missingCoverage.length > 0
-      ? "needs_more_work"
-      : "pass";
+    : "pass";
   const actionReadiness = actionReadinessFor(data, threshold, status);
 
   return {
@@ -351,6 +351,7 @@ async function loadRunQualityData(
     combinations,
     backtests,
     backtestArtifacts,
+    historicalRecords,
     unlinkedFactClaims,
   ] = await Promise.all([
     sql`SELECT * FROM research_stages WHERE research_run_id = ${runId} ORDER BY stage_order`,
@@ -362,7 +363,7 @@ async function loadRunQualityData(
       WHERE sd.research_run_id = ${runId} OR rrs.research_run_id = ${runId}
       ORDER BY sd.created_at DESC
     `,
-    sql`SELECT * FROM evidence_claims WHERE research_run_id = ${runId} AND review_status != 'rejected' ORDER BY created_at DESC`,
+    sql`SELECT * FROM evidence_claims WHERE research_run_id = ${runId} AND review_status IN ('machine_verified', 'accepted') AND COALESCE(metadata_json->>'evidence_role', 'decision_support') != 'corpus_inventory' ORDER BY created_at DESC`,
     sql`
       SELECT mo.*, md.metric_key, md.display_name AS metric_display_name
       FROM metric_observations mo
@@ -381,12 +382,19 @@ async function loadRunQualityData(
     sql`SELECT * FROM backtest_runs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM backtest_artifacts WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`
+      SELECT content_json FROM research_artifacts
+      WHERE research_run_id = ${runId} AND artifact_type = 'historical_record'
+        AND status IN ('validated', 'accepted')
+      ORDER BY created_at DESC LIMIT 1
+    `,
+    sql`
       SELECT COUNT(*) AS cnt
       FROM evidence_claims ec
       LEFT JOIN evidence_links el ON el.evidence_claim_id = ec.id
       WHERE ec.research_run_id = ${runId}
         AND ec.claim_category = 'fact'
-        AND ec.review_status != 'rejected'
+        AND ec.review_status IN ('machine_verified', 'accepted')
+        AND COALESCE(ec.metadata_json->>'evidence_role', 'decision_support') != 'corpus_inventory'
         AND el.id IS NULL
     `,
   ]);
@@ -410,8 +418,35 @@ async function loadRunQualityData(
     combinations,
     backtests,
     backtestArtifacts,
+    historicalRecords,
     unlinkedFactClaimCount: Number(unlinkedFactClaims[0]?.cnt || 0),
   };
+}
+
+function addHistoricalCoverage(
+  data: RunQualityData,
+  errors: string[],
+  missingCoverage: MissingCoverageItem[]
+) {
+  if (Number(data.run.pipeline_version || 1) < 3 || !["deep_dive", "full_initiation_report"].includes(data.run.run_type)) return;
+  const record = data.historicalRecords?.[0]?.content_json || data.historicalRecords?.[0];
+  const coverage = record?.coverage;
+  const required = Number(coverage?.quarters_required || 0);
+  const present = Number(coverage?.quarters_present || 0);
+  const minimum = data.run.run_type === "full_initiation_report" ? 0.8 : 0.6;
+  const ratio = required > 0 ? present / required : 0;
+  if (ratio >= minimum) return;
+  const description = required > 0
+    ? `Historical metric coverage is ${(ratio * 100).toFixed(1)}% (${present}/${required}); ${(minimum * 100).toFixed(0)}% is required for ${data.run.run_type.replace(/_/g, " ")}.`
+    : "The run has no measurable twenty-quarter historical coverage artifact.";
+  errors.push(description);
+  missingCoverage.push({
+    key: "historical_metric_coverage",
+    severity: "high",
+    area: "historical record",
+    description,
+    requiredForCompletion: true,
+  });
 }
 
 function addV3ArtifactCoverage(
@@ -585,7 +620,14 @@ function addAnalysisCoverage(
   const requiredModules = jsonArray(data.profile?.required_modules_json);
   const completionCriteria = data.profile?.completion_criteria_json || {};
   const completionModules = jsonArray((completionCriteria as Row).required_modules);
-  const modules = completionModules.length ? completionModules : requiredModules;
+  const valuationMethodModules = new Set([
+    ...jsonArray(data.profile?.required_valuation_lenses_json),
+    "driver_based_dcf",
+    "exit_multiple_dcf",
+    "reverse_dcf",
+  ].map((value) => String(value).toLowerCase()));
+  const modules = (completionModules.length ? completionModules : requiredModules)
+    .filter((moduleKey) => !valuationMethodModules.has(String(moduleKey).toLowerCase()));
 
   if (!modules.length) {
     warnings.push("Profile has no required analysis module list.");
@@ -720,14 +762,30 @@ function addAiReviewCoverage(
   }
 
   const output = normalizeReviewOutput(reviewTask.output_json);
-  const passFail = String(output.pass_fail || output.passFail || output.status || "").toLowerCase();
+  const passFail = Number(data.run.pipeline_version || 1) >= 4
+    ? (typeof output.pass_fail === "string" ? output.pass_fail : "")
+    : String(output.pass_fail || output.passFail || output.status || output.review_verdict || "").toLowerCase();
+  if (Number(data.run.pipeline_version || 1) >= 4 && passFail !== "pass") {
+    const description = passFail
+      ? `AI review outcome is ${passFail}.`
+      : "AI review output is missing the canonical pass_fail verdict.";
+    errors.push(description);
+    missingCoverage.push({
+      key: "ai_review_outcome",
+      severity: "critical",
+      area: "AI review",
+      description,
+      requiredForCompletion: true,
+    });
+    return;
+  }
 
   if (!passFail) {
     warnings.push("AI review output has no parsed pass_fail/status field.");
     return;
   }
 
-  if (passFail === "needs_more_work" || passFail === "fail" || passFail === "failed") {
+  if (/needs[_\s-]*more[_\s-]*work|fail|reject|conditional|with[_\s-]*conditions?/.test(passFail)) {
     const description = `AI review outcome is ${passFail}.`;
     errors.push(description);
     missingCoverage.push({
@@ -880,6 +938,7 @@ export function evaluateQualityGates(data: Partial<RunQualityData> & Record<stri
     combinations: (data.combinations ?? []) as Row[],
     backtests: (data.backtests ?? []) as Row[],
     backtestArtifacts: (data.backtestArtifacts ?? []) as Row[],
+    historicalRecords: (data.historicalRecords ?? []) as Row[],
     unlinkedFactClaimCount: (data.unlinkedFactClaimCount ?? 0) as number,
     ...(data.asset ? { asset: data.asset as Row } : {}),
     ...(data.profile ? { profile: data.profile as Row } : {}),

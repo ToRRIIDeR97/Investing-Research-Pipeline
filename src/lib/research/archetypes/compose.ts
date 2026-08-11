@@ -59,6 +59,12 @@ export function composeProfile(
       message: "A profile must include 'operating_company_core' or 'etf_fund' as a base archetype.",
     });
   }
+  if (archetypeKeys.includes("operating_company_core") && archetypeKeys.includes("etf_fund")) {
+    errors.push({
+      code: "conflict",
+      message: "Valuation method rules cannot combine the mutually exclusive operating-company and ETF/fund base archetypes.",
+    });
+  }
 
   const resolvedArchetypes = archetypeKeys.map((k) => {
     const a = getArchetype(k);
@@ -100,7 +106,7 @@ export function composeProfile(
     methodsByKey.get(m.method)!.push(m);
   }
   for (const [method, rules] of methodsByKey) {
-    const allowed = rules.every((r) => r.allowed);
+    const allowed = rules.some((r) => r.allowed);
     const required = rules.some((r) => r.required);
     if (allowed && required) {
       // fine
@@ -129,10 +135,17 @@ export function composeProfile(
     [...resolvedArchetypes.flatMap((a) => a.required_process_nodes), ...resolvedOverlays.flatMap((o) => o.required_process_nodes)],
     "node_key"
   );
-  const valuation_methods = dedupeByKey<ValuationMethodRule>(
-    [...resolvedArchetypes.flatMap((a) => a.valuation_methods), ...resolvedOverlays.flatMap((o) => o.valuation_methods)],
-    "method"
-  );
+  const valuation_methods = Array.from(methodsByKey.entries()).map(([method, rules]) => {
+    const preferred = rules.find((rule) => rule.required && rule.allowed)
+      || rules.find((rule) => rule.allowed)
+      || rules[0];
+    return {
+      method,
+      allowed: rules.some((rule) => rule.allowed),
+      required: rules.some((rule) => rule.required),
+      rationale: preferred.rationale,
+    };
+  });
   const required_scenario_drivers = dedupeByKey<ScenarioDriverRequirement>(
     [...resolvedArchetypes.flatMap((a) => a.required_scenario_drivers), ...resolvedOverlays.flatMap((o) => o.required_scenario_drivers)],
     "driver_key"

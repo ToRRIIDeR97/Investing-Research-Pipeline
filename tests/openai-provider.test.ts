@@ -43,6 +43,74 @@ test("local provider parses fragmented SSE, usage, request IDs, and health", asy
   } finally { server.close(); }
 });
 
+test("serializes concurrent model streams for one provider endpoint", async () => {
+  const originalFetch = globalThis.fetch;
+  let active = 0;
+  let maximumActive = 0;
+  globalThis.fetch = (async () => {
+    active += 1;
+    maximumActive = Math.max(maximumActive, active);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        setTimeout(() => {
+          controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"{\\"ok\\":true}"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));
+          controller.close();
+          active -= 1;
+        }, 25);
+      },
+      cancel() {
+        active -= 1;
+      },
+    });
+    return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+  }) as typeof fetch;
+  try {
+    const url = "http://127.0.0.1:65535/v1";
+    const providers = [
+      new OpenAICompatibleProvider({ mode: "local", baseUrl: url }),
+      new OpenAICompatibleProvider({ mode: "local", baseUrl: url }),
+    ];
+    await Promise.all(providers.map((provider) => runResearchAgent({
+      agentName: "asset-classifier",
+      title: "serialized fixture",
+      taskPacket: {},
+      provider,
+      outputFormat: { requiredKeys: ["ok"], schema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } } },
+      policy: { maxAttempts: 1 },
+    })));
+    assert.equal(maximumActive, 1);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("queued endpoint requests receive a full provider deadline after lock acquisition", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        setTimeout(() => {
+          controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"{\\"ok\\":true}"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));
+          controller.close();
+        }, 20);
+      },
+    });
+    return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+  }) as typeof fetch;
+  try {
+    const providers = [
+      new OpenAICompatibleProvider({ mode: "local", baseUrl: "http://127.0.0.1:65534/v1" }),
+      new OpenAICompatibleProvider({ mode: "local", baseUrl: "http://127.0.0.1:65534/v1" }),
+    ];
+    await Promise.all(providers.map((provider) => runResearchAgent({
+      agentName: "asset-classifier",
+      title: "queued deadline fixture",
+      taskPacket: {},
+      provider,
+      outputFormat: { requiredKeys: ["ok"], schema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } } },
+      policy: { totalTimeoutMs: 35, inactivityTimeoutMs: 1_000, maxAttempts: 1 },
+    })));
+  } finally { globalThis.fetch = originalFetch; }
+});
+
 test("provider rejects malformed and unterminated SSE", async () => {
   const malformed = await fixture((response) => { response.writeHead(200, { "content-type": "text/event-stream" }); response.end("data: {bad}\n\n"); });
   try {

@@ -16,7 +16,7 @@ import {
   pauseForHumanReview,
   getRunProgress,
 } from "@/lib/workflow/orchestrator";
-import { getStageConfig } from "@/lib/workflow/stages";
+import { getStageConfig, shouldSkipOptionalBacktest } from "@/lib/workflow/stages";
 import { loadRunContext, type ResearchRunContext } from "./run-context";
 import { getStageHandler } from "./stage-registry";
 import { registerCoreHandlers } from "./handlers";
@@ -40,6 +40,55 @@ type StageRow = {
   max_retries: number | null;
   validation_result_json: unknown;
 };
+
+async function settleStageArtifacts(
+  sql: ReturnType<typeof postgres>,
+  runId: string,
+  stageId: string,
+  status: "validated" | "rejected"
+) {
+  // Handlers may persist an artifact before their final validator runs. Keep
+  // that write invisible until validation succeeds; rejected attempts remain
+  // auditable without becoming downstream inputs.
+  await sql`
+    UPDATE research_artifacts
+    SET status = ${status}, updated_at = NOW()
+    WHERE research_run_id = ${runId}
+      AND status IN ('draft', 'validated')
+      AND updated_at >= COALESCE(
+        (SELECT started_at FROM research_stages WHERE id = ${stageId}),
+        NOW()
+      )
+  `;
+}
+
+async function stageInvalidTasks(
+  sql: ReturnType<typeof postgres>,
+  runId: string,
+  stageId: string,
+  errors: string[]
+) {
+  const tasks = await sql`
+    SELECT id, agent_name, task_type, output_json
+    FROM research_tasks
+    WHERE research_run_id = ${runId} AND stage_id = ${stageId} AND status = 'completed'
+  `;
+  for (const task of tasks) {
+    await sql`
+      INSERT INTO agent_output_staging (
+        research_run_id, stage_id, task_id, target_table,
+        output_schema_key, output_schema_version, payload_json,
+        validation_status, validation_errors_json, review_status,
+        created_by_agent, rejected_at, rejection_reason
+      ) VALUES (
+        ${runId}, ${stageId}, ${task.id}, 'research_tasks',
+        ${task.task_type}, 4, ${sql.json(task.output_json || {})},
+        'invalid', ${sql.json(errors)}, 'rejected', ${task.agent_name || 'research-os'},
+        NOW(), ${errors.join('; ').slice(0, 4000)}
+      )
+    `;
+  }
+}
 
 const MAX_ITERATIONS = 96;
 
@@ -66,7 +115,7 @@ async function getRunStatus(sql: ReturnType<typeof postgres>, runId: string): Pr
 }
 
 async function markPipelineFailure(sql: ReturnType<typeof postgres>, runId: string, error: unknown): Promise<void> {
-  console.error("V3 Pipeline failure error stack:", error);
+  console.error("V4 Pipeline failure error stack:", error);
   const message = (error instanceof Error ? error.message : String(error)).slice(0, 4000);
   await sql.begin(async (tx) => {
     await tx`
@@ -140,12 +189,12 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
     `;
     if (!versionRows[0]) throw new Error(`Research run not found: ${runId}`);
     if (Number(versionRows[0].pipeline_version || 1) !== CURRENT_PIPELINE_VERSION) {
-      throw new Error(`Run ${runId} is not a current v3 run (pipeline_version=${versionRows[0].pipeline_version})`);
+      throw new Error(`Run ${runId} is not a current v4 run (pipeline_version=${versionRows[0].pipeline_version})`);
     }
 
     if (String(versionRows[0].status) === "pending") {
       await startRun(runId);
-      notes.push("Started v3 run");
+      notes.push("Started v4 run");
     }
 
     for (let iteration = 0; iteration < MAX_ITERATIONS; iteration += 1) {
@@ -154,7 +203,33 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
         notes.push("Run is waiting for a human gate");
         return await result(sql, runId, notes);
       }
-      if (["completed", "failed", "needs_more_work", "cancelled"].includes(runStatus)) {
+      if (runStatus === "needs_more_work") {
+        if (iteration > 0) return await result(sql, runId, notes);
+        const failedStage = (await getStages(sql, runId)).find((stage) => stage.status === "failed");
+        if (!failedStage) return await result(sql, runId, notes);
+        await sql.begin(async (tx) => {
+          await tx`
+            UPDATE research_stages
+            SET status = 'running', failure_reason = NULL, completed_at = NULL,
+                started_at = NOW(), updated_at = NOW()
+            WHERE id = ${failedStage.id}
+          `;
+          await tx`
+            UPDATE research_stages
+            SET status = 'pending', failure_reason = NULL, completed_at = NULL,
+                started_at = NULL, validation_result_json = NULL, updated_at = NOW()
+            WHERE research_run_id = ${runId}
+              AND stage_order > ${failedStage.stage_order}
+              AND status IN ('cancelled', 'failed', 'running', 'waiting_for_human')
+          `;
+          await tx`
+            UPDATE research_runs
+            SET status = 'running', failure_reason = NULL, completed_at = NULL, updated_at = NOW()
+            WHERE id = ${runId}
+          `;
+        });
+        notes.push(`Resuming failed stage ${failedStage.stage_key}`);
+      } else if (["completed", "failed", "cancelled"].includes(runStatus)) {
         return await result(sql, runId, notes);
       }
 
@@ -189,6 +264,20 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
           const done = await finalizeIfComplete(sql, runId);
           if (done) return await result(sql, runId, notes);
           return await result(sql, runId, notes);
+        }
+
+        const nextContext = await loadRunContext(sql, runId);
+        if (nextContext.composedProfile && shouldSkipOptionalBacktest(next.stage_key, nextContext.composedProfile.backtest_required)) {
+          const reason = "No accepted timing hypothesis; fundamental synthesis does not require a framework backtest.";
+          await sql`
+            UPDATE research_stages
+            SET status = 'skipped', failure_reason = ${reason},
+                validation_result_json = ${sql.json({ valid: true, skipped: true, reason })},
+                completed_at = NOW(), updated_at = NOW()
+            WHERE id = ${next.id}
+          `;
+          notes.push(`Skipped optional stage ${next.stage_key}`);
+          continue;
         }
 
         const config = getStageConfig(next.stage_key);
@@ -246,6 +335,16 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
         const handlerValidation = await handler.validate(ctx, output);
 
         if (!handlerValidation.valid) {
+          await settleStageArtifacts(sql, runId, active.id, "rejected");
+          await stageInvalidTasks(sql, runId, active.id, handlerValidation.errors);
+          await sql`
+            UPDATE research_tasks
+            SET status = 'failed', validation_status = 'invalid',
+                validation_result_json = ${sql.json(handlerValidation as any)},
+                failure_reason = ${handlerValidation.errors.join("; ").slice(0, 4000)},
+                updated_at = NOW()
+            WHERE stage_id = ${active.id} AND status = 'completed'
+          `;
           const retryCount = retryCountOf(active);
           const maxRetries = Number(active.max_retries ?? 2);
           if (retryCount < maxRetries) {
@@ -291,7 +390,9 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
           notes.push(reason);
           continue;
         }
+        await settleStageArtifacts(sql, runId, active.id, "validated");
       } catch (error) {
+        await settleStageArtifacts(sql, runId, active.id, "rejected").catch(() => undefined);
         await markPipelineFailure(sql, runId, error);
         notes.push(`Stage ${active.stage_key} execution failed: ${error instanceof Error ? error.message : String(error)}`);
         return await result(sql, runId, notes);
@@ -303,8 +404,16 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
         return await result(sql, runId, notes);
       }
       if (advance.action === "retry") {
-        notes.push(`Stage ${active.stage_key} validation requested retry`);
+        notes.push(`Stage ${active.stage_key} validation requested retry${advance.error ? `: ${advance.error}` : ""}`);
         continue;
+      }
+      if (advance.action === "skip_and_continue") {
+        notes.push(`Stage ${active.stage_key} failed validation and continued${advance.error ? `: ${advance.error}` : ""}`);
+        continue;
+      }
+      if (advance.action === "pause_for_human") {
+        notes.push(`Stage ${active.stage_key} paused for human input${advance.error ? `: ${advance.error}` : ""}`);
+        return await result(sql, runId, notes);
       }
       notes.push(`Completed stage ${active.stage_key}`);
     }

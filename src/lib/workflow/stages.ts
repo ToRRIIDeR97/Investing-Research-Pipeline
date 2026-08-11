@@ -76,7 +76,7 @@ export const STAGE_CONFIGS: StageConfig[] = [
     order: 4,
     name: "Research Plan",
     description: "Generate the structured research plan outlining scope, modules, and source strategy. Requires human approval.",
-    allowedModelTiers: ["mid"],
+    allowedModelTiers: ["mid", "specialist"],
     maxRetries: 2,
     maxBudgetUsd: 2.00,
     requiresHumanApproval: true,
@@ -156,7 +156,7 @@ export const STAGE_CONFIGS: StageConfig[] = [
     order: 9,
     name: "Company Genesis",
     description: "Synthesize strategic identity, origin history, and founder profile.",
-    allowedModelTiers: ["mid"],
+    allowedModelTiers: ["mid", "specialist"],
     maxRetries: 2,
     maxBudgetUsd: 3.00,
     requiresHumanApproval: false,
@@ -172,7 +172,7 @@ export const STAGE_CONFIGS: StageConfig[] = [
     order: 10,
     name: "Historical Diagnosis",
     description: "Diagnose level-shifts and inflections in the historical record.",
-    allowedModelTiers: ["mid"],
+    allowedModelTiers: ["mid", "specialist"],
     maxRetries: 2,
     maxBudgetUsd: 3.00,
     requiresHumanApproval: false,
@@ -188,7 +188,7 @@ export const STAGE_CONFIGS: StageConfig[] = [
     order: 11,
     name: "Business Process Analysis",
     description: "Model customer decisions, segment models, and business process maps.",
-    allowedModelTiers: ["mid"],
+    allowedModelTiers: ["mid", "specialist"],
     maxRetries: 2,
     maxBudgetUsd: 5.00,
     requiresHumanApproval: false,
@@ -204,7 +204,7 @@ export const STAGE_CONFIGS: StageConfig[] = [
     order: 12,
     name: "Moat Analysis",
     description: "Assess moat strength, durability, and model attack scenarios.",
-    allowedModelTiers: ["mid"],
+    allowedModelTiers: ["mid", "specialist"],
     maxRetries: 2,
     maxBudgetUsd: 5.00,
     requiresHumanApproval: false,
@@ -220,7 +220,7 @@ export const STAGE_CONFIGS: StageConfig[] = [
     order: 13,
     name: "Operating Model",
     description: "Build forecast driver tree and detailed operating model.",
-    allowedModelTiers: ["mid", "premium"],
+    allowedModelTiers: ["mid", "premium", "specialist"],
     maxRetries: 2,
     maxBudgetUsd: 5.00,
     requiresHumanApproval: false,
@@ -236,7 +236,7 @@ export const STAGE_CONFIGS: StageConfig[] = [
     order: 14,
     name: "Operating Scenarios",
     description: "Synthesize bear, base, and bull operating forecasts.",
-    allowedModelTiers: ["premium"],
+    allowedModelTiers: ["premium", "specialist"],
     maxRetries: 2,
     maxBudgetUsd: 5.00,
     requiresHumanApproval: false,
@@ -252,7 +252,7 @@ export const STAGE_CONFIGS: StageConfig[] = [
     order: 15,
     name: "Asset Valuation",
     description: "Run valuation models and price-target paths for all scenarios.",
-    allowedModelTiers: ["mid", "premium"],
+    allowedModelTiers: ["mid", "premium", "specialist"],
     maxRetries: 2,
     maxBudgetUsd: 10.00,
     requiresHumanApproval: false,
@@ -332,12 +332,12 @@ export const STAGE_CONFIGS: StageConfig[] = [
     order: 20,
     name: "Decision Synthesis",
     description: "Synthesize thesis, risks, catalysts, Expected Return, monitoring thresholds, and the reviewed backtest evidence.",
-    allowedModelTiers: ["mid", "premium"],
+    allowedModelTiers: ["mid", "premium", "specialist"],
     maxRetries: 2,
     maxBudgetUsd: 5.00,
     requiresHumanApproval: false,
     requiredOutputs: ["thesis", "risks", "catalysts"],
-    entryCriteria: ["backtest_review_completed"],
+    entryCriteria: ["asset_valuation_completed"],
     validationRules: ["decision_validation"],
     failureState: "skip_and_continue",
     skippable: true,
@@ -416,6 +416,12 @@ export const STAGE_CONFIG_MAP: Record<string, StageConfig> = Object.fromEntries(
 
 export function getStageConfig(key: string): StageConfig | undefined {
   return STAGE_CONFIG_MAP[key];
+}
+
+const OPTIONAL_BACKTEST_STAGES = new Set(["indicator_design", "strategy_design", "backtest_execution", "backtest_review"]);
+
+export function shouldSkipOptionalBacktest(stageKey: string, backtestRequired: boolean): boolean {
+  return !backtestRequired && OPTIONAL_BACKTEST_STAGES.has(stageKey);
 }
 
 /**

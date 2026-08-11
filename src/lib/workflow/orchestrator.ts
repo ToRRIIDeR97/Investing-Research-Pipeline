@@ -597,13 +597,42 @@ async function startNextStage(
           WHERE id = ${runId}
         `;
       } else {
+        const [runTelemetry, stageTelemetry] = await Promise.all([
+          sql`
+            SELECT started_at, actual_cost_usd,
+                   COALESCE((SELECT SUM(input_tokens) FROM model_call_logs WHERE research_run_id = ${runId}), 0) AS input_tokens,
+                   COALESCE((SELECT SUM(output_tokens) FROM model_call_logs WHERE research_run_id = ${runId}), 0) AS output_tokens,
+                   COALESCE((SELECT SUM(cost_usd::numeric) FROM model_call_logs WHERE research_run_id = ${runId} AND cost_source != 'provider'), 0) AS estimated_cost_usd,
+                   (SELECT COUNT(*) FROM model_call_logs WHERE research_run_id = ${runId} AND request_metadata_json->>'fallback' = 'true') AS fallback_count,
+                   (SELECT COUNT(*) FROM model_call_logs WHERE research_run_id = ${runId} AND response_metadata_json->>'repair_attempted' = 'true') AS repair_count,
+                   (SELECT EXTRACT(EPOCH FROM (COALESCE(completed_at, NOW()) - started_at)) * 1000 FROM research_runs WHERE id = ${runId}) AS wall_time_ms
+            FROM research_runs WHERE id = ${runId}
+          `,
+          sql`
+            SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (completed_at - started_at)) * 1000), 0) AS critical_path_ms
+            FROM research_stages WHERE research_run_id = ${runId} AND started_at IS NOT NULL AND completed_at IS NOT NULL
+          `,
+        ]);
+        const telemetry = {
+          wall_time_ms: Number(runTelemetry[0]?.wall_time_ms || 0),
+          stage_critical_path_ms: Number(stageTelemetry[0]?.critical_path_ms || 0),
+          concurrency: Math.max(1, Math.min(4, Number(process.env.RESEARCH_AGENT_CONCURRENCY || 3))),
+          repair_count: Number(runTelemetry[0]?.repair_count || 0),
+          fallback_count: Number(runTelemetry[0]?.fallback_count || 0),
+          input_tokens: Number(runTelemetry[0]?.input_tokens || 0),
+          output_tokens: Number(runTelemetry[0]?.output_tokens || 0),
+          estimated_cost_usd: Number(runTelemetry[0]?.estimated_cost_usd || 0),
+          actual_cost_usd: Number(runTelemetry[0]?.actual_cost_usd || 0),
+          slo_status: "unverified",
+        };
         await sql`
           UPDATE research_runs
           SET status = 'completed',
               completed_at = COALESCE(completed_at, NOW()),
               metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
-                quality_gate: quality as any,
-              })},
+              quality_gate: quality as any,
+              run_telemetry: telemetry,
+            })},
               updated_at = NOW()
           WHERE id = ${runId}
         `;

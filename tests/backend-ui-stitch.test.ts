@@ -6,7 +6,7 @@ import { STAGE_CONFIGS, getAllStagesForRun } from "@/lib/workflow/stages";
 
 describe("backend/UI stitching contracts", () => {
   it("uses one server-owned current pipeline version", () => {
-    assert.equal(CURRENT_PIPELINE_VERSION, 3);
+  assert.equal(CURRENT_PIPELINE_VERSION, 4);
     const parsed = createResearchRunSchema.parse({
       run_type: "deep_dive",
       research_question: "test",

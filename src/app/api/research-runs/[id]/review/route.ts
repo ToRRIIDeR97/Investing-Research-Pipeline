@@ -44,7 +44,7 @@ export async function POST(
         `;
         if (!runs[0]) throw new ApiError("Research run not found", 404, "NOT_FOUND");
         if (Number(runs[0].pipeline_version) !== CURRENT_PIPELINE_VERSION) {
-          throw new ApiError("Final review is available only for current v3 runs", 422, "UNSUPPORTED_PIPELINE_VERSION");
+          throw new ApiError("Final review is available only for current v4 runs", 422, "UNSUPPORTED_PIPELINE_VERSION");
         }
 
         const stages = await tx`

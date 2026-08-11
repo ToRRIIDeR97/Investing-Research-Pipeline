@@ -6,13 +6,29 @@ import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { createHash } from "node:crypto";
+import { loadAcceptedEvidencePacket } from "../system-pipeline";
+import { CURRENT_PIPELINE_VERSION } from "../version";
 
 export const moatAnalysisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "moat_analysis",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
-      const taskKey = "moat-analyst:assessment:v2";
+      const evidenceClaims = await loadAcceptedEvidencePacket(sql, {
+        runId: ctx.runId, runType: ctx.runType, assetId: ctx.assetId, assetName: ctx.assetName,
+        assetSlug: ctx.assetSlug, symbol: ctx.symbol, profileId: ctx.profileId || "", profileKey: ctx.profileKey || "",
+        requiredModules: [], requiredLenses: [], marketDataCutoffAt: ctx.marketDataCutoffAt?.toISOString() || null,
+        pipelineVersion: CURRENT_PIPELINE_VERSION,
+      });
+      const upstreamRows = await sql`
+        SELECT artifact_type, content_json FROM research_artifacts
+        WHERE research_run_id = ${ctx.runId}
+          AND artifact_type IN ('segment_model', 'customer_decision_map', 'business_process_map', 'bottleneck_register', 'competitive_response_matrix', 'historical_diagnosis')
+          AND status IN ('validated', 'accepted')
+        ORDER BY artifact_type
+      `;
+      const upstream = Object.fromEntries(upstreamRows.map((row) => [String(row.artifact_type), row.content_json]));
       const packet = {
         asset: {
           runId: ctx.runId,
@@ -24,7 +40,10 @@ export const moatAnalysisHandler: StageHandler<Record<string, unknown>> = {
         required_modules: ["moat_durability", "competitive_advantage_sources"],
         output_contract: "moat_analysis",
         output_schema: MOAT_CONTRACT.schema,
+        evidence_claims: evidenceClaims,
+        upstream_artifacts: upstream,
       };
+      const taskKey = `moat-analyst:assessment:v3:${createHash("sha256").update(JSON.stringify(packet)).digest("hex").slice(0, 12)}`;
 
       const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
         agentName: "asset-analyst",
@@ -33,6 +52,7 @@ export const moatAnalysisHandler: StageHandler<Record<string, unknown>> = {
         extraRules: [
           "Assess moat sources: network effects, high switching costs, cost advantages, intangible assets.",
           "Follow output_schema exactly, including every nested required field and primitive type.",
+          "Ground every moat claim in evidence_claims and upstream_artifacts. Treat an unsupported claimed advantage as unproven, and translate each competitive response and bottleneck into an explicit durability or attack assessment.",
         ],
       });
 

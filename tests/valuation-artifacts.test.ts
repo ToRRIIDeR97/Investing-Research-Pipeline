@@ -6,6 +6,7 @@ import {
 import type {
   AnnualPriceTargetPath,
 } from "@/lib/research/valuation/contracts";
+import { missingRequiredValuationMethods } from "@/lib/research/valuation/contracts";
 
 const baseProjection = () => [
   {
@@ -201,5 +202,12 @@ describe("valuation annual price paths (Component 11)", () => {
     const result = validateAnnualPriceTargetPath(path, scenarioSet);
     assert.equal(result.valid, false);
     assert.ok(result.errors.some((e) => e.includes("blocked because segment assumptions do not reconcile")));
+  });
+
+  it("requires the profile's valuation method rather than accepting a proxy", () => {
+    const path = baseTargetPath();
+    assert.deepEqual(missingRequiredValuationMethods(["residual_income"], path.price_target_path), ["residual_income"]);
+    path.price_target_path[0].valuation_method = "Residual Income";
+    assert.deepEqual(missingRequiredValuationMethods(["residual_income"], path.price_target_path), []);
   });
 });

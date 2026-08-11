@@ -1,8 +1,20 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import { createProfile, validateArchetypes, isBacktestApplicable } from "@/lib/research/pipeline-contracts";
+import { archetypesForProfile } from "@/lib/research/handlers/archetype-composition";
 
 describe("research v3 contracts", () => {
+  it("composes financial companies with a base and no marketplace assumption", () => {
+    assert.deepEqual(archetypesForProfile("financials"), ["operating_company_core", "bank", "lender", "payments_network"]);
+    const result = createProfile("financial-test", {
+      asset_id: "financial",
+      archetypes: archetypesForProfile("financials"),
+      overlays: [],
+    });
+    assert.ok(result.valid, result.errors.map((error) => error.message).join("; "));
+    assert.equal(result.composed.valuation_methods.find((method) => method.method === "nav")?.required, true);
+    assert.equal(result.composed.valuation_methods.find((method) => method.method === "nav")?.allowed, true);
+  });
   it("C2-T1: Compose MELI archetypes", () => {
     const result = createProfile("meli-test", {
       asset_id: "meli",

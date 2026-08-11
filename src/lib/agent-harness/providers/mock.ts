@@ -62,7 +62,7 @@ const STATIC: Record<string, unknown> = {
       source: "sofi-10q-q3-2024", confidence: 0.93 }
   ], definition_mappings: [], conversion_notes: [], unresolved_ambiguities: [], quality_flags: [], source_gaps: [] },
   "backtest-coder": { strategy_name: "Mock strategy", strategy_description: "Mock backtest strategy", run_instructions: "Run it", assumptions: [], files: [{ path: "strategy.py", content: "def generate_signals(prices, params):\n    return prices" }] },
-  "research-reviewer": { review_summary: "All v3 artifacts are internally consistent.", findings: [{ severity: "info", message: "No issues found.", affected_artifact: "none" }], quality_score: 0.95, recommendations: [{ action: "continue", rationale: "All checks passed." }], review_verdict: "pass" },
+  "research-reviewer": { pass_fail: "pass", review_summary: "All v4 artifacts are internally consistent.", quality_score: 95, findings: [{ severity: "info", category: "coverage", message: "No issues found." }], recommendations: ["Continue to human review."] },
   "export-writer": { artifact_type: "report", title: "Investment Research Report", sections: [], tables: [], charts: [], disclosures: [], source_index: [], open_questions: [] },
 };
 
@@ -111,14 +111,19 @@ function sourceReaderResponse(packet: Record<string, unknown>) {
   ].filter((topic, index, all) => all.indexOf(topic) === index);
   const claims = topics.map((module, index) => {
     const source = sources[index % Math.max(1, sources.length)] || {};
+    const quotedText = String(source.content_excerpt || "").slice(0, 500);
+    const charStart = Number(source.char_start || 0);
+    const founderSource = source.source_role === "founder_and_company_history";
     return {
-      claim_text: `${asset.name} ${module.replace(/_/g, " ")} evidence is decision relevant and sufficiently detailed for module-specific mock validation ${index}.`,
+      claim_text: founderSource
+        ? `${asset.name} was founded to solve the customer problem described by this founder-history source.`
+        : `${asset.name} ${module.replace(/_/g, " ")} evidence is decision relevant and sufficiently detailed for module-specific mock validation ${index}.`,
       claim_type: "mock_fact", claim_category: "fact", confidence: 0.9,
       source_id: String(source.source_id || "00000000-0000-4000-8000-000000000001"),
       document_chunk_id: source.document_chunk_id,
-      char_start: source.char_start,
-      char_end: source.char_end,
-      quoted_text: String(source.content_excerpt || "").slice(0, 500),
+      char_start: charStart,
+      char_end: charStart + quotedText.length,
+      quoted_text: quotedText,
     };
   });
   return { evidence_claims: claims, contradictions: [], source_gaps: [], low_confidence_items: [], rejected_candidates: [] };
@@ -544,6 +549,7 @@ function v3OperatingScenariosResponse(packet: Record<string, unknown>) {
 }
 
 function v3ValuationResponse(packet: Record<string, unknown>) {
+  const valuationMethod = Array.isArray(packet.required_lenses) ? String(packet.required_lenses[0] || "reverse_dcf") : "reverse_dcf";
   return {
     valuation_scenario_set: {
       artifact_type: "valuation_scenario_set",
@@ -604,7 +610,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
         {
           fiscal_year: 2026,
           scenario_type: "bear",
-          valuation_method: "reverse_dcf",
+          valuation_method: valuationMethod,
           operating_metric_key: "eps",
           operating_metric_value: 0.10,
           valuation_parameter_key: "pe_multiple",
@@ -617,7 +623,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
         {
           fiscal_year: 2026,
           scenario_type: "base",
-          valuation_method: "reverse_dcf",
+          valuation_method: valuationMethod,
           operating_metric_key: "eps",
           operating_metric_value: 0.10,
           valuation_parameter_key: "pe_multiple",
@@ -630,7 +636,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
         {
           fiscal_year: 2026,
           scenario_type: "bull",
-          valuation_method: "reverse_dcf",
+          valuation_method: valuationMethod,
           operating_metric_key: "eps",
           operating_metric_value: 0.10,
           valuation_parameter_key: "pe_multiple",
@@ -643,7 +649,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
         {
           fiscal_year: 2027,
           scenario_type: "bear",
-          valuation_method: "reverse_dcf",
+          valuation_method: valuationMethod,
           operating_metric_key: "eps",
           operating_metric_value: 0.12,
           valuation_parameter_key: "pe_multiple",
@@ -656,7 +662,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
         {
           fiscal_year: 2027,
           scenario_type: "base",
-          valuation_method: "reverse_dcf",
+          valuation_method: valuationMethod,
           operating_metric_key: "eps",
           operating_metric_value: 0.12,
           valuation_parameter_key: "pe_multiple",
@@ -669,7 +675,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
         {
           fiscal_year: 2027,
           scenario_type: "bull",
-          valuation_method: "reverse_dcf",
+          valuation_method: valuationMethod,
           operating_metric_key: "eps",
           operating_metric_value: 0.12,
           valuation_parameter_key: "pe_multiple",
@@ -682,7 +688,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
         {
           fiscal_year: 2028,
           scenario_type: "bear",
-          valuation_method: "reverse_dcf",
+          valuation_method: valuationMethod,
           operating_metric_key: "eps",
           operating_metric_value: 0.14,
           valuation_parameter_key: "pe_multiple",
@@ -695,7 +701,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
         {
           fiscal_year: 2028,
           scenario_type: "base",
-          valuation_method: "reverse_dcf",
+          valuation_method: valuationMethod,
           operating_metric_key: "eps",
           operating_metric_value: 0.14,
           valuation_parameter_key: "pe_multiple",
@@ -708,7 +714,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
         {
           fiscal_year: 2028,
           scenario_type: "bull",
-          valuation_method: "reverse_dcf",
+          valuation_method: valuationMethod,
           operating_metric_key: "eps",
           operating_metric_value: 0.14,
           valuation_parameter_key: "pe_multiple",
@@ -721,7 +727,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
         {
           fiscal_year: 2029,
           scenario_type: "bear",
-          valuation_method: "reverse_dcf",
+          valuation_method: valuationMethod,
           operating_metric_key: "eps",
           operating_metric_value: 0.17,
           valuation_parameter_key: "pe_multiple",
@@ -734,7 +740,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
         {
           fiscal_year: 2029,
           scenario_type: "base",
-          valuation_method: "reverse_dcf",
+          valuation_method: valuationMethod,
           operating_metric_key: "eps",
           operating_metric_value: 0.17,
           valuation_parameter_key: "pe_multiple",
@@ -747,7 +753,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
         {
           fiscal_year: 2029,
           scenario_type: "bull",
-          valuation_method: "reverse_dcf",
+          valuation_method: valuationMethod,
           operating_metric_key: "eps",
           operating_metric_value: 0.17,
           valuation_parameter_key: "pe_multiple",
@@ -930,6 +936,12 @@ export class MockProvider implements ModelProvider {
         response = v3HistoricalDiagnosisResponse(packet);
       } else if (contract === "business_process_analysis") {
         response = v3BusinessProcessResponse(packet);
+      } else if ([
+        "segment_model", "customer_decision_map", "business_process_map",
+        "bottleneck_register", "competitive_response_matrix",
+      ].includes(contract || "")) {
+        const artifacts = v3BusinessProcessResponse(packet);
+        response = { [contract!]: artifacts[contract as keyof typeof artifacts] };
       } else if (contract === "moat_analysis") {
         response = v3MoatResponse(packet);
       } else if (contract === "operating_model") {
@@ -940,6 +952,12 @@ export class MockProvider implements ModelProvider {
         response = v3ValuationResponse(packet);
       } else if (contract === "decision_synthesis") {
         response = v3DecisionResponse(packet);
+      } else if ([
+        "investment_thesis", "risk_register", "catalyst_register", "expected_return_matrix",
+        "thesis_breakers", "monitoring_dashboard", "confidence_assessment", "decision_record",
+      ].includes(contract || "")) {
+        const artifacts = v3DecisionResponse(packet);
+        response = { [contract!]: artifacts[contract as keyof typeof artifacts] };
       } else if (contract === "ai_reviewer") {
         response = STATIC["research-reviewer"];
       } else {

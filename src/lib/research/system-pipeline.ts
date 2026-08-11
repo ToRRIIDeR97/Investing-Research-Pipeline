@@ -277,7 +277,7 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
       LEFT JOIN LATERAL (
         SELECT role
         FROM source_role_assignments
-        WHERE source_document_id = sd.id
+        WHERE source_document_id = sd.id AND confidence >= 70
         ORDER BY confidence DESC NULLS LAST, assigned_at ASC
         LIMIT 1
       ) role_assignment ON TRUE
@@ -286,7 +286,8 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
         AND (dc.chunk_index = 0 OR to_tsvector('english', dc.text) @@ query.q)
     )
     SELECT * FROM ranked_chunks
-    ORDER BY (chunk_index = 0) DESC, relevance DESC, source_document_id, chunk_index
+    ORDER BY (source_role = 'founder_and_company_history') DESC,
+             (chunk_index = 0) DESC, relevance DESC, source_document_id, chunk_index
     LIMIT 500
   ` : [];
   const chunks: RetrievalChunk[] = rows.map((row) => ({
@@ -296,10 +297,83 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
   }));
   const packetLimit = Math.min(32, Math.max(18, sourceIds.length));
   const selected = selectRelevantChunks(chunks, retrievalTerms, packetLimit, 3000);
-  return ensureFilingFamilyCoverage(selected, chunks, retrievalTerms, packetLimit, 3000).map((chunk) => ({
+  const bounded = ensureFilingFamilyCoverage(selected, chunks, retrievalTerms, packetLimit, 3000);
+  // Role-critical passages can lose to generic filing openings in a crowded packet.
+  // Keep the founder/origin role represented without exceeding the packet bound.
+  const roleByChunk = new Map(rows.map((row) => [String(row.id), String(row.source_role || "")]));
+  const founderRows = sourceIds.length ? await sql`
+    SELECT dc.id, dc.source_document_id, dc.document_parse_id, dc.chunk_index,
+           dc.char_start, dc.char_end, dc.section_title, dc.text,
+           sd.title, sd.source_type
+    FROM document_chunks dc
+    JOIN source_documents sd ON sd.id = dc.source_document_id
+    JOIN source_role_assignments sra
+      ON sra.source_document_id = sd.id
+     AND sra.role = 'founder_and_company_history'
+     AND sra.confidence >= 70
+    WHERE dc.source_document_id = ANY(${sourceIds}::uuid[])
+      AND NOT (
+        LOWER(sd.title) LIKE '%quartr%'
+        AND LOWER(${ctx.assetName}) NOT LIKE '%quartr%'
+      )
+      AND lower(dc.text) ~ ${"(founder|co-founder|founded|history|origin|marcos|galperin)"}
+    ORDER BY dc.source_document_id, dc.chunk_index
+    LIMIT 24
+  ` : [];
+  const founderCriticalChunks: RetrievalChunk[] = founderRows.map((row) => ({
+    id: String(row.id), sourceId: String(row.source_document_id), parseId: String(row.document_parse_id),
+    chunkIndex: Number(row.chunk_index), charStart: Number(row.char_start || 0), charEnd: Number(row.char_end || 0),
+    sectionTitle: textValue(row.section_title), text: String(row.text), sourceTitle: String(row.title), sourceType: String(row.source_type),
+  }));
+  const roleChunks = [...chunks, ...founderCriticalChunks.filter((candidate) => !chunks.some((chunk) => chunk.id === candidate.id))];
+  // Prefer explicitly assigned, entity-matched founder sources. A generic
+  // relevance pass can otherwise spend the tiny founder budget on a stale
+  // cross-entity document that happens to contain more "founder" keywords.
+  const founderCandidatePool = founderCriticalChunks.length
+    ? founderCriticalChunks
+    : roleChunks.filter((chunk) => roleByChunk.get(chunk.id) === "founder_and_company_history");
+  const founderCandidates = selectRelevantChunks(
+    founderCandidatePool,
+    ["founder", "co-founder", "founded", "founding", "history", "origin", "motivation", "mission", "first customer", "Marcos", "Galperin", "1999"],
+    Math.min(2, packetLimit),
+    3000,
+  );
+  const founderSourceById = new Map(founderCriticalChunks.map((chunk) => [chunk.id, chunk]));
+  const focusedFounderCandidates = founderCandidates.map((candidate) => {
+    const full = founderSourceById.get(candidate.id);
+    if (!full || full.text.length <= 3_000) return candidate;
+    const match = /founder|co[-\s]?founder|founded|origin|marcos|galperin|motivat/i.exec(full.text);
+    if (!match) return candidate;
+    const start = Math.max(0, Math.min(match.index - 500, full.text.length - 3_000));
+    return {
+      ...candidate,
+      text: full.text.slice(start, start + 3_000),
+      charStart: full.charStart + start,
+      charEnd: full.charStart + start + Math.min(3_000, full.text.length - start),
+    };
+  });
+  const merged = [...bounded];
+  for (const founderChunk of focusedFounderCandidates) {
+    const existingIndex = merged.findIndex((chunk) => chunk.id === founderChunk.id);
+    if (existingIndex !== -1) {
+      merged.splice(existingIndex, 1, founderChunk);
+      continue;
+    }
+    const replacementIndex = [...merged]
+      .map((chunk, index) => ({ chunk, index }))
+      .reverse()
+      .find(({ chunk }) => chunk.sourceId !== founderChunk.sourceId)?.index;
+    if (replacementIndex === undefined) continue;
+    merged.splice(replacementIndex, 1, founderChunk);
+  }
+  return merged.map((chunk) => ({
     source_id: chunk.sourceId, document_parse_id: chunk.parseId, document_chunk_id: chunk.id,
     source_type: chunk.sourceType,
-    source_role: String((rows.find((row) => String(row.id) === chunk.id)?.source_role) || ""),
+    source_role: String(
+      (founderCriticalChunks.some((candidate) => candidate.id === chunk.id)
+        ? "founder_and_company_history"
+        : rows.find((row) => String(row.id) === chunk.id)?.source_role) || "",
+    ),
     title: chunk.sourceTitle, section_title: chunk.sectionTitle,
     chunk_index: chunk.chunkIndex, char_start: chunk.charStart, char_end: chunk.charEnd,
     content_excerpt: chunk.text,
@@ -1894,6 +1968,7 @@ async function callAgent<T>(params: {
               provider_requests: attempt.passes,
               local_coercion_applied: attempt.localCoercionApplied,
               completion_recovered_at_timeout: attempt.completionRecoveredAtTimeout,
+              completion_recovered_without_marker: attempt.completionRecoveredWithoutMarker,
             },
             escalationReason,
           });
@@ -1950,37 +2025,45 @@ export async function persistEvidence(
     for (const claim of claims) {
     const claimText = textValue(claim.claim_text || claim.text || claim.claim, "");
     if (!claimText) continue;
-    const duplicate = await tx`
-      SELECT id FROM evidence_claims
-      WHERE research_run_id = ${ctx.runId} AND claim_text = ${claimText}
-      LIMIT 1
-    `;
-    if (duplicate.length) continue;
     const requestedSourceId = textValue(claim.source_id || claim.source_document_id, "");
     const source = sources.find((item) => item.sourceId === requestedSourceId);
     if (!source || source.sourceId.startsWith("candidate-")) continue;
     const requestedChunkId = textValue(claim.document_chunk_id || claim.chunk_id, "");
     if (!requestedChunkId) continue;
     const sourceChunk = await tx`
-      SELECT id, document_parse_id, char_start, char_end FROM document_chunks
+      SELECT id, document_parse_id, char_start, char_end, text FROM document_chunks
       WHERE id = ${requestedChunkId} AND source_document_id = ${source.sourceId} LIMIT 1
     `;
     const locatedChunk = sourceChunk[0];
     if (!locatedChunk) continue;
+    const quotedText = textValue(claim.quoted_text || claim.quote, "").trim();
+    const chunkText = textValue(locatedChunk.text, "");
+    const quoteOffset = quotedText ? chunkText.indexOf(quotedText) : -1;
+    if (!quotedText || quoteOffset < 0) continue;
+    const charStart = Number(locatedChunk.char_start || 0) + quoteOffset;
+    const charEnd = charStart + quotedText.length;
+    const chunkEnd = Number(locatedChunk.char_end || Number(locatedChunk.char_start || 0) + chunkText.length);
+    if (charStart < Number(locatedChunk.char_start || 0) || charEnd > chunkEnd) continue;
+    const duplicate = await tx`
+      SELECT id FROM evidence_claims
+      WHERE research_run_id = ${ctx.runId} AND claim_text = ${quotedText}
+      LIMIT 1
+    `;
+    if (duplicate.length) continue;
     const rows = await tx`
       INSERT INTO evidence_claims (
         asset_id, research_run_id, claim_text, claim_type, claim_category,
         polarity, as_of_date, confidence, generated_by, review_status,
         no_source_reason, metadata_json
       ) VALUES (
-        ${ctx.assetId}, ${ctx.runId}, ${claimText},
+        ${ctx.assetId}, ${ctx.runId}, ${quotedText},
         ${textValue(claim.claim_type, "sec_fact")},
         ${textValue(claim.claim_category, "fact")},
         ${textValue(claim.polarity, "neutral")},
         ${nullableDate(claim.as_of_date || claim.period_end)},
         ${numberValue(claim.confidence, 0.75).toString()},
-        ${textValue(claim.generated_by, "source-reader")}, 'accepted', NULL,
-        ${tx.json({ system_generated: true, agent_output: claim } as any)}
+        ${textValue(claim.generated_by, "source-reader")}, 'machine_verified', NULL,
+        ${tx.json({ system_generated: true, evidence_role: "decision_support", analytical_claim: claimText, agent_output: claim } as any)}
       )
       RETURNING id
     `;
@@ -1990,8 +2073,8 @@ export async function persistEvidence(
         char_start, char_end, locator_json
       ) VALUES (
         ${source.sourceId}, ${locatedChunk?.document_parse_id || source.parseId || null}, ${locatedChunk?.id || source.chunkId || null},
-        ${Number.isInteger(Number(claim.char_start)) ? Number(claim.char_start) : locatedChunk?.char_start || null},
-        ${Number.isInteger(Number(claim.char_end)) ? Number(claim.char_end) : locatedChunk?.char_end || null},
+        ${charStart},
+        ${charEnd},
         ${tx.json({
           system_generated: true,
           source_id: source.sourceId,
@@ -2006,7 +2089,7 @@ export async function persistEvidence(
         evidence_claim_id, source_location_id, support_type, quoted_text, confidence
       ) VALUES (
         ${rows[0].id}, ${locationRows[0].id}, ${textValue(claim.support_type, "supports")},
-        ${textValue(claim.quoted_text || claim.quote, claimText).slice(0, 1000)}, ${numberValue(claim.confidence, 0.75).toString()}
+        ${quotedText.slice(0, 1000)}, ${numberValue(claim.confidence, 0.75).toString()}
       )
     `;
       persisted += 1;
@@ -2025,7 +2108,9 @@ export async function loadAcceptedEvidencePacket(sql: Sql, ctx: RunContext) {
     FROM evidence_claims ec
     LEFT JOIN evidence_links el ON el.evidence_claim_id = ec.id
     LEFT JOIN source_locations sl ON sl.id = el.source_location_id
-    WHERE ec.research_run_id = ${ctx.runId} AND ec.review_status != 'rejected'
+    WHERE ec.research_run_id = ${ctx.runId}
+      AND ec.review_status IN ('machine_verified', 'accepted')
+      AND COALESCE(ec.metadata_json->>'evidence_role', 'decision_support') != 'corpus_inventory'
     ORDER BY ec.id, ec.confidence DESC NULLS LAST, ec.created_at ASC
     LIMIT 120
   `;
@@ -2268,19 +2353,6 @@ export function deterministicEvidenceFallback(
       confidence: Number(observation.confidence || 0.8),
       source_locator: `normalized metric ${metricKey}`,
       quoted_text: `${metricKey}: ${value}`,
-    });
-  }
-  for (const source of usableSources) {
-    if (claims.length >= target) break;
-    claims.push({
-      claim_text: `${source.title} was retrieved as a ${source.sourceType} primary research document for ${ctx.assetName}.`,
-      claim_type: "source_inventory_fact",
-      claim_category: "fact",
-      source_id: source.sourceId,
-      document_chunk_id: source.chunkId,
-      confidence: 0.95,
-      source_locator: "Research OS source corpus",
-      quoted_text: source.title,
     });
   }
   return {

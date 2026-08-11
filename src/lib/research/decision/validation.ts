@@ -18,6 +18,15 @@ export type ValidationResult = {
   warnings: string[];
 };
 
+export function calculateProbabilityWeightedReturn(
+  returns: Pick<ExpectedReturnMatrix, "bear_return" | "base_return" | "bull_return">,
+  probabilities: { probability_bear: number; probability_base: number; probability_bull: number }
+): number {
+  return Number((returns.bear_return * probabilities.probability_bear
+    + returns.base_return * probabilities.probability_base
+    + returns.bull_return * probabilities.probability_bull).toFixed(6));
+}
+
 export function validateInvestmentThesis(content: unknown): ValidationResult {
   const parsed = InvestmentThesis.safeParse(content);
   if (!parsed.success) {

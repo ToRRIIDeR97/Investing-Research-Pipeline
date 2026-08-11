@@ -1,7 +1,14 @@
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
 import { makeValidationResult } from "../run-context";
 import { persistV3Composition } from "../run-context";
+import { validateCompositionForRun } from "../archetypes/compose";
 import postgres from "postgres";
+
+export function archetypesForProfile(profileKey: string | null): string[] {
+  return profileKey === "financials"
+    ? ["operating_company_core", "bank", "lender", "payments_network"]
+    : ["operating_company_core"];
+}
 
 export const archetypeCompositionHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "archetype_composition",
@@ -13,22 +20,16 @@ export const archetypeCompositionHandler: StageHandler<Record<string, unknown>> 
 
       // Determine archetypes and overlays from the profile key, or run metadata if provided
       if (ctx.archetypeKeys && ctx.archetypeKeys.length > 0) {
-        archetypes = ctx.archetypeKeys;
+        archetypes = ctx.profileKey === "financials"
+          ? ["operating_company_core", ...ctx.archetypeKeys.filter((key) => key !== "marketplace" && key !== "operating_company_core")]
+          : ctx.archetypeKeys;
         overlays = ctx.overlayKeys || [];
       } else {
-        const profileKey = ctx.profileKey;
-        if (profileKey === "financials") {
-          archetypes = ["bank", "lender", "marketplace", "payments_network"];
-          overlays = [];
-        } else if (profileKey === "operating_company") {
-          archetypes = ["operating_company_core"];
-          overlays = [];
-        } else {
-          // Default to operating company core
-          archetypes = ["operating_company_core"];
-          overlays = [];
-        }
+        archetypes = archetypesForProfile(ctx.profileKey);
       }
+
+      const compositionErrors = validateCompositionForRun(archetypes, overlays);
+      if (compositionErrors.length) throw new Error(compositionErrors.map((error) => error.message).join("; "));
 
       await persistV3Composition(sql, ctx.runId, archetypes, overlays);
       return { status: "success", archetypes, overlays };
@@ -45,7 +46,8 @@ export const archetypeCompositionHandler: StageHandler<Record<string, unknown>> 
       const metadata = runs[0]?.metadata_json as Record<string, any>;
       console.log("[archetype.validate] metadata:", JSON.stringify(metadata));
       const archetypes = Array.isArray(metadata?.v3_archetypes) ? metadata.v3_archetypes : [];
-      const errors: string[] = [];
+      const errors = validateCompositionForRun(archetypes, Array.isArray(metadata?.v3_overlays) ? metadata.v3_overlays : [])
+        .map((error) => error.message);
       if (!Array.isArray(archetypes) || archetypes.length === 0) {
         errors.push("No archetypes composed/persisted for this run");
       }

@@ -29,7 +29,7 @@ test("source-reader batching is stable and obeys chunk and byte ceilings", () =>
   assert.ok(first.every((batch) => batch.inputBytes <= 10_000));
 });
 
-test("source-reader task fingerprints reuse identical corpora and invalidate changed batches", () => {
+test("source-reader task fingerprints reuse identical inputs and invalidate changed batches or targets", () => {
   const first = createSourceReaderBatches([chunk(0), chunk(1)])[0];
   const same = createSourceReaderBatches([chunk(0), chunk(1)])[0];
   const changedChunk = chunk(1);
@@ -37,6 +37,7 @@ test("source-reader task fingerprints reuse identical corpora and invalidate cha
   const changed = createSourceReaderBatches([chunk(0), changedChunk])[0];
   assert.equal(sourceReaderBatchFingerprint(first), sourceReaderBatchFingerprint(same));
   assert.notEqual(sourceReaderBatchFingerprint(first), sourceReaderBatchFingerprint(changed));
+  assert.notEqual(sourceReaderBatchFingerprint(first, 5), sourceReaderBatchFingerprint(first, 10));
 });
 
 test("source-reader merge rejects invented citations and deduplicates valid claims", () => {
@@ -45,8 +46,9 @@ test("source-reader merge rejects invented citations and deduplicates valid clai
     claim_text: "A sufficiently detailed decision-relevant source claim.",
     source_id: "source-0",
     document_chunk_id: "chunk-0",
+    quoted_text: "xxxxxxxxxxxxxxxxxxxx",
     char_start: 0,
-    char_end: 100,
+    char_end: 20,
   };
   const invalidId = { ...valid, claim_text: "Another sufficiently detailed claim with a bad citation.", document_chunk_id: "invented" };
   const invalidRange = { ...valid, claim_text: "Another sufficiently detailed claim with a bad range.", char_end: 9_999 };
@@ -72,12 +74,33 @@ test("source-reader merge derives precise locators from exact quotes and caps co
       source_id: source.source_id,
       document_chunk_id: source.document_chunk_id,
       quoted_text: "Exact supporting quotation for the claim.",
-      char_start: 100,
-      char_end: 155,
+      char_start: 107,
+      char_end: 148,
       confidence: 1,
     }],
   }], batches);
   assert.equal(merged.evidence_claims[0].char_start, 107);
   assert.equal(merged.evidence_claims[0].char_end, 148);
   assert.equal(merged.evidence_claims[0].confidence, 0.9);
+});
+
+test("source-reader merge repairs in-bounds offsets when the exact quote locates unambiguously", () => {
+  const source = chunk(0);
+  source.content_excerpt = "prefix Exact supporting quotation for the claim. suffix";
+  source.char_start = 100;
+  source.char_end = 155;
+  const merged = mergeSourceReaderOutputs([{
+    evidence_claims: [{
+      claim_text: "A sufficiently detailed decision-relevant source claim.",
+      source_id: source.source_id,
+      document_chunk_id: source.document_chunk_id,
+      quoted_text: "Exact supporting quotation for the claim.",
+      char_start: 101,
+      char_end: 140,
+    }],
+  }], createSourceReaderBatches([source]));
+  assert.equal(merged.evidence_claims.length, 1);
+  assert.equal(merged.evidence_claims[0].char_start, 107);
+  assert.equal(merged.evidence_claims[0].char_end, 148);
+  assert.equal(merged.evidence_claims[0].citation_repaired, true);
 });

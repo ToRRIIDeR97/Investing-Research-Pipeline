@@ -1,5 +1,6 @@
 import { ProviderError, type HarnessErrorCategory } from "../errors";
 import type { ModelEvent, ModelProvider, ModelRequest, ToolCall } from "../types";
+import { acquireProviderRequestLock } from "./request-lock";
 
 export interface AnthropicProviderOptions {
   baseUrl: string;
@@ -29,6 +30,10 @@ export class AnthropicCompatibleProvider implements ModelProvider {
   constructor(private readonly options: AnthropicProviderOptions) {
     if (!options.apiKey) throw new ProviderError("Anthropic-compatible provider requires an API key", "invalid_request");
     this.baseUrl = validateBaseUrl(options.baseUrl, options.allowedHosts);
+  }
+
+  acquireRequestLock(signal?: AbortSignal) {
+    return acquireProviderRequestLock(this.baseUrl, signal);
   }
 
   async *stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent> {

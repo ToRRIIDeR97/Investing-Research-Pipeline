@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { isEventLikeHistoricalMetricKey } from "@/lib/research/history/normalizer";
+import { missingRequiredValuationMethods } from "@/lib/research/valuation/contracts";
 
 export interface ResearchReportData {
   runId: string;
@@ -13,6 +15,7 @@ export interface ResearchReportData {
     strategic_identity?: string;
     founder_profile?: string;
     origin_history?: string;
+    strategic_dna?: string;
   };
   historical_record?: Array<{
     fiscal_year: number;
@@ -43,6 +46,10 @@ export interface ResearchReportData {
       process_name: string;
       bottleneck: string;
     }>;
+    competitive_responses?: Array<{
+      competitor: string;
+      response: string;
+    }>;
   };
   moat?: {
     strength?: string;
@@ -56,10 +63,14 @@ export interface ResearchReportData {
   forecast?: {
     cagr?: number;
     operating_model_summary?: string;
+    driver_tree_summary?: string;
+    reconciliation_summary?: string;
+    reinvestment_summary?: string;
     scenarios?: Array<{
       scenario_name: string;
       probability: number;
-      revenue_growth: number;
+      revenue_growth?: number;
+      summary?: string;
     }>;
   };
   valuation?: {
@@ -84,6 +95,8 @@ export interface ResearchReportData {
       bear_return: number;
       base_return: number;
       bull_return: number;
+      probability_weighted_return?: number;
+      permanent_loss_limit?: number;
     };
     risks?: Array<{
       risk_name: string;
@@ -107,7 +120,9 @@ export interface ResearchReportData {
     decision_record?: {
       decision: string;
       human_approved_by?: string;
+      rationale?: string;
     };
+    confidence?: Record<string, number>;
   };
   backtest?: {
     framework_gate?: {
@@ -137,7 +152,183 @@ export interface ResearchReportData {
     unsupported_conclusion?: string;
     next_robustness_test?: string;
   };
+  limitations?: string[];
   isTestRun?: boolean;
+}
+
+export interface ReportArtifact {
+  artifact_type: string;
+  content_json: Record<string, unknown>;
+}
+
+export function mapArtifactsToReportData(params: {
+  runId: string;
+  asset: ResearchReportData["asset"];
+  artifacts: ReportArtifact[];
+  requiredValuationMethods?: string[];
+  isTestRun?: boolean;
+}): ResearchReportData {
+  const byType = new Map(params.artifacts.map((artifact) => [artifact.artifact_type, artifact.content_json]));
+  const get = (type: string) => byType.get(type) as any;
+  const company = get("company_genesis");
+  const founder = get("founder_profile");
+  const history = get("strategic_history_timeline");
+  const dna = get("strategic_dna");
+  const historical = get("historical_record");
+  const diagnosis = get("historical_diagnosis");
+  const segmentModel = get("segment_model");
+  const customerMap = get("customer_decision_map");
+  const processMap = get("business_process_map");
+  const competitors = get("competitive_response_matrix");
+  const moat = get("moat_assessment");
+  const moatAttacks = get("moat_attack_matrix");
+  const noMoat = get("no_moat_counterfactual");
+  const driverTree = get("driver_tree");
+  const operatingModel = get("operating_model");
+  const operatingScenarios = get("operating_scenario_set");
+  const reconciliation = get("top_down_bottom_up_reconciliation");
+  const reinvestment = get("reinvestment_model");
+  const valuation = get("valuation_scenario_set");
+  const pricePath = get("annual_price_target_path");
+  const reverseValuation = get("reverse_valuation");
+  const thesis = get("investment_thesis");
+  const riskRegister = get("risk_register");
+  const catalystRegister = get("catalyst_register");
+  const expectedReturn = get("expected_return_matrix");
+  const breakers = get("thesis_breakers");
+  const monitoring = get("monitoring_dashboard");
+  const confidence = get("confidence_assessment");
+  const decisionRecord = get("decision_record");
+  const coverage = historical?.coverage;
+  const coverageCells = Array.isArray(coverage?.cells) ? coverage.cells : [];
+  const presentCells = coverageCells.filter((cell: any) => cell?.present).length;
+  const missingValuationMethods = missingRequiredValuationMethods(
+    params.requiredValuationMethods || [],
+    pricePath?.price_target_path || []
+  );
+
+  return {
+    runId: params.runId,
+    asset: params.asset,
+    isTestRun: params.isTestRun,
+    genesis: company || founder || history || dna ? {
+      strategic_identity: company ? [company.customer_problem, company.incumbent_failure, company.original_product].filter(Boolean).join(" ") : undefined,
+      founder_profile: founder ? [founder.founder_name, founder.background_summary, founder.influence_today].filter(Boolean).join(" — ") : company?.founder_background,
+      origin_history: Array.isArray(history?.events)
+        ? history.events.map((event: any) => `${event.date_or_period}: ${event.event} — ${event.lasting_consequence}`).join("\n\n")
+        : undefined,
+      strategic_dna: dna ? [...(dna.persistent_behaviors || []), ...(dna.current_implications || [])].join("; ") : undefined,
+    } : undefined,
+    historical_record: Array.isArray(historical?.observations)
+      ? historical.observations
+          .filter((row: any) => row?.value_numeric != null && row?.fiscal_year != null && !isEventLikeHistoricalMetricKey(String(row.metric_key || "")))
+          .map((row: any) => ({
+            fiscal_year: row.fiscal_year,
+            fiscal_quarter: row.fiscal_quarter ? `Q${row.fiscal_quarter}` : row.periodicity || "FY",
+            metric_key: row.metric_key,
+            value_numeric: row.value_numeric,
+            unit: row.unit || row.currency || "",
+          }))
+      : undefined,
+    diagnosis: Array.isArray(diagnosis?.diagnoses) ? {
+      diagnoses: diagnosis.diagnoses.filter((row: any) => !isEventLikeHistoricalMetricKey(String(row.metric_key || ""))).map((row: any) => ({
+        metric_key: row.metric_key,
+        diagnosis_type: row.structural_cyclical_temporary_or_accounting || row.diagnosis_type,
+        magnitude: row.current_level ?? row.magnitude ?? 0,
+        explanation: row.forecast_implication || row.explanation || "",
+      })),
+    } : undefined,
+    business_process: segmentModel || customerMap || processMap || competitors ? {
+      segments: (segmentModel?.segments || []).map((row: any) => ({
+        segment_name: row.segment_name,
+        revenue_model: row.revenue_model,
+        customer_or_end_user: row.customer_or_end_user,
+      })),
+      customer_decisions: (customerMap?.customer_groups || []).map((row: any) => ({
+        decision_maker: row.budget_owner || row.customer_group,
+        primary_need: `${row.customer_group}: ${row.problem_initiating_demand}`,
+      })),
+      process_maps: (processMap?.process_nodes || []).map((row: any) => ({
+        process_name: row.process_node,
+        bottleneck: row.main_constraint,
+      })),
+      competitive_responses: (competitors?.competitors || []).map((row: any) => ({
+        competitor: row.competitor_name,
+        response: (row.response_scenarios || []).map((scenario: any) => `${scenario.scenario_name}: ${scenario.response_mechanism}`).join("; "),
+      })),
+    } : undefined,
+    moat: moat || moatAttacks || noMoat ? {
+      strength: (moat?.assessments || []).map((row: any) => `${row.claimed_moat}: ${row.current_strength}`).join("; ") || undefined,
+      durability: (moat?.assessments || []).map((row: any) => `${row.claimed_moat}: ${row.durability}`).join("; ") || undefined,
+      attacks: (moatAttacks?.attacks || []).map((row: any) => ({
+        threat: `${row.primary_attacker}: ${row.attack_mechanism}`,
+        severity: row.financial_translation || row.residual_moat,
+      })),
+      no_moat_counterfactual: noMoat
+        ? `${noMoat.changed_economics_description} Expected margin ${formatPercent(noMoat.expected_margin_no_moat)}; growth ${formatPercent(noMoat.expected_growth_no_moat)}.`
+        : undefined,
+    } : undefined,
+    forecast: driverTree || operatingModel || operatingScenarios || reconciliation || reinvestment ? {
+      driver_tree_summary: (driverTree?.drivers || []).map((row: any) => `${row.driver_key} → ${row.financial_line_affected} (${row.time_lag})`).join("; ") || undefined,
+      operating_model_summary: operatingModel
+        ? `Consolidated revenue: ${operatingModel.consolidated_revenue}; consolidated operating income: ${operatingModel.consolidated_operating_income}. ${(operatingModel.segments || []).map((row: any) => `${row.segment_name}: revenue ${row.forecast_revenue}, operating income ${row.forecast_operating_income}`).join("; ")}`
+        : undefined,
+      reconciliation_summary: reconciliation ? readableObject(reconciliation) : undefined,
+      reinvestment_summary: reinvestment ? readableObject(reinvestment) : undefined,
+      scenarios: (operatingScenarios?.scenarios || []).map((row: any) => ({
+        scenario_name: row.scenario_type,
+        probability: operatingScenarios[`probability_${row.scenario_type}`] ?? 0,
+        summary: [row.end_market, row.customer_economics, row.competitive_response, row.margin_formation].filter(Boolean).join(" — "),
+      })),
+    } : undefined,
+    valuation: valuation || pricePath || reverseValuation ? {
+      terminal_year: valuation?.terminal_year || Math.max(0, ...(pricePath?.price_target_path || []).map((row: any) => row.fiscal_year)),
+      scenarios: valuation ? ["bear", "base", "bull"].map((scenario) => ({
+        scenario_type: scenario as "bear" | "base" | "bull",
+        terminal_anchor: valuation[`terminal_anchor_${scenario}`],
+      })) : undefined,
+      price_target_paths: (pricePath?.price_target_path || []).map((row: any) => ({
+        fiscal_year: row.fiscal_year,
+        scenario_type: row.scenario_type,
+        price_target: row.price_target,
+      })),
+      reverse_valuations: reverseValuation ? [{
+        method: pricePath?.price_target_path?.[0]?.valuation_method || "reverse valuation",
+        implied_growth: reverseValuation.implied_growth,
+      }] : undefined,
+    } : undefined,
+    decision: thesis || riskRegister || catalystRegister || expectedReturn || breakers || monitoring || confidence || decisionRecord ? {
+      thesis_statement: thesis?.thesis_statement,
+      expected_return_matrix: expectedReturn,
+      risks: riskRegister?.risks,
+      catalysts: catalystRegister?.catalysts,
+      breakers: breakers?.breakers,
+      monitoring: monitoring?.items,
+      confidence: confidence ? Object.fromEntries(Object.entries(confidence).filter(([key, value]) => key !== "artifact_type" && typeof value === "number")) as Record<string, number> : undefined,
+      decision_record: decisionRecord ? {
+        decision: decisionRecord.decision,
+        human_approved_by: decisionRecord.human_approved_by,
+        rationale: decisionRecord.rationale,
+      } : undefined,
+    } : undefined,
+    backtest: get("backtest_review") as ResearchReportData["backtest"],
+    limitations: [
+      coverageCells.length && presentCells < coverageCells.length
+        ? `Historical coverage is partial: ${presentCells} of ${coverageCells.length} required metric-period cells are present.`
+        : "",
+      ...(historical?.reconciliation_issues || []).map((issue: any) => issue.description),
+      missingValuationMethods.length
+        ? `Valuation output did not use required method(s): ${missingValuationMethods.join(", ")}. The displayed path is a non-compliant legacy result.`
+        : "",
+    ].filter(Boolean),
+  };
+}
+
+function readableObject(value: Record<string, unknown>): string {
+  return Object.entries(value)
+    .filter(([key]) => key !== "artifact_type")
+    .map(([key, item]) => `${key.replace(/_/g, " ")}: ${Array.isArray(item) ? item.map((entry) => typeof entry === "object" ? readableObject(entry as Record<string, unknown>) : String(entry)).join("; ") : typeof item === "object" && item ? readableObject(item as Record<string, unknown>) : String(item)}`)
+    .join(". ");
 }
 
 export function generateMarkdownReport(data: ResearchReportData): string {
@@ -185,6 +376,10 @@ export function generateMarkdownReport(data: ResearchReportData): string {
     sections.push("");
     sections.push(`**Origin History**: ${data.genesis.origin_history || "N/A"}`);
     sections.push("");
+    if (data.genesis.strategic_dna) {
+      sections.push(`**Strategic DNA**: ${data.genesis.strategic_dna}`);
+      sections.push("");
+    }
   } else {
     addMissingSection("Company Genesis");
   }
@@ -268,8 +463,16 @@ export function generateMarkdownReport(data: ResearchReportData): string {
 
   // 10. Competitive response
   addHeading(10, "Competitive response");
-  sections.push("Competitor responses modeled under high-stress conditions.");
-  sections.push("");
+  if (data.business_process?.competitive_responses?.length) {
+    sections.push("| Competitor | Modeled response |");
+    sections.push("|---|---|");
+    for (const row of data.business_process.competitive_responses) {
+      sections.push(`| ${row.competitor} | ${row.response} |`);
+    }
+    sections.push("");
+  } else {
+    addMissingSection("Competitive Response Matrix");
+  }
 
   // 11. Moat proof, attacks, and no-moat counterfactual
   addHeading(11, "Moat proof, attacks, and no-moat counterfactual");
@@ -294,6 +497,10 @@ export function generateMarkdownReport(data: ResearchReportData): string {
   // 12. Driver tree and operating model
   addHeading(12, "Driver tree and operating model");
   if (data.forecast?.operating_model_summary) {
+    if (data.forecast.driver_tree_summary) {
+      sections.push(`**Driver tree**: ${data.forecast.driver_tree_summary}`);
+      sections.push("");
+    }
     sections.push(data.forecast.operating_model_summary);
     sections.push("");
   } else {
@@ -302,21 +509,29 @@ export function generateMarkdownReport(data: ResearchReportData): string {
 
   // 13. Top-down/bottom-up reconciliation
   addHeading(13, "Top-down/bottom-up reconciliation");
-  sections.push("Reconciliation between segment drivers and consolidated aggregates.");
-  sections.push("");
+  if (data.forecast?.reconciliation_summary) {
+    sections.push(data.forecast.reconciliation_summary);
+    sections.push("");
+  } else {
+    addMissingSection("Top-down / Bottom-up Reconciliation");
+  }
 
   // 14. Reinvestment economics
   addHeading(14, "Reinvestment economics");
-  sections.push("Capex and working capital dynamics modeled for terminal return.");
-  sections.push("");
+  if (data.forecast?.reinvestment_summary) {
+    sections.push(data.forecast.reinvestment_summary);
+    sections.push("");
+  } else {
+    addMissingSection("Reinvestment Model");
+  }
 
   // 15. Operating scenarios
   addHeading(15, "Operating scenarios");
   if (data.forecast?.scenarios && data.forecast.scenarios.length > 0) {
-    sections.push("| Scenario | Probability | Revenue CAGR |");
+    sections.push("| Scenario | Probability | Key assumptions |");
     sections.push("|---|---|---|");
     for (const row of data.forecast.scenarios) {
-      sections.push(`| ${row.scenario_name} | ${row.probability} | ${row.revenue_growth * 100}% |`);
+      sections.push(`| ${row.scenario_name} | ${formatPercent(row.probability)} | ${row.summary || (row.revenue_growth == null ? "N/A" : formatPercent(row.revenue_growth))} |`);
     }
     sections.push("");
   } else {
@@ -382,9 +597,11 @@ export function generateMarkdownReport(data: ResearchReportData): string {
   addHeading(19, "Expected-return matrix");
   if (data.decision?.expected_return_matrix) {
     const mat = data.decision.expected_return_matrix;
-    sections.push(`- **Bear Case Return**: ${mat.bear_return * 100}%`);
-    sections.push(`- **Base Case Return**: ${mat.base_return * 100}%`);
-    sections.push(`- **Bull Case Return**: ${mat.bull_return * 100}%`);
+    sections.push(`- **Bear Case Return**: ${formatPercent(mat.bear_return)}`);
+    sections.push(`- **Base Case Return**: ${formatPercent(mat.base_return)}`);
+    sections.push(`- **Bull Case Return**: ${formatPercent(mat.bull_return)}`);
+    if (mat.probability_weighted_return != null) sections.push(`- **Probability-weighted Return**: ${formatPercent(mat.probability_weighted_return)}`);
+    if (mat.permanent_loss_limit != null) sections.push(`- **Permanent-loss Limit**: ${formatPercent(mat.permanent_loss_limit)}`);
     sections.push("");
   } else {
     addMissingSection("Expected Return Matrix");
@@ -470,9 +687,14 @@ export function generateMarkdownReport(data: ResearchReportData): string {
     sections.push(`**Next robustness test**: ${data.backtest.next_robustness_test || "N/A"}`);
     sections.push("");
   } else {
-    addMissingSection("Backtest Review");
+    sections.push("No accepted timing hypothesis required a backtest for this fundamental report.");
+    sections.push("");
   }
-  sections.push("Confidence and information density scored across all key modules.");
+  if (data.decision?.confidence) {
+    sections.push(`**Research confidence**: ${Object.entries(data.decision.confidence).map(([key, value]) => `${key} ${formatPercent(value)}`).join("; ")}`);
+  } else {
+    sections.push("Confidence assessment unavailable.");
+  }
   sections.push("");
 
   // 24. Human decision
@@ -481,6 +703,7 @@ export function generateMarkdownReport(data: ResearchReportData): string {
     const dec = data.decision.decision_record;
     sections.push(`- **Status**: ${dec.decision}`);
     sections.push(`- **Approver**: ${dec.human_approved_by || "Pending"}`);
+    if (dec.rationale) sections.push(`- **Rationale**: ${dec.rationale}`);
     sections.push("");
   } else {
     addMissingSection("Human Decision Record");
@@ -488,7 +711,11 @@ export function generateMarkdownReport(data: ResearchReportData): string {
 
   // 25. Limitations and open research
   addHeading(25, "Limitations and open research");
-  sections.push("Key variables requiring further data gathering.");
+  if (data.limitations?.length) {
+    for (const limitation of data.limitations) sections.push(`- ${limitation}`);
+  } else {
+    sections.push("No material artifact-level limitations were recorded.");
+  }
   sections.push("");
 
   sections.push("---");

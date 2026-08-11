@@ -61,3 +61,12 @@ export const ValuationArtifactSet = z.union([
   ReverseValuation,
 ]);
 export type ValuationArtifactSet = z.infer<typeof ValuationArtifactSet>;
+
+export function missingRequiredValuationMethods(
+  requiredMethods: string[],
+  priceTargetPath: Array<{ valuation_method?: unknown }>
+): string[] {
+  const normalize = (value: unknown) => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  const used = new Set(priceTargetPath.map((row) => normalize(row.valuation_method)).filter(Boolean));
+  return requiredMethods.filter((method) => !used.has(normalize(method)));
+}

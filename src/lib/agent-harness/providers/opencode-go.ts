@@ -16,6 +16,10 @@ export class OpenCodeGoProvider implements ModelProvider {
     return this.openai.healthCheck();
   }
 
+  acquireRequestLock(signal?: AbortSignal) {
+    return this.openai.acquireRequestLock(signal);
+  }
+
   stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent> {
     if (/^(qwen|minimax)/i.test(request.model)) return this.anthropic.stream(request, signal);
     const providerRequest = /^kimi-/i.test(request.model) ? { ...request, temperature: undefined } : request;

@@ -8,6 +8,7 @@ import {
   validateThesisBreakers,
   validateMonitoringDashboard,
   validateDecisionRecord,
+  calculateProbabilityWeightedReturn,
 } from "@/lib/research/decision/validation";
 import type {
   InvestmentThesis,
@@ -22,6 +23,13 @@ import type {
 const uuid1 = "00000000-0000-0000-0000-000000000001";
 
 describe("investment decision artifacts (Component 12)", () => {
+  it("calculates the scenario-probability weighted return deterministically", () => {
+    assert.equal(calculateProbabilityWeightedReturn(
+      { bear_return: -0.6754, base_return: 0.8932, bull_return: 2.2466 },
+      { probability_bear: 0.25, probability_base: 0.5, probability_bull: 0.25 }
+    ), 0.8394);
+  });
+
   it("C12-T1: Source gap submitted as operating risk without mechanism is rejected", () => {
     const reg: RiskRegister = {
       artifact_type: "risk_register",

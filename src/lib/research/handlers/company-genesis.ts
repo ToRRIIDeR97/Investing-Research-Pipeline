@@ -130,7 +130,8 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
       });
       const allowedClaimRows = await sql`
         SELECT id FROM evidence_claims
-        WHERE research_run_id = ${ctx.runId} AND review_status = 'accepted'
+        WHERE research_run_id = ${ctx.runId}
+          AND review_status IN ('machine_verified', 'accepted')
       `;
       let citationValidation = validateArtifactCitationIds(
         output,

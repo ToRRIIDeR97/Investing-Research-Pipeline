@@ -5,12 +5,13 @@ import {
   loadAcceptedEvidencePacket,
   persistMetrics,
 } from "../system-pipeline";
-import { buildHistoricalRecord } from "../history/normalizer";
+import { buildHistoricalRecord, isRecurringHistoricalObservation } from "../history/normalizer";
 import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { CURRENT_PIPELINE_VERSION } from "../version";
+import { createHash } from "node:crypto";
 
 const NORMALIZER_OUTPUT_KEYS = [
   "normalized_observations",
@@ -37,7 +38,7 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
         symbol: ctx.symbol,
         profileId: ctx.profileId || "",
         profileKey: ctx.profileKey || "",
-        requiredModules: ctx.composedProfile?.required_artifacts.map((a: any) => a.artifact_type) || [],
+        requiredModules: ctx.composedProfile?.historical_metrics.map((metric: any) => metric.metric_family) || [],
         requiredLenses: ctx.composedProfile?.valuation_methods.map((m: any) => m.method) || [],
         marketDataCutoffAt: ctx.marketDataCutoffAt ? ctx.marketDataCutoffAt.toISOString() : null,
         pipelineVersion: CURRENT_PIPELINE_VERSION,
@@ -47,10 +48,20 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       const evidenceClaims = await loadAcceptedEvidencePacket(sql, v2Ctx);
 
       // 3. Call metric-normalizer agent
-      const taskKey = "metric-normalizer:observations";
+      const evidenceFingerprint = createHash("sha256")
+        .update(JSON.stringify(evidenceClaims.map((claim) => ({
+          id: claim.id,
+          claim_text: claim.claim_text,
+          as_of_date: claim.as_of_date,
+          period_end: claim.period_end,
+        }))))
+        .digest("hex")
+        .slice(0, 12);
+      const taskKey = `metric-normalizer:observations:${evidenceFingerprint}`;
       let output = await sql`
         SELECT output_json FROM research_tasks
-        WHERE research_run_id = ${ctx.runId} AND task_key = ${taskKey} AND status = 'completed'
+        WHERE research_run_id = ${ctx.runId} AND task_key = ${taskKey}
+          AND status = 'completed' AND validation_status = 'valid'
       `.then(rows => rows[0]?.output_json as Record<string, any>);
 
       if (!output) {
@@ -64,7 +75,9 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
           requiredKeys: NORMALIZER_OUTPUT_KEYS,
           packet,
           extraRules: [
-            "Normalize and standardize all numbers, currencies, units, and dates into canonical observations.",
+            "Return only recurring quantitative financial or operating measurements. Dates, durations, transaction events, announcements, commitments, and founding milestones are evidence, not metric observations.",
+            "Every normalized observation must contain a numeric value and period_end or as_of_date. Include period_start for flow metrics; use as_of_date for legitimate point-in-time balance-sheet metrics.",
+            "Use required_modules as target metric families. Do not create an observation merely because an evidence claim contains a number.",
             "Separate GAAP and non-GAAP measurements explicitly (use distinct metric_keys, e.g. net_revenue vs gross_revenue).",
             "Identify the latest restatement version where applicable.",
           ],
@@ -83,19 +96,30 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       `;
       const primarySourceId = primaryDoc[0]?.id || "00000000-0000-4000-8000-000000000001";
 
-      // 4. Persist observations in metric_observations table
+      // 4. Persist only recurring measurements; narrative events remain evidence claims.
+      const normalizedObservations = Array.isArray(output.normalized_observations)
+        ? output.normalized_observations.filter((observation: Record<string, unknown>) => isRecurringHistoricalObservation(observation))
+        : [];
+      output = { ...output, normalized_observations: normalizedObservations };
       await persistMetrics(sql, v2Ctx, primarySourceId, output);
 
       // 5. Fetch all observations from the DB and construct twenty-quarter HistoricalRecord
       const obsRows = await sql`
-        SELECT mo.value_numeric, mo.period_start, mo.period_end, mo.unit, mo.currency, mo.confidence,
+        SELECT mo.value_numeric, mo.period_start, mo.period_end, mo.as_of_date, mo.unit, mo.currency,
+               mo.confidence, mo.source_document_id, mo.evidence_claim_id, mo.metadata_json,
                md.metric_key, md.metric_category
         FROM metric_observations mo
         JOIN metric_definitions md ON md.id = mo.metric_definition_id
         WHERE mo.research_run_id = ${ctx.runId}
       `;
 
-      const observations = obsRows.map(row => {
+      const observations = obsRows.filter((row) => isRecurringHistoricalObservation(row)).map(row => {
+        const metadata = row.metadata_json && typeof row.metadata_json === "object" ? row.metadata_json as Record<string, unknown> : {};
+        const agentOutput = metadata.agent_output && typeof metadata.agent_output === "object" ? metadata.agent_output as Record<string, unknown> : {};
+        const metricKey = String(row.metric_key);
+        const reportingBasis = String(agentOutput.reporting_basis || metadata.reporting_basis ||
+          (/(?:adjusted|non[_ -]?gaap)/i.test(metricKey) ? "as_reported" : "as_reported"));
+        const comparabilityStatus = String(agentOutput.comparability_status || metadata.comparability_status || "unknown");
         const start = row.period_start ? new Date(row.period_start) : null;
         const end = new Date(row.period_end);
         const diffMonth = start ? (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) : 3;
@@ -103,31 +127,43 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
         const fiscal_quarter = periodicity === "annual" ? null : Math.floor(end.getMonth() / 3) + 1;
 
         return {
-          metric_key: String(row.metric_key),
+          metric_key: metricKey,
           fiscal_year: end.getFullYear(),
           fiscal_quarter,
           periodicity: periodicity as "annual" | "quarterly",
-          reporting_basis: "gaap" as const, // Default
-          metric_type: "reported" as const,
-          value_numeric: row.value_numeric ? Number(row.value_numeric) : null,
+          reporting_basis: (["gaap", "non_gaap", "adjusted", "as_reported"] as const).includes(reportingBasis as any)
+            ? reportingBasis as "gaap" | "non_gaap" | "adjusted" | "as_reported"
+            : "as_reported",
+          metric_type: (["reported", "normalized", "calculated", "reconciled"] as const).includes(String(agentOutput.metric_type) as any)
+            ? String(agentOutput.metric_type) as "reported" | "normalized" | "calculated" | "reconciled"
+            : "reported",
+          value_numeric: row.value_numeric != null ? Number(row.value_numeric) : null,
           unit: String(row.unit || ""),
           currency: String(row.currency || "USD"),
           confidence: Number(row.confidence || 1),
           restatement_version: 0,
-          comparability_status: "comparable" as const,
-          metadata_json: {},
+          source_document_id: row.source_document_id ? String(row.source_document_id) : null,
+          evidence_claim_id: row.evidence_claim_id ? String(row.evidence_claim_id) : null,
+          comparability_status: (["comparable", "definition_changed", "revised", "estimated", "blocked"] as const).includes(comparabilityStatus as any)
+            ? comparabilityStatus as "comparable" | "definition_changed" | "revised" | "estimated" | "blocked"
+            : "blocked",
+          metadata_json: metadata,
         };
       });
 
       // Find start/end periods
-      const currentYear = new Date().getFullYear();
+      const latestQuarter = observations
+        .filter((observation) => observation.periodicity === "quarterly" && observation.fiscal_quarter != null)
+        .sort((a, b) => (b.fiscal_year * 10 + (b.fiscal_quarter || 0)) - (a.fiscal_year * 10 + (a.fiscal_quarter || 0)))[0];
+      const endFiscalYear = latestQuarter?.fiscal_year ?? new Date().getFullYear() - 1;
+      const endFiscalQuarter = latestQuarter?.fiscal_quarter ?? 4;
       const record = buildHistoricalRecord({
         asset_id: ctx.assetId,
         run_id: ctx.runId,
         observations,
         requiredMetricKeys: [...new Set(observations.map(o => o.metric_key))],
-        endFiscalYear: currentYear - 1,
-        endFiscalQuarter: 4,
+        endFiscalYear,
+        endFiscalQuarter,
       });
 
       // 6. Save artifact using repository
@@ -156,20 +192,7 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       await sql.end();
     }
   },
-  async validate(ctx: ResearchRunContext, output: any): Promise<ValidationResult> {
-    const sql = postgres(process.env.DATABASE_URL!);
-    try {
-      const rows = await sql`
-        SELECT COUNT(*) as cnt FROM metric_observations
-        WHERE research_run_id = ${ctx.runId}
-      `;
-      const errors: string[] = [];
-      if (Number(rows[0].cnt) === 0) {
-        errors.push("No metric observations recorded for this run");
-      }
-      return makeValidationResult(errors);
-    } finally {
-      await sql.end();
-    }
+  async validate(_ctx: ResearchRunContext, output: any): Promise<ValidationResult> {
+    return makeValidationResult(Number(output?.observationsCount || 0) > 0 ? [] : ["No recurring quantitative observations recorded for this run"]);
   }
 };

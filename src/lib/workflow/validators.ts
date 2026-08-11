@@ -615,39 +615,18 @@ export async function validateAssetProfile(
     // Check required modules — at least one task per module should exist. A
     // needs_more_work/failed task still proves that the module was attempted;
     // module completion is enforced separately by the v2 analysis gate.
-    if (requiredModules.length > 0) {
+    // V3 is artifact-driven: several required modules are covered by one
+    // validated artifact family instead of one task per module. Substantive
+    // v3 module coverage is enforced by evaluateResearchQuality.
+    if (requiredModules.length > 0 && Number(pipeline_version || 1) < 3) {
       const taskRows = await sql`
         SELECT DISTINCT task_key
         FROM research_tasks
         WHERE research_run_id = ${runId}
       `;
       const attemptedModules = new Set(taskRows.map((r) => r.task_key));
-      const v3ModuleTaskTypes: Record<string, string[]> = {
-        business_segments: ["business_process_analysis"],
-        revenue_drivers: ["business_process_analysis", "operating_model"],
-        unit_economics: ["business_process_analysis"],
-        margins: ["historical_record", "operating_model"],
-        roic: ["historical_record", "operating_model"],
-        fcf: ["historical_record", "operating_model"],
-        capex: ["historical_record", "operating_model"],
-        working_capital: ["historical_record", "operating_model"],
-        net_debt: ["historical_record", "asset_valuation"],
-        share_count: ["historical_record", "asset_valuation"],
-        driver_based_dcf: ["asset_valuation"],
-        exit_multiple_dcf: ["asset_valuation"],
-        reverse_dcf: ["asset_valuation"],
-      };
-      const taskTypeRows = Number(pipeline_version || 1) >= 3
-        ? await sql`
-            SELECT DISTINCT task_type
-            FROM research_tasks
-            WHERE research_run_id = ${runId} AND status = 'completed'
-          `
-        : [];
-      const attemptedTaskTypes = new Set(taskTypeRows.map((row) => String(row.task_type)));
       for (const mod of requiredModules) {
-        const v3Covered = (v3ModuleTaskTypes[mod] || []).some((taskType) => attemptedTaskTypes.has(taskType));
-        if (!attemptedModules.has(mod) && !v3Covered) {
+        if (!attemptedModules.has(mod)) {
           errors.push(`Required module "${mod}" has no task created for this run`);
         }
       }

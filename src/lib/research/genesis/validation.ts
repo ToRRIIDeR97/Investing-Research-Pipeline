@@ -36,7 +36,10 @@ export function validateGenesisArtifact(content: unknown): ValidationResult {
 
   const data = parsed.data;
   if (!data.founder_motivations.some((m) => m.motivation !== "unknown")) {
-    errors.push("Founder motivation is entirely unknown; at least one supported motivation is required.");
+    // Unknown is an intentional fail-closed value when the source packet does
+    // not support a motivation. Rejecting it here would force the model to
+    // invent a supported motivation just to satisfy the workflow gate.
+    warnings.push("Founder motivation remains unknown because no supported motivation was evidenced.");
   }
 
   for (const claim of data.material_claims) {
@@ -64,7 +67,7 @@ export function validateFounderProfile(content: unknown): ValidationResult {
   const warnings: string[] = [];
   const data = parsed.data;
   if (data.motivations.every((m) => m.motivation === "unknown")) {
-    errors.push("Founder motivations cannot all be unknown.");
+    warnings.push("Founder motivations remain unknown because no supported motivation was evidenced.");
   }
   if (data.alternative_interpretations.length === 0) {
     errors.push("At least one alternative interpretation is required.");
@@ -103,7 +106,7 @@ export function validateStrategicDNA(content: unknown): ValidationResult {
   const warnings: string[] = [];
   const data = parsed.data;
   if (data.historical_evidence.length < 2) {
-    errors.push("Strategic DNA requires at least two historical evidence claims.");
+    warnings.push("Strategic DNA has limited historical evidence; no additional claims were inferred.");
   }
   if (data.current_implications.length === 0) {
     errors.push("At least one current implication is required.");

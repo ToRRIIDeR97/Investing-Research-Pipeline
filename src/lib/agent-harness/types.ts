@@ -38,6 +38,8 @@ export interface ProviderHealth {
 export interface ModelProvider {
   readonly id: string;
   stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent>;
+  /** Reserve this provider endpoint before the request deadline starts. */
+  acquireRequestLock?(signal?: AbortSignal): Promise<() => void>;
   healthCheck?(): Promise<ProviderHealth>;
 }
 
@@ -67,6 +69,7 @@ export interface AgentAttempt {
   outputTokens: number;
   reasoningTokens?: number;
   costUsd: number;
+  costSource?: "provider" | "catalog_estimate" | "unknown";
   status: "success" | "failed" | "cancelled";
   errorCategory?: string;
   errorMessage?: string;
@@ -82,6 +85,7 @@ export interface AgentAttempt {
   passes?: AgentPassTelemetry[];
   localCoercionApplied?: boolean;
   completionRecoveredAtTimeout?: boolean;
+  completionRecoveredWithoutMarker?: boolean;
 }
 
 export interface AgentPassTelemetry {
@@ -94,12 +98,14 @@ export interface AgentPassTelemetry {
   outputTokens: number;
   reasoningTokens: number;
   costUsd: number;
+  costSource?: "provider" | "catalog_estimate" | "unknown";
   status: "success" | "failed";
   errorCategory?: string;
   errorMessage?: string;
   validationErrors?: Array<{ path: string; message: string }>;
   localCoercionApplied?: boolean;
   completionRecoveredAtTimeout?: boolean;
+  completionRecoveredWithoutMarker?: boolean;
 }
 
 export interface AgentLifecycleHooks {
@@ -118,6 +124,7 @@ export interface AgentRequest<T = unknown> {
   hooks?: AgentLifecycleHooks;
   provider?: ModelProvider;
   outputFormat?: AgentOutputFormat;
+  validateStructured?: (value: unknown) => Array<{ path: string; message: string }>;
   _outputType?: T;
 }
 
@@ -133,6 +140,7 @@ export interface AgentUsage {
   outputTokens: number;
   reasoningTokens?: number;
   costUsd: number;
+  costSource?: "provider" | "catalog_estimate" | "unknown";
   latencyMs: number;
   requestId?: string;
   promptVersion?: string;

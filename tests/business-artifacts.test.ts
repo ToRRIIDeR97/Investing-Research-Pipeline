@@ -13,11 +13,34 @@ import type {
   BusinessProcessMap,
   CompetitiveResponseMatrix,
 } from "@/lib/research/business/contracts";
+import { BUSINESS_PROCESS_CONTRACT, contractForArtifact } from "@/lib/research/stage-contracts";
 
 const uuid1 = "00000000-0000-0000-0000-000000000001";
 const uuid2 = "00000000-0000-0000-0000-000000000002";
 
 describe("business process and segment artifacts (Component 8)", () => {
+  it("declares conditional lender and marketplace details in the model-facing contract", () => {
+    const schema = BUSINESS_PROCESS_CONTRACT.schema as any;
+    const segment = schema.properties.segment_model.properties.segments.items;
+    assert.ok(segment.properties.lender_details);
+    assert.ok(segment.properties.marketplace_details);
+    assert.equal(segment.required.includes("lender_details"), false);
+    assert.equal(segment.required.includes("marketplace_details"), false);
+  });
+
+  it("extracts a strict independently executable artifact contract", () => {
+    const contract = contractForArtifact(BUSINESS_PROCESS_CONTRACT, "bottleneck_register");
+    const schema = contract.schema as any;
+    assert.deepEqual(contract.requiredKeys, ["bottleneck_register"]);
+    assert.deepEqual(schema.required, ["bottleneck_register"]);
+    assert.deepEqual(Object.keys(schema.properties), ["bottleneck_register"]);
+    assert.equal(schema.properties.bottleneck_register.properties.artifact_type.const, "bottleneck_register");
+    assert.throws(
+      () => contractForArtifact(BUSINESS_PROCESS_CONTRACT, "unknown_artifact"),
+      /not declared/
+    );
+  });
+
   it("C8-T1: Segment has revenue description but no customer decision maker is rejected", () => {
     const model: SegmentModel = {
       artifact_type: "segment_model",

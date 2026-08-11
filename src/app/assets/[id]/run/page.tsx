@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import {
   Activity,
   AlertTriangle,
@@ -883,6 +884,7 @@ function ResearchTheater({
           />
         </div>
 
+        {messages.length > 0 && <ResearchConversation messages={messages} />}
         <QualityGatesPanel quality={quality} />
         <StageRail progress={progress} />
         <ActiveStagePanel progress={progress} theater={theater} />
@@ -894,9 +896,38 @@ function ResearchTheater({
   );
 }
 
+function ResearchConversation({ messages }: { messages: Message[] }) {
+  return (
+    <section className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Research assistant</div>
+          <div className="mt-1 text-[12px] text-gray-500">Answers are grounded in the persisted run and retain the human-decision caveat.</div>
+        </div>
+        <Bot className="h-4 w-4 text-gray-400" />
+      </div>
+      <div className="space-y-2">
+        {messages.map((message, index) => (
+          <div key={`${message.role}-${index}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`max-w-3xl rounded-md px-3 py-2 text-[12px] leading-5 ${
+              message.role === "user"
+                ? "bg-black text-white"
+                : message.role === "assistant"
+                  ? "border border-sky-200 bg-sky-50 text-sky-950"
+                  : "border border-gray-100 bg-[#fbfcfd] font-mono text-gray-500"
+            }`}>
+              <div className="mb-1 text-[9px] font-bold uppercase tracking-wider opacity-60">{message.role}</div>
+              <div className="whitespace-pre-wrap">{message.content}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export default function RunResearchPage() {
   const params = useParams();
-  const router = useRouter();
   const assetId = params.id as string;
 
   const [phase, setPhase] = useState<"intake" | "plan" | "pipeline">("intake");
@@ -985,12 +1016,46 @@ export default function RunResearchPage() {
 
     const userMessage = input.trim();
     setInput("");
+    const history = messages
+      .filter((message): message is Message & { role: "user" | "assistant" } => message.role !== "system")
+      .slice(-12)
+      .map(({ role, content }) => ({ role, content }));
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setIsProcessing(true);
 
-    if (phase === "intake") await createAndStartRun(userMessage);
+    try {
+      if (phase === "intake") {
+        await createAndStartRun(userMessage);
+      } else if (runId) {
+        await askRunAssistant(userMessage, runId, history);
+      } else {
+        setMessages((prev) => [...prev, { role: "system", content: "No research run is loaded yet." }]);
+      }
+    } finally {
+      setIsProcessing(false);
+    }
+  }
 
-    setIsProcessing(false);
+  async function askRunAssistant(
+    question: string,
+    id: string,
+    history: Array<{ role: "user" | "assistant"; content: string }>,
+  ) {
+    try {
+      const response = await fetch(`/api/research-runs/${id}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: question, history }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Unable to answer from the research packet");
+      setMessages((prev) => [...prev, { role: "assistant", content: body.answer }]);
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "system", content: `Assistant error: ${error instanceof Error ? error.message : String(error)}` },
+      ]);
+    }
   }
 
   async function createAndStartRun(userMessage: string) {
@@ -1305,15 +1370,15 @@ export default function RunResearchPage() {
       {/* Top Header */}
       <div className="border-b border-[#eef2f6] bg-white px-6 py-3.5 flex items-center justify-between shrink-0 shadow-sm z-10">
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.back()}
+          <Link
+            href={`/assets/${assetId}`}
             className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-black transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
             <span>Back</span>
-          </button>
+          </Link>
           <span className="text-gray-300">|</span>
           <h2 className="text-[14px] font-bold text-black">
             Run Research &rsaquo; <span className="text-gray-500 font-semibold">{assetName}</span>

@@ -1,5 +1,6 @@
 import type { ModelEvent, ModelProvider, ModelRequest, ProviderHealth, ToolCall } from "../types";
 import { ProviderError, type HarnessErrorCategory } from "../errors";
+import { acquireProviderRequestLock } from "./request-lock";
 
 type ProviderMode = "direct" | "local";
 
@@ -82,6 +83,10 @@ export class OpenAICompatibleProvider implements ModelProvider {
     } catch (error) {
       return { status: "unhealthy", message: error instanceof Error ? error.message : String(error) };
     }
+  }
+
+  acquireRequestLock(signal?: AbortSignal) {
+    return acquireProviderRequestLock(this.baseUrl, signal);
   }
 
   async *stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent> {

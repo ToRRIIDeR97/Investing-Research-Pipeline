@@ -36,6 +36,27 @@ describe("operating forecasts and scenarios (Component 10)", () => {
     assert.ok(result.errors.some((e) => e.includes("without operational driver decomposition")));
   });
 
+  it("accepts financial-services revenue decomposed into operational drivers", () => {
+    const tree: DriverTree = {
+      artifact_type: "driver_tree",
+      drivers: [
+        {
+          driver_key: "financial_services_revenue_growth",
+          formula_decomposition: "active_members * products_per_member * revenue_per_product",
+          historical_metric_key: "financial_services_revenue",
+          historical_diagnosis_key: "financial_services_monetization",
+          process_node_key: "member_monetization",
+          assumption_key: "member_product_adoption",
+          time_lag: "1 quarter",
+          failure_condition: "cross_buy_or_monetization_stalls",
+          financial_line_affected: "Financial Services revenue",
+        },
+      ],
+    };
+
+    assert.equal(validateDriverTree(tree).valid, true);
+  });
+
   it("C10-T2: Bear case is blanket 20% reduction of base case is rejected", () => {
     const set: OperatingScenarioSet = {
       artifact_type: "operating_scenario_set",

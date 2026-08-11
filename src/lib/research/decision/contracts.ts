@@ -67,6 +67,12 @@ export const ExpectedReturnMatrix = z.object({
   no_rerating_return: z.number(),
   weak_stock_outcome: z.number(),
   permanent_loss_limit: z.number(),
+  prediction_date: z.string().optional(),
+  prediction_price: z.number().finite().optional(),
+  horizon_months: z.literal(12).optional(),
+  return_unit: z.literal("decimal").optional(),
+  benchmark_symbol: z.string().min(1).optional(),
+  currency: z.string().min(1).optional(),
   dilution_omitted: z.boolean().default(false), // For C12-T6 check
 });
 export type ExpectedReturnMatrix = z.infer<typeof ExpectedReturnMatrix>;

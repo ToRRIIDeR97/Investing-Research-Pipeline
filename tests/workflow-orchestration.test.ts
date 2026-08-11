@@ -4,6 +4,7 @@ import {
   getAllStagesForRun,
   getStageConfig,
   STAGE_CONFIGS,
+  shouldSkipOptionalBacktest,
 } from "@/lib/workflow/stages";
 import {
   evaluateLoadedResearchQuality,
@@ -66,6 +67,13 @@ describe("workflow orchestration and quality gates (Component 13)", () => {
     }
   });
 
+  it("skips framework stages without an accepted timing hypothesis", () => {
+    assert.equal(shouldSkipOptionalBacktest("backtest_review", false), true);
+    assert.equal(shouldSkipOptionalBacktest("decision_synthesis", false), false);
+    assert.equal(shouldSkipOptionalBacktest("backtest_review", true), false);
+    assert.ok(getStageConfig("decision_synthesis")?.entryCriteria.includes("asset_valuation_completed"));
+  });
+
   it("C13-T6: V3 quality gates detect missing genesis, diagnosis, moat, operating model/scenarios", () => {
     const qualityData = {
       run: { id: uuid1, run_type: "deep_dive", pipeline_version: 3 },
@@ -104,5 +112,60 @@ describe("workflow orchestration and quality gates (Component 13)", () => {
     assert.ok(errStr.includes("Moat Assessment"));
     assert.ok(errStr.includes("Operating Model"));
     assert.ok(errStr.includes("Operating Scenario Set"));
+  });
+
+  it("does not block completion on warnings or non-required coverage gaps", () => {
+    const result = evaluateLoadedResearchQuality({
+      run: { id: uuid1, run_type: "quick_scan", pipeline_version: 1 },
+      profile: {},
+      stages: [],
+      tasks: [],
+      sources: [{ id: uuid1, source_type: "sec_filing", metadata_json: {} }],
+      evidence: Array(5).fill({ claim_text: "supported evidence", claim_category: "fact" }),
+      metrics: [], signals: [], scenarios: [], sourceGaps: [], reviewDecisions: [],
+      analysisSections: [], valuationModels: [], indicators: [], combinations: [],
+      backtests: [], backtestArtifacts: [], unlinkedFactClaimCount: 0,
+    });
+    assert.equal(result.status, "pass");
+    assert.ok(result.warnings.length > 0 || result.missingCoverage.length > 0);
+  });
+
+  it("treats a conditional AI review verdict as blocking", () => {
+    const result = evaluateLoadedResearchQuality({
+      run: { id: uuid1, run_type: "deep_dive", pipeline_version: 3 },
+      profile: {},
+      stages: [],
+      tasks: [{ task_type: "ai_review", status: "completed", output_json: { review_verdict: "APPROVED WITH CONDITIONS" } }],
+      sources: [], evidence: [], metrics: [], signals: [], scenarios: [], sourceGaps: [], reviewDecisions: [],
+      analysisSections: [], valuationModels: [], indicators: [], combinations: [],
+      backtests: [], backtestArtifacts: [], unlinkedFactClaimCount: 0,
+    });
+    assert.ok(result.errors.some((error) => error.includes("AI review outcome is approved with conditions")));
+  });
+
+  it("requires the canonical reviewer verdict for V4", () => {
+    const result = evaluateLoadedResearchQuality({
+      run: { id: uuid1, run_type: "quick_scan", pipeline_version: 4 },
+      profile: {},
+      stages: [],
+      tasks: [{ task_type: "ai_review", status: "completed", output_json: { review_verdict: "pass" } }],
+      sources: [{ id: uuid1, source_type: "sec_filing", metadata_json: {} }],
+      evidence: Array(5).fill({ claim_text: "supported evidence", claim_category: "fact" }),
+      metrics: [], signals: [], scenarios: [], sourceGaps: [], reviewDecisions: [],
+      analysisSections: [], valuationModels: [], indicators: [], combinations: [],
+      backtests: [], backtestArtifacts: [], unlinkedFactClaimCount: 0,
+    });
+    assert.ok(result.errors.includes("AI review output is missing the canonical pass_fail verdict."));
+  });
+
+  it("blocks a full report when twenty-quarter metric coverage is materially incomplete", () => {
+    const result = evaluateLoadedResearchQuality({
+      run: { id: uuid1, run_type: "full_initiation_report", pipeline_version: 3 },
+      profile: {}, stages: [], tasks: [], sources: [], evidence: [], metrics: [], signals: [], scenarios: [],
+      sourceGaps: [], reviewDecisions: [], analysisSections: [], valuationModels: [], indicators: [], combinations: [],
+      backtests: [], backtestArtifacts: [], unlinkedFactClaimCount: 0,
+      historicalRecords: [{ content_json: { coverage: { quarters_present: 22, quarters_required: 740 } } }],
+    });
+    assert.ok(result.errors.some((error) => error.includes("Historical metric coverage is 3.0% (22/740)")));
   });
 });

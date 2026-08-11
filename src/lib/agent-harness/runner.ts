@@ -2,8 +2,8 @@ import { createDeadlineController } from "./deadlines";
 import { ProviderError, ResearchAgentRunError, type HarnessErrorCategory } from "./errors";
 import { parseStructuredOutput } from "./output-parser";
 import { getProvider } from "./providers/provider";
-import { getAgentConfig, normalizeModelEnvValue, resolveAgentModel, type ResearchAgentName } from "./registry";
-import { calculateCost } from "./telemetry";
+import { DEFAULT_RESEARCH_MODEL, getAgentConfig, normalizeModelEnvValue, resolveAgentModel, type ResearchAgentName } from "./registry";
+import { estimateCost } from "./telemetry";
 import { executeTool, toolDefinitionsForAgent } from "./tools";
 import type {
   AgentAttempt, AgentPassTelemetry, AgentRequest, AgentResult, AgentUsage, ExecutionPolicy, ModelEvent, ModelProvider, ModelUsage, ToolCall,
@@ -39,18 +39,25 @@ function optionalPositiveNumberEnv(...names: string[]) {
 
 function executionPolicy(input: AgentRequest): ExecutionPolicy {
   const key = input.agentName.toUpperCase().replace(/-/g, "_");
-  const totalDefault = input.agentName === "asset-analyst"
-    ? 600_000
-    : input.agentName === "source-reader" ? 600_000 : DEFAULT_POLICY.totalTimeoutMs;
+  const totalDefault = input.agentName === "source-reader"
+    ? 1_200_000
+    : ["asset-analyst", "metric-normalizer", "valuation-analyst"].includes(input.agentName)
+      ? 600_000
+      : DEFAULT_POLICY.totalTimeoutMs;
+  const inactivityDefault = input.agentName === "source-reader" ? 600_000 : DEFAULT_POLICY.inactivityTimeoutMs;
+  const configuredMaxOutputTokens = optionalPositiveNumberEnv(`RESEARCH_${key}_MAX_OUTPUT_TOKENS`, "RESEARCH_MAX_OUTPUT_TOKENS");
   return {
     totalTimeoutMs: numberEnv(`RESEARCH_${key}_TIMEOUT_MS`, numberEnv("RESEARCH_AGENT_TIMEOUT_MS", totalDefault, 10_000), 10_000),
-    inactivityTimeoutMs: numberEnv(`RESEARCH_${key}_INACTIVITY_TIMEOUT_MS`, numberEnv("RESEARCH_INACTIVITY_TIMEOUT_MS", DEFAULT_POLICY.inactivityTimeoutMs, 1_000), 1_000),
+    inactivityTimeoutMs: numberEnv(`RESEARCH_${key}_INACTIVITY_TIMEOUT_MS`, numberEnv("RESEARCH_INACTIVITY_TIMEOUT_MS", inactivityDefault, 1_000), 1_000),
     maxResponseBytes: numberEnv(`RESEARCH_${key}_MAX_RESPONSE_BYTES`, numberEnv("RESEARCH_MAX_RESPONSE_BYTES", DEFAULT_POLICY.maxResponseBytes)),
-    maxOutputTokens: optionalPositiveNumberEnv(`RESEARCH_${key}_MAX_OUTPUT_TOKENS`, "RESEARCH_MAX_OUTPUT_TOKENS"),
+    // OpenAI-compatible providers account for reasoning inside max_tokens. Leave
+    // it unset unless explicitly configured so valid JSON is not truncated before
+    // the model reaches its answer; maxResponseBytes remains the hard response bound.
+    maxOutputTokens: configuredMaxOutputTokens,
     maxRepairAttempts: numberEnv("RESEARCH_MAX_REPAIR_ATTEMPTS", DEFAULT_POLICY.maxRepairAttempts, 0),
     maxToolTurns: numberEnv("RESEARCH_MAX_TOOL_TURNS", DEFAULT_POLICY.maxToolTurns, 0),
     maxToolCalls: numberEnv("RESEARCH_MAX_TOOL_CALLS", DEFAULT_POLICY.maxToolCalls, 0),
-    maxAttempts: numberEnv("RESEARCH_MAX_MODEL_ATTEMPTS", DEFAULT_POLICY.maxAttempts),
+    maxAttempts: numberEnv(`RESEARCH_${key}_MAX_MODEL_ATTEMPTS`, numberEnv("RESEARCH_MAX_MODEL_ATTEMPTS", DEFAULT_POLICY.maxAttempts)),
     retryBaseDelayMs: numberEnv("RESEARCH_RETRY_BASE_DELAY_MS", DEFAULT_POLICY.retryBaseDelayMs),
     ...input.policy,
   };
@@ -74,13 +81,27 @@ function requiredKeys(outputFormat: Record<string, unknown> | { requiredKeys?: s
   return Array.isArray(schema?.required) ? schema.required.filter((key): key is string => typeof key === "string") : [];
 }
 
+function validateCandidate(
+  value: unknown,
+  outputFormat: Record<string, unknown>,
+  custom?: AgentRequest["validateStructured"]
+): SchemaValidationError[] {
+  return [
+    ...validateSchema(value, outputFormat),
+    ...(custom ? custom(value) : []),
+  ];
+}
+
+function repairCandidate(value: unknown, rawText: string) {
+  const serialized = value === undefined ? rawText : JSON.stringify(value);
+  if (serialized.length <= 80_000) return serialized;
+  return `${serialized.slice(0, 40_000)}\n...[middle omitted]...\n${serialized.slice(-40_000)}`;
+}
+
 function modelCandidates(agentName: ResearchAgentName, maxAttempts: number) {
   const primary = resolveAgentModel(agentName);
   const fallbackKey = `RESEARCH_${agentName.toUpperCase().replace(/-/g, "_")}_FALLBACK_MODEL`;
-  const builtIns: Partial<Record<ResearchAgentName, string>> = {
-    "source-reader": "deepseek-v4-pro", "asset-analyst": "qwen3.7-plus", "valuation-analyst": "deepseek-v4-pro",
-  };
-  const fallback = process.env[fallbackKey] || builtIns[agentName];
+  const fallback = process.env[fallbackKey] || process.env.RESEARCH_FALLBACK_MODEL || process.env.RESEARCH_DEFAULT_MODEL || DEFAULT_RESEARCH_MODEL;
   const models = [primary, fallback ? normalizeModelEnvValue(fallback) : null]
     .filter((model): model is string => Boolean(model))
     .filter((model, index, all) => all.indexOf(model) === index);
@@ -124,8 +145,9 @@ function category(error: unknown): HarnessErrorCategory {
   return "unknown";
 }
 
-function retryable(value: HarnessErrorCategory) {
-  return value === "rate_limit" || value === "provider_timeout" || value === "connection" || value === "malformed_stream";
+function retryable(value: HarnessErrorCategory, _agentName: string) {
+  return value === "rate_limit" || value === "provider_timeout" || value === "connection" || value === "malformed_stream" ||
+    value === "schema_validation";
 }
 
 function redact(value: string) {
@@ -134,9 +156,43 @@ function redact(value: string) {
     .replace(/(bearer\s+)[^\s"']+/gi, "$1[REDACTED]");
 }
 
+function repairContext(input: AgentRequest) {
+  const packet = input.taskPacket && typeof input.taskPacket === "object"
+    ? input.taskPacket as Record<string, unknown>
+    : {};
+  const context: Record<string, unknown> = {
+    title: input.title,
+    agentName: input.agentName,
+    output_contract: packet.output_contract,
+    providedKeys: Object.keys(packet).slice(0, 20),
+  };
+  if (input.agentName === "source-reader" && Array.isArray(packet.source_corpus)) {
+    // A schema repair must be able to restore citations, but it does not need
+    // the entire original corpus. Preserve identifiers plus bounded excerpts
+    // so the repair can map each claim to a real source chunk.
+    context.source_corpus = packet.source_corpus.slice(0, 8).map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+      const chunk = item as Record<string, unknown>;
+      return {
+        source_id: chunk.source_id,
+        document_chunk_id: chunk.document_chunk_id,
+        char_start: chunk.char_start,
+        char_end: chunk.char_end,
+        source_role: chunk.source_role,
+        title: chunk.title,
+        section_title: chunk.section_title,
+        content_excerpt: typeof chunk.content_excerpt === "string"
+          ? chunk.content_excerpt.slice(0, 2_000)
+          : chunk.content_excerpt,
+      };
+    });
+  }
+  return context;
+}
+
 interface PassResult {
   rawText: string;
-  usage: { inputTokens: number; outputTokens: number; reasoningTokens: number; costUsd: number };
+  usage: { inputTokens: number; outputTokens: number; reasoningTokens: number; costUsd: number; costSource: "provider" | "catalog_estimate" | "unknown" };
   requestId?: string;
   toolCalls: Array<{ name: string; status: "success" | "failed" }>;
 }
@@ -163,23 +219,43 @@ async function executePass(params: {
     if (!providerStarted && inputTokens === 0 && outputTokens === 0 && !rawText) {
       return {
         rawText: "",
-        usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, costUsd: 0 },
+        usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, costUsd: 0, costSource: "unknown" },
         requestId,
         toolCalls: [...toolSummaries],
       };
     }
     const effectiveInputTokens = inputTokens || Math.ceil(params.prompt.length / 4);
     const effectiveOutputTokens = outputTokens || Math.ceil(rawText.length / 4);
-    const effectiveCost = costReportedByProvider
-      ? costUsd
-      : calculateCost(params.model, effectiveInputTokens, effectiveOutputTokens);
+    const estimate = estimateCost(params.model, effectiveInputTokens, effectiveOutputTokens);
+    const effectiveCost = costReportedByProvider ? costUsd : estimate.costUsd;
     return {
       rawText,
-      usage: { inputTokens: effectiveInputTokens, outputTokens: effectiveOutputTokens, reasoningTokens, costUsd: effectiveCost },
+      usage: {
+        inputTokens: effectiveInputTokens,
+        outputTokens: effectiveOutputTokens,
+        reasoningTokens,
+        costUsd: effectiveCost,
+        costSource: costReportedByProvider ? "provider" : estimate.costSource,
+      },
       requestId,
       toolCalls: [...toolSummaries],
     };
   };
+
+  let releaseRequestLock: (() => void) | undefined;
+  if (params.provider.acquireRequestLock) {
+    params.deadline.pauseTotal();
+    params.deadline.pauseInactivity();
+    try {
+      releaseRequestLock = await params.provider.acquireRequestLock(params.deadline.signal);
+    } catch (error) {
+      params.deadline.resumeInactivity();
+      params.deadline.resumeTotal();
+      throw error;
+    }
+    params.deadline.resumeTotal();
+    params.deadline.resumeInactivity();
+  }
 
   try {
     while (true) {
@@ -283,6 +359,8 @@ async function executePass(params: {
       throw new ProviderError(error.message, error.category, { ...error.details, partial: snapshot() });
     }
     throw error;
+  } finally {
+    releaseRequestLock?.();
   }
 }
 
@@ -298,7 +376,7 @@ async function executeTrackedPass(
       kind, startedAt: new Date(started).toISOString(), completedAt: new Date().toISOString(),
       latencyMs: Date.now() - started, requestId: result.requestId,
       inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens,
-      reasoningTokens: result.usage.reasoningTokens, costUsd: result.usage.costUsd, status: "success",
+      reasoningTokens: result.usage.reasoningTokens, costUsd: result.usage.costUsd, costSource: result.usage.costSource, status: "success",
     });
     return result;
   } catch (error) {
@@ -307,7 +385,7 @@ async function executeTrackedPass(
       kind, startedAt: new Date(started).toISOString(), completedAt: new Date().toISOString(),
       latencyMs: Date.now() - started, requestId: partial?.requestId,
       inputTokens: partial?.usage.inputTokens || 0, outputTokens: partial?.usage.outputTokens || 0,
-      reasoningTokens: partial?.usage.reasoningTokens || 0, costUsd: partial?.usage.costUsd || 0,
+      reasoningTokens: partial?.usage.reasoningTokens || 0, costUsd: partial?.usage.costUsd || 0, costSource: partial?.usage.costSource,
       status: "failed", errorCategory: category(error),
       errorMessage: redact(error instanceof Error ? error.message : String(error)),
     });
@@ -325,6 +403,11 @@ function aggregateUsage(attempts: AgentAttempt[], fallback: { provider: string; 
     outputTokens: attempts.reduce((sum, attempt) => sum + attempt.outputTokens, 0),
     reasoningTokens: attempts.reduce((sum, attempt) => sum + (attempt.reasoningTokens || 0), 0),
     costUsd: Number(attempts.reduce((sum, attempt) => sum + attempt.costUsd, 0).toFixed(6)),
+    costSource: attempts.some((attempt) => attempt.costSource === "unknown")
+      ? "unknown"
+      : attempts.some((attempt) => attempt.costSource === "catalog_estimate")
+        ? "catalog_estimate"
+        : "provider",
     latencyMs: attempts.reduce((sum, attempt) => sum + attempt.latencyMs, 0),
     requestId: final?.requestId,
     promptVersion: fallback.promptVersion,
@@ -351,7 +434,11 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
   // C14-T6: Red-team prompt contains "confirm the thesis" -> Prompt review test fails
   const promptText = buildTaskPrompt(input, config);
   if (input.agentName.toLowerCase().includes("red-team") || input.agentName.toLowerCase().includes("reviewer")) {
-    if (promptText.toLowerCase().includes("confirm the thesis") || promptText.toLowerCase().includes("prove the thesis")) {
+    // Treat the packet as data, not instructions. Generated evidence can
+    // legitimately quote those phrases; only the instruction preamble is
+    // subject to the red-team wording check.
+    const instructionText = promptText.split("\nTask packet:\n", 1)[0];
+    if (instructionText.toLowerCase().includes("confirm the thesis") || instructionText.toLowerCase().includes("prove the thesis")) {
       throw new Error("Red-team prompt review failed: prompt must not contain instructions to confirm or prove the thesis.");
     }
   }
@@ -373,18 +460,24 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
     const model = candidates[index];
     const fallback = model !== primaryModel;
     const modelAttempt = candidates.slice(0, index + 1).filter((candidate) => candidate === model).length;
-    const compactedFallback = fallback ? compactFallback(input) : { request: input, compacted: false };
+    // A same-model source-reader retry must change the request. Replaying the
+    // full packet can reproduce the same long-reasoning stall; keep the retry
+    // bounded and deterministic by using the existing excerpt compactor.
+    const compactedFallback = fallback || (index > 0 && input.agentName === "source-reader")
+      ? compactFallback(input)
+      : { request: input, compacted: false };
     const currentInput = compactedFallback.request;
     await input.hooks?.beforeAttempt?.({ attempt: attemptNumber, provider: provider.id, model });
     const started = Date.now();
     const startedAt = new Date(started).toISOString();
     const deadline = createDeadlineController(input.signal, policy.totalTimeoutMs, policy.inactivityTimeoutMs);
-    let pass: PassResult = { rawText: "", usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, costUsd: 0 }, toolCalls: [] };
+    let pass: PassResult = { rawText: "", usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, costUsd: 0, costSource: "unknown" }, toolCalls: [] };
     let repairAttempted = false;
     let validationErrors: SchemaValidationError[] = [];
     const passes: AgentPassTelemetry[] = [];
     let localCoercionApplied = false;
     let completionRecoveredAtTimeout = false;
+    let completionRecoveredWithoutMarker = false;
     let generationWasMalformed = false;
 
     try {
@@ -394,25 +487,34 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
       } catch (error) {
         const timeoutReason = deadline.reason();
         const partial = error instanceof ProviderError ? error.details.partial as PassResult | undefined : undefined;
-        if ((timeoutReason === "total" || timeoutReason === "inactivity") && partial?.rawText.trim()) {
+        const timedOut = timeoutReason === "total" || timeoutReason === "inactivity";
+        const recoverableStreamEnd = error instanceof ProviderError &&
+          error.category === "malformed_stream" &&
+          /completion marker|did not emit completion|terminated/i.test(error.message);
+        if ((timedOut || recoverableStreamEnd) && partial?.rawText.trim()) {
           try {
             let candidate = parseStructuredOutput(partial.rawText, keys);
-            let candidateErrors = validateSchema(candidate, effectiveOutputFormat);
+            let candidateErrors = validateCandidate(candidate, effectiveOutputFormat, input.validateStructured);
             if (candidateErrors.length) {
               const coerced = coerceStructuredOutput(candidate, effectiveOutputFormat);
               if (coerced.changed) {
-                const coercedErrors = validateSchema(coerced.value, effectiveOutputFormat);
+                const coercedErrors = validateCandidate(coerced.value, effectiveOutputFormat, input.validateStructured);
                 if (coercedErrors.length < candidateErrors.length) {
                   candidate = coerced.value;
                   candidateErrors = coercedErrors;
                 }
               }
             }
-            if (candidateErrors.length) throw new Error("Timed-out response did not satisfy the output schema");
+            if (candidateErrors.length) throw new Error("Incomplete response did not satisfy the output schema");
             pass = partial;
-            completionRecoveredAtTimeout = true;
             const generationPass = passes.at(-1);
-            if (generationPass?.kind === "generation") generationPass.completionRecoveredAtTimeout = true;
+            if (timedOut) {
+              completionRecoveredAtTimeout = true;
+              if (generationPass?.kind === "generation") generationPass.completionRecoveredAtTimeout = true;
+            } else {
+              completionRecoveredWithoutMarker = true;
+              if (generationPass?.kind === "generation") generationPass.completionRecoveredWithoutMarker = true;
+            }
           } catch {
             throw error;
           }
@@ -423,11 +525,11 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
       let parsed: unknown;
       try {
         parsed = parseStructuredOutput(pass.rawText, keys);
-        validationErrors = validateSchema(parsed, effectiveOutputFormat);
+        validationErrors = validateCandidate(parsed, effectiveOutputFormat, input.validateStructured);
         if (validationErrors.length) {
           const coerced = coerceStructuredOutput(parsed, effectiveOutputFormat);
           if (coerced.changed) {
-            const coercedErrors = validateSchema(coerced.value, effectiveOutputFormat);
+            const coercedErrors = validateCandidate(coerced.value, effectiveOutputFormat, input.validateStructured);
             if (coercedErrors.length < validationErrors.length) {
               parsed = coerced.value;
               localCoercionApplied = true;
@@ -444,19 +546,32 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
       }
       if (passes[0] && !passes[0].validationErrors) passes[0].validationErrors = [...validationErrors];
 
-      if (validationErrors.length && policy.maxRepairAttempts > 0) {
+      const sourceReaderRepairRules = input.agentName === "source-reader"
+        ? [
+            "For every evidence_claim, use exactly these field names: claim_text, claim_type, claim_category, source_id, document_chunk_id, quoted_text, char_start, char_end, confidence.",
+            "claim_category must be exactly one of: fact, estimate, assumption, opinion.",
+            "Use source_id and document_chunk_id only from source_corpus, and pair each claim with its matching chunk.",
+            "quoted_text must be an exact contiguous substring of the matching source_corpus.content_excerpt; char_start is inclusive and char_end is exclusive, and both must match that quote.",
+            "Do not use aliases such as claim or source_quote. Do not omit a citation or invent an identifier.",
+          ]
+        : [];
+      for (let repairIndex = 0; validationErrors.length && repairIndex < policy.maxRepairAttempts; repairIndex += 1) {
         repairAttempted = true;
         const repairPrompt = [
           `REPAIR TASK: ${input.title}`,
           "",
           "The previous model output failed schema validation. Repair it into exactly one JSON object.",
           `Required top-level keys: ${keys.join(", ")}`,
-          `Validation errors: ${validationErrors.map((error) => `${error.path}: ${error.message}`).join(" | ").slice(0, 4000)}`,
+          `Validation errors: ${validationErrors.map((error) => `${error.path}: ${error.message}`).join(" | ").slice(0, 16_000)}`,
+          ...sourceReaderRepairRules,
+          "",
+          "Required JSON schema:",
+          JSON.stringify(effectiveOutputFormat.schema || effectiveOutputFormat),
           "",
           "Original task context (compact):",
-          JSON.stringify({ title: input.title, agentName: input.agentName, output_contract: (input.taskPacket as any).output_contract, providedKeys: Object.keys(input.taskPacket).slice(0, 20) }),
+          JSON.stringify(repairContext(input)),
           "",
-          `Previous response: ${pass.rawText.slice(0, 12_000)}`,
+          `Previous parsed response: ${repairCandidate(parsed, pass.rawText)}`,
         ].join("\n\n");
         if (deadline.remainingMs() < 10_000) {
           throw new ProviderError("Insufficient time remaining for structured-output repair", "provider_timeout", {
@@ -479,6 +594,11 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
                   outputTokens: pass.usage.outputTokens + (repairPartial?.usage.outputTokens || 0),
                   reasoningTokens: pass.usage.reasoningTokens + (repairPartial?.usage.reasoningTokens || 0),
                   costUsd: pass.usage.costUsd + (repairPartial?.usage.costUsd || 0),
+                  costSource: pass.usage.costSource === "unknown" || repairPartial?.usage.costSource === "unknown"
+                    ? "unknown"
+                    : pass.usage.costSource === "catalog_estimate" || repairPartial?.usage.costSource === "catalog_estimate"
+                      ? "catalog_estimate"
+                      : "provider",
                 },
                 toolCalls: [...pass.toolCalls, ...(repairPartial?.toolCalls || [])],
               } satisfies PassResult,
@@ -493,16 +613,21 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
             outputTokens: pass.usage.outputTokens + repair.usage.outputTokens,
             reasoningTokens: pass.usage.reasoningTokens + repair.usage.reasoningTokens,
             costUsd: pass.usage.costUsd + repair.usage.costUsd,
+            costSource: pass.usage.costSource === "unknown" || repair.usage.costSource === "unknown"
+              ? "unknown"
+              : pass.usage.costSource === "catalog_estimate" || repair.usage.costSource === "catalog_estimate"
+                ? "catalog_estimate"
+                : "provider",
           },
           toolCalls: [...pass.toolCalls, ...repair.toolCalls],
         };
         try {
           parsed = parseStructuredOutput(repair.rawText, keys);
-          validationErrors = validateSchema(parsed, effectiveOutputFormat);
+          validationErrors = validateCandidate(parsed, effectiveOutputFormat, input.validateStructured);
           if (validationErrors.length) {
             const coerced = coerceStructuredOutput(parsed, effectiveOutputFormat);
             if (coerced.changed) {
-              const coercedErrors = validateSchema(coerced.value, effectiveOutputFormat);
+              const coercedErrors = validateCandidate(coerced.value, effectiveOutputFormat, input.validateStructured);
               if (coercedErrors.length < validationErrors.length) {
                 const originalErrors = validationErrors;
                 parsed = coerced.value;
@@ -533,13 +658,14 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         attempt: attemptNumber, provider: provider.id, model, modelAttempt, requestId: pass.requestId,
         startedAt, completedAt: new Date(completed).toISOString(), latencyMs: completed - started,
         inputTokens: pass.usage.inputTokens, outputTokens: pass.usage.outputTokens, reasoningTokens: pass.usage.reasoningTokens,
-        costUsd: Number(pass.usage.costUsd.toFixed(6)), status: "success", repairAttempted,
+        costUsd: Number(pass.usage.costUsd.toFixed(6)), costSource: pass.usage.costSource, status: "success", repairAttempted,
         fallback, compactionOccurred: compactedFallback.compacted,
         inputBytes: Buffer.byteLength(buildTaskPrompt(currentInput, config), "utf8"), originalInputBytes: originalPromptBytes,
         rawResponseExcerpt: redact(pass.rawText.slice(0, 12_000)), validationErrors, toolCalls: pass.toolCalls,
         passes,
         localCoercionApplied,
         completionRecoveredAtTimeout,
+        completionRecoveredWithoutMarker,
       };
       attempts.push(record);
       await input.hooks?.onAttemptComplete?.(record);
@@ -563,7 +689,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         attempt: attemptNumber, provider: provider.id, model, modelAttempt, requestId: pass.requestId,
         startedAt, completedAt: new Date(completed).toISOString(), latencyMs: completed - started,
         inputTokens: pass.usage.inputTokens, outputTokens: pass.usage.outputTokens, reasoningTokens: pass.usage.reasoningTokens,
-        costUsd: Number(pass.usage.costUsd.toFixed(6)), status: errorCategory === "cancellation" ? "cancelled" : "failed",
+        costUsd: Number(pass.usage.costUsd.toFixed(6)), costSource: pass.usage.costSource, status: errorCategory === "cancellation" ? "cancelled" : "failed",
         errorCategory, errorMessage: redact(failure instanceof Error ? failure.message : String(failure)),
         timeoutType: reason === "total" || reason === "inactivity" ? reason : undefined,
         repairAttempted, fallback, compactionOccurred: compactedFallback.compacted,
@@ -572,10 +698,13 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         passes,
         localCoercionApplied,
         completionRecoveredAtTimeout,
+        completionRecoveredWithoutMarker,
       };
       attempts.push(record);
       await input.hooks?.onAttemptComplete?.(record);
-      if (!retryable(errorCategory) || index === candidates.length - 1) {
+      const schemaAttemptsExhausted = errorCategory === "schema_validation" &&
+        attempts.filter((attempt) => attempt.errorCategory === "schema_validation").length >= 2;
+      if (!retryable(errorCategory, input.agentName) || schemaAttemptsExhausted || index === candidates.length - 1) {
         const usage = aggregateUsage(attempts, { provider: provider.id, model, promptVersion: config.promptVersion });
         throw new ResearchAgentRunError(
           `Agent attempts exhausted: ${record.errorMessage}`, usage,

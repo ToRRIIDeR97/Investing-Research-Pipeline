@@ -55,6 +55,7 @@ export const model_call_logs = pgTable(
     input_tokens: integer("input_tokens"),
     output_tokens: integer("output_tokens"),
     cost_usd: numeric("cost_usd"),
+    cost_source: text("cost_source").notNull().default("unknown"),
     latency_ms: integer("latency_ms"),
     status: text("status").notNull(),
     error_message: text("error_message"),
@@ -109,12 +110,36 @@ export const model_budget_ledger = pgTable(
     task_id: uuid("task_id").references(() => research_tasks.id),
     model_tier: text("model_tier").notNull(),
     cost_usd: numeric("cost_usd").notNull(),
+    cost_source: text("cost_source").notNull().default("unknown"),
     created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index("model_budget_ledger_run_idx").on(table.research_run_id),
     index("model_budget_ledger_stage_idx").on(table.stage_id),
     index("model_budget_ledger_tier_idx").on(table.model_tier),
+  ]
+);
+
+// Reservations close the check-then-insert race when multiple workers share a
+// run budget. A reservation is consumed by the eventual model-call ledger row
+// or released when the attempt never starts.
+export const model_budget_reservations = pgTable(
+  "model_budget_reservations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    research_run_id: uuid("research_run_id").references(() => research_runs.id),
+    stage_id: uuid("stage_id").references(() => research_stages.id),
+    task_id: uuid("task_id").references(() => research_tasks.id),
+    model_tier: text("model_tier").notNull(),
+    reserved_usd: numeric("reserved_usd").notNull(),
+    status: text("status").notNull().default("pending"),
+    created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expires_at: timestamp("expires_at", { withTimezone: true }).notNull(),
+    resolved_at: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("model_budget_reservations_run_idx").on(table.research_run_id, table.status),
+    index("model_budget_reservations_expires_idx").on(table.status, table.expires_at),
   ]
 );
 

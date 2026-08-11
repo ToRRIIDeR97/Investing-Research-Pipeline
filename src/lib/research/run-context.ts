@@ -1,5 +1,5 @@
 /**
- * Research OS v3 run context and stage-handler shared services.
+ * Research OS v4 run context and stage-handler shared services.
  *
  * The research runtime is deliberately separate from the legacy monolith:
  * each stage handler receives a ResearchRunContext and produces one bounded
@@ -9,19 +9,23 @@
 
 import postgres from "postgres";
 import { runResearchAgent } from "@/lib/agent-harness/runner";
-import { assertModelBudgetAvailable, recordModelCall } from "@/lib/agents/model-calls";
+import { getAgentConfig } from "@/lib/agent-harness/registry";
+import { validateSchema } from "@/lib/agent-harness/validation";
+import { assertModelBudgetAvailable, recordModelCall, releaseModelBudgetReservation } from "@/lib/agents/model-calls";
 import { composeProfile } from "./archetypes/compose";
 import type { ComposedProfile } from "./archetypes/types";
 import type { ValidationResult } from "@/lib/workflow/validators";
 import { CURRENT_PIPELINE_VERSION } from "./version";
+import { contractForArtifact } from "./stage-contracts";
+import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 export type { ValidationResult };
 
 export type Sql = ReturnType<typeof postgres>;
 
-export const HANDLER_VERSION = "3.0.0";
-export const SCHEMA_VERSION = "3.0.0";
-export const VALIDATOR_VERSION = "1.0.0";
-export const PROMPT_VERSION = "v3-runtime-v1";
+export const HANDLER_VERSION = "4.0.0";
+export const SCHEMA_VERSION = "4.0.0";
+export const VALIDATOR_VERSION = "2.0.0";
+export const PROMPT_VERSION = "v4-runtime-v1";
 
 export interface ResearchRunContext {
   runId: string;
@@ -84,6 +88,27 @@ function asObject(value: unknown): Record<string, unknown> {
   return {};
 }
 
+async function stageRejectedOutput(
+  sql: Sql,
+  params: { runId: string; stageId: string; taskId: string; agentName: string; schemaKey: string; error: unknown }
+) {
+  const errorMessage = params.error instanceof Error ? params.error.message : String(params.error);
+  const details = params.error && typeof params.error === "object" ? params.error as Record<string, unknown> : {};
+  const rawResponseExcerpt = typeof details.raw_response_excerpt === "string" ? details.raw_response_excerpt : null;
+  await sql`
+    INSERT INTO agent_output_staging (
+      research_run_id, stage_id, task_id, target_table,
+      output_schema_key, output_schema_version, payload_json,
+      validation_status, validation_errors_json, review_status, created_by_agent, rejected_at, rejection_reason
+    ) VALUES (
+      ${params.runId}, ${params.stageId}, ${params.taskId}, 'research_tasks',
+      ${params.schemaKey}, 4,
+      ${sql.json({ error: errorMessage, raw_response_excerpt: rawResponseExcerpt })},
+      'invalid', ${sql.json([errorMessage])}, 'rejected', ${params.agentName}, NOW(), ${errorMessage.slice(0, 4000)}
+    )
+  `;
+}
+
 /**
  * Load the run-scoped context for a execution. The composed profile is
  * rebuilt from run metadata when an archetype composition has already been
@@ -135,7 +160,7 @@ export async function loadRunContext(sql: Sql, runId: string): Promise<ResearchR
       overlayKeys,
       timingHypothesis || undefined
     );
-    if (!errors.some((error) => error.code === "conflict")) {
+    if (errors.length === 0) {
       composedProfile = profile;
     }
   }
@@ -200,17 +225,41 @@ export async function createV3Task(
   taskKey: string,
   taskType: string,
   agentName: string
-): Promise<{ id: string; stage_id: string }> {
+): Promise<{ id: string; stage_id: string; taskKey: string; priorValidationErrors: string[] }> {
   const existing = await sql`
-    SELECT id, stage_id, status FROM research_tasks
-    WHERE research_run_id = ${runId} AND task_key = ${taskKey}
+    SELECT id, stage_id, status, validation_status, validation_result_json, failure_reason, task_key FROM research_tasks
+    WHERE research_run_id = ${runId}
+      AND (task_key = ${taskKey} OR task_key LIKE ${`${taskKey}:revision-%`})
     ORDER BY created_at DESC
     LIMIT 1
   `;
-  if (existing[0] && existing[0].status === "completed") {
-    return { id: existing[0].id, stage_id: existing[0].stage_id };
+  if (existing[0] && existing[0].status === "completed" && existing[0].validation_status === "valid") {
+    return { id: existing[0].id, stage_id: existing[0].stage_id, taskKey: String(existing[0].task_key), priorValidationErrors: [] };
   }
-  // Find the stage_id first (avoid INSERT...SELECT which breaks sql.json in postgres.js v3.4.5)
+  if (existing[0] && ["completed", "failed"].includes(String(existing[0].status))) {
+    await sql`
+      UPDATE research_tasks
+      SET status = 'failed', validation_status = 'invalid',
+          failure_reason = 'Completed output failed downstream validation', updated_at = NOW()
+      WHERE id = ${existing[0].id}
+    `;
+  }
+  const priorValidationErrors = existing[0]
+    ? [
+        ...(existing[0].validation_result_json && typeof existing[0].validation_result_json === "object"
+          ? (Array.isArray((existing[0].validation_result_json as Record<string, unknown>).errors)
+            ? ((existing[0].validation_result_json as Record<string, unknown>).errors as unknown[]).map(String)
+            : [])
+          : []),
+        existing[0].failure_reason ? String(existing[0].failure_reason) : "",
+      ].filter(Boolean)
+    : [];
+  const revision = existing[0]
+    ? Number(String(existing[0].task_key).match(/:revision-(\d+)$/)?.[1] || 0) + 1
+    : 0;
+  const effectiveTaskKey = revision > 0 ? `${taskKey}:revision-${revision}` : taskKey;
+  // Find the stage_id first; bind JSON as text to avoid postgres.js Parameter
+  // objects leaking through mixed Drizzle/raw-SQL handlers.
   const stage = await sql`
     SELECT id FROM research_stages
     WHERE research_run_id = ${runId} AND stage_key = ${stageKey}
@@ -222,12 +271,12 @@ export async function createV3Task(
       research_run_id, stage_id, task_key, task_type, agent_name,
       status, priority, input_json, started_at
     ) VALUES (
-      ${runId}, ${stage[0].id}, ${taskKey}, ${taskType}, ${agentName},
+      ${runId}, ${stage[0].id}, ${effectiveTaskKey}, ${taskType}, ${agentName},
       'running', 80, ${JSON.stringify({ system_generated: true, pipeline_version: CURRENT_PIPELINE_VERSION })}::jsonb, NOW()
     )
     RETURNING id, stage_id
   `;
-  return rows[0] as { id: string; stage_id: string };
+  return { ...(rows[0] as { id: string; stage_id: string }), taskKey: effectiveTaskKey, priorValidationErrors };
 }
 
 export async function latestV3TaskOutput(
@@ -239,8 +288,9 @@ export async function latestV3TaskOutput(
     SELECT output_json
     FROM research_tasks
     WHERE research_run_id = ${runId}
-      AND task_key = ${taskKey}
+      AND (task_key = ${taskKey} OR task_key LIKE ${`${taskKey}:revision-%`})
       AND status = 'completed'
+      AND validation_status = 'valid'
       AND output_json IS NOT NULL
     ORDER BY completed_at DESC NULLS LAST, created_at DESC
     LIMIT 1
@@ -264,6 +314,7 @@ export async function completeV3Task(sql: Sql, taskId: string, output: unknown):
   await sql`
     UPDATE research_tasks
     SET status = 'completed',
+        validation_status = 'valid',
         output_json = ${JSON.stringify(output ?? {})}::jsonb,
         failure_reason = NULL,
         completed_at = NOW(),
@@ -277,6 +328,7 @@ export async function failV3Task(sql: Sql, taskId: string, error: unknown): Prom
   await sql`
     UPDATE research_tasks
     SET status = 'failed',
+        validation_status = 'invalid',
         failure_reason = ${message.slice(0, 4000)},
         completed_at = NOW(),
         updated_at = NOW()
@@ -291,7 +343,7 @@ export function exactJsonPrompt(params: {
   extraRules?: string[];
 }): string {
   return [
-    `Run Research OS v3 agent: ${params.agentName}.`,
+    `Run Research OS v4 agent: ${params.agentName}.`,
     "",
     "Return exactly one JSON object. Do not return Markdown, prose, code fences, or nested wrapper objects.",
     `The top-level object must contain exactly these required keys: ${params.requiredKeys.join(", ")}.`,
@@ -305,7 +357,7 @@ export function exactJsonPrompt(params: {
 }
 
 /**
- * Bounded agent call for v3 handlers. Mirrors the v2 callAgent behavior:
+ * Bounded agent call for v4 handlers. Mirrors the v2 callAgent behavior:
  * budget preflight before every attempt and a per-attempt model-call ledger.
  */
 export async function callResearchAgent<T extends Record<string, unknown>>(params: {
@@ -315,40 +367,90 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
   taskKey: string;
   taskType: string;
   agentName: Parameters<typeof runResearchAgent>[0]["agentName"];
-  modelTier: string;
+  /** @deprecated The registry is the source of truth; retained for V3 callers. */
+  modelTier?: string;
   packet: Record<string, unknown>;
+  signal?: AbortSignal;
   prompt?: string;
   promptFactory?: (packet: Record<string, unknown>) => string;
   outputFormat?: Parameters<typeof runResearchAgent>[0]["outputFormat"];
+  validateStructured?: Parameters<typeof runResearchAgent>[0]["validateStructured"];
 }): Promise<T> {
-  const task = await createV3Task(params.sql, params.ctx.runId, params.stageKey, params.taskKey, params.taskType, params.agentName);
-  const prior = await latestV3TaskOutput(params.sql, params.ctx.runId, params.taskKey);
-  if (prior) return prior as T;
+  const agentConfig = getAgentConfig(params.agentName);
+  const resolvedTier = agentConfig.modelTier;
+  let task = await createV3Task(params.sql, params.ctx.runId, params.stageKey, params.taskKey, params.taskType, params.agentName);
+  const stageRows = await params.sql`
+    SELECT allowed_model_tiers FROM research_stages
+    WHERE id = ${task.stage_id}
+    LIMIT 1
+  `;
+  const allowedTiers = Array.isArray(stageRows[0]?.allowed_model_tiers)
+    ? stageRows[0].allowed_model_tiers.map(String)
+    : [];
+  if (allowedTiers.length && !allowedTiers.includes(resolvedTier)) {
+    throw new Error(`Agent ${params.agentName} resolves to tier ${resolvedTier}, which is not allowed for stage ${params.stageKey}`);
+  }
+  let prior = await latestV3TaskOutput(params.sql, params.ctx.runId, task.taskKey);
+  if (prior) {
+    const outputFormat = params.outputFormat || agentConfig.outputFormat;
+    const cachedErrors = [
+      ...validateSchema(prior, outputFormat),
+      ...(params.validateStructured ? params.validateStructured(prior) : []),
+    ];
+    if (cachedErrors.length === 0) {
+      // createV3Task checkpoints the current invocation before cache lookup;
+      // close that task so a valid cache hit never leaves a phantom running
+      // task in the ledger.
+      await completeV3Task(params.sql, task.id, prior);
+      return prior as T;
+    }
 
-  const escalationReason = params.modelTier === "premium" || params.modelTier === "specialist"
-    ? "Research OS v3 stage requires specialist reasoning"
+    const reason = `Cached output failed current validation: ${cachedErrors.map((error) => `${error.path}: ${error.message}`).join(" | ")}`;
+    await stageRejectedOutput(params.sql, {
+      runId: params.ctx.runId,
+      stageId: task.stage_id,
+      taskId: task.id,
+      agentName: params.agentName,
+      schemaKey: params.stageKey,
+      error: reason,
+    }).catch(() => undefined);
+    await failV3Task(params.sql, task.id, reason);
+    task = await createV3Task(params.sql, params.ctx.runId, params.stageKey, params.taskKey, params.taskType, params.agentName);
+    prior = null;
+  }
+
+  const escalationReason = resolvedTier === "premium" || resolvedTier === "specialist"
+    ? "Research OS v4 stage requires specialist reasoning"
     : undefined;
   let recordedAttempts = 0;
+  let reservationId: string | undefined;
   try {
+    const packet = task.priorValidationErrors.length
+      ? { ...params.packet, prior_validation_errors: task.priorValidationErrors }
+      : params.packet;
     const result = await runResearchAgent<T>({
       agentName: params.agentName,
       title: `${params.agentName} ${params.ctx.symbol} ${params.ctx.runId}`,
-      taskPacket: params.packet,
+      taskPacket: packet,
       prompt: params.prompt,
-      promptFactory: params.promptFactory,
+      promptFactory: params.promptFactory ? () => params.promptFactory!(packet) : undefined,
       outputFormat: params.outputFormat,
+      validateStructured: params.validateStructured,
+      signal: params.signal,
       hooks: {
         beforeAttempt: async () => {
-          await assertModelBudgetAvailable({
+          reservationId = await assertModelBudgetAvailable({
             researchRunId: params.ctx.runId,
             stageId: task.stage_id,
             taskId: task.id,
-            modelTier: params.modelTier,
+            modelTier: resolvedTier,
             reserveUsd: Number(process.env.RESEARCH_ATTEMPT_BUDGET_RESERVE_USD || 0.1),
           });
         },
         onAttemptComplete: async (attempt) => {
           recordedAttempts += 1;
+          const attemptReservationId = reservationId;
+          const reservationReconciledByCost = attempt.status === "success" || attempt.costUsd > 0;
           await recordModelCall({
             researchRunId: params.ctx.runId,
             stageId: task.stage_id,
@@ -356,11 +458,12 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
             agentName: params.agentName,
             modelProvider: attempt.provider,
             modelName: attempt.model,
-            modelTier: params.modelTier,
+            modelTier: resolvedTier,
             promptVersion: PROMPT_VERSION,
             inputTokens: attempt.inputTokens,
             outputTokens: attempt.outputTokens,
             costUsd: attempt.costUsd,
+            costSource: attempt.costSource,
             latencyMs: attempt.latencyMs,
             status: attempt.status,
             errorMessage: attempt.errorMessage,
@@ -386,15 +489,22 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
               provider_requests: attempt.passes,
               local_coercion_applied: attempt.localCoercionApplied,
               completion_recovered_at_timeout: attempt.completionRecoveredAtTimeout,
+              completion_recovered_without_marker: attempt.completionRecoveredWithoutMarker,
             },
             escalationReason,
+            reservationId: reservationReconciledByCost ? attemptReservationId : undefined,
           });
+          if (attemptReservationId && !reservationReconciledByCost) {
+            await releaseModelBudgetReservation(attemptReservationId).catch(() => undefined);
+          }
+          reservationId = undefined;
         },
       },
     });
     await completeV3Task(params.sql, task.id, result.structured);
     return result.structured as T;
   } catch (error) {
+    if (reservationId) await releaseModelBudgetReservation(reservationId).catch(() => undefined);
     if (!recordedAttempts) {
       await recordModelCall({
         researchRunId: params.ctx.runId,
@@ -403,16 +513,105 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
         agentName: params.agentName,
         modelProvider: process.env.RESEARCH_MODEL_PROVIDER || "local-harness",
         modelName: "not-started",
-        modelTier: params.modelTier,
+        modelTier: resolvedTier,
         status: "failed",
         errorMessage: error instanceof Error ? error.message : String(error),
         responseMetadata: { pre_attempt_failure: true },
         escalationReason,
       });
     }
+    await stageRejectedOutput(params.sql, {
+      runId: params.ctx.runId,
+      stageId: task.stage_id,
+      taskId: task.id,
+      agentName: params.agentName,
+      schemaKey: params.stageKey,
+      error,
+    }).catch(() => undefined);
     await failV3Task(params.sql, task.id, error);
     throw error;
   }
+}
+
+/** Execute and checkpoint each top-level artifact in a compound contract independently. */
+export async function callResearchAgentArtifacts(params: {
+  sql: Sql;
+  ctx: ResearchRunContext;
+  stageKey: string;
+  taskKeyPrefix: string;
+  taskType: string;
+  agentName: Parameters<typeof runResearchAgent>[0]["agentName"];
+  /** @deprecated Registry-derived tier is used by callResearchAgent. */
+  modelTier?: string;
+  packet: Record<string, unknown>;
+  signal?: AbortSignal;
+  outputFormat: AgentOutputFormat;
+  promptFactory: (packet: Record<string, unknown>, artifactKey: string) => string;
+  validateArtifact?: (
+    artifactKey: string,
+    value: unknown
+  ) => Pick<ValidationResult, "valid" | "errors" | "warnings">;
+  onArtifact?: (artifactKey: string, value: Record<string, unknown>) => Promise<void> | void;
+  artifactWaves?: string[][];
+}): Promise<Record<string, Record<string, unknown>>> {
+  const artifacts: Record<string, Record<string, unknown>> = {};
+  const waves = params.artifactWaves?.length
+    ? params.artifactWaves
+    : params.outputFormat.requiredKeys.map((artifactKey) => [artifactKey]);
+  for (const wave of waves) {
+    const waveAbort = new AbortController();
+    const abortParent = () => waveAbort.abort();
+    if (params.signal?.aborted) waveAbort.abort();
+    else params.signal?.addEventListener("abort", abortParent, { once: true });
+    const results = await Promise.allSettled(wave.map(async (artifactKey) => {
+      try {
+        const artifactContract = contractForArtifact(params.outputFormat, artifactKey);
+        const packet = {
+          ...params.packet,
+          output_contract: artifactKey,
+          output_schema: artifactContract.schema,
+          accepted_artifacts: artifacts,
+        };
+        const output = await callResearchAgent<Record<string, Record<string, unknown>>>({
+          sql: params.sql,
+          ctx: params.ctx,
+          stageKey: params.stageKey,
+          taskKey: `${params.taskKeyPrefix}:${artifactKey}`,
+          taskType: params.taskType,
+          agentName: params.agentName,
+          modelTier: params.modelTier,
+          packet,
+          signal: waveAbort.signal,
+          promptFactory: (currentPacket) => params.promptFactory(currentPacket, artifactKey),
+          outputFormat: artifactContract,
+          validateStructured: params.validateArtifact
+            ? (value) => {
+                const artifact = value && typeof value === "object" && !Array.isArray(value)
+                  ? (value as Record<string, unknown>)[artifactKey]
+                  : undefined;
+                const validation = params.validateArtifact!(artifactKey, artifact);
+                return validation.errors.map((message) => ({ path: artifactKey, message }));
+              }
+            : undefined,
+        });
+        await params.onArtifact?.(artifactKey, output[artifactKey]);
+        return [artifactKey, output[artifactKey]] as const;
+      } catch (error) {
+        waveAbort.abort();
+        throw error;
+      }
+    }));
+    params.signal?.removeEventListener("abort", abortParent);
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failure) throw failure.reason;
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        const [artifactKey, value] = result.value;
+        artifacts[artifactKey] = value;
+      }
+    }
+  }
+  return artifacts;
 }
 
 export function makeValidationResult(errors: string[] = [], warnings: string[] = []): ValidationResult {

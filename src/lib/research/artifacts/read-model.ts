@@ -1,4 +1,6 @@
 import postgres from "postgres";
+import { readFile } from "node:fs/promises";
+import { resolve, sep } from "node:path";
 
 export interface ResearchArtifactReadModel {
   id: string;
@@ -135,6 +137,8 @@ export async function getResearchRunReport(runId: string) {
       sql`SELECT stage_key, status FROM research_stages WHERE research_run_id = ${runId}`,
     ]);
     const artifacts = artifactRows.map((row) => normalizeArtifact(row as Record<string, unknown>));
+    const markdownExport = exports.find((item) => String(item.export_type) === "markdown_memo" && item.storage_path);
+    const canonicalMarkdown = markdownExport ? await readCanonicalMarkdown(String(markdownExport.storage_path)) : null;
     const byType: Record<string, ResearchArtifactReadModel[]> = {};
     for (const artifact of artifacts) (byType[artifact.type] ||= []).push(artifact);
 
@@ -191,6 +195,7 @@ export async function getResearchRunReport(runId: string) {
       artifacts_by_type: byType,
       missing_sections: missingSections,
       incomplete: missingSections.length > 0,
+      canonical_markdown: canonicalMarkdown,
       read_models: {
         evidence,
         metrics,
@@ -211,5 +216,16 @@ export async function getResearchRunReport(runId: string) {
     };
   } finally {
     await sql.end();
+  }
+}
+
+async function readCanonicalMarkdown(storagePath: string): Promise<string | null> {
+  const exportRoot = resolve(process.cwd(), "storage", "exports");
+  const target = resolve(process.cwd(), storagePath);
+  if (target !== exportRoot && !target.startsWith(`${exportRoot}${sep}`)) return null;
+  try {
+    return await readFile(target, "utf8");
+  } catch {
+    return null;
   }
 }

@@ -229,7 +229,7 @@ describe("source intelligence v3", () => {
       }
       const published = url.endsWith("/future") ? "2025-02-01" : "2024-06-01";
       return new Response(
-        `<html><head><title>Founder history</title><meta property="article:published_time" content="${published}"></head><body>${"documented founder history ".repeat(90)}</body></html>`,
+        `<html><head><title>Founder history</title><meta property="article:published_time" content="${published}"></head><body>${"The founders started Example Company to solve an unaffordable lending problem. ".repeat(90)}</body></html>`,
         { status: 200, headers: { "content-type": "text/html" } }
       );
     };
@@ -243,6 +243,102 @@ describe("source intelligence v3", () => {
       assert.equal(sources[0].metadata.source_role, "founder_and_company_history");
       assert.equal(sources[0].metadata.fetch_status, "fetched");
     } finally {
+      if (oldEndpoint === undefined) delete process.env.RESEARCH_WEB_SEARCH_ENDPOINT;
+      else process.env.RESEARCH_WEB_SEARCH_ENDPOINT = oldEndpoint;
+      if (oldAcceptance === undefined) delete process.env.RESEARCH_ACCEPTANCE_PROVIDER;
+      else process.env.RESEARCH_ACCEPTANCE_PROVIDER = oldAcceptance;
+      if (oldTestMode === undefined) delete process.env.RESEARCH_TEST_MODE;
+      else process.env.RESEARCH_TEST_MODE = oldTestMode;
+    }
+  });
+
+  it("recovers founder discovery with a targeted query and rejects generic company history", async () => {
+    const oldEndpoint = process.env.RESEARCH_WEB_SEARCH_ENDPOINT;
+    const oldAcceptance = process.env.RESEARCH_ACCEPTANCE_PROVIDER;
+    const oldTestMode = process.env.RESEARCH_TEST_MODE;
+    process.env.RESEARCH_WEB_SEARCH_ENDPOINT = "https://search.example/api";
+    delete process.env.RESEARCH_ACCEPTANCE_PROVIDER;
+    delete process.env.RESEARCH_TEST_MODE;
+    const queries: string[] = [];
+    const fetchMock = async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.startsWith("https://search.example/api")) {
+        const query = new URL(url).searchParams.get("q") || "";
+        queries.push(query);
+        const isRecovery = query.includes("founder interview why started motivation problem founding story");
+        return new Response(JSON.stringify({
+          results: [{
+            url: isRecovery ? "https://company.example/founder" : "https://company.example/history",
+            title: isRecovery ? "Example Company founder profile" : "Example Company history",
+          }],
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      const founder = url.endsWith("/founder");
+      return new Response(
+        `<html><head><title>Example Company ${founder ? "founder profile" : "history"}</title><body>${(founder ? "The founders started Example Company to solve an unaffordable student lending problem. " : "Example Company expanded its alumni lending model. ").repeat(90)}</body></html>`,
+        { status: 200, headers: { "content-type": "text/html" } }
+      );
+    };
+    try {
+      const sources = await discoverRoleSources({
+        assetName: "Example Company",
+        symbol: "EX",
+      }, ["founder_and_company_history"], fetchMock as typeof fetch);
+      assert.equal(sources.length, 1);
+      assert.equal(sources[0].url, "https://company.example/founder");
+      assert.ok(queries.some((query) => query.includes("founder interview why started motivation problem founding story")));
+    } finally {
+      if (oldEndpoint === undefined) delete process.env.RESEARCH_WEB_SEARCH_ENDPOINT;
+      else process.env.RESEARCH_WEB_SEARCH_ENDPOINT = oldEndpoint;
+      if (oldAcceptance === undefined) delete process.env.RESEARCH_ACCEPTANCE_PROVIDER;
+      else process.env.RESEARCH_ACCEPTANCE_PROVIDER = oldAcceptance;
+      if (oldTestMode === undefined) delete process.env.RESEARCH_TEST_MODE;
+      else process.env.RESEARCH_TEST_MODE = oldTestMode;
+    }
+  });
+
+  it("uses Tavily's documented POST search API when configured", async () => {
+    const oldTavilyApiKey = process.env.TAVILY_API_KEY;
+    const oldEndpoint = process.env.RESEARCH_WEB_SEARCH_ENDPOINT;
+    const oldAcceptance = process.env.RESEARCH_ACCEPTANCE_PROVIDER;
+    const oldTestMode = process.env.RESEARCH_TEST_MODE;
+    process.env.TAVILY_API_KEY = "test-key";
+    delete process.env.RESEARCH_WEB_SEARCH_ENDPOINT;
+    delete process.env.RESEARCH_ACCEPTANCE_PROVIDER;
+    delete process.env.RESEARCH_TEST_MODE;
+    let searchInit: RequestInit | undefined;
+    const fetchMock = async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "https://api.tavily.com/search") {
+        searchInit ??= init;
+        return new Response(JSON.stringify({
+          results: [{ url: "https://company.example/history", title: "Example founder motivation history" }],
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(
+        `<html><head><title>Example founder motivation history</title></head><body>${"Example founders started the company to solve an unaffordable lending problem. ".repeat(90)}</body></html>`,
+        { status: 200, headers: { "content-type": "text/html" } }
+      );
+    };
+    try {
+      const sources = await discoverRoleSources({
+        assetName: "Example Company",
+        symbol: "EX",
+      }, ["founder_and_company_history"], fetchMock as typeof fetch);
+      assert.equal(sources.length, 1);
+      assert.equal(searchInit?.method, "POST");
+      assert.equal((searchInit?.headers as Record<string, string>).Authorization, "Bearer test-key");
+      assert.deepEqual(JSON.parse(String(searchInit?.body)), {
+        query: "\"Example Company\" EX founder interview why started motivation problem",
+        search_depth: "basic",
+        max_results: 10,
+        topic: "general",
+        include_answer: false,
+        include_raw_content: false,
+      });
+    } finally {
+      if (oldTavilyApiKey === undefined) delete process.env.TAVILY_API_KEY;
+      else process.env.TAVILY_API_KEY = oldTavilyApiKey;
       if (oldEndpoint === undefined) delete process.env.RESEARCH_WEB_SEARCH_ENDPOINT;
       else process.env.RESEARCH_WEB_SEARCH_ENDPOINT = oldEndpoint;
       if (oldAcceptance === undefined) delete process.env.RESEARCH_ACCEPTANCE_PROVIDER;

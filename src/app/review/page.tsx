@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Check,
   ClipboardCheck,
@@ -39,6 +40,7 @@ const verdicts = [
 export default function ReviewQueuePage() {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<ReviewItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [reviewForm, setReviewForm] = useState({
@@ -57,13 +59,14 @@ export default function ReviewQueuePage() {
 
   async function fetchQueue() {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch("/api/review/queue");
-      if (res.ok) {
-        const data = await res.json();
-        setItems(Array.isArray(data) ? data : []);
-      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Unable to load the review queue");
+      setItems(Array.isArray(data) ? data : []);
     } catch (error) {
+      setError(error instanceof Error ? error.message : "Unable to load the review queue");
       console.error("Failed to fetch review queue:", error);
     } finally {
       setLoading(false);
@@ -155,6 +158,10 @@ export default function ReviewQueuePage() {
             <div className="rounded-md border border-gray-200 bg-white py-16 text-center font-mono text-[12px] text-gray-400 shadow-sm">
               Loading review gates...
             </div>
+          ) : error ? (
+            <div className="rounded-md border border-red-200 bg-red-50 px-5 py-8 text-center text-sm text-red-700 shadow-sm">
+              {error}
+            </div>
           ) : filteredItems.length === 0 ? (
             <div className="rounded-md border border-gray-200 bg-white py-16 text-center shadow-sm">
               <FileCheck2 className="mx-auto mb-3 text-gray-300" size={34} />
@@ -166,41 +173,47 @@ export default function ReviewQueuePage() {
               {filteredItems.map((item) => {
                 const selected = selectedItem?.run_id === item.run_id;
                 return (
-                  <button
+                  <div
                     key={item.run_id}
-                    type="button"
-                    onClick={() => setSelectedItem(item)}
                     className={[
-                      "w-full rounded-md border bg-white p-4 text-left shadow-sm transition-all hover:border-gray-300",
+                      "rounded-md border bg-white p-4 text-left shadow-sm transition-all hover:border-gray-300",
                       selected ? "border-black ring-1 ring-black" : "border-gray-200",
                     ].join(" ")}
                   >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h2 className="truncate text-[14px] font-bold text-black">{item.asset_name}</h2>
-                          <span className="rounded-full border border-gray-200 bg-[#fbfcfd] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                            {item.asset_kind.replace(/_asset/g, "")}
-                          </span>
-                          {item.priority && (
-                            <span className="rounded-full bg-black px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-                              {item.priority}
+                    <button type="button" onClick={() => setSelectedItem(item)} className="w-full text-left">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h2 className="truncate text-[14px] font-bold text-black">{item.asset_name}</h2>
+                            <span className="rounded-full border border-gray-200 bg-[#fbfcfd] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                              {item.asset_kind.replace(/_asset/g, "")}
                             </span>
-                          )}
+                            {item.priority && (
+                              <span className="rounded-full bg-black px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                                {item.priority}
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-2 line-clamp-2 text-[12px] leading-5 text-gray-500">
+                            <span className="mr-2 font-mono text-[11px] font-bold uppercase tracking-wider text-black">
+                              {item.run_type.replace(/_/g, " ")}
+                            </span>
+                            {item.research_question || "Default pipeline research run"}
+                          </p>
                         </div>
-                        <p className="mt-2 line-clamp-2 text-[12px] leading-5 text-gray-500">
-                          <span className="mr-2 font-mono text-[11px] font-bold uppercase tracking-wider text-black">
-                            {item.run_type.replace(/_/g, " ")}
-                          </span>
-                          {item.research_question || "Default pipeline research run"}
-                        </p>
+                        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gray-200 bg-[#fbfcfd] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-600">
+                          <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                          needs review
+                        </span>
                       </div>
-                      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-gray-200 bg-[#fbfcfd] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-600">
-                        <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
-                        needs review
-                      </span>
-                    </div>
-                  </button>
+                    </button>
+                    <Link
+                      href={`/assets/${item.asset_id}/view?run=${item.run_id}`}
+                      className="mt-3 inline-flex rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-[11px] font-bold text-sky-700 hover:border-sky-300 hover:bg-sky-100"
+                    >
+                      View research preview
+                    </Link>
+                  </div>
                 );
               })}
             </div>
@@ -220,8 +233,14 @@ export default function ReviewQueuePage() {
                   </div>
                   <h2 className="text-[17px] font-bold text-black">{selectedItem.asset_name}</h2>
                   <p className="mt-1 text-[12px] leading-5 text-gray-500">
-                    Record the investment decision and the conditions that would invalidate it.
+                    Review the automated research first, then record the investment decision and the conditions that would invalidate it.
                   </p>
+                  <Link
+                    href={`/assets/${selectedItem.asset_id}/view?run=${selectedItem.run_id}`}
+                    className="mt-3 inline-flex items-center rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-bold text-sky-700 transition-colors hover:border-sky-300 hover:bg-sky-100"
+                  >
+                    View research preview
+                  </Link>
                 </div>
                 <button
                   type="button"

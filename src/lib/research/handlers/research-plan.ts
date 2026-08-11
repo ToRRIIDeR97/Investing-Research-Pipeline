@@ -4,13 +4,15 @@ import postgres from "postgres";
 import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { getAllStagesForRun } from "@/lib/workflow/stages";
+import { getAllStagesForRun, shouldSkipOptionalBacktest } from "@/lib/workflow/stages";
 
 function buildResearchPlan(ctx: import("../run-context").ResearchRunContext) {
   const profile = ctx.composedProfile;
   const { applicable, skipped } = getAllStagesForRun(ctx.runType);
   const plannedStages = [
-    ...applicable.map((stage) => ({ stage, ledger_status: "planned", skip_reason: null })),
+    ...applicable.map((stage) => shouldSkipOptionalBacktest(stage.key, profile?.backtest_required === true)
+      ? { stage, ledger_status: "skipped", skip_reason: "No accepted timing hypothesis." }
+      : { stage, ledger_status: "planned", skip_reason: null }),
     ...skipped.map((stage) => ({
       stage,
       ledger_status: "skipped",
@@ -36,8 +38,10 @@ function buildResearchPlan(ctx: import("../run-context").ResearchRunContext) {
     required_process_nodes: profile?.required_process_nodes || [],
     valuation_methods: profile?.valuation_methods || [],
     backtest_requirement: {
-      required: profile?.backtest_required ?? true,
-      rationale: "The current v3 workflow includes the five-bucket framework backtest before decision synthesis.",
+      required: profile?.backtest_required ?? false,
+      rationale: profile?.backtest_required
+        ? "An explicit timing hypothesis was accepted for testing."
+        : "No accepted timing hypothesis; backtesting is optional for fundamental synthesis.",
     },
     applicable_stages: plannedStages.map(({ stage, ledger_status, skip_reason }) => ({
       key: stage.key,

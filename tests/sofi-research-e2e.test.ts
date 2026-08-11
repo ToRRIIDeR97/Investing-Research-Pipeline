@@ -8,6 +8,7 @@ import { runSystemResearchPipeline } from "../src/lib/research/system-pipeline";
 import { createStagesForRun, approveResearchPlan, approveHumanReview } from "../src/lib/workflow/orchestrator";
 import { evaluateQualityGates } from "../src/lib/workflow/quality-gates";
 import { generateMarkdownReport } from "../src/lib/export/report-generator";
+import { CURRENT_PIPELINE_VERSION } from "../src/lib/research/version";
 
 function loadLocalEnv() {
   if (!existsSync(".env.local")) return;
@@ -66,6 +67,7 @@ async function deleteAssetCascade(sql: ReturnType<typeof postgres>, targetAssetI
   await sql`DELETE FROM agent_output_staging WHERE task_id IN (${taskQ})`;
   await sql`DELETE FROM agent_traces WHERE task_id IN (${taskQ})`;
   await sql`DELETE FROM stage_validation_results WHERE stage_id IN (${stageQ})`;
+  await sql`DELETE FROM model_budget_reservations WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM model_budget_ledger WHERE stage_id IN (${stageQ})`;
   await sql`DELETE FROM model_call_logs WHERE stage_id IN (${stageQ})`;
 
@@ -203,7 +205,7 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
       ) VALUES (
         ${runId}, ${testAssetId}, 'deep_dive', 'pending', 'Mock SOFI Deep Dive?', 'system-test-harness',
         ${financialsProfileId}, 1, ${cutoffAt}, ${cutoffAt},
-        100.00, 3, ${sql.json({ acceptance_provider: "mock" })}
+        100.00, ${CURRENT_PIPELINE_VERSION}, ${sql.json({ acceptance_provider: "mock" })}
       )
     `;
 
@@ -223,7 +225,7 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     // Invocation 1: Reach research-plan gate
     // ==========================================
     let state = await runResearchPipeline(runId);
-    assert.equal(state.status, "waiting_for_human");
+    assert.equal(state.status, "waiting_for_human", JSON.stringify(state));
 
     const [planStage] = await sql`
       SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'research_plan'
@@ -243,7 +245,7 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     // Invocation 2: Execute research through decision synthesis & AI review to human_review gate
     // ==========================================
     state = await runResearchPipeline(runId);
-    assert.equal(state.status, "waiting_for_human");
+    assert.equal(state.status, "waiting_for_human", JSON.stringify(state));
 
     const [finalStage] = await sql`
       SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'human_review'
@@ -392,7 +394,7 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
       ) VALUES (
         ${runId}, ${testAssetId}, 'deep_dive', 'pending', 'Failure cleanup test?', 'system-test-harness',
         ${financialsProfileId}, 1, ${cutoffAt}, ${cutoffAt},
-        100.00, 3, ${sql.json({ acceptance_provider: "mock" })}
+        100.00, ${CURRENT_PIPELINE_VERSION}, ${sql.json({ acceptance_provider: "mock" })}
       )
     `;
     await sql`

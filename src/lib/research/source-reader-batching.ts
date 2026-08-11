@@ -32,9 +32,11 @@ export interface SourceReaderBatchOptions {
   maxBytes?: number;
 }
 
-export function sourceReaderBatchFingerprint(batch: SourceReaderBatch): string {
+const SOURCE_READER_CONTRACT_VERSION = "citation-v2";
+
+export function sourceReaderBatchFingerprint(batch: SourceReaderBatch, claimTarget?: number): string {
   return createHash("sha256")
-    .update(JSON.stringify(batch.chunks))
+    .update(JSON.stringify({ contractVersion: SOURCE_READER_CONTRACT_VERSION, chunks: batch.chunks, claimTarget }))
     .digest("hex")
     .slice(0, 12);
 }
@@ -54,8 +56,8 @@ export function createSourceReaderBatches(
   chunks: SourceReaderChunk[],
   options: SourceReaderBatchOptions = {}
 ): SourceReaderBatch[] {
-  const maxChunks = Math.max(1, options.maxChunks ?? 8);
-  const maxBytes = Math.max(4_000, options.maxBytes ?? 36_000);
+  const maxChunks = Math.max(1, options.maxChunks ?? 4);
+  const maxBytes = Math.max(4_000, options.maxBytes ?? 16_000);
   const batches: SourceReaderChunk[][] = [];
   let current: SourceReaderChunk[] = [];
   let currentBytes = 0;
@@ -105,27 +107,29 @@ function normalizedClaim(claim: Record<string, unknown>, chunks: Map<string, Sou
   if (claimText.length < 20) return null;
 
   const quote = typeof claim.quoted_text === "string" ? claim.quoted_text.trim() : "";
-  const quoteOffset = quote.length >= 10 ? chunk.content_excerpt.indexOf(quote) : -1;
-  if (quoteOffset >= 0) {
-    const start = Number(chunk.char_start || 0) + quoteOffset;
-    return {
-      ...claim,
-      char_start: start,
-      char_end: start + quote.length,
-      confidence: Math.min(0.9, Number.isFinite(Number(claim.confidence)) ? Number(claim.confidence) : 0.75),
-    };
-  }
-
-  const start = Number(claim.char_start);
-  const end = Number(claim.char_end);
-  if (Number.isFinite(start) && Number.isFinite(end)) {
+  const claimedStart = Number(claim.char_start);
+  const claimedEnd = Number(claim.char_end);
+  if (Number.isFinite(claimedStart) && Number.isFinite(claimedEnd)) {
     const chunkStart = Number(chunk.char_start ?? 0);
     const chunkEnd = Number(chunk.char_end ?? chunkStart + chunk.content_excerpt.length);
-    if (start < chunkStart || end > chunkEnd || end <= start) return null;
+    if (claimedStart < chunkStart || claimedEnd > chunkEnd || claimedEnd <= claimedStart) return null;
   }
+  const quoteOffset = quote.length >= 10 ? chunk.content_excerpt.indexOf(quote) : -1;
+  if (quoteOffset < 0) return null;
+  const start = Number(chunk.char_start || 0) + quoteOffset;
+  const end = start + quote.length;
+  // Models often copy the quote correctly but calculate offsets against the
+  // shortened excerpt instead of the absolute document chunk. The quote is
+  // the authoritative locator; repair an in-bounds offset deterministically
+  // while retaining rejection for invented chunks or out-of-bounds ranges.
+  const repaired = Number.isFinite(claimedStart) && Number.isFinite(claimedEnd)
+    && (claimedStart !== start || claimedEnd !== end);
   return {
     ...claim,
-    confidence: Math.min(0.85, Number.isFinite(Number(claim.confidence)) ? Number(claim.confidence) : 0.75),
+    char_start: start,
+    char_end: end,
+    ...(repaired ? { citation_repaired: true } : {}),
+    confidence: Math.min(0.9, Number.isFinite(Number(claim.confidence)) ? Number(claim.confidence) : 0.75),
   };
 }
 

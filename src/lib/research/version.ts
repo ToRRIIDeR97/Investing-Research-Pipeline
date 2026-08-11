@@ -4,4 +4,4 @@
  * Historical rows may still contain v1/v2 values.  Callers must never be able
  * to select a version for a new run.
  */
-export const CURRENT_PIPELINE_VERSION = 3 as const;
+export const CURRENT_PIPELINE_VERSION = 4 as const;

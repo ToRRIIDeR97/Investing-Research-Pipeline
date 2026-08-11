@@ -6,13 +6,24 @@ import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { createHash } from "node:crypto";
 
 export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "operating_model",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
-      const taskKey = "forecast-analyst:operating-model:v2";
+      const upstreamRows = await sql`
+        SELECT artifact_type, content_json
+        FROM research_artifacts
+        WHERE research_run_id = ${ctx.runId}
+          AND artifact_type IN ('segment_model', 'business_process_map', 'historical_record', 'historical_diagnosis', 'moat_assessment', 'no_moat_counterfactual')
+          AND status IN ('validated', 'accepted')
+        ORDER BY artifact_type
+      `;
+      const upstream = Object.fromEntries(
+        upstreamRows.map((row) => [String(row.artifact_type), row.content_json])
+      );
       const packet = {
         asset: {
           runId: ctx.runId,
@@ -24,7 +35,12 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
         required_modules: ["operating_model_structure", "driver_tree_specification", "driver_tree"],
         output_contract: "operating_model",
         output_schema: OPERATING_MODEL_CONTRACT.schema,
+        upstream_artifacts: upstream,
       };
+      const taskKey = `forecast-analyst:operating-model:v3:${createHash("sha256")
+        .update(JSON.stringify(packet))
+        .digest("hex")
+        .slice(0, 12)}`;
 
       const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
         agentName: "asset-analyst",
@@ -32,7 +48,11 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
         packet: p,
         extraRules: [
           "Construct a driver-based forecast tree structure, mapping historical inputs to future drivers.",
+          "For every revenue driver, formula_decomposition must be an operational equation, not CAGR or a growth-rate restatement. For lenders and financial-services segments, decompose revenue into measurable drivers such as members or accounts, products per member, balances or transaction volume, and yield, take rate, or revenue per product.",
           "Follow output_schema exactly, including every nested required field and primitive type.",
+          "Model every material segment listed in upstream_artifacts.segment_model and reconcile segment revenue and operating income exactly to the consolidated totals.",
+          "Copy driver_tree.process_node_key values exactly from upstream_artifacts.business_process_map.process_nodes[].process_node; do not invent alternate keys or aliases.",
+          "Calibrate forecast levels to upstream_artifacts.historical_record and make moat/no-moat assumptions explicit in driver failure conditions. Do not forecast from narrative context alone.",
         ],
       });
 

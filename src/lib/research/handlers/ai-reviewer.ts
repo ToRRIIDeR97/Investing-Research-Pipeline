@@ -18,6 +18,10 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
         FROM research_artifacts
         WHERE research_run_id = ${ctx.runId}
           AND status IN ('validated', 'accepted')
+          AND artifact_type NOT IN (
+            'review_summary', 'findings', 'quality_score', 'recommendations',
+            'review_verdict', 'synthetic_report'
+          )
         ORDER BY artifact_type
       `;
       const packet = {
@@ -32,6 +36,7 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
           artifacts.map((artifact) => [artifact.artifact_type, artifact.content_json])
         ),
       };
+      const hasBacktest = artifacts.some((artifact) => artifact.artifact_type === "backtest_review");
       const taskKey = `research-reviewer:review:v2:${createHash("sha256")
         .update(JSON.stringify(packet))
         .digest("hex")
@@ -43,7 +48,9 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
         packet: p,
         extraRules: [
           "Perform a comprehensive review checking consistency and rules compliance across all generated artifacts.",
-          "Verify that the backtest executed at least 50 thesis-distinct combinations, ranked a top 10, reviewed at least five weak or failed combinations, used shifted signals and transaction costs, and disclosed proxy-data limitations.",
+          hasBacktest
+            ? "Verify that the backtest executed at least 50 thesis-distinct combinations, ranked a top 10, reviewed at least five weak or failed combinations, used shifted signals and transaction costs, and disclosed proxy-data limitations."
+            : "No backtest_review artifact is present. Treat this as acceptable when no timing hypothesis was accepted; do not fail the fundamental report solely because backtesting was skipped.",
         ],
       });
 

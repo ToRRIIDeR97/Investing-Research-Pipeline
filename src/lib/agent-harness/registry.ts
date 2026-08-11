@@ -10,6 +10,7 @@ export const RESEARCH_AGENT_NAMES = [
   "valuation-coder",
   "backtest-coder",
   "research-reviewer",
+  "research-assistant",
   "export-writer",
   "document-vision-agent",
   "chart-interpreter-agent",
@@ -19,6 +20,8 @@ export const RESEARCH_AGENT_NAMES = [
 ] as const;
 
 export type ResearchAgentName = (typeof RESEARCH_AGENT_NAMES)[number];
+
+export const DEFAULT_RESEARCH_MODEL = "deepseek-v4-flash";
 
 export type AgentRoute =
   | "cheap"
@@ -42,6 +45,26 @@ export interface ResearchAgentConfig {
   outputSchemaKey: string;
   outputSchemaVersion: number;
   outputFormat: Record<string, unknown>;
+}
+
+export type CostSource = "provider" | "catalog_estimate" | "unknown";
+
+export const MODEL_PRICING_CATALOG_VERSION = "2026-08-06";
+export const MODEL_PRICING_CATALOG: Record<string, { inputCostPerMillion: number; outputCostPerMillion: number }> = {
+  "deepseek-v4-flash": { inputCostPerMillion: 0.05, outputCostPerMillion: 0.1 },
+  "deepseek-v4-pro": { inputCostPerMillion: 0.14, outputCostPerMillion: 0.28 },
+  "qwen3.7-plus": { inputCostPerMillion: 0.3, outputCostPerMillion: 0.6 },
+  "qwen3.7-max": { inputCostPerMillion: 0.6, outputCostPerMillion: 1.2 },
+  "glm-5.2": { inputCostPerMillion: 0.3, outputCostPerMillion: 0.6 },
+  "kimi-k2.7-code": { inputCostPerMillion: 0.5, outputCostPerMillion: 1.0 },
+};
+
+export function modelPricing(model: string) {
+  const normalized = normalizeModelEnvValue(model).toLowerCase();
+  const match = Object.entries(MODEL_PRICING_CATALOG).find(([key]) => normalized.includes(key));
+  return match
+    ? { ...match[1], costSource: "catalog_estimate" as const }
+    : { inputCostPerMillion: 0.5, outputCostPerMillion: 1.0, costSource: "unknown" as const };
 }
 
 const objectValue = {
@@ -146,15 +169,29 @@ const valuationMethodProposal = {
 
 const evidenceClaimArray = {
   type: "array",
-  minItems: 5,
+  // A batch can contain fewer than five substantive claims; the stage-level
+  // evidence target enforces total coverage across all batches.
+  minItems: 1,
   items: {
     type: "object",
     additionalProperties: true,
-    required: ["claim_text", "claim_type", "claim_category", "confidence"],
+    // Source-reader claims are only useful when they can be linked back to a
+    // persisted source chunk. Keep this contract aligned with the prompt,
+    // batch merger, and persistence layer rather than accepting uncitable
+    // prose that will be discarded later.
+    required: [
+      "claim_text", "claim_type", "claim_category", "source_id", "document_chunk_id",
+      "quoted_text", "char_start", "char_end", "confidence",
+    ],
     properties: {
       claim_text: { type: "string", minLength: 20 },
       claim_type: { type: "string", minLength: 2 },
       claim_category: { type: "string", enum: ["fact", "estimate", "assumption", "opinion"] },
+      source_id: { type: "string", minLength: 1 },
+      document_chunk_id: { type: "string", minLength: 1 },
+      quoted_text: { type: "string", minLength: 10 },
+      char_start: { type: "number", minimum: 0 },
+      char_end: { type: "number", minimum: 1 },
       as_of_date: nullableString,
       period_end: nullableString,
       confidence: { type: "number", minimum: 0, maximum: 1 },
@@ -227,13 +264,21 @@ const backtestCodegenOutputFormat = schema(
   }
 );
 
+const researchAssistantOutputFormat = schema(
+  ["answer", "status_caveat"],
+  {
+    answer: { type: "string", minLength: 1, maxLength: 12_000 },
+    status_caveat: { type: "string", minLength: 1, maxLength: 2_000 },
+  },
+);
+
 export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
   "intake-planner": {
     name: "intake-planner",
     description: "Convert a user research request into a bounded research run plan.",
     route: "mid",
     modelTier: "mid",
-    defaultModel: "deepseek-v4-pro",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_MID_MODEL",
     promptVersion: "intake-planner-v1",
     tools: { bash: false, edit: false, write: false },
@@ -274,7 +319,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Select or challenge the asset research profile.",
     route: "cheap",
     modelTier: "cheap",
-    defaultModel: "deepseek-v4-flash",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_CHEAP_MODEL",
     promptVersion: "asset-classifier-v1",
     tools: { bash: false, edit: false, write: false },
@@ -312,7 +357,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Identify and rank source candidates.",
     route: "cheap",
     modelTier: "cheap",
-    defaultModel: "deepseek-v4-flash",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_CHEAP_MODEL",
     promptVersion: "source-discovery-agent-v1",
     tools: { bash: false, edit: false, write: false },
@@ -344,9 +389,9 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Extract source-linked evidence claims from parsed chunks.",
     route: "cheap",
     modelTier: "cheap",
-    defaultModel: "deepseek-v4-flash",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_CHEAP_MODEL",
-    promptVersion: "source-reader-v1",
+    promptVersion: "source-reader-v2",
     tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "evidence_claim_batch",
     outputSchemaVersion: 1,
@@ -366,7 +411,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Convert extracted tables into normalized metric candidates.",
     route: "mid",
     modelTier: "mid",
-    defaultModel: "deepseek-v4-pro",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_MID_MODEL",
     promptVersion: "table-normalizer-v1",
     tools: { bash: false, edit: false, write: false },
@@ -396,7 +441,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Standardize metric observations.",
     route: "cheap",
     modelTier: "cheap",
-    defaultModel: "deepseek-v4-flash",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_CHEAP_MODEL",
     promptVersion: "metric-normalizer-v1",
     tools: { bash: false, edit: false, write: false },
@@ -426,7 +471,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Synthesize accepted evidence into asset-specific analysis sections.",
     route: "asset-analyst",
     modelTier: "specialist",
-    defaultModel: "deepseek-v4-pro",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_ASSET_ANALYST_MODEL",
     promptVersion: "asset-analyst-v1",
     tools: { bash: false, edit: false, write: false },
@@ -460,7 +505,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Produce valuation signals and scenarios.",
     route: "valuation-analyst",
     modelTier: "premium",
-    defaultModel: "kimi-k2.7-code",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_VALUATION_ANALYST_MODEL",
     promptVersion: "valuation-analyst-v2",
     tools: { bash: false, edit: false, write: false },
@@ -499,7 +544,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Generate bounded valuation model code artifacts.",
     route: "valuation-coder",
     modelTier: "premium",
-    defaultModel: "kimi-k2.7-code",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_VALUATION_CODER_MODEL",
     promptVersion: "valuation-coder-v1",
     tools: { bash: false, edit: false, write: false },
@@ -533,7 +578,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Generate bounded Python indicator/backtest strategy code.",
     route: "backtest-coder",
     modelTier: "premium",
-    defaultModel: "kimi-k2.7-code",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_BACKTEST_CODER_MODEL",
     promptVersion: "backtest-coder-v1",
     tools: { bash: false, edit: false, write: false },
@@ -546,7 +591,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Review research for unsupported claims and category errors.",
     route: "research-reviewer",
     modelTier: "premium",
-    defaultModel: "deepseek-v4-pro",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_RESEARCH_REVIEWER_MODEL",
     promptVersion: "research-reviewer-v1",
     tools: { bash: false, edit: false, write: false },
@@ -577,12 +622,25 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
       }
     ),
   },
+  "research-assistant": {
+    name: "research-assistant",
+    description: "Answer user questions from the current run's persisted research packet.",
+    route: "mid",
+    modelTier: "mid",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
+    modelEnvVar: "RESEARCH_MID_MODEL",
+    promptVersion: "research-assistant-v1",
+    tools: { bash: false, edit: false, write: false },
+    outputSchemaKey: "research_assistant_response",
+    outputSchemaVersion: 1,
+    outputFormat: researchAssistantOutputFormat,
+  },
   "export-writer": {
     name: "export-writer",
     description: "Generate final research artifacts from accepted records.",
     route: "mid",
     modelTier: "mid",
-    defaultModel: "deepseek-v4-pro",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_MID_MODEL",
     promptVersion: "export-writer-v1",
     tools: { bash: false, edit: false, write: false },
@@ -607,7 +665,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Inspect visual documents and identify extraction tasks.",
     route: "vision",
     modelTier: "vision",
-    defaultModel: "qwen3.7-plus",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "document-vision-agent-v1",
     tools: { bash: false, edit: false, write: false },
@@ -630,7 +688,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Interpret charts with uncertainty and source location.",
     route: "vision",
     modelTier: "vision",
-    defaultModel: "qwen3.7-plus",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "chart-interpreter-agent-v1",
     tools: { bash: false, edit: false, write: false },
@@ -664,7 +722,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Extract structured rows and columns from visual tables.",
     route: "vision",
     modelTier: "vision",
-    defaultModel: "qwen3.7-plus",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "table-vision-agent-v1",
     tools: { bash: false, edit: false, write: false },
@@ -688,7 +746,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Convert visual findings into candidate evidence claims.",
     route: "vision",
     modelTier: "vision",
-    defaultModel: "qwen3.7-plus",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "visual-evidence-agent-v1",
     tools: { bash: false, edit: false, write: false },
@@ -718,7 +776,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Visually QA generated dashboards, charts, tables, and memos.",
     route: "vision",
     modelTier: "vision",
-    defaultModel: "qwen3.7-plus",
+    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "ui-output-qa-vision-agent-v1",
     tools: { bash: false, edit: false, write: false },
@@ -761,7 +819,7 @@ export function getAgentConfig(agentName: string): ResearchAgentConfig {
 export function resolveAgentModel(agentName: ResearchAgentName, modelOverride?: string): string {
   const config = getAgentConfig(agentName);
   const agentModelKey = `RESEARCH_${agentName.toUpperCase().replace(/-/g, "_")}_MODEL`;
-  const configured = modelOverride || process.env[agentModelKey] || process.env[config.modelEnvVar] || config.defaultModel;
+  const configured = modelOverride || process.env[agentModelKey] || process.env[config.modelEnvVar] || process.env.RESEARCH_DEFAULT_MODEL || config.defaultModel;
   return normalizeModelEnvValue(configured);
 }
 

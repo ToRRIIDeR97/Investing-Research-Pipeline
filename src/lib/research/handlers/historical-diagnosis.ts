@@ -34,7 +34,8 @@ export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> =
       `;
       const claimRows = await sql`
         SELECT id FROM evidence_claims
-        WHERE research_run_id = ${ctx.runId} AND review_status = 'accepted'
+        WHERE research_run_id = ${ctx.runId}
+          AND review_status IN ('machine_verified', 'accepted')
         ORDER BY created_at
       `;
       const fallbackClaimIds = claimRows.slice(0, 3).map((row) => String(row.id));

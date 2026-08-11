@@ -5,6 +5,7 @@ import {
   computeStartPeriod,
   buildMELIAdjustedFCFBridge,
   separateMELIRevenueDefinition,
+  isRecurringHistoricalObservation,
 } from "@/lib/research/history/normalizer";
 import type { HistoricalObservation } from "@/lib/research/history/contracts";
 import { reconcileRecord, reconcileAnnualToQuarters } from "@/lib/research/history/reconciliation";
@@ -146,6 +147,24 @@ describe("historical record", () => {
     assert.equal(revenue.gaap_revenue, 1000);
     assert.equal(revenue.net_revenues_and_financial_income, 1200);
     assert.equal(revenue.financial_income, 200);
+  });
+
+  it("keeps recurring measurements and rejects event numbers or empty values", () => {
+    assert.equal(isRecurringHistoricalObservation({ metric_key: "net_revenue", value_numeric: 100, period_end: "2025-06-30" }), true);
+    assert.equal(isRecurringHistoricalObservation({ metric_key: "acquisition_date", value_numeric: 2024, period_end: "2024-01-01" }), false);
+    assert.equal(isRecurringHistoricalObservation({ metric_key: "funding_commitment", value_numeric: 500, as_of_date: "2025-01-01" }), false);
+    assert.equal(isRecurringHistoricalObservation({ metric_key: "net_revenue", value_numeric: null, period_end: "2025-06-30" }), false);
+  });
+
+  it("does not count a null quarterly observation as present coverage", () => {
+    const record = buildHistoricalRecord({
+      asset_id: "00000000-0000-0000-0000-000000000001",
+      observations: [{ ...makeObs("revenue", 2025, 1, 100), value_numeric: null }],
+      requiredMetricKeys: ["revenue"],
+      endFiscalYear: 2025,
+      endFiscalQuarter: 1,
+    });
+    assert.equal(record.coverage.quarters_present, 0);
   });
 });
 
