@@ -834,43 +834,45 @@ export async function failRun(
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
-    await sql`
-      UPDATE research_runs
-      SET status = 'failed',
-          failure_reason = ${reason},
-          completed_at = NOW(),
-          updated_at = NOW()
-      WHERE id = ${runId}
-    `;
+    await sql.begin(async (tx) => {
+      await tx`
+        UPDATE research_runs
+        SET status = 'failed',
+            failure_reason = ${reason},
+            completed_at = NOW(),
+            updated_at = NOW()
+        WHERE id = ${runId}
+      `;
 
-    await sql`
-      UPDATE research_stages
-      SET status = 'failed',
-          failure_reason = ${reason},
-          completed_at = NOW(),
-          updated_at = NOW()
-      WHERE research_run_id = ${runId}
-        AND status IN ('running', 'waiting_for_human')
-    `;
+      await tx`
+        UPDATE research_stages
+        SET status = 'failed',
+            failure_reason = ${reason},
+            completed_at = NOW(),
+            updated_at = NOW()
+        WHERE research_run_id = ${runId}
+          AND status IN ('running', 'waiting_for_human')
+      `;
 
-    await sql`
-      UPDATE research_tasks
-      SET status = 'failed',
-          failure_reason = ${reason},
-          completed_at = NOW(),
-          updated_at = NOW()
-      WHERE research_run_id = ${runId}
-        AND status = 'running'
-    `;
+      await tx`
+        UPDATE research_tasks
+        SET status = 'failed',
+            failure_reason = ${reason},
+            completed_at = NOW(),
+            updated_at = NOW()
+        WHERE research_run_id = ${runId}
+          AND status IN ('pending', 'running')
+      `;
 
-    await sql`
-      UPDATE research_stages
-      SET status = 'cancelled',
-          failure_reason = ${`Run failed: ${reason}`},
-          updated_at = NOW()
-      WHERE research_run_id = ${runId}
-        AND status = 'pending'
-    `;
+      await tx`
+        UPDATE research_stages
+        SET status = 'cancelled',
+            failure_reason = ${`Run failed: ${reason}`},
+            updated_at = NOW()
+        WHERE research_run_id = ${runId}
+          AND status = 'pending'
+      `;
+    });
   } finally {
     await sql.end();
   }

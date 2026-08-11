@@ -31,7 +31,6 @@ export function createDeadlineController(
     controller.abort(reason);
   };
   const onParentAbort = () => abort("caller");
-  parentSignal?.addEventListener("abort", onParentAbort, { once: true });
 
   const scheduleTotalTimer = () => {
     if (totalTimer) clearTimeout(totalTimer);
@@ -55,6 +54,7 @@ export function createDeadlineController(
     scheduleTotalTimer();
   };
   const resetInactivity = () => {
+    if (controller.signal.aborted) return;
     if (inactivityPaused) return;
     if (Date.now() >= expiresAt && totalPausedAt === undefined) {
       abort("total");
@@ -72,8 +72,12 @@ export function createDeadlineController(
     inactivityPaused = false;
     resetInactivity();
   };
-  scheduleTotalTimer();
-  resetInactivity();
+  if (parentSignal?.aborted) abort("caller");
+  else parentSignal?.addEventListener("abort", onParentAbort, { once: true });
+  if (!controller.signal.aborted) {
+    scheduleTotalTimer();
+    resetInactivity();
+  }
 
   return {
     signal: controller.signal,

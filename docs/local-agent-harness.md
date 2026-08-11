@@ -1,6 +1,10 @@
 # Research OS local agent harness
 
-Research OS calls configured inference endpoints directly. It does not start an OpenCode server or use the OpenCode SDK, localhost sidecar, session database, or history API.
+Research OS uses a native Node/Postgres agent backend modeled on OpenCode's runtime contracts. It calls configured inference endpoints directly and does not start an OpenCode server, use its SDK, or require a localhost sidecar.
+
+The backend provides canonical multi-turn messages, ordered sessions/events, resumable tool history, bounded context compaction, provider retries, typed tools, ask/allow/deny permissions, local skills, remote HTTPS MCP tools, and bounded research subagents. The research pipeline supplies `PostgresAgentSessionStore`; standalone calls use the in-memory store unless a durable store is passed explicitly.
+
+The research FSM, artifact validators, task/job leases, budget ledger, and human review gates remain the source of truth. Shell/edit/write/LSP tools, terminal or web agent UIs, application auth, Git snapshots, local-stdio MCP, OAuth, and arbitrary npm plugins are intentionally outside this backend.
 
 For an OpenCode Go subscription, `opencode-go-direct` calls the published HTTPS inference API without the OpenCode SDK, localhost server, or session/history layer. It routes GLM, Kimi, and DeepSeek models through `/chat/completions`, and Qwen or MiniMax models through `/messages` according to the provider's published protocol table.
 
@@ -68,7 +72,11 @@ Ollama's OpenAI-compatible endpoint uses the `/v1` base path. The configured mod
 
 ## Execution controls
 
-The harness requests plain text, parses JSON locally, and performs at most one bounded repair by default. Total and inactivity deadlines, response/token limits, model attempts, tool turns, and tool calls use the `RESEARCH_*` settings documented in `.env.example`. Research agents have no tool permissions unless a tool is explicitly registered and allowed by that agent's definition.
+The harness requests plain text, parses JSON locally, and performs at most one bounded repair by default. Total and inactivity deadlines, context/response/tool-output limits, model attempts, repeated-call limits, tool timeouts, tool turns, and tool calls use the `RESEARCH_*` settings documented in `.env.example`. Research agents have no tool permissions unless a tool is registered, explicitly enabled for the run, and allowed by the execution-time permission policy. An `ask` rule without an approval callback fails closed. `allow_always` lasts for the current materialized execution scope; the durable permission row is an audit record, not a cross-process grant.
+
+Remote MCP servers must use HTTPS, an exact allowed hostname, and environment-referenced headers. Userinfo, query-string secrets, fragments, cross-origin redirects, and numeric private/loopback targets are rejected. Production deployments must also enforce trusted DNS or an egress proxy because hostname allowlists alone cannot prevent DNS rebinding. Skills are read only from configured local roots with realpath, size, and count bounds. Subagents are registry-defined research agents with inherited cancellation, depth, child-count, and packet-size limits.
+
+Session coordination is single-flight within one process. Distributed research execution continues to use the existing leased `research_run_jobs` queue; the harness does not claim standalone clustered session ownership or post-crash continuation of an ambiguous provider/tool side effect.
 
 Source-reader extraction is partitioned in retrieval order into stable `source-reader:batch:NN` tasks. Each batch is bounded by both chunk count and serialized bytes, so completed batches can be reused after a later batch fails. The merge rejects invented source/chunk identifiers and invalid character ranges before evidence is persisted. A fallback receives only the failed batch with shortened excerpts; it never receives the complete research corpus.
 

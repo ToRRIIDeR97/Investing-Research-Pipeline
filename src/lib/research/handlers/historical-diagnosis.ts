@@ -102,7 +102,7 @@ export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> =
       await completeV3Task(sql, task.id, output);
       return output;
     } catch (error) {
-      await failV3Task(sql, task.id, error);
+      await failV3Task(sql, task.id, error).catch(() => undefined);
       throw error;
     } finally {
       await sql.end();

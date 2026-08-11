@@ -1,4 +1,6 @@
-import { ProviderError, type HarnessErrorCategory } from "../errors";
+import { ProviderError, redactHarnessText, type HarnessErrorCategory } from "../errors";
+import { toAnthropicMessages } from "../messages";
+import { isPrivateOrLocalHost } from "../network";
 import type { ModelEvent, ModelProvider, ModelRequest, ToolCall } from "../types";
 import { acquireProviderRequestLock } from "./request-lock";
 
@@ -13,14 +15,17 @@ function validateBaseUrl(baseUrl: string, allowedHosts: string[]) {
   try { url = new URL(baseUrl); } catch { throw new ProviderError("Invalid provider base URL", "invalid_request"); }
   if (url.protocol !== "https:") throw new ProviderError("Direct provider must use HTTPS", "invalid_request");
   if (url.username || url.password) throw new ProviderError("Provider URL must not contain credentials", "invalid_request");
+  if (url.search || url.hash) throw new ProviderError("Provider base URL must not contain a query or fragment", "invalid_request");
   if (!allowedHosts.map((host) => host.toLowerCase()).includes(url.hostname.toLowerCase())) {
     throw new ProviderError(`Direct provider host is not allowlisted: ${url.hostname}`, "invalid_request");
   }
+  if (isPrivateOrLocalHost(url.hostname)) throw new ProviderError("Direct provider cannot target a private host", "invalid_request");
   return url.toString().replace(/\/+$/, "");
 }
 
-function safeBody(value: string) {
-  return value.slice(0, 2_000).replace(/((?:bearer|x-api-key)[:\s]+)[^\s"']+/gi, "$1[REDACTED]");
+function safeBody(value: string, apiKey = "") {
+  const withoutKey = apiKey.length > 5 ? value.split(apiKey).join("[REDACTED]") : value;
+  return redactHarnessText(withoutKey, 2_000);
 }
 
 export class AnthropicCompatibleProvider implements ModelProvider {
@@ -37,8 +42,12 @@ export class AnthropicCompatibleProvider implements ModelProvider {
   }
 
   async *stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent> {
+    const streamBufferLimit = request.maxResponseBytes || 1_000_000;
     let response: Response;
     try {
+      const lowered = request.messages?.length
+        ? toAnthropicMessages(request.messages)
+        : { system: undefined, messages: [{ role: "user" as const, content: [{ type: "text", text: request.prompt }] }] };
       response = await fetch(`${this.baseUrl}/messages`, {
         method: "POST",
         headers: {
@@ -48,7 +57,8 @@ export class AnthropicCompatibleProvider implements ModelProvider {
         },
         body: JSON.stringify({
           model: request.model,
-          messages: [{ role: "user", content: request.prompt }],
+          messages: lowered.messages,
+          ...(lowered.system ? { system: lowered.system } : {}),
           // Anthropic's messages protocol requires this field even when the
           // shared harness intentionally leaves generation uncapped.
           max_tokens: request.maxTokens || Number(process.env.RESEARCH_ANTHROPIC_PROTOCOL_MAX_TOKENS || 65_536),
@@ -72,7 +82,7 @@ export class AnthropicCompatibleProvider implements ModelProvider {
 
     const requestId = response.headers.get("request-id") || response.headers.get("x-request-id") || undefined;
     if (!response.ok) {
-      const body = safeBody(await response.text().catch(() => ""));
+      const body = safeBody(await response.text().catch(() => ""), this.options.apiKey);
       let category: HarnessErrorCategory = "unknown";
       if (response.status === 401 || response.status === 403) category = "authentication";
       else if (response.status === 429) category = "rate_limit";
@@ -111,7 +121,7 @@ export class AnthropicCompatibleProvider implements ModelProvider {
         throw new ProviderError("Provider emitted malformed SSE JSON", "malformed_stream", { excerpt: data.slice(0, 300) });
       }
       if (payload.type === "error") {
-        throw new ProviderError(`Provider stream error: ${safeBody(payload.error?.message || "unknown")}`, "server_error");
+        throw new ProviderError(`Provider stream error: ${safeBody(payload.error?.message || "unknown", this.options.apiKey)}`, "server_error");
       }
       const events: ModelEvent[] = [];
       if (payload.type === "message_start" && payload.message?.usage) {
@@ -121,7 +131,7 @@ export class AnthropicCompatibleProvider implements ModelProvider {
         tools.set(Number(payload.index || 0), {
           id: payload.content_block.id || `tool_${payload.index || 0}`,
           name: payload.content_block.name || "",
-          arguments: payload.content_block.input ? JSON.stringify(payload.content_block.input) : "",
+          arguments: "",
         });
       }
       if (payload.type === "content_block_delta") {
@@ -132,6 +142,9 @@ export class AnthropicCompatibleProvider implements ModelProvider {
           const tool = tools.get(index);
           if (!tool) throw new ProviderError("Tool arguments arrived before tool declaration", "malformed_stream");
           tool.arguments += payload.delta.partial_json || "";
+          if (Buffer.byteLength(tool.arguments, "utf8") > streamBufferLimit) {
+            throw new ProviderError("Provider tool call exceeded maximum size", "response_limit");
+          }
         }
       }
       if (payload.type === "message_delta") {
@@ -150,6 +163,9 @@ export class AnthropicCompatibleProvider implements ModelProvider {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
+        if (Buffer.byteLength(buffer, "utf8") > streamBufferLimit) {
+          throw new ProviderError("Provider SSE event exceeded maximum size", "response_limit");
+        }
         const blocks = buffer.split(/\r?\n\r?\n/);
         buffer = blocks.pop() || "";
         for (const block of blocks) for (const event of parseBlock(block)) yield event;

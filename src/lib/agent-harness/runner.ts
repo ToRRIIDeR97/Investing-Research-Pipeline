@@ -1,12 +1,20 @@
+import { randomUUID } from "node:crypto";
 import { createDeadlineController } from "./deadlines";
-import { ProviderError, ResearchAgentRunError, type HarnessErrorCategory } from "./errors";
+import { ProviderError, redactHarnessText as redact, ResearchAgentRunError, type HarnessErrorCategory } from "./errors";
+import { compactMessages, createMessage, messageText, textMessage } from "./messages";
+import { registerMcpServers } from "./mcp";
 import { parseStructuredOutput } from "./output-parser";
 import { getProvider } from "./providers/provider";
 import { DEFAULT_RESEARCH_MODEL, getAgentConfig, normalizeModelEnvValue, resolveAgentModel, type ResearchAgentName } from "./registry";
+import { MemoryAgentSessionStore } from "./session-store";
+import { sessionCoordinator } from "./session-coordinator";
+import { discoverSkills, renderSkillContext, selectSkills } from "./skills";
+import { registerSubagentTool } from "./subagents";
 import { estimateCost } from "./telemetry";
-import { executeTool, toolDefinitionsForAgent } from "./tools";
+import { defaultToolRegistry, materializeTools, ToolRegistry, type MaterializedTools } from "./tools";
 import type {
-  AgentAttempt, AgentPassTelemetry, AgentRequest, AgentResult, AgentUsage, ExecutionPolicy, ModelEvent, ModelProvider, ModelUsage, ToolCall,
+  AgentAttempt, AgentMessage, AgentPassTelemetry, AgentRequest, AgentResult, AgentSessionEvent, AgentSessionStore,
+  AgentUsage, ExecutionPolicy, ModelEvent, ModelProvider, ToolCall,
 } from "./types";
 import { coerceStructuredOutput, validateSchema, type SchemaValidationError } from "./validation";
 
@@ -16,6 +24,10 @@ const DEFAULT_POLICY: ExecutionPolicy = {
   totalTimeoutMs: 240_000,
   inactivityTimeoutMs: 90_000,
   maxResponseBytes: 1_000_000,
+  maxContextBytes: 4_000_000,
+  maxToolOutputBytes: 50_000,
+  toolTimeoutMs: 30_000,
+  maxRepeatedToolCalls: 3,
   maxRepairAttempts: 1,
   maxToolTurns: 4,
   maxToolCalls: 8,
@@ -46,10 +58,14 @@ function executionPolicy(input: AgentRequest): ExecutionPolicy {
       : DEFAULT_POLICY.totalTimeoutMs;
   const inactivityDefault = input.agentName === "source-reader" ? 600_000 : DEFAULT_POLICY.inactivityTimeoutMs;
   const configuredMaxOutputTokens = optionalPositiveNumberEnv(`RESEARCH_${key}_MAX_OUTPUT_TOKENS`, "RESEARCH_MAX_OUTPUT_TOKENS");
-  return {
+  const policy: ExecutionPolicy = {
     totalTimeoutMs: numberEnv(`RESEARCH_${key}_TIMEOUT_MS`, numberEnv("RESEARCH_AGENT_TIMEOUT_MS", totalDefault, 10_000), 10_000),
     inactivityTimeoutMs: numberEnv(`RESEARCH_${key}_INACTIVITY_TIMEOUT_MS`, numberEnv("RESEARCH_INACTIVITY_TIMEOUT_MS", inactivityDefault, 1_000), 1_000),
     maxResponseBytes: numberEnv(`RESEARCH_${key}_MAX_RESPONSE_BYTES`, numberEnv("RESEARCH_MAX_RESPONSE_BYTES", DEFAULT_POLICY.maxResponseBytes)),
+    maxContextBytes: numberEnv(`RESEARCH_${key}_MAX_CONTEXT_BYTES`, numberEnv("RESEARCH_MAX_CONTEXT_BYTES", DEFAULT_POLICY.maxContextBytes)),
+    maxToolOutputBytes: numberEnv("RESEARCH_MAX_TOOL_OUTPUT_BYTES", DEFAULT_POLICY.maxToolOutputBytes),
+    toolTimeoutMs: numberEnv("RESEARCH_TOOL_TIMEOUT_MS", DEFAULT_POLICY.toolTimeoutMs),
+    maxRepeatedToolCalls: numberEnv("RESEARCH_MAX_REPEATED_TOOL_CALLS", DEFAULT_POLICY.maxRepeatedToolCalls),
     // OpenAI-compatible providers account for reasoning inside max_tokens. Leave
     // it unset unless explicitly configured so valid JSON is not truncated before
     // the model reaches its answer; maxResponseBytes remains the hard response bound.
@@ -61,6 +77,17 @@ function executionPolicy(input: AgentRequest): ExecutionPolicy {
     retryBaseDelayMs: numberEnv("RESEARCH_RETRY_BASE_DELAY_MS", DEFAULT_POLICY.retryBaseDelayMs),
     ...input.policy,
   };
+  const zeroAllowed = new Set<keyof ExecutionPolicy>([
+    "maxRepairAttempts", "maxToolTurns", "maxToolCalls", "retryBaseDelayMs",
+  ]);
+  for (const [name, value] of Object.entries(policy) as Array<[keyof ExecutionPolicy, number | undefined]>) {
+    if (value === undefined) continue;
+    const minimum = zeroAllowed.has(name) ? 0 : 1;
+    if (!Number.isFinite(value) || value < minimum) {
+      throw new ProviderError(`Invalid execution policy value for ${name}`, "invalid_request");
+    }
+  }
+  return policy;
 }
 
 function buildTaskPrompt(input: AgentRequest, config: ReturnType<typeof getAgentConfig>) {
@@ -142,18 +169,36 @@ function compactFallback(input: AgentRequest): { request: AgentRequest; compacte
 
 function category(error: unknown): HarnessErrorCategory {
   if (error instanceof ProviderError) return error.category;
+  if (error instanceof ResearchAgentRunError) {
+    const value = error.responseMetadata.error_type;
+    if (typeof value === "string") return value as HarnessErrorCategory;
+  }
   return "unknown";
 }
 
 function retryable(value: HarnessErrorCategory, _agentName: string) {
   return value === "rate_limit" || value === "provider_timeout" || value === "connection" || value === "malformed_stream" ||
-    value === "schema_validation";
+    value === "schema_validation" || value === "server_error" || value === "context_limit";
 }
 
-function redact(value: string) {
-  const secrets = [process.env.RESEARCH_MODEL_API_KEY, process.env.DATABASE_URL].filter(Boolean) as string[];
-  return secrets.reduce((message, secret) => secret.length > 5 ? message.split(secret).join("[REDACTED]") : message, value)
-    .replace(/(bearer\s+)[^\s"']+/gi, "$1[REDACTED]");
+async function waitForRetry(ms: number, deadline: ReturnType<typeof createDeadlineController>) {
+  const abortError = () => deadline.reason() === "caller"
+    ? new ProviderError("Request cancelled during retry backoff", "cancellation")
+    : new ProviderError("Request total timeout during retry backoff", "provider_timeout", { timeoutType: "total" });
+  const signal = deadline.signal;
+  if (signal.aborted) throw abortError();
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      reject(abortError());
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function repairContext(input: AgentRequest) {
@@ -190,18 +235,49 @@ function repairContext(input: AgentRequest) {
   return context;
 }
 
+interface AgentRuntime {
+  sessionId: string;
+  store: AgentSessionStore;
+  hooks?: AgentRequest["hooks"];
+}
+
+async function emit(
+  runtime: AgentRuntime,
+  type: string,
+  payload: Record<string, unknown> = {},
+  options?: { idempotencyKey?: string }
+) {
+  const event = await runtime.store.appendEvent(runtime.sessionId, type, payload, options);
+  await runtime.hooks?.onEvent?.(event);
+  return event;
+}
+
+async function persistMessage(runtime: AgentRuntime, message: AgentMessage) {
+  const stored = await runtime.store.appendMessage(runtime.sessionId, message);
+  await emit(runtime, "message.completed", {
+    messageId: stored.id,
+    sequence: stored.sequence,
+    role: stored.role,
+  }, { idempotencyKey: `message:${stored.id}` });
+  return stored;
+}
+
 interface PassResult {
   rawText: string;
   usage: { inputTokens: number; outputTokens: number; reasoningTokens: number; costUsd: number; costSource: "provider" | "catalog_estimate" | "unknown" };
   requestId?: string;
   toolCalls: Array<{ name: string; status: "success" | "failed" }>;
+  messages: AgentMessage[];
+  contextCompacted: boolean;
 }
 
 async function executePass(params: {
   provider: ModelProvider; model: string; prompt: string; agentName: string; policy: ExecutionPolicy;
   deadline: ReturnType<typeof createDeadlineController>; maxOutputTokens?: number;
+  invocationDeadline: ReturnType<typeof createDeadlineController>;
+  messages: AgentMessage[]; tools: MaterializedTools; runtime: AgentRuntime;
 }): Promise<PassResult> {
-  let prompt = params.prompt;
+  const messages = [...params.messages];
   let rawText = "";
   let inputTokens = 0;
   let outputTokens = 0;
@@ -212,24 +288,32 @@ async function executePass(params: {
   let requestId: string | undefined;
   let toolTurns = 0;
   let toolCount = 0;
+  let responseBytes = 0;
+  let currentTurnText = "";
+  let currentTurnReasoning = "";
+  let contextCompacted = false;
   const toolSummaries: PassResult["toolCalls"] = [];
-  const tools = toolDefinitionsForAgent(params.agentName);
+  const repeatedCalls = new Map<string, number>();
+  const seenToolCallIds = new Set<string>();
 
   const snapshot = (): PassResult => {
-    if (!providerStarted && inputTokens === 0 && outputTokens === 0 && !rawText) {
+    const visibleRawText = rawText || currentTurnText;
+    if (!providerStarted && inputTokens === 0 && outputTokens === 0 && !visibleRawText) {
       return {
         rawText: "",
         usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, costUsd: 0, costSource: "unknown" },
         requestId,
         toolCalls: [...toolSummaries],
+        messages: [...messages],
+        contextCompacted,
       };
     }
-    const effectiveInputTokens = inputTokens || Math.ceil(params.prompt.length / 4);
-    const effectiveOutputTokens = outputTokens || Math.ceil(rawText.length / 4);
+    const effectiveInputTokens = inputTokens || Math.ceil(JSON.stringify(messages).length / 4);
+    const effectiveOutputTokens = outputTokens || Math.ceil(visibleRawText.length / 4);
     const estimate = estimateCost(params.model, effectiveInputTokens, effectiveOutputTokens);
     const effectiveCost = costReportedByProvider ? costUsd : estimate.costUsd;
     return {
-      rawText,
+      rawText: visibleRawText,
       usage: {
         inputTokens: effectiveInputTokens,
         outputTokens: effectiveOutputTokens,
@@ -239,34 +323,55 @@ async function executePass(params: {
       },
       requestId,
       toolCalls: [...toolSummaries],
+      messages: [...messages],
+      contextCompacted,
     };
   };
 
-  let releaseRequestLock: (() => void) | undefined;
-  if (params.provider.acquireRequestLock) {
+  const acquireRequestLock = async () => {
+    if (!params.provider.acquireRequestLock) return undefined;
     params.deadline.pauseTotal();
     params.deadline.pauseInactivity();
+    params.invocationDeadline.pauseTotal();
+    params.invocationDeadline.pauseInactivity();
     try {
-      releaseRequestLock = await params.provider.acquireRequestLock(params.deadline.signal);
-    } catch (error) {
+      return await params.provider.acquireRequestLock(params.deadline.signal);
+    } finally {
       params.deadline.resumeInactivity();
       params.deadline.resumeTotal();
-      throw error;
+      params.invocationDeadline.resumeInactivity();
+      params.invocationDeadline.resumeTotal();
     }
-    params.deadline.resumeTotal();
-    params.deadline.resumeInactivity();
-  }
+  };
 
   try {
     while (true) {
       const calls: ToolCall[] = [];
+      currentTurnText = "";
+      currentTurnReasoning = "";
       let completed = false;
-      const stream = params.provider.stream({
-        model: params.model, prompt, temperature: 0.2, maxTokens: params.maxOutputTokens ?? params.policy.maxOutputTokens,
-        tools, agentName: params.agentName,
+      const compacted = compactMessages(messages, params.policy.maxContextBytes);
+      contextCompacted ||= compacted.compacted;
+      if (compacted.compacted) {
+        await emit(params.runtime, "context.compacted", {
+          beforeMessages: messages.length,
+          afterMessages: compacted.messages.length,
+        });
+      }
+      const releaseRequestLock = await acquireRequestLock();
+      try {
+        const stream = params.provider.stream({
+        model: params.model,
+        prompt: params.prompt,
+        messages: compacted.messages,
+        temperature: 0.2,
+        maxTokens: params.maxOutputTokens ?? params.policy.maxOutputTokens,
+        maxResponseBytes: params.policy.maxResponseBytes,
+        tools: params.tools.definitions,
+        agentName: params.agentName,
       }, params.deadline.signal);
-      const iterator = stream[Symbol.asyncIterator]();
-      while (true) {
+        const iterator = stream[Symbol.asyncIterator]();
+        while (true) {
         if (params.deadline.remainingMs() <= 0) {
           throw new ProviderError("Provider request exceeded total deadline", "provider_timeout", { timeoutType: "total" });
         }
@@ -305,10 +410,23 @@ async function executePass(params: {
         if (event.type === "response.started") {
           providerStarted = true;
           requestId = event.requestId || requestId;
+          await emit(params.runtime, "response.started", {
+            requestId: event.requestId,
+            provider: params.provider.id,
+            model: params.model,
+          });
         }
         if (event.type === "text.delta") {
-          rawText += event.text;
-          if (Buffer.byteLength(rawText, "utf8") > params.policy.maxResponseBytes) {
+          currentTurnText += event.text;
+          responseBytes += Buffer.byteLength(event.text, "utf8");
+          if (responseBytes > params.policy.maxResponseBytes) {
+            throw new ProviderError("Model response exceeded maximum size", "response_limit");
+          }
+        }
+        if (event.type === "reasoning.delta") {
+          currentTurnReasoning += event.text;
+          responseBytes += Buffer.byteLength(event.text, "utf8");
+          if (responseBytes > params.policy.maxResponseBytes) {
             throw new ProviderError("Model response exceeded maximum size", "response_limit");
           }
         }
@@ -321,31 +439,118 @@ async function executePass(params: {
             costUsd += event.usage.costUsd;
           }
         }
-        if (event.type === "tool.call") calls.push(event.call);
-        if (event.type === "response.failed") throw event.error;
-        if (event.type === "response.completed") completed = true;
+        if (event.type === "tool.call") {
+          if (!event.call.id || !event.call.name || seenToolCallIds.has(event.call.id)) {
+            throw new ProviderError("Provider emitted an invalid or duplicate tool call ID", "malformed_stream");
+          }
+          seenToolCallIds.add(event.call.id);
+          responseBytes += Buffer.byteLength(event.call.id, "utf8") +
+            Buffer.byteLength(event.call.name, "utf8") + Buffer.byteLength(event.call.arguments, "utf8");
+          if (responseBytes > params.policy.maxResponseBytes) {
+            throw new ProviderError("Model response exceeded maximum size", "response_limit");
+          }
+          calls.push(event.call);
+        }
+        if (event.type === "response.failed") {
+          if (event.error instanceof ProviderError) throw event.error;
+          throw new ProviderError(redact(event.error.message), "server_error");
+        }
+          if (event.type === "response.completed") completed = true;
+        }
+      } finally {
+        releaseRequestLock?.();
       }
       if (!completed) throw new ProviderError("Provider did not emit completion", "malformed_stream");
-      if (!calls.length && !rawText.trim()) throw new ProviderError("Provider completed without text output", "malformed_stream");
-      if (!calls.length) break;
+      if (!calls.length && !currentTurnText.trim()) throw new ProviderError("Provider completed without text output", "malformed_stream");
+
+      const assistant = createMessage("assistant", [
+        ...(currentTurnReasoning ? [{ type: "reasoning" as const, text: currentTurnReasoning }] : []),
+        ...(currentTurnText ? [{ type: "text" as const, text: currentTurnText }] : []),
+        ...calls.map((call) => ({ type: "tool_call" as const, call })),
+      ]);
+      await persistMessage(params.runtime, assistant);
+      messages.push(assistant);
+      await emit(params.runtime, "response.completed", {
+        requestId,
+        toolCalls: calls.length,
+        textBytes: Buffer.byteLength(currentTurnText, "utf8"),
+      });
+      if (!calls.length) {
+        rawText = currentTurnText;
+        break;
+      }
       toolTurns += 1;
       if (toolTurns > params.policy.maxToolTurns || toolCount + calls.length > params.policy.maxToolCalls) {
         throw new ProviderError("Tool execution limit exceeded", "invalid_request");
       }
-      const results: Array<{ name: string; result?: unknown; error?: string }> = [];
-      for (const call of calls) {
-        toolCount += 1;
+      params.deadline.pauseInactivity();
+      const results = await (async () => {
         try {
-          const result = await executeTool(params.agentName, call);
-          results.push({ name: call.name, result });
-          toolSummaries.push({ name: call.name, status: "success" });
-        } catch (error) {
-          const message = redact(error instanceof Error ? error.message : String(error));
-          results.push({ name: call.name, error: message });
-          toolSummaries.push({ name: call.name, status: "failed" });
+          return await Promise.all(calls.map(async (call) => {
+            try {
+              toolCount += 1;
+              const signature = `${call.name}:${call.arguments}`;
+              const repeated = (repeatedCalls.get(signature) || 0) + 1;
+              repeatedCalls.set(signature, repeated);
+              if (repeated > params.policy.maxRepeatedToolCalls) {
+                throw new ProviderError(`Repeated tool call limit exceeded for ${call.name}`, "invalid_request");
+              }
+              await emit(params.runtime, "tool.called", {
+                callId: call.id,
+                name: call.name,
+                arguments: call.arguments,
+              }, { idempotencyKey: `tool:${call.id}:called` });
+              try {
+                const result = await params.tools.execute(call);
+                toolSummaries.push({ name: call.name, status: "success" });
+                await emit(params.runtime, "tool.completed", {
+                  callId: call.id,
+                  name: call.name,
+                  outputBytes: result.outputBytes,
+                  truncated: result.truncated,
+                }, { idempotencyKey: `tool:${call.id}:completed` });
+                return { call, output: result.output, isError: false };
+              } catch (error) {
+                if (category(error) === "cancellation") throw error;
+                const message = redact(error instanceof Error ? error.message : String(error));
+                toolSummaries.push({ name: call.name, status: "failed" });
+                await emit(params.runtime, "tool.failed", {
+                  callId: call.id,
+                  name: call.name,
+                  error: message,
+                  category: category(error),
+                }, { idempotencyKey: `tool:${call.id}:failed` });
+                return { call, output: { error: message }, isError: true };
+              }
+            } catch (error) {
+              const message = redact(error instanceof Error ? error.message : String(error));
+              toolSummaries.push({ name: call.name, status: "failed" });
+              await emit(params.runtime, "tool.failed", {
+                callId: call.id,
+                name: call.name,
+                error: message,
+                category: category(error),
+              }, { idempotencyKey: `tool:${call.id}:failed` }).catch(() => undefined);
+              return { call, output: { error: message }, isError: true, fatal: error };
+            }
+          }));
+        } finally {
+          params.deadline.resumeInactivity();
         }
+      })();
+      for (const result of results) {
+        const toolMessage = createMessage("tool", [{
+          type: "tool_result",
+          toolCallId: result.call.id,
+          toolName: result.call.name,
+          output: result.output,
+          isError: result.isError,
+        }]);
+        await persistMessage(params.runtime, toolMessage);
+        messages.push(toolMessage);
       }
-      prompt = `${prompt}\n\nTool results:\n${JSON.stringify(results)}\n\nContinue and return exactly one JSON object.`;
+      const fatal = results.find((result) => "fatal" in result)?.fatal;
+      if (fatal) throw fatal;
     }
 
     const result = snapshot();
@@ -359,8 +564,6 @@ async function executePass(params: {
       throw new ProviderError(error.message, error.category, { ...error.details, partial: snapshot() });
     }
     throw error;
-  } finally {
-    releaseRequestLock?.();
   }
 }
 
@@ -415,37 +618,60 @@ function aggregateUsage(attempts: AgentAttempt[], fallback: { provider: string; 
   };
 }
 
-export async function runResearchAgent<TStructured = unknown>(input: AgentRequest): Promise<AgentResult<TStructured>> {
-  const config = getAgentConfig(input.agentName);
+interface ExecutionSetup {
+  config: ReturnType<typeof getAgentConfig>;
+  policy: ExecutionPolicy;
+  provider: ModelProvider;
+  runtime: AgentRuntime;
+  invocationDeadline: ReturnType<typeof createDeadlineController>;
+  baseMessages: AgentMessage[];
+  tools: MaterializedTools;
+}
 
-  // C14-T5: Registry prevents wrong artifact assignment
+function messagesForPrompt(base: AgentMessage[], prompt: string) {
+  const messages = base.map((message) => ({ ...message, parts: [...message.parts] }));
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role !== "user") continue;
+    messages[index] = textMessage("user", prompt, messages[index].id);
+    return messages;
+  }
+  return [...messages, textMessage("user", prompt)];
+}
+
+function preflightRequest(input: AgentRequest, config: ReturnType<typeof getAgentConfig>) {
   if (input.taskPacket && typeof input.taskPacket === "object") {
     const packet = input.taskPacket as any;
-    if (packet.artifact_type && packet.artifact_type !== config.outputSchemaKey) {
-      if (
-        (input.agentName === "asset-analyst" && packet.artifact_type.includes("valuation")) ||
-        (input.agentName === "intake-planner" && packet.artifact_type.includes("valuation"))
-      ) {
+    if (packet.artifact_type !== undefined) {
+      if (typeof packet.artifact_type !== "string") throw new Error("artifact_type must be a string");
+      const artifactType = packet.artifact_type.toLowerCase();
+      if (packet.artifact_type !== config.outputSchemaKey && (
+        (input.agentName === "asset-analyst" && artifactType.includes("valuation")) ||
+        (input.agentName === "intake-planner" && artifactType.includes("valuation"))
+      )) {
         throw new Error(`Agent ${input.agentName} cannot be assigned valuation task or output artifact type ${packet.artifact_type}. Expected ${config.outputSchemaKey}.`);
       }
     }
   }
 
-  // C14-T6: Red-team prompt contains "confirm the thesis" -> Prompt review test fails
-  const promptText = buildTaskPrompt(input, config);
   if (input.agentName.toLowerCase().includes("red-team") || input.agentName.toLowerCase().includes("reviewer")) {
-    // Treat the packet as data, not instructions. Generated evidence can
-    // legitimately quote those phrases; only the instruction preamble is
-    // subject to the red-team wording check.
-    const instructionText = promptText.split("\nTask packet:\n", 1)[0];
+    const firstUser = input.messages?.find((message) => message.role === "user");
+    const supplied = input.messages
+      ?.filter((message) => message.role === "system" || message === firstUser)
+      .map(messageText) || [];
+    const instructionText = [
+      input.systemPrompt || "",
+      buildTaskPrompt(input, config).split("\nTask packet:\n", 1)[0],
+      ...supplied,
+    ].join("\n");
     if (instructionText.toLowerCase().includes("confirm the thesis") || instructionText.toLowerCase().includes("prove the thesis")) {
       throw new Error("Red-team prompt review failed: prompt must not contain instructions to confirm or prove the thesis.");
     }
   }
+}
 
-  const policy = executionPolicy(input);
-  const providerType = process.env.RESEARCH_MODEL_PROVIDER || "direct-openai-compatible";
-  const provider = input.provider || getProvider(providerType);
+async function executeResearchAgent<TStructured>(input: AgentRequest, setup: ExecutionSetup): Promise<AgentResult<TStructured>> {
+  const { config, policy, provider } = setup;
+
   const attempts: AgentAttempt[] = [];
 
   // Use request-level output format override if provided; otherwise fall back to agent config
@@ -463,15 +689,23 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
     // A same-model source-reader retry must change the request. Replaying the
     // full packet can reproduce the same long-reasoning stall; keep the retry
     // bounded and deterministic by using the existing excerpt compactor.
-    const compactedFallback = fallback || (index > 0 && input.agentName === "source-reader")
+    const compactedFallback = fallback || index > 0
       ? compactFallback(input)
       : { request: input, compacted: false };
     const currentInput = compactedFallback.request;
     await input.hooks?.beforeAttempt?.({ attempt: attemptNumber, provider: provider.id, model });
     const started = Date.now();
     const startedAt = new Date(started).toISOString();
-    const deadline = createDeadlineController(input.signal, policy.totalTimeoutMs, policy.inactivityTimeoutMs);
-    let pass: PassResult = { rawText: "", usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, costUsd: 0, costSource: "unknown" }, toolCalls: [] };
+    const deadline = createDeadlineController(
+      setup.invocationDeadline.signal,
+      Math.max(1, setup.invocationDeadline.remainingMs()),
+      policy.inactivityTimeoutMs
+    );
+    let pass: PassResult = {
+      rawText: "",
+      usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, costUsd: 0, costSource: "unknown" },
+      toolCalls: [], messages: [...setup.baseMessages], contextCompacted: false,
+    };
     let repairAttempted = false;
     let validationErrors: SchemaValidationError[] = [];
     const passes: AgentPassTelemetry[] = [];
@@ -483,7 +717,12 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
     try {
       const prompt = buildTaskPrompt(currentInput, config);
       try {
-        pass = await executeTrackedPass("generation", { provider, model, prompt, agentName: input.agentName, policy, deadline }, passes);
+        pass = await executeTrackedPass("generation", {
+          provider, model, prompt, agentName: input.agentName, policy, deadline,
+          invocationDeadline: setup.invocationDeadline,
+          messages: input.messages?.length ? setup.baseMessages : messagesForPrompt(setup.baseMessages, prompt),
+          tools: setup.tools, runtime: setup.runtime,
+        }, passes);
       } catch (error) {
         const timeoutReason = deadline.reason();
         const partial = error instanceof ProviderError ? error.details.partial as PassResult | undefined : undefined;
@@ -580,7 +819,18 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         }
         let repair: PassResult;
         try {
-          repair = await executeTrackedPass("repair", { provider, model, prompt: repairPrompt, agentName: input.agentName, policy, deadline }, passes);
+          const repairMessage = textMessage("user", repairPrompt);
+          await persistMessage(setup.runtime, repairMessage);
+          repair = await executeTrackedPass("repair", {
+            provider, model, prompt: repairPrompt, agentName: input.agentName, policy, deadline,
+            invocationDeadline: setup.invocationDeadline,
+            messages: [
+              ...setup.baseMessages.filter((message) => message.role === "system"),
+              repairMessage,
+            ],
+            tools: setup.tools,
+            runtime: setup.runtime,
+          }, passes);
         } catch (error) {
           if (error instanceof ProviderError) {
             const repairPartial = error.details.partial as PassResult | undefined;
@@ -601,6 +851,8 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
                       : "provider",
                 },
                 toolCalls: [...pass.toolCalls, ...(repairPartial?.toolCalls || [])],
+                messages: repairPartial?.messages || pass.messages,
+                contextCompacted: Boolean(pass.contextCompacted || repairPartial?.contextCompacted),
               } satisfies PassResult,
             });
           }
@@ -608,6 +860,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         }
         pass = {
           ...repair,
+          contextCompacted: pass.contextCompacted || repair.contextCompacted,
           usage: {
             inputTokens: pass.usage.inputTokens + repair.usage.inputTokens,
             outputTokens: pass.usage.outputTokens + repair.usage.outputTokens,
@@ -659,7 +912,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         startedAt, completedAt: new Date(completed).toISOString(), latencyMs: completed - started,
         inputTokens: pass.usage.inputTokens, outputTokens: pass.usage.outputTokens, reasoningTokens: pass.usage.reasoningTokens,
         costUsd: Number(pass.usage.costUsd.toFixed(6)), costSource: pass.usage.costSource, status: "success", repairAttempted,
-        fallback, compactionOccurred: compactedFallback.compacted,
+        fallback, compactionOccurred: compactedFallback.compacted || pass.contextCompacted,
         inputBytes: Buffer.byteLength(buildTaskPrompt(currentInput, config), "utf8"), originalInputBytes: originalPromptBytes,
         rawResponseExcerpt: redact(pass.rawText.slice(0, 12_000)), validationErrors, toolCalls: pass.toolCalls,
         passes,
@@ -668,15 +921,32 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         completionRecoveredWithoutMarker,
       };
       attempts.push(record);
-      await input.hooks?.onAttemptComplete?.(record);
       deadline.cleanup();
       const usage = aggregateUsage(attempts, { provider: provider.id, model, promptVersion: config.promptVersion });
-      return { structured: parsed as TStructured, rawText: pass.rawText, attempts, usage, config: config as unknown as Record<string, unknown> };
+      try {
+        await input.hooks?.onAttemptComplete?.(record);
+      } catch (error) {
+        throw new ResearchAgentRunError(
+          `Attempt persistence failed after a successful model response: ${redact(error instanceof Error ? error.message : String(error))}`,
+          usage,
+          { attempts, error_type: "server_error", persistence_failure: true },
+          attempts
+        );
+      }
+      return {
+        structured: parsed as TStructured,
+        rawText: pass.rawText,
+        attempts,
+        usage,
+        config: config as unknown as Record<string, unknown>,
+        sessionId: setup.runtime.sessionId,
+      };
     } catch (error) {
+      if (error instanceof ResearchAgentRunError) throw error;
       if (error instanceof ProviderError && error.details.partial) {
         pass = error.details.partial as PassResult;
       }
-      const reason = deadline.reason();
+      const reason = setup.invocationDeadline.reason() || deadline.reason();
       deadline.cleanup();
       let failure = error;
       if (reason === "caller") failure = new ProviderError("Request cancelled by caller", "cancellation");
@@ -692,7 +962,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         costUsd: Number(pass.usage.costUsd.toFixed(6)), costSource: pass.usage.costSource, status: errorCategory === "cancellation" ? "cancelled" : "failed",
         errorCategory, errorMessage: redact(failure instanceof Error ? failure.message : String(failure)),
         timeoutType: reason === "total" || reason === "inactivity" ? reason : undefined,
-        repairAttempted, fallback, compactionOccurred: compactedFallback.compacted,
+        repairAttempted, fallback, compactionOccurred: compactedFallback.compacted || pass.contextCompacted,
         inputBytes: Buffer.byteLength(buildTaskPrompt(currentInput, config), "utf8"), originalInputBytes: originalPromptBytes,
         rawResponseExcerpt: redact(pass.rawText.slice(0, 12_000)), validationErrors, toolCalls: pass.toolCalls,
         passes,
@@ -701,7 +971,17 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         completionRecoveredWithoutMarker,
       };
       attempts.push(record);
-      await input.hooks?.onAttemptComplete?.(record);
+      try {
+        await input.hooks?.onAttemptComplete?.(record);
+      } catch (hookError) {
+        const usage = aggregateUsage(attempts, { provider: provider.id, model, promptVersion: config.promptVersion });
+        throw new ResearchAgentRunError(
+          `Attempt persistence failed after a failed model response: ${redact(hookError instanceof Error ? hookError.message : String(hookError))}`,
+          usage,
+          { attempts, error_type: "server_error", persistence_failure: true },
+          attempts
+        );
+      }
       const schemaAttemptsExhausted = errorCategory === "schema_validation" &&
         attempts.filter((attempt) => attempt.errorCategory === "schema_validation").length >= 2;
       if (!retryable(errorCategory, input.agentName) || schemaAttemptsExhausted || index === candidates.length - 1) {
@@ -716,8 +996,166 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         ? Math.min(retryAfter * 1000, 30_000)
         : Math.min(policy.retryBaseDelayMs * 2 ** index, 30_000);
       const delay = Math.min(30_000, Math.max(1, Math.round(baseDelay * (0.9 + Math.random() * 0.2))));
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      setup.invocationDeadline.pauseInactivity();
+      try {
+        await waitForRetry(delay, setup.invocationDeadline);
+      } finally {
+        setup.invocationDeadline.resumeInactivity();
+      }
     }
   }
   throw new Error("No model candidates configured");
+}
+
+async function initialMessages(
+  input: AgentRequest,
+  config: ReturnType<typeof getAgentConfig>,
+  runtime: AgentRuntime
+) {
+  const existing = await runtime.store.listMessages(runtime.sessionId);
+  if (existing.length) {
+    if (input.messages?.length) {
+      const appended: AgentMessage[] = [];
+      for (const message of input.messages) appended.push(await persistMessage(runtime, message));
+      return [...existing, ...appended.filter((message) => !existing.some((current) => current.id === message.id))];
+    }
+    const message = textMessage("user", buildTaskPrompt(input, config), input.session?.inputId || randomUUID());
+    const stored = await persistMessage(runtime, message);
+    return existing.some((current) => current.id === stored.id) ? existing : [...existing, stored];
+  }
+
+  const messages: AgentMessage[] = [];
+  let skillContext = "";
+  if (input.skills?.length) {
+    const roots = input.skillPaths?.length
+      ? input.skillPaths
+      : [`${process.cwd()}/.agents/skills`, `${process.cwd()}/.opencode/skills`];
+    const discovered = await discoverSkills({ roots });
+    skillContext = renderSkillContext(selectSkills(discovered, input.skills));
+  }
+  const system = [input.systemPrompt, skillContext].filter(Boolean).join("\n\n");
+  if (system) messages.push(textMessage("system", system));
+  if (input.messages?.length) messages.push(...input.messages);
+  else messages.push(textMessage("user", buildTaskPrompt(input, config), input.session?.inputId || randomUUID()));
+  const stored: AgentMessage[] = [];
+  for (const message of messages) stored.push(await persistMessage(runtime, message));
+  return stored;
+}
+
+export async function runResearchAgent<TStructured = unknown>(input: AgentRequest): Promise<AgentResult<TStructured>> {
+  const config = getAgentConfig(input.agentName);
+  preflightRequest(input, config);
+  if (input.session?.depth !== undefined && (!Number.isInteger(input.session.depth) || input.session.depth < 0)) {
+    throw new ProviderError("Session depth must be a non-negative integer", "invalid_request");
+  }
+  if (input.signal?.aborted) throw new ProviderError("Request cancelled by caller", "cancellation");
+  const policy = executionPolicy(input);
+  const store = input.session?.store || new MemoryAgentSessionStore();
+  const session = await store.createSession({
+    id: input.session?.id,
+    parentSessionId: input.session?.parentSessionId,
+    researchRunId: input.session?.researchRunId,
+    stageId: input.session?.stageId,
+    taskId: input.session?.taskId,
+    agentName: input.agentName,
+    metadata: { title: input.title, ...(input.session?.metadata || {}) },
+  });
+  const runtime: AgentRuntime = { sessionId: session.id, store, hooks: input.hooks };
+  const operationId = input.session?.inputId || randomUUID();
+  if (session.result && typeof session.result === "object" && "structured" in session.result) {
+    if (session.status !== "completed") await store.updateSession(session.id, { status: "completed" });
+    return { ...(session.result as AgentResult<TStructured>), sessionId: session.id };
+  }
+  return sessionCoordinator.run(session.id, operationId, async () => {
+    const invocationDeadline = createDeadlineController(
+      input.signal,
+      policy.totalTimeoutMs,
+      policy.totalTimeoutMs + 60_000
+    );
+    const registry = new ToolRegistry(defaultToolRegistry);
+    let subagent: ReturnType<typeof registerSubagentTool> | undefined;
+    let mcp: Awaited<ReturnType<typeof registerMcpServers>> | undefined;
+
+    try {
+      if (invocationDeadline.signal.aborted) throw new ProviderError("Request cancelled by caller", "cancellation");
+      if (input.subagents) {
+        subagent = registerSubagentTool({
+          registry,
+          config: input.subagents,
+          parentSessionId: session.id,
+          parentDepth: input.session?.depth || 0,
+        });
+      }
+      const providerType = process.env.RESEARCH_MODEL_PROVIDER || "direct-openai-compatible";
+      const provider = input.provider || getProvider(providerType);
+      await store.updateSession(session.id, {
+        status: "running",
+        provider: provider.id,
+        model: resolveAgentModel(input.agentName as ResearchAgentName),
+      });
+      await emit(runtime, "session.started", {
+        operationId,
+        agentName: input.agentName,
+        provider: provider.id,
+      }, { idempotencyKey: `operation:${operationId}:started` });
+      const baseMessages = await initialMessages(input, config, runtime);
+      if (input.mcpServers?.length) {
+        mcp = await registerMcpServers(input.mcpServers, registry, invocationDeadline.signal);
+        for (const failure of mcp.errors) {
+          await emit(runtime, "mcp.failed", { server: failure.server, message: redact(failure.message, 2_000) });
+        }
+      }
+      const tools = materializeTools({
+        agentName: input.agentName,
+        sessionId: session.id,
+        signal: invocationDeadline.signal,
+        enabledTools: [
+          ...(input.enabledTools || []),
+          ...(mcp?.enabledTools || []),
+          ...(subagent ? [subagent.toolName] : []),
+        ],
+        permissionRules: input.permissionRules,
+        onPermissionRequest: input.onPermissionRequest,
+        researchRunId: input.session?.researchRunId,
+        stageId: input.session?.stageId,
+        taskId: input.session?.taskId,
+        store,
+        defaultTimeoutMs: policy.toolTimeoutMs,
+        defaultMaxOutputBytes: policy.maxToolOutputBytes,
+      }, registry);
+      const result = await executeResearchAgent<TStructured>(input, {
+        config, policy, provider, runtime, invocationDeadline, baseMessages, tools,
+      });
+      const completed = { ...result, sessionId: session.id };
+      await store.updateSession(session.id, {
+        status: "completed",
+        provider: result.usage.provider,
+        model: result.usage.model,
+        result: completed,
+      });
+      await emit(runtime, "session.completed", {
+        attempts: result.attempts.length,
+        costUsd: result.usage.costUsd,
+      }, { idempotencyKey: `operation:${operationId}:completed` }).catch(() => undefined);
+      return completed;
+    } catch (error) {
+      const cancelled = category(error) === "cancellation" || input.signal?.aborted;
+      await emit(runtime, cancelled ? "session.cancelled" : "session.failed", {
+        error: redact(error instanceof Error ? error.message : String(error)),
+        category: category(error),
+      }, { idempotencyKey: `operation:${operationId}:${cancelled ? "cancelled" : "failed"}` }).catch(() => undefined);
+      await store.updateSession(session.id, {
+        status: cancelled ? "cancelled" : "failed",
+        error: {
+          message: redact(error instanceof Error ? error.message : String(error)),
+          category: category(error),
+        },
+      }).catch(() => undefined);
+      throw error;
+    } finally {
+      invocationDeadline.cleanup();
+      subagent?.unregister();
+      await mcp?.close().catch(() => undefined);
+    }
+  });
 }

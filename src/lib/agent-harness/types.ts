@@ -4,6 +4,24 @@ export interface ToolCall {
   arguments: string;
 }
 
+export type AgentMessageRole = "system" | "user" | "assistant" | "tool";
+
+export type AgentContentPart =
+  | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "image"; url?: string; data?: string; mediaType?: string; detail?: "auto" | "low" | "high" }
+  | { type: "tool_call"; call: ToolCall }
+  | { type: "tool_result"; toolCallId: string; toolName: string; output: unknown; isError?: boolean };
+
+export interface AgentMessage {
+  /** Globally unique client/message identifier used for durable replay. */
+  id: string;
+  role: AgentMessageRole;
+  parts: AgentContentPart[];
+  createdAt: string;
+  sequence?: number;
+}
+
 export interface ModelUsage {
   inputTokens?: number;
   outputTokens?: number;
@@ -14,8 +32,10 @@ export interface ModelUsage {
 export interface ModelRequest {
   model: string;
   prompt: string;
+  messages?: AgentMessage[];
   temperature?: number;
   maxTokens?: number;
+  maxResponseBytes?: number;
   tools?: Array<Record<string, unknown>>;
   agentName?: string;
 }
@@ -47,6 +67,10 @@ export interface ExecutionPolicy {
   totalTimeoutMs: number;
   inactivityTimeoutMs: number;
   maxResponseBytes: number;
+  maxContextBytes: number;
+  maxToolOutputBytes: number;
+  toolTimeoutMs: number;
+  maxRepeatedToolCalls: number;
   /** Omitted by default so providers may complete naturally. */
   maxOutputTokens?: number;
   maxRepairAttempts: number;
@@ -54,6 +78,130 @@ export interface ExecutionPolicy {
   maxToolCalls: number;
   maxAttempts: number;
   retryBaseDelayMs: number;
+}
+
+export type AgentSessionStatus = "idle" | "running" | "completed" | "failed" | "cancelled";
+
+export interface AgentSessionRecord {
+  id: string;
+  parentSessionId?: string;
+  researchRunId?: string;
+  stageId?: string;
+  taskId?: string;
+  agentName: string;
+  status: AgentSessionStatus;
+  model?: string;
+  provider?: string;
+  result?: unknown;
+  error?: unknown;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentSessionEvent {
+  id: string;
+  sessionId: string;
+  sequence: number;
+  type: string;
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AgentToolTrace {
+  sessionId: string;
+  researchRunId?: string;
+  taskId?: string;
+  agentName: string;
+  toolCallId: string;
+  toolName: string;
+  input: unknown;
+  output?: unknown;
+  status: "running" | "completed" | "failed" | "cancelled";
+  errorMessage?: string;
+  durationMs?: number;
+}
+
+export type PermissionEffect = "allow" | "deny" | "ask";
+export type PermissionDecision = "allow_once" | "allow_always" | "deny";
+
+export interface PermissionRule {
+  action: string;
+  resource: string;
+  effect: PermissionEffect;
+}
+
+export interface PermissionRequest {
+  id: string;
+  sessionId: string;
+  agentName: string;
+  toolCallId: string;
+  toolName: string;
+  action: string;
+  resource: string;
+  input: unknown;
+}
+
+export interface AgentSessionStore {
+  createSession(input: {
+    id?: string;
+    parentSessionId?: string;
+    researchRunId?: string;
+    stageId?: string;
+    taskId?: string;
+    agentName: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<AgentSessionRecord>;
+  updateSession(
+    sessionId: string,
+    patch: Partial<Pick<AgentSessionRecord, "status" | "model" | "provider" | "metadata" | "result" | "error">>
+  ): Promise<void>;
+  appendMessage(sessionId: string, message: AgentMessage): Promise<AgentMessage>;
+  appendEvent(
+    sessionId: string,
+    type: string,
+    payload?: Record<string, unknown>,
+    options?: { idempotencyKey?: string }
+  ): Promise<AgentSessionEvent>;
+  listMessages(sessionId: string): Promise<AgentMessage[]>;
+  listEvents(sessionId: string): Promise<AgentSessionEvent[]>;
+  recordToolTrace?(trace: AgentToolTrace): Promise<void>;
+  recordPermission?(request: PermissionRequest, decision: PermissionDecision): Promise<void>;
+}
+
+export interface AgentSessionOptions {
+  id?: string;
+  inputId?: string;
+  parentSessionId?: string;
+  researchRunId?: string;
+  stageId?: string;
+  taskId?: string;
+  metadata?: Record<string, unknown>;
+  store?: AgentSessionStore;
+  depth?: number;
+}
+
+export interface McpServerConfig {
+  name: string;
+  url: string;
+  allowedHosts: string[];
+  headerEnv?: Record<string, string>;
+  timeoutMs?: number;
+  enabledTools?: string[];
+}
+
+export interface SubagentOptions {
+  allowedAgents: string[];
+  maxDepth?: number;
+  maxChildren?: number;
+  execute(request: {
+    agentName: string;
+    title: string;
+    taskPacket: Record<string, unknown>;
+    signal: AbortSignal;
+    parentSessionId: string;
+    depth: number;
+  }): Promise<unknown>;
 }
 
 export interface AgentAttempt {
@@ -111,6 +259,7 @@ export interface AgentPassTelemetry {
 export interface AgentLifecycleHooks {
   beforeAttempt?: (context: { attempt: number; provider: string; model: string }) => Promise<void> | void;
   onAttemptComplete?: (attempt: AgentAttempt) => Promise<void> | void;
+  onEvent?: (event: AgentSessionEvent) => Promise<void> | void;
 }
 
 export interface AgentRequest<T = unknown> {
@@ -118,11 +267,21 @@ export interface AgentRequest<T = unknown> {
   title: string;
   taskPacket: Record<string, unknown>;
   prompt?: string;
+  systemPrompt?: string;
+  messages?: AgentMessage[];
   promptFactory?: (packet: Record<string, unknown>) => string;
   signal?: AbortSignal;
   policy?: Partial<ExecutionPolicy>;
   hooks?: AgentLifecycleHooks;
   provider?: ModelProvider;
+  session?: AgentSessionOptions;
+  enabledTools?: string[];
+  permissionRules?: PermissionRule[];
+  onPermissionRequest?: (request: PermissionRequest) => Promise<PermissionDecision> | PermissionDecision;
+  skillPaths?: string[];
+  skills?: string[];
+  mcpServers?: McpServerConfig[];
+  subagents?: SubagentOptions;
   outputFormat?: AgentOutputFormat;
   validateStructured?: (value: unknown) => Array<{ path: string; message: string }>;
   _outputType?: T;
@@ -153,4 +312,5 @@ export interface AgentResult<T = unknown> {
   attempts: AgentAttempt[];
   usage: AgentUsage;
   config: Record<string, unknown>;
+  sessionId?: string;
 }

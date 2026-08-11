@@ -57,6 +57,13 @@
       "when": 1786108800000,
       "tag": "0007_harness_integrity_v4",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786406400000,
+      "tag": "0008_opencode_harness_backend",
+      "breakpoints": true
     }
   ]
 }

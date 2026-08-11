@@ -8,6 +8,8 @@ import {
   jsonb,
   boolean,
   index,
+  uniqueIndex,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { research_runs, research_stages, research_tasks } from "./workflow";
@@ -144,6 +146,93 @@ export const model_budget_reservations = pgTable(
 );
 
 // ============================================================
+// agent_sessions/messages/events — durable harness transcript
+// ============================================================
+export const agent_sessions = pgTable(
+  "agent_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    parent_session_id: uuid("parent_session_id").references((): AnyPgColumn => agent_sessions.id, { onDelete: "cascade" }),
+    research_run_id: uuid("research_run_id").references(() => research_runs.id, { onDelete: "cascade" }),
+    stage_id: uuid("stage_id").references(() => research_stages.id, { onDelete: "cascade" }),
+    task_id: uuid("task_id").references(() => research_tasks.id, { onDelete: "cascade" }),
+    agent_name: text("agent_name").notNull(),
+    status: text("status").notNull().default("idle"),
+    provider: text("provider"),
+    model: text("model"),
+    result_json: jsonb("result_json"),
+    error_json: jsonb("error_json"),
+    metadata_json: jsonb("metadata_json").notNull().default({}),
+    next_event_sequence: integer("next_event_sequence").notNull().default(0),
+    next_message_sequence: integer("next_message_sequence").notNull().default(0),
+    created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    completed_at: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("agent_sessions_task_unique").on(table.task_id),
+    index("agent_sessions_run_idx").on(table.research_run_id, table.created_at),
+    index("agent_sessions_parent_idx").on(table.parent_session_id),
+  ]
+);
+
+export const agent_session_messages = pgTable(
+  "agent_session_messages",
+  {
+    id: text("id").primaryKey(),
+    session_id: uuid("session_id").notNull().references(() => agent_sessions.id, { onDelete: "cascade" }),
+    sequence: integer("sequence").notNull(),
+    role: text("role").notNull(),
+    content_json: jsonb("content_json").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("agent_session_messages_sequence_unique").on(table.session_id, table.sequence),
+    index("agent_session_messages_session_idx").on(table.session_id, table.sequence),
+  ]
+);
+
+export const agent_session_events = pgTable(
+  "agent_session_events",
+  {
+    id: uuid("id").primaryKey(),
+    session_id: uuid("session_id").notNull().references(() => agent_sessions.id, { onDelete: "cascade" }),
+    sequence: integer("sequence").notNull(),
+    event_type: text("event_type").notNull(),
+    payload_json: jsonb("payload_json").notNull().default({}),
+    idempotency_key: text("idempotency_key"),
+    created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("agent_session_events_sequence_unique").on(table.session_id, table.sequence),
+    uniqueIndex("agent_session_events_idempotency_unique").on(table.session_id, table.idempotency_key),
+    index("agent_session_events_session_idx").on(table.session_id, table.sequence),
+  ]
+);
+
+export const agent_permission_requests = pgTable(
+  "agent_permission_requests",
+  {
+    id: uuid("id").primaryKey(),
+    session_id: uuid("session_id").notNull().references(() => agent_sessions.id, { onDelete: "cascade" }),
+    tool_call_id: text("tool_call_id").notNull(),
+    tool_name: text("tool_name").notNull(),
+    agent_name: text("agent_name").notNull(),
+    action: text("action").notNull(),
+    resource: text("resource").notNull(),
+    input_json: jsonb("input_json").notNull().default({}),
+    status: text("status").notNull().default("pending"),
+    decision: text("decision"),
+    created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolved_at: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("agent_permission_requests_call_unique").on(table.session_id, table.tool_call_id),
+    index("agent_permission_requests_session_idx").on(table.session_id, table.created_at),
+  ]
+);
+
+// ============================================================
 // agent_traces — §27.13
 // Tool calls made by agents.
 // ============================================================
@@ -151,13 +240,21 @@ export const agent_traces = pgTable("agent_traces", {
   id: uuid("id").primaryKey().defaultRandom(),
   research_run_id: uuid("research_run_id").references(() => research_runs.id),
   task_id: uuid("task_id").references(() => research_tasks.id),
+  session_id: uuid("session_id").references(() => agent_sessions.id, { onDelete: "cascade" }),
   agent_name: text("agent_name").notNull(),
+  tool_call_id: text("tool_call_id"),
   tool_name: text("tool_name"),
   tool_input_json: jsonb("tool_input_json").notNull().default({}),
   tool_output_json: jsonb("tool_output_json"),
   status: text("status").notNull(),
+  error_message: text("error_message"),
+  duration_ms: integer("duration_ms"),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+  completed_at: timestamp("completed_at", { withTimezone: true }),
+}, (table) => [
+  uniqueIndex("agent_traces_session_call_unique").on(table.session_id, table.tool_call_id),
+  index("agent_traces_session_idx").on(table.session_id, table.created_at),
+]);
 
 // ============================================================
 // Relations

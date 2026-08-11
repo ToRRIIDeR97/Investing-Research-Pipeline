@@ -50,8 +50,13 @@ export async function acquireProviderRequestLock(
   try {
     await waitForTurn(previous, signal);
   } catch (error) {
-    releaseTurn();
-    if (queues.get(endpoint) === turn) queues.delete(endpoint);
+    // Preserve the chain when a queued caller cancels; later callers must
+    // still wait for the active predecessor before this abandoned turn opens.
+    const finishAbandonedTurn = () => {
+      releaseTurn();
+      if (queues.get(endpoint) === turn) queues.delete(endpoint);
+    };
+    void previous.then(finishAbandonedTurn, finishAbandonedTurn);
     throw error;
   }
 

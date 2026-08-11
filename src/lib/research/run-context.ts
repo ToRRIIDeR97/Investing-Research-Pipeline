@@ -9,6 +9,7 @@
 
 import postgres from "postgres";
 import { runResearchAgent } from "@/lib/agent-harness/runner";
+import { PostgresAgentSessionStore } from "@/lib/agent-harness/session-store";
 import { getAgentConfig } from "@/lib/agent-harness/registry";
 import { validateSchema } from "@/lib/agent-harness/validation";
 import { assertModelBudgetAvailable, recordModelCall, releaseModelBudgetReservation } from "@/lib/agents/model-calls";
@@ -206,13 +207,11 @@ export async function persistV3Composition(
   archetypes: string[],
   overlays: string[]
 ): Promise<void> {
-  // JSONB || concatenation requires a raw SQL literal; use JSON.stringify
-  // with proper SQL string escaping (double single quotes).
-  const value = JSON.stringify({ v3_archetypes: archetypes, v3_overlays: overlays }).replace(/'/g, "''");
+  const value = { v3_archetypes: archetypes, v3_overlays: overlays };
   await sql`
     UPDATE research_runs
-    SET metadata_json = coalesce(metadata_json, '{}'::jsonb)
-                         || ${sql.unsafe(`'${value}'::jsonb`)},
+    SET metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
+                         || ${sql.json(value)},
         updated_at = NOW()
     WHERE id = ${runId}
   `;
@@ -226,57 +225,76 @@ export async function createV3Task(
   taskType: string,
   agentName: string
 ): Promise<{ id: string; stage_id: string; taskKey: string; priorValidationErrors: string[] }> {
-  const existing = await sql`
-    SELECT id, stage_id, status, validation_status, validation_result_json, failure_reason, task_key FROM research_tasks
-    WHERE research_run_id = ${runId}
-      AND (task_key = ${taskKey} OR task_key LIKE ${`${taskKey}:revision-%`})
-    ORDER BY created_at DESC
-    LIMIT 1
-  `;
-  if (existing[0] && existing[0].status === "completed" && existing[0].validation_status === "valid") {
-    return { id: existing[0].id, stage_id: existing[0].stage_id, taskKey: String(existing[0].task_key), priorValidationErrors: [] };
-  }
-  if (existing[0] && ["completed", "failed"].includes(String(existing[0].status))) {
-    await sql`
-      UPDATE research_tasks
-      SET status = 'failed', validation_status = 'invalid',
-          failure_reason = 'Completed output failed downstream validation', updated_at = NOW()
-      WHERE id = ${existing[0].id}
+  return sql.begin(async (tx) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`${runId}:${stageKey}:${taskKey}`}, 0))`;
+    const stage = await tx`
+      SELECT id FROM research_stages
+      WHERE research_run_id = ${runId} AND stage_key = ${stageKey}
+      LIMIT 1
     `;
-  }
-  const priorValidationErrors = existing[0]
-    ? [
-        ...(existing[0].validation_result_json && typeof existing[0].validation_result_json === "object"
-          ? (Array.isArray((existing[0].validation_result_json as Record<string, unknown>).errors)
-            ? ((existing[0].validation_result_json as Record<string, unknown>).errors as unknown[]).map(String)
-            : [])
-          : []),
-        existing[0].failure_reason ? String(existing[0].failure_reason) : "",
-      ].filter(Boolean)
-    : [];
-  const revision = existing[0]
-    ? Number(String(existing[0].task_key).match(/:revision-(\d+)$/)?.[1] || 0) + 1
-    : 0;
-  const effectiveTaskKey = revision > 0 ? `${taskKey}:revision-${revision}` : taskKey;
-  // Find the stage_id first; bind JSON as text to avoid postgres.js Parameter
-  // objects leaking through mixed Drizzle/raw-SQL handlers.
-  const stage = await sql`
-    SELECT id FROM research_stages
-    WHERE research_run_id = ${runId} AND stage_key = ${stageKey}
-    LIMIT 1
-  `;
-  if (!stage[0]) throw new Error(`Stage not found for task: ${stageKey}`);
-  const rows = await sql`
-    INSERT INTO research_tasks (
-      research_run_id, stage_id, task_key, task_type, agent_name,
-      status, priority, input_json, started_at
-    ) VALUES (
-      ${runId}, ${stage[0].id}, ${effectiveTaskKey}, ${taskType}, ${agentName},
-      'running', 80, ${JSON.stringify({ system_generated: true, pipeline_version: CURRENT_PIPELINE_VERSION })}::jsonb, NOW()
-    )
-    RETURNING id, stage_id
-  `;
-  return { ...(rows[0] as { id: string; stage_id: string }), taskKey: effectiveTaskKey, priorValidationErrors };
+    if (!stage[0]) throw new Error(`Stage not found for task: ${stageKey}`);
+
+    const valid = await tx`
+      SELECT id, stage_id, task_key FROM research_tasks
+      WHERE research_run_id = ${runId} AND stage_id = ${stage[0].id}
+        AND (task_key = ${taskKey} OR task_key LIKE ${`${taskKey}:revision-%`})
+        AND status = 'completed' AND validation_status = 'valid' AND output_json IS NOT NULL
+      ORDER BY completed_at DESC NULLS LAST, created_at DESC
+      LIMIT 1
+    `;
+    if (valid[0]) {
+      return { id: valid[0].id, stage_id: valid[0].stage_id, taskKey: String(valid[0].task_key), priorValidationErrors: [] };
+    }
+
+    const existing = await tx`
+      SELECT id, stage_id, status, validation_status, validation_result_json, failure_reason, task_key
+      FROM research_tasks
+      WHERE research_run_id = ${runId} AND stage_id = ${stage[0].id}
+        AND (task_key = ${taskKey} OR task_key LIKE ${`${taskKey}:revision-%`})
+      ORDER BY created_at DESC
+      LIMIT 1
+      FOR UPDATE
+    `;
+    if (existing[0] && ["pending", "running"].includes(String(existing[0].status))) {
+      if (existing[0].status === "pending") {
+        await tx`UPDATE research_tasks SET status = 'running', started_at = NOW(), updated_at = NOW() WHERE id = ${existing[0].id}`;
+      }
+      return { id: existing[0].id, stage_id: existing[0].stage_id, taskKey: String(existing[0].task_key), priorValidationErrors: [] };
+    }
+    if (existing[0] && ["completed", "failed"].includes(String(existing[0].status))) {
+      await tx`
+        UPDATE research_tasks
+        SET status = 'failed', validation_status = 'invalid',
+            failure_reason = 'Completed output failed downstream validation', updated_at = NOW()
+        WHERE id = ${existing[0].id}
+      `;
+    }
+    const priorValidationErrors = existing[0]
+      ? [
+          ...(existing[0].validation_result_json && typeof existing[0].validation_result_json === "object"
+            ? (Array.isArray((existing[0].validation_result_json as Record<string, unknown>).errors)
+              ? ((existing[0].validation_result_json as Record<string, unknown>).errors as unknown[]).map(String)
+              : [])
+            : []),
+          existing[0].failure_reason ? String(existing[0].failure_reason) : "",
+        ].filter(Boolean)
+      : [];
+    const revision = existing[0]
+      ? Number(String(existing[0].task_key).match(/:revision-(\d+)$/)?.[1] || 0) + 1
+      : 0;
+    const effectiveTaskKey = revision > 0 ? `${taskKey}:revision-${revision}` : taskKey;
+    const rows = await tx`
+      INSERT INTO research_tasks (
+        research_run_id, stage_id, task_key, task_type, agent_name,
+        status, priority, input_json, started_at
+      ) VALUES (
+        ${runId}, ${stage[0].id}, ${effectiveTaskKey}, ${taskType}, ${agentName},
+        'running', 80, ${JSON.stringify({ system_generated: true, pipeline_version: CURRENT_PIPELINE_VERSION })}::jsonb, NOW()
+      )
+      RETURNING id, stage_id
+    `;
+    return { ...(rows[0] as { id: string; stage_id: string }), taskKey: effectiveTaskKey, priorValidationErrors };
+  });
 }
 
 export async function latestV3TaskOutput(
@@ -311,29 +329,52 @@ export async function latestV3TaskOutput(
 }
 
 export async function completeV3Task(sql: Sql, taskId: string, output: unknown): Promise<void> {
-  await sql`
+  const serialized = JSON.stringify(output ?? {});
+  const rows = await sql`
     UPDATE research_tasks
     SET status = 'completed',
         validation_status = 'valid',
-        output_json = ${JSON.stringify(output ?? {})}::jsonb,
+        output_json = ${serialized}::jsonb,
         failure_reason = NULL,
         completed_at = NOW(),
         updated_at = NOW()
     WHERE id = ${taskId}
+      AND (status = 'running' OR (status = 'completed' AND output_json IS NOT DISTINCT FROM ${serialized}::jsonb))
+    RETURNING id
   `;
+  if (!rows[0]) throw new Error(`Task ${taskId} is no longer claimable for completion`);
 }
 
 export async function failV3Task(sql: Sql, taskId: string, error: unknown): Promise<void> {
-  const message = error instanceof Error ? error.message : String(error);
-  await sql`
+  const message = (error instanceof Error ? error.message : String(error)).slice(0, 4000);
+  const rows = await sql`
     UPDATE research_tasks
     SET status = 'failed',
         validation_status = 'invalid',
-        failure_reason = ${message.slice(0, 4000)},
+        failure_reason = ${message},
         completed_at = NOW(),
         updated_at = NOW()
     WHERE id = ${taskId}
+      AND (status IN ('pending', 'running') OR (status = 'failed' AND failure_reason = ${message}))
+    RETURNING id
   `;
+  if (!rows[0]) throw new Error(`Task ${taskId} is no longer claimable for failure`);
+}
+
+async function invalidateCachedV3Task(sql: Sql, taskId: string, reason: string): Promise<void> {
+  const rows = await sql`
+    UPDATE research_tasks
+    SET status = 'failed',
+        validation_status = 'invalid',
+        failure_reason = ${reason},
+        completed_at = NOW(),
+        updated_at = NOW()
+    WHERE id = ${taskId}
+      AND status = 'completed'
+      AND validation_status = 'valid'
+    RETURNING id
+  `;
+  if (!rows[0]) throw new Error(`Cached task ${taskId} is no longer claimable for invalidation`);
 }
 
 export function exactJsonPrompt(params: {
@@ -378,18 +419,19 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
 }): Promise<T> {
   const agentConfig = getAgentConfig(params.agentName);
   const resolvedTier = agentConfig.modelTier;
-  let task = await createV3Task(params.sql, params.ctx.runId, params.stageKey, params.taskKey, params.taskType, params.agentName);
   const stageRows = await params.sql`
-    SELECT allowed_model_tiers FROM research_stages
-    WHERE id = ${task.stage_id}
+    SELECT id, allowed_model_tiers FROM research_stages
+    WHERE research_run_id = ${params.ctx.runId} AND stage_key = ${params.stageKey}
     LIMIT 1
   `;
+  if (!stageRows[0]) throw new Error(`Stage not found for task: ${params.stageKey}`);
   const allowedTiers = Array.isArray(stageRows[0]?.allowed_model_tiers)
     ? stageRows[0].allowed_model_tiers.map(String)
     : [];
   if (allowedTiers.length && !allowedTiers.includes(resolvedTier)) {
     throw new Error(`Agent ${params.agentName} resolves to tier ${resolvedTier}, which is not allowed for stage ${params.stageKey}`);
   }
+  let task = await createV3Task(params.sql, params.ctx.runId, params.stageKey, params.taskKey, params.taskType, params.agentName);
   let prior = await latestV3TaskOutput(params.sql, params.ctx.runId, task.taskKey);
   if (prior) {
     const outputFormat = params.outputFormat || agentConfig.outputFormat;
@@ -414,7 +456,7 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
       schemaKey: params.stageKey,
       error: reason,
     }).catch(() => undefined);
-    await failV3Task(params.sql, task.id, reason);
+    await invalidateCachedV3Task(params.sql, task.id, reason);
     task = await createV3Task(params.sql, params.ctx.runId, params.stageKey, params.taskKey, params.taskType, params.agentName);
     prior = null;
   }
@@ -437,6 +479,14 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
       outputFormat: params.outputFormat,
       validateStructured: params.validateStructured,
       signal: params.signal,
+      session: {
+        inputId: task.id,
+        researchRunId: params.ctx.runId,
+        stageId: task.stage_id,
+        taskId: task.id,
+        metadata: { stageKey: params.stageKey, taskKey: task.taskKey, taskType: params.taskType },
+        store: new PostgresAgentSessionStore(params.sql),
+      },
       hooks: {
         beforeAttempt: async () => {
           reservationId = await assertModelBudgetAvailable({
@@ -528,7 +578,7 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
       schemaKey: params.stageKey,
       error,
     }).catch(() => undefined);
-    await failV3Task(params.sql, task.id, error);
+    await failV3Task(params.sql, task.id, error).catch(() => undefined);
     throw error;
   }
 }

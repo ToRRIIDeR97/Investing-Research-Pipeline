@@ -47,14 +47,19 @@ async function claimNextBacktestTask(): Promise<ResearchTask | null> {
   const sql = postgres(process.env.DATABASE_URL!);
   try {
     const rows = await sql`
-      UPDATE research_tasks
-      SET status = 'running', started_at = COALESCE(started_at, NOW()), updated_at = NOW()
-      WHERE id = (
-        SELECT id FROM research_tasks
-        WHERE status = 'pending' AND task_type = 'backtest'
-        ORDER BY priority DESC, created_at ASC
-        LIMIT 1 FOR UPDATE SKIP LOCKED
+      WITH next_task AS (
+        SELECT task.id FROM research_tasks task
+        JOIN research_runs run ON run.id = task.research_run_id
+        JOIN research_stages stage ON stage.id = task.stage_id
+        WHERE task.status = 'pending' AND task.task_type = 'backtest'
+          AND run.status = 'running' AND stage.status = 'running'
+        ORDER BY task.priority DESC, task.created_at ASC
+        LIMIT 1 FOR UPDATE OF task SKIP LOCKED
       )
+      UPDATE research_tasks AS task
+      SET status = 'running', started_at = COALESCE(task.started_at, NOW()), updated_at = NOW()
+      FROM next_task
+      WHERE task.id = next_task.id
       RETURNING id, research_run_id, stage_id, task_key, task_type,
         agent_name, status, priority, input_json, output_json,
         validation_status, validation_result_json, retry_count, cost_usd,

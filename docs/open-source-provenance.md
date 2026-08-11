@@ -7,17 +7,18 @@ This document records the provenance of open-source components and algorithms ad
 - **Project Name**: OpenCode CLI
 - **Repository URL**: https://github.com/anomalyco/opencode
 - **License**: MIT License
-- **Version/Commit Studied**: tag `v1.17.13`, commit `10c894bdeef3618f5666fb506ef7f9491bb964d8`
+- **Version/Commit Studied**: `dev` branch, commit `3a90639cb57619a21e59f544b3e8d23ffed56f48` (downloaded into `Temp Download` on 2026-08-11)
 
 ## 2. Adapted Algorithms and Concepts
 
 The following algorithms and protocols were studied from the OpenCode CLI/SDK:
 - **JSON Object Scanning/Extraction**: The depth-counting JSON parser used in `src/lib/agent-harness/output-parser.ts` is an independent implementation of the scanning method from the OpenCode runtime.
 - **Model Routing**: The registry format and key aliases were transitioned from `src/lib/opencode/agent-registry.ts` to `src/lib/agent-harness/registry.ts`.
+- **Runtime Contracts**: Canonical messages, provider event normalization, session/event projection, context compaction, typed tool settlement, permissions, skills, remote MCP, and bounded subagent patterns informed the replacement harness backend.
 
 ## 3. Implementation Status
 
-All files in `src/lib/agent-harness/` are independent Research OS implementations targeting generic OpenAI-compatible streaming protocols. OpenCode's provider-neutral event-loop, cancellation, and routing concepts were studied; no OpenCode source file was copied into this repository.
+All files in `src/lib/agent-harness/` are independent Research OS implementations for Node.js and Postgres. They preserve the existing research pipeline contracts and do not vendor OpenCode's Bun/Effect/SQLite runtime. No OpenCode source file was copied into this repository.
 
 ## 4. Attribution and Notices
 

@@ -3924,6 +3924,26 @@ Trade-offs:
 - Some components share a deployment boundary at first.
 - Clear module boundaries make later extraction possible.
 
+### ADR-011: Implement The OpenCode Harness Contracts Natively
+
+Status: Accepted
+
+Decision:
+
+Replace the prompt-only research harness with a native Node/Postgres backend modeled on OpenCode's message, session, event, tool, permission, skill, MCP, and subagent contracts. Keep the research FSM, artifacts, budget ledger, job leases, and human gates unchanged. Do not embed OpenCode's server, SDK, Bun/Effect runtime, SQLite store, auth, UI, coding tools, or plugin host.
+
+Rationale:
+
+- The research workflow needs durable, replayable agent execution without becoming a coding-agent product.
+- Native integration preserves the existing Postgres transactions, model-call audit, and domain validators.
+- Excluding host shell/file tools and arbitrary plugins keeps the research trust boundary narrow.
+
+Trade-offs:
+
+- Session single-flight is process-local; distributed ownership remains the responsibility of the leased research job queue.
+- Remote MCP is HTTPS-only and uses explicit environment-backed headers; local stdio and OAuth can be added only when a concrete connector requires them.
+- Database migrations for this repository remain hand-authored and checked with `drizzle-kit check`; migration generation is not authoritative until the existing snapshot history is repaired.
+
 ## 33. Remaining Open Questions
 
 These should be decided during implementation planning:

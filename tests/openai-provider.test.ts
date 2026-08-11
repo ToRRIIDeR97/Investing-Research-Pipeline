@@ -5,6 +5,7 @@ import { once } from "node:events";
 import { ProviderError } from "../src/lib/agent-harness/errors";
 import { OpenAICompatibleProvider } from "../src/lib/agent-harness/providers/openai-compatible";
 import { OpenCodeGoProvider } from "../src/lib/agent-harness/providers/opencode-go";
+import { acquireProviderRequestLock } from "../src/lib/agent-harness/providers/request-lock";
 import { runResearchAgent } from "../src/lib/agent-harness/runner";
 
 async function fixture(handler: (response: ServerResponse) => void) {
@@ -80,6 +81,27 @@ test("serializes concurrent model streams for one provider endpoint", async () =
     })));
     assert.equal(maximumActive, 1);
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test("cancelling a queued endpoint request preserves the active lock", async () => {
+  const endpoint = `fixture:${crypto.randomUUID()}`;
+  const releaseActive = await acquireProviderRequestLock(endpoint);
+  const cancelled = new AbortController();
+  const waiting = acquireProviderRequestLock(endpoint, cancelled.signal);
+  cancelled.abort();
+  await assert.rejects(waiting, (error: unknown) => error instanceof ProviderError && error.category === "cancellation");
+
+  let acquired = false;
+  const next = acquireProviderRequestLock(endpoint).then((release) => {
+    acquired = true;
+    return release;
+  });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(acquired, false);
+  releaseActive();
+  const releaseNext = await next;
+  assert.equal(acquired, true);
+  releaseNext();
 });
 
 test("queued endpoint requests receive a full provider deadline after lock acquisition", async () => {
@@ -216,6 +238,7 @@ test("direct provider requires HTTPS, API key, and exact host allowlist", () => 
   assert.throws(() => new OpenAICompatibleProvider({ mode: "direct", baseUrl: "http://example.com/v1", apiKey: "x", allowedHosts: ["example.com"] }), /HTTPS/);
   assert.throws(() => new OpenAICompatibleProvider({ mode: "direct", baseUrl: "https://example.com/v1", allowedHosts: ["example.com"] }), /API_KEY/);
   assert.throws(() => new OpenAICompatibleProvider({ mode: "direct", baseUrl: "https://evil.example/v1", apiKey: "x", allowedHosts: ["example.com"] }), /allowlisted/);
+  assert.throws(() => new OpenAICompatibleProvider({ mode: "direct", baseUrl: "https://example.com/v1?token=x", apiKey: "x", allowedHosts: ["example.com"] }), /query or fragment/);
 });
 
 test("OpenCode Go router uses Anthropic messages for Qwen and OpenAI chat for GLM", async () => {

@@ -1,5 +1,7 @@
 import type { ModelEvent, ModelProvider, ModelRequest, ProviderHealth, ToolCall } from "../types";
-import { ProviderError, type HarnessErrorCategory } from "../errors";
+import { ProviderError, redactHarnessText, type HarnessErrorCategory } from "../errors";
+import { toOpenAIChatMessages } from "../messages";
+import { isPrivateOrLocalHost } from "../network";
 import { acquireProviderRequestLock } from "./request-lock";
 
 type ProviderMode = "direct" | "local";
@@ -11,14 +13,9 @@ export interface ProviderOptions {
   allowedHosts?: string[];
 }
 
-function privateOrLoopback(host: string) {
-  return host === "localhost" || host === "127.0.0.1" || host === "::1" ||
-    /^10\./.test(host) || /^192\.168\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host);
-}
-
-function safeErrorBody(value: string) {
-  return value.slice(0, 2000).replace(/(bearer\s+)[^\s"']+/gi, "$1[REDACTED]");
+function safeErrorBody(value: string, apiKey: string) {
+  const withoutKey = apiKey.length > 5 ? value.split(apiKey).join("[REDACTED]") : value;
+  return redactHarnessText(withoutKey, 2_000);
 }
 
 export class OpenAICompatibleProvider implements ModelProvider {
@@ -28,9 +25,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   constructor(options: ProviderOptions) {
     this.id = options.mode === "local" ? "local-openai-compatible" : "direct-openai-compatible";
-    this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.apiKey = options.apiKey || "";
     const url = this.validateUrl(options);
+    this.baseUrl = url.toString().replace(/\/+$/, "");
     if (options.mode === "direct" && !this.apiKey) {
       throw new ProviderError("Direct provider requires RESEARCH_MODEL_API_KEY", "invalid_request");
     }
@@ -52,8 +49,11 @@ export class OpenAICompatibleProvider implements ModelProvider {
     if (url.username || url.password) {
       throw new ProviderError("Provider URL must not contain credentials", "invalid_request");
     }
+    if (url.search || url.hash) {
+      throw new ProviderError("Provider base URL must not contain a query or fragment", "invalid_request");
+    }
     if (options.mode === "local") {
-      if (!privateOrLoopback(url.hostname)) {
+      if (!isPrivateOrLocalHost(url.hostname)) {
         throw new ProviderError("Local provider must use a loopback or private host", "invalid_request");
       }
     } else {
@@ -61,7 +61,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       if (!allowed.length || !allowed.includes(url.hostname.toLowerCase())) {
         throw new ProviderError(`Direct provider host is not allowlisted: ${url.hostname}`, "invalid_request");
       }
-      if (privateOrLoopback(url.hostname)) {
+      if (isPrivateOrLocalHost(url.hostname)) {
         throw new ProviderError("Direct provider cannot target a private host", "invalid_request");
       }
     }
@@ -76,7 +76,11 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   async healthCheck(): Promise<ProviderHealth> {
     try {
-      const response = await fetch(`${this.baseUrl}/models`, { headers: this.headers(), redirect: "error" });
+      const response = await fetch(`${this.baseUrl}/models`, {
+        headers: this.headers(),
+        redirect: "error",
+        signal: AbortSignal.timeout(Number(process.env.RESEARCH_PROVIDER_HEALTH_TIMEOUT_MS || 10_000)),
+      });
       if (!response.ok) return { status: "unhealthy", message: `HTTP ${response.status}` };
       const body = await response.json().catch(() => ({})) as { data?: Array<{ id?: string }> };
       return { status: "healthy", models: (body.data || []).map((item) => item.id || "").filter(Boolean) };
@@ -90,6 +94,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   async *stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent> {
+    const streamBufferLimit = request.maxResponseBytes || 1_000_000;
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}/chat/completions`, {
@@ -97,7 +102,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
         headers: this.headers(),
         body: JSON.stringify({
           model: request.model,
-          messages: [{ role: "user", content: request.prompt }],
+          messages: request.messages?.length
+            ? toOpenAIChatMessages(request.messages)
+            : [{ role: "user", content: request.prompt }],
           stream: true,
           stream_options: { include_usage: true },
           ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
@@ -114,7 +121,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
     const requestId = response.headers.get("x-request-id") || response.headers.get("request-id") || undefined;
     if (!response.ok) {
-      const raw = safeErrorBody(await response.text().catch(() => ""));
+      const raw = safeErrorBody(await response.text().catch(() => ""), this.apiKey);
       const status = response.status;
       let category: HarnessErrorCategory = "unknown";
       if (status === 401 || status === 403) category = "authentication";
@@ -172,6 +179,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
         if (fragment.id) current.id = fragment.id;
         if (fragment.function?.name) current.name += fragment.function.name;
         if (fragment.function?.arguments) current.arguments += fragment.function.arguments;
+        if (Buffer.byteLength(current.name, "utf8") + Buffer.byteLength(current.arguments, "utf8") > streamBufferLimit) {
+          throw new ProviderError("Provider tool call exceeded maximum size", "response_limit");
+        }
         toolFragments.set(index, current);
       }
       if (payload.usage) {
@@ -193,6 +203,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
+        if (Buffer.byteLength(buffer, "utf8") > streamBufferLimit) {
+          throw new ProviderError("Provider SSE event exceeded maximum size", "response_limit");
+        }
         const blocks = buffer.split(/\r?\n\r?\n/);
         buffer = blocks.pop() || "";
         for (const block of blocks) for (const event of parseBlock(block)) yield event;
