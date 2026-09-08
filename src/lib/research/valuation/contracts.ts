@@ -43,6 +43,9 @@ export const ValuationScenarioSet = z.object({
   terminal_anchor_bear: z.number(),
   terminal_anchor_base: z.number(),
   terminal_anchor_bull: z.number(),
+  probability_bear: z.number().min(0).max(1).default(0.25),
+  probability_base: z.number().min(0).max(1).default(0.5),
+  probability_bull: z.number().min(0).max(1).default(0.25),
   uses_adjusted_fcf: z.boolean().default(true),
   segments_reconciled: z.boolean().default(true),
 });
@@ -52,6 +55,10 @@ export const ReverseValuation = z.object({
   artifact_type: z.literal("reverse_valuation"),
   implied_growth: z.number(),
   implied_margin: z.number(),
+  return_on_equity: z.number(),
+  cost_of_equity: z.number(),
+  roe_minus_cost_of_equity: z.number(),
+  roe_vs_coe_assessment: z.string().min(1),
 });
 export type ReverseValuation = z.infer<typeof ReverseValuation>;
 

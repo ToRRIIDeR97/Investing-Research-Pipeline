@@ -7,20 +7,13 @@ import { buildHistoricalDiagnosis } from "../diagnosis/diagnosis";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { createHash } from "node:crypto";
 
 export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "historical_diagnosis",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
-    const taskKey = "historical-diagnostician:diagnosis";
-    const task = await createV3Task(
-      sql,
-      ctx.runId,
-      "historical_diagnosis",
-      taskKey,
-      "historical_diagnosis",
-      "historical-diagnostician"
-    );
+    let task: Awaited<ReturnType<typeof createV3Task>> | null = null;
     try {
       const observationRows = await sql`
         SELECT md.metric_key, mo.value_numeric, mo.period_end, mo.as_of_date,
@@ -30,6 +23,8 @@ export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> =
         WHERE mo.research_run_id = ${ctx.runId}
           AND mo.review_status = 'accepted'
           AND mo.value_numeric IS NOT NULL
+          AND COALESCE(mo.period_end, mo.as_of_date) <= ${ctx.marketDataCutoffAt?.toISOString().slice(0, 10) || new Date().toISOString().slice(0, 10)}::date
+          AND (mo.available_at IS NULL OR mo.available_at <= ${ctx.marketDataCutoffAt || new Date()})
         ORDER BY md.metric_key, COALESCE(mo.period_end, mo.as_of_date)
       `;
       const claimRows = await sql`
@@ -42,6 +37,18 @@ export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> =
       if (fallbackClaimIds.length === 0) {
         throw new Error("Historical diagnosis requires at least one accepted evidence claim");
       }
+      const taskKey = `historical-diagnostician:diagnosis:${createHash("sha256")
+        .update(JSON.stringify({ observations: observationRows, evidence_claim_ids: fallbackClaimIds }))
+        .digest("hex")
+        .slice(0, 12)}`;
+      task = await createV3Task(
+        sql,
+        ctx.runId,
+        "historical_diagnosis",
+        taskKey,
+        "historical_diagnosis",
+        "historical-diagnostician"
+      );
       const observations = observationRows.map((row) => {
         const date = new Date(row.period_end || row.as_of_date);
         return {
@@ -102,7 +109,7 @@ export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> =
       await completeV3Task(sql, task.id, output);
       return output;
     } catch (error) {
-      await failV3Task(sql, task.id, error).catch(() => undefined);
+      if (task) await failV3Task(sql, task.id, error).catch(() => undefined);
       throw error;
     } finally {
       await sql.end();

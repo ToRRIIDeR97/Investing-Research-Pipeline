@@ -9,6 +9,9 @@ import {
   validateMonitoringDashboard,
   validateDecisionRecord,
   calculateProbabilityWeightedReturn,
+  buildFourQuarterMetricTrends,
+  deriveExpectedReturnMatrix,
+  inferPredictionPriceFromTargetPath,
 } from "@/lib/research/decision/validation";
 import type {
   InvestmentThesis,
@@ -23,6 +26,49 @@ import type {
 const uuid1 = "00000000-0000-0000-0000-000000000001";
 
 describe("investment decision artifacts (Component 12)", () => {
+  it("derives a reconciled expected-return matrix from accepted valuation targets", () => {
+    const matrix = deriveExpectedReturnMatrix({
+      scenarioSet: { probability_bear: 0.25, probability_base: 0.5, probability_bull: 0.25 },
+      priceTargetPath: {
+        currency: "USD",
+        price_target_path: [
+          { fiscal_year: 2027, scenario_type: "bear", price_target: 8, dividend_per_share: 0 },
+          { fiscal_year: 2027, scenario_type: "base", price_target: 12, dividend_per_share: 0 },
+          { fiscal_year: 2027, scenario_type: "bull", price_target: 16, dividend_per_share: 0 },
+        ],
+      },
+      currentPrice: 10,
+      predictionDate: "2026-08-24",
+    });
+    assert.equal(matrix.bear_return, -0.2);
+    assert.equal(matrix.base_return, 0.2);
+    assert.equal(matrix.bull_return, 0.6);
+    assert.equal(matrix.probability_weighted_return, 0.2);
+    assert.equal(matrix.rows.length, 3);
+  });
+
+  it("keeps the latest four observations for each monitoring metric", () => {
+    const trends = buildFourQuarterMetricTrends([1, 2, 3, 4, 5].map((value) => ({
+      metric_key: "members",
+      period_end: `2025-0${value + 1}-30`,
+      value,
+      unit: "count",
+    })));
+    assert.deepEqual(trends.members.map((row) => row.value), [2, 3, 4, 5]);
+  });
+
+  it("recovers a common prediction price from accepted valuation returns", () => {
+    assert.equal(inferPredictionPriceFromTargetPath({ price_target_path: [
+      { price_target: 8, dividend_per_share: 0, total_return_target: -0.2 },
+      { price_target: 12, dividend_per_share: 0, total_return_target: 0.2 },
+      { price_target: 16, dividend_per_share: 0, total_return_target: 0.6 },
+    ] }), 10);
+    assert.throws(() => inferPredictionPriceFromTargetPath({ price_target_path: [
+      { price_target: 8, total_return_target: -0.2 },
+      { price_target: 12, total_return_target: 0.5 },
+    ] }), /inconsistent prediction prices/);
+  });
+
   it("calculates the scenario-probability weighted return deterministically", () => {
     assert.equal(calculateProbabilityWeightedReturn(
       { bear_return: -0.6754, base_return: 0.8932, bull_return: 2.2466 },
@@ -115,6 +161,7 @@ describe("investment decision artifacts (Component 12)", () => {
       artifact_type: "monitoring_dashboard",
       items: [
         {
+          metric_key: "fintech_take_rate",
           kpi: "Fintech take rate",
           process_node: "Payments processing",
           current_level: 0.038,
@@ -159,5 +206,16 @@ describe("investment decision artifacts (Component 12)", () => {
     const result = validateDecisionRecord(record);
     assert.equal(result.valid, false);
     assert.ok(result.errors.some((e) => e.includes("cannot be approved without a human approver name")));
+  });
+
+  it("rejects adjacent repeated words in the decision rationale", () => {
+    const record: DecisionRecord = {
+      artifact_type: "decision_record",
+      decision: "pending",
+      rationale: "The decision remains pending pending human review.",
+    };
+    const result = validateDecisionRecord(record);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((e) => e.includes("adjacent repeated word")));
   });
 });

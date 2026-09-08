@@ -5,7 +5,16 @@ import {
   loadAcceptedEvidencePacket,
   persistMetrics,
 } from "../system-pipeline";
-import { buildHistoricalRecord, isRecurringHistoricalObservation } from "../history/normalizer";
+import {
+  buildHistoricalRecord,
+  buildMetricCoverageManifest,
+  extractSecQuarterlyObservations,
+  extractReportedKpiObservations,
+  isRecurringHistoricalObservation,
+  latestCoverageQuarter,
+  selectHistoricalCoverageMetricKeys,
+} from "../history/normalizer";
+import { reconcileMetricObservations } from "../pipeline-helpers";
 import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -69,6 +78,7 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
           asset: v2Ctx,
           evidence_claims: evidenceClaims,
           required_modules: v2Ctx.requiredModules,
+          required_metric_keys: ["members", "total_products", "financial_services_contribution_profit", "financial_services_contribution_margin", "lending_contribution_profit", "lending_contribution_margin", "technology_platform_contribution_profit", "technology_platform_contribution_margin"],
         };
         const promptFactory = (packet: Record<string, unknown>) => exactJsonPrompt({
           agentName: "metric-normalizer",
@@ -78,6 +88,7 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
             "Return only recurring quantitative financial or operating measurements. Dates, durations, transaction events, announcements, commitments, and founding milestones are evidence, not metric observations.",
             "Every normalized observation must contain a numeric value and period_end or as_of_date. Include period_start for flow metrics; use as_of_date for legitimate point-in-time balance-sheet metrics.",
             "Use required_modules as target metric families. Do not create an observation merely because an evidence claim contains a number.",
+            "Prioritize required_metric_keys when the verified evidence reports them, including members, total products, and segment contribution profit or margin.",
             "Separate GAAP and non-GAAP measurements explicitly (use distinct metric_keys, e.g. net_revenue vs gross_revenue).",
             "Identify the latest restatement version where applicable.",
           ],
@@ -90,18 +101,85 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
         });
       }
 
-      // Find primary source to link (fallback)
-      const primaryDoc = await sql`
-        SELECT id FROM source_documents WHERE research_run_id = ${ctx.runId} LIMIT 1
+      const primaryContextRows = await sql`
+        SELECT sd.id, dc.text
+        FROM research_run_sources rrs
+        JOIN source_documents sd ON sd.id = rrs.source_document_id
+        JOIN document_parses dp ON dp.source_document_id = sd.id AND dp.status = 'completed'
+        JOIN document_chunks dc ON dc.document_parse_id = dp.id
+        WHERE rrs.research_run_id = ${ctx.runId}
+          AND sd.source_type = 'primary_source_context'
+          AND sd.id = (
+            SELECT sd2.id
+            FROM research_run_sources rrs2
+            JOIN source_documents sd2 ON sd2.id = rrs2.source_document_id
+            WHERE rrs2.research_run_id = ${ctx.runId}
+              AND sd2.source_type = 'primary_source_context'
+            ORDER BY sd2.retrieved_at DESC
+            LIMIT 1
+          )
+          AND dp.id = (
+            SELECT dp2.id FROM document_parses dp2
+            WHERE dp2.source_document_id = sd.id AND dp2.status = 'completed'
+            ORDER BY dp2.completed_at DESC
+            LIMIT 1
+          )
+        ORDER BY dc.chunk_index ASC
+      `;
+      const primaryDoc = primaryContextRows.length ? primaryContextRows : await sql`
+        SELECT id, NULL::text AS text FROM source_documents
+        WHERE research_run_id = ${ctx.runId}
+        ORDER BY created_at ASC LIMIT 1
       `;
       const primarySourceId = primaryDoc[0]?.id || "00000000-0000-4000-8000-000000000001";
 
+      const cutoffDate = ctx.marketDataCutoffAt?.toISOString().slice(0, 10) || new Date().toISOString().slice(0, 10);
+      let secQuarterlyObservations: Record<string, unknown>[] = [];
+      if (primaryContextRows.length) {
+        try {
+          const context = JSON.parse(primaryContextRows.map((row) => String(row.text || "")).join(""));
+          secQuarterlyObservations = extractSecQuarterlyObservations(
+            context?.companyFacts || {},
+            String(primarySourceId),
+            cutoffDate
+          );
+        } catch {
+          secQuarterlyObservations = [];
+        }
+      }
+
       // 4. Persist only recurring measurements; narrative events remain evidence claims.
-      const normalizedObservations = Array.isArray(output.normalized_observations)
+      const agentObservations = Array.isArray(output.normalized_observations)
         ? output.normalized_observations.filter((observation: Record<string, unknown>) => isRecurringHistoricalObservation(observation))
         : [];
-      output = { ...output, normalized_observations: normalizedObservations };
+      const reportedKpiObservations = extractReportedKpiObservations(evidenceClaims);
+      const reconciled = reconcileMetricObservations(
+        [...secQuarterlyObservations, ...reportedKpiObservations],
+        agentObservations
+      );
+      output = {
+        ...output,
+        normalized_observations: reconciled.accepted,
+        quality_flags: [...(Array.isArray(output.quality_flags) ? output.quality_flags : []), ...reconciled.conflicts],
+      };
       await persistMetrics(sql, v2Ctx, primarySourceId, output);
+      const cutoffTimestamp = (ctx.marketDataCutoffAt || new Date()).toISOString();
+      const rejectionMetadata = JSON.stringify({
+        rejected_reason: "observation_after_run_cutoff",
+        rejected_at: new Date().toISOString(),
+      });
+      await sql`
+        UPDATE metric_observations
+        SET review_status = 'rejected',
+            metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
+              || ${rejectionMetadata}::jsonb
+        WHERE research_run_id = ${ctx.runId}
+          AND review_status = 'accepted'
+          AND (
+            COALESCE(period_end, as_of_date) > ${cutoffDate}::date
+            OR (available_at IS NOT NULL AND available_at > ${cutoffTimestamp}::timestamptz)
+          )
+      `;
 
       // 5. Fetch all observations from the DB and construct twenty-quarter HistoricalRecord
       const obsRows = await sql`
@@ -111,6 +189,7 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
         FROM metric_observations mo
         JOIN metric_definitions md ON md.id = mo.metric_definition_id
         WHERE mo.research_run_id = ${ctx.runId}
+          AND mo.review_status = 'accepted'
       `;
 
       const observations = obsRows.filter((row) => isRecurringHistoricalObservation(row)).map(row => {
@@ -150,18 +229,29 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
           metadata_json: metadata,
         };
       });
+      const kpiSourceRows = await sql`
+        SELECT dc.text
+        FROM research_run_sources rrs
+        JOIN document_parses dp ON dp.source_document_id = rrs.source_document_id AND dp.status = 'completed'
+        JOIN document_chunks dc ON dc.document_parse_id = dp.id
+        WHERE rrs.research_run_id = ${ctx.runId}
+          AND LOWER(dc.text) ~ '(member|total products|contribution profit|contribution margin|contribution loss)'
+      `;
+      const metricCoverage = buildMetricCoverageManifest(
+        observations,
+        kpiSourceRows.map((row) => String(row.text || ""))
+      );
 
       // Find start/end periods
-      const latestQuarter = observations
-        .filter((observation) => observation.periodicity === "quarterly" && observation.fiscal_quarter != null)
-        .sort((a, b) => (b.fiscal_year * 10 + (b.fiscal_quarter || 0)) - (a.fiscal_year * 10 + (a.fiscal_quarter || 0)))[0];
+      const requiredMetricKeys = selectHistoricalCoverageMetricKeys(observations);
+      const latestQuarter = latestCoverageQuarter(observations, requiredMetricKeys);
       const endFiscalYear = latestQuarter?.fiscal_year ?? new Date().getFullYear() - 1;
       const endFiscalQuarter = latestQuarter?.fiscal_quarter ?? 4;
       const record = buildHistoricalRecord({
         asset_id: ctx.assetId,
         run_id: ctx.runId,
         observations,
-        requiredMetricKeys: [...new Set(observations.map(o => o.metric_key))],
+        requiredMetricKeys,
         endFiscalYear,
         endFiscalQuarter,
       });
@@ -175,7 +265,7 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
         artifact_type: "historical_record",
         scope_key: `${ctx.assetSlug}-historical-record`,
         status: "validated",
-        content_json: record as any,
+        content_json: { ...record, metric_coverage: metricCoverage } as any,
         schema_version: "3.0.0",
         validator_version: "1.0.0",
         prompt_version: "current",
@@ -186,6 +276,7 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       return {
         status: "success",
         observationsCount: observations.length,
+        missingPriorityMetrics: metricCoverage.filter((item) => item.status !== "covered").length,
         ttmSeriesCount: record.ttm_series.length,
       };
     } finally {

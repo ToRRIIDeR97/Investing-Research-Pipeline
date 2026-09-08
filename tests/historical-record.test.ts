@@ -2,10 +2,15 @@ import { describe, it } from "node:test";
 import assert from "node:assert";
 import {
   buildHistoricalRecord,
+  buildMetricCoverageManifest,
   computeStartPeriod,
   buildMELIAdjustedFCFBridge,
   separateMELIRevenueDefinition,
   isRecurringHistoricalObservation,
+  extractSecQuarterlyObservations,
+  extractReportedKpiObservations,
+  latestCoverageQuarter,
+  selectHistoricalCoverageMetricKeys,
 } from "@/lib/research/history/normalizer";
 import type { HistoricalObservation } from "@/lib/research/history/contracts";
 import { reconcileRecord, reconcileAnnualToQuarters } from "@/lib/research/history/reconciliation";
@@ -50,6 +55,34 @@ function makeAnnual(metricKey: string, year: number, value: number): HistoricalO
 }
 
 describe("historical record", () => {
+  it("extracts member, product, and segment contribution KPIs from verified filing claims", () => {
+    const observations = extractReportedKpiObservations([
+      { id: "member-claim", claim_text: "Total members reached 11.7 million.", period_end: "2025-06-30", source_id: "source-1", confidence: 0.9 },
+      { id: "product-claim", claim_text: "Total products reached 17.1 million.", period_end: "2025-06-30", source_id: "source-1", confidence: 0.9 },
+      { id: "margin-claim", claim_text: "Financial Services contribution margin was 45% for the quarter.", period_end: "2025-06-30", source_id: "source-1", confidence: 0.9 },
+      { id: "profit-claim", claim_text: "Technology Platform contribution profit was $32 million for the quarter.", period_end: "2025-06-30", source_id: "source-1", confidence: 0.9 },
+    ]);
+    assert.equal(observations.find((item) => item.metric_key === "members")?.value_numeric, 11_700_000);
+    assert.equal(observations.find((item) => item.metric_key === "total_products")?.value_numeric, 17_100_000);
+    assert.equal(observations.find((item) => item.metric_key === "financial_services_contribution_margin")?.value_numeric, 45);
+    assert.equal(observations.find((item) => item.metric_key === "technology_platform_contribution_profit")?.value_numeric, 32_000_000);
+  });
+
+  it("distinguishes an absent KPI disclosure from a missed extraction", () => {
+    const coverage = buildMetricCoverageManifest(
+      [{ metric_key: "members", value_numeric: 10_000_000 }],
+      ["Total members reached 10 million. Technology Platform contribution margin was 30%."],
+      [
+        { metric_key: "members", source_pattern: /members/i },
+        { metric_key: "technology_platform_contribution_margin", source_pattern: /technology platform.*contribution margin/i },
+        { metric_key: "total_products", source_pattern: /total products/i },
+      ]
+    );
+    assert.equal(coverage[0].status, "covered");
+    assert.equal(coverage[1].status, "present_not_extracted");
+    assert.equal(coverage[2].status, "not_found_in_snapshot");
+  });
+
   it("C6-T1: Twenty complete comparable quarters pass historical record gate", () => {
     const obs: HistoricalObservation[] = [];
     for (let y = 2020; y <= 2025; y++) {
@@ -165,6 +198,74 @@ describe("historical record", () => {
       endFiscalQuarter: 1,
     });
     assert.equal(record.coverage.quarters_present, 0);
+  });
+
+  it("extracts direct SEC quarters, keeps the latest filing, and respects the cutoff", () => {
+    const companyFacts = {
+      facts: {
+        "us-gaap": {
+          RevenuesNetOfInterestExpense: {
+            units: {
+              USD: [
+                { start: "2025-01-01", end: "2025-03-31", filed: "2025-05-01", form: "10-Q", val: 100, accn: "old" },
+                { start: "2025-01-01", end: "2025-03-31", filed: "2025-05-02", form: "10-Q", val: 101, accn: "new" },
+                { start: "2025-04-01", end: "2025-06-30", filed: "2025-08-01", form: "10-Q", val: 110 },
+                { start: "2025-07-01", end: "2025-09-30", filed: "2025-11-01", form: "10-Q", val: 120 },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const observations = extractSecQuarterlyObservations(companyFacts, "00000000-0000-4000-8000-000000000001", "2025-08-19");
+    assert.equal(observations.length, 2);
+    assert.equal(observations[0].value_numeric, 101);
+    assert.equal(observations[0].source, "sec_companyfacts");
+  });
+
+  it("derives additive Q4 facts from the audited annual value and reported Q1-Q3", () => {
+    const companyFacts = {
+      facts: {
+        "us-gaap": {
+          NetIncomeLoss: {
+            units: {
+              USD: [
+                { start: "2024-01-01", end: "2024-03-31", filed: "2024-05-01", form: "10-Q", val: 10 },
+                { start: "2024-04-01", end: "2024-06-30", filed: "2024-08-01", form: "10-Q", val: 20 },
+                { start: "2024-07-01", end: "2024-09-30", filed: "2024-11-01", form: "10-Q", val: 30 },
+                { start: "2024-01-01", end: "2024-12-31", filed: "2025-02-20", form: "10-K", fp: "FY", val: 100 },
+              ],
+            },
+          },
+        },
+      },
+    };
+    const observations = extractSecQuarterlyObservations(companyFacts, "00000000-0000-4000-8000-000000000001", "2025-03-01");
+    const netIncome = observations.filter((row) => row.metric_key === "net_income");
+    assert.equal(netIncome.length, 4);
+    assert.equal(netIncome.find((row) => row.period_end === "2024-12-31")?.value_numeric, 40);
+    assert.match(String(netIncome.find((row) => row.period_end === "2024-12-31")?.description), /annual value minus reported Q1-Q3/);
+  });
+
+  it("uses recurring histories for the coverage matrix without letting one-off KPIs inflate its denominator", () => {
+    const observations: HistoricalObservation[] = [];
+    for (let index = 0; index < 12; index += 1) {
+      observations.push(makeObs("revenue", 2022 + Math.floor(index / 4), (index % 4) + 1, index));
+    }
+    observations.push(makeObs("launch_metric", 2024, 4, 1));
+    assert.deepEqual(selectHistoricalCoverageMetricKeys(observations), ["revenue"]);
+  });
+
+  it("does not advance the coverage window for a non-core current-quarter observation", () => {
+    const observations = [
+      makeObs("net_revenue", 2026, 2, 100),
+      makeObs("one_off_kpi", 2026, 3, 1),
+    ];
+
+    assert.deepEqual(latestCoverageQuarter(observations, ["net_revenue"]), {
+      fiscal_year: 2026,
+      fiscal_quarter: 2,
+    });
   });
 });
 

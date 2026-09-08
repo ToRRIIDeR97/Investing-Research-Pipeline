@@ -2,9 +2,12 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import postgres from "postgres";
-import { recordModelCall } from "../src/lib/agents/model-calls";
+import { recordModelCall, assertModelBudgetAvailable, releaseModelBudgetReservation } from "../src/lib/agents/model-calls";
 import { createMessage } from "../src/lib/agent-harness/messages";
 import { PostgresAgentSessionStore } from "../src/lib/agent-harness/session-store";
+import { createV3Task, callResearchAgentArtifacts, type ResearchRunContext } from "../src/lib/research/run-context";
+import { BUSINESS_PROCESS_CONTRACT } from '../src/lib/research/stage-contracts';
+import { requestFocusedReviewRepair } from '../src/lib/research/review-repairs';
 import { mergeGroupOutputs } from "../src/lib/research/system-pipeline";
 import { failRun } from "../src/lib/workflow/orchestrator";
 import { enqueueTask } from "../src/lib/workflow/task-queue";
@@ -17,6 +20,72 @@ function loadLocalEnv() {
     process.env[match[1]] = match[2].trim().replace(/^['"]|['"]$/g, "");
   }
 }
+
+test('split tasks survive sibling failure and persisted effort cannot reset on resume', { skip: process.env.RUN_DB_INTEGRATION !== '1' }, async () => {
+  loadLocalEnv();
+  const provider = process.env.RESEARCH_MODEL_PROVIDER;
+  process.env.RESEARCH_MODEL_PROVIDER = 'mock';
+  const sql = postgres(process.env.DATABASE_URL!);
+  const runId = crypto.randomUUID();
+  try {
+    const [asset] = await sql`SELECT id FROM assets ORDER BY created_at LIMIT 1`;
+    await sql`INSERT INTO research_runs (id, asset_id, run_type, status, pipeline_version, budget_limit_usd)
+      VALUES (${runId}, ${asset.id}, 'deep_dive', 'running', 4, 100)`;
+    const [stage] = await sql`INSERT INTO research_stages (research_run_id, stage_key, stage_order, status)
+      VALUES (${runId}, 'business_process_analysis', 1, 'running') RETURNING id`;
+    const ctx = { runId, assetId: String(asset.id), assetName: 'SOFI fixture', assetSlug: 'sofi-fixture', symbol: 'SOFI',
+      profileId: null, profileKey: 'financials', runType: 'deep_dive', pipelineVersion: 4, testMode: true } as ResearchRunContext;
+    let injectFailure = true;
+    const saved = new Set<string>();
+    const execute = () => callResearchAgentArtifacts({ sql, ctx, stageKey: 'business_process_analysis', taskKeyPrefix: 'fixture',
+      taskType: 'fixture', agentName: 'asset-analyst', packet: { asset: { symbol: 'SOFI' }, evidence_claims: [] },
+      outputFormat: BUSINESS_PROCESS_CONTRACT, artifactWaves: [['segment_model', 'customer_decision_map']],
+      promptFactory: (packet) => `Task packet:\n${JSON.stringify(packet)}`,
+      onArtifact: (key) => { if (key === 'customer_decision_map' && injectFailure) throw new Error('Injected checkpoint-write failure'); saved.add(key); },
+    });
+    await assert.rejects(execute(), /Injected checkpoint-write failure/);
+    assert.ok(saved.has('segment_model'));
+    const [before] = await sql`SELECT COUNT(*) AS count FROM model_call_logs WHERE research_run_id = ${runId}`;
+    assert.equal(Number(before.count), 2);
+    injectFailure = false;
+    await execute();
+    const [after] = await sql`SELECT COUNT(*) AS count FROM model_call_logs WHERE research_run_id = ${runId}`;
+    assert.equal(Number(after.count), 2, 'Resume must use both successful model outputs without a paid repeat');
+    assert.ok(saved.has('customer_decision_map'));
+    const findings = [{ severity: 'blocker', artifact_refs: ['segment_model'], message: 'Segment support is incomplete.' }];
+    assert.equal(await requestFocusedReviewRepair(sql, runId, findings), true);
+    assert.equal(await requestFocusedReviewRepair(sql, runId, findings), false, 'Only one persisted repair round is allowed');
+    const repairedTasks = await sql`SELECT task_key, status FROM research_tasks WHERE research_run_id = ${runId}`;
+    assert.equal(repairedTasks.find((row) => row.task_key.includes(':segment_model:'))?.status, 'failed');
+    assert.equal(repairedTasks.find((row) => row.task_key.includes(':customer_decision_map:'))?.status, 'completed');
+    const segmentTask = repairedTasks.find((row) => row.task_key.includes(':segment_model:'))!;
+    const revision = await createV3Task(sql, runId, 'business_process_analysis', String(segmentTask.task_key), 'fixture', 'asset-analyst');
+    assert.ok(revision.priorValidationErrors.some((error) => error.includes('Segment support is incomplete.')));
+    const [task] = await sql`SELECT id, task_key FROM research_tasks WHERE research_run_id = ${runId} ORDER BY task_key LIMIT 1`;
+    const reserve = () => assertModelBudgetAvailable({ researchRunId: runId, stageId: String(stage.id), taskId: String(task.id),
+      modelTier: 'mid', reserveUsd: 0, checkpointKey: String(task.task_key), checkpointAttemptLimit: 2, stageAttemptLimit: 3 });
+    const reservations = await Promise.allSettled([reserve(), reserve()]);
+    assert.equal(reservations.filter((result) => result.status === 'fulfilled').length, 1);
+    for (const result of reservations) if (result.status === 'fulfilled' && result.value) await releaseModelBudgetReservation(result.value);
+    await assert.rejects(reserve(), /budget exhausted/i, 'Released reservations must still count toward effort');
+    await sql`INSERT INTO research_stages (research_run_id, stage_key, stage_order, status)
+      VALUES (${runId}, 'evidence_extraction', 2, 'running')`;
+    for (let index = 0; index < 10; index++) await createV3Task(sql, runId, 'evidence_extraction', `batch:${index}`, 'fixture', 'source-reader');
+    await assert.rejects(createV3Task(sql, runId, 'evidence_extraction', 'batch:overflow', 'fixture', 'source-reader'), /logical batch budget exhausted/);
+  } finally {
+    await sql`DELETE FROM agent_sessions WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM agent_output_staging WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM model_budget_ledger WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM model_call_logs WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM model_budget_reservations WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM research_tasks WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM research_stages WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM research_runs WHERE id = ${runId}`;
+    await sql.end();
+    if (provider === undefined) delete process.env.RESEARCH_MODEL_PROVIDER;
+    else process.env.RESEARCH_MODEL_PROVIDER = provider;
+  }
+});
 
 test("JSONB task-style outputs survive object and legacy-string persistence and group merging", { skip: process.env.RUN_DB_INTEGRATION !== "1" }, async () => {
   loadLocalEnv();
@@ -85,6 +154,10 @@ test("idempotent task resume and terminal failure leave no running work or valua
       INSERT INTO research_stages (research_run_id, stage_key, stage_order, status)
       VALUES (${runId}, 'asset_valuation', 2, 'pending')
     `;
+    const auditTask = await createV3Task(sql, runId, "asset_analysis", "v3-json-fixture", "analysis", "asset-analyst");
+    const [persistedInput] = await sql`SELECT input_json, jsonb_typeof(input_json) AS input_type FROM research_tasks WHERE id = ${auditTask.id}`;
+    assert.equal(persistedInput.input_type, "object");
+    assert.deepEqual(persistedInput.input_json, { system_generated: true, pipeline_version: 4 });
     taskId = await enqueueTask({
       runId, stageId: analysis.id, taskKey: "analysis-fixture", taskType: "analysis",
       agentName: "asset-analyst", inputJson: { packet: "fixture" },

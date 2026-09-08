@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { ProviderError } from "../agent-harness/errors";
 
 interface RecordModelCallInput {
   researchRunId?: string;
@@ -33,6 +34,9 @@ export interface BudgetReservationInput {
   taskId?: string;
   modelTier: string;
   reserveUsd: number;
+  checkpointKey?: string;
+  checkpointAttemptLimit?: number;
+  stageAttemptLimit?: number;
 }
 
 async function activeSpend(
@@ -129,6 +133,21 @@ export async function assertModelBudgetAvailable(input: BudgetReservationInput):
       if (input.researchRunId) await tx`SELECT id FROM research_runs WHERE id = ${input.researchRunId} FOR UPDATE`;
       if (input.stageId) await tx`SELECT id FROM research_stages WHERE id = ${input.stageId} FOR UPDATE`;
       if (input.taskId) await tx`SELECT id FROM research_tasks WHERE id = ${input.taskId} FOR UPDATE`;
+      if (input.stageId && input.checkpointKey) {
+        // Reservations count even after failure/release, so a process restart cannot reset effort.
+        const attempts = await tx`
+          SELECT COUNT(*) AS stage_count,
+            COUNT(*) FILTER (WHERE regexp_replace(rt.task_key, ':revision-[0-9]+$', '') = ${input.checkpointKey}) AS checkpoint_count
+          FROM model_budget_reservations br JOIN research_tasks rt ON rt.id = br.task_id
+          WHERE br.stage_id = ${input.stageId}
+        `;
+        if (input.stageAttemptLimit && Number(attempts[0].stage_count) >= input.stageAttemptLimit) {
+          throw new ProviderError('Stage model-call budget exhausted, including prior resumes', 'budget_exhausted');
+        }
+        if (input.checkpointAttemptLimit && Number(attempts[0].checkpoint_count) >= input.checkpointAttemptLimit) {
+          throw new ProviderError('Checkpoint attempt budget exhausted, including prior resumes', 'budget_exhausted');
+        }
+      }
 
       const checks: Array<{ scopeType: string; scopeId: string; column: "research_run_id" | "stage_id" | "task_id" }> = [];
       if (input.researchRunId) checks.push({ scopeType: "research_run", scopeId: input.researchRunId, column: "research_run_id" });
@@ -185,14 +204,14 @@ export async function recordModelCall(input: RecordModelCallInput): Promise<stri
 
   try {
     const budget = await checkBudget(sql, input);
-    if (budget.exceeded) {
-      throw new Error(budget.reason);
-    }
+    // Calls already incurred must be recorded even if the provider exceeded its reservation.
+    // The next preflight enforces the limit using this actual spend.
 
     const cost = input.costUsd ?? 0;
     const requestMetadata = {
       ...(input.requestMetadata || {}),
       ...(input.escalationReason ? { escalation_reason: input.escalationReason } : {}),
+      ...(budget.exceeded ? { budget_overrun: budget.reason } : {}),
     };
 
     const callId = await sql.begin(async (tx) => {
@@ -218,7 +237,7 @@ export async function recordModelCall(input: RecordModelCallInput): Promise<stri
         const projected = await activeSpend(tx, check.column, check.scopeId) + cost;
         for (const limit of limits) {
           if (projected > Number(limit.limit_usd)) {
-            throw new Error(`${check.scopeType} budget exceeded: $${projected.toFixed(4)} > $${Number(limit.limit_usd).toFixed(4)}`);
+            Object.assign(requestMetadata, { budget_overrun: `${check.scopeType} budget exceeded: $${projected.toFixed(4)} > $${Number(limit.limit_usd).toFixed(4)}` });
           }
         }
       }

@@ -20,6 +20,7 @@ import {
   TerminalSquare,
   Zap,
 } from "lucide-react";
+import { activeRunStage, countOpenTaskFailures } from "@/lib/research/run-console";
 
 interface Message {
   role: "user" | "assistant" | "system";
@@ -320,17 +321,67 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function StageRail({ progress }: { progress: RunProgress }) {
+type RunTab = "overview" | "stages" | "agents" | "sources" | "backtests" | "audit";
+
+const RUN_TABS: Array<{ id: RunTab; label: string }> = [
+  { id: "overview", label: "Overview" },
+  { id: "stages", label: "Stages" },
+  { id: "agents", label: "Agents" },
+  { id: "sources", label: "Sources" },
+  { id: "backtests", label: "Backtests" },
+  { id: "audit", label: "Audit" },
+];
+
+function StageRail({
+  progress,
+  selectedStageId,
+  onSelect,
+}: {
+  progress: RunProgress;
+  selectedStageId: string | null;
+  onSelect: (stageId: string) => void;
+}) {
+  const selectedStage = progress.stages.find((stage) => stage.id === selectedStageId);
+
   return (
     <div className="rounded-md border border-gray-200 bg-white p-3 shadow-sm">
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
+      <div className="md:hidden">
+        <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400" htmlFor="run-stage-select">
+          Stage navigator
+        </label>
+        <select
+          id="run-stage-select"
+          value={selectedStageId || ""}
+          onChange={(event) => onSelect(event.target.value)}
+          className="mt-1 w-full rounded-md border border-gray-200 bg-[#fbfcfd] px-3 py-2 text-[12px] font-semibold text-gray-700 outline-none focus:border-black"
+        >
+          {progress.stages.map((stage) => (
+            <option key={stage.id} value={stage.id}>
+              {String(stage.order).padStart(2, "0")} · {humanize(stage.key)} · {stage.status}
+            </option>
+          ))}
+        </select>
+        {selectedStage && (
+          <div className="mt-2 flex items-center justify-between text-[11px] text-gray-500">
+            <span>{humanize(selectedStage.key)}</span>
+            <StatusBadge status={selectedStage.status} />
+          </div>
+        )}
+      </div>
+
+      <div className="hidden gap-2 overflow-x-auto md:grid md:grid-cols-2 xl:grid-cols-4">
         {progress.stages.map((stage) => (
-          <div
+          <button
             key={stage.id}
-            className={`min-h-20 rounded-md border px-3 py-2 ${
-              stage.status === "running"
-                ? "border-amber-200 bg-amber-50/60"
-                : "border-gray-100 bg-[#fbfcfd]"
+            type="button"
+            onClick={() => onSelect(stage.id)}
+            aria-pressed={selectedStageId === stage.id}
+            className={`min-h-20 rounded-md border px-3 py-2 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-black/20 ${
+              selectedStageId === stage.id
+                ? "border-black bg-white"
+                : stage.status === "running"
+                  ? "border-amber-200 bg-amber-50/60"
+                  : "border-gray-100 bg-[#fbfcfd] hover:border-gray-300"
             }`}
           >
             <div className="flex items-center justify-between gap-2">
@@ -350,7 +401,7 @@ function StageRail({ progress }: { progress: RunProgress }) {
                 {formatTime(stage.completed_at || stage.started_at)}
               </span>
             </div>
-          </div>
+          </button>
         ))}
       </div>
     </div>
@@ -437,11 +488,14 @@ function QualityGatesPanel({ quality }: { quality: ResearchQuality | null }) {
 function ActiveStagePanel({
   progress,
   theater,
+  selectedStageId,
 }: {
   progress: RunProgress;
   theater: TheaterData;
+  selectedStageId?: string | null;
 }) {
   const activeStage =
+    progress.stages.find((stage) => stage.id === selectedStageId) ||
     progress.stages.find((stage) => stage.status === "running") ||
     progress.stages.find((stage) => stage.status === "pending") ||
     progress.stages[progress.stages.length - 1];
@@ -648,54 +702,125 @@ function AgentConsole({ progress, theater }: { progress: RunProgress; theater: T
   );
 }
 
-function ArtifactDeck({ theater }: { theater: TheaterData }) {
+function SourceDeck({ theater }: { theater: TheaterData }) {
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center gap-2">
+    <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
           <FileText className="h-4 w-4 text-gray-400" />
-          <h3 className="text-[13px] font-bold text-black">Source Intake</h3>
+          <h3 className="text-[13px] font-bold text-black">Source intake</h3>
         </div>
-        <div className="space-y-2">
-          {theater.sources.length === 0 ? (
-            <div className="text-[12px] text-gray-400">No sources attached yet.</div>
-          ) : (
-            theater.sources.slice(0, 5).map((source) => (
-              <div key={source.id} className="rounded-md border border-gray-100 bg-[#fbfcfd] p-2">
-                <div className="truncate text-[12px] font-semibold text-black">{source.title}</div>
-                <div className="mt-1 truncate font-mono text-[10px] text-gray-400">
-                  {humanize(source.source_type)} · {source.publisher || "unpublished"}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+        <span className="font-mono text-[10px] text-gray-400">{theater.sources.length} attached</span>
       </div>
+      {theater.sources.length === 0 ? (
+        <div className="rounded-md border border-dashed border-gray-200 bg-[#fbfcfd] px-3 py-5 text-[12px] text-gray-400">
+          No sources attached yet. Upload a file or ingest a URL below.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-md border border-gray-100">
+          <table className="w-full min-w-[560px] text-left text-[12px]">
+            <thead className="bg-[#fbfcfd] text-[10px] font-bold uppercase tracking-wider text-gray-400">
+              <tr>
+                <th className="px-3 py-2">Title</th>
+                <th className="px-3 py-2">Type</th>
+                <th className="px-3 py-2">Publisher</th>
+                <th className="px-3 py-2">Added</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {theater.sources.map((source) => (
+                <tr key={source.id} className="text-gray-600">
+                  <td className="max-w-[260px] truncate px-3 py-2 font-semibold text-black">{source.title}</td>
+                  <td className="px-3 py-2">{humanize(source.source_type)}</td>
+                  <td className="px-3 py-2">{source.publisher || "unpublished"}</td>
+                  <td className="whitespace-nowrap px-3 py-2 font-mono text-[10px] text-gray-400">{formatTime(source.created_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
+function BacktestDeck({
+  theater,
+  backtestPrompt,
+  setBacktestPrompt,
+  onRequest,
+  isSubmitting,
+}: {
+  theater: TheaterData;
+  backtestPrompt: string;
+  setBacktestPrompt: (value: string) => void;
+  onRequest: () => void;
+  isSubmitting: boolean;
+}) {
+  return (
+    <div className="space-y-4">
       <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center gap-2">
-          <Gauge className="h-4 w-4 text-gray-400" />
-          <h3 className="text-[13px] font-bold text-black">Backtest Bench</h3>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Gauge className="h-4 w-4 text-gray-400" />
+            <h3 className="text-[13px] font-bold text-black">Queue a backtest</h3>
+          </div>
+          <span className="font-mono text-[10px] text-gray-400">{theater.backtests.length} runs</span>
         </div>
-        <div className="space-y-2">
-          {theater.backtests.length === 0 ? (
-            <div className="text-[12px] text-gray-400">No backtests queued.</div>
-          ) : (
-            theater.backtests.slice(0, 5).map((backtest) => (
-              <div key={backtest.id} className="rounded-md border border-gray-100 bg-[#fbfcfd] p-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-[12px] font-semibold text-black">
-                    {backtest.strategy_name || `${backtest.symbol} strategy`}
-                  </span>
-                  <StatusBadge status={backtest.status} />
-                </div>
-                <div className="mt-1 truncate font-mono text-[10px] text-gray-400">
-                  {backtest.error_message || backtest.strategy_prompt}
-                </div>
-              </div>
-            ))
-          )}
+        <textarea
+          value={backtestPrompt}
+          onChange={(event) => setBacktestPrompt(event.target.value)}
+          placeholder="Moving-average trend strategy with 50/200 day windows"
+          className="min-h-20 w-full resize-y rounded-md border border-gray-200 bg-[#fbfcfd] px-3 py-2 text-[12px] text-gray-700 outline-none transition-all focus:border-black"
+          disabled={isSubmitting}
+        />
+        <button
+          type="button"
+          onClick={onRequest}
+          disabled={isSubmitting || !backtestPrompt.trim()}
+          className="mt-2 rounded-full bg-black px-4 py-2 text-[11px] font-bold text-white transition-all hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-30"
+        >
+          {isSubmitting ? "Queueing…" : "Queue backtest"}
+        </button>
+      </div>
+      <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Gauge className="h-4 w-4 text-gray-400" />
+            <h3 className="text-[13px] font-bold text-black">Backtest bench</h3>
+          </div>
+          <span className="font-mono text-[10px] text-gray-400">stored results</span>
         </div>
+        {theater.backtests.length === 0 ? (
+          <div className="rounded-md border border-dashed border-gray-200 bg-[#fbfcfd] px-3 py-5 text-[12px] text-gray-400">
+            No backtests queued yet.
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-md border border-gray-100">
+            <table className="w-full min-w-[620px] text-left text-[12px]">
+              <thead className="bg-[#fbfcfd] text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                <tr>
+                  <th className="px-3 py-2">Strategy</th>
+                  <th className="px-3 py-2">Symbol</th>
+                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2">Created</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {theater.backtests.map((backtest) => (
+                  <tr key={backtest.id} className="text-gray-600">
+                    <td className="max-w-[300px] truncate px-3 py-2 font-semibold text-black" title={backtest.error_message || backtest.strategy_prompt}>
+                      {backtest.strategy_name || `${backtest.symbol} strategy`}
+                    </td>
+                    <td className="px-3 py-2 font-mono">{backtest.symbol}</td>
+                    <td className="px-3 py-2"><StatusBadge status={backtest.status} /></td>
+                    <td className="whitespace-nowrap px-3 py-2 font-mono text-[10px] text-gray-400">{formatTime(backtest.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -817,31 +942,59 @@ function ResearchTheater({
   theater,
   messages,
   quality,
+  backtestPrompt,
+  setBacktestPrompt,
+  onBacktestRequest,
+  isBacktestSubmitting,
+  progressError,
 }: {
   assetName: string;
   progress: RunProgress;
   theater: TheaterData;
   messages: Message[];
   quality: ResearchQuality | null;
+  backtestPrompt: string;
+  setBacktestPrompt: (value: string) => void;
+  onBacktestRequest: () => void;
+  isBacktestSubmitting: boolean;
+  progressError: string | null;
 }) {
   const completedStages = progress.stages.filter((stage) => stage.status === "completed").length;
   const runningTasks = progress.tasks.filter((task) => task.status === "running").length;
-  const failedTasks = progress.tasks.filter((task) => task.status === "failed").length;
+  const failedTasks = countOpenTaskFailures(
+    progress.tasks,
+    new Set(progress.stages.filter((stage) => ["completed", "skipped"].includes(stage.status)).map((stage) => stage.id))
+  );
   const events = buildTimeline(progress, theater, messages);
+  const [activeTab, setActiveTab] = useState<RunTab>("overview");
+  const defaultStage = activeRunStage(progress.stages);
+  const [selectedStageId, setSelectedStageId] = useState<string | null>(defaultStage?.id || null);
+
+  useEffect(() => {
+    if (!progress.stages.some((stage) => stage.id === selectedStageId)) {
+      setSelectedStageId(defaultStage?.id || null);
+    }
+  }, [defaultStage?.id, progress.stages, selectedStageId]);
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div className="flex-1 overflow-y-auto p-3 md:p-6">
+      <div className="mx-auto flex max-w-7xl flex-col gap-3 md:gap-4">
+        {progressError && (
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-800">
+            <span>{progressError}</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider">Retrying automatically</span>
+          </div>
+        )}
+        <div className="flex flex-col gap-3 border-b border-gray-200 pb-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-gray-400">
               <Radio className="h-3.5 w-3.5" />
-              Mission Control
+              Research operations
             </div>
-            <h1 className="text-[24px] font-bold tracking-tight text-black">
+            <h1 className="text-[21px] font-bold tracking-tight text-black md:text-[24px]">
               {assetName || "Research Run"}
             </h1>
-            <p className="mt-1 max-w-2xl text-[12px] leading-5 text-gray-500">
+            <p className="mt-1 max-w-3xl text-[11px] leading-5 text-gray-500 md:text-[12px]">
               Run {compactId(progress.runId)} · v{progress.pipelineVersion} · {humanize(progress.status)} · {progress.latestJob ? `job ${humanize(progress.latestJob.status)}` : "no job"}
               {!progress.workerHealthy && progress.latestJob?.status === "queued" ? " · waiting for worker" : ""}
               {progress.marketDataCutoffAt
@@ -857,41 +1010,114 @@ function ResearchTheater({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <MetricTile
-            label="Stages"
-            value={`${completedStages}/${progress.stages.length}`}
-            detail="completed gates"
-            icon={Layers3}
-          />
-          <MetricTile
-            label="Agents"
-            value={String(runningTasks)}
-            detail={`${progress.tasks.length} tasks total`}
-            icon={Bot}
-          />
-          <MetricTile
-            label="Sources"
-            value={String(theater.sources.length)}
-            detail="attached to this run"
-            icon={Database}
-          />
-          <MetricTile
-            label="Blockers"
-            value={String(failedTasks)}
-            detail="failed tasks"
-            icon={AlertTriangle}
-          />
+        <div className="grid grid-cols-2 gap-2 rounded-md border border-gray-200 bg-white p-2 shadow-sm sm:grid-cols-3 lg:grid-cols-6">
+          <RunStat label="Stages" value={`${completedStages}/${progress.stages.length}`} />
+          <RunStat label="Running" value={String(runningTasks)} />
+          <RunStat label="Sources" value={String(theater.sources.length)} />
+          <RunStat label="Blockers" value={String(failedTasks)} tone={failedTasks > 0 ? "danger" : "default"} />
+          <RunStat label="Exports" value={String(progress.exportCount)} />
+          <RunStat label="Worker" value={progress.workerHealthy ? "Ready" : "Offline"} tone={progress.workerHealthy ? "success" : "danger"} />
         </div>
 
-        {messages.length > 0 && <ResearchConversation messages={messages} />}
-        <QualityGatesPanel quality={quality} />
-        <StageRail progress={progress} />
-        <ActiveStagePanel progress={progress} theater={theater} />
-        <AgentConsole progress={progress} theater={theater} />
-        <ArtifactDeck theater={theater} />
-        <Timeline events={events} />
+        <nav aria-label="Run sections" role="tablist" className="sticky top-0 z-10 -mx-1 overflow-x-auto rounded-md border border-gray-200 bg-white p-1 shadow-sm">
+          <div className="flex min-w-max gap-1">
+            {RUN_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`rounded px-3 py-2 text-[11px] font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-black/20 ${
+                  activeTab === tab.id ? "bg-black text-white" : "text-gray-500 hover:bg-gray-100 hover:text-black"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        <div role="tabpanel" aria-label={`${activeTab} run view`} className="min-w-0">
+          {activeTab === "overview" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.25fr_1fr]">
+                <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Current checkpoint</div>
+                      <h2 className="mt-1 text-[15px] font-bold text-black">{humanize(progress.currentStage || defaultStage?.key || "pipeline")}</h2>
+                    </div>
+                    <StatusBadge status={defaultStage?.status || progress.status} />
+                  </div>
+                  <p className="text-[12px] leading-5 text-gray-500">
+                    {progress.latestJob?.failure_reason || (progress.latestJob ? `Latest job is ${humanize(progress.latestJob.status)}.` : "No worker job has been recorded for this run yet.")}
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-gray-500">
+                    <span className="rounded-full border border-gray-200 px-2.5 py-1">Source cutoff: {progress.marketDataCutoffAt ? new Date(progress.marketDataCutoffAt).toLocaleDateString() : "not set"}</span>
+                    <span className="rounded-full border border-gray-200 px-2.5 py-1">Budget: {progress.budgetLimit === null ? "open" : formatMoney(progress.budgetLimit)}</span>
+                  </div>
+                </div>
+                <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Next actions</div>
+                    <button type="button" onClick={() => setActiveTab("stages")} className="text-[11px] font-semibold text-gray-500 underline-offset-2 hover:text-black hover:underline">View stages</button>
+                  </div>
+                  <ul className="space-y-2 text-[12px] text-gray-600">
+                    <li className="flex items-center justify-between gap-3"><span>Quality gate</span><StatusBadge status={quality?.status || "checking"} /></li>
+                    <li className="flex items-center justify-between gap-3"><span>Open task blockers</span><span className="font-mono font-bold text-black">{failedTasks}</span></li>
+                    <li className="flex items-center justify-between gap-3"><span>Attached source documents</span><span className="font-mono font-bold text-black">{theater.sources.length}</span></li>
+                  </ul>
+                </div>
+              </div>
+              {messages.length > 0 && <ResearchConversation messages={messages} />}
+            </div>
+          )}
+
+          {activeTab === "stages" && (
+            <div className="space-y-4">
+              {progress.stages.length === 0 ? (
+                <div className="rounded-md border border-dashed border-gray-200 bg-white px-4 py-6 text-[12px] text-gray-400 shadow-sm">
+                  Stages have not been persisted for this run yet.
+                </div>
+              ) : (
+                <>
+                  <StageRail progress={progress} selectedStageId={selectedStageId} onSelect={setSelectedStageId} />
+                  <ActiveStagePanel progress={progress} theater={theater} selectedStageId={selectedStageId} />
+                </>
+              )}
+            </div>
+          )}
+
+          {activeTab === "agents" && <AgentConsole progress={progress} theater={theater} />}
+          {activeTab === "sources" && <SourceDeck theater={theater} />}
+          {activeTab === "backtests" && (
+            <BacktestDeck
+              theater={theater}
+              backtestPrompt={backtestPrompt}
+              setBacktestPrompt={setBacktestPrompt}
+              onRequest={onBacktestRequest}
+              isSubmitting={isBacktestSubmitting}
+            />
+          )}
+          {activeTab === "audit" && (
+            <div className="space-y-4">
+              <QualityGatesPanel quality={quality} />
+              <Timeline events={events} />
+            </div>
+          )}
+        </div>
       </div>
+    </div>
+  );
+}
+
+function RunStat({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "success" | "danger" }) {
+  const valueClass = tone === "success" ? "text-emerald-700" : tone === "danger" ? "text-rose-700" : "text-black";
+  return (
+    <div className="min-w-0 rounded border border-gray-100 bg-[#fbfcfd] px-2.5 py-2">
+      <div className="truncate text-[9px] font-bold uppercase tracking-wider text-gray-400">{label}</div>
+      <div className={`mt-0.5 truncate font-mono text-[13px] font-bold ${valueClass}`}>{value}</div>
     </div>
   );
 }
@@ -942,6 +1168,7 @@ export default function RunResearchPage() {
   const [runType, setRunType] = useState("deep_dive");
   const [runId, setRunId] = useState<string | null>(null);
   const [progress, setProgress] = useState<RunProgress | null>(null);
+  const [progressError, setProgressError] = useState<string | null>(null);
   const [quality, setQuality] = useState<ResearchQuality | null>(null);
   const [theater, setTheater] = useState<TheaterData>({
     sources: [],
@@ -971,27 +1198,32 @@ export default function RunResearchPage() {
         }
         if (runsRes.ok) {
           const runs = await runsRes.json();
+          const requestedRunId = new URLSearchParams(window.location.search).get("run");
           const latestRun = Array.isArray(runs)
-            ? [...runs]
-                .sort(
-                  (a, b) =>
-                    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                )[0]
+            ? [...runs].sort(
+                (a, b) =>
+                  new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+              )[0]
             : null;
-          if (latestRun) {
-            setRunId(latestRun.id);
+          const selectedRun = Array.isArray(runs)
+            ? runs.find((run: { id?: string }) => run.id === requestedRunId) || latestRun
+            : null;
+          if (selectedRun) {
+            setRunId(selectedRun.id);
             setPhase("pipeline");
             setMessages((prev) =>
               prev.length === 0
                 ? [
                     {
                       role: "system",
-                      content: `Loaded latest research run: ${latestRun.id}`,
+                      content: requestedRunId === selectedRun.id
+                        ? `Loaded requested research run: ${selectedRun.id}`
+                        : `Loaded latest research run: ${selectedRun.id}`,
                     },
                   ]
                 : prev
             );
-            fetchProgress(latestRun.id);
+            fetchProgress(selectedRun.id);
           }
         }
       } catch (error) {
@@ -1156,6 +1388,7 @@ export default function RunResearchPage() {
 
   async function fetchProgress(id: string) {
     try {
+      setProgressError(null);
       const [runRes, qualityRes, sourcesRes, tracesRes, modelCallsRes, backtestsRes, jobsRes, artifactsRes] =
         await Promise.all([
           fetch(`/api/research-runs/${id}`),
@@ -1190,7 +1423,7 @@ export default function RunResearchPage() {
         workerHealthy: Boolean(data.worker_health?.healthy || (jobsData.workers || []).some((worker: any) => worker.status === "healthy" && !worker.stale)),
         sourceRoleCount: Number(data.source_role_count || new Set((data.source_role_coverage || []).map((row: any) => row.source_role)).size),
         budgetLimit: data.budget_limit_usd ? Number(data.budget_limit_usd) : null,
-        currentStage: data.stages?.find((s: any) => s.status === "running")?.stage_key || null,
+        currentStage: activeRunStage<{ status: string; stage_key: string }>(data.stages || [])?.stage_key || null,
         stages: data.stages?.map((s: any) => ({
           id: s.id,
           key: s.stage_key,
@@ -1230,6 +1463,7 @@ export default function RunResearchPage() {
       });
       setQuality(qualityData);
     } catch (error) {
+      setProgressError(error instanceof Error ? error.message : "Unable to load run progress");
       console.error("Failed to fetch progress:", error);
     }
   }
@@ -1365,14 +1599,19 @@ export default function RunResearchPage() {
     }
   }
 
+  const reportHref = runId
+    ? `/assets/${assetId}/research/general?run=${encodeURIComponent(runId)}`
+    : `/assets/${assetId}/research/general`;
+
   return (
-    <div className="flex flex-col h-screen bg-[#f4f7fa]">
+    <div className="flex min-h-[100dvh] flex-col bg-[#f4f7fa]">
       {/* Top Header */}
-      <div className="border-b border-[#eef2f6] bg-white px-6 py-3.5 flex items-center justify-between shrink-0 shadow-sm z-10">
-        <div className="flex items-center gap-3">
+      <div className="z-10 flex shrink-0 flex-col gap-3 border-b border-[#eef2f6] bg-white px-3 py-3 shadow-sm sm:px-6 sm:py-3.5 md:flex-row md:items-center md:justify-between">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <Link
-            href={`/assets/${assetId}`}
-            className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-black transition-colors"
+            href={reportHref}
+            aria-label="Back to research report"
+            className="flex shrink-0 items-center gap-1.5 text-xs font-semibold text-gray-400 transition-colors hover:text-black"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -1380,11 +1619,11 @@ export default function RunResearchPage() {
             <span>Back</span>
           </Link>
           <span className="text-gray-300">|</span>
-          <h2 className="text-[14px] font-bold text-black">
+          <h2 className="truncate text-[13px] font-bold text-black sm:text-[14px]">
             Run Research &rsaquo; <span className="text-gray-500 font-semibold">{assetName}</span>
           </h2>
         </div>
-        <div>
+        <div className="flex flex-wrap items-center gap-2 md:justify-end">
           <select
             value={runType}
             onChange={(e) => setRunType(e.target.value)}
@@ -1394,17 +1633,20 @@ export default function RunResearchPage() {
             <option value="deep_dive">Deep Dive</option>
             <option value="valuation_refresh">Valuation Refresh</option>
             <option value="thesis_investigation">Thesis Investigation</option>
-            <option value="full_initiation_report">Full Initiation Report</option>
-          </select>
-          <div className="mt-2 grid grid-cols-3 gap-1">
-            <input type="datetime-local" value={sourceCutoffAt} onChange={(event) => setSourceCutoffAt(event.target.value)} title="Source cutoff" className="w-full rounded border border-gray-200 px-2 py-1 text-[10px] text-gray-500" />
-            <input type="datetime-local" value={marketDataCutoffAt} onChange={(event) => setMarketDataCutoffAt(event.target.value)} title="Market-data cutoff" className="w-full rounded border border-gray-200 px-2 py-1 text-[10px] text-gray-500" />
-            <input type="number" min="0" step="0.01" value={budgetLimitUsd} onChange={(event) => setBudgetLimitUsd(event.target.value)} placeholder="Budget $" className="w-full rounded border border-gray-200 px-2 py-1 text-[10px] text-gray-500" />
-          </div>
+              <option value="full_initiation_report">Full Initiation Report</option>
+            </select>
+          <details className="relative">
+            <summary className="cursor-pointer list-none rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-500 hover:border-gray-300 hover:text-black">Run options</summary>
+            <div className="absolute right-0 top-9 z-30 grid w-[min(92vw,380px)] grid-cols-1 gap-2 rounded-md border border-gray-200 bg-white p-3 shadow-lg sm:grid-cols-3">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Source cutoff<input type="datetime-local" value={sourceCutoffAt} onChange={(event) => setSourceCutoffAt(event.target.value)} className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-[10px] font-normal text-gray-500" /></label>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Market cutoff<input type="datetime-local" value={marketDataCutoffAt} onChange={(event) => setMarketDataCutoffAt(event.target.value)} className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-[10px] font-normal text-gray-500" /></label>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Budget<input type="number" min="0" step="0.01" value={budgetLimitUsd} onChange={(event) => setBudgetLimitUsd(event.target.value)} placeholder="Open" className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-[10px] font-normal text-gray-500" /></label>
+            </div>
+          </details>
         </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Main Panel */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Conversation history view */}
@@ -1415,7 +1657,19 @@ export default function RunResearchPage() {
               theater={theater}
               messages={messages}
               quality={quality}
+              backtestPrompt={backtestPrompt}
+              setBacktestPrompt={setBacktestPrompt}
+              onBacktestRequest={handleBacktestRequest}
+              isBacktestSubmitting={isBacktestSubmitting}
+              progressError={progressError}
             />
+          ) : phase === "pipeline" ? (
+            <div className="flex flex-1 items-center justify-center p-6">
+              <div className="rounded-md border border-gray-200 bg-white px-5 py-4 text-center shadow-sm">
+                <div className="text-[12px] font-semibold text-gray-700">Loading run progress…</div>
+                <div className="mt-1 text-[11px] text-gray-400">The latest persisted stage state will appear here.</div>
+              </div>
+            </div>
           ) : phase === "plan" && progress ? (
             <ResearchPlanCard plan={researchPlan} />
           ) : (
@@ -1480,7 +1734,7 @@ export default function RunResearchPage() {
           )}
 
           {/* User Input controls */}
-          <div className="border-t border-[#eef2f6] bg-white p-4.5 shrink-0 shadow-sm">
+          <div className="shrink-0 border-t border-[#eef2f6] bg-white p-3 shadow-sm sm:p-4">
             {phase === "plan" && (
               <div className="mb-4 space-y-2">
                 <textarea
@@ -1600,135 +1854,6 @@ export default function RunResearchPage() {
           </div>
         </div>
 
-        {/* Pipeline Progress Sidebar */}
-        {phase === "pipeline" && progress && (
-          <div className="w-80 border-l border-[#eef2f6] bg-white overflow-y-auto p-5 shrink-0 shadow-sm z-20 flex flex-col gap-6">
-            <div>
-              <h3 className="font-bold text-[14px] text-black mb-1">
-                Pipeline Progress
-              </h3>
-              <p className="text-[11px] text-gray-400">
-                Orchestrator pipeline stage validation.
-              </p>
-            </div>
-
-            {/* Run ID Status & Cost */}
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between rounded-xl border border-gray-100 bg-[#fbfcfd] p-3">
-                <div>
-                  <span className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block">Status</span>
-                  <span className="rounded-full bg-yellow-50 text-yellow-700 text-[10px] font-bold uppercase tracking-wider inline-block mt-0.5">
-                    {progress.status}
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block">LiteLLM Cost</span>
-                  <span className="text-xs font-mono font-bold text-black block mt-0.5">
-                    ${progress.totalCost.toFixed(4)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Stages status list */}
-            <div>
-              <h4 className="text-[11px] uppercase tracking-wider text-gray-400 font-bold mb-3">Stages</h4>
-              <div className="space-y-1.5 font-mono text-[11px]">
-                {progress.stages.map((stage) => (
-                  <div
-                    key={stage.key}
-                    className="flex items-center gap-2 px-2 py-1"
-                  >
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${
-                        stage.status === "completed"
-                          ? "bg-emerald-500"
-                          : stage.status === "running"
-                          ? "bg-amber-500 animate-pulse"
-                          : stage.status === "failed"
-                          ? "bg-rose-500"
-                          : stage.status === "skipped"
-                          ? "bg-gray-300"
-                          : "bg-gray-200"
-                      }`}
-                    />
-                    <span
-                      className={`uppercase tracking-wider ${
-                        stage.status === "running"
-                          ? "font-semibold text-black"
-                          : "text-gray-500"
-                      }`}
-                    >
-                      {stage.key.replace(/_/g, " ")}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Agent Tasks */}
-            {progress.tasks && progress.tasks.length > 0 && (
-              <div>
-                <h4 className="text-[11px] uppercase tracking-wider text-gray-400 font-bold mb-3">Agent Tasks</h4>
-                <div className="space-y-1.5 font-mono text-[11px]">
-                  {progress.tasks.map((task) => (
-                    <div key={task.id} className="flex items-center gap-2">
-                      <span className={`h-1 w-1 rounded-full ${
-                        task.status === "completed" ? "bg-emerald-500" :
-                        task.status === "running" ? "bg-amber-500 animate-pulse" : "bg-gray-300"
-                      }`} />
-                      <span className="text-gray-600 truncate">{task.agent_name || task.task_type}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Backtest request */}
-            {runId && (
-              <div className="rounded-xl border border-gray-100 bg-[#fbfcfd] p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                    Backtest
-                  </h4>
-                  <span className="font-mono text-[10px] text-gray-400">
-                    opencode
-                  </span>
-                </div>
-                <textarea
-                  value={backtestPrompt}
-                  onChange={(e) => setBacktestPrompt(e.target.value)}
-                  placeholder="Moving-average trend strategy with 50/200 day windows"
-                  className="min-h-20 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11.5px] text-gray-700 outline-none transition-all focus:border-blue-500"
-                  disabled={isBacktestSubmitting}
-                />
-                <button
-                  onClick={handleBacktestRequest}
-                  disabled={isBacktestSubmitting || !backtestPrompt.trim()}
-                  className="mt-2 w-full rounded-full bg-black px-4 py-2 text-[11px] font-bold text-white transition-all hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-30"
-                >
-                  {isBacktestSubmitting ? "Queueing..." : "Queue Backtest"}
-                </button>
-              </div>
-            )}
-
-            {/* Sources metrics card */}
-            {progress.sourceCount > 0 && (
-              <div className="rounded-xl border border-gray-100 bg-[#fbfcfd] p-3 flex justify-between items-center text-xs">
-                <span className="font-semibold text-gray-500">Ingested Sources</span>
-                <span className="font-bold text-black">{progress.sourceCount} files</span>
-              </div>
-            )}
-
-            {/* Artifacts metrics card */}
-            {progress.exportCount > 0 && (
-              <div className="rounded-xl border border-gray-100 bg-[#fbfcfd] p-3 flex justify-between items-center text-xs">
-                <span className="font-semibold text-gray-500">Generated Reports</span>
-                <span className="font-bold text-black">{progress.exportCount} exports</span>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );

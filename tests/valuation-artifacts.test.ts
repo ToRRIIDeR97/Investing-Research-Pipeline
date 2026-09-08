@@ -2,11 +2,18 @@ import { describe, it } from "node:test";
 import assert from "node:assert";
 import {
   validateAnnualPriceTargetPath,
+  validateReverseValuation,
 } from "@/lib/research/valuation/validation";
 import type {
   AnnualPriceTargetPath,
 } from "@/lib/research/valuation/contracts";
 import { missingRequiredValuationMethods } from "@/lib/research/valuation/contracts";
+import {
+  buildValuationInputManifest,
+  deriveAnnualPriceTargetPath,
+  deriveValuationExpectedReturns,
+  reconcileValuationMethods,
+} from "@/lib/research/valuation/checkpoints";
 
 const baseProjection = () => [
   {
@@ -172,6 +179,19 @@ describe("valuation annual price paths (Component 11)", () => {
     assert.ok(result.errors.some((e) => e.includes("differs from market price currency")));
   });
 
+  it("requires cumulative returns from the current market price", () => {
+    const path = baseTargetPath();
+    path.price_target_path[0].total_return_target = -0.25;
+    path.price_target_path[1].total_return_target = -0.1;
+    const valid = validateAnnualPriceTargetPath(path, undefined, 100);
+    assert.equal(valid.valid, true);
+
+    path.price_target_path[1].total_return_target = 0.2;
+    const invalid = validateAnnualPriceTargetPath(path, undefined, 100);
+    assert.equal(invalid.valid, false);
+    assert.ok(invalid.errors.some((e) => e.includes("must be cumulative")));
+  });
+
   it("C11-T13: FCF method blocked if unadjusted FCF is used", () => {
     const path = baseTargetPath();
     path.price_target_path[0].valuation_method = "FCF yield";
@@ -209,5 +229,77 @@ describe("valuation annual price paths (Component 11)", () => {
     assert.deepEqual(missingRequiredValuationMethods(["residual_income"], path.price_target_path), ["residual_income"]);
     path.price_target_path[0].valuation_method = "Residual Income";
     assert.deepEqual(missingRequiredValuationMethods(["residual_income"], path.price_target_path), []);
+  });
+
+  it("requires the ROE-versus-cost-of-equity spread to reconcile", () => {
+    const valid = validateReverseValuation({
+      artifact_type: "reverse_valuation",
+      implied_growth: 0.15,
+      implied_margin: 0.2,
+      return_on_equity: 0.14,
+      cost_of_equity: 0.1,
+      roe_minus_cost_of_equity: 0.04,
+      roe_vs_coe_assessment: "ROE exceeds the cost of equity, supporting book-value compounding.",
+    });
+    assert.equal(valid.valid, true);
+
+    const invalid = validateReverseValuation({
+      artifact_type: "reverse_valuation",
+      implied_growth: 0.15,
+      implied_margin: 0.2,
+      return_on_equity: 0.14,
+      cost_of_equity: 0.1,
+      roe_minus_cost_of_equity: 0.08,
+      roe_vs_coe_assessment: "Inconsistent spread.",
+    });
+    assert.equal(invalid.valid, false);
+    assert.ok(invalid.errors.some((error) => error.includes("ROE-minus-cost-of-equity")));
+  });
+});
+
+describe("valuation checkpoints", () => {
+  const upstream = [{
+    id: "scenario-artifact",
+    artifactType: "operating_scenario_set",
+    schemaVersion: "3.0.0",
+    content: {},
+  }];
+
+  it("hashes a sorted manifest and rejects incompatible duplicate units", () => {
+    const rows = [
+      { id: "2", metric_key: "revenue", period_end: "2025-03-31", value_numeric: 20, unit: "USD", currency: "USD" },
+      { id: "1", metric_key: "revenue", period_end: "2024-12-31", value_numeric: 10, unit: "USD", currency: "USD" },
+    ];
+    const make = (metricRows: any[]) => buildValuationInputManifest({
+      runId: "run", marketSnapshot: { regular_market_price: 10, currency: "USD", retrieved_at: "2026-01-01" },
+      metricRows, operatingScenarioSet: { probability_bear: 0.25, probability_base: 0.5, probability_bull: 0.25 },
+      requiredMethods: ["dcf"], upstreamArtifacts: upstream,
+    });
+    assert.equal(make(rows).input_manifest_hash, make([...rows].reverse()).input_manifest_hash);
+    assert.equal(make(rows).executionMetrics.find((metric) => metric.metricKey === "revenue")?.value, 20);
+    assert.throws(() => make([...rows, { ...rows[0], id: "3", unit: "shares" }]), /incompatible duplicate units/);
+  });
+
+  it("reconciles executed anchors and derives reproducible targets and returns", () => {
+    const execution = {
+      valid: true,
+      scenarios: [
+        { scenarioType: "bear", valueAnchor: 8 },
+        { scenarioType: "base", valueAnchor: 12 },
+        { scenarioType: "bull", valueAnchor: 16 },
+      ],
+    } as any;
+    const scenarioSet = reconcileValuationMethods({
+      methods: new Map([["dcf", execution]]), requiredMethods: ["dcf"], primaryMethod: "dcf",
+      operatingScenarioSet: { probability_bear: 0.25, probability_base: 0.5, probability_bull: 0.25 },
+      terminalYear: 2028,
+    });
+    const path = deriveAnnualPriceTargetPath({ scenarioSet, currentMarketPrice: 10, currency: "USD", primaryMethod: "dcf", startYear: 2027 });
+    const final = path.price_target_path.filter((row) => row.fiscal_year === 2028);
+    assert.deepEqual(final.map((row) => row.price_target), [8, 12, 16]);
+    assert.equal(validateAnnualPriceTargetPath(path, scenarioSet, 10).valid, true);
+    const returns = deriveValuationExpectedReturns({ scenarioSet, priceTargetPath: path, currentPrice: 10, predictionDate: "2026-01-01" });
+    assert.equal(returns.artifact_type, "expected_return_matrix");
+    assert.equal(returns.probability_weighted_return, 0.087558);
   });
 });

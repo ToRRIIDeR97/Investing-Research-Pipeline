@@ -10,56 +10,39 @@ import {
 } from "../system-pipeline";
 import {
   createSourceReaderBatches,
+  evaluateEvidenceCoverage,
+  extractDeterministicEvidence,
   mergeSourceReaderOutputs,
+  planEvidenceBatches,
+  SOURCE_READER_OUTPUT_KEYS,
   sourceReaderBatchFingerprint,
 } from "../source-reader-batching";
 import postgres from "postgres";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 import { RUN_TYPE_THRESHOLDS } from "../../workflow/quality-gates";
 
-const SOURCE_READER_OUTPUT_KEYS = [
-  "evidence_claims",
-  "contradictions",
-  "source_gaps",
-  "low_confidence_items",
-  "rejected_candidates",
-];
 const FOUNDER_ORIGIN_CLAIM_PATTERN = /founder|co[-\s]?founder|founded|marcos|galperin|motivat|origin|professor|research program|mission|sacrifice|lab to the market/i;
 
-function compactFounderRoleChunks(chunks: Record<string, unknown>[]) {
-  return chunks.map((chunk) => {
-    const text = typeof chunk.content_excerpt === "string" ? chunk.content_excerpt : "";
-    if (text.length <= 2_400) return chunk;
-    const match = /founder|co[-\s]?founder|founded|origin|marcos|galperin|motivat/i.exec(text);
-    const pivot = match?.index ?? 0;
-    const start = Math.max(0, Math.min(pivot - 500, text.length - 2_400));
-    const absoluteStart = Number(chunk.char_start || 0) + start;
-    return {
-      ...chunk,
-      char_start: absoluteStart,
-      char_end: absoluteStart + Math.min(2_400, text.length - start),
-      content_excerpt: text.slice(start, start + 2_400),
-    };
+export function buildSourceReaderPrompt(packet: Record<string, unknown>, target: number) {
+  return exactJsonPrompt({
+    agentName: "source-reader",
+    requiredKeys: [...SOURCE_READER_OUTPUT_KEYS],
+    packet,
+    extraRules: [
+      "Each evidence_claim must include claim_text, claim_type, claim_category, source_id, document_chunk_id, quoted_text, char_start, char_end, as_of_date or period_end, and confidence.",
+      "claim_category must be exactly one of: fact, estimate, assumption, opinion.",
+      "quoted_text must be an exact contiguous substring of the matching source_corpus.content_excerpt, copied character-for-character; do not paraphrase it.",
+      "char_start is the absolute inclusive source offset and char_end is the absolute exclusive source offset for quoted_text; copy the bounds from the matching source_corpus chunk and make them agree with quoted_text.",
+      `Return up to ${target} distinct, decision-relevant evidence claims supported by this batch. Never return schema examples or placeholder values.`,
+      "Use only source_corpus in this packet. Do not invent or alter source or chunk identifiers.",
+      "Prefer annual and quarterly SEC filings for financial facts.",
+      "Extract at least one decision-relevant claim from every substantive source_corpus chunk before taking additional claims from the same chunk.",
+      "For retrieval_scopes containing member_and_product_growth, extract every disclosed Members and Total Products value with its reporting period and definition.",
+      "For retrieval_scopes containing segment_economics, extract each segment's contribution profit, contribution loss, and contribution margin with its reporting period; do not collapse the table into one narrative claim.",
+      "For source_role=founder_and_company_history, prioritize the founder's identity, background, stated motivation, problem being solved, company origin, early constraints, and first proof point.",
+      "For source_role=industry_primary or peer_company_primary, prioritize independent industry structure and comparative evidence rather than repeating issuer claims.",
+    ],
   });
-}
-
-function canonicalizeFounderQuoteSpans(output: Record<string, unknown>, chunks: Record<string, unknown>[]) {
-  const byChunk = new Map(chunks.map((chunk) => [String(chunk.document_chunk_id || ""), chunk]));
-  const claims = Array.isArray(output.evidence_claims) ? output.evidence_claims : [];
-  return {
-    ...output,
-    evidence_claims: claims.map((claim) => {
-      if (!claim || typeof claim !== "object" || Array.isArray(claim)) return claim;
-      const item = claim as Record<string, unknown>;
-      const chunk = byChunk.get(String(item.document_chunk_id || item.chunk_id || ""));
-      const quote = typeof item.quoted_text === "string" ? item.quoted_text : "";
-      const excerpt = typeof chunk?.content_excerpt === "string" ? chunk.content_excerpt : "";
-      const offset = quote ? excerpt.indexOf(quote) : -1;
-      if (!chunk || offset < 0) return claim;
-      const start = Number(chunk.char_start || 0) + offset;
-      return { ...item, char_start: start, char_end: start + quote.length };
-    }),
-  };
 }
 
 function deterministicFounderEvidence(chunks: Record<string, unknown>[]) {
@@ -139,74 +122,112 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       }
 
       const evidenceTarget = RUN_TYPE_THRESHOLDS[ctx.runType]?.minEvidenceClaims ?? 12;
-      const batches = createSourceReaderBatches(sourcePacket as any[], {
+      const coverageSlots = ctx.composedProfile?.evidence_coverage_slots || [];
+      const existingEvidence = await loadAcceptedEvidencePacket(sql, v2Ctx) as Record<string, unknown>[];
+      const existingCoverage = evaluateEvidenceCoverage(coverageSlots, existingEvidence);
+      const existingMandatorySatisfied = existingCoverage
+        .filter((slot) => slot.priority === "mandatory")
+        .every((slot) => slot.status === "satisfied");
+      if (existingEvidence.length >= evidenceTarget && existingMandatorySatisfied) {
+        return {
+          status: "success",
+          extractedClaimsCount: existingEvidence.length,
+          coverage: existingCoverage,
+          effortBudget: { primaryBatches: 0, gapBatches: 0, logicalBatchLimit: 10, underlyingCallLimit: 20, selectedCharacters: 0, selectedBytes: 0 },
+          failedBatches: [],
+        };
+      }
+      const planningSlots = existingCoverage.length
+        ? coverageSlots.filter((slot) => existingCoverage.some((status) => status.key === slot.key && status.status === "missing"))
+        : coverageSlots;
+      const batchOptions = {
         maxChunks: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_CHUNKS || 4),
         maxBytes: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_BYTES || 16_000),
-      });
+      };
+      const plan = planningSlots.length
+        ? planEvidenceBatches(sourcePacket as any[], planningSlots, {
+            ...batchOptions,
+            maxBatches: 8,
+            maxCharacters: 80_000,
+          })
+        : {
+            batches: createSourceReaderBatches(sourcePacket as any[], batchOptions).slice(0, 8),
+            selectedCharacters: (sourcePacket as any[]).slice(0, 32).reduce((sum, chunk) => sum + String(chunk.content_excerpt || "").length, 0),
+            selectedBytes: 0,
+            coveredSlotKeys: [],
+            uncoveredMandatorySlotKeys: [],
+          };
+      const batches = [...plan.batches];
 
       if (!batches.length) {
-        throw new Error("Source-reader has no persisted source chunks to analyze");
+        throw new Error(`Source-reader coverage planner selected no usable chunks${plan.uncoveredMandatorySlotKeys.length ? `; uncovered: ${plan.uncoveredMandatorySlotKeys.join(", ")}` : ""}`);
       }
 
-      const batchTarget = Math.max(5, Math.ceil(evidenceTarget / batches.length) + 1);
+      const batchTarget = Math.max(5, Math.ceil(evidenceTarget / 8) + 1);
       const outputs: Record<string, unknown>[] = Array.from({ length: batches.length }, () => ({}));
-      const promptFactory = (target: number) => (packet: Record<string, unknown>) => exactJsonPrompt({
-        agentName: "source-reader",
-        requiredKeys: [...SOURCE_READER_OUTPUT_KEYS],
-        packet,
-        extraRules: [
-          "Each evidence_claim must include claim_text, claim_type, claim_category, source_id, document_chunk_id, quoted_text, char_start, char_end, as_of_date or period_end, and confidence.",
-          "claim_category must be exactly one of: fact, estimate, assumption, opinion.",
-          "quoted_text must be an exact contiguous substring of the matching source_corpus.content_excerpt, copied character-for-character; do not paraphrase it.",
-          "char_start is the absolute inclusive source offset and char_end is the absolute exclusive source offset for quoted_text; copy the bounds from the matching source_corpus chunk and make them agree with quoted_text.",
-          `Return up to ${target} distinct, decision-relevant evidence claims supported by this batch. Never return schema examples or placeholder values.`,
-          "Use only source_corpus in this packet. Do not invent or alter source or chunk identifiers.",
-          "Prefer annual and quarterly SEC filings for financial facts.",
-          "Extract at least one decision-relevant claim from every substantive source_corpus chunk before taking additional claims from the same chunk.",
-          "For source_role=founder_and_company_history, prioritize the founder's identity, background, stated motivation, problem being solved, company origin, early constraints, and first proof point.",
-          "For source_role=industry_primary or peer_company_primary, prioritize independent industry structure and comparative evidence rather than repeating issuer claims.",
-        ],
-      });
+      const deterministicClaims = extractDeterministicEvidence(batches.flatMap((batch) => batch.chunks));
+      if (deterministicClaims.length) {
+        await persistEvidence(sql, v2Ctx, sources, { evidence_claims: deterministicClaims });
+      }
+      const afterDeterministic = await loadAcceptedEvidencePacket(sql, v2Ctx) as Record<string, unknown>[];
+      const afterCoverage = evaluateEvidenceCoverage(coverageSlots, afterDeterministic);
+      const satisfiedByDeterministic = afterDeterministic.length >= evidenceTarget
+        && afterCoverage.filter((slot) => slot.priority === 'mandatory').every((slot) => slot.status === 'satisfied');
+      const promptFactory = (target: number) => (packet: Record<string, unknown>) => buildSourceReaderPrompt(packet, target);
 
       let nextBatch = 0;
-      const workerCount = Math.max(1, Math.min(4, Number(process.env.RESEARCH_AGENT_CONCURRENCY || 3)));
-      const batchAbort = new AbortController();
+      const workerCount = Math.max(1, Math.min(3, Number(process.env.RESEARCH_AGENT_CONCURRENCY || 3)));
+      const batchFailures: Array<{ batchId: string; error: string }> = [];
+      let stopScheduling = satisfiedByDeterministic;
       const batchWorkers = Array.from({ length: Math.min(workerCount, batches.length) }, async () => {
-        try {
-          while (true) {
-            const index = nextBatch++;
-            if (index >= batches.length) return;
-            const batch = batches[index];
+        while (true) {
+          if (stopScheduling) return;
+          const index = nextBatch++;
+          if (index >= batches.length) return;
+          const batch = batches[index];
+          try {
             const fingerprint = sourceReaderBatchFingerprint(batch, batchTarget);
-            const taskKey = `source-reader:batch:${batch.id}:${fingerprint}`;
+            let taskKey = `source-reader:batch:${fingerprint}`;
             let output = await latestV3TaskOutput(sql, ctx.runId, taskKey);
             if (output && mergeSourceReaderOutputs([output], [batch]).evidence_claims.length === 0) {
               output = null;
+              taskKey += ":citation-retry";
             }
             if (!output) {
               const packet = {
+                context_policy: 'focused-v1',
                 asset: v2Ctx,
-                batch: { id: batch.id, count: batches.length, claim_target: batchTarget },
+                batch: { id: batch.id, count: batches.length, claim_target: batchTarget, coverage_slots: batch.coverageSlotKeys },
                 source_corpus: batch.chunks,
               };
               output = await callResearchAgent<Record<string, unknown>>({
                 sql, ctx, stageKey: "evidence_extraction", taskKey,
                 taskType: "evidence_extraction_batch", agentName: "source-reader", modelTier: "cheap",
-                packet, signal: batchAbort.signal, promptFactory: promptFactory(batchTarget),
+                packet, promptFactory: promptFactory(batchTarget), policy: { maxAttempts: 2, maxRepairAttempts: 0 },
               });
             }
             outputs[index] = output;
+            await persistEvidence(sql, v2Ctx, sources, mergeSourceReaderOutputs([output], [batch]));
+          } catch (error) {
+            const failure = error as { category?: string; responseMetadata?: { error_type?: string } };
+            if (failure?.category === 'provider_unavailable' || failure?.responseMetadata?.error_type === 'provider_unavailable'
+              || /Stage model-call budget|Evidence logical batch budget/.test(String(error))) stopScheduling = true;
+            batchFailures.push({
+              batchId: batch.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
           }
-        } catch (error) {
-          batchAbort.abort();
-          throw error;
         }
       });
-      const batchResults = await Promise.allSettled(batchWorkers);
-      const batchFailure = batchResults.find((result): result is PromiseRejectedResult => result.status === "rejected");
-      if (batchFailure) throw batchFailure.reason;
+      await Promise.all(batchWorkers);
 
       let evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
+      if (deterministicClaims.length) {
+        evidenceOutput = {
+          ...evidenceOutput,
+          evidence_claims: [...deterministicClaims, ...evidenceOutput.evidence_claims],
+        };
+      }
 
       const usableClaims = (out: any) => Array.isArray(out?.evidence_claims) ? out.evidence_claims : [];
       const hasFounderOriginClaim = (out: any) => usableClaims(out).some((claim: any) =>
@@ -214,103 +235,44 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
         FOUNDER_ORIGIN_CLAIM_PATTERN.test(String(claim?.claim_text || ""))
       );
 
+      const initialCoverage = evaluateEvidenceCoverage(coverageSlots, [...existingEvidence, ...usableClaims(evidenceOutput)]);
+      const missingMandatory = new Set(initialCoverage
+        .filter((slot) => slot.priority === "mandatory" && slot.status === "missing")
+        .map((slot) => slot.key));
+      const failedBatchIds = new Set(batchFailures.map((failure) => failure.batchId));
+      const gapBatches = batches
+        .filter((batch) => batch.coverageSlotKeys?.some((key) => missingMandatory.has(key)))
+        .sort((a, b) => Number(failedBatchIds.has(b.id)) - Number(failedBatchIds.has(a.id)));
       if (usableClaims(evidenceOutput).length < evidenceTarget) {
-        const gapSpecs: Array<{ batch: (typeof batches)[number]; gapTarget: number }> = [];
-        let plannedClaims = usableClaims(evidenceOutput).length;
-        for (let index = 0; index < batches.length && plannedClaims < evidenceTarget; index += 1) {
-          const batch = batches[index];
-          const acceptedInBatch = mergeSourceReaderOutputs([outputs[index]], [batch]).evidence_claims.length;
-          if (acceptedInBatch >= batchTarget) continue;
-          const remaining = evidenceTarget - plannedClaims;
-          const gapTarget = Math.max(5, Math.min(batchTarget, remaining));
-          gapSpecs.push({ batch, gapTarget });
-          plannedClaims += gapTarget;
+        for (const batch of batches) {
+          if (!gapBatches.includes(batch)) gapBatches.push(batch);
         }
-        const gapOutputs: Record<string, unknown>[] = Array.from({ length: gapSpecs.length }, () => ({}));
-        let nextGap = 0;
-        const gapAbort = new AbortController();
-        const gapWorkers = Array.from({ length: Math.min(workerCount, gapSpecs.length) }, async () => {
-          try {
-            while (true) {
-              const index = nextGap++;
-              if (index >= gapSpecs.length) return;
-              const { batch, gapTarget } = gapSpecs[index];
-              const gapPacket = {
-                asset: v2Ctx,
-                batch: { id: batch.id, count: batches.length, claim_target: gapTarget, gap_retry: true },
-                source_corpus: batch.chunks,
-              };
-              gapOutputs[index] = await callResearchAgent<Record<string, unknown>>({
-                sql, ctx, stageKey: "evidence_extraction",
-                taskKey: `source-reader:batch:${batch.id}:${sourceReaderBatchFingerprint(batch, gapTarget)}:gap`,
-                taskType: "evidence_extraction_gap", agentName: "source-reader", modelTier: "cheap",
-                packet: gapPacket, signal: gapAbort.signal, promptFactory: promptFactory(gapTarget),
-              });
-            }
-          } catch (error) {
-            gapAbort.abort();
-            throw error;
-          }
-        });
-        const gapResults = await Promise.allSettled(gapWorkers);
-        const gapFailure = gapResults.find((result): result is PromiseRejectedResult => result.status === "rejected");
-        if (gapFailure) throw gapFailure.reason;
-        outputs.push(...gapOutputs);
-        evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
       }
-
-      if (!hasFounderOriginClaim(evidenceOutput)) {
-        const assetPattern = new RegExp(
-          String(ctx.assetName || "").trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-          "i",
-        );
-        const assetFounderChunks = founderChunks.filter((chunk) => {
-          const text = typeof chunk.content_excerpt === "string" ? chunk.content_excerpt : "";
-          const title = typeof chunk.title === "string" ? chunk.title : "";
-          if (/quartr/i.test(title)) return false;
-          return /marcos|galperin/i.test(text) || /mercadolibre|\bmeli\b/i.test(title) || assetPattern.test(title);
-        });
-        const founderRoleChunks = compactFounderRoleChunks(assetFounderChunks.length ? assetFounderChunks : founderChunks);
-        const [founderBatch] = createSourceReaderBatches(founderRoleChunks as any[], {
-          maxChunks: Math.max(1, founderChunks.length),
-          maxBytes: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_BYTES || 16_000),
-        });
-        const roleBatch = { ...founderBatch, id: "founder-origin" };
-        const founderOutput = await callResearchAgent<Record<string, unknown>>({
-          sql,
-          ctx,
-          stageKey: "evidence_extraction",
-          taskKey: `source-reader:role:founder-origin:${sourceReaderBatchFingerprint(roleBatch, Math.max(3, founderChunks.length))}`,
-          taskType: "evidence_extraction_role_gap",
-          agentName: "source-reader",
-          modelTier: "cheap",
+      const selectedGapBatches = stopScheduling ? [] : gapBatches.slice(0, 2);
+      const gapResults = await Promise.allSettled(selectedGapBatches.map(async (batch) => {
+        const gapTarget = Math.max(5, Math.min(batchTarget, evidenceTarget - usableClaims(evidenceOutput).length || batchTarget));
+        const output = await callResearchAgent<Record<string, unknown>>({
+          sql, ctx, stageKey: "evidence_extraction",
+          taskKey: `source-reader:gap:${sourceReaderBatchFingerprint(batch, gapTarget)}`,
+          taskType: "evidence_extraction_gap", agentName: "source-reader", modelTier: "cheap",
           packet: {
+            context_policy: 'focused-v1',
             asset: v2Ctx,
-            batch: {
-              id: roleBatch.id,
-              claim_target: Math.max(3, founderChunks.length),
-              required_source_role: "founder_and_company_history",
-            },
-            source_corpus: roleBatch.chunks,
+            batch: { id: batch.id, count: batches.length, claim_target: gapTarget, gap_retry: true, coverage_slots: batch.coverageSlotKeys },
+            source_corpus: batch.chunks,
           },
-          promptFactory: (packet) => exactJsonPrompt({
-            agentName: "source-reader",
-            requiredKeys: [...SOURCE_READER_OUTPUT_KEYS],
-            packet,
-            extraRules: [
-              "Extract only directly supported founder and company-origin facts from source_corpus.",
-              "At least one claim must identify the founder or founding team and why the relevant technology or company was pursued.",
-              "Do not use IPO, financing, bank-charter, or product claims unless they directly establish the company origin or founder motivation.",
-              "Prioritize contemporary statements and university archives over later corporate narrative.",
-              "Each claim must copy source_id and document_chunk_id exactly and include claim_text, claim_type, claim_category, quoted_text, char_start, char_end, confidence, and the most precise available date.",
-              "quoted_text must be an exact contiguous substring of the matching source_corpus.content_excerpt, and char_start/char_end must be the matching absolute inclusive/exclusive bounds.",
-              "Do not infer a financial, mission, status, or other motivation unless the source text directly supports it.",
-            ],
-          }),
+          promptFactory: promptFactory(gapTarget), policy: { maxAttempts: 2, maxRepairAttempts: 0 },
         });
-        outputs.push(canonicalizeFounderQuoteSpans(founderOutput, roleBatch.chunks as any[]));
-        batches.push(roleBatch);
-        evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
+        await persistEvidence(sql, v2Ctx, sources, mergeSourceReaderOutputs([output], [batch]));
+        return output;
+      }));
+      for (const result of gapResults) {
+        if (result.status === "fulfilled") outputs.push(result.value);
+        else batchFailures.push({ batchId: "gap", error: result.reason instanceof Error ? result.reason.message : String(result.reason) });
+      }
+      evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
+      if (deterministicClaims.length) {
+        evidenceOutput.evidence_claims.unshift(...deterministicClaims);
       }
 
       if (!hasFounderOriginClaim(evidenceOutput)) {
@@ -323,25 +285,54 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
         }
       }
 
-      let persistedEvidenceCount = await persistEvidence(sql, v2Ctx, sources, evidenceOutput);
+      await persistEvidence(sql, v2Ctx, sources, evidenceOutput);
+      let countRows = await sql`SELECT COUNT(*) AS count FROM evidence_claims WHERE research_run_id = ${ctx.runId}`;
+      let persistedEvidenceCount = Number(countRows[0]?.count || 0);
 
       if (persistedEvidenceCount < evidenceTarget) {
-        // Fallback
         const fallbackEvidence = deterministicEvidenceFallback(v2Ctx, sources, {}, evidenceTarget - persistedEvidenceCount);
-        persistedEvidenceCount += await persistEvidence(sql, v2Ctx, sources, fallbackEvidence);
-        if (persistedEvidenceCount >= evidenceTarget) {
-          evidenceOutput = {
-            ...evidenceOutput,
-            evidence_claims: [...usableClaims(evidenceOutput), ...usableClaims(fallbackEvidence)],
-          };
-        }
+        await persistEvidence(sql, v2Ctx, sources, fallbackEvidence);
+        evidenceOutput = {
+          ...evidenceOutput,
+          evidence_claims: [...usableClaims(evidenceOutput), ...usableClaims(fallbackEvidence)],
+        };
+        countRows = await sql`SELECT COUNT(*) AS count FROM evidence_claims WHERE research_run_id = ${ctx.runId}`;
+        persistedEvidenceCount = Number(countRows[0]?.count || 0);
       }
 
+      const acceptedEvidence = await loadAcceptedEvidencePacket(sql, v2Ctx) as Record<string, unknown>[];
+      const coverage = evaluateEvidenceCoverage(coverageSlots, acceptedEvidence);
+      evidenceOutput.source_gaps = coverage
+        .filter((slot) => slot.status === "missing")
+        .map((slot) => ({
+          gap_key: slot.key,
+          priority: slot.priority,
+          description: `Evidence coverage slot ${slot.key} is missing`,
+          accepted_claim_count: slot.acceptedClaimCount,
+          period_count: slot.periodCount,
+        }));
       await reconcileSourceGaps(sql, v2Ctx, evidenceOutput, "system:source-reader");
+      const [effort] = await sql`SELECT
+        (SELECT COUNT(DISTINCT regexp_replace(task_key, ':revision-[0-9]+$', '')) FROM research_tasks
+          WHERE research_run_id = ${ctx.runId} AND stage_id IN (SELECT id FROM research_stages WHERE research_run_id = ${ctx.runId} AND stage_key = 'evidence_extraction')) AS logical_batches,
+        (SELECT COUNT(*) FROM model_budget_reservations WHERE research_run_id = ${ctx.runId}
+          AND stage_id IN (SELECT id FROM research_stages WHERE research_run_id = ${ctx.runId} AND stage_key = 'evidence_extraction')) AS reserved_attempts`;
 
       return {
         status: "success",
         extractedClaimsCount: persistedEvidenceCount,
+        coverage,
+        effortBudget: {
+          logicalBatchesUsed: Number(effort.logical_batches),
+          attemptsReserved: Number(effort.reserved_attempts),
+          primaryBatches: batches.length,
+          gapBatches: selectedGapBatches.length,
+          logicalBatchLimit: 10,
+          underlyingCallLimit: 20,
+          selectedCharacters: plan.selectedCharacters,
+          selectedBytes: plan.selectedBytes,
+        },
+        failedBatches: batchFailures,
       };
     } finally {
       await sql.end();
@@ -386,6 +377,12 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       `;
       if (Number(founderRows[0]?.cnt || 0) === 0) {
         errors.push("No accepted founder/origin evidence was extracted from founder_and_company_history sources");
+      }
+      const missingMandatory = Array.isArray(output?.coverage)
+        ? output.coverage.filter((slot: any) => slot?.priority === "mandatory" && slot?.status !== "satisfied")
+        : [];
+      if (missingMandatory.length) {
+        errors.push(`Missing mandatory evidence coverage: ${missingMandatory.map((slot: any) => slot.key).join(", ")}`);
       }
       return makeValidationResult(errors);
     } finally {

@@ -6,7 +6,7 @@ import { handleApiError, createdResponse, ApiError } from "@/lib/api/errors";
 import { eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { writeFile, mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { document_parses } from "@/db/schema/corpus";
 import { invokeDoclingParser, storeParseResults } from "@/lib/ingestion/parser";
 
@@ -165,7 +165,13 @@ async function parseSourceIfNeeded(sourceDocumentId: string, storagePath: string
     return null;
   }
 
-  const parseResult = await invokeDoclingParser(join(process.cwd(), storagePath));
+  const sourceRoot = resolve(process.cwd(), "storage", "sources");
+  const relativePath = storagePath.replace(/^storage[\\/]sources[\\/]/, "");
+  const sourcePath = resolve(sourceRoot, relativePath);
+  if (!relativePath || (sourcePath !== sourceRoot && !sourcePath.startsWith(`${sourceRoot}${sep}`))) {
+    throw new Error("Source path is outside storage/sources");
+  }
+  const parseResult = await invokeDoclingParser(sourcePath);
   return storeParseResults({
     sourceDocumentId,
     parserName: parseResult.metadata.parser === "basic_fallback" ? "basic_fallback" : "docling",

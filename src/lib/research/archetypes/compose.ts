@@ -14,6 +14,7 @@ import type {
   ScenarioDriverRequirement,
   MonitoringKPI,
   OptionalBranch,
+  EvidenceCoverageSlot,
 } from "./types";
 
 function dedupeByKey<T extends { [key: string]: any }>(items: T[], key: keyof T): T[] {
@@ -158,6 +159,28 @@ export function composeProfile(
     [...resolvedArchetypes.flatMap((a) => a.optional_branches), ...resolvedOverlays.flatMap((o) => o.optional_branches)],
     "branch_key"
   );
+  const coveragePriority = { mandatory: 3, important: 2, optional: 1 } as const;
+  const evidence_coverage_slots = [...resolvedArchetypes, ...resolvedOverlays]
+    .flatMap((item) => item.evidence_coverage_slots || [])
+    .reduce<EvidenceCoverageSlot[]>((slots, slot) => {
+      const existing = slots.find((item) => item.key === slot.key);
+      if (!existing) {
+        slots.push({ ...slot });
+        return slots;
+      }
+      existing.priority = coveragePriority[slot.priority] > coveragePriority[existing.priority] ? slot.priority : existing.priority;
+      existing.retrievalQueries = [...new Set([...existing.retrievalQueries, ...slot.retrievalQueries])];
+      existing.preferredSourceRoles = [...new Set([...existing.preferredSourceRoles, ...slot.preferredSourceRoles])];
+      existing.preferredSourceTypes = [...new Set([...existing.preferredSourceTypes, ...slot.preferredSourceTypes])];
+      existing.minimumAcceptedClaims = Math.max(existing.minimumAcceptedClaims, slot.minimumAcceptedClaims);
+      if (slot.periodCoverage) {
+        existing.periodCoverage = {
+          minimumPeriods: Math.max(existing.periodCoverage?.minimumPeriods || 0, slot.periodCoverage.minimumPeriods),
+          periodicity: slot.periodCoverage.periodicity || existing.periodCoverage?.periodicity,
+        };
+      }
+      return slots;
+    }, []);
 
   const backtestBranch = optional_branches.find((b) => b.branch_key === "backtest");
   const backtest_required = !!(backtestBranch?.allowed && (timingHypothesis?.accepted ?? false));
@@ -186,6 +209,7 @@ export function composeProfile(
     required_scenario_drivers,
     monitoring_kpis,
     optional_branches,
+    evidence_coverage_slots,
     backtest_required,
     composition_conflicts: errors.filter((e) => e.code === "conflict").map((e) => e.message),
     composition_warnings: warnings,

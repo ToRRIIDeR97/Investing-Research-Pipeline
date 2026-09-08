@@ -8,13 +8,13 @@ import { calculateCost, estimateCost } from "../src/lib/agent-harness/telemetry"
 import { clearRegisteredTools, registerTool } from "../src/lib/agent-harness/tools";
 import type { ModelEvent, ModelProvider, ModelRequest } from "../src/lib/agent-harness/types";
 import {
-  AGENT_CONFIGS,
-  DEFAULT_RESEARCH_MODEL,
-  RESEARCH_AGENT_NAMES,
   getAgentConfig,
   resolveAgentModel,
 } from "../src/lib/agent-harness/registry";
 import { coerceStructuredOutput, validateSchema } from "../src/lib/agent-harness/validation";
+
+const TEST_VISION_MODEL = "test-vision-model";
+process.env.RESEARCH_VISION_MODEL = TEST_VISION_MODEL;
 
 const classifierOutput = {
   selected_profile_key: "operating_company", selected_profile_name: "Operating Company", confidence: 0.9,
@@ -22,29 +22,22 @@ const classifierOutput = {
   classification_evidence: [], ambiguities: [], recommended_next_tasks: [],
 };
 
-test("model resolution is env-first and every registry default is DeepSeek V4 Flash", () => {
+test("model resolution is env-only and fails closed when unconfigured", () => {
   const keys = [
-    "RESEARCH_DEFAULT_MODEL",
-    "RESEARCH_MID_MODEL",
     "RESEARCH_RESEARCH_ASSISTANT_MODEL",
+    "RESEARCH_VISION_MODEL",
+    "RESEARCH_DOCUMENT_VISION_AGENT_MODEL",
   ];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   try {
-    for (const agentName of RESEARCH_AGENT_NAMES) {
-      assert.equal(AGENT_CONFIGS[agentName].defaultModel, DEFAULT_RESEARCH_MODEL);
-    }
+    delete process.env.RESEARCH_VISION_MODEL;
+    assert.throws(() => resolveAgentModel("research-assistant"), /No model configured/);
 
-    process.env.RESEARCH_DEFAULT_MODEL = DEFAULT_RESEARCH_MODEL;
-    process.env.RESEARCH_MID_MODEL = "configured-mid-model";
-    delete process.env.RESEARCH_RESEARCH_ASSISTANT_MODEL;
-    assert.equal(resolveAgentModel("research-assistant"), "configured-mid-model");
-
+    process.env.RESEARCH_VISION_MODEL = "configured-vision-model";
     process.env.RESEARCH_RESEARCH_ASSISTANT_MODEL = "explicit-assistant-model";
-    assert.equal(resolveAgentModel("research-assistant"), "explicit-assistant-model");
-
-    delete process.env.RESEARCH_MID_MODEL;
-    delete process.env.RESEARCH_RESEARCH_ASSISTANT_MODEL;
-    assert.equal(resolveAgentModel("research-assistant"), DEFAULT_RESEARCH_MODEL);
+    process.env.RESEARCH_DOCUMENT_VISION_AGENT_MODEL = "different-agent-model";
+    assert.equal(resolveAgentModel("research-assistant"), "configured-vision-model");
+    assert.equal(resolveAgentModel("document-vision-agent"), "configured-vision-model");
   } finally {
     for (const key of keys) {
       if (previous[key] === undefined) delete process.env[key];
@@ -92,6 +85,20 @@ async function* textResponse(text: string): AsyncGenerator<ModelEvent> {
   yield { type: "usage", usage: { inputTokens: 10, outputTokens: 20, costUsd: 0.01 } };
   yield { type: "response.completed", finishReason: "stop" };
 }
+
+test("runner does not double-count cumulative usage events", async () => {
+  const provider = new ScriptedProvider(() => (async function* () {
+    yield { type: "response.started", requestId: "cumulative-usage" } as ModelEvent;
+    yield { type: "text.delta", text: JSON.stringify(classifierOutput) } as ModelEvent;
+    yield { type: "usage", usage: { inputTokens: 10, outputTokens: 20, costUsd: 0.01 } } as ModelEvent;
+    yield { type: "usage", usage: { inputTokens: 10, outputTokens: 25, costUsd: 0.012 } } as ModelEvent;
+    yield { type: "response.completed", finishReason: "stop" } as ModelEvent;
+  })());
+  const result = await runResearchAgent({ agentName: "asset-classifier", title: "usage", taskPacket: {}, provider });
+  assert.equal(result.usage.inputTokens, 10);
+  assert.equal(result.usage.outputTokens, 25);
+  assert.equal(result.usage.costUsd, 0.012);
+});
 
 test("JSON parser accepts one direct/fenced object and rejects ambiguity or truncation", () => {
   assert.equal((parseStructuredOutput('{"ok":true}', ["ok"]) as any).ok, true);
@@ -242,13 +249,71 @@ test("provider queue wait pauses the total request deadline", async () => {
 });
 
 test("runner returns validated output, raw text, attempts, and aggregate usage", async () => {
-  const provider = new ScriptedProvider(() => textResponse(JSON.stringify(classifierOutput)));
+  let providerSessionId: string | undefined;
+  const provider = new ScriptedProvider((request) => {
+    providerSessionId = request.sessionId;
+    return textResponse(JSON.stringify(classifierOutput));
+  });
   const result = await runResearchAgent<any>({ agentName: "asset-classifier", title: "test", taskPacket: {}, provider });
   assert.equal(result.structured.selected_profile_key, "operating_company");
   assert.equal(result.attempts.length, 1);
   assert.equal(result.attempts[0].requestId, "req-test");
   assert.equal(result.usage.costUsd, 0.01);
+  assert.equal(providerSessionId, result.sessionId);
   assert.match(result.rawText, /selected_profile_key/);
+});
+
+test("runner records queue wait separately from provider execution", async () => {
+  const provider = new ScriptedProvider(() => textResponse(JSON.stringify(classifierOutput))) as ScriptedProvider & {
+    acquireRequestLock(signal?: AbortSignal): Promise<() => void>;
+  };
+  provider.acquireRequestLock = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    return () => undefined;
+  };
+
+  const result = await runResearchAgent({
+    agentName: "asset-classifier",
+    title: "queue telemetry",
+    taskPacket: {},
+    provider,
+    policy: { attemptTimeoutMs: 20, totalTimeoutMs: 50, inactivityTimeoutMs: 1_000 },
+  });
+
+  assert.ok((result.attempts[0].queueWaitMs || 0) >= 25);
+  assert.ok((result.attempts[0].executionMs || 0) < 20);
+});
+
+test('a queued request cannot outlive the checkpoint wall-clock deadline', async () => {
+  const provider = new ScriptedProvider(() => textResponse(JSON.stringify(classifierOutput))) as ScriptedProvider & {
+    acquireRequestLock(signal?: AbortSignal): Promise<() => void>;
+  };
+  provider.acquireRequestLock = (signal) => new Promise((_resolve, reject) => {
+    signal!.addEventListener('abort', () => reject(new ProviderError('queue cancelled', 'cancellation')), { once: true });
+  });
+  const start = Date.now();
+  await assert.rejects(runResearchAgent({ agentName: 'asset-classifier', title: 'bounded queue', taskPacket: {}, provider,
+    policy: { attemptTimeoutMs: 20, totalTimeoutMs: 40, inactivityTimeoutMs: 1000, maxAttempts: 1 } }), /timeout/i);
+  assert.ok(Date.now() - start < 500);
+  assert.equal(provider.calls, 0);
+});
+
+test("runner applies the project unslop skill to every new agent session", async () => {
+  let systemPrompt = "";
+  const provider = new ScriptedProvider((request) => {
+    systemPrompt = request.messages
+      ?.filter((message) => message.role === "system")
+      .flatMap((message) => message.parts)
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("\n") || "";
+    return textResponse(JSON.stringify(classifierOutput));
+  });
+
+  await runResearchAgent({ agentName: "asset-classifier", title: "test", taskPacket: {}, provider });
+
+  assert.match(systemPrompt, /<skill name="unslop"/);
+  assert.match(systemPrompt, /Edit text to remove AI patterns and add human voice/);
 });
 
 test("source-reader requests omit max tokens unless explicitly configured", async () => {
@@ -418,7 +483,7 @@ test("schema repair exhaustion gets one bounded model retry", async () => {
   );
 });
 
-test("source-reader retries a citation schema failure with its fallback model", async () => {
+test("source-reader retries a citation schema failure with the configured vision model", async () => {
   const oldFallback = process.env.RESEARCH_SOURCE_READER_FALLBACK_MODEL;
   process.env.RESEARCH_SOURCE_READER_FALLBACK_MODEL = "fallback-model";
   let repairPrompt = "";
@@ -459,8 +524,8 @@ test("source-reader retries a citation schema failure with its fallback model", 
     });
     assert.equal(result.attempts.length, 2);
     assert.equal(result.attempts[0].errorCategory, "schema_validation");
-    assert.equal(result.attempts[1].fallback, true);
-    assert.equal(result.attempts[1].model, "fallback-model");
+    assert.equal(result.attempts[1].fallback, false);
+    assert.equal(result.attempts[1].model, TEST_VISION_MODEL);
     assert.match(repairPrompt, /source_id, document_chunk_id/);
     assert.match(repairPrompt, /"source_id":"source-1"/);
     assert.match(repairPrompt, /Do not use aliases such as claim or source_quote/);
@@ -470,7 +535,7 @@ test("source-reader retries a citation schema failure with its fallback model", 
   }
 });
 
-test("truncated generation and failed repair use the alternate model", async () => {
+test("truncated generation and failed repair retry the configured vision model", async () => {
   const oldFallback = process.env.RESEARCH_ASSET_CLASSIFIER_FALLBACK_MODEL;
   process.env.RESEARCH_ASSET_CLASSIFIER_FALLBACK_MODEL = "fallback-model";
   const provider = new ScriptedProvider((_request, call) => textResponse(
@@ -483,7 +548,8 @@ test("truncated generation and failed repair use the alternate model", async () 
     });
     assert.equal(provider.calls, 3);
     assert.equal(result.attempts[0].errorCategory, "malformed_stream");
-    assert.equal(result.attempts[1].fallback, true);
+    assert.equal(result.attempts[1].fallback, false);
+    assert.equal(result.attempts[1].model, TEST_VISION_MODEL);
     assert.equal(result.structured.selected_profile_key, "operating_company");
   } finally {
     if (oldFallback === undefined) delete process.env.RESEARCH_ASSET_CLASSIFIER_FALLBACK_MODEL;
@@ -491,7 +557,7 @@ test("truncated generation and failed repair use the alternate model", async () 
   }
 });
 
-test("retryable primary failure invokes compacted fallback once", async () => {
+test("retryable primary failure invokes a compacted same-model retry once", async () => {
   const oldFallback = process.env.RESEARCH_ASSET_ANALYST_FALLBACK_MODEL;
   process.env.RESEARCH_ASSET_ANALYST_FALLBACK_MODEL = "fallback-model";
   const evidence = Array.from({ length: 30 }, (_, id) => ({ id, claim_text: `claim ${id}` }));
@@ -505,7 +571,8 @@ test("retryable primary failure invokes compacted fallback once", async () => {
   try {
     const result = await runResearchAgent<any>({ agentName: "asset-analyst", title: "test", taskPacket: { evidence_claims: evidence }, provider, policy: { retryBaseDelayMs: 1 } });
     assert.equal(result.attempts.length, 2);
-    assert.equal(result.attempts[1].fallback, true);
+    assert.equal(result.attempts[1].fallback, false);
+    assert.equal(result.attempts[1].model, TEST_VISION_MODEL);
     assert.ok(prompts[1].length < prompts[0].length);
   } finally {
     if (oldFallback === undefined) delete process.env.RESEARCH_ASSET_ANALYST_FALLBACK_MODEL;
@@ -544,7 +611,7 @@ test("connection failures before provider start record zero usage and cost", asy
   }
 });
 
-test("retry schedule revisits primary and fallback models with backoff", async () => {
+test("two provider failures open the run circuit without changing models", async () => {
   const oldFallback = process.env.RESEARCH_SOURCE_READER_FALLBACK_MODEL;
   process.env.RESEARCH_SOURCE_READER_FALLBACK_MODEL = "fallback-model";
   const models: string[] = [];
@@ -557,7 +624,7 @@ test("retry schedule revisits primary and fallback models with backoff", async (
       agentName: "source-reader", title: "retry schedule", taskPacket: {}, provider,
       policy: { maxAttempts: 4, retryBaseDelayMs: 1 },
     }));
-    assert.deepEqual(models, ["deepseek-v4-flash", "fallback-model", "deepseek-v4-flash", "fallback-model"]);
+    assert.deepEqual(models, [TEST_VISION_MODEL, TEST_VISION_MODEL]);
   } finally {
     if (oldFallback === undefined) delete process.env.RESEARCH_SOURCE_READER_FALLBACK_MODEL;
     else process.env.RESEARCH_SOURCE_READER_FALLBACK_MODEL = oldFallback;
@@ -611,6 +678,41 @@ test("same-model source-reader retries compact the packet", async () => {
   assert.equal(result.attempts.length, 2);
   assert.equal(result.attempts[1].compactionOccurred, true);
   assert.ok(prompts[1].length < prompts[0].length);
+});
+
+test("resumed source-reader transport failures start with a compacted packet", async () => {
+  const excerpt = "x".repeat(3_000);
+  let prompt = "";
+  const provider = new ScriptedProvider((request) => {
+    prompt = request.prompt;
+    return textResponse(JSON.stringify({
+      evidence_claims: [{
+        claim_text: "A sufficiently detailed decision-relevant source claim.",
+        claim_type: "source_fact",
+        claim_category: "fact",
+        source_id: "s",
+        document_chunk_id: "c",
+        quoted_text: "x".repeat(40),
+        char_start: 0,
+        char_end: 40,
+        confidence: 0.8,
+      }],
+      contradictions: [], source_gaps: [], low_confidence_items: [], rejected_candidates: [],
+    }));
+  });
+  const result = await runResearchAgent({
+    agentName: "source-reader",
+    title: "resumed transport failure",
+    taskPacket: {
+      prior_validation_errors: ["Agent attempts exhausted: Provider stream ended without a completion marker"],
+      source_corpus: [{ source_id: "s", document_chunk_id: "c", content_excerpt: excerpt }],
+    },
+    provider,
+    promptFactory: (packet) => JSON.stringify(packet),
+    policy: { maxAttempts: 1 },
+  });
+  assert.equal(result.attempts[0].compactionOccurred, true);
+  assert.ok(prompt.length < excerpt.length);
 });
 
 test("caller cancellation propagates and response limits fail closed", async () => {

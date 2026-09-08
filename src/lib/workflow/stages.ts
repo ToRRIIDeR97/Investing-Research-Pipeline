@@ -193,7 +193,7 @@ export const STAGE_CONFIGS: StageConfig[] = [
     maxBudgetUsd: 5.00,
     requiresHumanApproval: false,
     requiredOutputs: ["business_process_map"],
-    entryCriteria: ["genesis_artifacts_exist"],
+    entryCriteria: ["evidence_claims_exist"],
     validationRules: ["business_process_validation"],
     failureState: "skip_and_continue",
     skippable: true,
@@ -273,7 +273,7 @@ export const STAGE_CONFIGS: StageConfig[] = [
     maxBudgetUsd: null,
     requiresHumanApproval: false,
     requiredOutputs: ["indicator_catalog"],
-    entryCriteria: ["valuation_signals_exist"],
+    entryCriteria: ["metric_observations_exist"],
     validationRules: [],
     failureState: "fail_run",
     skippable: true,
@@ -413,6 +413,48 @@ export const STAGE_CONFIGS: StageConfig[] = [
 export const STAGE_CONFIG_MAP: Record<string, StageConfig> = Object.fromEntries(
   STAGE_CONFIGS.map((s) => [s.key, s])
 );
+
+export const STAGE_DEPENDENCIES: Record<string, string[]> = {
+  intake: [],
+  asset_identity: ["intake"],
+  archetype_composition: ["asset_identity"],
+  research_plan: ["archetype_composition"],
+  source_discovery: ["research_plan"],
+  source_ingestion: ["source_discovery"],
+  evidence_extraction: ["source_ingestion"],
+  historical_record: ["evidence_extraction"],
+  company_genesis: ["evidence_extraction"],
+  historical_diagnosis: ["historical_record"],
+  business_process_analysis: ["evidence_extraction"],
+  moat_analysis: ["business_process_analysis"],
+  operating_model: ["historical_diagnosis", "moat_analysis"],
+  operating_scenarios: ["operating_model"],
+  asset_valuation: ["operating_scenarios"],
+  indicator_design: ["historical_record"],
+  strategy_design: ["indicator_design"],
+  backtest_execution: ["strategy_design"],
+  backtest_review: ["backtest_execution"],
+  decision_synthesis: ["asset_valuation", "company_genesis"],
+  ai_reviewer: ["decision_synthesis"],
+  human_review: ["ai_reviewer"],
+  export: ["human_review"],
+  refresh_schedule: ["export"],
+};
+
+export function stageDependencies(stageKey: string, backtestRequired = false): string[] {
+  const dependencies = STAGE_DEPENDENCIES[stageKey] || [];
+  return stageKey === "decision_synthesis" && backtestRequired ? [...dependencies, "backtest_review"] : dependencies;
+}
+
+export function readyStageKeys(
+  stages: Array<{ stage_key: string; status: string }>,
+  backtestRequired = false
+): string[] {
+  const statuses = new Map(stages.map((stage) => [stage.stage_key, stage.status]));
+  return stages.filter((stage) => stage.status === "pending" && stageDependencies(stage.stage_key, backtestRequired)
+    .every((dependency) => ["completed", "skipped"].includes(statuses.get(dependency) || "")))
+    .map((stage) => stage.stage_key);
+}
 
 export function getStageConfig(key: string): StageConfig | undefined {
   return STAGE_CONFIG_MAP[key];

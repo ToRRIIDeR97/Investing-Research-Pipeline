@@ -1,7 +1,7 @@
 import postgres from "postgres";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { writeFile, mkdir } from "node:fs/promises";
+import { writeFile, readFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { runResearchAgent } from "@/lib/agent-harness/runner";
@@ -18,7 +18,7 @@ import {
   type ValuationMetricInput,
 } from "@/lib/valuation/method-protocol";
 import { canonicalResearchKey, contractForProfile } from "@/lib/research/v2-contracts";
-import { canonicalMetricPlan, ensureFilingFamilyCoverage, evidenceRelevantToModule, moduleCompletion, normalizeSourceGap, positiveFiniteNumber, reconcileMetricObservations, selectLatestFact, selectRelevantChunks, MODULE_TERMS, type RetrievalChunk } from "@/lib/research/pipeline-helpers";
+import { canonicalMetricPlan, evidenceRelevantToModule, moduleCompletion, normalizeSourceGap, positiveFiniteNumber, reconcileMetricObservations, selectLatestFact, selectRelevantChunks, selectScopedRelevantChunks, MODULE_TERMS, type RetrievalChunk, type RetrievalScope } from "@/lib/research/pipeline-helpers";
 import {
   createSourceReaderBatches,
   mergeSourceReaderOutputs,
@@ -28,6 +28,7 @@ import {
 import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
 import type { SourceRole } from "@/lib/research/sources/roles";
 import { CURRENT_PIPELINE_VERSION } from "@/lib/research/version";
+import { readableSourceText, readableTextChunks } from "./sources/readable-text";
 
 type Sql = ReturnType<typeof postgres>;
 const execFileAsync = promisify(execFile);
@@ -251,15 +252,36 @@ export function mergeGroupOutputs(groups: Array<Record<string, any> | string>): 
 
 export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: StoredSource[]) {
   const sourceIds = sources.filter((source) => !source.sourceId.startsWith("candidate-")).map((source) => source.sourceId);
+  // Reparse legacy HTML into a new version. Old citations and raw source files remain untouched.
+  const legacy = sourceIds.length ? await sql`
+    SELECT id, storage_path, title FROM source_documents sd
+    WHERE id = ANY(${sourceIds}::uuid[]) AND mime_type LIKE '%html%'
+      AND NOT EXISTS (SELECT 1 FROM document_parses dp WHERE dp.source_document_id = sd.id
+        AND dp.parser_name = 'system-source-payload' AND dp.parser_version = '3' AND dp.status = 'completed')
+  ` : [];
+  for (const source of legacy) {
+    const raw = await readFile(join(process.cwd(), String(source.storage_path)), "utf8");
+    await storeReadableParse(sql, String(source.id), raw, String(source.title));
+  }
   const contract = contractForProfile(ctx.profileKey, ctx.assetSlug);
-  const retrievalTerms = [
-    ...ctx.requiredModules, ...(contract?.requiredModules || []), ...(contract?.requiredMetricKeys || []),
-    "segment", "working capital", "credit loss", "loan", "customer funds", "cash flow",
-    "founder", "founded", "company origin", "founder motivation", "company history",
-    "mission", "move from lab to market", "early funding", "first customer",
+  const moduleKeys = [...new Set([...ctx.requiredModules, ...(contract?.requiredModules || []), ...(contract?.requiredMetricKeys || [])])];
+  const retrievalScopes: RetrievalScope[] = [
+    { key: "financial_statements", terms: ["revenue", "net income", "operating income", "cash flow", "balance sheet", "shares outstanding"], maxChunks: 7 },
+    { key: "member_and_product_growth", terms: ["members", "new members", "total members", "total products", "new products", "products per member", "cross-buy"], maxChunks: 7 },
+    { key: "segment_economics", terms: ["segment revenue", "contribution profit", "contribution margin", "contribution loss", "lending", "financial services", "technology platform"], maxChunks: 8 },
+    { key: "credit_and_funding", terms: ["credit loss", "charge-off", "delinquency", "loan", "deposits", "customer funds", "funding mix"], maxChunks: 7 },
+    { key: "capital_and_dilution", terms: ["cash and equivalents", "debt", "tangible book value", "capital ratio", "share-based compensation", "diluted shares"], maxChunks: 6 },
+    { key: "valuation_inputs", terms: ["guidance", "margin", "cost of equity", "terminal growth", "multiple", "free cash flow", "return on equity"], maxChunks: 6 },
+    { key: "company_history", terms: ["founder", "founded", "company origin", "founder motivation", "company history", "mission", "early funding", "first customer"], maxChunks: 4 },
+    ...moduleKeys.map((key) => ({
+      key: `module:${key}`,
+      terms: MODULE_TERMS[canonicalResearchKey(key)] || key.replace(/_/g, " ").split(/\s+/),
+      maxChunks: 3,
+    })),
   ];
+  const retrievalTerms = retrievalScopes.flatMap((scope) => scope.terms);
   const searchQuery = [...new Set(retrievalTerms.map((term) => term.replace(/_/g, " ").trim()).filter(Boolean))]
-    .slice(0, 40).map((term) => `"${term.replace(/"/g, "")}"`).join(" OR ");
+    .slice(0, 96).map((term) => `"${term.replace(/"/g, "")}"`).join(" OR ");
   const rows = sourceIds.length ? await sql`
     WITH latest_parses AS (
       SELECT DISTINCT ON (source_document_id) id, source_document_id
@@ -269,7 +291,7 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
     ), query AS (SELECT websearch_to_tsquery('english', ${searchQuery}) AS q), ranked_chunks AS (
       SELECT dc.id, dc.source_document_id, dc.document_parse_id, dc.chunk_index,
              dc.char_start, dc.char_end, dc.section_title, dc.text,
-             sd.title, sd.source_type, role_assignment.role AS source_role,
+             sd.title, sd.source_type, sd.period_end, role_assignment.role AS source_role,
              ts_rank_cd(to_tsvector('english', dc.text), query.q) AS relevance
       FROM document_chunks dc
       JOIN source_documents sd ON sd.id = dc.source_document_id
@@ -288,16 +310,14 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
     SELECT * FROM ranked_chunks
     ORDER BY (source_role = 'founder_and_company_history') DESC,
              (chunk_index = 0) DESC, relevance DESC, source_document_id, chunk_index
-    LIMIT 500
+    LIMIT 2000
   ` : [];
   const chunks: RetrievalChunk[] = rows.map((row) => ({
     id: String(row.id), sourceId: String(row.source_document_id), parseId: String(row.document_parse_id),
     chunkIndex: Number(row.chunk_index), charStart: Number(row.char_start || 0), charEnd: Number(row.char_end || 0),
     sectionTitle: textValue(row.section_title), text: String(row.text), sourceTitle: String(row.title), sourceType: String(row.source_type),
   }));
-  const packetLimit = Math.min(32, Math.max(18, sourceIds.length));
-  const selected = selectRelevantChunks(chunks, retrievalTerms, packetLimit, 3000);
-  const bounded = ensureFilingFamilyCoverage(selected, chunks, retrievalTerms, packetLimit, 3000);
+  const bounded = selectScopedRelevantChunks(chunks, retrievalScopes, 6, 3000);
   // Role-critical passages can lose to generic filing openings in a crowded packet.
   // Keep the founder/origin role represented without exceeding the packet bound.
   const roleByChunk = new Map(rows.map((row) => [String(row.id), String(row.source_role || "")]));
@@ -312,6 +332,9 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
      AND sra.role = 'founder_and_company_history'
      AND sra.confidence >= 70
     WHERE dc.source_document_id = ANY(${sourceIds}::uuid[])
+      AND dc.document_parse_id = (SELECT id FROM document_parses
+        WHERE source_document_id = sd.id AND status = 'completed'
+        ORDER BY completed_at DESC NULLS LAST, created_at DESC LIMIT 1)
       AND NOT (
         LOWER(sd.title) LIKE '%quartr%'
         AND LOWER(${ctx.assetName}) NOT LIKE '%quartr%'
@@ -335,7 +358,7 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
   const founderCandidates = selectRelevantChunks(
     founderCandidatePool,
     ["founder", "co-founder", "founded", "founding", "history", "origin", "motivation", "mission", "first customer", "Marcos", "Galperin", "1999"],
-    Math.min(2, packetLimit),
+    2,
     3000,
   );
   const founderSourceById = new Map(founderCriticalChunks.map((chunk) => [chunk.id, chunk]));
@@ -356,19 +379,18 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
   for (const founderChunk of focusedFounderCandidates) {
     const existingIndex = merged.findIndex((chunk) => chunk.id === founderChunk.id);
     if (existingIndex !== -1) {
-      merged.splice(existingIndex, 1, founderChunk);
+      merged.splice(existingIndex, 1, {
+        ...founderChunk,
+        retrievalScopes: [...new Set([...merged[existingIndex].retrievalScopes, "company_history"])],
+      });
       continue;
     }
-    const replacementIndex = [...merged]
-      .map((chunk, index) => ({ chunk, index }))
-      .reverse()
-      .find(({ chunk }) => chunk.sourceId !== founderChunk.sourceId)?.index;
-    if (replacementIndex === undefined) continue;
-    merged.splice(replacementIndex, 1, founderChunk);
+    merged.push({ ...founderChunk, retrievalScopes: ["company_history"] });
   }
   return merged.map((chunk) => ({
     source_id: chunk.sourceId, document_parse_id: chunk.parseId, document_chunk_id: chunk.id,
     source_type: chunk.sourceType,
+    retrieval_scopes: chunk.retrievalScopes,
     source_role: String(
       (founderCriticalChunks.some((candidate) => candidate.id === chunk.id)
         ? "founder_and_company_history"
@@ -377,6 +399,7 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
     title: chunk.sourceTitle, section_title: chunk.sectionTitle,
     chunk_index: chunk.chunkIndex, char_start: chunk.charStart, char_end: chunk.charEnd,
     content_excerpt: chunk.text,
+    source_period_end: rows.find((row) => String(row.id) === chunk.id)?.period_end || null,
   }));
 }
 
@@ -583,6 +606,22 @@ async function fetchMarketSnapshot(ctx: RunContext) {
 }
 
 async function marketSourcePayload(ctx: RunContext): Promise<SourcePayload | null> {
+  if (process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock") {
+    const retrievedAt = ctx.marketDataCutoffAt || "2026-01-01T00:00:00.000Z";
+    const timestamp = Math.floor(new Date(retrievedAt).getTime() / 1000) - 86_400;
+    const snapshot = {
+      provider: "Research OS acceptance fixture", url: "https://example.test/market-data",
+      retrieved_at: retrievedAt, symbol: ctx.symbol, meta: { currency: "USD", regularMarketPrice: 10 },
+      timestamps: [timestamp], quote: { close: [10] },
+    };
+    return {
+      sourceType: "market_data_snapshot", title: `${ctx.symbol.toUpperCase()} market data snapshot`,
+      publisher: "Research OS acceptance fixture", url: snapshot.url, content: JSON.stringify(snapshot, null, 2),
+      mimeType: "application/json", qualityScore: "0.80", publishedAt: retrievedAt,
+      metadata: { system_generated: true, source: "acceptance_fixture", retrieved_at: retrievedAt },
+      chunkTitle: "Market data snapshot",
+    };
+  }
   try {
     const snapshot = await fetchMarketSnapshot(ctx);
     return {
@@ -1742,13 +1781,28 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
     ON CONFLICT (research_run_id, source_document_id) DO NOTHING
   `;
 
-  const parseRows = await sql`
+  const { parseId, chunkId } = await storeReadableParse(sql, sourceId, content, payload.chunkTitle);
+  return {
+    sourceId, parseId, chunkId, content: readableSourceText(content).slice(0, 60000),
+    title: payload.title, sourceType: payload.sourceType, url: payload.url, metadata: payload.metadata,
+  };
+}
+
+async function storeReadableParse(sql: Sql, sourceId: string, raw: string, title: string) {
+  const content = readableSourceText(raw);
+  const hash = createHash("sha256").update(content).digest("hex");
+  const storagePath = `storage/sources/${hash}.txt`;
+  await mkdir(join(process.cwd(), "storage/sources"), { recursive: true });
+  await writeFile(join(process.cwd(), storagePath), content, "utf8");
+  return sql.begin(async (tx) => {
+  await tx`SELECT id FROM source_documents WHERE id = ${sourceId} FOR UPDATE`;
+  const parseRows = await tx`
     INSERT INTO document_parses (
       source_document_id, parser_name, parser_version,
       status, warnings_json, output_storage_path, completed_at
     ) VALUES (
-      ${sourceId}, 'system-source-payload', '2', 'completed',
-      ${sql.json([])}, ${storagePath}, NOW()
+      ${sourceId}, 'system-source-payload', '3', 'completed',
+      ${tx.json([])}, ${storagePath}, NOW()
     )
     ON CONFLICT (source_document_id, parser_name, parser_version, parse_config_json) DO UPDATE
     SET status = 'completed', completed_at = NOW()
@@ -1756,24 +1810,23 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
   `;
   const parseId = parseRows[0].id as string;
 
-  const existingChunks = await sql`
+  const existingChunks = await tx`
     SELECT id FROM document_chunks
     WHERE source_document_id = ${sourceId} AND document_parse_id = ${parseId}
     ORDER BY chunk_index ASC
   `;
   let chunkId = existingChunks[0]?.id as string | undefined;
   if (!chunkId) {
-    const chunkSize = 9000;
-    for (let start = 0, chunkIndex = 0; start < content.length; start += chunkSize, chunkIndex += 1) {
-      const end = Math.min(content.length, start + chunkSize);
-      const chunkRows = await sql`
+    for (const [chunkIndex, chunk] of readableTextChunks(content).entries()) {
+      const { start, end } = chunk;
+      const chunkRows = await tx`
         INSERT INTO document_chunks (
           source_document_id, document_parse_id, chunk_index, section_title,
           char_start, char_end, text, token_count, metadata_json
         ) VALUES (
-          ${sourceId}, ${parseId}, ${chunkIndex}, ${payload.chunkTitle},
+          ${sourceId}, ${parseId}, ${chunkIndex}, ${title},
           ${start}, ${end}, ${content.slice(start, end)}, ${Math.ceil((end - start) / 4)},
-          ${sql.json({ system_generated: true, source_payload: true })}
+          ${tx.json({ system_generated: true, source_payload: true, offset_basis: 'parsed_text_v3' })}
         )
         RETURNING id
       `;
@@ -1781,16 +1834,8 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
     }
   }
 
-  return {
-    sourceId,
-    parseId,
-    chunkId: chunkId || "",
-    content: content.slice(0, 60000),
-    title: payload.title,
-    sourceType: payload.sourceType,
-    url: payload.url,
-    metadata: payload.metadata,
-  };
+  return { parseId, chunkId: chunkId || "" };
+  });
 }
 
 export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: unknown): Promise<StoredSourceCorpus> {
@@ -1958,6 +2003,8 @@ async function callAgent<T>(params: {
               model_attempt: attempt.modelAttempt,
               compaction_occurred: attempt.compactionOccurred,
               input_bytes: attempt.inputBytes, original_input_bytes: attempt.originalInputBytes,
+              queue_wait_ms: attempt.queueWaitMs, execution_ms: attempt.executionMs,
+              circuit_state: attempt.circuitState,
             },
             responseMetadata: {
               request_id: attempt.requestId, started_at: attempt.startedAt, completed_at: attempt.completedAt,
@@ -2046,20 +2093,22 @@ export async function persistEvidence(
     if (charStart < Number(locatedChunk.char_start || 0) || charEnd > chunkEnd) continue;
     const duplicate = await tx`
       SELECT id FROM evidence_claims
-      WHERE research_run_id = ${ctx.runId} AND claim_text = ${quotedText}
+      WHERE research_run_id = ${ctx.runId} AND claim_text = ${claimText}
       LIMIT 1
     `;
     if (duplicate.length) continue;
     const rows = await tx`
       INSERT INTO evidence_claims (
         asset_id, research_run_id, claim_text, claim_type, claim_category,
-        polarity, as_of_date, confidence, generated_by, review_status,
+        polarity, period_start, period_end, as_of_date, confidence, generated_by, review_status,
         no_source_reason, metadata_json
       ) VALUES (
-        ${ctx.assetId}, ${ctx.runId}, ${quotedText},
+        ${ctx.assetId}, ${ctx.runId}, ${claimText},
         ${textValue(claim.claim_type, "sec_fact")},
         ${textValue(claim.claim_category, "fact")},
         ${textValue(claim.polarity, "neutral")},
+        ${nullableDate(claim.period_start)},
+        ${nullableDate(claim.period_end || claim.as_of_date)},
         ${nullableDate(claim.as_of_date || claim.period_end)},
         ${numberValue(claim.confidence, 0.75).toString()},
         ${textValue(claim.generated_by, "source-reader")}, 'machine_verified', NULL,
@@ -2089,7 +2138,7 @@ export async function persistEvidence(
         evidence_claim_id, source_location_id, support_type, quoted_text, confidence
       ) VALUES (
         ${rows[0].id}, ${locationRows[0].id}, ${textValue(claim.support_type, "supports")},
-        ${quotedText.slice(0, 1000)}, ${numberValue(claim.confidence, 0.75).toString()}
+        ${quotedText}, ${numberValue(claim.confidence, 0.75).toString()}
       )
     `;
       persisted += 1;
@@ -2100,19 +2149,26 @@ export async function persistEvidence(
 
 export async function loadAcceptedEvidencePacket(sql: Sql, ctx: RunContext) {
   return sql`
-    SELECT DISTINCT ON (ec.id)
-      ec.id, ec.claim_text, ec.claim_type, ec.claim_category,
-      ec.period_start, ec.period_end, ec.as_of_date, ec.confidence,
-      sl.source_document_id AS source_id, sl.document_chunk_id,
-      sl.char_start, sl.char_end
-    FROM evidence_claims ec
-    LEFT JOIN evidence_links el ON el.evidence_claim_id = ec.id
-    LEFT JOIN source_locations sl ON sl.id = el.source_location_id
-    WHERE ec.research_run_id = ${ctx.runId}
-      AND ec.review_status IN ('machine_verified', 'accepted')
-      AND COALESCE(ec.metadata_json->>'evidence_role', 'decision_support') != 'corpus_inventory'
-    ORDER BY ec.id, ec.confidence DESC NULLS LAST, ec.created_at ASC
-    LIMIT 120
+    WITH accepted AS (
+      SELECT DISTINCT ON (ec.id)
+        ec.id, ec.claim_text, ec.claim_type, ec.claim_category,
+        ec.period_start, ec.period_end, ec.as_of_date, ec.confidence,
+        sl.source_document_id AS source_id, sl.document_chunk_id,
+        sl.char_start, sl.char_end, ec.created_at
+      FROM evidence_claims ec
+      LEFT JOIN evidence_links el ON el.evidence_claim_id = ec.id
+      LEFT JOIN source_locations sl ON sl.id = el.source_location_id
+      WHERE ec.research_run_id = ${ctx.runId}
+        AND ec.review_status IN ('machine_verified', 'accepted')
+        AND COALESCE(ec.metadata_json->>'evidence_role', 'decision_support') != 'corpus_inventory'
+      ORDER BY ec.id, ec.confidence DESC NULLS LAST, ec.created_at ASC
+    )
+    SELECT id, claim_text, claim_type, claim_category, period_start, period_end,
+      as_of_date, confidence, source_id, document_chunk_id, char_start, char_end
+    FROM accepted
+    ORDER BY (LOWER(claim_text) ~ '(member|total products|contribution profit|contribution margin|contribution loss)') DESC,
+      confidence DESC NULLS LAST, created_at ASC
+    LIMIT 240
   `;
 }
 
@@ -2373,7 +2429,8 @@ function usableEvidenceClaims(output: Record<string, unknown>) {
 }
 
 export async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string, output: Record<string, unknown>) {
-  const observations = arrayValue(output.normalized_observations).slice(0, 60);
+  const observationLimit = ctx.runType === "full_initiation_report" ? 500 : ctx.runType === "deep_dive" ? 250 : 60;
+  const observations = arrayValue(output.normalized_observations).slice(0, observationLimit);
   await sql.begin(async (tx) => {
     for (const obs of observations) {
       const metricKey = canonicalResearchKey(textValue(obs.metric_key || obs.metric || obs.label, "agent_metric").toLowerCase().replace(/[^a-z0-9_]+/g, "_"));
@@ -2400,12 +2457,13 @@ export async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string
         obs.available_at,
         sourceAvailableAt ? new Date(sourceAvailableAt).toISOString() : ctx.marketDataCutoffAt || new Date().toISOString()
       );
+      const defaultCurrency = obs.currency === null ? null : textValue(obs.currency || obs.default_currency, "USD");
       const metricRows = await tx`
         INSERT INTO metric_definitions (metric_key, display_name, metric_category, unit_type, default_unit,
           default_currency, description, applicable_profile_keys, metadata_json)
         VALUES (${metricKey}, ${textValue(obs.display_name || obs.metric_name || metricKey, metricKey)},
           ${textValue(obs.metric_category, "financial")}, ${textValue(obs.unit_type, "number")},
-          ${textValue(obs.unit || obs.default_unit, "") || null}, ${textValue(obs.currency || obs.default_currency, "USD")},
+          ${textValue(obs.unit || obs.default_unit, "") || null}, ${defaultCurrency},
           ${textValue(obs.description, "Reconciled metric")}, ARRAY[${ctx.profileKey}], ${tx.unsafe(`'${JSON.stringify({ system_generated: true }).replace(/'/g, "''")}'::jsonb`)})
         ON CONFLICT (metric_key) DO UPDATE SET updated_at = NOW() RETURNING id
       `;
@@ -2413,7 +2471,7 @@ export async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string
       const periodEnd = textValue(obs.period_end || obs.as_of_date, new Date().toISOString().slice(0, 10));
       const asOfDate = textValue(obs.as_of_date || obs.period_end, periodEnd);
       const unit = textValue(obs.unit, "");
-      const currency = textValue(obs.currency, "USD");
+      const currency = obs.currency === null ? "" : textValue(obs.currency, "USD");
       const valueNumeric = Number.isFinite(Number(obs.value_numeric ?? obs.value)) ? String(obs.value_numeric ?? obs.value) : null;
       const existing = await tx`
         SELECT id, value_numeric, review_status FROM metric_observations
@@ -2432,7 +2490,7 @@ export async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string
             confidence, review_status, metadata_json)
           VALUES (${ctx.assetId}, ${ctx.runId}, ${metricRows[0].id}, ${periodStart}, ${periodEnd}, ${asOfDate},
             ${availableAt}, ${valueNumeric}, ${textValue(obs.value_text, "") || null},
-            ${unit || null}, ${currency}, ${textValue(obs.source, "metric-reconciler")}, ${observationSourceId},
+            ${unit || null}, ${currency || null}, ${textValue(obs.source, "metric-reconciler")}, ${observationSourceId},
             ${numberValue(obs.confidence, 0.7).toString()}, 'accepted',
             ${tx.unsafe(`'${JSON.stringify({ system_generated: true, reconciliation: "canonical_revision", supersedes_observation_ids: existing.map((row) => String(row.id)), agent_output: obs } as any).replace(/'/g, "''")}'::jsonb`)})
           RETURNING id

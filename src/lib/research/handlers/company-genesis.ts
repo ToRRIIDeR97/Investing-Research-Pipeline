@@ -1,6 +1,6 @@
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
 import { makeValidationResult } from "../run-context";
-import { callResearchAgent, exactJsonPrompt } from "../run-context";
+import { callResearchAgentArtifacts, exactJsonPrompt } from "../run-context";
 import { COMPANY_GENESIS_CONTRACT } from "../stage-contracts";
 import { loadAcceptedEvidencePacket } from "../system-pipeline";
 import {
@@ -67,114 +67,58 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
         output_contract: "company_genesis",
         output_schema: COMPANY_GENESIS_CONTRACT.schema,
         evidence_claims: evidenceClaims,
-        artifact_shape: {
-          company_genesis: {
-            artifact_type: "company_genesis",
-            required_fields: [
-              "pre_founding_environment", "customer_problem", "incumbent_failure",
-              "enabling_change", "founder_background", "founder_motivations",
-              "alternative_motivation_interpretations", "original_product",
-              "original_customer", "original_geography", "original_revenue_model",
-              "initial_funding", "early_constraints", "first_proof_point",
-              "present_day_implications", "material_claims",
-            ],
-          },
-          founder_profile: {
-            artifact_type: "founder_profile",
-            required_fields: [
-              "founder_name", "background_summary", "motivations",
-              "alternative_interpretations", "control_evolution", "influence_today",
-            ],
-          },
-          strategic_history_timeline: {
-            artifact_type: "strategic_history_timeline",
-            required_fields: ["events", "major_pivots"],
-          },
-          strategic_dna: {
-            artifact_type: "strategic_dna",
-            required_fields: [
-              "persistent_behaviors", "decision_patterns", "capital_allocation_habits",
-              "talent_and_organization_patterns", "historical_evidence", "current_implications",
-            ],
-          },
-        },
       };
 
-      const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
+      const artifactRules: Record<string, string[]> = {
+        founder_profile: [
+          "Profile the principal founder as one object. Cover motivations, alternative interpretations, control evolution and influence today.",
+          "Motivations need accepted evidence IDs and numeric confidence. Use motivation=unknown where founder evidence is unavailable.",
+        ],
+        company_genesis: [
+          "Explain the founding problem, enabling conditions, early product and funding, constraints, first proof point and present implications. Use the saved founder profile.",
+          "Separate documented founder motivations from alternative interpretations. Mark analyst inference explicitly in material_claims.",
+        ],
+        strategic_history_timeline: [
+          "Trace dated strategic decisions, their objectives and consequences. Distinguish a change in strategy from a change in mission.",
+          "major_pivots is an array of strings. Each event needs accepted evidence IDs and numeric confidence.",
+        ],
+        strategic_dna: [
+          "Infer persistent operating, capital-allocation and organizational habits from the saved founding history and timeline. Explain current implications.",
+          "historical_evidence must distinguish documented actions from analyst inference and include accepted evidence IDs and numeric confidence.",
+        ],
+      };
+
+      const promptFactory = (p: Record<string, unknown>, artifactKey: string) => exactJsonPrompt({
         agentName: "asset-analyst",
-        requiredKeys: COMPANY_GENESIS_CONTRACT.requiredKeys,
+        requiredKeys: [artifactKey],
         packet: p,
         extraRules: [
-          "Provide a detailed synthesis of the company genesis, founders, and early corporate structure.",
-          "Return each nested artifact as an object with the exact artifact_type and required_fields supplied in artifact_shape.",
-          "Every narrative field named in required_fields is a non-empty string unless explicitly described below; do not return arrays for narrative strings.",
-          "founder_motivations and motivations entries require motivation, evidence_claim_ids, and numeric confidence.",
-          "motivation must be exactly one of: personal_problem, mission_or_cause, technical_conviction, commercial_opportunity, financial_ambition, competitive_ambition, professional_frustration, status_or_legacy, mixed, unknown.",
-          "alternative_motivation_interpretations and alternative_interpretations are non-empty arrays of strings.",
-          "present_day_implications, persistent_behaviors, decision_patterns, capital_allocation_habits, talent_and_organization_patterns, and current_implications are non-empty arrays of strings.",
-          "material_claims and historical_evidence entries require claim, evidence_weight, evidence_claim_ids, and numeric confidence.",
-          "evidence_weight must be exactly one of: contemporary_direct_founder_statement, later_retrospective_founder_statement, contemporary_third_party_observation, documented_company_action, analyst_inference, disputed_corporate_account.",
-          "founder_profile is one object for the principal founder, never an array.",
-          "Timeline events require date_or_period, event, objective_at_the_time, decision, evidence_claim_ids, immediate_effect, lasting_consequence, strategy_changed, mission_changed, and confidence.",
-          "strategic_history_timeline.major_pivots is a non-empty array of strings, never objects.",
+          "Return only the requested artifact using output_schema. Use accepted_artifacts as prior checked context.",
+          "Follow every nested field type and enum in output_schema. Narrative string fields must be non-empty strings, not arrays.",
+          ...artifactRules[artifactKey],
           "Use only UUID evidence claim IDs present in evidence_claims. Never invent citation IDs.",
-          "When founder evidence is unavailable, state the limitation and use motivation=unknown rather than inventing history.",
+          "State missing evidence as a limitation rather than inventing history.",
         ],
       });
 
-      let output = await callResearchAgent<Record<string, any>>({
-        sql, ctx, stageKey: "company_genesis", taskKey,
-        taskType: "company_genesis", agentName: "asset-analyst", modelTier: "mid",
-        packet, promptFactory,
-        outputFormat: COMPANY_GENESIS_CONTRACT,
-      });
       const allowedClaimRows = await sql`
         SELECT id FROM evidence_claims
         WHERE research_run_id = ${ctx.runId}
           AND review_status IN ('machine_verified', 'accepted')
       `;
-      let citationValidation = validateArtifactCitationIds(
-        output,
-        allowedClaimRows.map((row) => String(row.id))
-      );
-      if (!citationValidation.valid) {
-        const repairPacket = {
-          ...packet,
-          draft_requiring_citation_repair: output,
-          invalid_evidence_claim_ids: citationValidation.invalidIds,
-          allowed_evidence_claim_ids: allowedClaimRows.map((row) => String(row.id)),
-          repair_instruction:
-            "Return the complete four-artifact output again. Replace an invalid citation only when an allowed evidence claim directly supports the statement. Otherwise remove the unsupported statement or mark the relevant narrative as unknown. Never invent a UUID.",
-        };
-        output = await callResearchAgent<Record<string, any>>({
-          sql,
-          ctx,
-          stageKey: "company_genesis",
-          taskKey: `${taskKey}:citation-repair`,
-          taskType: "company_genesis_citation_repair",
-          agentName: "asset-analyst",
-          modelTier: "mid",
-          packet: repairPacket,
-          promptFactory,
-          outputFormat: COMPANY_GENESIS_CONTRACT,
-        });
-        citationValidation = validateArtifactCitationIds(
-          output,
-          allowedClaimRows.map((row) => String(row.id))
-        );
-        if (!citationValidation.valid) {
-          throw new Error(
-            `Company genesis contains unaccepted evidence claim IDs after repair: ${citationValidation.invalidIds.join(", ")}`
-          );
-        }
-      }
-
       // Persist generated sub-artifacts
       const db = drizzle(sql, { schema });
       const repo = createArtifactRepository(db);
-      const subKeys = COMPANY_GENESIS_CONTRACT.requiredKeys;
-      for (const k of subKeys) {
-        if (output[k]) {
+      const output = await callResearchAgentArtifacts({
+        sql, ctx, stageKey: 'company_genesis', taskKeyPrefix: taskKey,
+        taskType: 'company_genesis', agentName: 'asset-analyst', packet, promptFactory,
+        outputFormat: COMPANY_GENESIS_CONTRACT,
+        artifactWaves: [['founder_profile', 'strategic_history_timeline'], ['company_genesis'], ['strategic_dna']],
+        validateArtifact: (_key, value) => {
+          const validation = validateArtifactCitationIds(value, allowedClaimRows.map((row) => String(row.id)));
+          return makeValidationResult(validation.valid ? [] : [`Unaccepted citation IDs: ${validation.invalidIds.join(', ')}`]);
+        },
+        onArtifact: async (k, value) => {
           await repo.upsertArtifact({
             research_run_id: ctx.runId,
             asset_id: ctx.assetId,
@@ -182,15 +126,15 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
             artifact_type: k,
             scope_key: `${ctx.assetSlug}-${k.replace(/_/g, "-")}`,
             status: "validated",
-            content_json: output[k],
+            content_json: value,
             schema_version: "3.0.0",
             validator_version: "1.0.0",
             prompt_version: "current",
             created_by: "system-research-os",
             idempotency_key: `${ctx.runId}-${k}`,
           });
-        }
-      }
+        },
+      });
 
       return output;
     } finally {

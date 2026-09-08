@@ -1,21 +1,7 @@
-import { existsSync, readFileSync } from "fs";
-import { resolve } from "path";
 import { runSystemResearchPipeline } from "../src/lib/research/system-pipeline";
+import { loadResearchEnvFiles } from "../src/lib/config/research-env";
 
-function loadEnvFile(fileName: string) {
-  const path = resolve(process.cwd(), fileName);
-  if (!existsSync(path)) return;
-  for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) continue;
-    const [key, ...valueParts] = trimmed.split("=");
-    if (process.env[key]) continue;
-    process.env[key] = valueParts.join("=").trim().replace(/^['"]|['"]$/g, "");
-  }
-}
-
-loadEnvFile(".env.local");
-loadEnvFile(".env");
+loadResearchEnvFiles();
 
 const runId = process.env.RESEARCH_RUN_ID;
 if (!runId) throw new Error("Set RESEARCH_RUN_ID to the research run to resume");

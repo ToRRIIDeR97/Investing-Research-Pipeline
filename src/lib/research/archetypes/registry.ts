@@ -101,6 +101,11 @@ export const businessArchetypes: BusinessArchetype[] = [
       { metric_family: "share_count", required: true, minimum_quarters: 20, rationale: "Dilution and buyback effects" },
       { metric_family: "capital_allocation", required: true, minimum_quarters: 20, rationale: "Dividends, buybacks, M&A" },
     ],
+    evidence_coverage_slots: [
+      { key: "consolidated_financials", priority: "mandatory", retrievalQueries: ["revenue", "adjusted EBITDA", "net income"], preferredSourceRoles: ["regulatory_filing", "earnings_release"], preferredSourceTypes: ["sec_filing", "earnings_release"], minimumAcceptedClaims: 3, periodCoverage: { minimumPeriods: 4, periodicity: "quarterly" } },
+      { key: "management_guidance", priority: "mandatory", retrievalQueries: ["guidance", "outlook", "management assumptions"], preferredSourceRoles: ["earnings_release", "earnings_transcript"], preferredSourceTypes: ["earnings_release", "transcript"], minimumAcceptedClaims: 1 },
+      { key: "founder_and_company_history", priority: "mandatory", retrievalQueries: ["founder", "founded", "company origin", "founder motivation"], preferredSourceRoles: ["founder_and_company_history"], preferredSourceTypes: ["company_history", "university_archive"], minimumAcceptedClaims: 1 },
+    ],
     required_artifacts: commonArtifacts(),
     required_process_nodes: [
       { node_key: "demand_generation", required: true, rationale: "Where revenue begins" },
@@ -219,6 +224,10 @@ export const businessArchetypes: BusinessArchetype[] = [
       { metric_family: "delinquency_rate", required: true, minimum_quarters: 20, rationale: "Asset quality" },
       { metric_family: "capital_ratio", required: false, minimum_quarters: 12, rationale: "Regulatory capital" },
     ],
+    evidence_coverage_slots: [
+      { key: "loans_and_credit", priority: "mandatory", retrievalQueries: ["loans", "charge-off", "delinquency", "credit performance"], preferredSourceRoles: ["regulatory_filing", "earnings_release"], preferredSourceTypes: ["sec_filing", "earnings_release"], minimumAcceptedClaims: 3 },
+      { key: "funding_cost", priority: "mandatory", retrievalQueries: ["funding cost", "cost of funds", "funding mix"], preferredSourceRoles: ["regulatory_filing", "earnings_release"], preferredSourceTypes: ["sec_filing", "earnings_release"], minimumAcceptedClaims: 1 },
+    ],
     required_artifacts: commonArtifacts({
       reinvestment_model: { required: true, rationale: "Balance-sheet and capital requirements" },
     }),
@@ -261,6 +270,15 @@ export const businessArchetypes: BusinessArchetype[] = [
       { metric_family: "loan_loss_reserve", required: true, minimum_quarters: 20, rationale: "Provisioning" },
       { metric_family: "tier_1_capital", required: true, minimum_quarters: 12, rationale: "Regulatory capital" },
       { metric_family: "non_interest_income", required: true, minimum_quarters: 20, rationale: "Fee income" },
+    ],
+    evidence_coverage_slots: [
+      { key: "members_by_period", priority: "mandatory", retrievalQueries: ["members", "new members", "total members"], preferredSourceRoles: ["earnings_release", "earnings_presentation"], preferredSourceTypes: ["earnings_release", "presentation"], minimumAcceptedClaims: 2, periodCoverage: { minimumPeriods: 2, periodicity: "quarterly" } },
+      { key: "products_by_period", priority: "mandatory", retrievalQueries: ["total products", "new products"], preferredSourceRoles: ["earnings_release", "earnings_presentation"], preferredSourceTypes: ["earnings_release", "presentation"], minimumAcceptedClaims: 2, periodCoverage: { minimumPeriods: 2, periodicity: "quarterly" } },
+      { key: "cross_buy", priority: "important", retrievalQueries: ["products per member", "cross-buy"], preferredSourceRoles: ["earnings_release", "earnings_presentation"], preferredSourceTypes: ["earnings_release", "presentation"], minimumAcceptedClaims: 1 },
+      { key: "lending_segment", priority: "mandatory", retrievalQueries: ["Lending contribution profit", "Lending contribution margin"], preferredSourceRoles: ["earnings_release", "regulatory_filing"], preferredSourceTypes: ["earnings_release", "sec_filing"], minimumAcceptedClaims: 1 },
+      { key: "technology_platform_segment", priority: "mandatory", retrievalQueries: ["Technology Platform contribution profit", "Technology Platform contribution margin"], preferredSourceRoles: ["earnings_release", "regulatory_filing"], preferredSourceTypes: ["earnings_release", "sec_filing"], minimumAcceptedClaims: 1 },
+      { key: "financial_services_segment", priority: "mandatory", retrievalQueries: ["Financial Services contribution profit", "Financial Services contribution loss", "Financial Services contribution margin"], preferredSourceRoles: ["earnings_release", "regulatory_filing"], preferredSourceTypes: ["earnings_release", "sec_filing"], minimumAcceptedClaims: 1 },
+      { key: "deposits_and_capital", priority: "mandatory", retrievalQueries: ["deposits", "capital ratio", "tangible book value"], preferredSourceRoles: ["regulatory_filing", "earnings_release"], preferredSourceTypes: ["sec_filing", "earnings_release"], minimumAcceptedClaims: 2 },
     ],
     required_artifacts: commonArtifacts(),
     required_process_nodes: [

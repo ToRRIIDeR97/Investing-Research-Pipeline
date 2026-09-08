@@ -8,6 +8,7 @@ import { handleApiError, successResponse } from "@/lib/api/errors";
  * §12: Full-text search + metadata filters.
  *
  * Query params:
+ *   scope — "workspace" for asset/evidence navigation search
  *   q — search text (full-text search against document_chunks)
  *   asset_id — filter by asset
  *   source_type — filter by source type
@@ -22,14 +23,75 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
 
     const query = url.searchParams.get("q");
+    const scope = url.searchParams.get("scope");
     const assetId = url.searchParams.get("asset_id");
     const sourceType = url.searchParams.get("source_type");
     const researchRunId = url.searchParams.get("research_run_id");
     const claimCategory = url.searchParams.get("claim_category");
     const confidenceMin = url.searchParams.get("confidence_min");
-    const limit = Math.min(parseInt(url.searchParams.get("limit") || "20"), 100);
+    const requestedLimit = Number.parseInt(url.searchParams.get("limit") || "20", 10);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.min(Math.max(requestedLimit, 1), 100)
+      : 20;
 
     try {
+      // Workspace search powers the global shell search. Keep this additive so
+      // corpus/evidence consumers retain their existing response shapes.
+      if (scope === "workspace") {
+        if (!query?.trim()) {
+          return successResponse({ type: "workspace", query: "", count: 0, results: [] });
+        }
+
+        const workspaceLimit = Math.min(Math.max(limit, 1), 20);
+        const assetLimit = Math.max(1, Math.ceil(workspaceLimit / 2));
+        const chunkLimit = Math.max(1, workspaceLimit - assetLimit);
+        const workspaceAssets = await sql`
+          SELECT
+            a.id,
+            a.id as asset_id,
+            a.canonical_name as asset_name,
+            a.canonical_name as title,
+            a.asset_kind,
+            a.slug,
+            a.sector,
+            a.status
+          FROM assets a
+          WHERE a.canonical_name ILIKE ${`%${query.trim()}%`}
+             OR a.slug ILIKE ${`%${query.trim()}%`}
+             OR COALESCE(a.asset_kind, '') ILIKE ${`%${query.trim()}%`}
+             OR COALESCE(a.sector, '') ILIKE ${`%${query.trim()}%`}
+          ORDER BY a.updated_at DESC NULLS LAST, a.canonical_name ASC
+          LIMIT ${assetLimit}
+        `;
+
+        const workspaceChunks = await sql`
+          SELECT
+            dc.id,
+            sd.asset_id,
+            a.canonical_name as asset_name,
+            sd.title,
+            dc.text,
+            dc.section_title,
+            ts_rank(to_tsvector('english', dc.text), plainto_tsquery('english', ${query.trim()})) as rank
+          FROM document_chunks dc
+          JOIN source_documents sd ON dc.source_document_id = sd.id
+          JOIN assets a ON sd.asset_id = a.id
+          WHERE to_tsvector('english', dc.text) @@ plainto_tsquery('english', ${query.trim()})
+          ORDER BY rank DESC
+          LIMIT ${chunkLimit}
+        `;
+
+        return successResponse({
+          type: "workspace",
+          query: query.trim(),
+          count: workspaceAssets.length + workspaceChunks.length,
+          results: [
+            ...workspaceAssets.map((asset) => ({ kind: "asset", ...asset })),
+            ...workspaceChunks.map((chunk) => ({ kind: "chunk", ...chunk })),
+          ],
+        });
+      }
+
       // If we have a text query, search document_chunks using FTS
       if (query) {
         const chunks = await sql`

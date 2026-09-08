@@ -1,7 +1,7 @@
 import postgres from "postgres";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { evaluateResearchQuality } from "@/lib/workflow/quality-gates";
 import type { ResearchQualityGateResult } from "@/lib/workflow/quality-gates";
 
@@ -99,7 +99,7 @@ export async function generateResearchPackage(params: {
     const generatedAt = new Date().toISOString();
     const folderName = `${safeSlug(data.asset.slug || data.asset.canonical_name)}_${data.run.run_type}_${Date.now()}_research_package`;
     const storagePath = `storage/exports/${folderName}`;
-    const absoluteDir = join(process.cwd(), storagePath);
+    const absoluteDir = join(process.cwd(), "storage", "exports", folderName);
 
     await mkdir(absoluteDir, { recursive: true });
     await mkdir(join(absoluteDir, "source_intelligence"), { recursive: true });
@@ -1613,13 +1613,17 @@ function backtestArtifactsCsv(artifacts: Row[]) {
 
 async function copyBacktestArtifacts(data: ResearchPackageData, absoluteDir: string) {
   const copied: Array<{ source_path: string; package_path: string }> = [];
+  const backtestRoot = resolve(process.cwd(), "storage", "backtests");
   const appendFiles: Record<string, string[]> = {
     "data/backtest_outputs/equity_curves.csv": [],
     "data/backtest_outputs/trade_log.csv": [],
   };
 
   for (const artifact of data.backtestArtifacts) {
-    const sourcePath = join(process.cwd(), artifact.storage_path || "");
+    const storagePath = String(artifact.storage_path || "");
+    const relativePath = storagePath.replace(/^storage[\\/]backtests[\\/]/, "");
+    const sourcePath = resolve(backtestRoot, relativePath);
+    if (!relativePath || (sourcePath !== backtestRoot && !sourcePath.startsWith(`${backtestRoot}${sep}`))) continue;
     const basename = String(artifact.title || "").toLowerCase();
     const artifactType = String(artifact.artifact_type || "").toLowerCase();
     if (artifactType === "equity_curve" || basename === "equity_curve.csv") {

@@ -105,14 +105,18 @@ describe("market data provider", () => {
 });
 
 describe("Yahoo parse error handling", () => {
-  it("C4-T7: Provider returns rate limit or malformed payload is classified failure", async () => {
-    const fetchRateLimited = async () =>
-      new Response("Too Many Requests", { status: 429 });
+  it("C4-T7: Provider sends Yahoo-compatible headers and classifies rate limits", async () => {
+    let userAgent = "";
+    const fetchRateLimited = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      userAgent = new Headers(init?.headers).get("user-agent") ?? "";
+      return new Response("Too Many Requests", { status: 429 });
+    };
     const { createYahooMarketDataProvider } = await import("@/lib/market-data/providers/yahoo");
     const yahoo = createYahooMarketDataProvider(fetchRateLimited);
     await assert.rejects(
       () => yahoo.getQuote("MELI"),
       (err: any) => err instanceof MarketDataError && err.code === "rate_limited"
     );
+    assert.match(userAgent, /Mozilla\/5\.0/);
   });
 });

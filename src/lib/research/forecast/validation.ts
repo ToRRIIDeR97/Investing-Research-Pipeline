@@ -56,6 +56,25 @@ export function validateOperatingScenarioSet(content: unknown): ValidationResult
   const base = data.scenarios.find((s) => s.scenario_type === "base");
   const bull = data.scenarios.find((s) => s.scenario_type === "bull");
 
+  for (const scenarioType of ["bear", "base", "bull"] as const) {
+    if (data.scenarios.filter((scenario) => scenario.scenario_type === scenarioType).length !== 1) {
+      errors.push(`Scenario set must contain exactly one ${scenarioType} case.`);
+    }
+  }
+
+  if (bear && base && bull) {
+    for (const metric of ["total_revenue", "net_income"] as const) {
+      const values = [bear, base, bull].map((scenario) =>
+        Number(scenario.resulting_financial_statements_json[metric])
+      );
+      if (!values.every(Number.isFinite)) {
+        errors.push(`Every scenario must include a numeric ${metric} in resulting_financial_statements_json.`);
+      } else if (!(values[0] < values[1] && values[1] < values[2])) {
+        errors.push(`${metric} must increase from bear to base to bull; got ${values.join(", ")}.`);
+      }
+    }
+  }
+
   if (bear && base && bull) {
     // C10-T2: Bear case is base case minus 20% on all lines (blanket percentage changes)
     if (bear.revenue_cagr && base.revenue_cagr && bear.operating_margin && base.operating_margin) {
@@ -91,6 +110,17 @@ export function validateOperatingModel(content: unknown): ValidationResult {
   const segmentRevenueSum = data.segments.reduce((acc, s) => acc + s.forecast_revenue, 0);
   if (Math.abs(segmentRevenueSum - data.consolidated_revenue) > 1e-2) {
     errors.push(`Segment revenue sum (${segmentRevenueSum}) does not reconcile to consolidated revenue (${data.consolidated_revenue}).`);
+  }
+
+  const segmentOperatingIncomeSum = data.segments.reduce((acc, s) => acc + s.forecast_operating_income, 0);
+  if (Math.abs(segmentOperatingIncomeSum - data.consolidated_operating_income) > 1e-2) {
+    errors.push(`Segment operating income sum (${segmentOperatingIncomeSum}) does not reconcile to consolidated operating income (${data.consolidated_operating_income}).`);
+  }
+
+  if (data.segments.length > 1 && new Set(
+    data.segments.map((segment) => `${segment.forecast_revenue}|${segment.forecast_operating_income}`)
+  ).size === 1) {
+    errors.push("Distinct segments cannot all use identical revenue and operating-income forecasts.");
   }
 
   // C10-T6: Growth requires credit capital but no balance-sheet effect exists

@@ -1,6 +1,6 @@
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
 import { makeValidationResult } from "../run-context";
-import { callResearchAgent, exactJsonPrompt } from "../run-context";
+import { callResearchAgentArtifacts, exactJsonPrompt } from "../run-context";
 import { MOAT_CONTRACT } from "../stage-contracts";
 import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
@@ -45,30 +45,29 @@ export const moatAnalysisHandler: StageHandler<Record<string, unknown>> = {
       };
       const taskKey = `moat-analyst:assessment:v3:${createHash("sha256").update(JSON.stringify(packet)).digest("hex").slice(0, 12)}`;
 
-      const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
+      const promptFactory = (p: Record<string, unknown>, artifactKey: string) => exactJsonPrompt({
         agentName: "asset-analyst",
-        requiredKeys: MOAT_CONTRACT.requiredKeys,
+        requiredKeys: [artifactKey],
         packet: p,
         extraRules: [
-          "Assess moat sources: network effects, high switching costs, cost advantages, intangible assets.",
+          ({ moat_assessment: "Assess moat sources, including network effects, switching costs, cost advantages and intangible assets.",
+            moat_attack_matrix: "Use the accepted moat assessment to analyze competitive attacks, bottlenecks and durability risks.",
+            no_moat_counterfactual: "Use the accepted moat assessment and attack matrix to describe economics without the claimed advantages." } as Record<string, string>)[artifactKey],
+          "Return only the assigned artifact. Use accepted_artifacts as checked context, not outputs to reproduce.",
           "Follow output_schema exactly, including every nested required field and primitive type.",
           "Ground every moat claim in evidence_claims and upstream_artifacts. Treat an unsupported claimed advantage as unproven, and translate each competitive response and bottleneck into an explicit durability or attack assessment.",
         ],
       });
 
-      const output = await callResearchAgent<Record<string, any>>({
-        sql, ctx, stageKey: "moat_analysis", taskKey,
-        taskType: "moat_analysis", agentName: "asset-analyst", modelTier: "mid",
-        packet, promptFactory,
-        outputFormat: MOAT_CONTRACT,
-      });
-
       // Persist generated sub-artifacts
       const db = drizzle(sql, { schema });
       const repo = createArtifactRepository(db);
-      const subKeys = MOAT_CONTRACT.requiredKeys;
-      for (const k of subKeys) {
-        if (output[k]) {
+      const output = await callResearchAgentArtifacts({
+        sql, ctx, stageKey: 'moat_analysis', taskKeyPrefix: taskKey,
+        taskType: 'moat_analysis', agentName: 'asset-analyst', packet, promptFactory,
+        outputFormat: MOAT_CONTRACT,
+        artifactWaves: [['moat_assessment'], ['moat_attack_matrix'], ['no_moat_counterfactual']],
+        onArtifact: async (k, value) => {
           await repo.upsertArtifact({
             research_run_id: ctx.runId,
             asset_id: ctx.assetId,
@@ -76,15 +75,15 @@ export const moatAnalysisHandler: StageHandler<Record<string, unknown>> = {
             artifact_type: k,
             scope_key: `${ctx.assetSlug}-${k.replace(/_/g, "-")}`,
             status: "validated",
-            content_json: output[k],
+            content_json: value,
             schema_version: "3.0.0",
             validator_version: "1.0.0",
             prompt_version: "current",
             created_by: "system-research-os",
             idempotency_key: `${ctx.runId}-${k}`,
           });
-        }
-      }
+        },
+      });
 
       return output;
     } finally {

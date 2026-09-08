@@ -1,5 +1,7 @@
 import postgres from "postgres";
-import { STAGE_CONFIGS, STAGE_CONFIG_MAP, getAllStagesForRun, getApplicableStages, getStageConfig } from "./stages";
+import { reportInputs, reportSnapshotFingerprint } from '../research/report-composition';
+import { taskInputFingerprint } from '../research/artifact-packets';
+import { STAGE_CONFIGS, STAGE_CONFIG_MAP, getAllStagesForRun, getApplicableStages, getStageConfig, readyStageKeys } from "./stages";
 import { evaluateResearchQuality } from "./quality-gates";
 import {
   validateStageCompletion,
@@ -34,6 +36,7 @@ export interface RunProgress {
   status: string;
   currentStage: string | null;
   currentStageOrder: number | null;
+  runningStages: string[];
   completedStages: string[];
   pendingStages: string[];
   failedStages: string[];
@@ -469,7 +472,7 @@ export async function approveHumanReview(
     };
     const transition = await sql.begin(async (tx) => {
       const stages = await tx`
-        SELECT id, status FROM research_stages
+        SELECT id, status, validation_result_json FROM research_stages
         WHERE research_run_id = ${runId} AND stage_key = 'human_review'
         LIMIT 1 FOR UPDATE
       `;
@@ -485,6 +488,17 @@ export async function approveHumanReview(
       if (!decisions[0] || !isApprovedHumanDecision(decisions[0].status)) {
         return { success: false as const, error: "A persisted approved human review decision is required before approving the human-review stage" };
       }
+      if (decisions[0].id === stages[0].validation_result_json?.reviewDecisionId) {
+        return { success: false as const, error: 'Research changed after approval; save a new human review decision before approving it again' };
+      }
+      const artifacts = await tx`SELECT artifact_type, content_json FROM research_artifacts
+        WHERE research_run_id = ${runId} AND status IN ('validated', 'accepted') ORDER BY artifact_type`;
+      const savedArtifacts = artifacts.map((row) => ({ artifact_type: String(row.artifact_type), content_json: row.content_json }));
+      const composition = savedArtifacts.find((row) => row.artifact_type === 'report_composition');
+      if (composition && composition.content_json.input_fingerprint !== taskInputFingerprint(reportInputs(savedArtifacts))) {
+        return { success: false as const, error: 'Report composition is stale; rerun decision synthesis and AI review before human approval' };
+      }
+      const approvedArtifactHash = reportSnapshotFingerprint(savedArtifacts);
       await tx`
         UPDATE research_stages
         SET status = 'completed', completed_at = NOW(),
@@ -498,6 +512,7 @@ export async function approveHumanReview(
             metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${tx.json({
               human_review_approved_by: reviewedBy,
               human_review_approved_at: new Date().toISOString(),
+              approved_artifact_hash: approvedArtifactHash,
             })},
             updated_at = NOW()
         WHERE id = ${runId}
@@ -551,21 +566,41 @@ export async function requestResearchPlanChanges(
 /**
  * Helper: start the next pending stage. Returns the stage key or undefined.
  */
-async function startNextStage(
+export async function startNextStage(
   runId: string
 ): Promise<string | undefined> {
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
-    const nextStages = await sql`
-      SELECT id, stage_key
-      FROM research_stages
-      WHERE research_run_id = ${runId}
-        AND status = 'pending'
-      ORDER BY stage_order ASC
-      LIMIT 1
+    const [runState] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${runId}`;
+    const metadata = runState?.metadata_json && typeof runState.metadata_json === "object" ? runState.metadata_json : {};
+    const backtestRequired = (metadata as any)?.timing_hypothesis?.accepted === true;
+    if (!backtestRequired) {
+      await sql`
+        UPDATE research_stages SET status = 'skipped', completed_at = NOW(), updated_at = NOW(),
+          failure_reason = 'No accepted timing hypothesis; fundamental synthesis does not require a framework backtest.'
+        WHERE research_run_id = ${runId} AND status = 'pending'
+          AND stage_key = ANY(${["indicator_design", "strategy_design", "backtest_execution", "backtest_review"]})
+      `;
+    }
+    const stageStates = await sql`
+      SELECT id, stage_key, stage_order, status FROM research_stages
+      WHERE research_run_id = ${runId} ORDER BY stage_order ASC
     `;
+    if (stageStates.some((stage) => stage.status === "running" || stage.status === "waiting_for_human")) return undefined;
+    const readyKeys = new Set(readyStageKeys(stageStates as any[], backtestRequired));
+    const nextStages = stageStates.filter((stage) => readyKeys.has(String(stage.stage_key)));
     if (nextStages.length === 0) {
+      const openStages = stageStates.filter((stage) => ["pending", "running", "waiting_for_human"].includes(String(stage.status)));
+      if (openStages.some((stage) => stage.status === "running" || stage.status === "waiting_for_human")) return undefined;
+      if (openStages.some((stage) => stage.status === "pending")) {
+        await sql`
+          UPDATE research_runs SET status = 'needs_more_work', completed_at = NOW(), updated_at = NOW(),
+            failure_reason = ${`Pending stages have unsatisfied dependencies: ${openStages.filter((stage) => stage.status === "pending").map((stage) => stage.stage_key).join(", ")}`}
+          WHERE id = ${runId}
+        `;
+        return undefined;
+      }
       // Acceptance test mode skips quality gate evaluation (mock data lacks real sources/evidence)
       const skipQualityGate = process.env.SKIP_V3_CONTENT_VALIDATORS === "true"
         || process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock";
@@ -703,7 +738,7 @@ async function startNextStage(
         SET status = 'running',
             started_at = NOW(),
             updated_at = NOW()
-        WHERE id = ${nextStage.id}
+        WHERE id = ANY(${nextStages.map((stage) => stage.id)}) AND status = 'pending'
       `;
     }
 
@@ -743,6 +778,7 @@ export async function getRunProgress(runId: string): Promise<RunProgress> {
     const validationResults: Record<string, ValidationResult> = {};
     let currentStage: string | null = null;
     let currentStageOrder: number | null = null;
+    const runningStages: string[] = [];
 
     for (const stage of stages) {
       const status = stage.status;
@@ -757,8 +793,11 @@ export async function getRunProgress(runId: string): Promise<RunProgress> {
       } else if (status === "pending") {
         pendingStages.push(stage.stage_key);
       } else if (status === "running" || status === "waiting_for_human") {
-        currentStage = stage.stage_key;
-        currentStageOrder = stage.stage_order;
+        runningStages.push(stage.stage_key);
+        if (currentStage === null) {
+          currentStage = stage.stage_key;
+          currentStageOrder = stage.stage_order;
+        }
       }
 
       if (stage.validation_result_json) {
@@ -777,6 +816,7 @@ export async function getRunProgress(runId: string): Promise<RunProgress> {
       status: runs[0].status,
       currentStage,
       currentStageOrder,
+      runningStages,
       completedStages,
       pendingStages,
       failedStages,

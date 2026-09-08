@@ -3,6 +3,7 @@ import { makeValidationResult } from "../run-context";
 import { generateReport, mapArtifactsToReportData } from "@/lib/export/report-generator";
 import postgres from "postgres";
 import { CURRENT_PIPELINE_VERSION } from "../version";
+import { reportSnapshotFingerprint, ReportReviewRequiredError } from '../report-composition';
 
 export const exportHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "export",
@@ -16,6 +17,16 @@ export const exportHandler: StageHandler<Record<string, unknown>> = {
           AND status IN ('validated', 'accepted')
         ORDER BY artifact_type
       `;
+      const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}`;
+      const snapshot = reportSnapshotFingerprint(artifacts.map((row) => ({ artifact_type: String(row.artifact_type), content_json: row.content_json })));
+      if (artifacts.some((row) => row.artifact_type === 'report_composition') && run?.metadata_json?.approved_artifact_hash !== snapshot) {
+        await sql.begin(async (tx) => {
+          await tx`UPDATE research_stages SET status = 'waiting_for_human', completed_at = NULL WHERE research_run_id = ${ctx.runId} AND stage_key = 'human_review'`;
+          await tx`UPDATE research_stages SET status = 'pending', completed_at = NULL WHERE research_run_id = ${ctx.runId} AND stage_key = 'export'`;
+          await tx`UPDATE research_runs SET status = 'waiting_for_human' WHERE id = ${ctx.runId}`;
+        });
+        throw new ReportReviewRequiredError('Research changed after approval; a new human review is required before export');
+      }
 
       // Load asset info
       const [asset] = await sql`

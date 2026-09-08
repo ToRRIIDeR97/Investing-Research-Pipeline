@@ -8,6 +8,8 @@ import { OpenCodeGoProvider } from "../src/lib/agent-harness/providers/opencode-
 import { acquireProviderRequestLock } from "../src/lib/agent-harness/providers/request-lock";
 import { runResearchAgent } from "../src/lib/agent-harness/runner";
 
+process.env.RESEARCH_VISION_MODEL = "test-default-model";
+
 async function fixture(handler: (response: ServerResponse) => void) {
   const server = createServer((request, response) => {
     if (request.url === "/v1/models") {
@@ -41,6 +43,19 @@ test("local provider parses fragmented SSE, usage, request IDs, and health", asy
     assert.equal(events.filter((event: any) => event.type === "text.delta").map((event: any) => event.text).join(""), '{"ok":true}');
     assert.ok(events.some((event: any) => event.type === "usage" && event.usage.outputTokens === 2));
     assert.ok(events.some((event: any) => event.type === "usage" && event.usage.reasoningTokens === 1));
+  } finally { server.close(); }
+});
+
+test("local provider captures a request ID from the SSE payload when headers omit it", async () => {
+  const { server, url } = await fixture((response) => {
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    response.end('data: {"id":"sse-request","choices":[{"delta":{"content":"{\\"ok\\":true}"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+  });
+  try {
+    const events = [];
+    const provider = new OpenAICompatibleProvider({ mode: "local", baseUrl: url });
+    for await (const event of provider.stream({ model: "fixture", prompt: "x" }, new AbortController().signal)) events.push(event);
+    assert.equal((events.filter((event) => event.type === "response.started").at(-1) as any)?.requestId, "sse-request");
   } finally { server.close(); }
 });
 
@@ -104,6 +119,41 @@ test("cancelling a queued endpoint request preserves the active lock", async () 
   releaseNext();
 });
 
+test('two-stream opt-in isolates responses and keeps the endpoint concurrency bounded', async () => {
+  const previous = process.env.RESEARCH_PROVIDER_CONCURRENCY;
+  const originalFetch = globalThis.fetch;
+  process.env.RESEARCH_PROVIDER_CONCURRENCY = '2';
+  let active = 0;
+  let maximum = 0;
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body));
+    const marker = JSON.stringify(body.messages).includes('alpha-marker') ? 'alpha' : 'beta';
+    active += 1;
+    maximum = Math.max(maximum, active);
+    return new Response(new ReadableStream({ start(controller) {
+      setTimeout(() => {
+        const value = JSON.stringify({ marker });
+        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ choices: [{ delta: { content: value }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n`));
+        controller.close(); active -= 1;
+      }, 20);
+    } }), { headers: { 'content-type': 'text/event-stream' } });
+  }) as typeof fetch;
+  try {
+    const results = await Promise.all(['alpha-marker', 'beta-marker', 'alpha-marker'].map((prompt) => runResearchAgent<{ marker: string }>({
+      agentName: 'asset-classifier', title: prompt, taskPacket: {}, prompt,
+      provider: new OpenAICompatibleProvider({ mode: 'local', baseUrl: 'http://127.0.0.1:65533/v1' }),
+      outputFormat: { requiredKeys: ['marker'], schema: { type: 'object', required: ['marker'], properties: { marker: { type: 'string' } } } },
+      policy: { maxAttempts: 1 },
+    })));
+    assert.equal(maximum, 2);
+    assert.deepEqual(results.map((result) => result.structured.marker), ['alpha', 'beta', 'alpha']);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previous === undefined) delete process.env.RESEARCH_PROVIDER_CONCURRENCY;
+    else process.env.RESEARCH_PROVIDER_CONCURRENCY = previous;
+  }
+});
+
 test("queued endpoint requests receive a full provider deadline after lock acquisition", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => {
@@ -128,7 +178,7 @@ test("queued endpoint requests receive a full provider deadline after lock acqui
       taskPacket: {},
       provider,
       outputFormat: { requiredKeys: ["ok"], schema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } } },
-      policy: { totalTimeoutMs: 35, inactivityTimeoutMs: 1_000, maxAttempts: 1 },
+      policy: { attemptTimeoutMs: 35, totalTimeoutMs: 200, inactivityTimeoutMs: 1_000, maxAttempts: 1 },
     })));
   } finally { globalThis.fetch = originalFetch; }
 });
@@ -245,10 +295,12 @@ test("OpenCode Go router uses Anthropic messages for Qwen and OpenAI chat for GL
   const originalFetch = globalThis.fetch;
   const requested: string[] = [];
   const bodies: any[] = [];
+  const headers: Headers[] = [];
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     requested.push(url);
     bodies.push(JSON.parse(String(init?.body || "{}")));
+    headers.push(new Headers(init?.headers));
     const sse = url.endsWith("/messages")
       ? [
           'event: message_start\ndata: {"type":"message_start","message":{"id":"msg-1","usage":{"input_tokens":2}}}',
@@ -264,14 +316,17 @@ test("OpenCode Go router uses Anthropic messages for Qwen and OpenAI chat for GL
   }) as typeof fetch;
   try {
     const provider = new OpenCodeGoProvider("https://opencode.ai/zen/go/v1", "fixture-key", ["opencode.ai"]);
-    for await (const _ of provider.stream({ model: "qwen3.7-plus", prompt: "x" }, new AbortController().signal)) {}
-    for await (const _ of provider.stream({ model: "glm-5.2", prompt: "x" }, new AbortController().signal)) {}
-    for await (const _ of provider.stream({ model: "kimi-k2.7-code", prompt: "x", temperature: 0.2 }, new AbortController().signal)) {}
+    for await (const _ of provider.stream({ model: "qwen3.7-plus", prompt: "x", sessionId: "session-1" }, new AbortController().signal)) {}
+    for await (const _ of provider.stream({ model: "glm-5.2", prompt: "x", sessionId: "session-2" }, new AbortController().signal)) {}
+    for await (const _ of provider.stream({ model: "kimi-k2.7-code", prompt: "x", temperature: 0.2, sessionId: "session-3" }, new AbortController().signal)) {}
     assert.ok(requested[0].endsWith("/messages"));
     assert.ok(requested[1].endsWith("/chat/completions"));
     assert.equal(bodies[0].max_tokens, 65_536);
     assert.equal(bodies[1].max_tokens, undefined);
     assert.equal(bodies[2].temperature, undefined);
+    assert.equal(headers[0].get("user-agent"), "ResearchOS/0.1");
+    assert.equal(headers[0].get("x-opencode-session"), "session-1");
+    assert.equal(headers[1].get("x-opencode-session"), "session-2");
   } finally {
     globalThis.fetch = originalFetch;
   }

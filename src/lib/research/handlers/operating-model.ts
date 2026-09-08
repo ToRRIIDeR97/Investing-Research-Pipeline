@@ -1,12 +1,17 @@
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
 import { makeValidationResult } from "../run-context";
-import { callResearchAgent, exactJsonPrompt } from "../run-context";
+import { callResearchAgentArtifacts, exactJsonPrompt } from "../run-context";
 import { OPERATING_MODEL_CONTRACT } from "../stage-contracts";
 import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { createHash } from "node:crypto";
+import {
+  validateDriverTree,
+  validateOperatingModel,
+  validateTopDownBottomUpReconciliation,
+} from "../forecast/validation";
 
 export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "operating_model",
@@ -32,7 +37,13 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
           symbol: ctx.symbol,
           profileKey: ctx.profileKey,
         },
-        required_modules: ["operating_model_structure", "driver_tree_specification", "driver_tree"],
+        required_modules: [
+          "operating_model_structure",
+          "driver_tree_specification",
+          "driver_tree",
+          "top_down_bottom_up_reconciliation",
+          "reinvestment_economics",
+        ],
         output_contract: "operating_model",
         output_schema: OPERATING_MODEL_CONTRACT.schema,
         upstream_artifacts: upstream,
@@ -42,33 +53,48 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
         .digest("hex")
         .slice(0, 12)}`;
 
-      const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
+      const artifactRules: Record<string, string[]> = {
+        driver_tree: [
+          "Construct a driver-based forecast tree from historical inputs. Revenue formula_decomposition must be an operational equation, not CAGR or a growth-rate restatement. For financial services use measurable members, products, balances, volumes, yield or take rate.",
+          "Copy process_node_key exactly from upstream_artifacts.business_process_map.process_nodes[].process_node; do not invent aliases.",
+          "Calibrate to historical_record and historical_diagnosis, and make moat assumptions explicit in driver failure conditions.",
+        ],
+        operating_model: [
+          "Use the accepted driver_tree and historical_record to forecast every material segment in upstream_artifacts.segment_model. Reconcile segment revenue and operating income exactly to consolidated totals.",
+          "Use differentiated forecasts for economically distinct segments, never identical balancing values. Make no-moat assumptions explicit.",
+        ],
+        reinvestment_model: [
+          "Provide explicit annual capex and working-capital forecasts consistent with the accepted operating_model and driver_tree, calibrated to historical_record.",
+        ],
+        top_down_bottom_up_reconciliation: [
+          "Reconcile the accepted operating_model and reinvestment_model with a defensible top-down market and customer-budget ceiling. Disclose differences without rewriting accepted forecasts.",
+        ],
+      };
+      const promptFactory = (p: Record<string, unknown>, artifactKey: string) => exactJsonPrompt({
         agentName: "asset-analyst",
-        requiredKeys: OPERATING_MODEL_CONTRACT.requiredKeys,
+        requiredKeys: [artifactKey],
         packet: p,
         extraRules: [
-          "Construct a driver-based forecast tree structure, mapping historical inputs to future drivers.",
-          "For every revenue driver, formula_decomposition must be an operational equation, not CAGR or a growth-rate restatement. For lenders and financial-services segments, decompose revenue into measurable drivers such as members or accounts, products per member, balances or transaction volume, and yield, take rate, or revenue per product.",
+          "Produce only the assigned artifact. Treat accepted_artifacts as checked dependencies, not outputs to reproduce.",
           "Follow output_schema exactly, including every nested required field and primitive type.",
-          "Model every material segment listed in upstream_artifacts.segment_model and reconcile segment revenue and operating income exactly to the consolidated totals.",
-          "Copy driver_tree.process_node_key values exactly from upstream_artifacts.business_process_map.process_nodes[].process_node; do not invent alternate keys or aliases.",
-          "Calibrate forecast levels to upstream_artifacts.historical_record and make moat/no-moat assumptions explicit in driver failure conditions. Do not forecast from narrative context alone.",
+          ...artifactRules[artifactKey],
         ],
-      });
-
-      const output = await callResearchAgent<Record<string, any>>({
-        sql, ctx, stageKey: "operating_model", taskKey,
-        taskType: "operating_model", agentName: "asset-analyst", modelTier: "mid",
-        packet, promptFactory,
-        outputFormat: OPERATING_MODEL_CONTRACT,
       });
 
       // Persist generated sub-artifacts
       const db = drizzle(sql, { schema });
       const repo = createArtifactRepository(db);
-      const subKeys = OPERATING_MODEL_CONTRACT.requiredKeys;
-      for (const k of subKeys) {
-        if (output[k]) {
+      const validators: Record<string, (value: unknown) => Pick<ValidationResult, 'valid' | 'errors' | 'warnings'>> = {
+        driver_tree: validateDriverTree, operating_model: validateOperatingModel,
+        top_down_bottom_up_reconciliation: validateTopDownBottomUpReconciliation,
+      };
+      const output = await callResearchAgentArtifacts({
+        sql, ctx, stageKey: 'operating_model', taskKeyPrefix: taskKey,
+        taskType: 'operating_model', agentName: 'asset-analyst', packet, promptFactory,
+        outputFormat: OPERATING_MODEL_CONTRACT,
+        artifactWaves: [['driver_tree'], ['operating_model'], ['reinvestment_model'], ['top_down_bottom_up_reconciliation']],
+        validateArtifact: (key, value) => validators[key]?.(value) || makeValidationResult(),
+        onArtifact: async (k, value) => {
           await repo.upsertArtifact({
             research_run_id: ctx.runId,
             asset_id: ctx.assetId,
@@ -76,15 +102,15 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
             artifact_type: k,
             scope_key: `${ctx.assetSlug}-${k.replace(/_/g, "-")}`,
             status: "validated",
-            content_json: output[k],
+            content_json: value,
             schema_version: "3.0.0",
             validator_version: "1.0.0",
             prompt_version: "current",
             created_by: "system-research-os",
             idempotency_key: `${ctx.runId}-${k}`,
           });
-        }
-      }
+        },
+      });
 
       return output;
     } finally {

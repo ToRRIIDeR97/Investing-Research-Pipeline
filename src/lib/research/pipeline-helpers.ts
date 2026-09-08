@@ -39,6 +39,28 @@ export interface RetrievalChunk {
   sourceType: string;
 }
 
+export interface RetrievalScope {
+  key: string;
+  terms: string[];
+  maxChunks?: number;
+}
+
+export type ScopedRetrievalChunk = RetrievalChunk & { retrievalScopes: string[] };
+
+/** Keep the matching passage and its preceding headings, with exact parse-relative bounds. */
+export function relevantExcerpt(chunk: RetrievalChunk, terms: string[], limit: number): RetrievalChunk {
+  if (chunk.text.length <= limit) return chunk;
+  const text = chunk.text.toLowerCase();
+  const hits = terms.map((term) => text.indexOf(term.toLowerCase())).filter((index) => index >= 0);
+  const best = hits.sort((a, b) => {
+    const score = (start: number) => hits.filter((hit) => hit >= start - 600 && hit < start + limit - 600).length;
+    return score(b) - score(a) || a - b;
+  })[0] ?? 0;
+  const start = Math.max(0, Math.min(best - 600, chunk.text.length - limit));
+  const end = Math.min(chunk.text.length, start + limit);
+  return { ...chunk, text: chunk.text.slice(start, end), charStart: chunk.charStart + start, charEnd: chunk.charStart + end };
+}
+
 /** Deterministic bounded retrieval: source openings plus the most relevant middle/closing chunks. */
 export function selectRelevantChunks(chunks: RetrievalChunk[], terms: string[], maxChunks = 18, excerptChars = 5000) {
   const normalizedTerms = [...new Set(terms.flatMap((term) => term.toLowerCase().split(/[^a-z0-9]+/)).filter((term) => term.length >= 3))];
@@ -69,8 +91,38 @@ export function selectRelevantChunks(chunks: RetrievalChunk[], terms: string[], 
     .sort((a, b) => score(b) - score(a) || a.sourceId.localeCompare(b.sourceId) || a.chunkIndex - b.chunkIndex)
     .slice(0, Math.max(0, maxChunks - selected.length)));
   return selected
-    .map((chunk) => ({ ...chunk, text: chunk.text.slice(0, excerptChars) }))
+    .map((chunk) => relevantExcerpt(chunk, terms, excerptChars))
     .sort((a, b) => a.sourceId.localeCompare(b.sourceId) || a.chunkIndex - b.chunkIndex);
+}
+
+/** Retrieve independently per analytical scope instead of using one global evidence competition. */
+export function selectScopedRelevantChunks(
+  chunks: RetrievalChunk[],
+  scopes: RetrievalScope[],
+  defaultMaxChunks = 6,
+  excerptChars = 3000
+): ScopedRetrievalChunk[] {
+  const selected = new Map<string, ScopedRetrievalChunk>();
+  for (const scope of scopes) {
+    const matches = selectRelevantChunks(
+      chunks,
+      scope.terms,
+      Math.max(1, scope.maxChunks ?? defaultMaxChunks),
+      excerptChars
+    );
+    for (const chunk of matches) {
+      const key = `${chunk.id}:${chunk.charStart}:${chunk.charEnd}`;
+      const existing = selected.get(key);
+      if (existing) {
+        if (!existing.retrievalScopes.includes(scope.key)) existing.retrievalScopes.push(scope.key);
+      } else {
+        selected.set(key, { ...chunk, retrievalScopes: [scope.key] });
+      }
+    }
+  }
+  return [...selected.values()].sort((left, right) =>
+    left.sourceId.localeCompare(right.sourceId) || left.chunkIndex - right.chunkIndex
+  );
 }
 
 /** Ensures primary annual and quarterly filing families survive relevance ranking. */
@@ -135,6 +187,9 @@ export const MODULE_TERMS: Record<string, string[]> = {
   unit_economics: ["gmv", "tpv", "take rate", "credit portfolio", "nimal", "margin"],
   active_buyers: ["active buyer", "unique buyer", "buyers", "items sold"],
   fintech_mau: ["monthly active", "mau", "active users", "fintech users"],
+  members: ["member", "members", "new members", "total members"],
+  total_products: ["total products", "products", "new products", "products per member", "cross-buy"],
+  segment_contribution: ["contribution profit", "contribution margin", "segment contribution", "contribution loss"],
   provisions: ["provision", "credit loss", "allowance", "expected credit loss"],
   credit_losses: ["credit loss", "allowance", "charge-off", "delinquen"],
   loan_book: ["loan", "credit portfolio", "receivable", "delinquen", "non-performing"],

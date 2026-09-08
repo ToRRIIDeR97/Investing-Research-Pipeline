@@ -6,6 +6,7 @@ import {
   validateOperatingModel,
   validateTopDownBottomUpReconciliation,
 } from "@/lib/research/forecast/validation";
+import { OPERATING_MODEL_CONTRACT } from "@/lib/research/stage-contracts";
 import type {
   DriverTree,
   OperatingScenarioSet,
@@ -14,6 +15,11 @@ import type {
 } from "@/lib/research/forecast/contracts";
 
 describe("operating forecasts and scenarios (Component 10)", () => {
+  it("declares reconciliation and reinvestment outputs required by the report", () => {
+    assert.ok(OPERATING_MODEL_CONTRACT.requiredKeys.includes("top_down_bottom_up_reconciliation"));
+    assert.ok(OPERATING_MODEL_CONTRACT.requiredKeys.includes("reinvestment_model"));
+  });
+
   it("C10-T1: Revenue CAGR without driver decomposition is rejected", () => {
     const tree: DriverTree = {
       artifact_type: "driver_tree",
@@ -179,6 +185,35 @@ describe("operating forecasts and scenarios (Component 10)", () => {
     assert.ok(result.errors.some((e) => e.includes("must total exactly 1.0")));
   });
 
+  it("rejects identical bear, base, and bull financial outcomes", () => {
+    const scenario = (scenario_type: "bear" | "base" | "bull") => ({
+      scenario_type,
+      end_market: scenario_type,
+      customer_economics: scenario_type,
+      customer_spending: scenario_type,
+      competitive_response: scenario_type,
+      capacity: scenario_type,
+      pricing_mix: scenario_type,
+      moat_state: scenario_type,
+      margin_formation: scenario_type,
+      reinvestment: scenario_type,
+      working_capital: scenario_type,
+      balance_sheet: scenario_type,
+      resulting_financial_statements_json: { total_revenue: 100, net_income: 10 },
+    });
+    const result = validateOperatingScenarioSet({
+      artifact_type: "operating_scenario_set",
+      probability_bear: 0.2,
+      probability_base: 0.6,
+      probability_bull: 0.2,
+      scenarios: [scenario("bear"), scenario("base"), scenario("bull")],
+    });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.includes("total_revenue must increase")));
+    assert.ok(result.errors.some((error) => error.includes("net_income must increase")));
+  });
+
   it("C10-T4: Segment revenue does not equal consolidated revenue fails", () => {
     const model: OperatingModel = {
       artifact_type: "operating_model",
@@ -225,6 +260,23 @@ describe("operating forecasts and scenarios (Component 10)", () => {
     const result = validateOperatingModel(model);
     assert.equal(result.valid, false);
     assert.ok(result.errors.some((e) => e.includes("requires credit capital but models no corresponding balance-sheet effect")));
+  });
+
+  it("rejects identical forecasts for distinct segments", () => {
+    const model: OperatingModel = {
+      artifact_type: "operating_model",
+      segments: [
+        { segment_name: "Lending", forecast_revenue: 100, forecast_operating_income: 20 },
+        { segment_name: "Technology", forecast_revenue: 100, forecast_operating_income: 20 },
+      ],
+      consolidated_revenue: 200,
+      consolidated_operating_income: 40,
+      credit_capital_required: 0,
+      balance_sheet_effect_present: false,
+    };
+    const result = validateOperatingModel(model);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((e) => e.includes("cannot all use identical")));
   });
 
   it("C10-T7: Bull case assumes stronger moat and lower maintenance spend fails", () => {

@@ -40,6 +40,8 @@ describe("framework-style research backtesting", () => {
     const combinations = generateStrategyCombinations("SOFI member and funding flywheel");
     assert.equal(combinations.length, MINIMUM_COMBINATION_COUNT);
     assert.equal(new Set(combinations.map((item) => item.combinationKey)).size, 50);
+    assert.equal(new Set(combinations.map((item) => item.hypothesis)).size, 50);
+    assert.ok(combinations.every((item) => item.hypothesis.startsWith("If SOFI member and funding flywheel is investable")));
     assert.ok(combinations.every((item) => new Set(item.familiesUsed).size >= 2));
     const bucketCounts = new Map<string, number>();
     for (const item of combinations) {

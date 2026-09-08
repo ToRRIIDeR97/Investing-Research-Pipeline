@@ -24,6 +24,8 @@ import { registerSubagentTool } from "../src/lib/agent-harness/subagents";
 import { registerTool, ToolRegistry } from "../src/lib/agent-harness/tools";
 import type { ModelEvent, ModelProvider, ModelRequest, PermissionRequest } from "../src/lib/agent-harness/types";
 
+process.env.RESEARCH_VISION_MODEL = "test-default-model";
+
 test("canonical messages lower tool calls and results for OpenAI and Anthropic", () => {
   const messages = [
     textMessage("system", "trusted system"),
@@ -320,6 +322,7 @@ test("a failed durable session replays prior assistant and tool messages on resu
   };
   try {
     await assert.rejects(runResearchAgent(request), ResearchAgentRunError);
+    request.taskPacket = { revision: true };
     const result = await runResearchAgent<{ ok: boolean }>(request);
     assert.equal(result.structured.ok, true);
     assert.ok(provider.resumedMessages?.some((message) => message.parts.some((part) => part.type === "tool_call")));

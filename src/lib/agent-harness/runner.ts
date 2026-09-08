@@ -1,11 +1,18 @@
 import { randomUUID } from "node:crypto";
+import {
+  assertProviderCircuitAvailable,
+  providerCircuitSnapshot,
+  qualifiesForProviderCircuit,
+  recordProviderFailure,
+  recordProviderSuccess,
+} from "./circuit-breaker";
 import { createDeadlineController } from "./deadlines";
 import { ProviderError, redactHarnessText as redact, ResearchAgentRunError, type HarnessErrorCategory } from "./errors";
 import { compactMessages, createMessage, messageText, textMessage } from "./messages";
 import { registerMcpServers } from "./mcp";
 import { parseStructuredOutput } from "./output-parser";
 import { getProvider } from "./providers/provider";
-import { DEFAULT_RESEARCH_MODEL, getAgentConfig, normalizeModelEnvValue, resolveAgentModel, type ResearchAgentName } from "./registry";
+import { getAgentConfig, resolveAgentModel, type ResearchAgentName } from "./registry";
 import { MemoryAgentSessionStore } from "./session-store";
 import { sessionCoordinator } from "./session-coordinator";
 import { discoverSkills, renderSkillContext, selectSkills } from "./skills";
@@ -20,8 +27,12 @@ import { coerceStructuredOutput, validateSchema, type SchemaValidationError } fr
 
 export { ResearchAgentRunError };
 
+const DEFAULT_SKILLS = ["unslop"];
+
 const DEFAULT_POLICY: ExecutionPolicy = {
-  totalTimeoutMs: 240_000,
+  totalTimeoutMs: 720_000,
+  attemptTimeoutMs: 360_000,
+  repairTimeoutMs: 180_000,
   inactivityTimeoutMs: 90_000,
   maxResponseBytes: 1_000_000,
   maxContextBytes: 4_000_000,
@@ -31,7 +42,7 @@ const DEFAULT_POLICY: ExecutionPolicy = {
   maxRepairAttempts: 1,
   maxToolTurns: 4,
   maxToolCalls: 8,
-  maxAttempts: 4,
+  maxAttempts: 2,
   retryBaseDelayMs: 1_000,
 };
 
@@ -51,15 +62,15 @@ function optionalPositiveNumberEnv(...names: string[]) {
 
 function executionPolicy(input: AgentRequest): ExecutionPolicy {
   const key = input.agentName.toUpperCase().replace(/-/g, "_");
-  const totalDefault = input.agentName === "source-reader"
-    ? 1_200_000
-    : ["asset-analyst", "metric-normalizer", "valuation-analyst"].includes(input.agentName)
-      ? 600_000
-      : DEFAULT_POLICY.totalTimeoutMs;
-  const inactivityDefault = input.agentName === "source-reader" ? 600_000 : DEFAULT_POLICY.inactivityTimeoutMs;
+  const valuationWork = input.agentName === "valuation-analyst";
+  const totalDefault = valuationWork ? 960_000 : DEFAULT_POLICY.totalTimeoutMs;
+  const attemptDefault = valuationWork ? 480_000 : DEFAULT_POLICY.attemptTimeoutMs;
+  const inactivityDefault = input.agentName === "source-reader" ? 120_000 : DEFAULT_POLICY.inactivityTimeoutMs;
   const configuredMaxOutputTokens = optionalPositiveNumberEnv(`RESEARCH_${key}_MAX_OUTPUT_TOKENS`, "RESEARCH_MAX_OUTPUT_TOKENS");
   const policy: ExecutionPolicy = {
     totalTimeoutMs: numberEnv(`RESEARCH_${key}_TIMEOUT_MS`, numberEnv("RESEARCH_AGENT_TIMEOUT_MS", totalDefault, 10_000), 10_000),
+    attemptTimeoutMs: numberEnv(`RESEARCH_${key}_ATTEMPT_TIMEOUT_MS`, numberEnv("RESEARCH_ATTEMPT_TIMEOUT_MS", attemptDefault, 1_000), 1_000),
+    repairTimeoutMs: numberEnv("RESEARCH_REPAIR_TIMEOUT_MS", DEFAULT_POLICY.repairTimeoutMs, 1_000),
     inactivityTimeoutMs: numberEnv(`RESEARCH_${key}_INACTIVITY_TIMEOUT_MS`, numberEnv("RESEARCH_INACTIVITY_TIMEOUT_MS", inactivityDefault, 1_000), 1_000),
     maxResponseBytes: numberEnv(`RESEARCH_${key}_MAX_RESPONSE_BYTES`, numberEnv("RESEARCH_MAX_RESPONSE_BYTES", DEFAULT_POLICY.maxResponseBytes)),
     maxContextBytes: numberEnv(`RESEARCH_${key}_MAX_CONTEXT_BYTES`, numberEnv("RESEARCH_MAX_CONTEXT_BYTES", DEFAULT_POLICY.maxContextBytes)),
@@ -127,22 +138,11 @@ function repairCandidate(value: unknown, rawText: string) {
 
 function modelCandidates(agentName: ResearchAgentName, maxAttempts: number) {
   const primary = resolveAgentModel(agentName);
-  const fallbackKey = `RESEARCH_${agentName.toUpperCase().replace(/-/g, "_")}_FALLBACK_MODEL`;
-  const fallback = process.env[fallbackKey] || process.env.RESEARCH_FALLBACK_MODEL || process.env.RESEARCH_DEFAULT_MODEL || DEFAULT_RESEARCH_MODEL;
-  const models = [primary, fallback ? normalizeModelEnvValue(fallback) : null]
-    .filter((model): model is string => Boolean(model))
-    .filter((model, index, all) => all.indexOf(model) === index);
-  const attempts: string[] = [];
-  while (attempts.length < maxAttempts) {
-    for (const model of models) {
-      if (attempts.length >= maxAttempts) break;
-      attempts.push(model);
-    }
-  }
-  return attempts;
+  return Array.from({ length: maxAttempts }, () => primary);
 }
 
 function compactFallback(input: AgentRequest): { request: AgentRequest; compacted: boolean } {
+  if (input.taskPacket.context_policy === 'focused-v1') return { request: input, compacted: false };
   const packet = { ...input.taskPacket };
   if (input.agentName === "asset-analyst") {
     if (Array.isArray(packet.evidence_claims)) packet.evidence_claims = packet.evidence_claims.slice(0, 15);
@@ -237,6 +237,7 @@ function repairContext(input: AgentRequest) {
 
 interface AgentRuntime {
   sessionId: string;
+  circuitScopeId: string;
   store: AgentSessionStore;
   hooks?: AgentRequest["hooks"];
 }
@@ -269,6 +270,9 @@ interface PassResult {
   toolCalls: Array<{ name: string; status: "success" | "failed" }>;
   messages: AgentMessage[];
   contextCompacted: boolean;
+  queueWaitMs: number;
+  executionMs: number;
+  circuitState: "closed" | "open";
 }
 
 async function executePass(params: {
@@ -292,6 +296,10 @@ async function executePass(params: {
   let currentTurnText = "";
   let currentTurnReasoning = "";
   let contextCompacted = false;
+  let queueWaitMs = 0;
+  let executionMs = 0;
+  let circuitState: "closed" | "open" = "closed";
+  const endpoint = params.provider.endpointKey || params.provider.id;
   const toolSummaries: PassResult["toolCalls"] = [];
   const repeatedCalls = new Map<string, number>();
   const seenToolCallIds = new Set<string>();
@@ -306,10 +314,14 @@ async function executePass(params: {
         toolCalls: [...toolSummaries],
         messages: [...messages],
         contextCompacted,
+        queueWaitMs,
+        executionMs,
+        circuitState,
       };
     }
     const effectiveInputTokens = inputTokens || Math.ceil(JSON.stringify(messages).length / 4);
-    const effectiveOutputTokens = outputTokens || Math.ceil(visibleRawText.length / 4);
+    const effectiveReasoningTokens = reasoningTokens || Math.ceil(currentTurnReasoning.length / 4);
+    const effectiveOutputTokens = outputTokens || Math.ceil(visibleRawText.length / 4) + effectiveReasoningTokens;
     const estimate = estimateCost(params.model, effectiveInputTokens, effectiveOutputTokens);
     const effectiveCost = costReportedByProvider ? costUsd : estimate.costUsd;
     return {
@@ -317,7 +329,7 @@ async function executePass(params: {
       usage: {
         inputTokens: effectiveInputTokens,
         outputTokens: effectiveOutputTokens,
-        reasoningTokens,
+        reasoningTokens: effectiveReasoningTokens,
         costUsd: effectiveCost,
         costSource: costReportedByProvider ? "provider" : estimate.costSource,
       },
@@ -325,30 +337,40 @@ async function executePass(params: {
       toolCalls: [...toolSummaries],
       messages: [...messages],
       contextCompacted,
+      queueWaitMs,
+      executionMs,
+      circuitState,
     };
   };
 
   const acquireRequestLock = async () => {
     if (!params.provider.acquireRequestLock) return undefined;
+    const queuedAt = Date.now();
     params.deadline.pauseTotal();
     params.deadline.pauseInactivity();
-    params.invocationDeadline.pauseTotal();
+    // Queue wait pauses the execution timer, never the checkpoint wall-clock ceiling.
     params.invocationDeadline.pauseInactivity();
     try {
       return await params.provider.acquireRequestLock(params.deadline.signal);
     } finally {
+      queueWaitMs += Date.now() - queuedAt;
       params.deadline.resumeInactivity();
       params.deadline.resumeTotal();
       params.invocationDeadline.resumeInactivity();
-      params.invocationDeadline.resumeTotal();
     }
   };
 
   try {
     while (true) {
+      circuitState = providerCircuitSnapshot(params.runtime.circuitScopeId, endpoint, params.model).state;
+      assertProviderCircuitAvailable(params.runtime.circuitScopeId, endpoint, params.model);
       const calls: ToolCall[] = [];
       currentTurnText = "";
       currentTurnReasoning = "";
+      let turnInputTokens = 0;
+      let turnOutputTokens = 0;
+      let turnReasoningTokens = 0;
+      let turnCostUsd = 0;
       let completed = false;
       const compacted = compactMessages(messages, params.policy.maxContextBytes);
       contextCompacted ||= compacted.compacted;
@@ -359,10 +381,15 @@ async function executePass(params: {
         });
       }
       const releaseRequestLock = await acquireRequestLock();
+      let executionStarted: number | undefined;
       try {
+        circuitState = providerCircuitSnapshot(params.runtime.circuitScopeId, endpoint, params.model).state;
+        assertProviderCircuitAvailable(params.runtime.circuitScopeId, endpoint, params.model);
+        executionStarted = Date.now();
         const stream = params.provider.stream({
         model: params.model,
         prompt: params.prompt,
+        sessionId: params.runtime.sessionId,
         messages: compacted.messages,
         temperature: 0.2,
         maxTokens: params.maxOutputTokens ?? params.policy.maxOutputTokens,
@@ -431,12 +458,19 @@ async function executePass(params: {
           }
         }
         if (event.type === "usage") {
-          inputTokens += event.usage.inputTokens || 0;
-          outputTokens += event.usage.outputTokens || 0;
-          reasoningTokens += event.usage.reasoningTokens || 0;
+          const nextInputTokens = event.usage.inputTokens || 0;
+          const nextOutputTokens = event.usage.outputTokens || 0;
+          const nextReasoningTokens = event.usage.reasoningTokens || 0;
+          inputTokens += Math.max(0, nextInputTokens - turnInputTokens);
+          outputTokens += Math.max(0, nextOutputTokens - turnOutputTokens);
+          reasoningTokens += Math.max(0, nextReasoningTokens - turnReasoningTokens);
+          turnInputTokens = Math.max(turnInputTokens, nextInputTokens);
+          turnOutputTokens = Math.max(turnOutputTokens, nextOutputTokens);
+          turnReasoningTokens = Math.max(turnReasoningTokens, nextReasoningTokens);
           if (event.usage.costUsd !== undefined) {
             costReportedByProvider = true;
-            costUsd += event.usage.costUsd;
+            costUsd += Math.max(0, event.usage.costUsd - turnCostUsd);
+            turnCostUsd = Math.max(turnCostUsd, event.usage.costUsd);
           }
         }
         if (event.type === "tool.call") {
@@ -458,10 +492,12 @@ async function executePass(params: {
           if (event.type === "response.completed") completed = true;
         }
       } finally {
+        if (executionStarted !== undefined) executionMs += Date.now() - executionStarted;
         releaseRequestLock?.();
       }
       if (!completed) throw new ProviderError("Provider did not emit completion", "malformed_stream");
       if (!calls.length && !currentTurnText.trim()) throw new ProviderError("Provider completed without text output", "malformed_stream");
+      circuitState = recordProviderSuccess(params.runtime.circuitScopeId, endpoint, params.model).state;
 
       const assistant = createMessage("assistant", [
         ...(currentTurnReasoning ? [{ type: "reasoning" as const, text: currentTurnReasoning }] : []),
@@ -560,6 +596,18 @@ async function executePass(params: {
     }
     return result;
   } catch (error) {
+    const errorCategory = category(error);
+    if (qualifiesForProviderCircuit(errorCategory, params.deadline.reason())) {
+      const snapshot = recordProviderFailure(params.runtime.circuitScopeId, endpoint, params.model);
+      circuitState = snapshot.state;
+      await emit(params.runtime, "provider.circuit", {
+        endpoint,
+        model: params.model,
+        state: snapshot.state,
+        consecutiveFailures: snapshot.consecutiveFailures,
+        openedAt: snapshot.openedAt,
+      }).catch(() => undefined);
+    }
     if (error instanceof ProviderError) {
       throw new ProviderError(error.message, error.category, { ...error.details, partial: snapshot() });
     }
@@ -578,6 +626,7 @@ async function executeTrackedPass(
     passes.push({
       kind, startedAt: new Date(started).toISOString(), completedAt: new Date().toISOString(),
       latencyMs: Date.now() - started, requestId: result.requestId,
+      queueWaitMs: result.queueWaitMs, executionMs: result.executionMs, circuitState: result.circuitState,
       inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens,
       reasoningTokens: result.usage.reasoningTokens, costUsd: result.usage.costUsd, costSource: result.usage.costSource, status: "success",
     });
@@ -587,6 +636,8 @@ async function executeTrackedPass(
     passes.push({
       kind, startedAt: new Date(started).toISOString(), completedAt: new Date().toISOString(),
       latencyMs: Date.now() - started, requestId: partial?.requestId,
+      queueWaitMs: partial?.queueWaitMs || 0, executionMs: partial?.executionMs || 0,
+      circuitState: partial?.circuitState || "closed",
       inputTokens: partial?.usage.inputTokens || 0, outputTokens: partial?.usage.outputTokens || 0,
       reasoningTokens: partial?.usage.reasoningTokens || 0, costUsd: partial?.usage.costUsd || 0, costSource: partial?.usage.costSource,
       status: "failed", errorCategory: category(error),
@@ -689,7 +740,10 @@ async function executeResearchAgent<TStructured>(input: AgentRequest, setup: Exe
     // A same-model source-reader retry must change the request. Replaying the
     // full packet can reproduce the same long-reasoning stall; keep the retry
     // bounded and deterministic by using the existing excerpt compactor.
-    const compactedFallback = fallback || index > 0
+    const priorTransportFailure = input.agentName === "source-reader"
+      && Array.isArray(input.taskPacket.prior_validation_errors)
+      && input.taskPacket.prior_validation_errors.some((error) => /connect|stream|terminated|timeout/i.test(String(error)));
+    const compactedFallback = fallback || index > 0 || priorTransportFailure
       ? compactFallback(input)
       : { request: input, compacted: false };
     const currentInput = compactedFallback.request;
@@ -698,13 +752,14 @@ async function executeResearchAgent<TStructured>(input: AgentRequest, setup: Exe
     const startedAt = new Date(started).toISOString();
     const deadline = createDeadlineController(
       setup.invocationDeadline.signal,
-      Math.max(1, setup.invocationDeadline.remainingMs()),
+      Math.max(1, Math.min(policy.attemptTimeoutMs, setup.invocationDeadline.remainingMs())),
       policy.inactivityTimeoutMs
     );
     let pass: PassResult = {
       rawText: "",
       usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, costUsd: 0, costSource: "unknown" },
       toolCalls: [], messages: [...setup.baseMessages], contextCompacted: false,
+      queueWaitMs: 0, executionMs: 0, circuitState: "closed",
     };
     let repairAttempted = false;
     let validationErrors: SchemaValidationError[] = [];
@@ -812,17 +867,22 @@ async function executeResearchAgent<TStructured>(input: AgentRequest, setup: Exe
           "",
           `Previous parsed response: ${repairCandidate(parsed, pass.rawText)}`,
         ].join("\n\n");
-        if (deadline.remainingMs() < 10_000) {
+        if (setup.invocationDeadline.remainingMs() < 10_000) {
           throw new ProviderError("Insufficient time remaining for structured-output repair", "provider_timeout", {
             timeoutType: "total", partial: pass,
           });
         }
         let repair: PassResult;
+        const repairDeadline = createDeadlineController(
+          setup.invocationDeadline.signal,
+          Math.max(1, Math.min(policy.repairTimeoutMs, setup.invocationDeadline.remainingMs())),
+          Math.min(60_000, policy.inactivityTimeoutMs)
+        );
         try {
           const repairMessage = textMessage("user", repairPrompt);
           await persistMessage(setup.runtime, repairMessage);
           repair = await executeTrackedPass("repair", {
-            provider, model, prompt: repairPrompt, agentName: input.agentName, policy, deadline,
+            provider, model, prompt: repairPrompt, agentName: input.agentName, policy, deadline: repairDeadline,
             invocationDeadline: setup.invocationDeadline,
             messages: [
               ...setup.baseMessages.filter((message) => message.role === "system"),
@@ -832,6 +892,14 @@ async function executeResearchAgent<TStructured>(input: AgentRequest, setup: Exe
             runtime: setup.runtime,
           }, passes);
         } catch (error) {
+          const repairReason = repairDeadline.reason();
+          if (repairReason === "total" || repairReason === "inactivity") {
+            const partial = error instanceof ProviderError ? error.details.partial : undefined;
+            throw new ProviderError(`Repair ${repairReason} timeout`, "provider_timeout", {
+              timeoutType: repairReason,
+              partial: partial || pass,
+            });
+          }
           if (error instanceof ProviderError) {
             const repairPartial = error.details.partial as PassResult | undefined;
             throw new ProviderError(error.message, error.category, {
@@ -853,10 +921,15 @@ async function executeResearchAgent<TStructured>(input: AgentRequest, setup: Exe
                 toolCalls: [...pass.toolCalls, ...(repairPartial?.toolCalls || [])],
                 messages: repairPartial?.messages || pass.messages,
                 contextCompacted: Boolean(pass.contextCompacted || repairPartial?.contextCompacted),
+                queueWaitMs: pass.queueWaitMs + (repairPartial?.queueWaitMs || 0),
+                executionMs: pass.executionMs + (repairPartial?.executionMs || 0),
+                circuitState: repairPartial?.circuitState || pass.circuitState,
               } satisfies PassResult,
             });
           }
           throw error;
+        } finally {
+          repairDeadline.cleanup();
         }
         pass = {
           ...repair,
@@ -910,6 +983,9 @@ async function executeResearchAgent<TStructured>(input: AgentRequest, setup: Exe
       const record: AgentAttempt = {
         attempt: attemptNumber, provider: provider.id, model, modelAttempt, requestId: pass.requestId,
         startedAt, completedAt: new Date(completed).toISOString(), latencyMs: completed - started,
+        queueWaitMs: passes.reduce((sum, item) => sum + (item.queueWaitMs || 0), 0),
+        executionMs: passes.reduce((sum, item) => sum + (item.executionMs || 0), 0),
+        circuitState: pass.circuitState,
         inputTokens: pass.usage.inputTokens, outputTokens: pass.usage.outputTokens, reasoningTokens: pass.usage.reasoningTokens,
         costUsd: Number(pass.usage.costUsd.toFixed(6)), costSource: pass.usage.costSource, status: "success", repairAttempted,
         fallback, compactionOccurred: compactedFallback.compacted || pass.contextCompacted,
@@ -958,10 +1034,17 @@ async function executeResearchAgent<TStructured>(input: AgentRequest, setup: Exe
       const record: AgentAttempt = {
         attempt: attemptNumber, provider: provider.id, model, modelAttempt, requestId: pass.requestId,
         startedAt, completedAt: new Date(completed).toISOString(), latencyMs: completed - started,
+        queueWaitMs: passes.reduce((sum, item) => sum + (item.queueWaitMs || 0), 0),
+        executionMs: passes.reduce((sum, item) => sum + (item.executionMs || 0), 0),
+        circuitState: pass.circuitState,
         inputTokens: pass.usage.inputTokens, outputTokens: pass.usage.outputTokens, reasoningTokens: pass.usage.reasoningTokens,
         costUsd: Number(pass.usage.costUsd.toFixed(6)), costSource: pass.usage.costSource, status: errorCategory === "cancellation" ? "cancelled" : "failed",
         errorCategory, errorMessage: redact(failure instanceof Error ? failure.message : String(failure)),
-        timeoutType: reason === "total" || reason === "inactivity" ? reason : undefined,
+        timeoutType: reason === "total" || reason === "inactivity"
+          ? reason
+          : failure instanceof ProviderError && (failure.details.timeoutType === "total" || failure.details.timeoutType === "inactivity")
+            ? failure.details.timeoutType
+            : undefined,
         repairAttempted, fallback, compactionOccurred: compactedFallback.compacted || pass.contextCompacted,
         inputBytes: Buffer.byteLength(buildTaskPrompt(currentInput, config), "utf8"), originalInputBytes: originalPromptBytes,
         rawResponseExcerpt: redact(pass.rawText.slice(0, 12_000)), validationErrors, toolCalls: pass.toolCalls,
@@ -1019,20 +1102,21 @@ async function initialMessages(
       for (const message of input.messages) appended.push(await persistMessage(runtime, message));
       return [...existing, ...appended.filter((message) => !existing.some((current) => current.id === message.id))];
     }
-    const message = textMessage("user", buildTaskPrompt(input, config), input.session?.inputId || randomUUID());
+    const inputId = input.session?.inputId || randomUUID();
+    if (existing.some((message) => message.id === inputId)) return existing;
+    const message = textMessage("user", buildTaskPrompt(input, config), inputId);
     const stored = await persistMessage(runtime, message);
     return existing.some((current) => current.id === stored.id) ? existing : [...existing, stored];
   }
 
   const messages: AgentMessage[] = [];
-  let skillContext = "";
-  if (input.skills?.length) {
-    const roots = input.skillPaths?.length
-      ? input.skillPaths
-      : [`${process.cwd()}/.agents/skills`, `${process.cwd()}/.opencode/skills`];
-    const discovered = await discoverSkills({ roots });
-    skillContext = renderSkillContext(selectSkills(discovered, input.skills));
-  }
+  const roots = [
+    ...(input.skillPaths || []),
+    `${process.cwd()}/.agents/skills`,
+    `${process.cwd()}/.opencode/skills`,
+  ];
+  const discovered = await discoverSkills({ roots });
+  const skillContext = renderSkillContext(selectSkills(discovered, [...new Set([...DEFAULT_SKILLS, ...(input.skills || [])])]));
   const system = [input.systemPrompt, skillContext].filter(Boolean).join("\n\n");
   if (system) messages.push(textMessage("system", system));
   if (input.messages?.length) messages.push(...input.messages);
@@ -1060,7 +1144,12 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
     agentName: input.agentName,
     metadata: { title: input.title, ...(input.session?.metadata || {}) },
   });
-  const runtime: AgentRuntime = { sessionId: session.id, store, hooks: input.hooks };
+  const runtime: AgentRuntime = {
+    sessionId: session.id,
+    circuitScopeId: input.session?.researchRunId || session.id,
+    store,
+    hooks: input.hooks,
+  };
   const operationId = input.session?.inputId || randomUUID();
   if (session.result && typeof session.result === "object" && "structured" in session.result) {
     if (session.status !== "completed") await store.updateSession(session.id, { status: "completed" });

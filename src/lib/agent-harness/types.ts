@@ -32,6 +32,7 @@ export interface ModelUsage {
 export interface ModelRequest {
   model: string;
   prompt: string;
+  sessionId?: string;
   messages?: AgentMessage[];
   temperature?: number;
   maxTokens?: number;
@@ -57,6 +58,8 @@ export interface ProviderHealth {
 
 export interface ModelProvider {
   readonly id: string;
+  /** Stable provider endpoint identity used by the run-scoped circuit breaker. */
+  readonly endpointKey?: string;
   stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent>;
   /** Reserve this provider endpoint before the request deadline starts. */
   acquireRequestLock?(signal?: AbortSignal): Promise<() => void>;
@@ -64,7 +67,12 @@ export interface ModelProvider {
 }
 
 export interface ExecutionPolicy {
+  /** Ceiling for the full checkpoint, including attempts and repairs. */
   totalTimeoutMs: number;
+  /** Execution ceiling for one model attempt. Queue wait is excluded. */
+  attemptTimeoutMs: number;
+  /** Execution ceiling for one structured-output repair. Queue wait is excluded. */
+  repairTimeoutMs: number;
   inactivityTimeoutMs: number;
   maxResponseBytes: number;
   maxContextBytes: number;
@@ -213,6 +221,9 @@ export interface AgentAttempt {
   startedAt: string;
   completedAt: string;
   latencyMs: number;
+  queueWaitMs?: number;
+  executionMs?: number;
+  circuitState?: "closed" | "open";
   inputTokens: number;
   outputTokens: number;
   reasoningTokens?: number;
@@ -241,6 +252,9 @@ export interface AgentPassTelemetry {
   startedAt: string;
   completedAt: string;
   latencyMs: number;
+  queueWaitMs?: number;
+  executionMs?: number;
+  circuitState?: "closed" | "open";
   requestId?: string;
   inputTokens: number;
   outputTokens: number;

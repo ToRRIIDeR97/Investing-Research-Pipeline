@@ -302,7 +302,7 @@ export function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQua
   const status: ResearchQualityGateResult["status"] = hasFailures
     ? "needs_more_work"
     : "pass";
-  const actionReadiness = actionReadinessFor(data, threshold, status);
+  const actionReadiness = actionReadinessFor(data, threshold, status, blockingMissingCoverage);
 
   return {
     status,
@@ -838,13 +838,18 @@ function addHumanReviewCoverage(
   }
 }
 
-function actionReadinessFor(
+export function actionReadinessFor(
   data: RunQualityData,
   threshold: RunTypeThreshold,
-  status: ResearchQualityGateResult["status"]
+  status: ResearchQualityGateResult["status"],
+  blockingMissingCoverage: MissingCoverageItem[] = []
 ): ResearchQualityGateResult["actionReadiness"] {
   if (data.run.run_type === "quick_scan") return "triage_only";
-  if (status !== "pass") return "research_scaffold";
+  const waitingOnlyForHuman = threshold.requireHumanReview
+    && data.reviewDecisions.length === 0
+    && blockingMissingCoverage.length > 0
+    && blockingMissingCoverage.every((item) => item.area === "human review");
+  if (status !== "pass" && !waitingOnlyForHuman) return "research_scaffold";
   if (threshold.requireHumanReview && data.reviewDecisions.length === 0) return "review_ready";
 
   const decision = String(data.reviewDecisions[0]?.status || "").toLowerCase();

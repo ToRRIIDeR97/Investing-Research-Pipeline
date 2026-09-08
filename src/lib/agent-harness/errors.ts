@@ -14,6 +14,7 @@ export type HarnessErrorCategory =
   | "response_limit"
   | "permission_denied"
   | "budget_exhausted"
+  | "provider_unavailable"
   | "unknown";
 
 export class ProviderError extends Error {

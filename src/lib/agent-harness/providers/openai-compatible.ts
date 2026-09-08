@@ -11,6 +11,8 @@ export interface ProviderOptions {
   baseUrl: string;
   apiKey?: string;
   allowedHosts?: string[];
+  clientName?: string;
+  sessionHeader?: string;
 }
 
 function safeErrorBody(value: string, apiKey: string) {
@@ -20,14 +22,20 @@ function safeErrorBody(value: string, apiKey: string) {
 
 export class OpenAICompatibleProvider implements ModelProvider {
   readonly id: string;
+  readonly endpointKey: string;
   private readonly baseUrl: string;
   private readonly apiKey: string;
+  private readonly clientName?: string;
+  private readonly sessionHeader?: string;
 
   constructor(options: ProviderOptions) {
     this.id = options.mode === "local" ? "local-openai-compatible" : "direct-openai-compatible";
     this.apiKey = options.apiKey || "";
+    this.clientName = options.clientName;
+    this.sessionHeader = options.sessionHeader;
     const url = this.validateUrl(options);
     this.baseUrl = url.toString().replace(/\/+$/, "");
+    this.endpointKey = this.baseUrl;
     if (options.mode === "direct" && !this.apiKey) {
       throw new ProviderError("Direct provider requires RESEARCH_MODEL_API_KEY", "invalid_request");
     }
@@ -68,9 +76,11 @@ export class OpenAICompatibleProvider implements ModelProvider {
     return url;
   }
 
-  private headers() {
+  private headers(request?: ModelRequest) {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
+    if (this.clientName) headers["User-Agent"] = this.clientName;
+    if (this.sessionHeader && request?.sessionId) headers[this.sessionHeader] = request.sessionId;
     return headers;
   }
 
@@ -99,7 +109,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     try {
       response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: "POST",
-        headers: this.headers(),
+        headers: this.headers(request),
         body: JSON.stringify({
           model: request.model,
           messages: request.messages?.length
@@ -120,6 +130,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     }
 
     const requestId = response.headers.get("x-request-id") || response.headers.get("request-id") || undefined;
+    let streamedRequestId = requestId;
     if (!response.ok) {
       const raw = safeErrorBody(await response.text().catch(() => ""), this.apiKey);
       const status = response.status;
@@ -165,6 +176,10 @@ export class OpenAICompatibleProvider implements ModelProvider {
         throw new ProviderError("Provider emitted malformed SSE JSON", "malformed_stream", { excerpt: data.slice(0, 300) });
       }
       const events: ModelEvent[] = [];
+      if (!streamedRequestId && typeof payload.id === "string" && payload.id) {
+        streamedRequestId = payload.id;
+        events.push({ type: "response.started", requestId: payload.id });
+      }
       const choice = payload.choices?.[0];
       const delta = choice?.delta;
       if (typeof delta?.reasoning_content === "string" && delta.reasoning_content) {

@@ -38,11 +38,14 @@ const verdicts = [
 ];
 
 export default function ReviewQueuePage() {
+  const [requestedRunId, setRequestedRunId] = useState<string | null>(null);
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<ReviewItem | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [reviewForm, setReviewForm] = useState({
     status: "approved_for_tracking",
     conviction: "",
@@ -55,7 +58,13 @@ export default function ReviewQueuePage() {
 
   useEffect(() => {
     fetchQueue();
+    setRequestedRunId(new URLSearchParams(window.location.search).get("run"));
   }, []);
+
+  useEffect(() => {
+    if (!requestedRunId || loading) return;
+    setSelectedItem(items.find((item) => item.run_id === requestedRunId) || null);
+  }, [items, loading, requestedRunId]);
 
   async function fetchQueue() {
     setLoading(true);
@@ -76,6 +85,8 @@ export default function ReviewQueuePage() {
   async function handleSubmitReview() {
     if (!selectedItem) return;
 
+    setSubmitting(true);
+    setSubmitError(null);
     try {
       const res = await fetch(`/api/research-runs/${selectedItem.run_id}/review`, {
         method: "POST",
@@ -87,12 +98,15 @@ export default function ReviewQueuePage() {
         }),
       });
 
-      if (res.ok) {
-        setSelectedItem(null);
-        fetchQueue();
-      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Unable to submit this decision");
+      setSelectedItem(null);
+      await fetchQueue();
     } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : "Unable to submit this decision");
       console.error("Failed to submit review:", error);
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -113,12 +127,12 @@ export default function ReviewQueuePage() {
   }, [items, searchQuery]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f4f7fa]">
+    <div className="flex min-h-screen overflow-hidden bg-[#f4f7fa]">
       <div className="flex min-w-0 flex-1 flex-col overflow-y-auto px-5 py-6 lg:px-8">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-gray-400">
-              <span>Staging</span>
+              <span>Workspace</span>
               <span>/</span>
               <span className="text-gray-600">Review Gates</span>
             </div>
@@ -128,16 +142,7 @@ export default function ReviewQueuePage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:w-[320px]">
-            <div className="rounded-md border border-gray-200 bg-white p-3 shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Open gates</div>
-              <div className="mt-1 font-mono text-[20px] font-bold text-black">{items.length}</div>
-            </div>
-            <div className="rounded-md border border-gray-200 bg-white p-3 shadow-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Selected</div>
-              <div className="mt-1 font-mono text-[20px] font-bold text-black">{selectedItem ? "001" : "000"}</div>
-            </div>
-          </div>
+          <div className="font-mono text-[11px] text-gray-400" aria-live="polite">{loading ? "Loading queue…" : `${filteredItems.length} visible · ${items.length} open`}</div>
         </div>
 
         <div className="mt-5 rounded-md border border-gray-200 bg-white p-3 shadow-sm">
@@ -148,6 +153,7 @@ export default function ReviewQueuePage() {
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="Search asset, run type, research question, or priority"
+              aria-label="Search review queue"
               className="h-10 w-full rounded-md border border-gray-200 bg-[#fbfcfd] pl-10 pr-3 font-mono text-[12px] outline-none transition-colors focus:border-gray-300"
             />
           </div>
@@ -159,8 +165,9 @@ export default function ReviewQueuePage() {
               Loading review gates...
             </div>
           ) : error ? (
-            <div className="rounded-md border border-red-200 bg-red-50 px-5 py-8 text-center text-sm text-red-700 shadow-sm">
-              {error}
+            <div className="flex flex-col items-center gap-3 rounded-md border border-red-200 bg-red-50 px-5 py-8 text-center text-sm text-red-700 shadow-sm" role="alert">
+              <span>{error}</span>
+              <button type="button" onClick={fetchQueue} className="inline-flex h-8 items-center gap-2 rounded-md border border-red-200 bg-white px-3 text-[11px] font-bold text-red-700 hover:border-red-300">Retry</button>
             </div>
           ) : filteredItems.length === 0 ? (
             <div className="rounded-md border border-gray-200 bg-white py-16 text-center shadow-sm">
@@ -169,18 +176,18 @@ export default function ReviewQueuePage() {
               <p className="mt-1 text-[12px] text-gray-400">Completed runs will appear here when they need a decision.</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm">
               {filteredItems.map((item) => {
                 const selected = selectedItem?.run_id === item.run_id;
                 return (
                   <div
                     key={item.run_id}
                     className={[
-                      "rounded-md border bg-white p-4 text-left shadow-sm transition-all hover:border-gray-300",
-                      selected ? "border-black ring-1 ring-black" : "border-gray-200",
+                      "border-b border-gray-100 p-3.5 text-left transition-colors last:border-0 hover:bg-[#fbfcfd]",
+                      selected ? "bg-[#fbfcfd] ring-1 ring-inset ring-black" : "",
                     ].join(" ")}
                   >
-                    <button type="button" onClick={() => setSelectedItem(item)} className="w-full text-left">
+                    <button type="button" onClick={() => { setSelectedItem(item); setSubmitError(null); }} className="w-full text-left" aria-expanded={selected}>
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
@@ -207,10 +214,7 @@ export default function ReviewQueuePage() {
                         </span>
                       </div>
                     </button>
-                    <Link
-                      href={`/assets/${item.asset_id}/view?run=${item.run_id}`}
-                      className="mt-3 inline-flex rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-[11px] font-bold text-sky-700 hover:border-sky-300 hover:bg-sky-100"
-                    >
+                    <Link href={`/assets/${item.asset_id}/research/general?run=${item.run_id}`} className="mt-3 inline-flex rounded-md border border-gray-200 bg-white px-3 py-1.5 text-[11px] font-bold text-gray-700 hover:border-gray-300 hover:text-black">
                       View research preview
                     </Link>
                   </div>
@@ -221,7 +225,8 @@ export default function ReviewQueuePage() {
         </div>
       </div>
 
-      <aside className="hidden w-[400px] shrink-0 flex-col border-l border-[#e8edf2] bg-white shadow-[-8px_0_30px_rgba(17,24,39,0.03)] lg:flex">
+      {selectedItem && <button type="button" onClick={() => setSelectedItem(null)} className="fixed inset-0 z-30 bg-black/20 lg:hidden" aria-label="Close decision desk" />}
+      <aside className={[selectedItem ? "fixed inset-y-0 right-0 z-40 flex w-full max-w-[400px]" : "hidden", "shrink-0 flex-col border-l border-[#e8edf2] bg-white shadow-[-8px_0_30px_rgba(17,24,39,0.03)] lg:static lg:flex lg:w-[400px]"].join(" ")} aria-label="Decision desk">
         {selectedItem ? (
           <>
             <div className="border-b border-gray-100 p-5">
@@ -235,10 +240,7 @@ export default function ReviewQueuePage() {
                   <p className="mt-1 text-[12px] leading-5 text-gray-500">
                     Review the automated research first, then record the investment decision and the conditions that would invalidate it.
                   </p>
-                  <Link
-                    href={`/assets/${selectedItem.asset_id}/view?run=${selectedItem.run_id}`}
-                    className="mt-3 inline-flex items-center rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] font-bold text-sky-700 transition-colors hover:border-sky-300 hover:bg-sky-100"
-                  >
+                  <Link href={`/assets/${selectedItem.asset_id}/research/general?run=${selectedItem.run_id}`} className="mt-3 inline-flex items-center rounded-md border border-gray-200 bg-white px-3 py-2 text-[11px] font-bold text-gray-700 transition-colors hover:border-gray-300 hover:text-black">
                     View research preview
                   </Link>
                 </div>
@@ -323,10 +325,11 @@ export default function ReviewQueuePage() {
                 <button
                   type="button"
                   onClick={handleSubmitReview}
+                  disabled={submitting}
                   className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-md bg-black px-4 text-[12px] font-bold text-white transition-colors hover:bg-black/90"
                 >
                   <Send size={14} />
-                  Submit Decision
+                  {submitting ? "Submitting…" : "Submit Decision"}
                 </button>
                 <button
                   type="button"
@@ -336,6 +339,7 @@ export default function ReviewQueuePage() {
                   Cancel
                 </button>
               </div>
+              {submitError && <p className="mt-3 text-[11px] leading-4 text-red-600" role="alert">{submitError}</p>}
             </div>
           </>
         ) : (

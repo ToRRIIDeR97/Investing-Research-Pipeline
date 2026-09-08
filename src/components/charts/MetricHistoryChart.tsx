@@ -61,12 +61,14 @@ export function MetricHistoryChart({
 
   // Build chart data: one row per period, with each metric as a key
   const chartData = periods.map((period) => {
-    const row: Record<string, string | number> = { period };
+    const row: Record<string, string | number | null> = { period };
     for (const name of metricNames) {
       const point = data.find(
         (d) => d.period === period && d.metric_name === name
       );
-      row[name] = point?.value ?? 0;
+      // Preserve missing observations as null so the chart shows a gap rather
+      // than implying a zero-valued observation that was never recorded.
+      row[name] = point?.value ?? null;
     }
     return row;
   });

@@ -8,6 +8,8 @@ export interface AnthropicProviderOptions {
   baseUrl: string;
   apiKey: string;
   allowedHosts: string[];
+  clientName?: string;
+  sessionHeader?: string;
 }
 
 function validateBaseUrl(baseUrl: string, allowedHosts: string[]) {
@@ -30,11 +32,13 @@ function safeBody(value: string, apiKey = "") {
 
 export class AnthropicCompatibleProvider implements ModelProvider {
   readonly id = "direct-anthropic-compatible";
+  readonly endpointKey: string;
   private readonly baseUrl: string;
 
   constructor(private readonly options: AnthropicProviderOptions) {
     if (!options.apiKey) throw new ProviderError("Anthropic-compatible provider requires an API key", "invalid_request");
     this.baseUrl = validateBaseUrl(options.baseUrl, options.allowedHosts);
+    this.endpointKey = this.baseUrl;
   }
 
   acquireRequestLock(signal?: AbortSignal) {
@@ -54,6 +58,8 @@ export class AnthropicCompatibleProvider implements ModelProvider {
           "Content-Type": "application/json",
           "x-api-key": this.options.apiKey,
           "anthropic-version": "2023-06-01",
+          ...(this.options.clientName ? { "User-Agent": this.options.clientName } : {}),
+          ...(this.options.sessionHeader && request.sessionId ? { [this.options.sessionHeader]: request.sessionId } : {}),
         },
         body: JSON.stringify({
           model: request.model,
@@ -81,6 +87,7 @@ export class AnthropicCompatibleProvider implements ModelProvider {
     }
 
     const requestId = response.headers.get("request-id") || response.headers.get("x-request-id") || undefined;
+    let streamedRequestId = requestId;
     if (!response.ok) {
       const body = safeBody(await response.text().catch(() => ""), this.options.apiKey);
       let category: HarnessErrorCategory = "unknown";
@@ -124,6 +131,11 @@ export class AnthropicCompatibleProvider implements ModelProvider {
         throw new ProviderError(`Provider stream error: ${safeBody(payload.error?.message || "unknown", this.options.apiKey)}`, "server_error");
       }
       const events: ModelEvent[] = [];
+      const payloadRequestId = payload.type === "message_start" ? payload.message?.id : undefined;
+      if (!streamedRequestId && typeof payloadRequestId === "string" && payloadRequestId) {
+        streamedRequestId = payloadRequestId;
+        events.push({ type: "response.started", requestId: payloadRequestId });
+      }
       if (payload.type === "message_start" && payload.message?.usage) {
         events.push({ type: "usage", usage: { inputTokens: payload.message.usage.input_tokens } });
       }

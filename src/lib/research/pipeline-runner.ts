@@ -15,12 +15,15 @@ import {
   failRun,
   pauseForHumanReview,
   getRunProgress,
+  startNextStage,
 } from "@/lib/workflow/orchestrator";
 import { getStageConfig, shouldSkipOptionalBacktest } from "@/lib/workflow/stages";
 import { loadRunContext, type ResearchRunContext } from "./run-context";
 import { getStageHandler } from "./stage-registry";
 import { registerCoreHandlers } from "./handlers";
 import { CURRENT_PIPELINE_VERSION } from "./version";
+import { STAGE_OUTPUT_CONTRACTS } from "./stage-contracts";
+import { ReportReviewRequiredError } from './report-composition';
 
 export interface SystemPipelineResult {
   runId: string;
@@ -47,18 +50,18 @@ async function settleStageArtifacts(
   stageId: string,
   status: "validated" | "rejected"
 ) {
-  // Handlers may persist an artifact before their final validator runs. Keep
-  // that write invisible until validation succeeds; rejected attempts remain
-  // auditable without becoming downstream inputs.
+  if (status === 'rejected') return; // Stage gaps do not invalidate independently checked outputs.
+  const [stage] = await sql`SELECT stage_key FROM research_stages WHERE id = ${stageId}`;
+  const keys = STAGE_OUTPUT_CONTRACTS[String(stage?.stage_key)]?.requiredKeys || [];
+  if (!keys.length) return;
+  // Promote only this stage's outputs. Stage dependencies keep consumers
+  // waiting, while independently checked siblings survive a stage retry.
   await sql`
     UPDATE research_artifacts
     SET status = ${status}, updated_at = NOW()
     WHERE research_run_id = ${runId}
       AND status IN ('draft', 'validated')
-      AND updated_at >= COALESCE(
-        (SELECT started_at FROM research_stages WHERE id = ${stageId}),
-        NOW()
-      )
+      AND artifact_type = ANY(${keys})
   `;
 }
 
@@ -68,12 +71,18 @@ async function stageInvalidTasks(
   stageId: string,
   errors: string[]
 ) {
+  const [stage] = await sql`SELECT stage_key FROM research_stages WHERE id = ${stageId}`;
+  const keys = (STAGE_OUTPUT_CONTRACTS[String(stage?.stage_key)]?.requiredKeys || [])
+    .filter((key) => errors.some((error) => error.startsWith(`${key}:`)));
+  if (!keys.length) return;
   const tasks = await sql`
     SELECT id, agent_name, task_type, output_json
     FROM research_tasks
     WHERE research_run_id = ${runId} AND stage_id = ${stageId} AND status = 'completed'
+      AND output_json ?| ${keys}
   `;
   for (const task of tasks) {
+    await sql`UPDATE research_tasks SET status = 'failed', validation_status = 'invalid', failure_reason = ${errors.join('; ')} WHERE id = ${task.id}`;
     await sql`
       INSERT INTO agent_output_staging (
         research_run_id, stage_id, task_id, target_table,
@@ -88,6 +97,8 @@ async function stageInvalidTasks(
       )
     `;
   }
+  await sql`UPDATE research_artifacts SET status = 'rejected', updated_at = NOW()
+    WHERE research_run_id = ${runId} AND artifact_type = ANY(${keys})`;
 }
 
 const MAX_ITERATIONS = 96;
@@ -175,6 +186,16 @@ async function result(sql: ReturnType<typeof postgres>, runId: string, notes: st
   };
 }
 
+async function executeStageHandler(
+  sql: ReturnType<typeof postgres>, runId: string, stage: StageRow
+): Promise<{ stage: StageRow; validation: Awaited<ReturnType<NonNullable<ReturnType<typeof getStageHandler>>["validate"]>> }> {
+  const handler = getStageHandler(stage.stage_key);
+  if (!handler) throw new Error(`No stage handler registered for stage "${stage.stage_key}"; failing closed`);
+  const ctx = await loadRunContext(sql, runId);
+  const output = await handler.execute(ctx);
+  return { stage, validation: await handler.validate(ctx, output) };
+}
+
 /**
  * Execute (or resume) a current-version research run.
  */
@@ -215,14 +236,6 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
             WHERE id = ${failedStage.id}
           `;
           await tx`
-            UPDATE research_stages
-            SET status = 'pending', failure_reason = NULL, completed_at = NULL,
-                started_at = NULL, validation_result_json = NULL, updated_at = NOW()
-            WHERE research_run_id = ${runId}
-              AND stage_order > ${failedStage.stage_order}
-              AND status IN ('cancelled', 'failed', 'running', 'waiting_for_human')
-          `;
-          await tx`
             UPDATE research_runs
             SET status = 'running', failure_reason = NULL, completed_at = NULL, updated_at = NOW()
             WHERE id = ${runId}
@@ -234,8 +247,8 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
       }
 
       const stages = await getStages(sql, runId);
-      const manuallyFailed = stages.find(
-        (stage) => stage.status === "failed" && !String(stage.failure_reason || "").startsWith("Failed after")
+      const manuallyFailed = stages.find((stage) =>
+        stage.status === "failed" && getStageConfig(stage.stage_key)?.failureState === "fail_run"
       );
       if (manuallyFailed) {
         const reason = `Run contains a failed stage (${manuallyFailed.stage_key}): ${manuallyFailed.failure_reason || "stage failure"}`;
@@ -247,6 +260,59 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
       if (waiting) {
         notes.push(`Stage ${waiting.stage_key} is waiting for human approval`);
         return await result(sql, runId, notes);
+      }
+
+      const running = stages.filter((stage) => stage.status === "running");
+      if (running.length > 1) {
+        const executions = await Promise.allSettled(running.map((stage) => executeStageHandler(sql, runId, stage)));
+        let fatal = false;
+        const completed: StageRow[] = [];
+        for (let index = 0; index < executions.length; index += 1) {
+          const stage = running[index];
+          const execution = executions[index];
+          if (execution.status === "fulfilled" && execution.value.validation.valid) {
+            completed.push(stage);
+            continue;
+          }
+          const validation = execution.status === "fulfilled" ? execution.value.validation : null;
+          const failure = execution.status === "rejected" ? execution.reason : null;
+          const message = validation
+            ? validation.errors.join("; ")
+            : failure instanceof Error ? failure.message : String(failure);
+          const retryCount = retryCountOf(stage);
+          const maxRetries = Number(stage.max_retries ?? 2);
+          if (validation && retryCount < maxRetries) {
+            await stageInvalidTasks(sql, runId, stage.id, validation.errors);
+            await sql`
+              UPDATE research_stages SET status = 'pending', started_at = NULL,
+                validation_result_json = ${sql.json({ ...validation, retryCount: retryCount + 1 })}, updated_at = NOW()
+              WHERE id = ${stage.id}
+            `;
+            notes.push(`Stage ${stage.stage_key} validation failed (retry ${retryCount + 1}/${maxRetries})`);
+            continue;
+          }
+          const reason = `Stage "${stage.stage_key}" failed: ${message}`;
+          if (getStageConfig(stage.stage_key)?.failureState === "fail_run") {
+            await failRun(runId, reason);
+            fatal = true;
+            break;
+          }
+          await sql`
+            UPDATE research_stages SET status = 'failed', failure_reason = ${reason}, completed_at = NOW(), updated_at = NOW()
+            WHERE id = ${stage.id}
+          `;
+          notes.push(reason);
+        }
+        if (fatal) return await result(sql, runId, notes);
+        for (const stage of completed) {
+          const advance = await advanceStage(runId);
+          if (!advance.success && advance.action !== "retry") {
+            notes.push(`Stage ${stage.stage_key} could not advance: ${advance.error || advance.action}`);
+            return await result(sql, runId, notes);
+          }
+          notes.push(`Completed stage ${stage.stage_key}`);
+        }
+        continue;
       }
 
       let active = stages.find((stage) => stage.status === "running");
@@ -332,19 +398,15 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
       try {
         ctx = await loadRunContext(sql, runId);
         const output = await handler.execute(ctx);
+        if (active.stage_key === 'ai_reviewer' && (output as any)?.repair_requested) {
+          notes.push('AI review scheduled one focused repair round; unaffected tasks remain reusable');
+          continue;
+        }
         const handlerValidation = await handler.validate(ctx, output);
 
         if (!handlerValidation.valid) {
           await settleStageArtifacts(sql, runId, active.id, "rejected");
           await stageInvalidTasks(sql, runId, active.id, handlerValidation.errors);
-          await sql`
-            UPDATE research_tasks
-            SET status = 'failed', validation_status = 'invalid',
-                validation_result_json = ${sql.json(handlerValidation as any)},
-                failure_reason = ${handlerValidation.errors.join("; ").slice(0, 4000)},
-                updated_at = NOW()
-            WHERE stage_id = ${active.id} AND status = 'completed'
-          `;
           const retryCount = retryCountOf(active);
           const maxRetries = Number(active.max_retries ?? 2);
           if (retryCount < maxRetries) {
@@ -354,7 +416,7 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
                   updated_at = NOW()
               WHERE id = ${active.id}
             `;
-            notes.push(`Stage ${active.stage_key} handler validation failed (retry ${retryCount + 1}/${maxRetries})`);
+            notes.push(`Stage ${active.stage_key} handler validation failed (retry ${retryCount + 1}/${maxRetries}): ${handlerValidation.errors.join('; ')}`);
             continue;
           }
 
@@ -373,29 +435,37 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
                   completed_at = NOW(), updated_at = NOW()
               WHERE id = ${active.id}
             `;
-            const remaining = await sql`
-              UPDATE research_stages
-              SET status = 'running', started_at = NOW(), updated_at = NOW()
-              WHERE id = (
-                SELECT id FROM research_stages
-                WHERE research_run_id = ${runId} AND status = 'pending'
-                ORDER BY stage_order ASC LIMIT 1
-              )
-              RETURNING stage_key
-            `;
-            if (remaining.length === 0) {
-              await failRun(runId, reason);
-            }
+            await startNextStage(runId);
           }
           notes.push(reason);
           continue;
         }
         await settleStageArtifacts(sql, runId, active.id, "validated");
       } catch (error) {
+        if (error instanceof ReportReviewRequiredError) {
+          notes.push(error.message);
+          return await result(sql, runId, notes);
+        }
         await settleStageArtifacts(sql, runId, active.id, "rejected").catch(() => undefined);
-        await markPipelineFailure(sql, runId, error);
-        notes.push(`Stage ${active.stage_key} execution failed: ${error instanceof Error ? error.message : String(error)}`);
-        return await result(sql, runId, notes);
+        const reason = `Stage ${active.stage_key} execution failed: ${error instanceof Error ? error.message : String(error)}`;
+        const failureState = getStageConfig(active.stage_key)?.failureState || "fail_run";
+        if (failureState === "fail_run") {
+          await markPipelineFailure(sql, runId, error);
+          notes.push(reason);
+          return await result(sql, runId, notes);
+        }
+        if (failureState === "pause_for_human") {
+          await pauseForHumanReview(runId, reason);
+          notes.push(reason);
+          return await result(sql, runId, notes);
+        }
+        await sql`
+          UPDATE research_stages SET status = 'failed', failure_reason = ${reason}, completed_at = NOW(), updated_at = NOW()
+          WHERE id = ${active.id}
+        `;
+        notes.push(reason);
+        await startNextStage(runId);
+        continue;
       }
 
       const advance = await advanceStage(runId);

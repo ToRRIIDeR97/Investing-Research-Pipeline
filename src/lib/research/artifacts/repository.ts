@@ -71,7 +71,7 @@ export function createArtifactRepository(db: Db) {
         .limit(1);
       if (existing.length > 0) {
         const current = existing[0];
-        if (["accepted", "superseded", "rejected"].includes(current.status)) {
+        if (["accepted", "superseded"].includes(current.status)) {
           return current;
         }
         const [updated] = await db

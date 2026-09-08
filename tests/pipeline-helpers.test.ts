@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canonicalMetricPlan, ensureFilingFamilyCoverage, evidenceRelevantToModule, moduleCompletion, normalizeSourceGap, positiveFiniteNumber, reconcileMetricObservations, selectLatestFact, selectRelevantChunks } from "../src/lib/research/pipeline-helpers";
+import { canonicalMetricPlan, ensureFilingFamilyCoverage, evidenceRelevantToModule, moduleCompletion, normalizeSourceGap, positiveFiniteNumber, reconcileMetricObservations, selectLatestFact, selectRelevantChunks, selectScopedRelevantChunks } from "../src/lib/research/pipeline-helpers";
 import { isApprovedHumanDecision, isKnownHumanDecision } from "../src/lib/workflow/orchestrator";
 import { inferMissingSourceCoverage } from "../src/lib/workflow/quality-gates";
 import { reviewCoverageItems } from "../src/lib/workflow/validators";
@@ -42,6 +42,20 @@ test("many source openings cannot crowd relevant middle-document evidence out of
   assert.equal(selected.length, 25);
   assert.ok(selected.some((chunk) => chunk.id === "s24-c1"));
   assert.ok(selected.filter((chunk) => chunk.chunkIndex === 0).length < selected.length);
+});
+
+test("scoped retrieval keeps member and segment contribution evidence from competing", () => {
+  const chunks = [
+    { id: "members", sourceId: "q1", parseId: "p1", chunkIndex: 1, charStart: 100, charEnd: 200, sourceTitle: "Q1", sourceType: "10-q", text: "Total members reached 10 million." },
+    { id: "products", sourceId: "q2", parseId: "p2", chunkIndex: 1, charStart: 100, charEnd: 200, sourceTitle: "Q2", sourceType: "10-q", text: "Total products reached 15 million." },
+    { id: "contribution", sourceId: "q3", parseId: "p3", chunkIndex: 1, charStart: 100, charEnd: 200, sourceTitle: "Q3", sourceType: "10-q", text: "Financial Services contribution margin was 45%." },
+  ];
+  const selected = selectScopedRelevantChunks(chunks, [
+    { key: "engagement", terms: ["members", "total products"], maxChunks: 2 },
+    { key: "segments", terms: ["contribution margin"], maxChunks: 1 },
+  ]);
+  assert.deepEqual(new Set(selected.map((chunk) => chunk.id)), new Set(["members", "products", "contribution"]));
+  assert.deepEqual(selected.find((chunk) => chunk.id === "contribution")?.retrievalScopes, ["segments"]);
 });
 
 test("filing-family coverage retains annual and quarterly primary filings", () => {

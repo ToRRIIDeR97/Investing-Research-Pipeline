@@ -3,8 +3,11 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { isEventLikeHistoricalMetricKey } from "@/lib/research/history/normalizer";
 import { missingRequiredValuationMethods } from "@/lib/research/valuation/contracts";
+import { renderComposedReport, reportNumericValues, type ReportComposition } from '@/lib/research/report-composition';
 
 export interface ResearchReportData {
+  composition?: ReportComposition;
+  compositionValues?: Record<string, number>;
   runId: string;
   asset: {
     canonical_name: string;
@@ -87,6 +90,18 @@ export interface ResearchReportData {
     reverse_valuations?: Array<{
       method: string;
       implied_growth: number;
+      return_on_equity?: number;
+      cost_of_equity?: number;
+      roe_minus_cost_of_equity?: number;
+      assessment?: string;
+    }>;
+    methods?: Array<{
+      method_name: string;
+      method_family: string;
+      rationale: string;
+      inputs: Array<{ key: string; value: number; unit: string; source: string }>;
+      formulas: Array<{ label: string; operation: string; args: Array<string | number>; unit: string }>;
+      scenarios: Array<{ scenarioType: string; probability: number; valueAnchor: number }>;
     }>;
   };
   decision?: {
@@ -97,6 +112,17 @@ export interface ResearchReportData {
       bull_return: number;
       probability_weighted_return?: number;
       permanent_loss_limit?: number;
+      prediction_price?: number;
+      currency?: string;
+      rows?: Array<{
+        scenario_type: string;
+        target_date: string;
+        target_price: number;
+        dividend_per_share: number;
+        total_return: number;
+        probability: number;
+        weighted_contribution: number;
+      }>;
     };
     risks?: Array<{
       risk_name: string;
@@ -114,8 +140,10 @@ export interface ResearchReportData {
       threshold: string;
     }>;
     monitoring?: Array<{
+      metric_key?: string;
       kpi: string;
       model_input_affected: string;
+      history?: Array<{ period_end: string; value: number; unit: string }>;
     }>;
     decision_record?: {
       decision: string;
@@ -191,6 +219,7 @@ export function mapArtifactsToReportData(params: {
   const valuation = get("valuation_scenario_set");
   const pricePath = get("annual_price_target_path");
   const reverseValuation = get("reverse_valuation");
+  const valuationMethodRun = get("valuation_method_run");
   const thesis = get("investment_thesis");
   const riskRegister = get("risk_register");
   const catalystRegister = get("catalyst_register");
@@ -209,6 +238,8 @@ export function mapArtifactsToReportData(params: {
 
   return {
     runId: params.runId,
+    composition: get('report_composition'),
+    compositionValues: reportNumericValues(params.artifacts),
     asset: params.asset,
     isTestRun: params.isTestRun,
     genesis: company || founder || history || dna ? {
@@ -281,7 +312,7 @@ export function mapArtifactsToReportData(params: {
         summary: [row.end_market, row.customer_economics, row.competitive_response, row.margin_formation].filter(Boolean).join(" — "),
       })),
     } : undefined,
-    valuation: valuation || pricePath || reverseValuation ? {
+    valuation: valuation || pricePath || reverseValuation || valuationMethodRun ? {
       terminal_year: valuation?.terminal_year || Math.max(0, ...(pricePath?.price_target_path || []).map((row: any) => row.fiscal_year)),
       scenarios: valuation ? ["bear", "base", "bull"].map((scenario) => ({
         scenario_type: scenario as "bear" | "base" | "bull",
@@ -295,7 +326,12 @@ export function mapArtifactsToReportData(params: {
       reverse_valuations: reverseValuation ? [{
         method: pricePath?.price_target_path?.[0]?.valuation_method || "reverse valuation",
         implied_growth: reverseValuation.implied_growth,
+        return_on_equity: reverseValuation.return_on_equity,
+        cost_of_equity: reverseValuation.cost_of_equity,
+        roe_minus_cost_of_equity: reverseValuation.roe_minus_cost_of_equity,
+        assessment: reverseValuation.roe_vs_coe_assessment,
       }] : undefined,
+      methods: valuationMethodRun?.methods,
     } : undefined,
     decision: thesis || riskRegister || catalystRegister || expectedReturn || breakers || monitoring || confidence || decisionRecord ? {
       thesis_statement: thesis?.thesis_statement,
@@ -547,6 +583,24 @@ export function generateMarkdownReport(data: ResearchReportData): string {
       sections.push(`| ${row.scenario_type} | ${row.terminal_anchor} |`);
     }
     sections.push("");
+    for (const method of data.valuation.methods || []) {
+      sections.push(`### ${method.method_name}`);
+      sections.push("");
+      sections.push(`${method.rationale}`);
+      sections.push("");
+      sections.push("| Input | Value | Unit | Source |");
+      sections.push("|---|---:|---|---|");
+      for (const input of method.inputs || []) sections.push(`| ${input.key} | ${input.value} | ${input.unit} | ${input.source} |`);
+      sections.push("");
+      sections.push("| Calculation | Operation | Arguments | Unit |");
+      sections.push("|---|---|---|---|");
+      for (const formula of method.formulas || []) sections.push(`| ${formula.label} | ${formula.operation} | ${(formula.args || []).join(", ")} | ${formula.unit} |`);
+      sections.push("");
+      sections.push("| Scenario | Probability | Per-share value |");
+      sections.push("|---|---:|---:|");
+      for (const scenario of method.scenarios || []) sections.push(`| ${scenario.scenarioType} | ${formatPercent(scenario.probability)} | ${scenario.valueAnchor} |`);
+      sections.push("");
+    }
   } else {
     addMissingSection("Valuation Scenario Set");
   }
@@ -583,10 +637,10 @@ export function generateMarkdownReport(data: ResearchReportData): string {
   // 18. Reverse valuation
   addHeading(18, "Reverse valuation");
   if (data.valuation?.reverse_valuations && data.valuation.reverse_valuations.length > 0) {
-    sections.push("| Valuation Method | Implied Growth Rate |");
-    sections.push("|---|---|");
+    sections.push("| Valuation Method | Implied Growth Rate | ROE | Cost of Equity | ROE − CoE | Assessment |");
+    sections.push("|---|---:|---:|---:|---:|---|");
     for (const row of data.valuation.reverse_valuations) {
-      sections.push(`| ${row.method} | ${row.implied_growth * 100}% |`);
+      sections.push(`| ${row.method} | ${row.implied_growth * 100}% | ${row.return_on_equity == null ? "N/A" : formatPercent(row.return_on_equity)} | ${row.cost_of_equity == null ? "N/A" : formatPercent(row.cost_of_equity)} | ${row.roe_minus_cost_of_equity == null ? "N/A" : formatPercent(row.roe_minus_cost_of_equity)} | ${row.assessment || "N/A"} |`);
     }
     sections.push("");
   } else {
@@ -597,6 +651,12 @@ export function generateMarkdownReport(data: ResearchReportData): string {
   addHeading(19, "Expected-return matrix");
   if (data.decision?.expected_return_matrix) {
     const mat = data.decision.expected_return_matrix;
+    if (mat.rows?.length) {
+      sections.push("| Scenario | Target date | Target price | Dividend | Return | Probability | Weighted contribution |");
+      sections.push("|---|---|---:|---:|---:|---:|---:|");
+      for (const row of mat.rows) sections.push(`| ${row.scenario_type} | ${row.target_date} | ${row.target_price} | ${row.dividend_per_share} | ${formatPercent(row.total_return)} | ${formatPercent(row.probability)} | ${formatPercent(row.weighted_contribution)} |`);
+      sections.push("");
+    }
     sections.push(`- **Bear Case Return**: ${formatPercent(mat.bear_return)}`);
     sections.push(`- **Base Case Return**: ${formatPercent(mat.base_return)}`);
     sections.push(`- **Bull Case Return**: ${formatPercent(mat.bull_return)}`);
@@ -644,10 +704,11 @@ export function generateMarkdownReport(data: ResearchReportData): string {
   // 22. Monitoring dashboard
   addHeading(22, "Monitoring dashboard");
   if (data.decision?.monitoring && data.decision.monitoring.length > 0) {
-    sections.push("| KPI | Affected Model Input |");
-    sections.push("|---|---|");
+    sections.push("| KPI | Metric key | Last four observations | Affected Model Input |");
+    sections.push("|---|---|---|---|");
     for (const row of data.decision.monitoring) {
-      sections.push(`| ${row.kpi} | ${row.model_input_affected} |`);
+      const history = (row.history || []).map((point) => `${point.period_end}: ${point.value} ${point.unit}`).join("; ");
+      sections.push(`| ${row.kpi} | ${row.metric_key || "unmapped"} | ${history || "N/A"} | ${row.model_input_affected} |`);
     }
     sections.push("");
   } else {
@@ -721,7 +782,8 @@ export function generateMarkdownReport(data: ResearchReportData): string {
   sections.push("---");
   sections.push("*Generated by Research OS*");
 
-  return sections.join("\n");
+  const markdown = sections.join("\n");
+  return data.composition ? renderComposedReport(markdown, data.composition, data.compositionValues || {}) : markdown;
 }
 
 function formatPercent(value: number): string {

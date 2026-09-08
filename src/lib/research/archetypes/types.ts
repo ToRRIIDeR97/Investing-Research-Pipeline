@@ -55,6 +55,16 @@ export type OptionalBranch = {
   rationale: string;
 };
 
+export type EvidenceCoverageSlot = {
+  key: string;
+  priority: "mandatory" | "important" | "optional";
+  retrievalQueries: string[];
+  preferredSourceRoles: string[];
+  preferredSourceTypes: string[];
+  minimumAcceptedClaims: number;
+  periodCoverage?: { minimumPeriods: number; periodicity?: "quarterly" | "annual" };
+};
+
 export type BusinessArchetype = {
   key: string;
   name: string;
@@ -67,6 +77,7 @@ export type BusinessArchetype = {
   required_scenario_drivers: ScenarioDriverRequirement[];
   monitoring_kpis: MonitoringKPI[];
   optional_branches: OptionalBranch[];
+  evidence_coverage_slots?: EvidenceCoverageSlot[];
   overlays: string[];
   conflicts_with: string[];
 };
@@ -83,6 +94,7 @@ export type ArchetypeOverlay = {
   required_scenario_drivers: ScenarioDriverRequirement[];
   monitoring_kpis: MonitoringKPI[];
   optional_branches: OptionalBranch[];
+  evidence_coverage_slots?: EvidenceCoverageSlot[];
 };
 
 export type ComposedProfile = {
@@ -98,6 +110,7 @@ export type ComposedProfile = {
   required_scenario_drivers: ScenarioDriverRequirement[];
   monitoring_kpis: MonitoringKPI[];
   optional_branches: OptionalBranch[];
+  evidence_coverage_slots: EvidenceCoverageSlot[];
   backtest_required: boolean;
   composition_conflicts: string[];
   composition_warnings: string[];

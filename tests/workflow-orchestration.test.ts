@@ -4,9 +4,12 @@ import {
   getAllStagesForRun,
   getStageConfig,
   STAGE_CONFIGS,
+  readyStageKeys,
+  stageDependencies,
   shouldSkipOptionalBacktest,
 } from "@/lib/workflow/stages";
 import {
+  actionReadinessFor,
   evaluateLoadedResearchQuality,
 } from "@/lib/workflow/quality-gates";
 import {
@@ -17,6 +20,15 @@ import type { ResearchArtifact } from "@/lib/research/artifacts/contracts";
 const uuid1 = "00000000-0000-0000-0000-000000000001";
 
 describe("workflow orchestration and quality gates (Component 13)", () => {
+  it("marks a completed report awaiting only human approval as review ready", () => {
+    assert.equal(actionReadinessFor(
+      { run: { run_type: "full_initiation_report" }, reviewDecisions: [] } as any,
+      { requireHumanReview: true } as any,
+      "needs_more_work",
+      [{ key: "human_review_decision", severity: "high", area: "human review", description: "Human review required.", requiredForCompletion: true }]
+    ), "review_ready");
+  });
+
   it("C13-T1: Evidence exists but analysis artifact is evidence_only -> validation fails", () => {
     const art = {
       id: uuid1,
@@ -72,6 +84,24 @@ describe("workflow orchestration and quality gates (Component 13)", () => {
     assert.equal(shouldSkipOptionalBacktest("decision_synthesis", false), false);
     assert.equal(shouldSkipOptionalBacktest("backtest_review", true), false);
     assert.ok(getStageConfig("decision_synthesis")?.entryCriteria.includes("asset_valuation_completed"));
+  });
+
+  it("releases independent evidence branches together", () => {
+    const stages = STAGE_CONFIGS.map((stage) => ({
+      stage_key: stage.key,
+      status: stage.key === "evidence_extraction" ? "completed" : stage.order < 7 ? "completed" : "pending",
+    }));
+    assert.deepEqual(
+      readyStageKeys(stages).sort(),
+      ["business_process_analysis", "company_genesis", "historical_record"].sort()
+    );
+    assert.deepEqual(stageDependencies("business_process_analysis"), ["evidence_extraction"]);
+    assert.deepEqual(stageDependencies("indicator_design"), ["historical_record"]);
+  });
+
+  it("makes reviewed backtests a conditional decision dependency", () => {
+    assert.deepEqual(stageDependencies("decision_synthesis", false), ["asset_valuation", "company_genesis"]);
+    assert.deepEqual(stageDependencies("decision_synthesis", true), ["asset_valuation", "company_genesis", "backtest_review"]);
   });
 
   it("C13-T6: V3 quality gates detect missing genesis, diagnosis, moat, operating model/scenarios", () => {

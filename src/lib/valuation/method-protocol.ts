@@ -249,10 +249,11 @@ export function executeValuationMethod(
     knownKeys.add(input.key);
     units.set(input.key, input.unit);
     if (input.currency) currencies.set(input.key, input.currency);
-    const metric = input.source === "metric" && input.metric_key ? metrics.get(input.metric_key) : undefined;
+    const metricKey = input.metric_key || (metrics.has(input.key) ? input.key : undefined);
+    const metric = input.source === "metric" && metricKey ? metrics.get(metricKey) : undefined;
     const value = input.source === "metric" ? metric?.value : input.value;
-    if (input.source === "metric" && !input.metric_key) errors.push(`${input.key}: metric inputs require metric_key.`);
-    if (input.source === "metric" && !metric) errors.push(`${input.key}: accepted metric "${input.metric_key || "unknown"}" is unavailable.`);
+    if (input.source === "metric" && !metricKey) errors.push(`${input.key}: metric inputs require metric_key.`);
+    if (input.source === "metric" && !metric) errors.push(`${input.key}: accepted metric "${metricKey || "unknown"}" is unavailable.`);
     if (metric?.currency && input.currency && metric.currency !== input.currency) {
       errors.push(`${input.key}: declared currency ${input.currency} conflicts with metric currency ${metric.currency}.`);
     }
@@ -267,7 +268,7 @@ export function executeValuationMethod(
       key: input.key,
       source: input.source,
       value,
-      metricKey: input.metric_key,
+      metricKey,
       metricObservationId: metric?.id,
       evidenceClaimIds,
       unit: input.unit,

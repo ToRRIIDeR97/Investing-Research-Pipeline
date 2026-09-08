@@ -252,19 +252,19 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     `;
     assert.equal(finalStage?.status, "waiting_for_human");
 
-    // Framework backtest executed 50 thesis-distinct combinations
+    // No accepted timing hypothesis: the optional framework branch is explicit but skipped.
     const backtestStages = await sql`
       SELECT stage_key, status FROM research_stages
       WHERE research_run_id = ${runId}
         AND stage_key IN ('indicator_design', 'strategy_design', 'backtest_execution', 'backtest_review')
     `;
     assert.equal(backtestStages.length, 4);
-    assert.ok(backtestStages.every((s) => s.status === "completed"));
+    assert.ok(backtestStages.every((s) => s.status === "skipped"));
 
     const [backtestCount] = await sql`
       SELECT COUNT(*) AS count FROM backtest_runs WHERE research_run_id = ${runId} AND status = 'completed'
     `;
-    assert.equal(Number(backtestCount.count), 50);
+    assert.equal(Number(backtestCount.count), 0);
 
     // Query persisted artifacts
     const artifacts = await sql`
@@ -355,6 +355,33 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     const approvalRes = await approveHumanReview(runId, "system-test-harness");
     assert.ok(approvalRes.success, `approveHumanReview failed: ${approvalRes.error}`);
 
+    // Changed prose must not export under an earlier human decision.
+    await sql`UPDATE research_artifacts
+      SET content_json = jsonb_set(content_json, '{closing_assessment}', to_jsonb('Updated report wording.'::text))
+      WHERE research_run_id = ${runId} AND artifact_type = 'report_composition'`;
+    state = await runResearchPipeline(runId);
+    assert.equal(state.status, 'waiting_for_human');
+    const prematureExports = await sql`SELECT id FROM exports WHERE research_run_id = ${runId}`;
+    assert.equal(prematureExports.length, 0);
+    const reusedApproval = await approveHumanReview(runId, 'system-test-harness');
+    assert.equal(reusedApproval.success, false);
+    assert.match(reusedApproval.error || '', /new human review decision/);
+    await sql`INSERT INTO review_decisions (id, asset_id, research_run_id, status, reviewed_by, reviewed_at)
+      VALUES (${crypto.randomUUID()}, ${testAssetId}, ${runId}, 'approved_for_tracking', 'human-reviewer-1', NOW())`;
+
+    // A new human decision cannot approve a composition based on outdated analysis.
+    const [confidence] = await sql`SELECT content_json FROM research_artifacts
+      WHERE research_run_id = ${runId} AND artifact_type = 'confidence_assessment'`;
+    await sql`UPDATE research_artifacts SET content_json = content_json || '{"test_approval_staleness":true}'::jsonb
+      WHERE research_run_id = ${runId} AND artifact_type = 'confidence_assessment'`;
+    const staleCompositionApproval = await approveHumanReview(runId, 'system-test-harness');
+    assert.equal(staleCompositionApproval.success, false);
+    assert.match(staleCompositionApproval.error || '', /composition is stale/);
+    await sql`UPDATE research_artifacts SET content_json = ${sql.json(confidence.content_json)}
+      WHERE research_run_id = ${runId} AND artifact_type = 'confidence_assessment'`;
+    const freshApproval = await approveHumanReview(runId, 'system-test-harness');
+    assert.ok(freshApproval.success, freshApproval.error);
+
     // ==========================================
     // Invocation 3: Execute terminal export and refresh_schedule stages
     // ==========================================
@@ -413,7 +440,7 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     await sql`
       UPDATE research_stages
       SET status = 'failed', failure_reason = 'Simulated stage failure'
-      WHERE research_run_id = ${runId} AND stage_key = 'source_discovery'
+      WHERE research_run_id = ${runId} AND stage_key = 'evidence_extraction'
     `;
 
     const state = await runResearchPipeline(runId);

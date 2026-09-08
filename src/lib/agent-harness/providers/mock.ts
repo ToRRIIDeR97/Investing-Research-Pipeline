@@ -70,7 +70,8 @@ function packetFromPrompt(prompt: string) {
   for (const value of extractJsonObjects(prompt)) {
     try {
       const parsed = JSON.parse(value) as Record<string, unknown>;
-      if (parsed.asset || parsed.source_corpus || parsed.evidence_claims || parsed.required_modules || parsed.required_lenses || parsed.output_contract) return parsed;
+      if (parsed.asset || parsed.source_corpus || parsed.evidence_claims || parsed.required_modules || parsed.required_lenses ||
+          parsed.output_contract || parsed.valuation_method_request || parsed.valuation_explanation_request) return parsed;
     } catch {}
   }
   return {};
@@ -103,27 +104,56 @@ function evidenceClaimIdFromPacket(packet: Record<string, unknown>) {
 function sourceReaderResponse(packet: Record<string, unknown>) {
   const sources = Array.isArray(packet.source_corpus) ? packet.source_corpus as Array<Record<string, unknown>> : [];
   const asset = assetFromPacket(packet);
+  const batch = packet.batch && typeof packet.batch === "object" ? packet.batch as Record<string, unknown> : {};
+  const requestedClaims = Number(batch.claim_target);
+  const coverageSlots = Array.isArray(batch.coverage_slots) ? batch.coverage_slots.map(String) : [];
+  const coverageText: Record<string, string> = {
+    consolidated_financials: "revenue adjusted EBITDA net income",
+    management_guidance: "management guidance outlook assumptions",
+    founder_and_company_history: "founder founded company origin motivation",
+    members_by_period: "members by reporting period",
+    products_by_period: "total products by reporting period",
+    cross_buy: "cross-buy products per member",
+    lending_segment: "lending segment contribution profit",
+    technology_platform_segment: "technology platform segment contribution profit",
+    financial_services_segment: "financial services segment contribution profit",
+    deposits_and_capital: "deposits capital ratio",
+    loans_and_credit: "loans credit losses",
+    funding_cost: "funding cost deposit interest expense",
+  };
   const topics = [
     ...asset.requiredModules,
     ...MODULES,
     "competitive_position", "management_execution", "capital_allocation", "regulatory_risk",
     "foreign_exchange", "geographic_mix", "market_share", "liquidity",
   ].filter((topic, index, all) => all.indexOf(topic) === index);
-  const claims = topics.map((module, index) => {
-    const source = sources[index % Math.max(1, sources.length)] || {};
+  const claimCount = Number.isFinite(requestedClaims)
+    ? Math.max(sources.length, Math.min(topics.length, requestedClaims))
+    : topics.length;
+  const founderChunk = sources.find((source) => source.source_role === 'founder_and_company_history');
+  const coverageTopics = coverageSlots.filter((slot) => slot !== 'founder_and_company_history' || founderChunk).flatMap((slot) =>
+    Array.from({ length: ["consolidated_financials", "members_by_period", "products_by_period"].includes(slot) ? 4 : 1 }, () => slot)
+  );
+  const claims = Array.from({ length: Math.max(claimCount, coverageTopics.length) }, (_, index) => {
+    const topic = coverageTopics[index] || topics[index % topics.length];
+    const source = (topic === 'founder_and_company_history' ? founderChunk : undefined)
+      || sources[index % Math.max(1, sources.length)] || {};
     const quotedText = String(source.content_excerpt || "").slice(0, 500);
     const charStart = Number(source.char_start || 0);
     const founderSource = source.source_role === "founder_and_company_history";
     return {
-      claim_text: founderSource
+      claim_text: coverageText[topic]
+        ? `${asset.name} ${coverageText[topic]} evidence for ${["2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31"][index % 4]}.`
+        : founderSource
         ? `${asset.name} was founded to solve the customer problem described by this founder-history source.`
-        : `${asset.name} ${module.replace(/_/g, " ")} evidence is decision relevant and sufficiently detailed for module-specific mock validation ${index}.`,
+        : `${asset.name} ${topic.replace(/_/g, " ")} evidence is decision relevant and sufficiently detailed for module-specific mock validation ${index}.`,
       claim_type: "mock_fact", claim_category: "fact", confidence: 0.9,
       source_id: String(source.source_id || "00000000-0000-4000-8000-000000000001"),
       document_chunk_id: source.document_chunk_id,
       char_start: charStart,
       char_end: charStart + quotedText.length,
       quoted_text: quotedText,
+      period_end: ["2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31"][index % 4],
     };
   });
   return { evidence_claims: claims, contradictions: [], source_gaps: [], low_confidence_items: [], rejected_candidates: [] };
@@ -474,9 +504,21 @@ function v3OperatingModelResponse(packet: Record<string, unknown>) {
         }
       ],
       consolidated_revenue: 1200000000,
-      consolidated_operating_income: 500000000,
+      consolidated_operating_income: 400000000,
       credit_capital_required: 150000000,
       balance_sheet_effect_present: true
+    },
+    top_down_bottom_up_reconciliation: {
+      artifact_type: "top_down_bottom_up_reconciliation",
+      top_down_forecast_total: 1200000000,
+      bottom_up_forecast_total: 1200000000,
+      tam_limit: 5000000000,
+      customer_budget_limit: 2500000000
+    },
+    reinvestment_model: {
+      artifact_type: "reinvestment_model",
+      capex_forecast: [100000000, 110000000, 120000000],
+      working_capital_forecast: [50000000, 55000000, 60000000]
     }
   };
 }
@@ -502,7 +544,7 @@ function v3OperatingScenariosResponse(packet: Record<string, unknown>) {
           reinvestment: "Reduced corporate marketing spend",
           working_capital: "Unchanged",
           balance_sheet: "Restricted limits",
-          resulting_financial_statements_json: {},
+          resulting_financial_statements_json: { total_revenue: 900000000, net_income: -50000000 },
           maintenance_spend: 5000000,
           revenue_cagr: 0.05,
           operating_margin: 0.12
@@ -520,7 +562,7 @@ function v3OperatingScenariosResponse(packet: Record<string, unknown>) {
           reinvestment: "Moderate R&D",
           working_capital: "Unchanged",
           balance_sheet: "Sufficient capital",
-          resulting_financial_statements_json: {},
+          resulting_financial_statements_json: { total_revenue: 1200000000, net_income: 100000000 },
           maintenance_spend: 10000000,
           revenue_cagr: 0.15,
           operating_margin: 0.22
@@ -538,7 +580,7 @@ function v3OperatingScenariosResponse(packet: Record<string, unknown>) {
           reinvestment: "Aggressive Galileo expansion",
           working_capital: "Unchanged",
           balance_sheet: "Robust capital",
-          resulting_financial_statements_json: {},
+          resulting_financial_statements_json: { total_revenue: 1500000000, net_income: 250000000 },
           maintenance_spend: 15000000,
           revenue_cagr: 0.25,
           operating_margin: 0.32
@@ -549,21 +591,106 @@ function v3OperatingScenariosResponse(packet: Record<string, unknown>) {
 }
 
 function v3ValuationResponse(packet: Record<string, unknown>) {
-  const valuationMethod = Array.isArray(packet.required_lenses) ? String(packet.required_lenses[0] || "reverse_dcf") : "reverse_dcf";
-  return {
+  const methodRequest = packet.valuation_method_request && typeof packet.valuation_method_request === "object"
+    ? packet.valuation_method_request as Record<string, unknown>
+    : {};
+  const valuationMethod = methodRequest.required_method
+    ? String(methodRequest.required_method)
+    : Array.isArray(packet.required_lenses) ? String(packet.required_lenses[0] || "reverse_dcf") : "reverse_dcf";
+  const marketSnapshot = packet.current_market_snapshot && typeof packet.current_market_snapshot === "object"
+    ? packet.current_market_snapshot as Record<string, unknown>
+    : {};
+  const predictionPrice = Number(marketSnapshot.regular_market_price) > 0
+    ? Number(marketSnapshot.regular_market_price)
+    : 0.5;
+  const operatingScenarios = packet.operating_scenarios && typeof packet.operating_scenarios === "object"
+    ? packet.operating_scenarios as Record<string, unknown>
+    : {};
+  const probabilities = {
+    bear: Number(operatingScenarios.probability_bear ?? 0.25),
+    base: Number(operatingScenarios.probability_base ?? 0.5),
+    bull: Number(operatingScenarios.probability_bull ?? 0.25),
+  };
+  const protocol = packet.valuation_method_protocol && typeof packet.valuation_method_protocol === "object"
+    ? packet.valuation_method_protocol as Record<string, unknown>
+    : {};
+  const requiredModelKeys = methodRequest.required_method
+    ? [String(methodRequest.required_method)]
+    : Array.isArray(protocol.required_model_keys) && protocol.required_model_keys.length
+    ? protocol.required_model_keys.map(String)
+    : [valuationMethod.toLowerCase().replace(/[^a-z0-9]+/g, "_")];
+  const methodProposals = requiredModelKeys.map((requiredModelKey) => ({
+    protocol_version: "1.0",
+    method_key: `${requiredModelKey}_model`,
+    method_name: `${requiredModelKey.replace(/_/g, " ")} valuation model`,
+    method_version: "1.0.0",
+    method_family: "earnings_multiple",
+    origin: "composed",
+    rationale: "Uses explicit per-share earnings and scenario multiples so every valuation result is independently reproducible.",
+    replaces_method_keys: [requiredModelKey],
+    inputs: [
+      { key: "earnings_per_share", label: "Earnings per share", source: "assumption", value: 0.2, unit: "USD_per_share", currency: "USD", rationale: "Terminal operating scenario assumption" },
+      { key: "valuation_multiple", label: "Valuation multiple", source: "assumption", value: 15, unit: "multiple", rationale: "Base scenario market multiple" },
+      { key: "return_on_equity", label: "Return on equity", source: "assumption", value: 0.12, unit: "decimal", rationale: "Scenario return assumption" },
+      { key: "cost_of_equity", label: "Cost of equity", source: "assumption", value: 0.10, unit: "decimal", rationale: "Required shareholder return" },
+    ],
+    formulas: [
+      { key: "per_share_value", label: "Per-share value", operation: "multiply", args: ["earnings_per_share", "valuation_multiple"], unit: "USD_per_share", currency: "USD" },
+    ],
+    outputs: { per_share_value: "per_share_value" },
+    scenarios: [
+      { scenario_name: "Bear", scenario_type: "bear", probability: probabilities.bear, overrides: { valuation_multiple: 10 }, confidence: 0.55, rationale: "Multiple compression" },
+      { scenario_name: "Base", scenario_type: "base", probability: probabilities.base, overrides: { valuation_multiple: 15 }, confidence: 0.7, rationale: "Expected operating trajectory" },
+      { scenario_name: "Bull", scenario_type: "bull", probability: probabilities.bull, overrides: { valuation_multiple: 20 }, confidence: 0.55, rationale: "Stronger growth and rerating" },
+    ],
+    tables: [{
+      table_key: "valuation_summary",
+      title: "Valuation model summary",
+      columns: ["value"],
+      rows: [{ label: "Per-share value", cells: { value: "per_share_value" } }],
+    }],
+    limitations: ["The mock valuation uses a simplified earnings multiple for deterministic tests."],
+  }));
+  if (packet.valuation_explanation_request) {
+    return {
+      valuation_explanation: {
+        artifact_type: "valuation_explanation",
+        method_selection: "The required valuation methods were executed independently under the formula-graph protocol.",
+        important_inputs_and_provenance: ["Inputs came from the immutable valuation manifest and accepted operating scenarios."],
+        scenario_differences: "Bear, base, and bull values reflect the executed scenario overrides.",
+        cross_check_results: "All required methods completed and reconciled before the scenario artifacts were created.",
+        reverse_valuation_implications: "The reverse valuation records the growth and return assumptions implied by the current price.",
+        limitations: ["The explanation does not create or modify valuation numbers."],
+      },
+    };
+  }
+  if (methodRequest.required_method) return { method_spec: methodProposals[0] };
+  const response = {
     valuation_scenario_set: {
       artifact_type: "valuation_scenario_set",
       terminal_year: 2030,
-      terminal_anchor_bear: 10,
-      terminal_anchor_base: 15,
-      terminal_anchor_bull: 20,
+      terminal_anchor_bear: 2,
+      terminal_anchor_base: 3,
+      terminal_anchor_bull: 4,
+      probability_bear: probabilities.bear,
+      probability_base: probabilities.base,
+      probability_bull: probabilities.bull,
       uses_adjusted_fcf: true,
       segments_reconciled: true
+    },
+    valuation_method_run: {
+      artifact_type: "valuation_method_run",
+      primary_method_key: requiredModelKeys[0],
+      methods: methodProposals,
     },
     reverse_valuation: {
       artifact_type: "reverse_valuation",
       implied_growth: 0.12,
-      implied_margin: 0.20
+      implied_margin: 0.20,
+      return_on_equity: 0.12,
+      cost_of_equity: 0.10,
+      roe_minus_cost_of_equity: 0.02,
+      roe_vs_coe_assessment: "ROE exceeds cost of equity by two percentage points, supporting modest book-value compounding."
     },
     annual_price_target_path: {
       artifact_type: "annual_price_target_path",
@@ -766,7 +893,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
         {
           fiscal_year: 2030,
           scenario_type: "bear",
-          valuation_method: "reverse_dcf",
+          valuation_method: valuationMethod,
           operating_metric_key: "eps",
           operating_metric_value: 0.20,
           valuation_parameter_key: "pe_multiple",
@@ -779,7 +906,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
         {
           fiscal_year: 2030,
           scenario_type: "base",
-          valuation_method: "reverse_dcf",
+          valuation_method: valuationMethod,
           operating_metric_key: "eps",
           operating_metric_value: 0.20,
           valuation_parameter_key: "pe_multiple",
@@ -792,7 +919,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
         {
           fiscal_year: 2030,
           scenario_type: "bull",
-          valuation_method: "reverse_dcf",
+          valuation_method: valuationMethod,
           operating_metric_key: "eps",
           operating_metric_value: 0.20,
           valuation_parameter_key: "pe_multiple",
@@ -805,10 +932,21 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
       ]
     }
   };
+  for (const row of response.annual_price_target_path.price_target_path) {
+    row.total_return_target = Number(((row.price_target + row.dividend_per_share) / predictionPrice - 1).toFixed(6));
+  }
+  return response;
 }
 
 function v3DecisionResponse(packet: Record<string, unknown>) {
   const claimId = evidenceClaimIdFromPacket(packet);
+  const expectedReturn = packet.deterministic_expected_return && typeof packet.deterministic_expected_return === "object"
+    ? packet.deterministic_expected_return as Record<string, unknown>
+    : {};
+  const metricTrends = packet.metric_trends && typeof packet.metric_trends === "object"
+    ? packet.metric_trends as Record<string, unknown>
+    : {};
+  const monitoringMetricKey = Object.keys(metricTrends)[0] || "net_interest_margin";
   return {
     investment_thesis: {
       artifact_type: "investment_thesis",
@@ -863,7 +1001,8 @@ function v3DecisionResponse(packet: Record<string, unknown>) {
       no_rerating_return: 0.10,
       weak_stock_outcome: 0.05,
       permanent_loss_limit: 0.20,
-      dilution_omitted: false
+      dilution_omitted: false,
+      ...expectedReturn,
     },
     thesis_breakers: {
       artifact_type: "thesis_breakers",
@@ -879,6 +1018,7 @@ function v3DecisionResponse(packet: Record<string, unknown>) {
       artifact_type: "monitoring_dashboard",
       items: [
         {
+          metric_key: monitoringMetricKey,
           kpi: "Total member deposits",
           process_node: "Deposit acquisition",
           current_level: 21000000000,
@@ -927,10 +1067,33 @@ export class MockProvider implements ModelProvider {
       response = sourceReaderResponse(packet);
     } else if (request.agentName === "valuation-analyst") {
       response = v3ValuationResponse(packet);
+    } else if (request.agentName === 'export-writer' && packet.output_contract === 'report_composition') {
+      response = {
+        executive_summary: 'The investment case depends on the operating assumptions and risks set out in the accepted research.',
+        section_order: Array.from({ length: 25 }, (_, index) => index + 1),
+        transitions: [{ before_section: 16, text: 'The valuation translates those operating assumptions into scenario outcomes.' }],
+        closing_assessment: 'Human approval is required before acting on this research.',
+        disclosures: ['This is a synthetic test report.'],
+        artifact_refs: ['investment_thesis'],
+      };
+    } else if (request.agentName === 'research-reviewer' && (packet.section || packet.section_reviews)) {
+      response = { ...(STATIC['research-reviewer'] as Record<string, unknown>), findings: Array.isArray(packet.section_reviews)
+        ? packet.section_reviews.flatMap((section: any) => section.findings || []) : [] };
     } else if (request.agentName === "asset-analyst") {
       // Route on the explicit output_contract discriminator (set by stage-specific handlers).
       const contract = packet.output_contract as string | undefined;
-      if (contract === "company_genesis") {
+      if (['founder_profile', 'strategic_history_timeline', 'strategic_dna', 'company_genesis'].includes(contract || '') &&
+        (packet.output_schema as any)?.required?.length === 1) {
+        const artifacts = v3CompanyGenesisResponse(packet);
+        response = { [contract!]: artifacts[contract as keyof typeof artifacts] };
+      } else if (['moat_assessment', 'moat_attack_matrix', 'no_moat_counterfactual'].includes(contract || '')) {
+        const artifacts = v3MoatResponse(packet);
+        response = { [contract!]: artifacts[contract as keyof typeof artifacts] };
+      } else if (['driver_tree', 'operating_model', 'reinvestment_model', 'top_down_bottom_up_reconciliation'].includes(contract || '') &&
+        (packet.output_schema as any)?.required?.length === 1) {
+        const artifacts = v3OperatingModelResponse(packet);
+        response = { [contract!]: artifacts[contract as keyof typeof artifacts] };
+      } else if (contract === "company_genesis") {
         response = v3CompanyGenesisResponse(packet);
       } else if (contract === "historical_diagnosis") {
         response = v3HistoricalDiagnosisResponse(packet);

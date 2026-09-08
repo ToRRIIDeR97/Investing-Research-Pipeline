@@ -34,6 +34,8 @@ describe("business process and segment artifacts (Component 8)", () => {
     assert.deepEqual(contract.requiredKeys, ["bottleneck_register"]);
     assert.deepEqual(schema.required, ["bottleneck_register"]);
     assert.deepEqual(Object.keys(schema.properties), ["bottleneck_register"]);
+    assert.equal(schema.additionalProperties, false);
+    assert.equal(schema.properties.bottleneck_register.additionalProperties, false);
     assert.equal(schema.properties.bottleneck_register.properties.artifact_type.const, "bottleneck_register");
     assert.throws(
       () => contractForArtifact(BUSINESS_PROCESS_CONTRACT, "unknown_artifact"),

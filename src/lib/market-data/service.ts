@@ -276,7 +276,9 @@ export function createMarketDataService(config: MarketDataServiceConfig) {
     if (rows.length === 0) return false;
     const first = rows[0].trading_date;
     const last = rows[rows.length - 1].trading_date;
-    return first <= start && last >= end;
+    const marketCalendarToleranceMs = 7 * 24 * 60 * 60 * 1000;
+    return first.getTime() <= start.getTime() + marketCalendarToleranceMs
+      && last.getTime() >= end.getTime() - marketCalendarToleranceMs;
   }
 }
 

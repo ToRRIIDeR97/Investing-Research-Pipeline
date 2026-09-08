@@ -16,7 +16,8 @@ export type ValidationResult = {
 
 export function validateAnnualPriceTargetPath(
   content: unknown,
-  scenarioSet?: { terminal_year: number; terminal_anchor_bear: number; terminal_anchor_base: number; terminal_anchor_bull: number; uses_adjusted_fcf: boolean; segments_reconciled: boolean; }
+  scenarioSet?: { terminal_year: number; terminal_anchor_bear: number; terminal_anchor_base: number; terminal_anchor_bull: number; uses_adjusted_fcf: boolean; segments_reconciled: boolean; },
+  marketPrice?: number
 ): ValidationResult {
   const parsed = AnnualPriceTargetPath.safeParse(content);
   if (!parsed.success) {
@@ -65,6 +66,27 @@ export function validateAnnualPriceTargetPath(
     if (isSOTP && scenarioSet && !scenarioSet.segments_reconciled) {
       errors.push(`SOTP method '${entry.valuation_method}' is blocked because segment assumptions do not reconcile to consolidated results.`);
     }
+
+    if (Number.isFinite(marketPrice) && Number(marketPrice) > 0) {
+      const expectedReturn = (entry.price_target + entry.dividend_per_share) / Number(marketPrice) - 1;
+      if (Math.abs(entry.total_return_target - expectedReturn) > 1e-3) {
+        errors.push(`Total return for ${entry.fiscal_year} ${entry.scenario_type} must be cumulative from the current market price (${Number(marketPrice)}); expected ${expectedReturn.toFixed(6)}, got ${entry.total_return_target}.`);
+      }
+    }
+  }
+
+  if (scenarioSet) {
+    for (const year of targetYears) {
+      const rows = data.price_target_path.filter((entry) => entry.fiscal_year === year);
+      const bear = rows.find((entry) => entry.scenario_type === "bear");
+      const base = rows.find((entry) => entry.scenario_type === "base");
+      const bull = rows.find((entry) => entry.scenario_type === "bull");
+      if (!bear || !base || !bull) {
+        errors.push(`Price target path for ${year} must include bear, base, and bull scenarios.`);
+      } else if (!(bear.price_target < base.price_target && base.price_target < bull.price_target)) {
+        errors.push(`Price targets for ${year} must be ordered bear < base < bull.`);
+      }
+    }
   }
 
   // C11-T6: Final-year path differs from terminal anchor
@@ -97,6 +119,14 @@ export function validateValuationScenarioSet(content: unknown): ValidationResult
   }
   const errors: string[] = [];
   const warnings: string[] = [];
+  const probabilityTotal = parsed.data.probability_bear + parsed.data.probability_base + parsed.data.probability_bull;
+  if (Math.abs(probabilityTotal - 1) > 0.001) {
+    errors.push(`Valuation scenario probabilities total ${probabilityTotal}, expected 1.`);
+  }
+  if (!(parsed.data.terminal_anchor_bear < parsed.data.terminal_anchor_base
+    && parsed.data.terminal_anchor_base < parsed.data.terminal_anchor_bull)) {
+    errors.push("Valuation scenario anchors must be ordered bear < base < bull.");
+  }
   return { valid: errors.length === 0, errors, warnings };
 }
 
@@ -107,5 +137,9 @@ export function validateReverseValuation(content: unknown): ValidationResult {
   }
   const errors: string[] = [];
   const warnings: string[] = [];
+  const expectedSpread = parsed.data.return_on_equity - parsed.data.cost_of_equity;
+  if (Math.abs(parsed.data.roe_minus_cost_of_equity - expectedSpread) > 1e-3) {
+    errors.push(`ROE-minus-cost-of-equity spread must equal ROE minus cost of equity; expected ${expectedSpread.toFixed(6)}, got ${parsed.data.roe_minus_cost_of_equity}.`);
+  }
   return { valid: errors.length === 0, errors, warnings };
 }

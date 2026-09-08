@@ -14,6 +14,12 @@ import type {
 
 type Sql = ReturnType<typeof postgres>;
 
+function jsonb(sql: Pick<Sql, "typed">, value: unknown) {
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined) throw new ProviderError("Value is not JSON serializable", "invalid_request");
+  return sql.typed(serialized, 25);
+}
+
 function now() {
   return new Date().toISOString();
 }
@@ -243,7 +249,7 @@ export class PostgresAgentSessionStore implements AgentSessionStore {
       ) VALUES (
         ${id}, ${input.parentSessionId || null}, ${input.researchRunId || null},
         ${input.stageId || null}, ${input.taskId || null}, ${input.agentName},
-        'idle', ${this.sql.json((input.metadata || {}) as any)}
+        'idle', ${jsonb(this.sql, input.metadata || {})}::jsonb
       )
       ON CONFLICT DO NOTHING
       RETURNING *
@@ -278,9 +284,9 @@ export class PostgresAgentSessionStore implements AgentSessionStore {
       SET status = COALESCE(${status}, status),
           model = COALESCE(${model}, model),
           provider = COALESCE(${provider}, provider),
-          metadata_json = CASE WHEN ${hasMetadata} THEN ${this.sql.json((patch.metadata || {}) as any)} ELSE metadata_json END,
-          result_json = CASE WHEN ${hasResult} THEN ${hasResult ? this.sql.json(patch.result as any) : null} ELSE result_json END,
-          error_json = CASE WHEN ${hasError} THEN ${hasError ? this.sql.json(patch.error as any) : null} WHEN ${status} IN ('running', 'completed') THEN NULL ELSE error_json END,
+          metadata_json = CASE WHEN ${hasMetadata} THEN ${jsonb(this.sql, patch.metadata || {})}::jsonb ELSE metadata_json END,
+          result_json = CASE WHEN ${hasResult} THEN ${hasResult ? jsonb(this.sql, patch.result) : null}::jsonb ELSE result_json END,
+          error_json = CASE WHEN ${hasError} THEN ${hasError ? jsonb(this.sql, patch.error) : null}::jsonb WHEN ${status} IN ('running', 'completed') THEN NULL ELSE error_json END,
           completed_at = CASE WHEN ${status} IN ('completed', 'failed', 'cancelled') THEN NOW() WHEN ${status} = 'running' THEN NULL ELSE completed_at END,
           updated_at = NOW()
       WHERE id = ${sessionId}
@@ -321,7 +327,7 @@ export class PostgresAgentSessionStore implements AgentSessionStore {
       const sequence = Number(seqRows[0].next_message_sequence);
       const rows = await tx`
         INSERT INTO agent_session_messages (id, session_id, sequence, role, content_json)
-        VALUES (${message.id}, ${sessionId}, ${sequence}, ${message.role}, ${tx.json(message.parts)})
+        VALUES (${message.id}, ${sessionId}, ${sequence}, ${message.role}, ${jsonb(tx, message.parts)}::jsonb)
         RETURNING created_at
       `;
       return { ...message, sequence, createdAt: new Date(rows[0].created_at).toISOString() };
@@ -368,7 +374,7 @@ export class PostgresAgentSessionStore implements AgentSessionStore {
       const sequence = Number(seqRows[0].next_event_sequence);
       const rows = await tx`
         INSERT INTO agent_session_events (id, session_id, sequence, event_type, payload_json, idempotency_key)
-        VALUES (${id}, ${sessionId}, ${sequence}, ${type}, ${tx.json(payload)}, ${options.idempotencyKey || null})
+        VALUES (${id}, ${sessionId}, ${sequence}, ${type}, ${jsonb(tx, payload)}::jsonb, ${options.idempotencyKey || null})
         RETURNING created_at
       `;
       return { id, sessionId, sequence, type, payload, createdAt: new Date(rows[0].created_at).toISOString() } satisfies AgentSessionEvent;
@@ -407,8 +413,8 @@ export class PostgresAgentSessionStore implements AgentSessionStore {
         error_message, duration_ms, completed_at
       ) VALUES (
         ${trace.researchRunId || null}, ${trace.taskId || null}, ${trace.sessionId}, ${trace.toolCallId},
-        ${trace.agentName}, ${trace.toolName}, ${this.sql.json(trace.input as any)},
-        ${trace.output === undefined ? null : this.sql.json(trace.output as any)}, ${trace.status},
+        ${trace.agentName}, ${trace.toolName}, ${jsonb(this.sql, trace.input)}::jsonb,
+        ${trace.output === undefined ? null : jsonb(this.sql, trace.output)}::jsonb, ${trace.status},
         ${trace.errorMessage || null}, ${trace.durationMs ?? null},
         ${trace.status === "running" ? null : new Date()}
       )
@@ -441,7 +447,7 @@ export class PostgresAgentSessionStore implements AgentSessionStore {
         action, resource, input_json, status, decision, resolved_at
       ) VALUES (
         ${request.id}, ${request.sessionId}, ${request.toolCallId}, ${request.toolName}, ${request.agentName},
-        ${request.action}, ${request.resource}, ${this.sql.json(request.input as any)},
+        ${request.action}, ${request.resource}, ${jsonb(this.sql, request.input)}::jsonb,
         'resolved', ${decision}, NOW()
       )
       ON CONFLICT (session_id, tool_call_id)

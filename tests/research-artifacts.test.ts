@@ -189,6 +189,38 @@ describe("research-artifact registry", { skip: !process.env.RUN_DB_INTEGRATION }
     assert.equal(a1.id, a2.id);
   });
 
+  it("revalidates the same artifact after a rejected attempt", async () => {
+    const rejected = await repo.upsertArtifact({
+      research_run_id: runId,
+      asset_id: assetId,
+      artifact_type: "historical_record",
+      scope_key: "retryable",
+      status: "rejected",
+      content_json: { version: 1 },
+      schema_version: "3.0.0",
+      validator_version: "1.0.0",
+      prompt_version: "1.0.0",
+      created_by: "test",
+      idempotency_key: "retryable-artifact",
+    });
+    const retried = await repo.upsertArtifact({
+      research_run_id: runId,
+      asset_id: assetId,
+      artifact_type: "historical_record",
+      scope_key: "retryable",
+      status: "validated",
+      content_json: { version: 2 },
+      schema_version: "3.0.0",
+      validator_version: "1.0.0",
+      prompt_version: "1.0.0",
+      created_by: "test",
+      idempotency_key: "retryable-artifact",
+    });
+    assert.equal(retried.id, rejected.id);
+    assert.equal(retried.status, "validated");
+    assert.deepEqual(retried.content_json, { version: 2 });
+  });
+
   it("C1-T8: Query an existing v2 run", async () => {
     const [v2run] = await db
       .insert(workflowSchema.research_runs)

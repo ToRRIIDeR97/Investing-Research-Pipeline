@@ -73,6 +73,15 @@ export const ExpectedReturnMatrix = z.object({
   return_unit: z.literal("decimal").optional(),
   benchmark_symbol: z.string().min(1).optional(),
   currency: z.string().min(1).optional(),
+  rows: z.array(z.object({
+    scenario_type: z.enum(["bear", "base", "bull"]),
+    target_date: z.string().min(1),
+    target_price: z.number().finite(),
+    dividend_per_share: z.number().finite(),
+    total_return: z.number().finite(),
+    probability: z.number().min(0).max(1),
+    weighted_contribution: z.number().finite(),
+  })).length(3).optional(),
   dilution_omitted: z.boolean().default(false), // For C12-T6 check
 });
 export type ExpectedReturnMatrix = z.infer<typeof ExpectedReturnMatrix>;
@@ -91,6 +100,7 @@ export const ThesisBreakers = z.object({
 export type ThesisBreakers = z.infer<typeof ThesisBreakers>;
 
 export const MonitoringKPI = z.object({
+  metric_key: z.string().min(1).default("unmapped"),
   kpi: z.string().min(1),
   process_node: z.string().min(1),
   current_level: z.number(),
@@ -100,6 +110,12 @@ export const MonitoringKPI = z.object({
   reporting_frequency: z.string().min(1),
   model_input_affected: z.string(), // C12-T5 check: must not be empty
   source_role: z.string().min(1),
+  history: z.array(z.object({
+    period_end: z.string().min(1),
+    value: z.number().finite(),
+    unit: z.string(),
+    currency: z.string().nullable().optional(),
+  })).max(4).optional(),
 });
 export type MonitoringKPI = z.infer<typeof MonitoringKPI>;
 

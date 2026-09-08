@@ -21,8 +21,6 @@ export const RESEARCH_AGENT_NAMES = [
 
 export type ResearchAgentName = (typeof RESEARCH_AGENT_NAMES)[number];
 
-export const DEFAULT_RESEARCH_MODEL = "deepseek-v4-flash";
-
 export type AgentRoute =
   | "cheap"
   | "mid"
@@ -38,7 +36,6 @@ export interface ResearchAgentConfig {
   description: string;
   route: AgentRoute;
   modelTier: "cheap" | "mid" | "premium" | "vision" | "specialist";
-  defaultModel: string;
   modelEnvVar: string;
   promptVersion: string;
   tools: Record<string, boolean>;
@@ -135,7 +132,7 @@ const valuationTable = {
   },
 };
 
-const valuationMethodProposal = {
+export const valuationMethodProposal = {
   type: "object",
   additionalProperties: false,
   required: [
@@ -278,7 +275,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Convert a user research request into a bounded research run plan.",
     route: "mid",
     modelTier: "mid",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_MID_MODEL",
     promptVersion: "intake-planner-v1",
     tools: { bash: false, edit: false, write: false },
@@ -319,7 +315,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Select or challenge the asset research profile.",
     route: "cheap",
     modelTier: "cheap",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_CHEAP_MODEL",
     promptVersion: "asset-classifier-v1",
     tools: { bash: false, edit: false, write: false },
@@ -357,7 +352,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Identify and rank source candidates.",
     route: "cheap",
     modelTier: "cheap",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_CHEAP_MODEL",
     promptVersion: "source-discovery-agent-v1",
     tools: { bash: false, edit: false, write: false },
@@ -389,7 +383,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Extract source-linked evidence claims from parsed chunks.",
     route: "cheap",
     modelTier: "cheap",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_CHEAP_MODEL",
     promptVersion: "source-reader-v2",
     tools: { bash: false, edit: false, write: false },
@@ -411,7 +404,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Convert extracted tables into normalized metric candidates.",
     route: "mid",
     modelTier: "mid",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_MID_MODEL",
     promptVersion: "table-normalizer-v1",
     tools: { bash: false, edit: false, write: false },
@@ -441,7 +433,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Standardize metric observations.",
     route: "cheap",
     modelTier: "cheap",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_CHEAP_MODEL",
     promptVersion: "metric-normalizer-v1",
     tools: { bash: false, edit: false, write: false },
@@ -471,7 +462,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Synthesize accepted evidence into asset-specific analysis sections.",
     route: "asset-analyst",
     modelTier: "specialist",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_ASSET_ANALYST_MODEL",
     promptVersion: "asset-analyst-v1",
     tools: { bash: false, edit: false, write: false },
@@ -505,7 +495,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Produce valuation signals and scenarios.",
     route: "valuation-analyst",
     modelTier: "premium",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_VALUATION_ANALYST_MODEL",
     promptVersion: "valuation-analyst-v2",
     tools: { bash: false, edit: false, write: false },
@@ -544,7 +533,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Generate bounded valuation model code artifacts.",
     route: "valuation-coder",
     modelTier: "premium",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_VALUATION_CODER_MODEL",
     promptVersion: "valuation-coder-v1",
     tools: { bash: false, edit: false, write: false },
@@ -578,7 +566,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Generate bounded Python indicator/backtest strategy code.",
     route: "backtest-coder",
     modelTier: "premium",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_BACKTEST_CODER_MODEL",
     promptVersion: "backtest-coder-v1",
     tools: { bash: false, edit: false, write: false },
@@ -591,7 +578,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Review research for unsupported claims and category errors.",
     route: "research-reviewer",
     modelTier: "premium",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_RESEARCH_REVIEWER_MODEL",
     promptVersion: "research-reviewer-v1",
     tools: { bash: false, edit: false, write: false },
@@ -627,7 +613,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Answer user questions from the current run's persisted research packet.",
     route: "mid",
     modelTier: "mid",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_MID_MODEL",
     promptVersion: "research-assistant-v1",
     tools: { bash: false, edit: false, write: false },
@@ -640,7 +625,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Generate final research artifacts from accepted records.",
     route: "mid",
     modelTier: "mid",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_MID_MODEL",
     promptVersion: "export-writer-v1",
     tools: { bash: false, edit: false, write: false },
@@ -665,7 +649,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Inspect visual documents and identify extraction tasks.",
     route: "vision",
     modelTier: "vision",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "document-vision-agent-v1",
     tools: { bash: false, edit: false, write: false },
@@ -688,7 +671,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Interpret charts with uncertainty and source location.",
     route: "vision",
     modelTier: "vision",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "chart-interpreter-agent-v1",
     tools: { bash: false, edit: false, write: false },
@@ -722,7 +704,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Extract structured rows and columns from visual tables.",
     route: "vision",
     modelTier: "vision",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "table-vision-agent-v1",
     tools: { bash: false, edit: false, write: false },
@@ -746,7 +727,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Convert visual findings into candidate evidence claims.",
     route: "vision",
     modelTier: "vision",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "visual-evidence-agent-v1",
     tools: { bash: false, edit: false, write: false },
@@ -776,7 +756,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     description: "Visually QA generated dashboards, charts, tables, and memos.",
     route: "vision",
     modelTier: "vision",
-    defaultModel: DEFAULT_RESEARCH_MODEL,
     modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "ui-output-qa-vision-agent-v1",
     tools: { bash: false, edit: false, write: false },
@@ -816,10 +795,12 @@ export function getAgentConfig(agentName: string): ResearchAgentConfig {
   return AGENT_CONFIGS[agentName];
 }
 
-export function resolveAgentModel(agentName: ResearchAgentName, modelOverride?: string): string {
-  const config = getAgentConfig(agentName);
-  const agentModelKey = `RESEARCH_${agentName.toUpperCase().replace(/-/g, "_")}_MODEL`;
-  const configured = modelOverride || process.env[agentModelKey] || process.env[config.modelEnvVar] || process.env.RESEARCH_DEFAULT_MODEL || config.defaultModel;
+export function resolveAgentModel(agentName: ResearchAgentName): string {
+  getAgentConfig(agentName);
+  const configured = process.env.RESEARCH_VISION_MODEL;
+  if (!configured?.trim()) {
+    throw new Error(`No model configured for ${agentName}. Set RESEARCH_VISION_MODEL.`);
+  }
   return normalizeModelEnvValue(configured);
 }
 

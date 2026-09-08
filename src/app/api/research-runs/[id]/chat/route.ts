@@ -28,7 +28,7 @@ export async function POST(
   try {
     const { id: runId } = await params;
     const body = chatRequestSchema.parse(await request.json());
-    const report = await getResearchRunReport(runId);
+    const report = await getResearchRunReport(runId, { includeProvenance: false });
     if (!report) throw new ApiError("Research run not found", 404, "NOT_FOUND");
 
     const quality = await evaluateResearchQuality(runId);

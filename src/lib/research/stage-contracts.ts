@@ -3,6 +3,7 @@
 // the generic "asset-analyst" schema that previously caused contract
 // mismatches between agent enforcement and handler persistence.
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
+import { valuationMethodProposal } from "@/lib/agent-harness/registry";
 
 /** Build a schema contract that works with both parseStructuredOutput & validateSchema */
 function contract(requiredKeys: string[]): AgentOutputFormat {
@@ -50,7 +51,12 @@ export function contractForArtifact(contract: AgentOutputFormat, artifactKey: st
   }
   return {
     requiredKeys: [artifactKey],
-    schema: objectSchema({ [artifactKey]: artifactSchema }, [artifactKey]),
+    schema: {
+      type: "object",
+      properties: { [artifactKey]: { ...artifactSchema, additionalProperties: false } },
+      required: [artifactKey],
+      additionalProperties: false,
+    },
   };
 }
 const stringArray = () => arraySchema(stringSchema());
@@ -322,6 +328,18 @@ export const OPERATING_MODEL_CONTRACT = typedContract({
     credit_capital_required: numberSchema(),
     balance_sheet_effect_present: booleanSchema(),
   }),
+  top_down_bottom_up_reconciliation: objectSchema({
+    artifact_type: literalStringSchema("top_down_bottom_up_reconciliation"),
+    top_down_forecast_total: numberSchema(),
+    bottom_up_forecast_total: numberSchema(),
+    tam_limit: numberSchema(),
+    customer_budget_limit: numberSchema(),
+  }),
+  reinvestment_model: objectSchema({
+    artifact_type: literalStringSchema("reinvestment_model"),
+    capex_forecast: arraySchema(numberSchema()),
+    working_capital_forecast: arraySchema(numberSchema()),
+  }),
 });
 
 /** Contract: operating-scenarios output */
@@ -357,13 +375,25 @@ export const VALUATION_CONTRACT = typedContract({
     terminal_anchor_bear: numberSchema(),
     terminal_anchor_base: numberSchema(),
     terminal_anchor_bull: numberSchema(),
+    probability_bear: numberSchema(),
+    probability_base: numberSchema(),
+    probability_bull: numberSchema(),
     uses_adjusted_fcf: booleanSchema(),
     segments_reconciled: booleanSchema(),
+  }),
+  valuation_method_run: objectSchema({
+    artifact_type: literalStringSchema("valuation_method_run"),
+    primary_method_key: stringSchema(),
+    methods: arraySchema(valuationMethodProposal),
   }),
   reverse_valuation: objectSchema({
     artifact_type: stringSchema(),
     implied_growth: numberSchema(),
     implied_margin: numberSchema(),
+    return_on_equity: numberSchema(),
+    cost_of_equity: numberSchema(),
+    roe_minus_cost_of_equity: numberSchema(),
+    roe_vs_coe_assessment: stringSchema(),
   }),
   annual_price_target_path: objectSchema({
     artifact_type: stringSchema(),
@@ -389,6 +419,22 @@ export const VALUATION_CONTRACT = typedContract({
       total_return_target: numberSchema(),
       is_interpolated: booleanSchema(),
     })),
+  }),
+});
+
+export const VALUATION_METHOD_SPEC_CONTRACT = typedContract({
+  method_spec: valuationMethodProposal,
+});
+
+export const VALUATION_EXPLANATION_CONTRACT = typedContract({
+  valuation_explanation: objectSchema({
+    artifact_type: literalStringSchema("valuation_explanation"),
+    method_selection: stringSchema(),
+    important_inputs_and_provenance: stringArray(),
+    scenario_differences: stringSchema(),
+    cross_check_results: stringSchema(),
+    reverse_valuation_implications: stringSchema(),
+    limitations: stringArray(),
   }),
 });
 
@@ -449,6 +495,15 @@ export const DECISION_SYNTHESIS_CONTRACT = typedContract({
     return_unit: literalStringSchema("decimal"),
     benchmark_symbol: stringSchema(),
     currency: stringSchema(),
+    rows: arraySchema(objectSchema({
+      scenario_type: enumStringSchema(["bear", "base", "bull"]),
+      target_date: stringSchema(),
+      target_price: numberSchema(),
+      dividend_per_share: numberSchema(),
+      total_return: numberSchema(),
+      probability: numberSchema(),
+      weighted_contribution: numberSchema(),
+    }), 3),
     dilution_omitted: booleanSchema(),
   }, ["artifact_type", "bear_return", "base_return", "bull_return", "probability_weighted_return", "no_rerating_return", "weak_stock_outcome", "permanent_loss_limit", "dilution_omitted"]),
   thesis_breakers: objectSchema({
@@ -462,6 +517,7 @@ export const DECISION_SYNTHESIS_CONTRACT = typedContract({
   monitoring_dashboard: objectSchema({
     artifact_type: literalStringSchema("monitoring_dashboard"),
     items: arraySchema(objectSchema({
+      metric_key: stringSchema(),
       kpi: stringSchema(),
       process_node: stringSchema(),
       current_level: numberSchema(),
@@ -471,7 +527,13 @@ export const DECISION_SYNTHESIS_CONTRACT = typedContract({
       reporting_frequency: stringSchema(),
       model_input_affected: stringSchema(),
       source_role: stringSchema(),
-    })),
+      history: arraySchema(objectSchema({
+        period_end: stringSchema(),
+        value: numberSchema(),
+        unit: stringSchema(),
+        currency: { type: ["string", "null"] },
+      })),
+    }, ["metric_key", "kpi", "process_node", "current_level", "bear_threshold", "base_range", "bull_threshold", "reporting_frequency", "model_input_affected", "source_role"])),
   }),
   confidence_assessment: objectSchema({
     artifact_type: literalStringSchema("confidence_assessment"),

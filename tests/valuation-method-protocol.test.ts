@@ -87,6 +87,14 @@ test("blocks a method when a declared metric is unavailable", () => {
   assert.match(result.errors.join("\n"), /fintech_revenue.*unavailable/);
 });
 
+test("infers a metric key when the input key exactly matches an accepted metric", () => {
+  const candidate = meliRevenueSotp();
+  delete candidate.inputs[0].metric_key;
+  const result = executeValuationMethod(candidate, metrics);
+  assert.equal(result.valid, true, result.errors.join("\n"));
+  assert.equal(result.inputManifest[0].metricKey, "commerce_revenue");
+});
+
 test("rejects arbitrary generated code and expression fields", () => {
   const candidate = { ...meliRevenueSotp(), code: "process.exit(0)" };
   const result = executeValuationMethod(candidate, metrics);

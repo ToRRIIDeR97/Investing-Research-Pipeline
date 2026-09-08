@@ -206,7 +206,12 @@ function dateAtOrBefore(target: Date, result: YahooChartResult): Date {
 async function fetchYahoo(url: string, fetchImpl: typeof fetch): Promise<YahooChartResult> {
   let response: Response;
   try {
-    response = await fetchImpl(url);
+    response = await fetchImpl(url, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; InvestingResearchPipeline/1.0)",
+      },
+    });
   } catch (err) {
     throw new MarketDataError(`Yahoo fetch failed: ${err}`, "yahoo", "network_error");
   }

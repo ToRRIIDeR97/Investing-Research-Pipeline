@@ -3,6 +3,8 @@ import assert from "node:assert";
 import { runResearchAgent } from "@/lib/agent-harness/runner";
 import type { AgentRequest } from "@/lib/agent-harness/types";
 
+process.env.RESEARCH_DEFAULT_MODEL = "test-default-model";
+
 describe("agent roles, prompts, and registry (Component 14)", () => {
   it("C14-T5: Genesis agent receives valuation task -> Registry blocks wrong artifact assignment", async () => {
     const request: AgentRequest = {

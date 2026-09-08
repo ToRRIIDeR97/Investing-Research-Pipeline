@@ -7,6 +7,7 @@ import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { createHash } from "node:crypto";
+import { validateOperatingScenarioSet } from "../forecast/validation";
 
 export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "operating_scenarios",
@@ -51,6 +52,7 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
           "Follow output_schema exactly and return exactly one bear, one base, and one bull scenario.",
           "Use upstream_artifacts.operating_model as the base-case starting forecast: its consolidated revenue must equal the earliest-year base scenario total revenue, and its segment names must remain consistent throughout.",
           "Vary the documented business-process constraints and moat failure indicators across bear/base/bull; the bear case must reconcile to upstream_artifacts.no_moat_counterfactual when that artifact exists.",
+          "resulting_financial_statements_json must include numeric total_revenue and net_income for every scenario, with both values strictly increasing from bear to base to bull.",
         ],
       });
 
@@ -59,6 +61,9 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
         taskType: "operating_scenarios", agentName: "asset-analyst", modelTier: "mid",
         packet, promptFactory,
         outputFormat: OPERATING_SCENARIOS_CONTRACT,
+        validateStructured: (value) => validateOperatingScenarioSet(
+          (value as Record<string, unknown>).operating_scenario_set
+        ).errors.map((message) => ({ path: "operating_scenario_set", message })),
       });
 
       // Persist generated sub-artifacts

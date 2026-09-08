@@ -4,12 +4,15 @@ import { OpenAICompatibleProvider } from "./openai-compatible";
 
 export class OpenCodeGoProvider implements ModelProvider {
   readonly id = "opencode-go-direct";
+  readonly endpointKey: string;
   private readonly openai: OpenAICompatibleProvider;
   private readonly anthropic: AnthropicCompatibleProvider;
 
   constructor(baseUrl: string, apiKey: string, allowedHosts: string[]) {
-    this.openai = new OpenAICompatibleProvider({ mode: "direct", baseUrl, apiKey, allowedHosts });
-    this.anthropic = new AnthropicCompatibleProvider({ baseUrl, apiKey, allowedHosts });
+    const client = { clientName: "ResearchOS/0.1", sessionHeader: "x-opencode-session" };
+    this.openai = new OpenAICompatibleProvider({ mode: "direct", baseUrl, apiKey, allowedHosts, ...client });
+    this.anthropic = new AnthropicCompatibleProvider({ baseUrl, apiKey, allowedHosts, ...client });
+    this.endpointKey = this.openai.endpointKey;
   }
 
   healthCheck(): Promise<ProviderHealth> {

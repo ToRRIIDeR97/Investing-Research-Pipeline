@@ -16,6 +16,7 @@ RESEARCH_MODEL_ALLOWED_HOSTS=opencode.ai
 ```
 
 The harness sends the explicit `RESEARCH_MODEL_API_KEY` (or `OPENCODE_GO_API_KEY`) as a bearer token; it does not read OpenCode's local credential store.
+OpenCode requests identify Research OS and carry the durable agent-session ID in `x-opencode-session`. Provider request IDs are retained from either response headers or the streamed response payload.
 
 ## Model resolution
 
@@ -23,9 +24,13 @@ Every agent resolves its primary model from environment variables at call time:
 
 1. `RESEARCH_<AGENT_NAME>_MODEL` when present;
 2. the agent's configured tier/specialist variable such as `RESEARCH_CHEAP_MODEL`, `RESEARCH_MID_MODEL`, or `RESEARCH_ASSET_ANALYST_MODEL`;
-3. `RESEARCH_DEFAULT_MODEL`, whose safe default is `deepseek-v4-flash`.
+3. `RESEARCH_DEFAULT_MODEL`.
 
-Retries use `RESEARCH_<AGENT_NAME>_FALLBACK_MODEL`, then `RESEARCH_FALLBACK_MODEL`, then the same DeepSeek V4 Flash default. Registry defaults never select a premium, vision, or coding model implicitly. Historical model-call rows retain the model actually used at execution time and are not rewritten when `.env.local` changes.
+Model resolution fails closed when none of these variables is configured. Retries use `RESEARCH_<AGENT_NAME>_FALLBACK_MODEL`, then `RESEARCH_FALLBACK_MODEL`; when neither is configured, retries reuse the environment-resolved primary model. The registry contains no fallback model name. Historical model-call rows retain the model actually used at execution time and are not rewritten when `.env.local` changes.
+
+OpenCode Go exposes vision through the separate `deepseek-v4-flash-vision-exp` model ID. The current project configuration uses that vision-capable model for every text and image agent route.
+
+The paid-run CLI entry points and research worker treat model-routing keys in `.env.local`/`.env` as authoritative. Command-scoped or previously exported `RESEARCH_*_MODEL` values cannot replace the file configuration.
 
 ## Direct HTTPS provider
 
@@ -50,11 +55,13 @@ Run the deliberately gated health and JSON smoke test with:
 RUN_PROVIDER_SMOKE=1 npm run test:provider-smoke
 ```
 
-After changing source batching, prompts, or deadlines, run the bounded source-reader smoke before a complete paid research run:
+After changing source batching, prompts, or deadlines, explicitly authorize the bounded source-reader canary before a complete paid research run:
 
 ```bash
 RUN_SOURCE_READER_SMOKE=1 npm run test:source-reader-smoke
 ```
+
+The canary creates a dedicated database run and evidence-extraction stage for the saved SOFI member/product table. It uses the production prompt, one model attempt, no repair, and provider concurrency one. The task, model-call telemetry, cost, and any sanitized rejected response remain attached to the printed run ID for audit.
 
 ## Local OpenAI-compatible or Ollama endpoint
 

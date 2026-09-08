@@ -23,3 +23,12 @@ All files in `src/lib/agent-harness/` are independent Research OS implementation
 ## 4. Attribution and Notices
 
 OpenCode is distributed under the MIT License, Copyright (c) 2025 opencode. Because no upstream source file was copied, this document records design provenance; if source is copied later, its copyright and MIT notice must accompany the adapted file.
+
+## 5. Unslop skill
+
+- **Project**: Cursor pstack
+- **Source**: https://github.com/cursor/plugins/blob/main/pstack/skills/unslop/SKILL.md
+- **License**: MIT
+- **Local copy**: `.opencode/skills/unslop/SKILL.md`
+
+Research OS copies the upstream skill instructions and injects them through the shared agent runner. The skill changes writing style only. Research OS schemas, source validation, and quality gates still decide whether an output is valid.

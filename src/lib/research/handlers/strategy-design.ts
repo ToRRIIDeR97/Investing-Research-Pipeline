@@ -15,7 +15,7 @@ export const strategyDesignHandler: StageHandler<Record<string, unknown>> = {
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
-      const combinations = generateStrategyCombinations(ctx.researchQuestion || ctx.assetName);
+      const combinations = generateStrategyCombinations(ctx.assetName);
       validateStrategyCombinations(combinations);
       for (const combination of combinations) {
         await sql`
