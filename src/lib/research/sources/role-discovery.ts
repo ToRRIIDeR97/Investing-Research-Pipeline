@@ -13,6 +13,7 @@ export type RoleDiscoveryContext = {
   cutoffAt?: string | null;
   seedUrls?: string[];
   roleSeedUrls?: Partial<Record<SourceRole, string[]>>;
+  roleQueries?: Partial<Record<SourceRole, string[]>>;
 };
 
 export type DiscoveredRoleSource = {
@@ -59,7 +60,7 @@ const ROLE_LINK_TERMS: Record<SourceRole, RegExp> = {
   earnings_presentation: /(presentation|earnings-deck|supplement)/i,
   earnings_transcript: /(transcript|prepared-remarks|earnings-call)/i,
   proxy_and_governance: /(proxy|governance|board)/i,
-  founder_and_company_history: /(founder|history|our-story|about|origin|leadership)/i,
+  founder_and_company_history: /(found(?:ed|er|ing)|history|our-story|about|origin|leadership)/i,
   peer_company_primary: /(competitor|peer|investor|annual-report|results|filing|reactor-design|design-cert)/i,
   industry_primary: /(industry|reactor|design|report|outlook|statistics|data)/i,
   customer_or_channel: /(customer|project|case-study|deployment)/i,
@@ -132,6 +133,31 @@ export function isSafePublicUrl(value: string): boolean {
   }
 }
 
+export function isPlausibleSourceRole(urlValue: string, role: SourceRole): boolean {
+  try {
+    const url = new URL(urlValue);
+    const host = url.hostname.toLowerCase();
+    const path = url.pathname.toLowerCase();
+    if (host === "wikipedia.org" || host.endsWith(".wikipedia.org")) return false;
+    if (role !== "market_data" && (
+      (host.endsWith("finance.yahoo.com") && /^\/quote\//.test(path)) ||
+      (host.endsWith("stockanalysis.com") && /^\/stocks\/[^/]+\/?$/.test(path))
+    )) return false;
+    if (role === "peer_company_primary" &&
+      !(host.endsWith(".gov") || /investor|annual[-_/]?report|financial[-_/]?results|filing|earnings|quarterly/.test(path))) return false;
+    if (role === "customer_or_channel" &&
+      !/customer|channel|case[-_/]?study|client|partner|testimonial/.test(path)) return false;
+    if (role === "supplier_or_partner" &&
+      !/supplier|partner|contract|agreement|collaboration|supply/.test(path)) return false;
+    if (role === "earnings_release" &&
+      !(host.endsWith(".gov") || /earnings|financial[-_/]?results|quarterly[-_/]?results|\/results\/|release|press|news/.test(path))) return false;
+    if (role === "regulatory_or_government" && !(host.endsWith(".gov") || host === "gov")) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function extractPublicLinks(baseUrl: string, html: string): { url: string; text: string }[] {
   const links: { url: string; text: string }[] = [];
   const pattern = /<a\b[^>]*href\s*=\s*["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
@@ -170,7 +196,7 @@ export async function discoverRoleSources(
   const selectedRoles = [...new Set(roles)].slice(0, maxRoles);
   const seedCandidates = await discoverSeedCandidates(
     context.seedUrls || [],
-    selectedRoles,
+    selectedRoles.filter((role) => ISSUER_SITE_ROLES.includes(role)),
     fetchImpl,
     context.assetName
   );
@@ -192,18 +218,21 @@ export async function discoverRoleSources(
 
   for (const role of selectedRoles) {
     const candidates = seedCandidates.get(role) || [];
-    const queries = buildRoleSearchQueries(context.assetName, context.symbol, role);
+    const requested = context.roleQueries?.[role] || [];
+    const queries = [...requested, ...buildRoleSearchQueries(context.assetName, context.symbol, role)];
     for (const query of queries) {
-      if (candidates.length >= maxPerRole * 3) break;
-      candidates.push(...await searchWeb(query, fetchImpl));
+      if (!requested.includes(query) && candidates.length >= maxPerRole * 3) break;
+      const found = await searchWeb(query, fetchImpl);
+      if (requested.includes(query)) candidates.unshift(...found);
+      else candidates.push(...found);
     }
 
     for (const candidate of dedupeCandidates(candidates)) {
       if (discovered.filter((source) => source.metadata.source_role === role).length >= maxPerRole) break;
-      const source = await fetchCandidate(candidate, role, context.cutoffAt, fetchImpl);
+      const source = await fetchCandidate(candidate, role, context.cutoffAt, context.assetName, fetchImpl);
       if (!source) continue;
       discovered.push(source);
-      if (role === "company_investor_relations") {
+      if (role === "company_investor_relations" && isIssuerSeedSite(source.url, context.seedUrls || [])) {
         const issuerRoles = selectedRoles.filter(
           (selectedRole) => selectedRole !== role && ISSUER_SITE_ROLES.includes(selectedRole)
         );
@@ -262,6 +291,20 @@ function normalizeSeedUrl(value: string): string | null {
   if (!trimmed) return null;
   const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
   return isSafePublicUrl(normalized) ? normalized : null;
+}
+
+function isIssuerSeedSite(sourceUrl: string, seedUrls: string[]): boolean {
+  try {
+    const sourceHost = new URL(sourceUrl).hostname.toLowerCase();
+    return seedUrls.some((seed) => {
+      const normalized = normalizeSeedUrl(seed);
+      if (!normalized) return false;
+      const seedHost = new URL(normalized).hostname.toLowerCase();
+      return sourceHost === seedHost || sourceHost.endsWith(`.${seedHost}`) || seedHost.endsWith(`.${sourceHost}`);
+    });
+  } catch {
+    return false;
+  }
 }
 
 async function searchWeb(query: string, fetchImpl: typeof fetch): Promise<SearchCandidate[]> {
@@ -340,9 +383,11 @@ async function fetchCandidate(
   candidate: SearchCandidate,
   role: SourceRole,
   cutoffAt: string | null | undefined,
+  assetName: string,
   fetchImpl: typeof fetch
 ): Promise<DiscoveredRoleSource | null> {
   try {
+    if (!isPlausibleSourceRole(candidate.url, role)) return null;
     const response = await safeFetch(candidate.url, fetchImpl);
     if (!response.ok) return null;
     const contentType = response.headers.get("content-type") || "";
@@ -365,18 +410,21 @@ async function fetchCandidate(
       title,
       candidate.url,
       role,
-      explicitRoleSeed ? "" : contextAssetName(candidate.query)
+      explicitRoleSeed ? "" : assetName
     )) {
       return null;
     }
     const publishedAt = extractPublishedAt(content);
     if (publishedAt && cutoffAt && new Date(publishedAt) > new Date(cutoffAt)) return null;
     if (/html/i.test(contentType)) {
-      content = stripHtml(content).replace(/\s+/g, " ").trim();
+      const article = content.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1];
+      content = stripHtml(article && isSubstantiveFetchedContent(article, title) ? article : content)
+        .replace(/\s+/g, " ").trim();
       storedMimeType = "text/plain";
       extractionMethod = "html_text";
     }
     const finalUrl = response.url || candidate.url;
+    if (!isPlausibleSourceRole(finalUrl, role)) return null;
     return {
       sourceType: roleSourceType(role),
       title,
@@ -529,10 +577,6 @@ function unwrapBingUrl(value: string): string {
   }
 }
 
-function contextAssetName(query: string): string {
-  return query.match(/^"([^"]+)"/)?.[1] || "";
-}
-
 function isRelevantForRole(
   content: string,
   title: string,
@@ -541,6 +585,11 @@ function isRelevantForRole(
   assetName: string
 ): boolean {
   const searchable = `${title} ${url} ${stripHtml(content).slice(0, 20_000)}`.toLowerCase();
+  if (["customer_or_channel", "supplier_or_partner"].includes(role) && assetName) {
+    const identity = `${title} ${url}`.toLowerCase();
+    const tokens = assetName.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length >= 4);
+    if (tokens.length && !tokens.some((token) => identity.includes(token))) return false;
+  }
   if (!["macro_dataset", "market_data"].includes(role)) {
     const genericCompanyTokens = new Set([
       "company", "corporation", "corp", "inc", "limited", "ltd", "plc",

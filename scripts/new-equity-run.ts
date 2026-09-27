@@ -132,7 +132,7 @@ async function main() {
     FROM research_stages
     WHERE research_run_id = ${runId} AND stage_key = 'research_plan'
   `;
-  if (result.status === "waiting_for_human" && planStage?.status === "waiting_for_human") {
+  if (acceptanceProvider === "mock" && result.status === "waiting_for_human" && planStage?.status === "waiting_for_human") {
     console.log("Approving the test research-plan gate and resuming...");
     await approveResearchPlan(runId, "system-test-harness");
     result = await runSystemResearchPipeline(runId);

@@ -189,6 +189,7 @@ export async function getResearchRunReport(runId: string) {
       },
       artifacts,
       artifacts_by_type: byType,
+      report_document: byType.report_document?.[0]?.content_json || null,
       missing_sections: missingSections,
       incomplete: missingSections.length > 0,
       read_models: {

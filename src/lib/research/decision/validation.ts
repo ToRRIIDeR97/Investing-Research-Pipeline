@@ -21,7 +21,7 @@ export type ValidationResult = {
 export function validateInvestmentThesis(content: unknown): ValidationResult {
   const parsed = InvestmentThesis.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -38,7 +38,7 @@ export function validateInvestmentThesis(content: unknown): ValidationResult {
 export function validateRiskRegister(content: unknown): ValidationResult {
   const parsed = RiskRegister.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -61,7 +61,7 @@ export function validateRiskRegister(content: unknown): ValidationResult {
 export function validateCatalystRegister(content: unknown): ValidationResult {
   const parsed = CatalystRegister.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -80,7 +80,7 @@ export function validateCatalystRegister(content: unknown): ValidationResult {
 export function validateExpectedReturnMatrix(content: unknown): ValidationResult {
   const parsed = ExpectedReturnMatrix.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -97,7 +97,7 @@ export function validateExpectedReturnMatrix(content: unknown): ValidationResult
 export function validateThesisBreakers(content: unknown): ValidationResult {
   const parsed = ThesisBreakers.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -116,7 +116,7 @@ export function validateThesisBreakers(content: unknown): ValidationResult {
 export function validateMonitoringDashboard(content: unknown): ValidationResult {
   const parsed = MonitoringDashboard.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -135,7 +135,7 @@ export function validateMonitoringDashboard(content: unknown): ValidationResult 
 export function validateDecisionRecord(content: unknown): ValidationResult {
   const parsed = DecisionRecord.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];

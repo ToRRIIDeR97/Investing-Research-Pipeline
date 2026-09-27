@@ -64,6 +64,12 @@ describe("framework-style research backtesting", () => {
       assert.ok(item.metrics.out_of_sample);
       assert.ok(Number.isFinite(item.metrics.out_of_sample_excess_return));
       assert.equal(item.metrics.parameter_stability.family_peer_count, 9);
+      if (item.status === "Robust" || item.status === "Promising") {
+        assert.ok(item.metrics.number_of_trades >= 12);
+        assert.ok(item.metrics.out_of_sample_return > 0);
+        assert.ok(item.metrics.out_of_sample_excess_return > 0);
+        assert.ok(item.metrics.benchmark_relative_return > 0);
+      }
     }
   });
 

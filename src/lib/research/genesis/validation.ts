@@ -29,7 +29,7 @@ const EVIDENCE_WEIGHT_RANK: Record<EvidenceWeight, number> = {
 export function validateGenesisArtifact(content: unknown): ValidationResult {
   const parsed = CompanyGenesis.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -58,7 +58,7 @@ export function validateGenesisArtifact(content: unknown): ValidationResult {
 export function validateFounderProfile(content: unknown): ValidationResult {
   const parsed = FounderProfile.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -75,7 +75,7 @@ export function validateFounderProfile(content: unknown): ValidationResult {
 export function validateStrategicHistoryTimeline(content: unknown): ValidationResult {
   const parsed = StrategicHistoryTimeline.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -97,7 +97,7 @@ export function validateStrategicHistoryTimeline(content: unknown): ValidationRe
 export function validateStrategicDNA(content: unknown): ValidationResult {
   const parsed = StrategicDNA.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -114,7 +114,7 @@ export function validateStrategicDNA(content: unknown): ValidationResult {
 export function validateMissionEvolution(content: unknown): ValidationResult {
   const parsed = MissionEvolution.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];

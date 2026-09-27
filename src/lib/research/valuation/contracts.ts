@@ -2,14 +2,15 @@
  * Valuation contracts (Component 11) for Research OS v3.
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
+import {ValuationMethodInput} from './schedules';
 
 export const AnnualProjectionEntry = z.object({
   fiscal_year: z.number().int(),
   target_date: z.string().min(1),
-  operating_values: z.record(z.number()),
-  balance_sheet_values: z.record(z.number()),
-  per_share_values: z.record(z.number()),
+  operating_values: z.record(z.string(), z.number()),
+  balance_sheet_values: z.record(z.string(), z.number()),
+  per_share_values: z.record(z.string(), z.number()),
 });
 export type AnnualProjectionEntry = z.infer<typeof AnnualProjectionEntry>;
 
@@ -45,6 +46,8 @@ export const ValuationScenarioSet = z.object({
   terminal_anchor_bull: z.number(),
   uses_adjusted_fcf: z.boolean().default(true),
   segments_reconciled: z.boolean().default(true),
+  method_inputs:z.array(ValuationMethodInput).optional(),
+  omitted_methods:z.array(z.object({method:z.string().min(1),reason:z.string().min(1)})).optional(),
 });
 export type ValuationScenarioSet = z.infer<typeof ValuationScenarioSet>;
 

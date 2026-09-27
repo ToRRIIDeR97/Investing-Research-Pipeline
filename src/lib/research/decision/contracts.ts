@@ -2,7 +2,7 @@
  * Decision contracts (Component 12) for Research OS v3.
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 
 export const InvestmentThesis = z.object({
   artifact_type: z.literal("investment_thesis"),
@@ -28,7 +28,7 @@ export const RiskEntry = z.object({
   financial_consequence: z.string().min(1),
   model_input_affected: z.string().min(1),
   mitigants: z.array(z.string().min(1)).min(1),
-  supporting_claim_ids: z.array(z.string().uuid()).min(1),
+  supporting_claim_ids: z.array(z.guid()).min(1),
   confidence: z.number().min(0).max(1),
   is_source_gap_only: z.boolean().default(false), // For C12-T1 check
 });
@@ -85,9 +85,15 @@ export const ThesisBreakers = z.object({
 export type ThesisBreakers = z.infer<typeof ThesisBreakers>;
 
 export const MonitoringKPI = z.object({
+  metric_key:z.string().min(1).optional(),
+  definition:z.string().min(1).optional(),
+  unit:z.string().min(1).optional(),
+  reporting_basis:z.string().min(1).optional(),
+  segment:z.string().nullable().optional(),
+  geography:z.string().nullable().optional(),
   kpi: z.string().min(1),
   process_node: z.string().min(1),
-  current_level: z.number(),
+  current_level: z.number().nullable(),
   bear_threshold: z.number(),
   base_range: z.string().min(1),
   bull_threshold: z.number(),

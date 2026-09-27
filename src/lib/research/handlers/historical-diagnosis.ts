@@ -1,9 +1,9 @@
 import { completeV3Task, createV3Task, failV3Task } from "../run-context";
-import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
-import { makeValidationResult } from "../run-context";
+import type { ResearchRunContext, StageHandler } from "../run-context";
 import { HISTORICAL_DIAGNOSIS_CONTRACT } from "../stage-contracts";
 import { createArtifactRepository } from "../artifacts/repository";
 import { buildHistoricalDiagnosis } from "../diagnosis/diagnosis";
+import { latestCompletedQuarter } from "../history/normalizer";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -23,24 +23,20 @@ export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> =
     );
     try {
       const observationRows = await sql`
-        SELECT md.metric_key, mo.value_numeric, mo.period_end, mo.as_of_date,
+        SELECT mo.id, md.metric_key, mo.value_numeric, mo.period_end, mo.as_of_date,
+               ec.id AS evidence_claim_id,
                mo.confidence, mo.unit, mo.currency
         FROM metric_observations mo
         JOIN metric_definitions md ON md.id = mo.metric_definition_id
+        LEFT JOIN evidence_claims ec ON ec.id = mo.evidence_claim_id AND ec.review_status = 'accepted'
         WHERE mo.research_run_id = ${ctx.runId}
           AND mo.review_status = 'accepted'
           AND mo.value_numeric IS NOT NULL
+          AND mo.period_end <= ${(ctx.marketDataCutoffAt || ctx.cutoffAt).toISOString().slice(0, 10)}
+          AND (mo.available_at IS NULL OR mo.available_at <= ${(ctx.marketDataCutoffAt || ctx.cutoffAt).toISOString()})
+          AND (mo.period_start IS NULL OR mo.period_start >= date_trunc('quarter', mo.period_end::timestamp)::date)
         ORDER BY md.metric_key, COALESCE(mo.period_end, mo.as_of_date)
       `;
-      const claimRows = await sql`
-        SELECT id FROM evidence_claims
-        WHERE research_run_id = ${ctx.runId} AND review_status = 'accepted'
-        ORDER BY created_at
-      `;
-      const fallbackClaimIds = claimRows.slice(0, 3).map((row) => String(row.id));
-      if (fallbackClaimIds.length === 0) {
-        throw new Error("Historical diagnosis requires at least one accepted evidence claim");
-      }
       const observations = observationRows.map((row) => {
         const date = new Date(row.period_end || row.as_of_date);
         return {
@@ -61,8 +57,10 @@ export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> =
       });
       const metricKeys = [...new Set(observations.map((row) => row.metric_key))];
       const supportingClaims = Object.fromEntries(
-        metricKeys.map((metricKey) => [metricKey, fallbackClaimIds])
+        metricKeys.map((metricKey) => [metricKey, [...new Set(observationRows
+          .filter(row => row.metric_key === metricKey && row.evidence_claim_id).map(row => String(row.evidence_claim_id))) ]])
       );
+      const end = latestCompletedQuarter(ctx.marketDataCutoffAt || ctx.cutoffAt);
       const output: Record<string, any> = {
         historical_diagnosis: buildHistoricalDiagnosis({
           asset_id: ctx.assetId,
@@ -70,8 +68,10 @@ export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> =
           observations,
           materialMetricKeys: metricKeys,
           supportingClaims,
-          endFiscalYear: new Date().getUTCFullYear(),
-          endFiscalQuarter: 4,
+          supportingObservations: Object.fromEntries(metricKeys.map(metricKey => [metricKey,
+            observationRows.filter(row => row.metric_key === metricKey).map(row => String(row.id))])),
+          endFiscalYear: end.year,
+          endFiscalQuarter: end.quarter,
         }),
       };
 
@@ -107,25 +107,4 @@ export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> =
       await sql.end();
     }
   },
-  async validate(ctx: ResearchRunContext, _output: unknown): Promise<ValidationResult> {
-    const sql = postgres(process.env.DATABASE_URL!);
-    try {
-      const errors: string[] = [];
-      const artifactKeys = HISTORICAL_DIAGNOSIS_CONTRACT.requiredKeys;
-      for (const k of artifactKeys) {
-        const rows = await sql`
-          SELECT COUNT(*) as cnt FROM research_artifacts
-          WHERE research_run_id = ${ctx.runId}
-            AND artifact_type = ${k}
-            AND status IN ('validated', 'accepted')
-        `;
-        if (Number(rows[0].cnt) === 0) {
-          errors.push(`Missing required artifact: ${k}`);
-        }
-      }
-      return makeValidationResult(errors);
-    } finally {
-      await sql.end();
-    }
-  }
 };

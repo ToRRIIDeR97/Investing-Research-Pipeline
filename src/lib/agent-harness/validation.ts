@@ -79,6 +79,7 @@ export function validateSchema(
   schemaFormat: any,
   path = ""
 ): SchemaValidationError[] {
+  if (typeof schemaFormat?.validate === "function") return schemaFormat.validate(value);
   const errors: SchemaValidationError[] = [];
 
   // Re-unwrap schema format if nested like `{ type: "json_schema", schema: { ... } }`

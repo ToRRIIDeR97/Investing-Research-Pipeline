@@ -1,4 +1,3 @@
-import { registerStageHandler, hasStageHandler } from "../stage-registry";
 import { intakeHandler } from "./intake";
 import { assetIdentityHandler } from "./asset-identity";
 import { archetypeCompositionHandler } from "./archetype-composition";
@@ -24,30 +23,8 @@ import { humanReviewHandler } from "./human-review";
 import { exportHandler } from "./export";
 import { refreshScheduleHandler } from "./refresh-schedule";
 
-export function registerCoreHandlers(): void {
-  if (hasStageHandler("intake")) return;
-  registerStageHandler(intakeHandler);
-  registerStageHandler(assetIdentityHandler);
-  registerStageHandler(archetypeCompositionHandler);
-  registerStageHandler(researchPlanHandler);
-  registerStageHandler(sourceDiscoveryHandler);
-  registerStageHandler(sourceIngestionHandler);
-  registerStageHandler(evidenceExtractionHandler);
-  registerStageHandler(historicalRecordHandler);
-  registerStageHandler(companyGenesisHandler);
-  registerStageHandler(historicalDiagnosisHandler);
-  registerStageHandler(businessProcessAnalysisHandler);
-  registerStageHandler(moatAnalysisHandler);
-  registerStageHandler(operatingModelHandler);
-  registerStageHandler(operatingScenariosHandler);
-  registerStageHandler(assetValuationHandler);
-  registerStageHandler(indicatorDesignHandler);
-  registerStageHandler(strategyDesignHandler);
-  registerStageHandler(backtestExecutionHandler);
-  registerStageHandler(backtestReviewHandler);
-  registerStageHandler(decisionSynthesisHandler);
-  registerStageHandler(aiReviewerHandler);
-  registerStageHandler(humanReviewHandler);
-  registerStageHandler(exportHandler);
-  registerStageHandler(refreshScheduleHandler);
-}
+import type { StageHandler } from "../run-context";
+
+export const STAGE_HANDLERS: Record<string, StageHandler> = Object.fromEntries(
+  [intakeHandler, assetIdentityHandler, archetypeCompositionHandler, researchPlanHandler, sourceDiscoveryHandler, sourceIngestionHandler, evidenceExtractionHandler, historicalRecordHandler, companyGenesisHandler, historicalDiagnosisHandler, businessProcessAnalysisHandler, moatAnalysisHandler, operatingModelHandler, operatingScenariosHandler, assetValuationHandler, indicatorDesignHandler, strategyDesignHandler, backtestExecutionHandler, backtestReviewHandler, decisionSynthesisHandler, aiReviewerHandler, humanReviewHandler, exportHandler, refreshScheduleHandler].map((handler) => [handler.stageKey, handler])
+);

@@ -1,0 +1,83 @@
+import { z } from "zod/v4";
+import type { AgentOutputFormat } from "@/lib/agent-harness/types";
+import { ReportVisual } from './visuals';
+
+export const STANDARD_VERSION = "asset-framework-2.1-adaptive-1";
+export const COVERAGE = {
+  ownership: "Investor claim, entity structure and value accrual",
+  evidence: "Evidence quality, definitions, periods and missing disclosures",
+  history: "Reported history, normalization, quarterly and TTM diagnosis",
+  business: "Segments, value chain, customer decisions and cash conversion",
+  constraints: "Bottlenecks, time lags and top-down/bottom-up reconciliation",
+  moat: "Moat evidence, attacks, competitive response and no-moat economics",
+  management: "Management, governance, capital allocation and per-share outcomes",
+  forecasts: "Operating drivers, reinvestment and coherent scenarios",
+  valuation: "Appropriate valuation methods and reverse operational expectations",
+  downside: "Permanent impairment, no-rerating returns and scenario sensitivities",
+  monitoring: "Thesis breakers, thresholds, indicators and affected assumptions",
+  conclusion: "Decision, confidence by area and material unresolved questions",
+} as const;
+
+const id = z.string().min(1);
+export const SectionPlan = z.object({
+  id: id.regex(/^[a-z0-9_-]+$/), title: id, purpose: id,
+  coverage: z.array(id), artifact_ids: z.array(id),
+});
+export const CoverageResult = z.object({
+  key: id, status: z.enum(["satisfied", "qualified", "blocked", "not_applicable"]),
+  rationale: id, section_ids: z.array(id),
+});
+export const Question = z.object({
+  id, question: id, materiality: z.enum(["critical", "material", "supporting"]),
+  status: z.enum(["answered", "qualified", "blocked"]), answer: id,
+  evidence_ids: z.array(id), artifact_ids: z.array(id), follow_up: z.string(),
+});
+export const Outline = z.object({
+  sections: z.array(SectionPlan).min(1).max(24),
+  coverage: z.array(CoverageResult).min(1), questions: z.array(Question),
+});
+export const Section = SectionPlan.extend({
+  paragraphs: z.array(z.object({
+    kind: z.enum(["fact", "analysis", "assumption", "speculation"]), text: id,
+    evidence_ids: z.array(id), artifact_ids: z.array(id),
+  })).min(1),
+  counterevidence: id, implication: id, gaps: z.array(id),
+  tables: z.array(z.object({ title: id, artifact_id: id, path: z.string() })),
+  visuals: z.array(ReportVisual).max(2).optional(),
+});
+export type ReportSection = z.infer<typeof Section>;
+export type ReportOutline = z.infer<typeof Outline>;
+export type ResearchQuestion = z.infer<typeof Question>;
+export type CoverageCheck = z.infer<typeof CoverageResult>;
+
+export function validateProductOutline(outline:ReportOutline) {
+  if(outline.sections.some(s=>s.coverage.length>0&&s.coverage.every(k=>k==='history'||k==='evidence')))throw new Error('Integrate historical causes and material uncertainty into the company analysis; do not create standalone financial-history or evidence-limitations chapters.');
+  const valuation=outline.sections.filter(s=>s.coverage.includes('valuation'));
+  if(valuation.length!==1||!['forecasts','downside'].every(k=>valuation[0].coverage.includes(k)))throw new Error('Combine forecasts, scenarios, valuation and permanent-loss analysis in one Valuation chapter.');
+}
+
+export function outputContract(shape: Record<string, z.ZodType>): AgentOutputFormat {
+  const schema = z.object(shape);
+  return { requiredKeys: Object.keys(shape), schema: z.toJSONSchema(schema, { target: "draft-7", io: "input" }),
+    validate(value) { const parsed = schema.safeParse(value); return parsed.success ? [] :
+      parsed.error.issues.map(issue => ({ path: issue.path.join("."), message: issue.message })); } };
+}
+export const OUTLINE_CONTRACT = outputContract({ outline: Outline });
+export const SECTION_CONTRACT = outputContract({ section: Section });
+
+export const RESEARCH_DOCTRINE = [
+  "The Financials deliverable is the complete issuer-reported primary statements from 10-Q and 10-K filings, with quarterly AND annual observations. Preserve custom line items, hierarchy, subtotals, fiscal calendars, units, source locations and restatements. A selected-metric shortlist is not complete. Check coverage against filing tables and reconcile totals. Never label annualized quarters or TTM as reported annual data.",
+  "Collect quarterly histories for every monitoring KPI, with stable metric_key, definition, unit, period, reporting basis and sources. Link thresholds and thesis breakers to model inputs. The KPI Dashboard and Monitoring and decision must use the same definitions and observations; never imply real-time disclosure where only a dated observation exists.",
+  "Financials Metrics must expose sourced net income margin, gross margin, SG&A margin, ROE, ROIC and company-relevant ratios. State formulas and period conventions, align units and basis, use average balances when required, and distinguish unavailable inputs from economically inapplicable measures. Never invent missing inputs.",
+  "Write company analysis directly in an analyst's voice, with adjacent citations. Do not narrate artifacts, packets, saved records, database fields or the research workflow. Retain material uncertainty beside the affected claim. Do not create standalone Financial history or Evidence and limitations chapters; financial tables live in Financials and citations retain source access.",
+  "Combine operating scenarios, valuation, downside and permanent loss in one Valuation chapter. Present numerical driver assumptions and annual schedules with explicit Bear, Base and Bull cases. Select appropriate valuation methods separately from scenarios, rather than forcing three DCF methods. Show actual discounting, terminal value, capital/share bridges or the chosen method's equivalent calculation. Do not describe an exit multiple or interpolated price path as a DCF.",
+  "Select exhibits to explain a material trend, comparison or business mechanism. No mandatory graph slot or Supporting evidence block in every chapter. Use relevant segment numbers where available. Management should include a sourced organization chart with names, roles, effective dates and documented reporting lines; never infer hierarchy from seniority.",
+  "Use Asset Research Agent Framework v2.1. Explain business processes and historical causes before relying on forecasts; write the executive judgment last.",
+  "Separate disclosed facts, third-party data, derived estimates, analyst assumptions and speculative options. A citation ID alone does not prove a claim: verify the source passage supports the statement.",
+  "Trace material forecasts through customer decisions, constraints, time lags, competitor responses, reinvestment and per-share value. Explain disagreements and what would disprove the interpretation.",
+  "Use the latest reported fiscal periods available by the source cutoff, targeting 20 quarters where applicable. Preserve fiscal conventions, raw versus normalized data, units, currencies and missing periods. Do not fabricate quarterly data for semiannual reporters.",
+  "Test moat claims against customer behavior and financial evidence. No demonstrated moat is a valid conclusion. Separate operating scenarios from valuation assumptions and examine permanent impairment and returns without rerating.",
+  "Adapt metrics and valuation to the asset and each segment. Do not impose banking capital metrics on unrelated businesses. Treat framework equations as conceptual until units, periods and accounting definitions are established.",
+  "Spend detail on questions that change valuation, downside or confidence. Explain unavailable disclosures and their consequences. Required coverage may be grouped under any useful headings; add company-specific sections when material.",
+  "Never invent sources, quotations, numerical inputs or calculated results. Numerical tables must reference supplied artifact paths. Label incomplete analysis and withhold a decision when a material gap blocks it.",
+];

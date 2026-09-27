@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "research-os",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--env-file=.env", "scripts/dev-with-db.cjs"],
+      "port": 3000
+    }
+  ]
+}

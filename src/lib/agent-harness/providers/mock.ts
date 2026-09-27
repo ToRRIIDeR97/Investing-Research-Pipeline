@@ -76,6 +76,46 @@ function packetFromPrompt(prompt: string) {
   return {};
 }
 
+function adaptiveReportResponse(packet: Record<string, any>) {
+  const artifacts = packet.artifacts as Array<Record<string, any>> || [];
+  const evidence = packet.evidence_claims as Array<Record<string, any>> || [];
+  const artifactIds = artifacts.map(a => String(a.id));
+  if (packet.output_contract === "report_outline") {
+    const labels: Record<string, string> = {
+      conclusion: "Executive judgment and confidence", ownership: "What the investor owns",
+      evidence: "Evidence quality and disclosure limits", history: "What changed in the historical economics",
+      business: "How customers become collected cash", constraints: "What limits profitable growth",
+      moat: "Competitive advantage under attack", management: "Can shareholders retain the economics?",
+      forecasts: "From operating drivers to scenarios", valuation: "Value range and market expectations",
+      downside: "Permanent impairment and returns without rerating", monitoring: "What would change the thesis",
+    };
+    const keys = Object.keys(packet.coverage_requirements || {});
+    keys.sort((a,b) => Number(b === "conclusion") - Number(a === "conclusion"));
+    return { outline: {
+      sections: keys.filter(key=>!["evidence","history","forecasts","downside"].includes(key)).map(key => ({ id: key, title: key==="valuation"?"Valuation":labels[key] || key, purpose: packet.coverage_requirements[key], coverage: key==="business"?["business","evidence","history"]:key==="valuation"?["valuation","forecasts","downside"]:[key], artifact_ids: artifactIds })),
+      coverage: keys.map(key => ({ key, status: artifactIds.length ? "satisfied" : "blocked", rationale: "Synthetic fixture exercises coverage; it does not establish real investment quality.", section_ids: [["evidence","history"].includes(key)?"business":["forecasts","downside"].includes(key)?"valuation":key] })),
+      questions: [{ id: "cash", question: `Which constraints determine cash reaching holders of ${packet.asset.assetName}?`,
+        materiality: "material", status: artifactIds.length ? "answered" : "blocked", answer: "The synthetic operating and valuation artifacts define the modeled cash conversion.",
+        evidence_ids: evidence.slice(0,1).map(e => e.id), artifact_ids: artifactIds, follow_up: artifactIds.length ? "" : "Obtain an operating model." }],
+    } };
+  }
+  if (packet.output_contract === "report_section") {
+    const section = packet.section_plan;
+    const matching = artifacts.find(a => a.artifact_type === ({ history: "historical_record", forecasts: "operating_scenario_set", valuation: "annual_price_target_path" } as Record<string,string>)[section.id]);
+    const tablePath = section.id === "history" ? "observations" : section.id === "valuation" ? "price_target_path" : "scenarios";
+    return { section: { ...section,
+      paragraphs: [
+        { kind: "analysis", text: `This synthetic ${section.title.toLowerCase()} analysis traces the supplied operating evidence to shareholder outcomes. Demand must convert to profitable activity, and reinvestment can absorb the resulting cash before it reaches holders.`, evidence_ids: evidence.slice(0,1).map(e => e.id), artifact_ids: artifactIds },
+        { kind: "assumption", text: "The scenario depends on sustained customer activity and disciplined reinvestment. If costs rise faster than monetization, the same revenue can produce weaker cash conversion. This is a mock explanation for workflow verification." + (packet.human_revision_request ? " This revised fixture distinguishes spending from returns: spending alone does not demonstrate a profitable investment." : ""), evidence_ids: [], artifact_ids: artifactIds },
+      ], counterevidence: "The fixture cannot establish actual customer retention, competitive responses or future capital allocation.",
+      implication: "Reassess the relevant operating assumptions when evidence changes; the fixture is not an investment recommendation.",
+      gaps: ["Synthetic data cannot establish live investment quality."],
+      tables: matching && Object.hasOwn(matching.content_json, tablePath) ? [{ title: "Stored model data", artifact_id: matching.id, path: tablePath }] : [],
+    } };
+  }
+  return STATIC["research-reviewer"];
+}
+
 function assetFromPacket(packet: Record<string, unknown>) {
   const asset = packet.asset && typeof packet.asset === "object"
     ? packet.asset as Record<string, unknown>
@@ -104,8 +144,8 @@ function sourceReaderResponse(packet: Record<string, unknown>) {
   const sources = Array.isArray(packet.source_corpus) ? packet.source_corpus as Array<Record<string, unknown>> : [];
   const asset = assetFromPacket(packet);
   const topics = [
-    ...asset.requiredModules,
     ...MODULES,
+    ...asset.requiredModules,
     "competitive_position", "management_execution", "capital_allocation", "regulatory_risk",
     "foreign_exchange", "geographic_mix", "market_share", "liquidity",
   ].filter((topic, index, all) => all.indexOf(topic) === index);
@@ -118,7 +158,7 @@ function sourceReaderResponse(packet: Record<string, unknown>) {
       document_chunk_id: source.document_chunk_id,
       char_start: source.char_start,
       char_end: source.char_end,
-      quoted_text: String(source.content_excerpt || "").slice(0, 500),
+      quoted_text: String(source.content_excerpt || "").slice(0, 240),
     };
   });
   return { evidence_claims: claims, contradictions: [], source_gaps: [], low_confidence_items: [], rejected_candidates: [] };
@@ -472,6 +512,18 @@ function v3OperatingModelResponse(packet: Record<string, unknown>) {
       consolidated_operating_income: 500000000,
       credit_capital_required: 150000000,
       balance_sheet_effect_present: true
+    },
+    top_down_bottom_up_reconciliation: {
+      artifact_type: "top_down_bottom_up_reconciliation",
+      top_down_forecast_total: 1200000000,
+      bottom_up_forecast_total: 1200000000,
+      tam_limit: 2000000000,
+      customer_budget_limit: 1500000000
+    },
+    reinvestment_model: {
+      artifact_type: "reinvestment_model",
+      capex_forecast: [100000000],
+      working_capital_forecast: [50000000]
     }
   };
 }
@@ -500,7 +552,8 @@ function v3OperatingScenariosResponse(packet: Record<string, unknown>) {
           resulting_financial_statements_json: {},
           maintenance_spend: 5000000,
           revenue_cagr: 0.05,
-          operating_margin: 0.12
+          operating_margin: 0.12,
+          numeric_assumptions:[{driver_key:"revenue_cagr",fiscal_year:2030,value:0.05,unit:"ratio",rationale:"Synthetic downside assumption",source_ids:[]}]
         },
         {
           scenario_type: "base",
@@ -518,7 +571,8 @@ function v3OperatingScenariosResponse(packet: Record<string, unknown>) {
           resulting_financial_statements_json: {},
           maintenance_spend: 10000000,
           revenue_cagr: 0.15,
-          operating_margin: 0.22
+          operating_margin: 0.22,
+          numeric_assumptions:[{driver_key:"revenue_cagr",fiscal_year:2030,value:0.15,unit:"ratio",rationale:"Synthetic base assumption",source_ids:[]}]
         },
         {
           scenario_type: "bull",
@@ -536,7 +590,8 @@ function v3OperatingScenariosResponse(packet: Record<string, unknown>) {
           resulting_financial_statements_json: {},
           maintenance_spend: 15000000,
           revenue_cagr: 0.25,
-          operating_margin: 0.32
+          operating_margin: 0.32,
+          numeric_assumptions:[{driver_key:"revenue_cagr",fiscal_year:2030,value:0.25,unit:"ratio",rationale:"Synthetic upside assumption",source_ids:[]}]
         }
       ]
     }
@@ -552,7 +607,9 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
       terminal_anchor_base: 15,
       terminal_anchor_bull: 20,
       uses_adjusted_fcf: true,
-      segments_reconciled: true
+      segments_reconciled: true,
+      method_inputs:["bear","base","bull"].map((scenario_type,i)=>({method:"fcfe",method_name:"Discounted equity cash flow",scenario_type,rationale:"Synthetic verification fixture",currency:"USD",cash_flow_label:"FCFE",discount_rate:0.1,years:[2026,2027,2028,2029,2030].map(fiscal_year=>({fiscal_year,cash_flow:100*(i+1)})),terminal:{type:"perpetuity",growth_rate:0.02},equity_bridge:0,equity_bridge_explanation:"Cash flow is already attributable to equity",diluted_shares:100,source_notes:["Synthetic fixture; not investment analysis"]})),
+      omitted_methods:[{method:"book_exit",reason:"Synthetic fixture has no terminal book forecast"}]
     },
     reverse_valuation: {
       artifact_type: "reverse_valuation",
@@ -873,7 +930,7 @@ function v3DecisionResponse(packet: Record<string, unknown>) {
       artifact_type: "monitoring_dashboard",
       items: [
         {
-          kpi: "Total member deposits",
+          kpi: "Total member deposits", metric_key:"deposits",definition:"Reported period-end deposits",unit:"USD",reporting_basis:"gaap",
           process_node: "Deposit acquisition",
           current_level: 21000000000,
           bear_threshold: 18000000000,
@@ -917,6 +974,18 @@ export class MockProvider implements ModelProvider {
 
     if (this.config.responseText) {
       response = this.config.responseText;
+    } else if (packet.output_contract === "team_brief") {
+      response = { approach: `Synthetic ${packet.role} specialist plan`, checks: ["Verify source coverage and trace assumptions"], information_needed: [] };
+    } else if (packet.output_contract === "team_requests") {
+      response = { requests: [] };
+    } else if (packet.output_contract === "team_answer") {
+      response = { status: "answered", answer: "Synthetic specialist answer grounded in the supplied research.",
+        evidence_ids: ((packet.evidence as any[]) || []).slice(0, 1).map(e => e.id),
+        artifact_ids: ((packet.artifacts as any[]) || []).slice(0, 1).map(a => a.id) };
+    } else if (packet.output_contract === "research_chat") {
+      response = {answer:"This is a synthetic chat response for workflow testing. The selected research and cited source provide the context.", evidence_ids:((packet.evidence as any[])||[]).slice(0,1).map(e=>e.id),proposals:[]};
+    } else if (["report_outline", "report_section", "report_review"].includes(String(packet.output_contract))) {
+      response = adaptiveReportResponse(packet);
     } else if (request.agentName === "source-reader") {
       response = sourceReaderResponse(packet);
     } else if (request.agentName === "valuation-analyst") {

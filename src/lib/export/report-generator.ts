@@ -3,6 +3,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 export interface ResearchReportData {
+  report_document?: import("@/lib/research/reporting/report").ReportDocument;
   runId: string;
   asset: {
     canonical_name: string;
@@ -21,6 +22,14 @@ export interface ResearchReportData {
     value_numeric: number;
     unit: string;
   }>;
+  historical_coverage?: { present: number; required: number };
+  source_roles?: Array<{ role: string; covered: number; gaps: number }>;
+  competitive_responses?: string[];
+  reconciliation?: string;
+  reinvestment?: string;
+  review_summary?: string;
+  review_verdict?: string;
+  limitations?: string[];
   diagnosis?: {
     diagnoses?: Array<{
       metric_key: string;
@@ -49,7 +58,8 @@ export interface ResearchReportData {
     durability?: string;
     attacks?: Array<{
       threat: string;
-      severity: string;
+      severity?: string;
+      mechanism?: string;
     }>;
     no_moat_counterfactual?: string;
   };
@@ -116,6 +126,7 @@ export interface ResearchReportData {
       weak_or_failed_reviewed?: number;
     };
     status_counts?: Record<string, number>;
+    benchmark_conclusion?: { positive_out_of_sample_excess_return?: boolean };
     top_ten?: Array<{
       rank: number;
       combination_key: string;
@@ -141,6 +152,7 @@ export interface ResearchReportData {
 }
 
 export function generateMarkdownReport(data: ResearchReportData): string {
+  if (data.report_document) return data.report_document.markdown;
   const sections: string[] = [];
 
   const addHeading = (num: number, title: string) => {
@@ -169,12 +181,16 @@ export function generateMarkdownReport(data: ResearchReportData): string {
   // 1. Executive conclusion
   addHeading(1, "Executive conclusion");
   if (data.decision?.thesis_statement) {
-    sections.push(`### Investment Thesis Summary`);
+    sections.push(`### Investment thesis drafted before human review`);
     sections.push(`> ${data.decision.thesis_statement}`);
     sections.push("");
   } else {
     addMissingSection("Executive conclusion / Thesis Statement");
   }
+  if (data.decision?.decision_record?.human_approved_by) {
+    sections.push(`**Current human decision**: ${data.decision.decision_record.decision}`, "");
+  }
+  if (data.review_verdict) sections.push(`**AI review verdict**: ${data.review_verdict}`, "");
 
   // 2. Company genesis and strategic identity
   addHeading(2, "Company genesis and strategic identity");
@@ -198,11 +214,21 @@ export function generateMarkdownReport(data: ResearchReportData): string {
 
   // 4. Evidence and source-role map
   addHeading(4, "Evidence and source-role map");
-  sections.push("Facts are verified against primary regulatory sources.");
+  if (data.source_roles?.length) {
+    sections.push("| Source role | Covered | Gaps |", "|---|---:|---:|");
+    for (const row of data.source_roles) sections.push(`| ${row.role} | ${row.covered} | ${row.gaps} |`);
+  } else {
+    sections.push("Source-role coverage is available in the run's source records.");
+  }
   sections.push("");
 
   // 5. Twenty-quarter historical record
   addHeading(5, "Twenty-quarter historical record");
+  if (data.historical_coverage) {
+    sections.push(`Required metric-quarter coverage: ${data.historical_coverage.present}/${data.historical_coverage.required}.`);
+    if (data.historical_coverage.present < data.historical_coverage.required) sections.push("The historical record is incomplete.");
+    sections.push("");
+  }
   if (data.historical_record && data.historical_record.length > 0) {
     sections.push("| Fiscal Period | Metric | Value | Unit |");
     sections.push("|---|---|---|---|");
@@ -217,7 +243,7 @@ export function generateMarkdownReport(data: ResearchReportData): string {
   // 6. Historical diagnosis
   addHeading(6, "Historical diagnosis");
   if (data.diagnosis?.diagnoses && data.diagnosis.diagnoses.length > 0) {
-    sections.push("| Metric | Diagnosis Type | Magnitude | Explanation |");
+    sections.push("| Metric | Trend | Inflection z-score | Forecast implication |");
     sections.push("|---|---|---|---|");
     for (const row of data.diagnosis.diagnoses) {
       sections.push(`| ${row.metric_key} | ${row.diagnosis_type} | ${row.magnitude} | ${row.explanation} |`);
@@ -268,7 +294,11 @@ export function generateMarkdownReport(data: ResearchReportData): string {
 
   // 10. Competitive response
   addHeading(10, "Competitive response");
-  sections.push("Competitor responses modeled under high-stress conditions.");
+  if (data.competitive_responses?.length) {
+    for (const response of data.competitive_responses) sections.push(`- ${response}`);
+  } else {
+    addMissingSection("Competitive Response");
+  }
   sections.push("");
 
   // 11. Moat proof, attacks, and no-moat counterfactual
@@ -281,7 +311,7 @@ export function generateMarkdownReport(data: ResearchReportData): string {
     if (data.moat.attacks && data.moat.attacks.length > 0) {
       sections.push("#### Moat Attacks modeled:");
       for (const row of data.moat.attacks) {
-        sections.push(`- **Threat**: ${row.threat} (Severity: ${row.severity})`);
+        sections.push(`- **Threat**: ${row.threat}${row.mechanism ? `. Mechanism: ${row.mechanism}` : row.severity ? ` (Severity: ${row.severity})` : ""}`);
       }
       sections.push("");
     }
@@ -302,18 +332,20 @@ export function generateMarkdownReport(data: ResearchReportData): string {
 
   // 13. Top-down/bottom-up reconciliation
   addHeading(13, "Top-down/bottom-up reconciliation");
-  sections.push("Reconciliation between segment drivers and consolidated aggregates.");
+  if (data.reconciliation) sections.push(data.reconciliation);
+  else addMissingSection("Top-Down/Bottom-Up Reconciliation");
   sections.push("");
 
   // 14. Reinvestment economics
   addHeading(14, "Reinvestment economics");
-  sections.push("Capex and working capital dynamics modeled for terminal return.");
+  if (data.reinvestment) sections.push(data.reinvestment);
+  else addMissingSection("Reinvestment Model");
   sections.push("");
 
   // 15. Operating scenarios
   addHeading(15, "Operating scenarios");
   if (data.forecast?.scenarios && data.forecast.scenarios.length > 0) {
-    sections.push("| Scenario | Probability | Revenue CAGR |");
+    sections.push("| Scenario | Probability | Revenue change vs base |");
     sections.push("|---|---|---|");
     for (const row of data.forecast.scenarios) {
       sections.push(`| ${row.scenario_name} | ${row.probability} | ${row.revenue_growth * 100}% |`);
@@ -403,7 +435,7 @@ export function generateMarkdownReport(data: ResearchReportData): string {
   if (data.decision?.catalysts && data.decision.catalysts.length > 0) {
     sections.push("#### Catalysts:");
     for (const row of data.decision.catalysts) {
-      sections.push(`- **${row.catalyst_name}** (Prob: ${row.probability * 100}%): ${row.event_mechanism}`);
+      sections.push(`- **${row.catalyst_name}** (Prob: ${(row.probability * 100).toFixed(1)}%): ${row.event_mechanism}`);
     }
     sections.push("");
   }
@@ -444,6 +476,8 @@ export function generateMarkdownReport(data: ResearchReportData): string {
     sections.push(`- **Framework gate**: ${gate.passed ? "Passed" : "Failed — conclusion withheld"}`);
     sections.push(`- **Combinations tested**: ${gate.combinations_tested ?? 0}`);
     sections.push(`- **Weak/failed combinations reviewed**: ${gate.weak_or_failed_reviewed ?? 0}`);
+    if (data.backtest.status_counts) sections.push(`- **Robust combinations**: ${data.backtest.status_counts.Robust ?? 0}`);
+    if (data.backtest.benchmark_conclusion) sections.push(`- **Positive out-of-sample excess return**: ${data.backtest.benchmark_conclusion.positive_out_of_sample_excess_return ? "yes" : "no"}`);
     sections.push("");
     if (data.backtest.top_ten?.length) {
       sections.push("| Rank | Combination | Strategy | Status | Score | CAGR | Max Drawdown | Sharpe | OOS Return | Benchmark Relative |");
@@ -472,8 +506,6 @@ export function generateMarkdownReport(data: ResearchReportData): string {
   } else {
     addMissingSection("Backtest Review");
   }
-  sections.push("Confidence and information density scored across all key modules.");
-  sections.push("");
 
   // 24. Human decision
   addHeading(24, "Human decision");
@@ -488,7 +520,12 @@ export function generateMarkdownReport(data: ResearchReportData): string {
 
   // 25. Limitations and open research
   addHeading(25, "Limitations and open research");
-  sections.push("Key variables requiring further data gathering.");
+  if (data.review_summary) sections.push("The AI review below was written before the human decision recorded in section 24.", "", data.review_summary, "");
+  if (data.limitations?.length) {
+    sections.push("AI reviewer recommendations at the time of review:", "");
+    for (const limitation of data.limitations) sections.push(`- ${limitation}`);
+  }
+  if (!data.review_summary && !data.limitations?.length) sections.push("No review limitations were recorded in the export packet.");
   sections.push("");
 
   sections.push("---");

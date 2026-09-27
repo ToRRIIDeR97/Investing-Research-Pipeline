@@ -14,6 +14,7 @@ export type BuildDiagnosisInput = {
   materialMetricKeys: string[];
   processNodeMapping?: Record<string, string | undefined>;
   supportingClaims: Record<string, string[]>;
+  supportingObservations?: Record<string, string[]>;
   contradictingClaims?: Record<string, string[]>;
   endFiscalYear: number;
   endFiscalQuarter: number;
@@ -42,10 +43,11 @@ export function buildHistoricalDiagnosis(input: BuildDiagnosisInput): Historical
     const max = Math.max(...values);
     const stdDev = Math.sqrt(values.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / values.length);
 
-    const trend = classifyTrend(values);
-    const stability = stdDev === 0 ? 1 : 1 / (1 + stdDev / Math.abs(mean));
+    const sufficientHistory = values.length >= 4;
+    const trend = sufficientHistory ? classifyTrend(values) : "insufficient_history";
+    const stability = sufficientHistory ? (stdDev === 0 ? 1 : 1 / (1 + stdDev / Math.abs(mean))) : 0;
 
-    const inflections = detectInflections(sorted, 1.5);
+    const inflections = sufficientHistory ? detectInflections(sorted, 1.5) : [];
     const primaryInflection = inflections[0];
     const levelShift = detectLevelShift(values);
     const hasChangePoint = primaryInflection != null || levelShift;
@@ -78,6 +80,7 @@ export function buildHistoricalDiagnosis(input: BuildDiagnosisInput): Historical
       historical_min: min,
       historical_max: max,
       historical_std_dev: stdDev,
+      observation_count: values.length,
       trend,
       stability: Math.max(0, Math.min(1, stability)),
       inflection_period: primaryInflection
@@ -88,10 +91,14 @@ export function buildHistoricalDiagnosis(input: BuildDiagnosisInput): Historical
       management_control: "unassigned",
       structural_cyclical_temporary_or_accounting: classification,
       moat_implication: undefined,
-      forecast_implication: `Current trend for ${metricKey} is ${trend}; expect ${classification === "structural" ? "durability" : "reversion risk"}.`,
-      supporting_claim_ids: input.supportingClaims[metricKey] ?? ["00000000-0000-0000-0000-000000000000"],
+      forecast_implication: sufficientHistory
+        ? `Current trend for ${metricKey} is ${trend}; expect ${classification === "structural" ? "durability" : "reversion risk"}.`
+        : `Only ${values.length} observation(s) for ${metricKey}; no trend or stability forecast is supported.`,
+      supporting_claim_ids: input.supportingClaims[metricKey] ?? [],
+      supporting_observation_ids: input.supportingObservations?.[metricKey] ?? [],
+      ...(!input.supportingClaims[metricKey]?.length ? { source_gap: "No metric-specific evidence claim supports a causal explanation. Linked observations support the statistics only." } : {}),
       contradicting_claim_ids: input.contradictingClaims?.[metricKey] ?? [],
-      confidence: primaryInflection ? (causalNode ? 0.75 : 0.45) : 0.7,
+      confidence: sufficientHistory ? (primaryInflection ? (causalNode ? 0.75 : 0.45) : 0.7) : 0.2,
     });
   }
 
@@ -157,7 +164,7 @@ export function diagnoseMetric(
   metricKey: string,
   observations: HistoricalObservation[],
   processNode?: string,
-  supportingClaimIds: string[] = ["00000000-0000-0000-0000-000000000000"],
+  supportingClaimIds: string[] = [],
   contradictingClaimIds: string[] = []
 ): DiagnosisRecord {
   const diagnosis = buildHistoricalDiagnosis({

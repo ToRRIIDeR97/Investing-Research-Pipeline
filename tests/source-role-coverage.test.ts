@@ -18,6 +18,7 @@ import {
   buildRoleSearchQueries,
   discoverRoleSources,
   extractPublicLinks,
+  isPlausibleSourceRole,
   isSafePublicUrl,
   isSubstantiveFetchedContent,
   parseBingHtml,
@@ -64,6 +65,18 @@ describe("source intelligence v3", () => {
     const roles = plan.items.filter((i) => i.required).map((i) => i.source_role);
     assert.ok(roles.includes("regulatory_filing"));
     assert.ok(roles.includes("earnings_transcript"));
+  });
+
+  it("uses the composed profile's explicit artifact links for source roles", () => {
+    const plan = buildSourcePlan("run-1", "asset-1", [
+      { artifact_type: "historical_record", rationale: "Quarterly financials" },
+      { artifact_type: "company_genesis", rationale: "Origins" },
+    ], [
+      { role: "regulatory_filing", required: true, blockedArtifacts: ["historical_record"] },
+      { role: "founder_and_company_history", required: true, blockedArtifacts: ["company_genesis"] },
+    ]);
+    assert.deepEqual(plan.items.find((item) => item.source_role === "regulatory_filing")?.artifact_types, ["historical_record"]);
+    assert.deepEqual(plan.items.find((item) => item.source_role === "founder_and_company_history")?.artifact_types, ["company_genesis"]);
   });
 
   it("C3-T4: Infer peer coverage from metadata word sector does not pass", () => {
@@ -173,6 +186,18 @@ describe("source intelligence v3", () => {
     assert.equal(isSafePublicUrl("http://192.168.1.10/report"), false);
     assert.equal(isSafePublicUrl("file:///etc/passwd"), false);
     assert.equal(isSafePublicUrl("https://www.nrc.gov/reactors/new-reactors/smr.html"), true);
+  });
+
+  it("does not count quote pages or Wikipedia as primary research roles", () => {
+    assert.equal(isPlausibleSourceRole("https://finance.yahoo.com/quote/SOFI/", "peer_company_primary"), false);
+    assert.equal(isPlausibleSourceRole("https://stockanalysis.com/stocks/sofi/", "customer_or_channel"), false);
+    assert.equal(isPlausibleSourceRole("https://en.wikipedia.org/wiki/SoFi", "supplier_or_partner"), false);
+    assert.equal(isPlausibleSourceRole("https://investors.sofi.com/overview/default.aspx", "customer_or_channel"), false);
+    assert.equal(isPlausibleSourceRole("https://investors.sofi.com/overview/default.aspx", "earnings_release"), false);
+    assert.equal(isPlausibleSourceRole("https://www.dbs.com.sg/treasures/aics/templatedata/article/generic/data/en/GR/US/SOFI_US.xml", "peer_company_primary"), false);
+    assert.equal(isPlausibleSourceRole("https://www.fdic.gov/quarterly-banking-profile", "regulatory_or_government"), true);
+    assert.equal(isPlausibleSourceRole("https://www.sec.gov/Archives/edgar/data/1409970/filing.htm", "peer_company_primary"), true);
+    assert.equal(isPlausibleSourceRole("https://finance.yahoo.com/quote/SOFI/", "market_data"), true);
   });
 
   it("extracts only safe public links and requires substantive fetched content", () => {
@@ -365,14 +390,13 @@ describe("source intelligence v3", () => {
       const sources = await discoverRoleSources({
         assetName: "NuScale Power",
         symbol: "SMR",
+        seedUrls: ["https://issuer.example/investors"],
         roleSeedUrls: {
           company_investor_relations: ["https://issuer.example/investors"],
         },
       }, ["company_investor_relations", "industry_primary"], fetchMock as typeof fetch);
-      assert.deepEqual(
-        sources.map((source) => source.metadata.source_role),
-        ["company_investor_relations"]
-      );
+      assert.ok(sources.length > 0);
+      assert.ok(sources.every((source) => source.metadata.source_role === "company_investor_relations"));
     } finally {
       if (oldEndpoint === undefined) delete process.env.RESEARCH_WEB_SEARCH_ENDPOINT;
       else process.env.RESEARCH_WEB_SEARCH_ENDPOINT = oldEndpoint;

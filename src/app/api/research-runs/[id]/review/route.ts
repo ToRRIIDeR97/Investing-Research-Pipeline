@@ -5,6 +5,8 @@ import { approveHumanReview, isApprovedHumanDecision, isKnownHumanDecision } fro
 import { enqueueResearchRun, getLatestResearchRunJob } from "@/lib/research/run-queue";
 import { reviewDecisionSchema } from "@/lib/api/validation";
 import { CURRENT_PIPELINE_VERSION } from "@/lib/research/version";
+import { getReportState, loadReportInputs } from "@/lib/research/reporting/store";
+import type { Sql } from "@/lib/research/run-context";
 
 /**
  * Persist the final human decision before approving the workflow stage.
@@ -36,10 +38,11 @@ export async function POST(
     const sql = postgres(process.env.DATABASE_URL!);
     let decision: Record<string, unknown>;
     let inserted = false;
+    let regenerateReport = false;
     try {
       const transaction = await sql.begin(async (tx) => {
         const runs = await tx`
-          SELECT id, asset_id, pipeline_version, status
+          SELECT id, asset_id, pipeline_version, status, metadata_json
           FROM research_runs WHERE id = ${runId} LIMIT 1 FOR UPDATE
         `;
         if (!runs[0]) throw new ApiError("Research run not found", 404, "NOT_FOUND");
@@ -54,12 +57,29 @@ export async function POST(
         `;
         if (!stages[0]) throw new ApiError("Human review stage not found", 404, "NOT_FOUND");
 
+        const report = await getReportState(tx as unknown as Sql, runId);
+        if (report.required && status === "needs_more_work" && (!report.document || body.reportHash !== report.document.content_hash)) {
+          throw new ApiError("Load the current report before requesting a revision.", 409, "STALE_REPORT");
+        }
+        if (report.required && isApprovedHumanDecision(status)) {
+          if (!report.document) throw new ApiError("The research report is not ready for approval", 409, "REPORT_NOT_READY");
+          if (body.reportHash !== report.document.content_hash) throw new ApiError("The report changed or was not loaded. Read the current report before approving.", 409, "STALE_REPORT");
+          const current = await loadReportInputs(tx as unknown as Sql, runId, report.cutoff);
+          if (current.input_hash !== report.document.input_hash) throw new ApiError("Research inputs changed. Regenerate and review the report.", 409, "STALE_REPORT_INPUTS");
+          if (!report.review || !["pass", "conditional_pass"].includes(report.review.review_verdict)) throw new ApiError("The report has unresolved review findings. Request more work before approving.", 422, "REPORT_REVIEW_FAILED");
+          if (status === "approved_for_position" && report.document.conclusion_status === "withheld") throw new ApiError("Material research gaps prevent position approval. Request more work or approve for tracking.", 422, "RESEARCH_INCOMPLETE");
+        }
+
         const existing = await tx`
           SELECT * FROM review_decisions
           WHERE research_run_id = ${runId} AND status = ${status}
           ORDER BY reviewed_at DESC LIMIT 1
         `;
-        if (existing[0]) {
+        const priorRevision = runs[0].metadata_json?.report_revision_request;
+        const sameRevisionRequest = status === "needs_more_work" && priorRevision?.report_hash === body.reportHash &&
+          priorRevision?.notes === (parsed.open_questions || parsed.watchlist_reason || "Address unresolved review findings") &&
+          stages[0].status !== "waiting_for_human";
+        if (existing[0] && (!report.required || runs[0].metadata_json?.report_approval?.report_hash === body.reportHash || sameRevisionRequest)) {
           return { decision: existing[0], inserted: false, stageStatus: String(stages[0].status) };
         }
         if (stages[0].status !== "waiting_for_human") {
@@ -85,6 +105,13 @@ export async function POST(
         `;
         if (!rows[0]) throw new ApiError("Unable to persist human review", 500, "REVIEW_NOT_SAVED");
 
+        if (report.required && isApprovedHumanDecision(status) && report.document) {
+          await tx`UPDATE research_runs SET metadata_json = metadata_json || ${tx.json({ report_approval: {
+            report_hash: report.document.content_hash, input_hash: report.document.input_hash,
+            decision_id: rows[0].id, reviewed_by: parsed.reviewed_by,
+          } })} WHERE id = ${runId}`;
+        }
+
         if (status === "needs_more_work") {
           await tx`
             UPDATE research_runs
@@ -97,16 +124,31 @@ export async function POST(
                 })}, updated_at = NOW()
             WHERE id = ${runId}
           `;
+          if (report.required) {
+            await tx`UPDATE research_stages SET status = 'pending', completed_at = NULL, failure_reason = NULL,
+              validation_result_json = NULL, updated_at = NOW()
+              WHERE research_run_id = ${runId} AND stage_key IN ('ai_reviewer', 'human_review', 'export', 'refresh_schedule')`;
+            await tx`UPDATE research_runs SET status = 'running', completed_at = NULL,
+              metadata_json = (metadata_json - 'report_approval') || ${tx.json({ report_revision_request: {
+                decision_id: rows[0].id, notes: parsed.open_questions || parsed.watchlist_reason || "Address unresolved review findings",
+                report_hash: report.document?.content_hash,
+              } })} WHERE id = ${runId}`;
+          }
         }
-        return { decision: rows[0], inserted: true, stageStatus: String(stages[0].status) };
+        return { decision: rows[0], inserted: true, stageStatus: String(stages[0].status), regenerateReport: report.required && status === "needs_more_work" };
       });
       decision = transaction.decision as Record<string, unknown>;
       inserted = transaction.inserted;
+      regenerateReport = "regenerateReport" in transaction && Boolean(transaction.regenerateReport);
     } finally {
       await sql.end();
     }
 
     if (status === "needs_more_work") {
+      if (regenerateReport) {
+        const job = await enqueueResearchRun(runId, parsed.reviewed_by);
+        return createdResponse({ decision, workflow: { success: true, status: "revision_queued" }, jobId: job.id });
+      }
       return (inserted ? createdResponse : successResponse)({ decision, workflow: { success: true, status: "needs_more_work" } });
     }
 

@@ -20,12 +20,18 @@ DATABASE_URL=postgresql://research_os:research_os_dev@localhost:5432/research_os
   npm run worker:research -- --once
 ```
 
-Create a run from the asset research UI or `POST /api/assets/:assetId/research-runs`; the API returns `202` with a job ID. Monitor the run through `/api/research-runs/:runId/jobs`, `/api/research-workers/health`, and the UI progress view.
+Create a run from the asset research UI or `POST /api/assets/:assetId/research-runs`; creation returns `201` with the run. Then `POST /api/research-runs/:runId/run-system-pipeline` queues execution and returns `202` with a job ID. The UI performs both steps. Monitor the run through `/api/research-runs/:runId/jobs`, `/api/research-workers/health`, and the UI progress view.
+
+Set `RESEARCH_RUN_ID` and run `npm run run:research:resume` to queue continuation through the same path. A running worker is required. Failed runs restart at their first failed stage; waiting human gates still require explicit approval through the UI or approval endpoints.
 
 For a deterministic database-backed acceptance run with no live network calls:
 
 ```bash
 npm run test:sofi-v3
 ```
+
+On this Windows checkout, PostgreSQL 18 is available as the `postgresql-x64-18` service on port 5433. Docker is not running, and the local `.env` contains entries Docker Compose cannot parse. Use the configured `WINDOWS_DATABASE_ADMIN_URL` to create a separate `research_os` database, then point `DATABASE_URL` at that database before running migrations, seed, or tests. The npm `test:sofi-v3` command hardcodes the Docker credentials, so invoke `npx tsx --test tests/sofi-research-e2e.test.ts` with `RUN_DB_INTEGRATION=1`, `RESEARCH_MODEL_PROVIDER=mock`, and `RESEARCH_ACCEPTANCE_PROVIDER=mock` for the Windows service. The mock acceptance test passes without `SKIP_V3_CONTENT_VALIDATORS`.
+
+For a live run, `scripts/new-equity-run.ts` requires `RUN_PAID_RESEARCH=1` and respects `RESEARCH_ACCEPTANCE_BUDGET_USD`. It stops at the research-plan gate. Review and explicitly approve that persisted plan before resuming paid work.
 
 Keep credentials and provider settings in `.env.local`; do not commit them.

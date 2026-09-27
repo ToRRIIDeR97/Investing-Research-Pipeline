@@ -1,5 +1,4 @@
-import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
-import { makeValidationResult } from "../run-context";
+import type { ResearchRunContext, StageHandler } from "../run-context";
 import { callResearchAgent, exactJsonPrompt } from "../run-context";
 import { MOAT_CONTRACT } from "../stage-contracts";
 import { createArtifactRepository } from "../artifacts/repository";
@@ -12,7 +11,7 @@ export const moatAnalysisHandler: StageHandler<Record<string, unknown>> = {
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
-      const taskKey = "moat-analyst:assessment:v2";
+      const taskKey = "moat-analyst:assessment";
       const packet = {
         asset: {
           runId: ctx.runId,
@@ -71,25 +70,4 @@ export const moatAnalysisHandler: StageHandler<Record<string, unknown>> = {
       await sql.end();
     }
   },
-  async validate(ctx: ResearchRunContext, _output: unknown): Promise<ValidationResult> {
-    const sql = postgres(process.env.DATABASE_URL!);
-    try {
-      const errors: string[] = [];
-      const artifactKeys = MOAT_CONTRACT.requiredKeys;
-      for (const k of artifactKeys) {
-        const rows = await sql`
-          SELECT COUNT(*) as cnt FROM research_artifacts
-          WHERE research_run_id = ${ctx.runId}
-            AND artifact_type = ${k}
-            AND status IN ('validated', 'accepted')
-        `;
-        if (Number(rows[0].cnt) === 0) {
-          errors.push(`Missing required artifact: ${k}`);
-        }
-      }
-      return makeValidationResult(errors);
-    } finally {
-      await sql.end();
-    }
-  }
 };

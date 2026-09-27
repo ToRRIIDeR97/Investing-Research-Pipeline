@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { saveReportArtifact } from "../src/lib/research/reporting/store";
 import { recordModelCall } from "../src/lib/agents/model-calls";
-import { mergeGroupOutputs } from "../src/lib/research/system-pipeline";
+import { mergeGroupOutputs, persistMetrics } from "../src/lib/research/sources/corpus";
+import { validatePointInTime } from "../src/lib/workflow/validators";
 import { failRun } from "../src/lib/workflow/orchestrator";
 import { enqueueTask } from "../src/lib/workflow/task-queue";
 
@@ -15,6 +18,93 @@ function loadLocalEnv() {
     process.env[match[1]] = match[2].trim().replace(/^['"]|['"]$/g, "");
   }
 }
+
+test("metric claim lineage preserves reporting and publication dates without inventing availability", { skip: process.env.RUN_DB_INTEGRATION !== "1" }, async () => {
+  loadLocalEnv();
+  const sql = postgres(process.env.DATABASE_URL!);
+  const runId = crypto.randomUUID(), sourceId = crypto.randomUUID(), claimId = crypto.randomUUID();
+  const metricKey = `lineage_fixture_${runId.replaceAll('-', '')}`;
+  try {
+    const [asset] = await sql`SELECT id FROM assets ORDER BY created_at LIMIT 1`;
+    await sql`INSERT INTO research_runs (id, asset_id, run_type, status, pipeline_version, market_data_cutoff_at)
+      VALUES (${runId}, ${asset.id}, 'deep_dive', 'running', 3, '2025-06-01T00:00:00Z')`;
+    await sql`INSERT INTO source_documents (id, asset_id, source_type, title, published_at, retrieved_at, file_hash, storage_path)
+      VALUES (${sourceId}, ${asset.id}, 'regulatory_filing', 'Lineage fixture', '2025-05-06T00:00:00Z', '2025-07-01T00:00:00Z', ${sourceId}, 'fixture')`;
+    await sql`INSERT INTO research_run_sources (research_run_id, source_document_id) VALUES (${runId}, ${sourceId})`;
+    await sql`INSERT INTO evidence_claims (id, asset_id, research_run_id, claim_text, claim_type, claim_category, as_of_date, generated_by, review_status)
+      VALUES (${claimId}, ${asset.id}, ${runId}, 'Quarterly metric fixture', 'financial', 'fact', '2025-03-31', 'fixture', 'accepted')`;
+    const [location] = await sql`INSERT INTO source_locations (source_document_id) VALUES (${sourceId}) RETURNING id`;
+    await sql`INSERT INTO evidence_links (evidence_claim_id, source_location_id) VALUES (${claimId}, ${location.id})`;
+    const ctx = { runId, assetId: asset.id, profileKey: 'financials', marketDataCutoffAt: '2025-06-01T00:00:00Z' } as any;
+    const output = { normalized_observations: [{ metric_key: metricKey, value: 0, unit: 'USD', source_claim_id: claimId, period: '2025Q1' }] };
+    await persistMetrics(sql, ctx, sourceId, output);
+    await persistMetrics(sql, ctx, sourceId, output);
+    const rows = await sql`SELECT * FROM metric_observations WHERE research_run_id = ${runId}`;
+    assert.equal(rows.length, 1);
+    assert.equal(Number(rows[0].value_numeric), 0);
+    assert.equal(rows[0].evidence_claim_id, claimId);
+    assert.equal(rows[0].source_document_id, sourceId);
+    assert.equal(new Date(rows[0].period_end).toISOString().slice(0, 10), '2025-03-31');
+    assert.equal(new Date(rows[0].available_at).toISOString().slice(0, 10), '2025-05-06');
+    assert.equal((await validatePointInTime(runId)).valid, true);
+    await persistMetrics(sql, ctx, sourceId, { normalized_observations: [{ ...output.normalized_observations[0], value: null, period_end: '2024-12-31' }] });
+    const [missing] = await sql`SELECT value_numeric FROM metric_observations WHERE research_run_id = ${runId} AND period_end = '2024-12-31'`;
+    assert.equal(missing.value_numeric, null, 'missing numeric data is SQL NULL, not zero or the string null');
+    await sql`UPDATE source_documents SET published_at = NULL WHERE id = ${sourceId}`;
+    await persistMetrics(sql, ctx, sourceId, { normalized_observations: [{ ...output.normalized_observations[0], value: 99 }] });
+    const [unchanged] = await sql`SELECT value_numeric FROM metric_observations WHERE id = ${rows[0].id}`;
+    assert.equal(Number(unchanged.value_numeric), 0, 'unknown publication after cutoff must not supersede verified data');
+    const gaps = await sql`SELECT * FROM source_gaps WHERE research_run_id = ${runId}`;
+    assert.equal(gaps.length, 1);
+    await sql`UPDATE metric_observations SET available_at = '2025-07-01' WHERE research_run_id = ${runId}`;
+    assert.equal((await validatePointInTime(runId)).valid, false, 'accepted future data remains blocked');
+    await sql`UPDATE metric_observations SET review_status = 'rejected' WHERE research_run_id = ${runId}`;
+    assert.equal((await validatePointInTime(runId)).valid, true, 'rejected audit rows are not research inputs');
+  } finally {
+    await sql`DELETE FROM metric_observations WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM metric_definitions WHERE metric_key = ${metricKey}`;
+    await sql`DELETE FROM source_gaps WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM evidence_links WHERE evidence_claim_id = ${claimId}`;
+    await sql`DELETE FROM source_locations WHERE source_document_id = ${sourceId}`;
+    await sql`DELETE FROM evidence_claims WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM research_run_sources WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM source_documents WHERE id = ${sourceId}`;
+    await sql`DELETE FROM research_runs WHERE id = ${runId}`;
+    await sql.end();
+  }
+});
+
+test("report artifacts round-trip and version on a Drizzle-shared connection", { skip: process.env.RUN_DB_INTEGRATION !== "1" }, async () => {
+  loadLocalEnv();
+  const sql = postgres(process.env.DATABASE_URL!);
+  drizzle(sql);
+  const runId = crypto.randomUUID();
+  try {
+    const [asset] = await sql`SELECT id FROM assets ORDER BY created_at LIMIT 1`;
+    await sql`INSERT INTO research_runs (id, asset_id, run_type, status, pipeline_version)
+      VALUES (${runId}, ${asset.id}, 'deep_dive', 'running', 3)`;
+    const ctx = { runId, assetId: asset.id, assetSlug: 'persistence-fixture' };
+    const content = { tables: [{ label: "Owner's equity — USD", values: [0, -1.5, null] }], coverage: { complete: true } };
+    const first = await saveReportArtifact(sql, ctx, 'financial_statement_set', 'fixture', content);
+    assert.deepEqual(first.content_json, content);
+    const unchanged = await saveReportArtifact(sql, ctx, 'financial_statement_set', 'fixture', content);
+    assert.equal(unchanged.id, first.id);
+    await sql`UPDATE research_artifacts SET status = 'needs_more_work' WHERE id = ${first.id}`;
+    const regenerated = await saveReportArtifact(sql, ctx, 'financial_statement_set', 'fixture', content);
+    assert.equal(regenerated.status, 'validated');
+    assert.equal(regenerated.artifact_version, 2, 'regenerated invalidated content needs a current validated version');
+    assert.equal(regenerated.supersedes_artifact_id, first.id);
+    const revised = await saveReportArtifact(sql, ctx, 'financial_statement_set', 'fixture', { ...content, revision: 2 });
+    assert.equal(revised.artifact_version, 3);
+    assert.equal(revised.supersedes_artifact_id, regenerated.id);
+    const [prior] = await sql`SELECT status FROM research_artifacts WHERE id = ${first.id}`;
+    assert.equal(prior.status, 'superseded');
+  } finally {
+    await sql`DELETE FROM research_artifacts WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM research_runs WHERE id = ${runId}`;
+    await sql.end();
+  }
+});
 
 test("JSONB task-style outputs survive object and legacy-string persistence and group merging", { skip: process.env.RUN_DB_INTEGRATION !== "1" }, async () => {
   loadLocalEnv();

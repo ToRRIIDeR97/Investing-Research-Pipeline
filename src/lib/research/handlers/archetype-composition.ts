@@ -18,7 +18,7 @@ export const archetypeCompositionHandler: StageHandler<Record<string, unknown>> 
       } else {
         const profileKey = ctx.profileKey;
         if (profileKey === "financials") {
-          archetypes = ["bank", "lender", "marketplace", "payments_network"];
+          archetypes = ["bank", "lender"];
           overlays = [];
         } else if (profileKey === "operating_company") {
           archetypes = ["operating_company_core"];

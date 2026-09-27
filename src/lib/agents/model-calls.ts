@@ -62,12 +62,18 @@ async function checkBudget(
 
     for (const limit of limits) {
       const spentRows = await sql`
-        SELECT COALESCE(SUM(cost_usd::numeric), 0) as total
-        FROM model_budget_ledger
-        WHERE
+        SELECT COALESCE(SUM(amount), 0) AS total FROM (
+        SELECT cost_usd::numeric AS amount FROM model_budget_ledger WHERE
           (${check.scopeType === "research_run" ? sql`research_run_id = ${check.scopeId}` : sql`false`})
           OR (${check.scopeType === "stage" ? sql`stage_id = ${check.scopeId}` : sql`false`})
           OR (${check.scopeType === "task" ? sql`task_id = ${check.scopeId}` : sql`false`})
+        UNION ALL
+        SELECT COALESCE((input_json->'budget_reservation'->>'usd')::numeric, 0) FROM research_tasks
+        WHERE status = 'running' AND id IS DISTINCT FROM ${input.taskId || null}::uuid AND (
+          (${check.scopeType === "research_run" ? sql`research_run_id = ${check.scopeId}` : sql`false`})
+          OR (${check.scopeType === "stage" ? sql`stage_id = ${check.scopeId}` : sql`false`})
+          OR (${check.scopeType === "task" ? sql`id = ${check.scopeId}` : sql`false`})
+        )) AS committed
       `;
       const projected = Number(spentRows[0].total) + cost;
       const limitUsd = Number(limit.limit_usd);
@@ -82,12 +88,14 @@ async function checkBudget(
 
   if (input.researchRunId) {
     const runs = await sql`
-      SELECT budget_limit_usd, actual_cost_usd
-      FROM research_runs
-      WHERE id = ${input.researchRunId}
+      SELECT budget_limit_usd, actual_cost_usd,
+        (SELECT COALESCE(SUM((input_json->'budget_reservation'->>'usd')::numeric), 0)
+         FROM research_tasks WHERE research_run_id = ${input.researchRunId} AND status = 'running'
+           AND id IS DISTINCT FROM ${input.taskId || null}::uuid) AS reserved
+      FROM research_runs WHERE id = ${input.researchRunId}
     `;
     if (runs[0]?.budget_limit_usd) {
-      const projected = Number(runs[0].actual_cost_usd || 0) + cost;
+      const projected = Number(runs[0].actual_cost_usd || 0) + Number(runs[0].reserved || 0) + cost;
       const limitUsd = Number(runs[0].budget_limit_usd);
       if (projected > limitUsd) {
         return {
@@ -104,14 +112,17 @@ async function checkBudget(
 export async function assertModelBudgetAvailable(input: BudgetReservationInput): Promise<void> {
   const sql = postgres(process.env.DATABASE_URL!);
   try {
-    const result = await checkBudget(sql, {
-      modelProvider: "budget-preflight",
-      modelName: "pending",
-      status: "preflight",
-      ...input,
-      costUsd: input.reserveUsd,
+    if (!Number.isFinite(input.reserveUsd) || input.reserveUsd <= 0) throw new Error("Attempt budget reservation must be positive");
+    await sql.begin(async tx => {
+      if (input.researchRunId) await tx`SELECT id FROM research_runs WHERE id = ${input.researchRunId} FOR UPDATE`;
+      const result = await checkBudget(tx as unknown as ReturnType<typeof postgres>, {
+        modelProvider: "budget-preflight", modelName: "pending", status: "preflight", ...input, costUsd: input.reserveUsd,
+      });
+      if (result.exceeded) throw new Error(result.reason || "Model budget exhausted");
+      if (input.taskId) await tx`UPDATE research_tasks SET input_json = COALESCE(input_json, '{}'::jsonb) ||
+        ${tx.json({ budget_reservation: { usd: input.reserveUsd, model_tier: input.modelTier } })}
+        WHERE id = ${input.taskId}`;
     });
-    if (result.exceeded) throw new Error(result.reason || "Model budget exhausted");
   } finally {
     await sql.end();
   }
@@ -125,11 +136,6 @@ export async function recordModelCall(input: RecordModelCallInput): Promise<stri
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
-    const budget = await checkBudget(sql, input);
-    if (budget.exceeded) {
-      throw new Error(budget.reason);
-    }
-
     const cost = input.costUsd ?? 0;
     const requestMetadata = {
       ...(input.requestMetadata || {}),
@@ -137,6 +143,9 @@ export async function recordModelCall(input: RecordModelCallInput): Promise<stri
     };
 
     const callId = await sql.begin(async (tx) => {
+      // Actual spend must be recorded even if the provider exceeded the estimate.
+      if (input.researchRunId) await tx`SELECT id FROM research_runs WHERE id = ${input.researchRunId} FOR UPDATE`;
+      if (input.taskId) await tx`UPDATE research_tasks SET input_json = input_json - 'budget_reservation' WHERE id = ${input.taskId}`;
       const rows = await tx`
         INSERT INTO model_call_logs (
           research_run_id, stage_id, task_id, agent_name,

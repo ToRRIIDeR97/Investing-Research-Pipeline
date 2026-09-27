@@ -154,6 +154,7 @@ export const backtestExecutionHandler: StageHandler<Record<string, unknown>> = {
         scope_key: `${ctx.assetSlug}-backtest-execution`,
         status: "validated",
         content_json: {
+          artifact_type: "backtest_execution_summary",
           combinations_executed: result.rankings.length,
           observations: result.observations,
           data_start: result.dates[0],

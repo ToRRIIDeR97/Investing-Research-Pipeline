@@ -47,7 +47,7 @@ export function buildSourcePlan(
   runId: string,
   assetId: string,
   requiredArtifacts: { artifact_type: string; rationale?: string }[],
-  overrides: { role: SourceRole; required?: boolean; rationale?: string }[] = []
+  overrides: { role: SourceRole; required?: boolean; rationale?: string; blockedArtifacts?: string[] }[] = []
 ): SourcePlan {
   const items: SourcePlanItem[] = [];
 
@@ -64,9 +64,10 @@ export function buildSourcePlan(
 
   for (const role of SOURCE_ROLES) {
     const override = overrides.find((o) => o.role === role);
-    const blockedArtifacts = requiredArtifacts
+    const inferredArtifacts = requiredArtifacts
       .filter((a) => normalizeRationale(a.rationale).includes(role) || normalizeRationale(a.rationale).includes(role.replace(/_/g, " ")))
       .map((a) => a.artifact_type);
+    const blockedArtifacts = override?.blockedArtifacts ?? inferredArtifacts;
 
     const defaultRequired = REQUIRED_SOURCE_ROLES_FOR_INITIATION.includes(role) || artifactRequiredRoles.has(role);
     const required = override?.required ?? defaultRequired;

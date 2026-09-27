@@ -1,0 +1,1490 @@
+{
+  "recorded_at": "2026-09-25T04:57:29.718Z",
+  "run": {
+    "id": "d2ea550f-7068-4706-9a62-abc89b4ceb9f",
+    "status": "waiting_for_human",
+    "run_type": "full_initiation_report",
+    "research_question": "Explain why SoFi was founded and how its strategic identity evolved from student-loan refinancing into a diversified financial-services and technology-platform company. Evaluate member growth, cross-buying, deposits and funding costs, lending volumes and credit quality, Financial Services monetization, Galileo/Technisys economics, capital requirements, competitive position, and valuation under bear, base, and bull scenarios.",
+    "created_at": "2026-09-25T03:47:27.882Z",
+    "source_cutoff_at": "2026-09-25T03:47:27.880Z",
+    "market_data_cutoff_at": "2026-09-25T03:47:27.880Z",
+    "budget_limit_usd": "10.00",
+    "actual_cost_usd": "1.419156",
+    "failure_reason": null,
+    "metadata_json": {
+      "v3_overlays": [],
+      "cutoff_at_utc": "2026-09-25T03:47:27.880Z",
+      "v3_archetypes": [
+        "bank",
+        "lender"
+      ],
+      "acceptance_asset": "SOFI",
+      "acceptance_provider": "opencode-go-direct",
+      "human_review_reason": "Stage research_plan requires human approval",
+      "live_test_checkpoint": "Finish active stage, then restart with explicit report schemas",
+      "human_review_requested_at": "2026-09-25T03:47:29.356Z",
+      "research_plan_approved_at": "2026-09-25T03:48:38.744Z",
+      "research_plan_approved_by": "Codex plan review under explicit user authorization for live SOFI test, 2026-09-25",
+      "live_test_schema_fix_resumed": true
+    }
+  },
+  "baseline": {
+    "run_id": "ce9f6573-8f61-45a8-9bf3-03d786a7b96b",
+    "exportId": "exp-1790261172055",
+    "sections": 25,
+    "contentHash": "0e399fc54794db09fed1f3895d90abad7d4f393a4bf2321a958886d676eac55b",
+    "generatedAt": "2026-09-24T14:46:12.059Z",
+    "storagePath": "storage/exports/sofi_1790261172054.md",
+    "actual_file_sha256": "0e399fc54794db09fed1f3895d90abad7d4f393a4bf2321a958886d676eac55b"
+  },
+  "billing_note": "Application estimates using repository token pricing; not a provider invoice. Separate smoke/receipt probes are excluded from run ledger.",
+  "provider_receipt_note": "Separate live probe records the returned model identifier. Pipeline call logs record requested model and usage; provider HTTP request IDs were not supplied.",
+  "per_agent": [
+    {
+      "agent": "source-reader",
+      "models": [
+        "deepseek-v4.1-flash"
+      ],
+      "attempts": 4,
+      "provider_requests": 5,
+      "successful": 4,
+      "failed": 0,
+      "input_tokens": 34257,
+      "output_tokens": 49643,
+      "estimated_cost_usd": 0.069849
+    },
+    {
+      "agent": "metric-normalizer",
+      "models": [
+        "deepseek-v4.1-flash"
+      ],
+      "attempts": 1,
+      "provider_requests": 2,
+      "successful": 1,
+      "failed": 0,
+      "input_tokens": 10015,
+      "output_tokens": 45453,
+      "estimated_cost_usd": 0.057548
+    },
+    {
+      "agent": "asset-analyst",
+      "models": [
+        "deepseek-v4.1-flash"
+      ],
+      "attempts": 8,
+      "provider_requests": 10,
+      "successful": 7,
+      "failed": 1,
+      "input_tokens": 400281,
+      "output_tokens": 164146,
+      "estimated_cost_usd": 0.31705900000000004
+    },
+    {
+      "agent": "valuation-analyst",
+      "models": [
+        "deepseek-v4.1-flash"
+      ],
+      "attempts": 1,
+      "provider_requests": 1,
+      "successful": 1,
+      "failed": 0,
+      "input_tokens": 11100,
+      "output_tokens": 29911,
+      "estimated_cost_usd": 0.039223
+    },
+    {
+      "agent": "export-writer",
+      "models": [
+        "deepseek-v4.1-flash"
+      ],
+      "attempts": 16,
+      "provider_requests": 20,
+      "successful": 16,
+      "failed": 0,
+      "input_tokens": 1809247,
+      "output_tokens": 234280,
+      "estimated_cost_usd": 0.823909
+    },
+    {
+      "agent": "research-reviewer",
+      "models": [
+        "deepseek-v4.1-flash"
+      ],
+      "attempts": 2,
+      "provider_requests": 2,
+      "successful": 1,
+      "failed": 1,
+      "input_tokens": 335085,
+      "output_tokens": 9202,
+      "estimated_cost_usd": 0.111568
+    }
+  ],
+  "all_attempts_use_requested_model": true,
+  "tasks": [
+    {
+      "task_key": "source-reader:batch:01:a0bf289a4ff1:2f66a7e864074b67a35ccf61",
+      "agent_name": "source-reader",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 31646,
+      "started_at": "2026-09-25T03:49:11.067Z",
+      "completed_at": "2026-09-25T03:50:35.785Z"
+    },
+    {
+      "task_key": "source-reader:batch:02:610271164e2a:312ec193418b45cfd7b91229",
+      "agent_name": "source-reader",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 31522,
+      "started_at": "2026-09-25T03:50:35.789Z",
+      "completed_at": "2026-09-25T03:51:54.805Z"
+    },
+    {
+      "task_key": "source-reader:batch:03:b7b07811098e:50a5edf928c9622bcf5ade98",
+      "agent_name": "source-reader",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 31794,
+      "started_at": "2026-09-25T03:51:54.809Z",
+      "completed_at": "2026-09-25T03:53:14.477Z"
+    },
+    {
+      "task_key": "source-reader:batch:04:8a332a1e9980:de269996b8ae11459e82710b",
+      "agent_name": "source-reader",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 31563,
+      "started_at": "2026-09-25T03:53:14.479Z",
+      "completed_at": "2026-09-25T03:54:25.695Z"
+    },
+    {
+      "task_key": "metric-normalizer:observations:9ba2d12deb6a69f7ed010e37",
+      "agent_name": "metric-normalizer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 18811,
+      "started_at": "2026-09-25T03:54:26.171Z",
+      "completed_at": "2026-09-25T03:58:10.973Z"
+    },
+    {
+      "task_key": "genesis-researcher:genesis:39729d0bd062dba0aaeec5c7",
+      "agent_name": "asset-analyst",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 36429,
+      "started_at": "2026-09-25T03:58:11.810Z",
+      "completed_at": "2026-09-25T04:00:07.772Z"
+    },
+    {
+      "task_key": "historical-diagnostician:diagnosis",
+      "agent_name": "historical-diagnostician",
+      "status": "completed",
+      "requested_model": null,
+      "provider": null,
+      "endpoint": null,
+      "prompt_characters": null,
+      "started_at": "2026-09-25T04:00:08.019Z",
+      "completed_at": "2026-09-25T04:00:08.041Z"
+    },
+    {
+      "task_key": "business-model-analyst:process-map:f976d2adaff64c9f59f3e507",
+      "agent_name": "asset-analyst",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 36553,
+      "started_at": "2026-09-25T04:00:08.345Z",
+      "completed_at": "2026-09-25T04:02:00.101Z"
+    },
+    {
+      "task_key": "moat-analyst:assessment:cf676515e4323d0fefc10312",
+      "agent_name": "asset-analyst",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 9462,
+      "started_at": "2026-09-25T04:04:00.616Z",
+      "completed_at": "2026-09-25T04:05:03.151Z"
+    },
+    {
+      "task_key": "forecast-analyst:operating-model:28cb8eeb56b0c7541aede55d",
+      "agent_name": "asset-analyst",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 42044,
+      "started_at": "2026-09-25T04:05:03.395Z",
+      "completed_at": "2026-09-25T04:06:40.484Z"
+    },
+    {
+      "task_key": "forecast-analyst:scenarios:086523442daee6a40005c01f",
+      "agent_name": "asset-analyst",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 15267,
+      "started_at": "2026-09-25T04:06:40.716Z",
+      "completed_at": "2026-09-25T04:08:00.030Z"
+    },
+    {
+      "task_key": "valuation-analyst:valuation:f2adccd488525fa2e7b1cc0b",
+      "agent_name": "valuation-analyst",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 42216,
+      "started_at": "2026-09-25T04:08:01.012Z",
+      "completed_at": "2026-09-25T04:10:44.577Z"
+    },
+    {
+      "task_key": "tangible_book_value",
+      "agent_name": "valuation-analyst",
+      "status": "completed",
+      "requested_model": null,
+      "provider": null,
+      "endpoint": null,
+      "prompt_characters": null,
+      "started_at": "2026-09-25T04:14:29.322Z",
+      "completed_at": "2026-09-25T04:14:29.328Z"
+    },
+    {
+      "task_key": "ptbv",
+      "agent_name": "valuation-analyst",
+      "status": "completed",
+      "requested_model": null,
+      "provider": null,
+      "endpoint": null,
+      "prompt_characters": null,
+      "started_at": "2026-09-25T04:14:29.330Z",
+      "completed_at": "2026-09-25T04:14:29.330Z"
+    },
+    {
+      "task_key": "roe_vs_coe",
+      "agent_name": "valuation-analyst",
+      "status": "completed",
+      "requested_model": null,
+      "provider": null,
+      "endpoint": null,
+      "prompt_characters": null,
+      "started_at": "2026-09-25T04:14:29.331Z",
+      "completed_at": "2026-09-25T04:14:29.331Z"
+    },
+    {
+      "task_key": "roa",
+      "agent_name": "valuation-analyst",
+      "status": "completed",
+      "requested_model": null,
+      "provider": null,
+      "endpoint": null,
+      "prompt_characters": null,
+      "started_at": "2026-09-25T04:14:29.332Z",
+      "completed_at": "2026-09-25T04:14:29.332Z"
+    },
+    {
+      "task_key": "nim",
+      "agent_name": "valuation-analyst",
+      "status": "completed",
+      "requested_model": null,
+      "provider": null,
+      "endpoint": null,
+      "prompt_characters": null,
+      "started_at": "2026-09-25T04:14:29.333Z",
+      "completed_at": "2026-09-25T04:14:29.333Z"
+    },
+    {
+      "task_key": "credit_losses",
+      "agent_name": "valuation-analyst",
+      "status": "completed",
+      "requested_model": null,
+      "provider": null,
+      "endpoint": null,
+      "prompt_characters": null,
+      "started_at": "2026-09-25T04:14:29.334Z",
+      "completed_at": "2026-09-25T04:14:29.335Z"
+    },
+    {
+      "task_key": "cet1",
+      "agent_name": "valuation-analyst",
+      "status": "completed",
+      "requested_model": null,
+      "provider": null,
+      "endpoint": null,
+      "prompt_characters": null,
+      "started_at": "2026-09-25T04:14:29.335Z",
+      "completed_at": "2026-09-25T04:14:29.336Z"
+    },
+    {
+      "task_key": "deposit_mix",
+      "agent_name": "valuation-analyst",
+      "status": "completed",
+      "requested_model": null,
+      "provider": null,
+      "endpoint": null,
+      "prompt_characters": null,
+      "started_at": "2026-09-25T04:14:29.336Z",
+      "completed_at": "2026-09-25T04:14:29.336Z"
+    },
+    {
+      "task_key": "book_value_growth",
+      "agent_name": "valuation-analyst",
+      "status": "completed",
+      "requested_model": null,
+      "provider": null,
+      "endpoint": null,
+      "prompt_characters": null,
+      "started_at": "2026-09-25T04:14:29.337Z",
+      "completed_at": "2026-09-25T04:14:29.337Z"
+    },
+    {
+      "task_key": "buyback_capacity",
+      "agent_name": "valuation-analyst",
+      "status": "completed",
+      "requested_model": null,
+      "provider": null,
+      "endpoint": null,
+      "prompt_characters": null,
+      "started_at": "2026-09-25T04:14:29.338Z",
+      "completed_at": "2026-09-25T04:14:29.338Z"
+    },
+    {
+      "task_key": "asset-analyst:decision:80b88bc57e65650338eaccad",
+      "agent_name": "asset-analyst",
+      "status": "failed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 106430,
+      "started_at": "2026-09-25T04:14:31.593Z",
+      "completed_at": "2026-09-25T04:17:40.744Z"
+    },
+    {
+      "task_key": "asset-analyst:decision:80b88bc57e65650338eaccad",
+      "agent_name": "asset-analyst",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 106430,
+      "started_at": "2026-09-25T04:21:32.239Z",
+      "completed_at": "2026-09-25T04:25:01.904Z"
+    },
+    {
+      "task_key": "report:outline:26f4cc62f292a4ee97cf95da",
+      "agent_name": "asset-analyst",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 1055677,
+      "started_at": "2026-09-25T04:25:02.322Z",
+      "completed_at": "2026-09-25T04:27:03.069Z"
+    },
+    {
+      "task_key": "report:section:genesis_and_founding_problem:734c305baf9c4c5cd10b8468",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 108223,
+      "started_at": "2026-09-25T04:27:03.096Z",
+      "completed_at": "2026-09-25T04:28:35.264Z"
+    },
+    {
+      "task_key": "report:section:strategic_identity_evolution:61b688235e9204df9c6c204b",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 97013,
+      "started_at": "2026-09-25T04:28:35.270Z",
+      "completed_at": "2026-09-25T04:30:01.886Z"
+    },
+    {
+      "task_key": "report:section:evidence_quality_and_conventions:8f7296e4a6a98e01e5f318b2",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 797951,
+      "started_at": "2026-09-25T04:30:01.909Z",
+      "completed_at": "2026-09-25T04:31:31.670Z"
+    },
+    {
+      "task_key": "report:section:reported_history_ttm:1661aec78f818b26157dda49",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 755840,
+      "started_at": "2026-09-25T04:31:31.690Z",
+      "completed_at": "2026-09-25T04:33:15.588Z"
+    },
+    {
+      "task_key": "report:section:business_processes_customer_decisions:df0b31b9e7babdc9de6aa677",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 88435,
+      "started_at": "2026-09-25T04:33:15.593Z",
+      "completed_at": "2026-09-25T04:34:41.145Z"
+    },
+    {
+      "task_key": "report:section:funding_liquidity_capital_constraints:f070a98bc4369c45668e2911",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 735960,
+      "started_at": "2026-09-25T04:34:41.164Z",
+      "completed_at": "2026-09-25T04:37:25.919Z"
+    },
+    {
+      "task_key": "report:section:lending_credit_capital_markets:c411c12b684d31b7d67b1ffa",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 733945,
+      "started_at": "2026-09-25T04:37:25.941Z",
+      "completed_at": "2026-09-25T04:39:35.390Z"
+    },
+    {
+      "task_key": "report:section:financial_services_galileo_technisys:5717b8b5523a20f1cd68b493",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 136929,
+      "started_at": "2026-09-25T04:39:35.396Z",
+      "completed_at": "2026-09-25T04:40:48.976Z"
+    },
+    {
+      "task_key": "report:section:moat_test:3f35c190bcd9627b5eb18e13",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 84025,
+      "started_at": "2026-09-25T04:40:48.981Z",
+      "completed_at": "2026-09-25T04:41:49.264Z"
+    },
+    {
+      "task_key": "report:section:management_ownership_per_share:d57eda3d992e9b921f3c762d",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 85729,
+      "started_at": "2026-09-25T04:41:49.269Z",
+      "completed_at": "2026-09-25T04:43:11.457Z"
+    },
+    {
+      "task_key": "report:section:operating_drivers_reinvestment:e86363f8faf1446fc64c90b8",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 86137,
+      "started_at": "2026-09-25T04:43:11.475Z",
+      "completed_at": "2026-09-25T04:45:07.890Z"
+    },
+    {
+      "task_key": "report:section:scenario_architecture:42a88733d1f940dcc7669879",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 94245,
+      "started_at": "2026-09-25T04:45:07.896Z",
+      "completed_at": "2026-09-25T04:46:32.405Z"
+    },
+    {
+      "task_key": "report:section:valuation_residual_income_nav_reverse:fafef60a30bfc133c52aa1f2",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 73210,
+      "started_at": "2026-09-25T04:46:32.410Z",
+      "completed_at": "2026-09-25T04:48:11.053Z"
+    },
+    {
+      "task_key": "report:section:downside_permanent_impairment:78d346451fa7b8f56674fcfa",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 77070,
+      "started_at": "2026-09-25T04:48:11.058Z",
+      "completed_at": "2026-09-25T04:49:49.191Z"
+    },
+    {
+      "task_key": "report:section:executive_judgment_preview:2b7938e5d59e201482f71708",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 301519,
+      "started_at": "2026-09-25T04:49:49.203Z",
+      "completed_at": "2026-09-25T04:51:01.287Z"
+    },
+    {
+      "task_key": "report:section:monitoring_final_decision:ab516f8dc980ac044bc7f803",
+      "agent_name": "export-writer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 347658,
+      "started_at": "2026-09-25T04:51:01.306Z",
+      "completed_at": "2026-09-25T04:52:26.953Z"
+    },
+    {
+      "task_key": "report:review:013c8f4c4421ba562f2cbb1e",
+      "agent_name": "research-reviewer",
+      "status": "failed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 4199617,
+      "started_at": "2026-09-25T04:52:27.161Z",
+      "completed_at": "2026-09-25T04:52:46.724Z"
+    },
+    {
+      "task_key": "report:review:0117d729bf45cdcd1230b710",
+      "agent_name": "research-reviewer",
+      "status": "completed",
+      "requested_model": "deepseek-v4.1-flash",
+      "provider": "opencode-go-direct",
+      "endpoint": "https://opencode.ai/zen/go/v1",
+      "prompt_characters": 1350082,
+      "started_at": "2026-09-25T04:55:27.106Z",
+      "completed_at": "2026-09-25T04:56:50.991Z"
+    }
+  ],
+  "stages": [
+    {
+      "stage_key": "intake",
+      "status": "completed",
+      "started_at": "2026-09-25T03:47:28.142Z",
+      "completed_at": "2026-09-25T03:47:28.369Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "asset_identity",
+      "status": "completed",
+      "started_at": "2026-09-25T03:47:28.407Z",
+      "completed_at": "2026-09-25T03:47:28.690Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "archetype_composition",
+      "status": "completed",
+      "started_at": "2026-09-25T03:47:28.720Z",
+      "completed_at": "2026-09-25T03:47:28.998Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "research_plan",
+      "status": "completed",
+      "started_at": "2026-09-25T03:47:29.136Z",
+      "completed_at": "2026-09-25T03:48:38.738Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "source_discovery",
+      "status": "completed",
+      "started_at": "2026-09-25T03:48:38.780Z",
+      "completed_at": "2026-09-25T03:49:03.063Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "source_ingestion",
+      "status": "completed",
+      "started_at": "2026-09-25T03:49:03.097Z",
+      "completed_at": "2026-09-25T03:49:03.409Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "evidence_extraction",
+      "status": "completed",
+      "started_at": "2026-09-25T03:49:03.452Z",
+      "completed_at": "2026-09-25T03:54:26.021Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "historical_record",
+      "status": "completed",
+      "started_at": "2026-09-25T03:54:26.073Z",
+      "completed_at": "2026-09-25T03:58:11.678Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "company_genesis",
+      "status": "completed",
+      "started_at": "2026-09-25T03:58:11.716Z",
+      "completed_at": "2026-09-25T04:00:07.880Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "historical_diagnosis",
+      "status": "completed",
+      "started_at": "2026-09-25T04:00:07.924Z",
+      "completed_at": "2026-09-25T04:00:08.114Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "business_process_analysis",
+      "status": "completed",
+      "started_at": "2026-09-25T04:00:08.147Z",
+      "completed_at": "2026-09-25T04:02:00.186Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "moat_analysis",
+      "status": "completed",
+      "started_at": "2026-09-25T04:04:00.375Z",
+      "completed_at": "2026-09-25T04:05:03.262Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "operating_model",
+      "status": "completed",
+      "started_at": "2026-09-25T04:05:03.306Z",
+      "completed_at": "2026-09-25T04:06:40.585Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "operating_scenarios",
+      "status": "completed",
+      "started_at": "2026-09-25T04:06:40.632Z",
+      "completed_at": "2026-09-25T04:08:00.228Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "asset_valuation",
+      "status": "completed",
+      "started_at": "2026-09-25T04:14:28.562Z",
+      "completed_at": "2026-09-25T04:14:29.567Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "indicator_design",
+      "status": "completed",
+      "started_at": "2026-09-25T04:14:29.610Z",
+      "completed_at": "2026-09-25T04:14:30.024Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "strategy_design",
+      "status": "completed",
+      "started_at": "2026-09-25T04:14:30.056Z",
+      "completed_at": "2026-09-25T04:14:30.397Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "backtest_execution",
+      "status": "completed",
+      "started_at": "2026-09-25T04:14:30.532Z",
+      "completed_at": "2026-09-25T04:14:31.151Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "backtest_review",
+      "status": "completed",
+      "started_at": "2026-09-25T04:14:31.190Z",
+      "completed_at": "2026-09-25T04:14:31.461Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "decision_synthesis",
+      "status": "completed",
+      "started_at": "2026-09-25T04:21:31.975Z",
+      "completed_at": "2026-09-25T04:25:02.138Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "ai_reviewer",
+      "status": "completed",
+      "started_at": "2026-09-25T04:55:26.560Z",
+      "completed_at": "2026-09-25T04:56:51.473Z",
+      "failure_reason": null
+    },
+    {
+      "stage_key": "human_review",
+      "status": "waiting_for_human",
+      "started_at": "2026-09-25T04:56:51.510Z",
+      "completed_at": null,
+      "failure_reason": null
+    },
+    {
+      "stage_key": "export",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "failure_reason": null
+    },
+    {
+      "stage_key": "refresh_schedule",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "failure_reason": null
+    }
+  ],
+  "report": {
+    "hash": "61ac57651a58c24ba3214a5d4f2a87e0d56444350899a1893ce5885869d71b3e",
+    "stored_markdown_sha256": "61ac57651a58c24ba3214a5d4f2a87e0d56444350899a1893ce5885869d71b3e",
+    "reader_file_sha256": "930880635beac23d42a5d5c130d0166c6aeeab3f700bb3118a0dd2c84bc095eb",
+    "reader_note": "Narrative, tables and citations are unchanged. Long supporting-passage quotations are omitted from this reading copy; the database report retains the audit evidence.",
+    "input_hash": "8781851b274d8159046fd85e4776fcae8fcc2506f0a9cb6d0ba6006bf8f67dbe",
+    "section_count": 16,
+    "conclusion_status": "withheld",
+    "questions": [
+      {
+        "id": "q_founding_reason",
+        "answer": "SoFi was started in 2011 by Stanford Graduate School of Business students; Mike Cagney framed the student loan system as a classic market failure. Early SoFi created university-specific alumni funds that made student loans, including a Stanford pilot with $5,000 to $200,000 loans at a 6.24% fixed rate that could drop to 5.99%. By September 2012, it had expanded to over 70 U.S. schools through state registration, a broker-dealer, and in-school and consolidation loans, alongside a $49 million Renren investment.",
+        "status": "answered",
+        "question": "Why was SoFi founded and what was its original product, customer, and funding model?",
+        "follow_up": "Obtain the full founding team, prior careers, and any earlier seed financing if governance history becomes material; supplied evidence identifies only Mike Cagney.",
+        "materiality": "material",
+        "artifact_ids": [
+          "157936e5-4be9-4994-b76d-e2d83499c399",
+          "4da88c6f-503b-4645-96fe-7c366fa0f8a7",
+          "8a319434-c606-48d8-baee-345ee030310c"
+        ],
+        "evidence_ids": [
+          "8ccdb289-6ef3-4ec2-93e4-d1f2a8bd1a7d",
+          "d226a345-1042-41c2-b5a1-7fa279380370"
+        ]
+      },
+      {
+        "id": "q_identity_evolution",
+        "answer": "SoFi became a bank holding company and began operating SoFi Bank, N.A. through the Golden Pacific Bancorp acquisition in 2022, shifting funding primarily to deposits. It also expanded through acquisitions including Galileo, 8 Limited, and Technisys, and now reports three segments: Lending, Technology Platform, and Financial Services. By Q2 2026, artifacts show 15.8 million members, 24.4 million products, $1.2187 billion net revenue, and average deposits over 90% of average liabilities.",
+        "status": "answered",
+        "question": "How did SoFi evolve from student lending into a diversified financial-services and technology-platform company?",
+        "follow_up": "No further evidence required for the strategic arc; current segment economics still need separate validation.",
+        "materiality": "critical",
+        "artifact_ids": [
+          "8a319434-c606-48d8-baee-345ee030310c",
+          "1ca3d988-36f0-4fb8-bdbd-b531e849b920",
+          "157936e5-4be9-4994-b76d-e2d83499c399"
+        ],
+        "evidence_ids": [
+          "39e34214-f46d-40d7-87bd-f402dc526c2f",
+          "67bb8c8d-3a82-4598-a0b4-1fffdc12b54a",
+          "979f3074-8f70-478f-82e3-faed3c3f21e6"
+        ]
+      },
+      {
+        "id": "q_member_crossbuy",
+        "answer": "Artifacts show Q2 2026 members of 15.8 million, up 35%, and products of 24.4 million, up 42%, but supplied evidence lacks retention, customer acquisition cost, products per member, cohort revenue, and lifetime value. Cross-buy metrics are directionally supportive but are not independently verified as a durable moat.",
+        "status": "qualified",
+        "question": "Does member growth and cross-buying demonstrate durable customer retention or a moat?",
+        "follow_up": "Obtain quarterly member/product history, CAC, retention, revenue per member, products per member, and cohort cross-buy data.",
+        "materiality": "critical",
+        "artifact_ids": [
+          "6e296d8c-fac5-464a-aecc-823b66b5077a",
+          "3fbd9c9a-8034-4d93-abb7-ca0136d947d8",
+          "0942ef94-2e5f-45b4-bbbc-2105e86f1ab6"
+        ],
+        "evidence_ids": [
+          "617b6627-1455-4547-8849-a16964ed3a9b"
+        ]
+      },
+      {
+        "id": "q_deposits_funding",
+        "answer": "Artifacts show Q2 2026 deposits of $45.543 billion, average deposits over 90% of average liabilities, a deposit rate 156 basis points below warehouse facilities, and roughly $712.6 million annualized interest expense savings. However, SoFi discloses that a downturn could cause deposit outflows and higher funding costs, and current Tier 1/CET1 capital and deposit beta are not in supplied evidence.",
+        "status": "qualified",
+        "question": "Are deposits and funding costs durable enough to support the base valuation?",
+        "follow_up": "Obtain current cost of deposits, deposit beta, uninsured deposit share, liquidity coverage, and Tier 1/CET1 ratios.",
+        "materiality": "critical",
+        "artifact_ids": [
+          "6e296d8c-fac5-464a-aecc-823b66b5077a",
+          "b134dca3-5f5c-4b78-8670-dd995feb6254",
+          "2d2b12d6-989c-4fb0-b17d-dff52b0b0de1",
+          "775bd945-a2a6-4f98-9c37-80b08f3d8370"
+        ],
+        "evidence_ids": [
+          "39e34214-f46d-40d7-87bd-f402dc526c2f",
+          "fdde8056-572a-49fc-be2e-bc6f4bf1b5ce",
+          "b2d7ec1e-711c-4018-920d-e415d100807a"
+        ]
+      },
+      {
+        "id": "q_lending_credit",
+        "answer": "The historical record shows Q2 2026 loans held for sale of $29.737 billion, loans held for investment net of $1.276 billion, credit loss expense of $13.755 million, and allowance for credit losses of $56.459 million. SoFi discloses cyclical credit risk and possible higher defaults, but delinquency, charge-off, vintage, and segment-level provision data are missing.",
+        "status": "qualified",
+        "question": "What do lending volumes and credit quality show, and what is missing?",
+        "follow_up": "Obtain net charge-offs, 30+ and 90+ day delinquency, segment provisions, vintage performance, and underwriting criteria.",
+        "materiality": "critical",
+        "artifact_ids": [
+          "775bd945-a2a6-4f98-9c37-80b08f3d8370",
+          "99133703-328e-4f6a-be7d-f0e0daed7b19",
+          "2d2b12d6-989c-4fb0-b17d-dff52b0b0de1"
+        ],
+        "evidence_ids": [
+          "b484c15e-a340-43a9-bf52-27dbfecbe937"
+        ]
+      },
+      {
+        "id": "q_financial_services_monetization",
+        "answer": "Supplied evidence shows Q3 2024 Financial Services contribution profit of $99.8 million on $238.3 million net revenue and 9M 2024 contribution profit of $192.2 million. These figures are stale relative to Q2 2026, and current segment contribution profit is not supplied; the monitoring dashboard sets the current level to null.",
+        "status": "qualified",
+        "question": "Is Financial Services monetization durable enough to support the segment contribution assumed in the thesis?",
+        "follow_up": "Obtain current Financial Services segment revenue, contribution profit, product counts, interchange revenue, and deposit spread.",
+        "materiality": "material",
+        "artifact_ids": [
+          "da871b3b-2148-49ba-b4db-310c6da53aca",
+          "6e296d8c-fac5-464a-aecc-823b66b5077a",
+          "29f7e388-fcb4-41cf-9098-ad41eec72401"
+        ],
+        "evidence_ids": [
+          "0a596964-211d-421a-bd0b-765f6a72f34a",
+          "5bee8df5-7e07-43a5-9e67-c5be7313cd14"
+        ]
+      },
+      {
+        "id": "q_galileo_technisys",
+        "answer": "Supplied evidence shows Technology Platform net revenue of $94.4 million in Q1 2024, up 21% year over year, but this is stale. Current segment revenue, margin, backlog, client concentration, retention, and integration performance history are not supplied, so Galileo/Technisys economics cannot be evaluated reliably.",
+        "status": "blocked",
+        "question": "What are the economics of Galileo and Technisys, and are they creating durable value?",
+        "follow_up": "Obtain current Technology Platform segment revenue, margin, client count, concentration, backlog, churn, and integration cost history.",
+        "materiality": "material",
+        "artifact_ids": [
+          "da871b3b-2148-49ba-b4db-310c6da53aca",
+          "ecead57d-fdd9-42c7-bd4c-bd790b5d322c",
+          "6e296d8c-fac5-464a-aecc-823b66b5077a"
+        ],
+        "evidence_ids": [
+          "1f4c815c-83e4-43b9-930e-10a10cbfd0c8"
+        ]
+      },
+      {
+        "id": "q_capital_dilution",
+        "answer": "The latest supplied Tier 1 capital ratio is 14.3% as of Q3 2023, which is stale. Q2 2026 diluted weighted-average shares are 1,351,990,000, and valuation artifacts treat this as the minimum denominator, but future share issuance beyond that count is unmodeled.",
+        "status": "qualified",
+        "question": "Do capital requirements and share issuance threaten per-share value?",
+        "follow_up": "Obtain current CET1/Tier 1 ratios, risk-weighted assets, capital plans, share count, stock-based compensation, and potential issuance.",
+        "materiality": "critical",
+        "artifact_ids": [
+          "775bd945-a2a6-4f98-9c37-80b08f3d8370",
+          "99133703-328e-4f6a-be7d-f0e0daed7b19",
+          "c8605d0e-71af-413c-ab4a-a7e0a72f9dcb",
+          "1cb3b2d4-8991-4c40-a7dc-0837b36271cb"
+        ],
+        "evidence_ids": [
+          "5bee8df5-7e07-43a5-9e67-c5be7313cd14"
+        ]
+      },
+      {
+        "id": "q_moat_conclusion",
+        "answer": "No durable moat is demonstrated. The bank charter provides a funding advantage versus non-bank lenders but is weak versus large banks; cross-buy metrics are not independently verified; and Galileo/Technisys switching costs exist but face cloud-native and incumbent competitors. The no-moat counterfactual supports competitive convergence.",
+        "status": "answered",
+        "question": "Is there a demonstrated moat in cross-buy, bank charter, or technology platform switching costs?",
+        "follow_up": "Monitor retention, products per member, deposit beta, CAC, and Technology Platform client churn for evidence of moat emergence or erosion.",
+        "materiality": "critical",
+        "artifact_ids": [
+          "0942ef94-2e5f-45b4-bbbc-2105e86f1ab6",
+          "18bfdbc7-8275-4d7a-bab7-fb2c9c00bb4a",
+          "c3c2b156-6443-4a49-8319-79695d987c20",
+          "4ca53f93-296a-4d9a-9b53-77243af7cccb"
+        ],
+        "evidence_ids": [
+          "39e34214-f46d-40d7-87bd-f402dc526c2f"
+        ]
+      },
+      {
+        "id": "q_valuation_reverse",
+        "answer": "Artifacts show a current price of $16.80, current EPS of $0.4633, P/E of 36.26, and P/TBV of 2.41. Reverse valuation implies 7.05% perpetual growth and a 17.02% implied margin. The base 2030 target is $24.77, with terminal EPS of $1.7657, which implies terminal P/E near 14.0 and P/TBV near 2.04. The base case therefore embeds substantial multiple compression.",
+        "status": "qualified",
+        "question": "What does the current valuation imply, and do the base residual-income targets require multiple compression?",
+        "follow_up": "Validate the discount rate, terminal margin, growth, and segment operating assumptions with current segment disclosures and market data.",
+        "materiality": "critical",
+        "artifact_ids": [
+          "c8605d0e-71af-413c-ab4a-a7e0a72f9dcb",
+          "1cb3b2d4-8991-4c40-a7dc-0837b36271cb",
+          "cc0c50df-9fb6-4784-bf5d-57c07acfa78f",
+          "b134dca3-5f5c-4b78-8670-dd995feb6254"
+        ],
+        "evidence_ids": []
+      },
+      {
+        "id": "q_scenario_weighting",
+        "answer": "Supplied expected returns are base 47.4%, bear -57.3%, and bull 197.6%, with a probability-weighted return of 51.3% under 25/55/20 weights. Those probabilities are analyst assumptions, and numeric bear/bull segment financial statements were withheld because material inputs are missing.",
+        "status": "qualified",
+        "question": "How should bear, base, and bull scenarios be weighted, and what is withheld?",
+        "follow_up": "Build numeric bear and bull segment statements after obtaining segment operating income, credit loss rates, capex, working capital, and share issuance.",
+        "materiality": "critical",
+        "artifact_ids": [
+          "891a115c-e26c-4628-94c3-08f0e18b49f8",
+          "1cb3b2d4-8991-4c40-a7dc-0837b36271cb",
+          "b02b6b40-3773-4138-bb0a-dc9508a1bc43",
+          "b134dca3-5f5c-4b78-8670-dd995feb6254"
+        ],
+        "evidence_ids": []
+      },
+      {
+        "id": "q_backtest_contradiction",
+        "answer": "The backtest executed 50 combinations and no strategy was classified Robust; 8 were Promising, 15 needed review, 21 were rejected, and 6 were weak. Top strategies showed positive in-sample and benchmark-relative returns, but the benchmark conclusion says positive out-of-sample excess return was false and the evidence is proxy-limited.",
+        "status": "qualified",
+        "question": "Does the backtest support the investment thesis, and what contradictions appear?",
+        "follow_up": "Replace proxy price-derived indicators with true release-date-aligned filings, macro, industry, and asset-specific datasets before relying on timing evidence.",
+        "materiality": "material",
+        "artifact_ids": [
+          "dc457d68-525e-4eec-99d1-5dc1e84de2d4",
+          "808e8b30-2692-4f02-87fe-d8b86b804aaf",
+          "c57e049b-58da-404a-a15f-5144ff86eebf",
+          "5d61001f-b4cd-4d39-a42d-5f82c5e70262"
+        ],
+        "evidence_ids": []
+      },
+      {
+        "id": "q_top_down_reconciliation",
+        "answer": "No. The bottom-up annualized revenue total is $4.874704 billion, but TAM and customer budget limits are null, and the reconciliation status is blocked_source_gap.",
+        "status": "blocked",
+        "question": "Can the bottom-up forecast be reconciled with a top-down market or customer budget constraint?",
+        "follow_up": "Obtain credible TAM, customer budget, market share, and competitor volume data for Lending, Financial Services, and Technology Platform.",
+        "materiality": "material",
+        "artifact_ids": [
+          "f29b630c-f30e-4c35-9f55-a2ba51ab11bd",
+          "b02b6b40-3773-4138-bb0a-dc9508a1bc43",
+          "ecead57d-fdd9-42c7-bd4c-bd790b5d322c"
+        ],
+        "evidence_ids": []
+      },
+      {
+        "id": "q_decision_blockers",
+        "answer": "The decision record is pending human review. Blocking gaps include no recent segment-level operating income for Lending and Technology Platform, no complete 20-quarter history for key banking metrics, withheld numeric bear and bull statements, unmodeled future share issuance beyond reported diluted shares, and proxy-limited backtest evidence.",
+        "status": "blocked",
+        "question": "What material gaps block an approve or reject decision?",
+        "follow_up": "Human review should resolve segment profitability, current credit and capital data, dilution assumptions, and point-in-time backtest limitations before changing the decision.",
+        "materiality": "critical",
+        "artifact_ids": [
+          "d78d9a6f-ffa8-4abb-bab5-4d426a7d0546",
+          "569b2a69-2b3a-497c-80f0-d47a1c5dd5e7",
+          "b134dca3-5f5c-4b78-8670-dd995feb6254",
+          "b02b6b40-3773-4138-bb0a-dc9508a1bc43",
+          "775bd945-a2a6-4f98-9c37-80b08f3d8370"
+        ],
+        "evidence_ids": []
+      }
+    ],
+    "coverage": [
+      {
+        "key": "ownership",
+        "status": "qualified",
+        "rationale": "Entity structure and bank holding company status are documented, but founder/current ownership, governance, and future share issuance beyond the reported diluted count are not disclosed in the supplied evidence.",
+        "section_ids": [
+          "management_ownership_per_share"
+        ]
+      },
+      {
+        "key": "evidence",
+        "status": "qualified",
+        "rationale": "The record covers 20 quarters for several metrics but is incomplete at 99 of 200 required cells and lacks tier 1 capital, loan portfolio, NIM, funding cost, and delinquency histories; backtest evidence is proxy-limited.",
+        "section_ids": [
+          "evidence_quality_and_conventions"
+        ]
+      },
+      {
+        "key": "history",
+        "status": "qualified",
+        "rationale": "Quarterly and TTM history exists for net interest income, noninterest income, credit losses, net income, deposits, assets, liabilities, equity, and loans held for sale, but missing metrics and stale segment disclosures limit diagnosis.",
+        "section_ids": [
+          "strategic_identity_evolution",
+          "reported_history_ttm"
+        ]
+      },
+      {
+        "key": "business",
+        "status": "qualified",
+        "rationale": "Segments, value chain, and customer decisions are mapped, but underwriting and servicing processes are blocked, and current segment-level profitability for Lending and Technology Platform is unavailable.",
+        "section_ids": [
+          "genesis_and_founding_problem",
+          "strategic_identity_evolution",
+          "business_processes_customer_decisions",
+          "lending_credit_capital_markets",
+          "financial_services_galileo_technisys"
+        ]
+      },
+      {
+        "key": "constraints",
+        "status": "qualified",
+        "rationale": "Deposit funding cost, capital markets demand, credit cycle, regulatory capital, and technology integration are identified as constraints, but current utilization is not quantified and top-down reconciliation is blocked.",
+        "section_ids": [
+          "business_processes_customer_decisions",
+          "funding_liquidity_capital_constraints",
+          "lending_credit_capital_markets"
+        ]
+      },
+      {
+        "key": "moat",
+        "status": "satisfied",
+        "rationale": "The supplied moat and no-moat artifacts support a no-demonstrated-moat conclusion; bank charter and switching-cost advantages are limited versus large banks and platform competitors.",
+        "section_ids": [
+          "moat_test"
+        ]
+      },
+      {
+        "key": "management",
+        "status": "qualified",
+        "rationale": "Founder history and strategic patterns are documented, but current founder influence, governance, compensation, and detailed capital-allocation decisions are not sufficiently disclosed.",
+        "section_ids": [
+          "management_ownership_per_share"
+        ]
+      },
+      {
+        "key": "forecasts",
+        "status": "qualified",
+        "rationale": "A base annualized operating model and qualitative bear/bull scenarios exist, but numeric bear/bull statements are withheld, and capex, working capital, TAM, and current segment operating income are missing.",
+        "section_ids": [
+          "operating_drivers_reinvestment",
+          "scenario_architecture"
+        ]
+      },
+      {
+        "key": "valuation",
+        "status": "qualified",
+        "rationale": "Residual income and tangible-book NAV paths are supplied, but segment reconciliation is incomplete, capex and working capital are missing, and future dilution beyond reported diluted shares is unmodeled.",
+        "section_ids": [
+          "valuation_residual_income_nav_reverse"
+        ]
+      },
+      {
+        "key": "downside",
+        "status": "qualified",
+        "rationale": "Bear and no-rerating outputs, risk register, and thesis breakers are supplied, but bear operating statements are analyst assumptions and numeric bear and bull segment statements are withheld.",
+        "section_ids": [
+          "scenario_architecture",
+          "downside_permanent_impairment"
+        ]
+      },
+      {
+        "key": "monitoring",
+        "status": "qualified",
+        "rationale": "A monitoring dashboard and thesis breakers exist, but some current segment KPI levels are null or stale relative to Q2 2026.",
+        "section_ids": [
+          "monitoring_final_decision"
+        ]
+      },
+      {
+        "key": "conclusion",
+        "status": "blocked",
+        "rationale": "The decision is pending human review because material gaps in segment profitability, credit quality, current capital, dilution, and point-in-time backtest data block approval or rejection.",
+        "section_ids": [
+          "executive_judgment_preview",
+          "monitoring_final_decision"
+        ]
+      }
+    ],
+    "review_verdict": "conditional_pass"
+  },
+  "artifacts": [
+    {
+      "id": "09bb239f-de00-4399-bcc3-7271053697f8",
+      "artifact_type": "research_plan",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "775bd945-a2a6-4f98-9c37-80b08f3d8370",
+      "artifact_type": "historical_record",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "157936e5-4be9-4994-b76d-e2d83499c399",
+      "artifact_type": "company_genesis",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "4da88c6f-503b-4645-96fe-7c366fa0f8a7",
+      "artifact_type": "founder_profile",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "8a319434-c606-48d8-baee-345ee030310c",
+      "artifact_type": "strategic_history_timeline",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "1ca3d988-36f0-4fb8-bdbd-b531e849b920",
+      "artifact_type": "strategic_dna",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "29f7e388-fcb4-41cf-9098-ad41eec72401",
+      "artifact_type": "historical_diagnosis",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "da871b3b-2148-49ba-b4db-310c6da53aca",
+      "artifact_type": "segment_model",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "3fbd9c9a-8034-4d93-abb7-ca0136d947d8",
+      "artifact_type": "customer_decision_map",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "2d2b12d6-989c-4fb0-b17d-dff52b0b0de1",
+      "artifact_type": "business_process_map",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "18378c03-d22f-4cb5-b317-1981622039e7",
+      "artifact_type": "bottleneck_register",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "4ca53f93-296a-4d9a-9b53-77243af7cccb",
+      "artifact_type": "competitive_response_matrix",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "0942ef94-2e5f-45b4-bbbc-2105e86f1ab6",
+      "artifact_type": "moat_assessment",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "18bfdbc7-8275-4d7a-bab7-fb2c9c00bb4a",
+      "artifact_type": "moat_attack_matrix",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "c3c2b156-6443-4a49-8319-79695d987c20",
+      "artifact_type": "no_moat_counterfactual",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "d0611dd4-5035-4c04-97c8-7b03ff3f35ae",
+      "artifact_type": "driver_tree",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "ecead57d-fdd9-42c7-bd4c-bd790b5d322c",
+      "artifact_type": "operating_model",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "f29b630c-f30e-4c35-9f55-a2ba51ab11bd",
+      "artifact_type": "top_down_bottom_up_reconciliation",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "ac4fbe0d-9570-4189-84af-f84e26f91e8f",
+      "artifact_type": "reinvestment_model",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "b02b6b40-3773-4138-bb0a-dc9508a1bc43",
+      "artifact_type": "operating_scenario_set",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "c8605d0e-71af-413c-ab4a-a7e0a72f9dcb",
+      "artifact_type": "valuation_scenario_set",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "cc0c50df-9fb6-4784-bf5d-57c07acfa78f",
+      "artifact_type": "reverse_valuation",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "1cb3b2d4-8991-4c40-a7dc-0837b36271cb",
+      "artifact_type": "annual_price_target_path",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "5d61001f-b4cd-4d39-a42d-5f82c5e70262",
+      "artifact_type": "indicator_catalog",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "c57e049b-58da-404a-a15f-5144ff86eebf",
+      "artifact_type": "strategy_combination_catalog",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "dc457d68-525e-4eec-99d1-5dc1e84de2d4",
+      "artifact_type": "backtest_execution_summary",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "808e8b30-2692-4f02-87fe-d8b86b804aaf",
+      "artifact_type": "backtest_review",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "b134dca3-5f5c-4b78-8670-dd995feb6254",
+      "artifact_type": "investment_thesis",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "99133703-328e-4f6a-be7d-f0e0daed7b19",
+      "artifact_type": "risk_register",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "757cd00f-7bff-414d-b91e-1fa045b78baf",
+      "artifact_type": "catalyst_register",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "891a115c-e26c-4628-94c3-08f0e18b49f8",
+      "artifact_type": "expected_return_matrix",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "91f6678a-5948-4489-8cf3-3db5ccfb2733",
+      "artifact_type": "thesis_breakers",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "6e296d8c-fac5-464a-aecc-823b66b5077a",
+      "artifact_type": "monitoring_dashboard",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "569b2a69-2b3a-497c-80f0-d47a1c5dd5e7",
+      "artifact_type": "confidence_assessment",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "d78d9a6f-ffa8-4abb-bab5-4d426a7d0546",
+      "artifact_type": "decision_record",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "1d4d5a1e-a7ad-4802-ae02-2d7670bfbc2f",
+      "artifact_type": "report_outline",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "ae62e16e-e648-4ffd-b2aa-9df44717cdfa",
+      "artifact_type": "question_register",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "72e6d4fc-e03e-49b5-bf89-5ab613eb2dac",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "63d240c4-6c92-4ed9-92b9-fd749282236e",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "270452af-080e-4b96-ae5f-993ffcf1ad31",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "207b4a10-2daa-4026-b67a-0ebe23708acd",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "c3df3222-5331-42e8-b0a1-44fb6890b341",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "8ea6c34c-7e6f-4270-9c04-870aa4714813",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "08310755-7ac9-4c11-a4ac-f2b431820810",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "82cb3bda-3b80-4a37-bea5-a49988ce83fb",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "2058387a-c159-4669-b552-2c080235bf89",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "afe2f2a6-42ba-4d82-bff4-1cc329e76d18",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "0b7edcd6-0ecb-49c1-b631-3a3a32544c4d",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "256ce7e6-cd37-4e88-b17d-8b410f3b564d",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "883b3310-d0ab-4038-859d-2232200784ce",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "f5461b07-cec9-421b-8741-9fb09d60479b",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "67c6bfb5-9d15-4c9b-8531-95fe4cc6d592",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "37fbe17f-5b55-47fe-9956-a4f5d7adf78f",
+      "artifact_type": "report_section",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "08e2d2f0-2f50-426c-bf1d-702faa28349c",
+      "artifact_type": "report_document",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "73401a4a-687f-4cdb-8f51-7d0592ddc8cf",
+      "artifact_type": "report_review",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "e8234471-eead-4079-936f-a3979118a89f",
+      "artifact_type": "review_summary",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "33b935a9-256c-40ee-b34c-a8747d4aa3b2",
+      "artifact_type": "findings",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "b8a4af07-7c71-407d-af8d-9dc43820a8cc",
+      "artifact_type": "quality_score",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "29d3942b-730b-423f-b5bc-ef3beeff78e9",
+      "artifact_type": "recommendations",
+      "status": "validated",
+      "artifact_version": 1
+    },
+    {
+      "id": "532fb04a-e5a7-4320-87a4-4b861a6dc2c6",
+      "artifact_type": "review_verdict",
+      "status": "validated",
+      "artifact_version": 1
+    }
+  ],
+  "source_sha256": {
+    "src/lib/research/reporting/compose.ts": "5195836295caaaf2bbf3fc43e3a095baa25d937525df0cecc42f618b7b87d17f",
+    "src/lib/research/reporting/contracts.ts": "63ece6d24ba52dd8923158b4ee9d8f720a7f0e9eb7523c9554edd4665353571c",
+    "src/lib/research/reporting/report.ts": "e48e6e95cd0d3c7988402a14f703a14528239d2830211b728c161705f84874d9",
+    "src/lib/research/reporting/runtime.ts": "0328c79d59f9e0147ef92d246995f3ed8d7728e73a8f128970c6e932479ac8a9",
+    "src/lib/research/reporting/store.ts": "ec3cfc111cce576d0f3c7e2a13dc7e092b6cc7d1a9e897458cdd5d855665468e",
+    "src/lib/research/reporting/tables.ts": "0e49d7ad6f1a11aa4123425e97e172b345b800d9cf24b12d4e318dbf5cf2db7a",
+    "src/lib/research/valuation/share-denominator.ts": "a54c594806487ee33c04ec8ec3d57c4b07f56a57ddfae16b10f4268e00bfa798",
+    "src/lib/research/handlers/asset-valuation.ts": "207e722b8244e7fcce605f38fc04f11a8c127194135b8cda194fbf5b6275abe4",
+    "src/lib/agent-harness/registry.ts": "36b5c3f8cbe5adf906c5cfbe3bfacd73020426894786d145ac9ec2301aac1674",
+    "src/lib/agent-harness/runner.ts": "cc1a86e904915a815fc8d4577908fb4d8889eef3ef025ac38e728d25146541d3"
+  }
+}

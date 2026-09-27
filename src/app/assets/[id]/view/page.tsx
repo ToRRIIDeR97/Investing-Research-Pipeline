@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Activity,
   AlertTriangle,
   ArrowLeft,
+  ArrowRight,
+  ArrowUpRight,
+  ChevronDown,
+  MoreHorizontal,
   BarChart3,
   BookOpen,
   Brain,
@@ -17,8 +21,6 @@ import {
   Gauge,
   ListChecks,
   RefreshCw,
-  Search,
-  ShieldAlert,
 } from "lucide-react";
 import {
   Bar,
@@ -30,6 +32,15 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+
+import styles from "./page.module.css";
+import ui from "@/components/research-ui.module.css";
+import { researchBriefAction } from "@/lib/research/brief-presentation";
+import { ResearchReport } from "@/components/research-report";
+import { FinancialStatements } from "@/components/financial-statements";
+import { KPIDashboard } from '@/components/research-dashboards';
+import { ResearchChat } from '@/components/research-chat';
+import { artifactContent, researchObservations } from '@/lib/research/reporting/data-views';
 
 type JsonRecord = Record<string, unknown>;
 type ResearchRecord = Record<string, any>;
@@ -85,44 +96,50 @@ const emptyResearchData: ResearchData = {
   artifacts: [],
 };
 
-const tabs = [
-  { id: "overview", label: "Overview", icon: BookOpen },
-  { id: "evidence", label: "Evidence", icon: ListChecks },
-  { id: "metrics", label: "Metrics", icon: BarChart3 },
-  { id: "valuation", label: "Valuation", icon: CircleDollarSign },
-  { id: "thesis", label: "Thesis", icon: Brain },
-  { id: "backtests", label: "Backtests", icon: Gauge },
-  { id: "sources", label: "Sources", icon: Database },
-] as const;
-
-type TabId = (typeof tabs)[number]["id"];
+type TabId = "overview" | "evidence" | "metrics" | "valuation" | "thesis" | "financials" | "kpis" | "backtests" | "sources" | "runs";
 
 const signalColors: Record<string, string> = {
-  very_cheap: "#047857",
-  cheap: "#10b981",
+  very_cheap: "#3d7664",
+  cheap: "#689c89",
   neutral: "#64748b",
-  expensive: "#f59e0b",
-  very_expensive: "#dc2626",
+  expensive: "#b7893e",
+  very_expensive: "#ae655c",
   inconclusive: "#94a3b8",
   not_applicable: "#cbd5e1",
 };
 
 export default function ViewResearchPage() {
+  return <Suspense fallback={<div className={styles.message}>Loading research…</div>}><ViewResearch /></Suspense>;
+}
+
+function ViewResearch() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const requestedRunId = searchParams.get("run");
+  const requestedView = searchParams.get("view");
   const params = useParams();
   const assetId = String(params.id);
   const [data, setData] = useState<ResearchData>(emptyResearchData);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const activeTab:TabId = requestedView === 'report' ? 'thesis' : ['evidence','metrics','valuation','financials','kpis','backtests','sources','runs'].includes(requestedView ?? '') ? requestedView as TabId : 'overview';
+  const menu = useRef<HTMLDetailsElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const loadVersion = useRef(0);
 
   useEffect(() => {
     void loadResearch();
-  }, [assetId, selectedRunId]);
+    return () => { loadVersion.current++; };
+  }, [assetId, requestedRunId]);
 
-  async function loadResearch() {
-    setLoading(true);
+  useEffect(() => {
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void loadResearch(true); }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [assetId, requestedRunId]);
+
+  async function loadResearch(quiet = false) {
+    const version = ++loadVersion.current;
+    if (!quiet) setLoading(true);
     setError(null);
 
     try {
@@ -134,8 +151,10 @@ export default function ViewResearchPage() {
       const sortedRuns = [...runs].sort(
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
-      const activeRun =
-        sortedRuns.find((run) => run.id === selectedRunId) ?? sortedRuns[0] ?? null;
+      if (version !== loadVersion.current) return;
+      const targetRunId = requestedRunId;
+      const activeRun = targetRunId ? sortedRuns.find((run) => run.id === targetRunId) : sortedRuns[0] ?? null;
+      if (targetRunId && !activeRun) throw new Error("Research run not found.");
 
       if (!activeRun) {
         setData({ ...emptyResearchData, asset, runs: sortedRuns });
@@ -160,6 +179,7 @@ export default function ViewResearchPage() {
       const sources = Array.isArray(readModels.sources) ? readModels.sources : [];
       const modelCalls = Array.isArray(readModels.model_calls) ? readModels.model_calls : [];
 
+      if (version !== loadVersion.current) return;
       setData({
         asset,
         runs: sortedRuns,
@@ -179,198 +199,169 @@ export default function ViewResearchPage() {
         artifacts,
       });
     } catch (loadError) {
+      if (version !== loadVersion.current) return;
       console.error(loadError);
-      setError(loadError instanceof Error ? loadError.message : "Unable to load research");
+      if (!quiet) setError(loadError instanceof Error ? loadError.message : "Unable to load research");
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
   }
 
   const filtered = useMemo(() => filterResearch(data, searchQuery), [data, searchQuery]);
-  const primaryThesis = data.theses[0] ?? null;
-  const numericMetrics = data.metrics
-    .filter((metric) => Number.isFinite(Number(metric.value_numeric)))
-    .slice(0, 10);
+  const content = (type: string) => {
+    const artifact = data.artifacts.find((item) => (item.type ?? item.artifact_type) === type);
+    return asRecord(artifact?.content ?? artifact?.content_json);
+  };
+  const thesis = content("investment_thesis");
+  const conditions = Array.isArray(thesis.must_be_true) ? thesis.must_be_true.filter((value): value is string => typeof value === "string") : [];
+  const riskContent = content("risk_register");
+  const risks = Array.isArray(riskContent.risks) ? riskContent.risks.map(asRecord) : [];
+  const targets = content("annual_price_target_path");
+  const targetRows = [targets.price_target_path, targets.price_target_paths, targets.annual_price_targets].find(Array.isArray) as ResearchRecord[] | undefined;
+  const run = data.activeRun ? { ...data.activeRun, ...data.runDetail } : null;
+  const action = researchBriefAction(run ? { id: String(run.id), status: String(run.status), stages: run.stages } : null, assetId);
   const valuationChartData = data.signals
-    .filter((signal) => Number.isFinite(Number(signal.cheapness_score)))
-    .slice(0, 10)
-    .map((signal) => ({
-      name: shortLabel(signal.signal_name || signal.signal_key || "Signal", 18),
-      score: Number(signal.cheapness_score),
-      signal: signal.signal,
-    }));
-  const runStatus = data.runDetail?.status ?? data.activeRun?.status ?? "unknown";
-  const completedStages = (data.runDetail?.stages ?? []).filter(
-    (stage: ResearchRecord) => stage.status === "completed" || stage.status === "skipped"
-  ).length;
-  const totalStages = (data.runDetail?.stages ?? []).length;
+    .filter((signal) => signal.cheapness_score != null && Number.isFinite(Number(signal.cheapness_score)))
+    .map((signal) => ({ name: shortLabel(signal.signal_name || signal.signal_key || "Signal", 18), score: Number(signal.cheapness_score), signal: signal.signal }));
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f6f8fb] text-sm text-slate-500">
-        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-        Loading research report...
-      </div>
-    );
+  function openSection(section: TabId) {
+    setSearchQuery("");
+    router.push(sectionHref(section));
+    if (menu.current) menu.current.open = false;
+    window.scrollTo({ top: 0 });
   }
 
-  if (error || !data.asset) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f6f8fb] px-6">
-        <div className="rounded-lg border border-red-200 bg-white p-6 text-sm text-red-700 shadow-sm">
-          {error ?? "Asset not found."}
-        </div>
-      </div>
-    );
+  function sectionHref(section:TabId, runId?:string) {
+    const query = new URLSearchParams(searchParams.toString());
+    query.set('view',section === 'thesis' ? 'report' : section);
+    if (runId ?? data.activeRun?.id) query.set('run',runId ?? data.activeRun!.id);
+    return `/assets/${assetId}/view?${query}`;
+  }
+
+  if (loading || (!error && data.asset && (data.asset.id !== assetId || (requestedRunId && data.activeRun?.id !== requestedRunId)))) return <div className={styles.message} role="status"><RefreshCw size={18} className="animate-spin" />Loading research…</div>;
+  if (error || !data.asset) return <div className={styles.message} role="alert">{error ?? "Asset not found."}<button onClick={()=>void loadResearch()}>Try again</button></div>;
+
+  const navigation = <div className={styles.assetNavigation}>
+    <Link className={styles.assetName} href={`/assets/${assetId}`}>{data.asset.canonical_name}</Link>
+    <nav aria-label="Asset views">{(['overview','thesis','financials','kpis'] as const).map(view=><Link key={view} href={sectionHref(view)} aria-current={activeTab===view?'page':undefined}>{view==='thesis'?'Report':view==='financials'?'Financials':view==='kpis'?'KPI Dashboard':'Overview'}</Link>)}</nav>
+    <Link href={`/assets/${assetId}/run?new=1`} className={styles.newResearch}>New research</Link>
+    {data.activeRun&&<ResearchChat key={data.activeRun.id} runId={data.activeRun.id} evidence={data.report?.report_document?.evidence??[]}/>}
+  </div>;
+  const viewArtifacts = [...data.artifacts, ...(data.report?.report_document?.artifacts ?? []).filter((a:ResearchRecord)=>!data.artifacts.some(b=>b.id===a.id))];
+  if (activeTab === 'kpis') return <>{navigation}<KPIDashboard key={data.activeRun?.id} artifacts={viewArtifacts} onRefresh={()=>void loadResearch()} refreshing={loading}/></>;
+  if (activeTab === 'thesis' && data.report?.report_document) return <>{navigation}<ResearchReport key={data.activeRun?.id} document={data.report.report_document} liveArtifacts={viewArtifacts} onBack={()=>openSection('overview')} financialsHref={sectionHref('financials')}/></>;
+  if (activeTab === 'financials') {
+    const observations = researchObservations(viewArtifacts);
+    return <>{navigation}<FinancialStatements key={data.activeRun?.id} observations={observations} filingTables={artifactContent(viewArtifacts,'financial_statement_set').tables??[]} sources={data.sources} evidence={[...(data.report?.report_document?.evidence??[]),...data.evidence]} isTest={data.report?.report_document?.is_test}/></>;
   }
 
   return (
-    <div className="min-h-screen bg-[#f6f8fb] text-slate-950">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-[1600px] flex-col gap-5 px-5 py-5 lg:px-8">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <Link
-                href={`/assets/${assetId}`}
-                className="mb-3 inline-flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-slate-950"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Asset
-              </Link>
-              <div className="flex flex-wrap items-center gap-3">
-                <h1 className="text-2xl font-bold tracking-tight text-slate-950">
-                  {data.asset.canonical_name}
-                </h1>
-                <StatusPill value={runStatus} />
-                {data.activeRun?.metadata_json?.system_generated && (
-                  <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                    System generated
-                  </span>
-                )}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500">
-                <span>{data.asset.asset_kind}</span>
-                <span>{data.asset.sector ?? "No sector"}</span>
-                <span>{data.asset.base_currency ?? "No currency"}</span>
-                <span>Run {shortId(data.activeRun?.id)}</span>
-                <span>{formatDate(data.activeRun?.created_at)}</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Kpi label="Evidence" value={data.evidence.length} />
-              <Kpi label="Metrics" value={data.metrics.length} />
-              <Kpi label="Signals" value={data.signals.length} />
-              <Kpi label="Stages" value={totalStages ? `${completedStages}/${totalStages}` : "0"} />
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3">
-            <label className="text-xs font-semibold text-slate-500">
-              Run
-              <select
-                value={data.activeRun?.id ?? ""}
-                onChange={(event) => setSelectedRunId(event.target.value || null)}
-                className="ml-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 font-mono text-xs text-slate-700"
-              >
-                {data.runs.map((run) => (
-                  <option key={run.id} value={run.id}>
-                    {shortId(run.id)} · v{run.pipeline_version ?? "?"} · {cleanLabel(run.status)} · {formatDate(run.created_at)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <span className="text-xs text-slate-500">Pipeline v{data.activeRun?.pipeline_version ?? "?"}</span>
-            {data.report?.incomplete && <StatusPill value="incomplete sections" />}
-          </div>
-
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-1">
-              {tabs.map((tab) => {
-                const Icon = tab.icon;
-                const active = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-xs font-semibold transition ${
-                      active
-                        ? "bg-white text-slate-950 shadow-sm"
-                        : "text-slate-500 hover:text-slate-900"
-                    }`}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="relative min-w-0 lg:w-[360px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Search report rows"
-                className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-sky-500"
-              />
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-[1600px] px-5 py-6 lg:px-8">
-        {!data.activeRun ? (
-          <EmptyState
-            title="No research run yet"
-            body="Start a run to populate the report."
-            actionHref={`/assets/${assetId}/run`}
-            actionLabel="Open pipeline"
-          />
-        ) : (
-          <>
-            <CanonicalReportSummary report={data.report} artifacts={data.artifacts} />
-            {activeTab === "overview" && (
-              <OverviewSection
-                thesis={primaryThesis}
-                evidence={filtered.evidence.slice(0, 6)}
-                metrics={numericMetrics}
-                signals={data.signals}
-                scenarios={data.scenarios}
-                risks={data.risks}
-                backtests={data.backtests}
-                valuationChartData={valuationChartData}
-              />
-            )}
-            {activeTab === "evidence" && <EvidenceSection evidence={filtered.evidence} />}
-            {activeTab === "metrics" && <MetricsSection metrics={filtered.metrics} />}
-            {activeTab === "valuation" && (
-              <ValuationSection
-                signals={filtered.signals}
-                scenarios={filtered.scenarios}
-                valuationChartData={valuationChartData}
-              />
-            )}
-            {activeTab === "thesis" && (
-              <ThesisSection
-                theses={filtered.theses}
-                risks={filtered.risks}
-                catalysts={filtered.catalysts}
-              />
-            )}
-            {activeTab === "backtests" && <BacktestsSection backtests={filtered.backtests} />}
-            {activeTab === "sources" && (
-              <SourcesSection
-                sources={filtered.sources}
-                modelCalls={filtered.modelCalls}
-                runDetail={data.runDetail}
-              />
-            )}
-          </>
+    <>{navigation}<div className={activeTab === "overview" ? styles.brief : styles.detailPage}>
+      <div className={styles.toolbar}>
+        {activeTab === "overview" ? <Link href="/assets"><ArrowLeft size={16} />Research</Link> : (
+          <button onClick={() => openSection("overview")}><ArrowLeft size={16} />Back to research</button>
         )}
-      </main>
-    </div>
+        <details ref={menu} className={styles.menu} onKeyDown={(event) => {
+          if (event.key === "Escape" && menu.current) { menu.current.open = false; menu.current.querySelector("summary")?.focus(); }
+        }}>
+          <summary aria-label="Research options"><MoreHorizontal size={23} /></summary>
+          <div className={styles.menuItems}>
+            <button onClick={() => openSection("thesis")}>Full report</button>
+            <button onClick={() => openSection("metrics")}>Metrics</button>
+            <button onClick={() => openSection("backtests")}>Backtests</button>
+            <button onClick={() => openSection("sources")}>Sources</button>
+            <button onClick={() => openSection("runs")}>Run history</button>
+            <Link href={`/assets/${assetId}`}>Asset details</Link>
+          </div>
+        </details>
+      </div>
+
+      {activeTab === "overview" ? <>
+        <header className={styles.titleRow}>
+          <h1>{data.asset.canonical_name}</h1>
+          <span className={styles.status} data-tone={action.tone}>{action.label}</span>
+        </header>
+        {!data.activeRun ? <div className={styles.empty}>
+          <p>No research yet.</p>
+          <Link className={styles.primary} href={action.href}>{action.action}</Link>
+        </div> : <>
+          <p className={styles.lead}>{safeText(thesis.thesis_statement ?? thesis.thesis ?? thesis.investment_thesis, "The research summary is not available yet.")}</p>
+          {data.report?.incomplete && <details className={styles.missing}>
+            <summary>Research incomplete<ChevronDown size={16} /></summary>
+            <ul>{(data.report.missing_sections ?? []).map((item: ResearchRecord) => <li key={item.type}>{item.label}</li>)}</ul>
+          </details>}
+          <div key={data.activeRun.id}>
+            <details className={styles.section} open>
+              <summary>Thesis<ChevronDown size={20} /></summary>
+              <div className={styles.sectionBody}>
+                {conditions.length ? <ul>{conditions.slice(0, 2).map((condition) => <li key={condition}>{condition}</li>)}</ul> : <p>{safeText(thesis.causal_chain, "No thesis details yet.")}</p>}
+                {(conditions.length > 2 || typeof thesis.causal_chain === "string") && <details className={styles.more}>
+                  <summary>Read more</summary>
+                  {conditions.length > 2 && <ul>{conditions.slice(2).map((condition) => <li key={condition}>{condition}</li>)}</ul>}
+                  {typeof thesis.causal_chain === "string" && <p>{thesis.causal_chain}</p>}
+                  {typeof thesis.market_mispricing === "string" && <p>{thesis.market_mispricing}</p>}
+                </details>}
+              </div>
+            </details>
+            <details className={styles.section}>
+              <summary>Valuation<ChevronDown size={20} /></summary>
+              <div className={styles.sectionBody}>
+                {targetRows?.length ? <div className={styles.targetTable}><table>
+                  <thead><tr><th>Year</th><th>Bear</th><th>Base</th><th>Bull</th></tr></thead>
+                  <tbody>{groupPriceTargets(targetRows).map((row) => <tr key={row.year}><td>{row.year}</td><td>{formatCurrency(row.bear, targets.currency ?? data.asset?.base_currency)}</td><td>{formatCurrency(row.base, targets.currency ?? data.asset?.base_currency)}</td><td>{formatCurrency(row.bull, targets.currency ?? data.asset?.base_currency)}</td></tr>)}</tbody>
+                </table></div> : <p>No annual price targets yet.</p>}
+                <button className={styles.textLink} onClick={() => openSection("valuation")}>Valuation details<ArrowUpRight size={16} /></button>
+              </div>
+            </details>
+            <details className={styles.section} open>
+              <summary>Open questions<ChevronDown size={20} /></summary>
+              <div className={styles.questions}>
+                {risks.length ? risks.slice(0, 2).map((risk, index) => <RiskQuestion key={index} risk={risk} />) : <p>No risk register yet.</p>}
+                {risks.length > 2 && <details className={styles.moreRisks}>
+                  <summary>All {risks.length} risks<ChevronDown size={16} /></summary>
+                  {risks.slice(2).map((risk, index) => <RiskQuestion key={index} risk={risk} />)}
+                </details>}
+              </div>
+            </details>
+          </div>
+          <footer className={styles.actions}>
+            <button className={styles.textLink} onClick={() => openSection("evidence")}>Evidence<ArrowUpRight size={17} /></button>
+            <Link className={styles.primary} href={action.href}>{action.action}</Link>
+          </footer>
+        </>}
+      </> : <>
+        <h1 className={styles.detailTitle}>{activeTab === "thesis" ? "Full report" : activeTab === "runs" ? "Run history" : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h1>
+        {activeTab !== "runs" && !(activeTab === "thesis" && data.report?.report_document) && <input className={styles.filter} type="search" aria-label="Search this section" placeholder="Search this section" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />}
+        <div className={styles.supporting}>
+          {activeTab === "evidence" && <EvidenceSection evidence={filtered.evidence} />}
+          {activeTab === "metrics" && <MetricsSection metrics={filtered.metrics} />}
+          {activeTab === "valuation" && <ValuationSection signals={filtered.signals} scenarios={filtered.scenarios} valuationChartData={valuationChartData} />}
+          {activeTab === "thesis" && (data.report?.report_document ? <ResearchReport document={data.report.report_document} /> : <><CanonicalReportSummary report={data.report} artifacts={data.artifacts} /><ThesisSection theses={filtered.theses} risks={filtered.risks} catalysts={filtered.catalysts} /></>)}
+          {activeTab === "backtests" && <BacktestsSection backtests={filtered.backtests} />}
+          {activeTab === "sources" && <SourcesSection sources={filtered.sources} modelCalls={filtered.modelCalls} runDetail={data.runDetail} />}
+          {activeTab === "runs" && <div className={styles.runHistory}>
+            <label htmlFor="report-run">Research run</label>
+            <select id="report-run" value={data.activeRun?.id ?? ""} onChange={(event) => router.push(sectionHref('runs',event.target.value))}>
+              {data.runs.map((item) => <option key={item.id} value={item.id}>{formatDate(item.created_at)} · {cleanLabel(item.status)} · {shortId(item.id)}</option>)}
+            </select>
+            <p>{action.label}</p>
+            <Link className={styles.textLink} href={`/assets/${assetId}/run?run=${data.activeRun?.id ?? ""}`}>Open run<ArrowUpRight size={16} /></Link>
+            <DataTable columns={["Stage", "Status"]} rows={(data.runDetail?.stages ?? []).map((stage: ResearchRecord) => [cleanLabel(stage.stage_name ?? stage.stage_key), cleanLabel(stage.status)])} />
+          </div>}
+        </div>
+      </>}
+    </div></>
   );
+}
+
+function RiskQuestion({ risk }: { risk: JsonRecord }) {
+  return <details className={styles.question}>
+    <summary>{safeText(risk.risk_name, "Risk")}<ArrowRight size={18} /></summary>
+    <div><p>{safeText(risk.causal_mechanism ?? risk.description)}</p>
+      {typeof risk.leading_indicator === "string" && <p>{risk.leading_indicator}</p>}
+      {typeof risk.failure_threshold === "string" && <p>{risk.failure_threshold}</p>}
+    </div>
+  </details>;
 }
 
 function CanonicalReportSummary({ report, artifacts }: { report: ResearchRecord | null; artifacts: ResearchRecord[] }) {
@@ -383,52 +374,32 @@ function CanonicalReportSummary({ report, artifacts }: { report: ResearchRecord 
   const founder = content("founder_profile");
   const thesis = content("investment_thesis");
   const targetContent = content("annual_price_target_path");
-  const targetRows = Array.isArray(targetContent.price_target_paths)
+  const targetRows = Array.isArray(targetContent.price_target_path)
+    ? targetContent.price_target_path as ResearchRecord[]
+    : Array.isArray(targetContent.price_target_paths)
     ? targetContent.price_target_paths as ResearchRecord[]
     : Array.isArray(targetContent.annual_price_targets)
       ? targetContent.annual_price_targets as ResearchRecord[]
       : [];
   const missing = Array.isArray(report?.missing_sections) ? report.missing_sections : [];
-  return (
-    <section className="mb-6 space-y-4">
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
-          <SectionHeader icon={BookOpen} title="Canonical decision" count={thesis ? 1 : 0} />
-          {thesis ? <LongText value={thesis.thesis || thesis.investment_thesis || thesis.thesis_statement} /> : <IncompleteState label="Executive decision" />}
-          <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
-            <span>Run status: {cleanLabel(report?.run?.status || "unknown")}</span>
-            <span>Pipeline: v{report?.run?.pipeline_version ?? "?"}</span>
-          </div>
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <SectionHeader icon={AlertTriangle} title="Incomplete sections" count={missing.length} />
-          {missing.length === 0 ? <div className="text-sm text-emerald-700">All canonical sections have artifacts.</div> : (
-            <div className="space-y-1 text-xs text-amber-700">{missing.map((item: ResearchRecord) => <div key={item.type}>• {item.label}</div>)}</div>
-          )}
-        </div>
-      </div>
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <SectionHeader icon={Brain} title="Company genesis" count={genesis || founder ? 1 : 0} />
-          {genesis || founder ? (
-            <div className="space-y-3 text-sm text-slate-600">
-              <InsightBlock label="Why the company started" value={genesis.customer_problem || genesis.pre_founding_environment || genesis.original_product} />
-              <InsightBlock label="Founder identity and motivation" value={founder.background_summary || founder.motivations || genesis.founder_background || genesis.founder_motivations} />
-              <InsightBlock label="Strategic implication" value={genesis.present_day_implications || genesis.current_strategic_implication} />
-            </div>
-          ) : <IncompleteState label="Company genesis" />}
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <SectionHeader icon={CircleDollarSign} title="Annual bear / base / bull price targets" count={targetRows.length} />
-          {targetRows.length ? (
-            <table className="w-full text-left text-xs"><thead><tr className="border-b border-slate-100 text-slate-400"><th className="py-2">Fiscal year</th><th className="py-2">Bear</th><th className="py-2">Base</th><th className="py-2">Bull</th></tr></thead><tbody>
-              {groupPriceTargets(targetRows).map((row) => <tr key={row.year} className="border-b border-slate-50"><td className="py-2 font-semibold">{row.year}</td><td className="py-2">{formatCurrency(row.bear, "USD")}</td><td className="py-2">{formatCurrency(row.base, "USD")}</td><td className="py-2">{formatCurrency(row.bull, "USD")}</td></tr>)}
-            </tbody></table>
-          ) : <IncompleteState label="Annual price target path" />}
-        </div>
-      </div>
-    </section>
-  );
+  return <>
+    <details className={ui.section} open><summary>Investment thesis</summary><div className={ui.sectionBody}>
+      {Object.keys(thesis).length ? <LongText value={thesis.thesis || thesis.investment_thesis || thesis.thesis_statement} /> : <IncompleteState label="Investment thesis" />}
+    </div></details>
+    {missing.length > 0 && <details className={ui.section}><summary>Incomplete sections <span className={ui.muted}>{missing.length}</span></summary><ul className={ui.sectionBody}>{missing.map((item: ResearchRecord) => <li key={item.type}>{item.label}</li>)}</ul></details>}
+    <details className={ui.section}><summary>Company origins</summary><div className={ui.sectionBody}>
+      {Object.keys(genesis).length || Object.keys(founder).length ? <>
+        <InsightBlock label="Why the company started" value={genesis.customer_problem || genesis.pre_founding_environment || genesis.original_product} />
+        <InsightBlock label="Founder background" value={founder.background_summary || founder.motivations || genesis.founder_background || genesis.founder_motivations} />
+        <InsightBlock label="Strategic implications" value={genesis.present_day_implications || genesis.current_strategic_implication} />
+      </> : <IncompleteState label="Company origins" />}
+    </div></details>
+    <details className={ui.section}><summary>Annual price targets</summary><div className={ui.sectionBody}>
+      {targetRows.length ? <div className={ui.table}><table><thead><tr><th>Fiscal year</th><th>Bear</th><th>Base</th><th>Bull</th></tr></thead><tbody>
+        {groupPriceTargets(targetRows).map((row) => <tr key={row.year}><td>{row.year}</td><td>{formatCurrency(row.bear, "USD")}</td><td>{formatCurrency(row.base, "USD")}</td><td>{formatCurrency(row.bull, "USD")}</td></tr>)}
+      </tbody></table></div> : <IncompleteState label="Annual price target path" />}
+    </div></details>
+  </>;
 }
 
 function IncompleteState({ label }: { label: string }) {
@@ -450,131 +421,9 @@ function groupPriceTargets(rows: ResearchRecord[]) {
   return [...grouped.values()].sort((a, b) => a.year.localeCompare(b.year));
 }
 
-function OverviewSection({
-  thesis,
-  evidence,
-  metrics,
-  signals,
-  scenarios,
-  risks,
-  backtests,
-  valuationChartData,
-}: {
-  thesis: ResearchRecord | null;
-  evidence: ResearchRecord[];
-  metrics: ResearchRecord[];
-  signals: ResearchRecord[];
-  scenarios: ResearchRecord[];
-  risks: ResearchRecord[];
-  backtests: ResearchRecord[];
-  valuationChartData: ResearchRecord[];
-}) {
-  const latestBacktest = backtests[0];
-  const backtestMetrics = asRecord(latestBacktest?.metrics_json);
-  const signalBreakdown = countBy(signals, "signal");
-
-  return (
-    <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <SectionHeader icon={BookOpen} title="Investment View" count={thesis ? 1 : 0} />
-        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <p className="text-lg font-semibold leading-snug text-slate-950">
-            {thesis?.one_sentence_thesis ?? "No thesis has been generated for this run."}
-          </p>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <InsightBlock label="Why now" value={thesis?.why_now} />
-            <InsightBlock label="Market missing" value={thesis?.market_missing} />
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-4 lg:grid-cols-3">
-          <MiniPanel title="Valuation" icon={CircleDollarSign}>
-            <div className="space-y-2">
-              {Object.entries(signalBreakdown).slice(0, 5).map(([signal, count]) => (
-                <div key={signal} className="flex items-center justify-between text-sm">
-                  <span className="capitalize text-slate-600">{signal.replace(/_/g, " ")}</span>
-                  <span className="font-semibold text-slate-950">{count}</span>
-                </div>
-              ))}
-              {signals.length === 0 && <EmptyLine>No valuation signals.</EmptyLine>}
-            </div>
-          </MiniPanel>
-          <MiniPanel title="Scenarios" icon={Activity}>
-            <div className="space-y-2">
-              {scenarios.slice(0, 4).map((scenario) => (
-                <div key={scenario.id} className="flex items-center justify-between gap-3 text-sm">
-                  <span className="truncate text-slate-600">{scenario.scenario_name}</span>
-                  <span className="font-semibold text-slate-950">
-                    {formatCurrency(scenario.value_anchor, scenario.currency)}
-                  </span>
-                </div>
-              ))}
-              {scenarios.length === 0 && <EmptyLine>No scenarios.</EmptyLine>}
-            </div>
-          </MiniPanel>
-          <MiniPanel title="Risk Count" icon={ShieldAlert}>
-            <div className="space-y-2">
-              {Object.entries(countBy(risks, "severity")).slice(0, 5).map(([severity, count]) => (
-                <div key={severity} className="flex items-center justify-between text-sm">
-                  <span className="capitalize text-slate-600">{severity || "unknown"}</span>
-                  <span className="font-semibold text-slate-950">{count}</span>
-                </div>
-              ))}
-              {risks.length === 0 && <EmptyLine>No risks.</EmptyLine>}
-            </div>
-          </MiniPanel>
-        </div>
-
-        <div className="mt-5">
-          <SectionHeader icon={ListChecks} title="Recent Evidence" count={evidence.length} compact />
-          <DataTable
-            columns={["Claim", "Type", "Confidence", "Status"]}
-            rows={evidence.map((claim) => [
-              <LongText key="claim" value={claim.claim_text} />,
-              cleanLabel(claim.claim_type ?? claim.claim_category),
-              formatPercent(claim.confidence),
-              <StatusPill key="status" value={claim.review_status} />,
-            ])}
-          />
-        </div>
-      </section>
-
-      <aside className="space-y-5">
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <SectionHeader icon={BarChart3} title="Metric Snapshot" count={metrics.length} />
-          <div className="mt-4 h-[280px]">
-            <MetricBarChart metrics={metrics} />
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <SectionHeader icon={CircleDollarSign} title="Cheapness Scores" count={valuationChartData.length} />
-          <div className="mt-4 h-[260px]">
-            <ValuationScoreChart data={valuationChartData} />
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <SectionHeader icon={Gauge} title="Latest Backtest" count={latestBacktest ? 1 : 0} />
-          {latestBacktest ? (
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <Kpi label="Return" value={formatPercent(backtestMetrics.total_return)} />
-              <Kpi label="Sharpe" value={formatNumber(backtestMetrics.sharpe_ratio)} />
-              <Kpi label="Max DD" value={formatPercent(backtestMetrics.max_drawdown)} />
-              <Kpi label="Win Rate" value={formatPercent(backtestMetrics.win_rate)} />
-            </div>
-          ) : (
-            <EmptyLine>No backtest results.</EmptyLine>
-          )}
-        </section>
-      </aside>
-    </div>
-  );
-}
-
 function EvidenceSection({ evidence }: { evidence: ResearchRecord[] }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className={styles.dataSection}>
       <SectionHeader icon={ListChecks} title="Evidence Claims" count={evidence.length} />
       <DataTable
         columns={["Claim", "Category", "Type", "Confidence", "Review", "Created"]}
@@ -594,14 +443,13 @@ function EvidenceSection({ evidence }: { evidence: ResearchRecord[] }) {
 function MetricsSection({ metrics }: { metrics: ResearchRecord[] }) {
   return (
     <div className="grid gap-5 xl:grid-cols-[0.7fr_1.3fr]">
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <SectionHeader icon={BarChart3} title="Numeric Metrics" count={metrics.length} />
+      <details className={ui.section}><summary>Metric comparison</summary>
         <div className="mt-4 h-[420px]">
           <MetricBarChart metrics={metrics} />
         </div>
-      </section>
+      </details>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className={styles.dataSection}>
         <SectionHeader icon={Database} title="Metric Observations" count={metrics.length} />
         <DataTable
           columns={["Metric", "Value", "Period", "Provider", "Confidence", "Review"]}
@@ -613,7 +461,7 @@ function MetricsSection({ metrics }: { metrics: ResearchRecord[] }) {
               <div className="text-xs text-slate-500">{metric.metric_category ?? "uncategorized"}</div>
             </div>,
             formatMetricValue(metric),
-            metric.period_end ?? metric.as_of_date ?? "n/a",
+            formatDate(metric.period_end ?? metric.as_of_date),
             metric.data_provider ?? "n/a",
             formatPercent(metric.confidence),
             <StatusPill key="status" value={metric.review_status} />,
@@ -636,14 +484,14 @@ function ValuationSection({
   return (
     <div className="space-y-5">
       <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section className={styles.dataSection}>
           <SectionHeader icon={CircleDollarSign} title="Cheapness Scores" count={valuationChartData.length} />
           <div className="mt-4 h-[360px]">
             <ValuationScoreChart data={valuationChartData} />
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <section className={styles.dataSection}>
           <SectionHeader icon={CircleDollarSign} title="Valuation Signals" count={signals.length} />
           <DataTable
             columns={["Signal", "Lens", "Current", "Cheapness", "Call", "Confidence"]}
@@ -662,7 +510,7 @@ function ValuationSection({
         </section>
       </div>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className={styles.dataSection}>
         <SectionHeader icon={Activity} title="Scenarios" count={scenarios.length} />
         <DataTable
           columns={["Scenario", "Type", "Probability", "Value Anchor", "Assumptions", "Review"]}
@@ -692,14 +540,13 @@ function ThesisSection({
   catalysts: ResearchRecord[];
 }) {
   return (
-    <div className="space-y-5">
+    <div>
       {theses.length === 0 ? (
         <EmptyState title="No thesis records" body="This run has not stored a thesis yet." />
       ) : (
         theses.map((thesis) => (
-          <section key={thesis.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <SectionHeader icon={Brain} title="Thesis" count={thesis.drivers?.length ?? 0} />
-            <p className="mt-4 text-lg font-semibold leading-snug text-slate-950">
+          <details key={thesis.id} className={ui.section}><summary>Thesis notes</summary><div className={ui.sectionBody}>
+            <p className="text-base leading-relaxed text-slate-700">
               {thesis.one_sentence_thesis}
             </p>
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -719,12 +566,11 @@ function ThesisSection({
                 ])}
               />
             </div>
-          </section>
+          </div></details>
         ))
       )}
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <SectionHeader icon={AlertTriangle} title="Risks" count={risks.length} />
+      <details className={ui.section}><summary>Risks <span className={ui.muted}>{risks.length}</span></summary><div className={ui.sectionBody}>
         <DataTable
           columns={["Risk", "Type", "Severity", "Probability", "Description", "Mitigants"]}
           rows={risks.map((risk) => [
@@ -738,10 +584,9 @@ function ThesisSection({
             <JsonPreview key="mitigants" value={risk.mitigants_json} />,
           ])}
         />
-      </section>
+      </div></details>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <SectionHeader icon={CheckCircle2} title="Catalysts" count={catalysts.length} />
+      <details className={ui.section}><summary>Catalysts <span className={ui.muted}>{catalysts.length}</span></summary><div className={ui.sectionBody}>
         <DataTable
           columns={["Catalyst", "Type", "Expected Date", "Impact", "Status", "Description"]}
           rows={catalysts.map((catalyst) => [
@@ -755,14 +600,14 @@ function ThesisSection({
             <LongText key="description" value={catalyst.description} />,
           ])}
         />
-      </section>
+      </div></details>
     </div>
   );
 }
 
 function BacktestsSection({ backtests }: { backtests: ResearchRecord[] }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className={styles.dataSection}>
       <SectionHeader icon={Gauge} title="Backtest Runs" count={backtests.length} />
       <DataTable
         columns={["Name", "Status", "Return", "Sharpe", "Max Drawdown", "Period", "Metrics"]}
@@ -775,9 +620,9 @@ function BacktestsSection({ backtests }: { backtests: ResearchRecord[] }) {
             </div>,
             <StatusPill key="status" value={backtest.status} />,
             formatPercent(metrics.total_return),
-            formatNumber(metrics.sharpe_ratio),
+            formatNumber(metrics.sharpe_ratio ?? metrics.sharpe),
             formatPercent(metrics.max_drawdown),
-            `${backtest.start_date ?? "n/a"} to ${backtest.end_date ?? "n/a"}`,
+            `${formatDate(backtest.start_date)} to ${formatDate(backtest.end_date)}`,
             <JsonPreview key="json" value={metrics} />,
           ];
         })}
@@ -797,7 +642,7 @@ function SourcesSection({
 }) {
   return (
     <div className="space-y-5">
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className={styles.dataSection}>
         <SectionHeader icon={FileText} title="Source Documents" count={sources.length} />
         <DataTable
           columns={["Source", "Publisher", "Date", "Ingest", "Trust", "URI"]}
@@ -827,7 +672,7 @@ function SourcesSection({
         />
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className={styles.dataSection}>
         <SectionHeader icon={Activity} title="Pipeline Stages" count={runDetail?.stages?.length ?? 0} />
         <DataTable
           columns={["Stage", "Status", "Started", "Completed", "Notes"]}
@@ -843,7 +688,7 @@ function SourcesSection({
         />
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className={styles.dataSection}>
         <SectionHeader icon={Brain} title="Agent Model Calls" count={modelCalls.length} />
         <DataTable
           columns={["Agent", "Model", "Tier", "Status", "Tokens", "Latency", "Cost"]}
@@ -889,7 +734,7 @@ function MetricBarChart({ metrics }: { metrics: ResearchRecord[] }) {
           formatter={(value) => formatNumber(value)}
           contentStyle={{ borderRadius: 8, borderColor: "#e2e8f0", fontSize: 12 }}
         />
-        <Bar dataKey="value" fill="#0f766e" radius={[0, 4, 4, 0]} />
+        <Bar dataKey="value" fill="#626b78" radius={[0, 4, 4, 0]} />
       </ReBarChart>
     </ResponsiveContainer>
   );
@@ -930,28 +775,28 @@ function DataTable({
 }) {
   if (rows.length === 0) {
     return (
-      <div className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+      <div className={ui.empty}>
         No rows for this section.
       </div>
     );
   }
 
   return (
-    <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+    <div className={`${ui.table} mt-4`}>
       <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-        <thead className="bg-slate-50">
+        <thead className="bg-transparent">
           <tr>
             {columns.map((column) => (
               <th
                 key={column}
-                className="whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase text-slate-500"
+                className="whitespace-nowrap px-4 py-3 text-sm font-normal text-slate-600"
               >
                 {column}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100 bg-white">
+        <tbody className="divide-y divide-slate-100">
           {rows.map((row, rowIndex) => (
             <tr key={rowIndex} className="align-top">
               {row.map((cell, cellIndex) => (
@@ -978,55 +823,14 @@ function SectionHeader({
   count: number;
   compact?: boolean;
 }) {
-  return (
-    <div className={`flex items-center justify-between gap-3 ${compact ? "" : "min-h-8"}`}>
-      <div className="flex items-center gap-2">
-        <span className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-100 text-slate-700">
-          <Icon className="h-4 w-4" />
-        </span>
-        <h2 className="text-sm font-bold text-slate-950">{title}</h2>
-      </div>
-      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-        {count}
-      </span>
-    </div>
-  );
-}
-
-function Kpi({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
-      <div className="text-xs font-semibold text-slate-500">{label}</div>
-      <div className="mt-1 text-lg font-bold text-slate-950">{value}</div>
-    </div>
-  );
-}
-
-function MiniPanel({
-  title,
-  icon: Icon,
-  children,
-}: {
-  title: string;
-  icon: React.ComponentType<{ className?: string }>;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase text-slate-500">
-        <Icon className="h-4 w-4" />
-        {title}
-      </div>
-      {children}
-    </div>
-  );
+  return <div className={ui.sectionHead}><h2>{title}</h2><span className={ui.muted}>{count}</span></div>;
 }
 
 function InsightBlock({ label, value }: { label: string; value: unknown }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <div className="mb-2 text-xs font-bold uppercase text-slate-500">{label}</div>
-      <p className="text-sm leading-relaxed text-slate-700">{safeText(value)}</p>
+    <div className="py-4">
+      <div className="mb-2 text-sm font-medium text-slate-700">{label}</div>
+      <p className="text-[15px] leading-relaxed text-slate-600">{safeText(value)}</p>
     </div>
   );
 }
@@ -1063,23 +867,19 @@ function EmptyState({
 
 function EmptyChart({ label }: { label: string }) {
   return (
-    <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-500">
+    <div className="flex h-full items-center justify-center text-sm text-slate-500">
       {label}
     </div>
   );
 }
 
-function EmptyLine({ children }: { children: React.ReactNode }) {
-  return <div className="text-sm text-slate-500">{children}</div>;
-}
-
 function LongText({ value }: { value: unknown }) {
-  return <div className="max-w-[620px] whitespace-normal leading-relaxed">{safeText(value)}</div>;
+  return <div className={styles.longText}>{safeText(value)}</div>;
 }
 
 function JsonPreview({ value }: { value: unknown }) {
   const text = stringifyCompact(value);
-  return <div className="max-w-[420px] whitespace-normal text-xs leading-relaxed text-slate-600">{text}</div>;
+  return <details className="max-w-[420px] text-sm text-slate-600"><summary>Details</summary><div className="mt-3 whitespace-normal break-words leading-relaxed">{text}</div></details>;
 }
 
 function StatusPill({ value }: { value: unknown }) {
@@ -1133,7 +933,8 @@ function SeverityPill({ value }: { value: unknown }) {
 async function fetchJson<T>(url: string, fallback: T): Promise<T> {
   const response = await fetch(url);
   if (!response.ok) {
-    return fallback;
+    if (response.status === 404) return fallback;
+    throw new Error("Unable to load research. Please try again.");
   }
   return response.json();
 }
@@ -1161,14 +962,6 @@ function filterResearch(data: ResearchData, query: string): ResearchData {
 
 function asRecord(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonRecord) : {};
-}
-
-function countBy(rows: ResearchRecord[], key: string) {
-  return rows.reduce<Record<string, number>>((counts, row) => {
-    const value = String(row[key] ?? "unknown");
-    counts[value] = (counts[value] ?? 0) + 1;
-    return counts;
-  }, {});
 }
 
 function safeText(value: unknown, fallback = "n/a") {
@@ -1212,6 +1005,7 @@ function formatMetricValue(metric: ResearchRecord) {
 }
 
 function formatNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return "n/a";
   const numberValue = Number(value);
   if (!Number.isFinite(numberValue)) return safeText(value);
   return new Intl.NumberFormat("en-US", {
@@ -1220,6 +1014,7 @@ function formatNumber(value: unknown) {
 }
 
 function formatCurrency(value: unknown, currency: unknown) {
+  if (value === null || value === undefined || value === "") return "n/a";
   const numberValue = Number(value);
   if (!Number.isFinite(numberValue)) return safeText(value);
   return new Intl.NumberFormat("en-US", {
@@ -1230,6 +1025,7 @@ function formatCurrency(value: unknown, currency: unknown) {
 }
 
 function formatPercent(value: unknown) {
+  if (value === null || value === undefined || value === "") return "n/a";
   const numberValue = Number(value);
   if (!Number.isFinite(numberValue)) return safeText(value);
   const percentValue = Math.abs(numberValue) <= 1 ? numberValue * 100 : numberValue;

@@ -12,6 +12,7 @@ import {
   requireEvidenceLinks,
 } from "@/lib/research/artifacts/validation";
 import type { ResearchArtifact } from "@/lib/research/artifacts/contracts";
+import { ARTIFACT_SCHEMAS } from "@/lib/research/stage-contracts";
 
 const uuid1 = "00000000-0000-0000-0000-000000000001";
 
@@ -104,5 +105,58 @@ describe("workflow orchestration and quality gates (Component 13)", () => {
     assert.ok(errStr.includes("Moat Assessment"));
     assert.ok(errStr.includes("Operating Model"));
     assert.ok(errStr.includes("Operating Scenario Set"));
+  });
+
+  it("completes an approved tracking report with a conditional AI verdict while retaining its limits", () => {
+    const data = {
+      run: { run_type: "deep_dive", pipeline_version: 3 },
+      profile: { required_modules_json: ["research"] },
+      stages: [],
+      artifacts: Object.keys(ARTIFACT_SCHEMAS).map((artifact_type) => ({
+        artifact_type, status: "validated", content_json: { research: true },
+      })),
+      tasks: [
+        ...["company_genesis", "historical_diagnosis", "business_process_analysis", "moat_analysis", "operating_model", "operating_scenarios"]
+          .map((task_type) => ({ task_type, status: "completed", output_json: { research: true } })),
+        { task_type: "ai_review", status: "completed", output_json: { review_verdict: "conditional_pass" } },
+      ],
+      sources: Array.from({ length: 5 }, (_, index) => ({
+        source_type: index === 0 ? "sec_filing" : index === 1 ? "investor_presentation" : "fdic_industry",
+        source_quality_score: 0.9,
+      })),
+      evidence: Array(25).fill({ claim_text: "research evidence" }),
+      metrics: [], signals: [],
+      scenarios: ["bear", "base", "bull"].map((scenario_type) => ({ scenario_type, value_anchor: 100 })),
+      sourceGaps: [],
+      reviewDecisions: [{ status: "approved_for_tracking" }],
+      analysisSections: [], valuationModels: [], indicators: [], combinations: [], backtests: [], backtestArtifacts: [],
+      unlinkedFactClaimCount: 0,
+    };
+    const result = evaluateLoadedResearchQuality(data);
+    assert.equal(result.status, "pass");
+    assert.equal(result.actionReadiness, "review_ready");
+    assert.ok(result.warnings.some((warning) => warning.includes("conditional_pass")));
+    assert.ok(result.warnings.some((warning) => warning.includes("tracking/watchlist")));
+    assert.deepEqual(result.missingCoverage, []);
+
+    const missingGenesis = evaluateLoadedResearchQuality({
+      ...data, artifacts: data.artifacts.filter((artifact) => artifact.artifact_type !== "company_genesis"),
+    });
+    assert.equal(missingGenesis.status, "needs_more_work", "completed tasks cannot substitute for missing artifacts");
+    const invalidGenesis = evaluateLoadedResearchQuality({
+      ...data, artifacts: data.artifacts.map((artifact) => artifact.artifact_type === "company_genesis"
+        ? { ...artifact, status: "needs_more_work" } : artifact),
+    });
+    assert.equal(invalidGenesis.status, "needs_more_work");
+
+    const missingVerdict = evaluateLoadedResearchQuality({
+      ...data,
+      tasks: data.tasks.map((task) => task.task_type === "ai_review" ? { ...task, output_json: {} } : task),
+    });
+    assert.equal(missingVerdict.status, "needs_more_work");
+    assert.ok(missingVerdict.errors.some((error) => error.includes("no parsed verdict")));
+
+    const position = evaluateLoadedResearchQuality({ ...data, reviewDecisions: [{ status: "approved_for_position" }] });
+    assert.equal(position.actionReadiness, "review_ready");
   });
 });

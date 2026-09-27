@@ -1,24 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
-import {
-  Activity,
-  AlertTriangle,
-  Bot,
-  CheckCircle2,
-  Clock,
-  Database,
-  FileText,
-  Gauge,
-  GitBranch,
-  Layers3,
-  Radio,
-  ReceiptText,
-  ShieldCheck,
-  TerminalSquare,
-  Zap,
-} from "lucide-react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
+import { ArrowLeft, ArrowUpRight } from "lucide-react";
+import ui from "@/components/research-ui.module.css";
 
 interface Message {
   role: "user" | "assistant" | "system";
@@ -157,10 +143,6 @@ function humanize(value: string | null | undefined) {
   return value ? value.replace(/_/g, " ") : "unknown";
 }
 
-function compactId(value: string | null | undefined) {
-  return value ? value.slice(0, 8) : "—";
-}
-
 function formatMoney(value: string | number | null | undefined) {
   const numeric = Number(value || 0);
   return `$${numeric.toFixed(4)}`;
@@ -172,24 +154,6 @@ function formatTime(value: string | null | undefined) {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function statusTone(status: string) {
-  if (status === "completed" || status === "success") {
-    return "bg-emerald-50 text-emerald-700 border-emerald-100";
-  }
-  if (status === "running") return "bg-amber-50 text-amber-700 border-amber-100";
-  if (status === "failed" || status === "error") return "bg-rose-50 text-rose-700 border-rose-100";
-  if (status === "skipped") return "bg-gray-50 text-gray-500 border-gray-100";
-  return "bg-blue-50 text-blue-700 border-blue-100";
-}
-
-function dotTone(status: string) {
-  if (status === "completed" || status === "success") return "bg-emerald-500";
-  if (status === "running") return "bg-amber-500";
-  if (status === "failed" || status === "error") return "bg-rose-500";
-  if (status === "skipped") return "bg-gray-300";
-  return "bg-blue-400";
 }
 
 function buildTimeline(
@@ -282,621 +246,67 @@ function buildTimeline(
     .slice(0, 36);
 }
 
-function MetricTile({
-  label,
-  value,
-  detail,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  icon: typeof Activity;
-}) {
-  return (
-    <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-          {label}
-        </span>
-        <Icon className="h-4 w-4 text-gray-400" />
-      </div>
-      <div className="mt-2 font-mono text-[20px] font-bold text-black">{value}</div>
-      <div className="mt-1 truncate text-[11px] text-gray-400">{detail}</div>
-    </div>
-  );
-}
-
 function StatusBadge({ status }: { status: string }) {
-  return (
-    <span
-      className={`inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${statusTone(
-        status
-      )}`}
-    >
-      {status}
-    </span>
-  );
-}
-
-function StageRail({ progress }: { progress: RunProgress }) {
-  return (
-    <div className="rounded-md border border-gray-200 bg-white p-3 shadow-sm">
-      <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-        {progress.stages.map((stage) => (
-          <div
-            key={stage.id}
-            className={`min-h-20 rounded-md border px-3 py-2 ${
-              stage.status === "running"
-                ? "border-amber-200 bg-amber-50/60"
-                : "border-gray-100 bg-[#fbfcfd]"
-            }`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2">
-                <span className={`h-2 w-2 shrink-0 rounded-full ${dotTone(stage.status)}`} />
-                <span className="truncate text-[11px] font-bold uppercase tracking-wider text-gray-600">
-                  {humanize(stage.key)}
-                </span>
-              </div>
-              <span className="font-mono text-[10px] text-gray-400">
-                {String(stage.order).padStart(2, "0")}
-              </span>
-            </div>
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <StatusBadge status={stage.status} />
-              <span className="font-mono text-[10px] text-gray-400">
-                {formatTime(stage.completed_at || stage.started_at)}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function QualityGatesPanel({ quality }: { quality: ResearchQuality | null }) {
-  const blockers = quality?.missingCoverage.filter((item) => item.requiredForCompletion) || [];
-  const counts = quality?.counts;
-
-  return (
-    <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-gray-400" />
-            <h3 className="text-[14px] font-bold text-black">Quality Gates</h3>
-          </div>
-          <p className="mt-1 text-[11px] text-gray-400">
-            Research depth check for source breadth, evidence, valuation anchors, AI review, and human approval.
-          </p>
-        </div>
-        {quality ? (
-          <div className="flex flex-wrap gap-2">
-            <StatusBadge status={quality.status} />
-            <StatusBadge status={quality.actionReadiness} />
-          </div>
-        ) : (
-          <StatusBadge status="checking" />
-        )}
-      </div>
-
-      {quality ? (
-        <>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <div className="rounded-md border border-gray-100 bg-[#fbfcfd] p-3">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Sources</div>
-              <div className="mt-1 font-mono text-[18px] font-bold text-black">{counts?.sources ?? 0}</div>
-            </div>
-            <div className="rounded-md border border-gray-100 bg-[#fbfcfd] p-3">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Evidence</div>
-              <div className="mt-1 font-mono text-[18px] font-bold text-black">{counts?.evidence ?? 0}</div>
-            </div>
-            <div className="rounded-md border border-gray-100 bg-[#fbfcfd] p-3">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Valuation Anchors</div>
-              <div className="mt-1 font-mono text-[18px] font-bold text-black">{counts?.scenariosWithValueAnchors ?? 0}</div>
-            </div>
-            <div className="rounded-md border border-gray-100 bg-[#fbfcfd] p-3">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Open Gaps</div>
-              <div className="mt-1 font-mono text-[18px] font-bold text-black">{counts?.openSourceGaps ?? 0}</div>
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-md border border-gray-100 bg-[#fbfcfd] p-3">
-            <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              Top Blockers
-            </div>
-            {blockers.length === 0 ? (
-              <div className="text-[12px] text-gray-500">No blocking quality gaps recorded.</div>
-            ) : (
-              <div className="space-y-2">
-                {blockers.slice(0, 5).map((item) => (
-                  <div key={`${item.key}-${item.description}`} className="grid grid-cols-[auto_1fr] gap-2 text-[12px]">
-                    <span className={`mt-0.5 h-2 w-2 rounded-full ${item.severity === "critical" || item.severity === "high" ? "bg-rose-500" : "bg-amber-500"}`} />
-                    <div>
-                      <span className="font-semibold text-gray-700">{humanize(item.area)}:</span>{" "}
-                      <span className="text-gray-500">{item.description}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </>
-      ) : (
-        <div className="rounded-md border border-dashed border-gray-200 bg-[#fbfcfd] px-3 py-4 text-[12px] text-gray-400">
-          Quality gates have not been evaluated yet.
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ActiveStagePanel({
-  progress,
-  theater,
-}: {
-  progress: RunProgress;
-  theater: TheaterData;
-}) {
-  const activeStage =
-    progress.stages.find((stage) => stage.status === "running") ||
-    progress.stages.find((stage) => stage.status === "pending") ||
-    progress.stages[progress.stages.length - 1];
-  const activeTasks = progress.tasks.filter((task) => task.stage_id === activeStage?.id);
-  const blockedTasks = progress.tasks.filter((task) => task.status === "failed");
-
-  return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_1fr]">
-      <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Radio className="h-4 w-4 text-amber-600" />
-              <h3 className="text-[14px] font-bold text-black">
-                {humanize(activeStage?.key || "research stage")}
-              </h3>
-            </div>
-            <p className="mt-1 text-[11px] text-gray-400">
-              Stage-centered control surface for active work.
-            </p>
-          </div>
-          <StatusBadge status={activeStage?.status || "pending"} />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              Tasks
-            </div>
-            <div className="mt-1 font-mono text-[18px] font-bold text-black">
-              {activeTasks.length}
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              Blockers
-            </div>
-            <div className="mt-1 font-mono text-[18px] font-bold text-black">
-              {blockedTasks.length}
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              Sources
-            </div>
-            <div className="mt-1 font-mono text-[18px] font-bold text-black">
-              {theater.sources.length}
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-              Calls
-            </div>
-            <div className="mt-1 font-mono text-[18px] font-bold text-black">
-              {theater.modelCalls.length}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-5 space-y-2">
-          {activeTasks.length === 0 ? (
-            <div className="rounded-md border border-dashed border-gray-200 bg-[#fbfcfd] px-3 py-4 text-[12px] text-gray-400">
-              No agent task is currently assigned to this stage.
-            </div>
-          ) : (
-            activeTasks.slice(0, 4).map((task) => (
-              <div
-                key={task.id}
-                className="flex items-center justify-between gap-3 rounded-md border border-gray-100 bg-[#fbfcfd] px-3 py-2"
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-[12px] font-semibold text-black">
-                    {task.agent_name || humanize(task.task_type)}
-                  </div>
-                  <div className="mt-0.5 truncate font-mono text-[10px] text-gray-400">
-                    {humanize(task.task_key)} · retry {task.retry_count}
-                  </div>
-                </div>
-                <StatusBadge status={task.status} />
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-gray-400" />
-            <h3 className="text-[13px] font-bold text-black">Validation Gates</h3>
-          </div>
-          <span className="font-mono text-[10px] text-gray-400">
-            {compactId(progress.runId)}
-          </span>
-        </div>
-        <div className="space-y-2">
-          {progress.stages.slice(0, 6).map((stage) => (
-            <div key={stage.id} className="flex items-center justify-between gap-3 text-[12px]">
-              <div className="min-w-0 truncate text-gray-600">{humanize(stage.key)}</div>
-              <div className="flex items-center gap-2">
-                {stage.validation_result_json ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                ) : stage.status === "failed" ? (
-                  <AlertTriangle className="h-3.5 w-3.5 text-rose-500" />
-                ) : (
-                  <Clock className="h-3.5 w-3.5 text-gray-300" />
-                )}
-                <StatusBadge status={stage.status} />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AgentConsole({ progress, theater }: { progress: RunProgress; theater: TheaterData }) {
-  const recentCalls = theater.modelCalls.slice(0, 5);
-  const recentTraces = theater.traces.slice(0, 5);
-
-  return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-      <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center gap-2">
-          <Bot className="h-4 w-4 text-gray-400" />
-          <h3 className="text-[13px] font-bold text-black">Agent Queue</h3>
-        </div>
-        <div className="space-y-2">
-          {progress.tasks.length === 0 ? (
-            <div className="text-[12px] text-gray-400">No tasks have been queued.</div>
-          ) : (
-            progress.tasks.slice(0, 7).map((task) => (
-              <div key={task.id} className="rounded-md border border-gray-100 bg-[#fbfcfd] p-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-[12px] font-semibold text-black">
-                    {task.agent_name || humanize(task.task_type)}
-                  </span>
-                  <StatusBadge status={task.status} />
-                </div>
-                <div className="mt-1 truncate font-mono text-[10px] text-gray-400">
-                  p{task.priority} · {compactId(task.id)}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center gap-2">
-          <TerminalSquare className="h-4 w-4 text-gray-400" />
-          <h3 className="text-[13px] font-bold text-black">Tool Traces</h3>
-        </div>
-        <div className="space-y-2">
-          {recentTraces.length === 0 ? (
-            <div className="text-[12px] text-gray-400">No tool traces recorded.</div>
-          ) : (
-            recentTraces.map((trace) => (
-              <div key={trace.id} className="rounded-md border border-gray-100 bg-[#fbfcfd] p-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-[12px] font-semibold text-black">
-                    {trace.tool_name || "agent event"}
-                  </span>
-                  <StatusBadge status={trace.status} />
-                </div>
-                <div className="mt-1 truncate font-mono text-[10px] text-gray-400">
-                  {trace.agent_name} · {formatTime(trace.created_at)}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center gap-2">
-          <ReceiptText className="h-4 w-4 text-gray-400" />
-          <h3 className="text-[13px] font-bold text-black">Model Calls</h3>
-        </div>
-        <div className="space-y-2">
-          {recentCalls.length === 0 ? (
-            <div className="text-[12px] text-gray-400">No model calls recorded.</div>
-          ) : (
-            recentCalls.map((call) => (
-              <div key={call.id} className="rounded-md border border-gray-100 bg-[#fbfcfd] p-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-[12px] font-semibold text-black">
-                    {call.agent_name || call.model_tier}
-                  </span>
-                  <span className="font-mono text-[10px] font-bold text-gray-500">
-                    {formatMoney(call.cost_usd)}
-                  </span>
-                </div>
-                <div className="mt-1 truncate font-mono text-[10px] text-gray-400">
-                  {call.model_provider}/{call.model_name}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ArtifactDeck({ theater }: { theater: TheaterData }) {
-  return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-      <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center gap-2">
-          <FileText className="h-4 w-4 text-gray-400" />
-          <h3 className="text-[13px] font-bold text-black">Source Intake</h3>
-        </div>
-        <div className="space-y-2">
-          {theater.sources.length === 0 ? (
-            <div className="text-[12px] text-gray-400">No sources attached yet.</div>
-          ) : (
-            theater.sources.slice(0, 5).map((source) => (
-              <div key={source.id} className="rounded-md border border-gray-100 bg-[#fbfcfd] p-2">
-                <div className="truncate text-[12px] font-semibold text-black">{source.title}</div>
-                <div className="mt-1 truncate font-mono text-[10px] text-gray-400">
-                  {humanize(source.source_type)} · {source.publisher || "unpublished"}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center gap-2">
-          <Gauge className="h-4 w-4 text-gray-400" />
-          <h3 className="text-[13px] font-bold text-black">Backtest Bench</h3>
-        </div>
-        <div className="space-y-2">
-          {theater.backtests.length === 0 ? (
-            <div className="text-[12px] text-gray-400">No backtests queued.</div>
-          ) : (
-            theater.backtests.slice(0, 5).map((backtest) => (
-              <div key={backtest.id} className="rounded-md border border-gray-100 bg-[#fbfcfd] p-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-[12px] font-semibold text-black">
-                    {backtest.strategy_name || `${backtest.symbol} strategy`}
-                  </span>
-                  <StatusBadge status={backtest.status} />
-                </div>
-                <div className="mt-1 truncate font-mono text-[10px] text-gray-400">
-                  {backtest.error_message || backtest.strategy_prompt}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Timeline({ events }: { events: TimelineEvent[] }) {
-  const iconFor = (type: TimelineEvent["type"]) => {
-    if (type === "stage") return GitBranch;
-    if (type === "task") return Bot;
-    if (type === "source") return FileText;
-    if (type === "trace") return TerminalSquare;
-    if (type === "model") return Zap;
-    if (type === "backtest") return Gauge;
-    return Activity;
-  };
-
-  return (
-    <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Activity className="h-4 w-4 text-gray-400" />
-          <h3 className="text-[13px] font-bold text-black">Event Stream</h3>
-        </div>
-        <span className="font-mono text-[10px] text-gray-400">{events.length} events</span>
-      </div>
-      <div className="space-y-2">
-        {events.length === 0 ? (
-          <div className="text-[12px] text-gray-400">No research events yet.</div>
-        ) : (
-          events.map((event) => {
-            const Icon = iconFor(event.type);
-            return (
-              <div key={event.id} className="grid grid-cols-[18px_1fr_auto] gap-3 rounded-md border border-gray-100 bg-[#fbfcfd] p-2">
-                <Icon className="mt-0.5 h-4 w-4 text-gray-400" />
-                <div className="min-w-0">
-                  <div className="truncate text-[12px] font-semibold text-black">
-                    {event.title}
-                  </div>
-                  <div className="mt-0.5 truncate text-[11px] text-gray-400">{event.detail}</div>
-                </div>
-                <div className="text-right">
-                  <StatusBadge status={event.status} />
-                  <div className="mt-1 font-mono text-[10px] text-gray-400">
-                    {formatTime(event.time)}
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
+  return <span className={ui.status} data-status={status}>{humanize(status).replace(/^./, (letter) => letter.toUpperCase())}</span>;
 }
 
 function ResearchPlanCard({ plan }: { plan: Record<string, any> | null }) {
-  if (!plan) {
-    return <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">Research plan is still being prepared.</div>;
-  }
-  const list = (value: unknown) => Array.isArray(value) ? value : [];
-  return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="mx-auto max-w-5xl space-y-4">
-        <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Research plan gate</div>
-              <h1 className="mt-1 text-xl font-bold text-black">Review the persisted v3 plan</h1>
-              <p className="mt-2 text-sm text-gray-500">{plan.research_question || "No research question recorded."}</p>
-            </div>
-            <StatusBadge status="waiting_for_human" />
-          </div>
-          <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
-            <MetricTile label="Stages" value={String(list(plan.applicable_stages).length)} detail="profile-derived" icon={Layers3} />
-            <MetricTile label="Source roles" value={String(list(plan.required_source_roles).length)} detail="required roles" icon={Database} />
-            <MetricTile label="Modules" value={String(list(plan.required_analysis_modules).length)} detail="analysis outputs" icon={FileText} />
-            <MetricTile label="Budget" value={plan.budget?.limit_usd ? `$${plan.budget.limit_usd}` : "Open"} detail="server-stored limit" icon={Gauge} />
-          </div>
-        </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <PlanList title="Composed profile" values={[...(list(plan.composed_archetypes).map(String)), ...(list(plan.overlays).map((value) => `Overlay: ${value}`))]} />
-          <PlanList title="Valuation methods" values={list(plan.valuation_methods).map((method) => `${method.method || method.method_key || "method"}: ${method.allowed === false ? "forbidden" : "allowed"}`)} />
-          <PlanList title="Required source roles" values={list(plan.required_source_roles).map((role) => `${role.role} — ${role.required === false ? "optional" : "required"}`)} />
-          <PlanList title="Required analysis modules" values={list(plan.required_analysis_modules).map((module) => `${module.artifact_type} — ${module.required === false ? "optional" : "required"}`)} />
-        </div>
-        <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 text-[11px] font-bold uppercase tracking-wider text-gray-400">Applicable stages</div>
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-            {list(plan.applicable_stages).map((stage) => (
-              <div key={stage.key} className="flex items-center gap-2 rounded border border-gray-100 bg-[#fbfcfd] px-3 py-2 text-xs">
-                <span className="font-mono text-gray-400">{String(stage.order).padStart(2, "0")}</span>
-                <span className="font-semibold text-gray-700">{stage.name || humanize(stage.key)}</span>
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 text-xs text-gray-500">
-            Source cutoff: {plan.cutoffs?.source_cutoff_at ? new Date(plan.cutoffs.source_cutoff_at).toLocaleString() : "not set"} · Market cutoff: {plan.cutoffs?.market_data_cutoff_at ? new Date(plan.cutoffs.market_data_cutoff_at).toLocaleString() : "not set"}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  if (!plan) return <p className={ui.notice}>Preparing the research plan…</p>;
+  const list = (value: unknown): any[] => Array.isArray(value) ? value : [];
+  return <>
+    <p className={ui.lead}>{plan.research_question || "No research question recorded."}</p>
+    <dl className={ui.metadata}>
+      <div><dt>Budget</dt><dd>{plan.budget?.limit_usd != null ? `$${plan.budget.limit_usd}` : "Not set"}</dd></div>
+      <div><dt>Profile</dt><dd>{[...list(plan.composed_archetypes), ...list(plan.overlays)].map(humanize).join(" · ") || "Not set"}</dd></div>
+    </dl>
+    {[
+      ["Valuation methods", list(plan.valuation_methods).map((item) => `${humanize(item.method || item.method_key)}: ${item.allowed === false ? "excluded" : "included"}`)],
+      ["Source requirements", list(plan.required_source_roles).map((item) => `${humanize(item.role)}: ${item.required === false ? "optional" : "required"}`)],
+      ["Analysis modules", list(plan.required_analysis_modules).map((item) => `${humanize(item.artifact_type)}: ${item.required === false ? "optional" : "required"}`)],
+      ["Planned stages", list(plan.applicable_stages).map((item) => `${item.order}. ${item.name || humanize(item.key)}`)],
+    ].map(([title, values]) => <details key={String(title)} className={ui.section}><summary>{title}</summary><div className={ui.sectionBody}><ul>{(values as string[]).map((value, index) => <li key={index}>{value}</li>)}</ul></div></details>)}
+    <p className={`${ui.muted} mt-6`}>Source cutoff: {plan.cutoffs?.source_cutoff_at ? new Date(plan.cutoffs.source_cutoff_at).toLocaleString() : "Not set"}<br />Market cutoff: {plan.cutoffs?.market_data_cutoff_at ? new Date(plan.cutoffs.market_data_cutoff_at).toLocaleString() : "Not set"}</p>
+  </>;
 }
 
-function PlanList({ title, values }: { title: string; values: string[] }) {
-  return (
-    <div className="rounded-md border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-gray-400">{title}</div>
-      {values.length === 0 ? <div className="text-xs text-gray-400">No persisted entries.</div> : (
-        <ul className="space-y-1 text-xs text-gray-600">{values.map((value, index) => <li key={`${value}-${index}`}>• {value}</li>)}</ul>
-      )}
-    </div>
-  );
-}
-
-function ResearchTheater({
-  assetName,
-  progress,
-  theater,
-  messages,
-  quality,
-}: {
-  assetName: string;
-  progress: RunProgress;
-  theater: TheaterData;
-  messages: Message[];
-  quality: ResearchQuality | null;
-}) {
-  const completedStages = progress.stages.filter((stage) => stage.status === "completed").length;
-  const runningTasks = progress.tasks.filter((task) => task.status === "running").length;
-  const failedTasks = progress.tasks.filter((task) => task.status === "failed").length;
+function RunDetails({ progress, theater, quality, messages }: { progress: RunProgress; theater: TheaterData; quality: ResearchQuality | null; messages: Message[] }) {
+  const completed = progress.stages.filter((stage) => stage.status === "completed").length;
+  const current = progress.stages.find((stage) => ["running", "waiting_for_human", "failed"].includes(stage.status));
+  const blockers = quality?.missingCoverage.filter((item) => item.requiredForCompletion) || [];
   const events = buildTimeline(progress, theater, messages);
-
-  return (
-    <div className="flex-1 overflow-y-auto p-6">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-gray-400">
-              <Radio className="h-3.5 w-3.5" />
-              Mission Control
-            </div>
-            <h1 className="text-[24px] font-bold tracking-tight text-black">
-              {assetName || "Research Run"}
-            </h1>
-            <p className="mt-1 max-w-2xl text-[12px] leading-5 text-gray-500">
-              Run {compactId(progress.runId)} · v{progress.pipelineVersion} · {humanize(progress.status)} · {progress.latestJob ? `job ${humanize(progress.latestJob.status)}` : "no job"}
-              {!progress.workerHealthy && progress.latestJob?.status === "queued" ? " · waiting for worker" : ""}
-              {progress.marketDataCutoffAt
-                ? ` · data cutoff ${new Date(progress.marketDataCutoffAt).toLocaleDateString()}`
-                : ""}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <StatusBadge status={progress.status} />
-            <span className="rounded-full border border-gray-200 bg-white px-3 py-1 font-mono text-[11px] font-bold text-gray-600">
-              {formatMoney(progress.totalCost)}
-            </span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <MetricTile
-            label="Stages"
-            value={`${completedStages}/${progress.stages.length}`}
-            detail="completed gates"
-            icon={Layers3}
-          />
-          <MetricTile
-            label="Agents"
-            value={String(runningTasks)}
-            detail={`${progress.tasks.length} tasks total`}
-            icon={Bot}
-          />
-          <MetricTile
-            label="Sources"
-            value={String(theater.sources.length)}
-            detail="attached to this run"
-            icon={Database}
-          />
-          <MetricTile
-            label="Blockers"
-            value={String(failedTasks)}
-            detail="failed tasks"
-            icon={AlertTriangle}
-          />
-        </div>
-
-        <QualityGatesPanel quality={quality} />
-        <StageRail progress={progress} />
-        <ActiveStagePanel progress={progress} theater={theater} />
-        <AgentConsole progress={progress} theater={theater} />
-        <ArtifactDeck theater={theater} />
-        <Timeline events={events} />
-      </div>
-    </div>
-  );
+  return <>
+    <div className="flex items-center justify-between gap-4 text-sm text-[#626b78]"><span>{completed} of {progress.stages.length} stages complete</span><span>{formatMoney(progress.totalCost)}</span></div>
+    <progress className={ui.progress} max={progress.stages.length || 1} value={completed} aria-label="Research progress" />
+    {current && <p className={ui.muted}>{humanize(current.key)} · {humanize(current.status)}</p>}
+    {progress.latestJob?.failure_reason && <p className={ui.error} role="alert">{progress.latestJob.failure_reason}</p>}
+    {!progress.workerHealthy && progress.latestJob?.status === "queued" && <p className={ui.notice}>Waiting for an available worker.</p>}
+    <details className={ui.section}><summary>Stages</summary><div className={ui.sectionBody}>
+      {progress.stages.map((stage) => <div key={stage.id} className={ui.row}><div><div className={ui.rowTitle}>{humanize(stage.key)}</div>{stage.failure_reason && <p className={ui.error}>{stage.failure_reason}</p>}<div className={ui.rowMeta}>{formatTime(stage.completed_at || stage.started_at)}</div></div><StatusBadge status={stage.status} /></div>)}
+    </div></details>
+    <details className={ui.section} open={quality?.status === "fail"}><summary>Quality checks {quality && <StatusBadge status={quality.status} />}</summary><div className={ui.sectionBody}>
+      {quality ? <>
+        <dl className={ui.metadata}>{[["Evidence", quality.counts.evidence], ["Sources", quality.counts.sources], ["Valuation anchors", quality.counts.scenariosWithValueAnchors], ["Open gaps", quality.counts.openSourceGaps]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+        <p className="mt-6">{humanize(quality.actionReadiness)}</p>
+        {blockers.length > 0 && <ul className="mt-4">{blockers.map((item, index) => <li key={index}>{item.description}</li>)}</ul>}
+        {quality.errors.filter((error) => !blockers.some((item) => item.description === error)).map((error, index) => <p key={index} className={ui.error}>{error}</p>)}
+        {quality.warnings.length > 0 && <details className="mt-4"><summary>Warnings ({quality.warnings.length})</summary><ul className="mt-3">{quality.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
+      </> : <p>Quality checks are not available yet.</p>}
+    </div></details>
+    <details className={ui.section}><summary>Activity</summary><div className={ui.sectionBody}>
+      {events.length ? events.map((event) => <div key={event.id} className={ui.row}><div><div className={ui.rowTitle}>{event.title}</div><p className={ui.rowMeta}>{event.detail}</p><span className={ui.rowMeta}>{formatTime(event.time)}</span></div><StatusBadge status={event.status} /></div>) : <p>No activity yet.</p>}
+      <details className="mt-6"><summary>Tasks ({progress.tasks.length})</summary>{progress.tasks.map((task) => <div key={task.id} className={ui.row}><div><div>{task.agent_name || humanize(task.task_type)}</div><p className={ui.rowMeta}>{task.failure_reason || humanize(task.task_key)}</p></div><StatusBadge status={task.status} /></div>)}</details>
+      <details className="mt-6"><summary>Model calls ({theater.modelCalls.length})</summary>{theater.modelCalls.map((call) => <div key={call.id} className={ui.row}><div><div>{call.agent_name || call.model_tier}</div><p className={ui.rowMeta}>{call.model_provider}/{call.model_name} · {formatMoney(call.cost_usd)}</p>{call.error_message && <p className={ui.error}>{call.error_message}</p>}</div><StatusBadge status={call.status} /></div>)}</details>
+    </div></details>
+    <details className={ui.section}><summary>Run details</summary><dl className={`${ui.metadata} ${ui.sectionBody}`}>
+      <div><dt>Run</dt><dd>{progress.runId}</dd></div><div><dt>Created</dt><dd>{progress.createdAt ? new Date(progress.createdAt).toLocaleString() : "Not set"}</dd></div>
+      <div><dt>Job</dt><dd>{humanize(progress.latestJob?.status)}</dd></div><div><dt>Market data cutoff</dt><dd>{progress.marketDataCutoffAt ? new Date(progress.marketDataCutoffAt).toLocaleString() : "Not set"}</dd></div>
+      <div><dt>Budget</dt><dd>{progress.budgetLimit != null ? `$${progress.budgetLimit}` : "Not set"}</dd></div><div><dt>Exports</dt><dd>{progress.exportCount}</dd></div>
+    </dl></details>
+  </>;
 }
 
 export default function RunResearchPage() {
   const params = useParams();
-  const router = useRouter();
   const assetId = params.id as string;
 
   const [phase, setPhase] = useState<"intake" | "plan" | "pipeline">("intake");
@@ -910,6 +320,7 @@ export default function RunResearchPage() {
   const [budgetLimitUsd, setBudgetLimitUsd] = useState("");
   const [runType, setRunType] = useState("deep_dive");
   const [runId, setRunId] = useState<string | null>(null);
+  const activeRunRef = useRef<string | null>(null);
   const [progress, setProgress] = useState<RunProgress | null>(null);
   const [quality, setQuality] = useState<ResearchQuality | null>(null);
   const [theater, setTheater] = useState<TheaterData>({
@@ -924,7 +335,8 @@ export default function RunResearchPage() {
   const [backtestPrompt, setBacktestPrompt] = useState("");
   const [showLinkInput, setShowLinkInput] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -934,20 +346,26 @@ export default function RunResearchPage() {
           fetch(`/api/assets/${assetId}`),
           fetch(`/api/assets/${assetId}/research-runs`),
         ]);
+        if (!assetRes.ok || !runsRes.ok) throw new Error("Unable to load research.");
         if (assetRes.ok) {
           const data = await assetRes.json();
           setAssetName(data.canonical_name);
         }
         if (runsRes.ok) {
           const runs = await runsRes.json();
-          const latestRun = Array.isArray(runs)
-            ? [...runs]
+          const requestedRunId = new URLSearchParams(window.location.search).get("run");
+          const latestRun = !new URLSearchParams(window.location.search).has("new") && Array.isArray(runs)
+            ? requestedRunId
+              ? runs.find((run) => run.id === requestedRunId)
+              : [...runs]
                 .sort(
                   (a, b) =>
                     new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
                 )[0]
             : null;
+          if (requestedRunId && !latestRun) throw new Error("Research run not found.");
           if (latestRun) {
+            activeRunRef.current = latestRun.id;
             setRunId(latestRun.id);
             setPhase("pipeline");
             setMessages((prev) =>
@@ -955,24 +373,22 @@ export default function RunResearchPage() {
                 ? [
                     {
                       role: "system",
-                      content: `Loaded latest research run: ${latestRun.id}`,
+                      content: `Loaded research run: ${latestRun.id}`,
                     },
                   ]
                 : prev
             );
-            fetchProgress(latestRun.id);
+            await fetchProgress(latestRun.id);
           }
         }
       } catch (error) {
-        console.error("Failed to load asset context:", error);
+        setLoadError(error instanceof Error ? error.message : "Unable to load research.");
+      } finally {
+        setLoading(false);
       }
     }
     loadAssetContext();
   }, [assetId]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   useEffect(() => {
     if (!runId || phase !== "pipeline") return;
@@ -981,7 +397,7 @@ export default function RunResearchPage() {
   }, [runId, phase]);
 
   async function handleSend() {
-    if (!input.trim() || isProcessing) return;
+    if (phase !== "intake" || !input.trim() || isProcessing) return;
 
     const userMessage = input.trim();
     setInput("");
@@ -1016,7 +432,9 @@ export default function RunResearchPage() {
       });
       if (!res.ok) throw new Error((await res.json()).error || "Unable to create run");
       const run = await res.json();
+      activeRunRef.current = run.id;
       setRunId(run.id);
+      window.history.replaceState(null, "", `/assets/${assetId}/run?run=${run.id}`);
       setPhase("pipeline");
 
       const startRes = await fetch(`/api/research-runs/${run.id}/run-system-pipeline`, {
@@ -1103,6 +521,7 @@ export default function RunResearchPage() {
           fetch(`/api/research-runs/${id}/artifacts`),
         ]);
 
+      if (!runRes.ok) throw new Error("Unable to refresh this run.");
       const data = await runRes.json();
       const qualityData = qualityRes.ok ? await qualityRes.json() : null;
       const sources = sourcesRes.ok ? await sourcesRes.json() : [];
@@ -1111,6 +530,7 @@ export default function RunResearchPage() {
       const backtests = backtestsRes.ok ? await backtestsRes.json() : [];
       const jobsData = jobsRes.ok ? await jobsRes.json() : { latestJob: null, workers: [] };
       const artifactsData = artifactsRes.ok ? await artifactsRes.json() : { artifacts: [] };
+      if (activeRunRef.current !== id) return;
       const planArtifact = (artifactsData.artifacts || []).find((artifact: any) => artifact.type === "research_plan");
       const planWaiting = data.stages?.some((stage: any) => stage.stage_key === "research_plan" && stage.status === "waiting_for_human");
       if (planArtifact) setResearchPlan(planArtifact.content || planArtifact.content_json || null);
@@ -1164,8 +584,9 @@ export default function RunResearchPage() {
         backtests: Array.isArray(backtests) ? backtests : [],
       });
       setQuality(qualityData);
+      setLoadError("");
     } catch (error) {
-      console.error("Failed to fetch progress:", error);
+      if (activeRunRef.current === id) setLoadError("Unable to refresh this run. Displayed progress may be out of date.");
     }
   }
 
@@ -1300,371 +721,47 @@ export default function RunResearchPage() {
     }
   }
 
-  return (
-    <div className="flex flex-col h-screen bg-[#f4f7fa]">
-      {/* Top Header */}
-      <div className="border-b border-[#eef2f6] bg-white px-6 py-3.5 flex items-center justify-between shrink-0 shadow-sm z-10">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.back()}
-            className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-black transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            <span>Back</span>
-          </button>
-          <span className="text-gray-300">|</span>
-          <h2 className="text-[14px] font-bold text-black">
-            Run Research &rsaquo; <span className="text-gray-500 font-semibold">{assetName}</span>
-          </h2>
-        </div>
-        <div>
-          <select
-            value={runType}
-            onChange={(e) => setRunType(e.target.value)}
-            className="rounded-full border border-gray-200 bg-white px-4 py-1.5 text-[12px] font-semibold text-gray-600 focus:outline-none focus:border-black cursor-pointer transition-colors"
-          >
-            <option value="quick_scan">Quick Scan</option>
-            <option value="deep_dive">Deep Dive</option>
-            <option value="valuation_refresh">Valuation Refresh</option>
-            <option value="thesis_investigation">Thesis Investigation</option>
-            <option value="full_initiation_report">Full Initiation Report</option>
-          </select>
-          <div className="mt-2 grid grid-cols-3 gap-1">
-            <input type="datetime-local" value={sourceCutoffAt} onChange={(event) => setSourceCutoffAt(event.target.value)} title="Source cutoff" className="w-full rounded border border-gray-200 px-2 py-1 text-[10px] text-gray-500" />
-            <input type="datetime-local" value={marketDataCutoffAt} onChange={(event) => setMarketDataCutoffAt(event.target.value)} title="Market-data cutoff" className="w-full rounded border border-gray-200 px-2 py-1 text-[10px] text-gray-500" />
-            <input type="number" min="0" step="0.01" value={budgetLimitUsd} onChange={(event) => setBudgetLimitUsd(event.target.value)} placeholder="Budget $" className="w-full rounded border border-gray-200 px-2 py-1 text-[10px] text-gray-500" />
-          </div>
-        </div>
-      </div>
+  if (loading) return <div className={ui.page} role="status">Loading research…</div>;
+  const finalReviewWaiting = progress?.stages.some((stage) => stage.key === "human_review" && stage.status === "waiting_for_human");
+  const lastMessage = messages[messages.length - 1];
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Main Panel */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Conversation history view */}
-          {phase === "pipeline" && progress ? (
-            <ResearchTheater
-              assetName={assetName}
-              progress={progress}
-              theater={theater}
-              messages={messages}
-              quality={quality}
-            />
-          ) : phase === "plan" && progress ? (
-            <ResearchPlanCard plan={researchPlan} />
-          ) : (
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            {messages.length === 0 && (
-              <div className="text-center py-16 max-w-xl mx-auto flex flex-col items-center">
-                <div className="h-12 w-12 rounded-xl bg-white border border-gray-200/60 shadow-sm flex items-center justify-center text-gray-400 mb-4">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                  </svg>
-                </div>
-                <h3 className="text-[16px] font-bold text-black mb-2">
-                  Research {assetName}
-                </h3>
-                <p className="text-xs text-gray-400 max-w-sm leading-normal">
-                  Propose your investment questions. The pipeline will construct a plan before executing LLM routing calls.
-                </p>
-                
-                <div className="mt-8 flex flex-wrap justify-center gap-2">
-                  {[
-                    `Research ${assetName} as a long-term compounder`,
-                    `Update valuation with latest data`,
-                    `Is ${assetName} cheap on key metrics?`,
-                    `Build a DCF and compare with reverse DCF`,
-                  ].map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      onClick={() => setInput(suggestion)}
-                      className="rounded-full border border-gray-200 bg-white px-4 py-1.5 text-[12px] font-semibold text-gray-600 hover:border-gray-300 hover:text-black transition-all shadow-sm"
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex ${
-                  msg.role === "user" ? "justify-end" : "justify-start"
-                }`}
-              >
-                <div
-                  className={`max-w-2xl rounded-2xl px-4.5 py-3 shadow-sm text-left leading-normal ${
-                    msg.role === "user"
-                      ? "bg-black text-white rounded-br-none"
-                      : msg.role === "system"
-                      ? "bg-[#fafbfc] border border-gray-200/50 text-gray-500 text-[11.5px] font-mono rounded-bl-none"
-                      : "bg-white border border-gray-200/80 text-black rounded-bl-none"
-                  }`}
-                >
-                  <pre className="whitespace-pre-wrap font-sans text-[13px]">
-                    {msg.content}
-                  </pre>
-                </div>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-          )}
-
-          {/* User Input controls */}
-          <div className="border-t border-[#eef2f6] bg-white p-4.5 shrink-0 shadow-sm">
-            {phase === "plan" && (
-              <div className="mb-4 space-y-2">
-                <textarea
-                  value={planChangeNotes}
-                  onChange={(event) => setPlanChangeNotes(event.target.value)}
-                  placeholder="Optional notes for requested plan changes"
-                  className="min-h-16 w-full rounded-md border border-gray-200 bg-[#fbfcfd] px-3 py-2 text-xs outline-none focus:border-gray-400"
-                  disabled={isProcessing}
-                />
-                <div className="flex gap-2">
-                <button
-                  onClick={handleApprovePlan}
-                  className="rounded-full bg-emerald-600 px-5 py-2 text-[12px] font-bold text-white hover:bg-emerald-700 shadow-sm transition-all flex items-center gap-1.5"
-                  disabled={isProcessing}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span>Approve & Start Research</span>
-                </button>
-                <button
-                  onClick={handleRequestPlanChanges}
-                  disabled={isProcessing || !planChangeNotes.trim()}
-                  className="rounded-full border border-gray-200 bg-white px-5 py-2 text-[12px] font-bold text-gray-600 hover:text-black hover:border-gray-300 transition-all"
-                >
-                  Request Changes
-                </button>
-                </div>
-              </div>
-            )}
-            
-            <div className="flex gap-2">
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={!runId || isUploading}
-                className={`rounded-full border border-gray-200 p-2.5 flex items-center justify-center transition-all ${
-                  runId && !isUploading
-                    ? "text-gray-400 hover:text-black hover:border-gray-300 bg-white"
-                    : "text-gray-200 bg-gray-50/50 cursor-not-allowed border-gray-100"
-                }`}
-                title={runId ? "Attach file" : "Create a run first to attach files"}
-              >
-                <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 11-2.828-2.828l6.414-6.414a4 4 0 015.656 5.656l-6.415 6.415a6 6 0 01-8.486-8.486L10.5 10" />
-                </svg>
-              </button>
-              <button
-                onClick={() => setShowLinkInput(!showLinkInput)}
-                disabled={!runId || isUploading}
-                className={`rounded-full border border-gray-200 p-2.5 flex items-center justify-center transition-all ${
-                  runId && !isUploading
-                    ? "text-gray-400 hover:text-black hover:border-gray-300 bg-white"
-                    : "text-gray-200 bg-gray-50/50 cursor-not-allowed border-gray-100"
-                }`}
-                title={runId ? "Attach link" : "Create a run first to attach links"}
-              >
-                <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                </svg>
-              </button>
-              
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                placeholder={
-                  phase === "intake"
-                    ? "Describe your research question..."
-                    : "Ask a follow-up or add context..."
-                }
-                className="flex-1 rounded-full border border-gray-200 px-5 py-2.5 text-[13px] font-mono focus:border-blue-500 focus:outline-none focus:ring-0 bg-[#fafbfc] focus:bg-white transition-all h-11"
-                disabled={isProcessing}
-              />
-              
-              <button
-                onClick={handleSend}
-                className="rounded-full bg-black px-6 h-11 text-[12px] font-bold text-white hover:bg-black/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                disabled={isProcessing || !input.trim()}
-              >
-                Send
-              </button>
-            </div>
-
-            {showLinkInput && runId && (
-              <div className="flex gap-2 mt-2">
-                <input
-                  type="url"
-                  value={linkUrl}
-                  onChange={(e) => setLinkUrl(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleLinkAttach()}
-                  placeholder="Paste a URL to ingest..."
-                  className="flex-1 rounded-full border border-gray-200 px-5 py-2.5 text-[13px] font-mono focus:border-blue-500 focus:outline-none bg-[#fafbfc] transition-all h-11"
-                  disabled={isUploading}
-                />
-                <button
-                  onClick={handleLinkAttach}
-                  disabled={isUploading || !linkUrl.trim()}
-                  className="rounded-full bg-black px-5 h-11 text-[12px] font-bold text-white hover:bg-black/90 disabled:opacity-30 transition-all"
-                >
-                  Ingest URL
-                </button>
-                <button
-                  onClick={() => { setShowLinkInput(false); setLinkUrl(""); }}
-                  className="rounded-full border border-gray-200 bg-white px-5 h-11 text-[12px] font-bold text-gray-500 hover:text-black hover:border-gray-300 transition-all"
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Pipeline Progress Sidebar */}
-        {phase === "pipeline" && progress && (
-          <div className="w-80 border-l border-[#eef2f6] bg-white overflow-y-auto p-5 shrink-0 shadow-sm z-20 flex flex-col gap-6">
-            <div>
-              <h3 className="font-bold text-[14px] text-black mb-1">
-                Pipeline Progress
-              </h3>
-              <p className="text-[11px] text-gray-400">
-                Orchestrator pipeline stage validation.
-              </p>
-            </div>
-
-            {/* Run ID Status & Cost */}
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between rounded-xl border border-gray-100 bg-[#fbfcfd] p-3">
-                <div>
-                  <span className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block">Status</span>
-                  <span className="rounded-full bg-yellow-50 text-yellow-700 text-[10px] font-bold uppercase tracking-wider inline-block mt-0.5">
-                    {progress.status}
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] text-gray-400 uppercase tracking-wider font-bold block">LiteLLM Cost</span>
-                  <span className="text-xs font-mono font-bold text-black block mt-0.5">
-                    ${progress.totalCost.toFixed(4)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Stages status list */}
-            <div>
-              <h4 className="text-[11px] uppercase tracking-wider text-gray-400 font-bold mb-3">Stages</h4>
-              <div className="space-y-1.5 font-mono text-[11px]">
-                {progress.stages.map((stage) => (
-                  <div
-                    key={stage.key}
-                    className="flex items-center gap-2 px-2 py-1"
-                  >
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${
-                        stage.status === "completed"
-                          ? "bg-emerald-500"
-                          : stage.status === "running"
-                          ? "bg-amber-500 animate-pulse"
-                          : stage.status === "failed"
-                          ? "bg-rose-500"
-                          : stage.status === "skipped"
-                          ? "bg-gray-300"
-                          : "bg-gray-200"
-                      }`}
-                    />
-                    <span
-                      className={`uppercase tracking-wider ${
-                        stage.status === "running"
-                          ? "font-semibold text-black"
-                          : "text-gray-500"
-                      }`}
-                    >
-                      {stage.key.replace(/_/g, " ")}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Agent Tasks */}
-            {progress.tasks && progress.tasks.length > 0 && (
-              <div>
-                <h4 className="text-[11px] uppercase tracking-wider text-gray-400 font-bold mb-3">Agent Tasks</h4>
-                <div className="space-y-1.5 font-mono text-[11px]">
-                  {progress.tasks.map((task) => (
-                    <div key={task.id} className="flex items-center gap-2">
-                      <span className={`h-1 w-1 rounded-full ${
-                        task.status === "completed" ? "bg-emerald-500" :
-                        task.status === "running" ? "bg-amber-500 animate-pulse" : "bg-gray-300"
-                      }`} />
-                      <span className="text-gray-600 truncate">{task.agent_name || task.task_type}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Backtest request */}
-            {runId && (
-              <div className="rounded-xl border border-gray-100 bg-[#fbfcfd] p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                    Backtest
-                  </h4>
-                  <span className="font-mono text-[10px] text-gray-400">
-                    opencode
-                  </span>
-                </div>
-                <textarea
-                  value={backtestPrompt}
-                  onChange={(e) => setBacktestPrompt(e.target.value)}
-                  placeholder="Moving-average trend strategy with 50/200 day windows"
-                  className="min-h-20 w-full resize-none rounded-lg border border-gray-200 bg-white px-3 py-2 text-[11.5px] text-gray-700 outline-none transition-all focus:border-blue-500"
-                  disabled={isBacktestSubmitting}
-                />
-                <button
-                  onClick={handleBacktestRequest}
-                  disabled={isBacktestSubmitting || !backtestPrompt.trim()}
-                  className="mt-2 w-full rounded-full bg-black px-4 py-2 text-[11px] font-bold text-white transition-all hover:bg-black/90 disabled:cursor-not-allowed disabled:opacity-30"
-                >
-                  {isBacktestSubmitting ? "Queueing..." : "Queue Backtest"}
-                </button>
-              </div>
-            )}
-
-            {/* Sources metrics card */}
-            {progress.sourceCount > 0 && (
-              <div className="rounded-xl border border-gray-100 bg-[#fbfcfd] p-3 flex justify-between items-center text-xs">
-                <span className="font-semibold text-gray-500">Ingested Sources</span>
-                <span className="font-bold text-black">{progress.sourceCount} files</span>
-              </div>
-            )}
-
-            {/* Artifacts metrics card */}
-            {progress.exportCount > 0 && (
-              <div className="rounded-xl border border-gray-100 bg-[#fbfcfd] p-3 flex justify-between items-center text-xs">
-                <span className="font-semibold text-gray-500">Generated Reports</span>
-                <span className="font-bold text-black">{progress.exportCount} exports</span>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  return <div className={`${ui.page} ${ui.withBack}`}>
+    <Link href={`/assets/${assetId}/view${runId ? `?run=${runId}` : ""}`} className={ui.back}><ArrowLeft size={17} />Research brief</Link>
+    <header className={ui.heading}><h1>{assetName || "Research"}</h1>{phase !== "intake" && progress && <StatusBadge status={progress.status} />}</header>
+    {loadError && <p className={ui.error} role="alert">{loadError}{runId && <button onClick={() => fetchProgress(runId)}>Try again</button>}</p>}
+    {phase === "intake" && !loadError ? <form className={ui.form} onSubmit={(event) => { event.preventDefault(); handleSend(); }}>
+      <label className={ui.field}>Research question<textarea rows={4} value={input} onChange={(event) => setInput(event.target.value)} placeholder={`What would you like to understand about ${assetName}?`} disabled={isProcessing} required /></label>
+      <div className="flex flex-wrap gap-x-6 gap-y-2">{["Long-term investment thesis", "Update valuation"].map((label, index) => <button key={label} type="button" className={ui.textLink} onClick={() => setInput(index === 0 ? `Research ${assetName} as a long-term compounder` : "Update valuation with latest data")}>{label}</button>)}</div>
+      <label className={ui.field}>Research type<select value={runType} onChange={(event) => setRunType(event.target.value)} disabled={isProcessing}>{[["quick_scan", "Quick scan"], ["deep_dive", "Deep dive"], ["valuation_refresh", "Valuation refresh"], ["thesis_investigation", "Thesis investigation"], ["full_initiation_report", "Full initiation report"]].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <details className={ui.section}><summary>Budget and data cutoffs</summary><div className={`${ui.form} ${ui.sectionBody}`}>
+        <label className={ui.field}>Budget (USD)<input type="number" min="0" step="0.01" value={budgetLimitUsd} onChange={(event) => setBudgetLimitUsd(event.target.value)} disabled={isProcessing} /></label>
+        <div className={ui.formGrid}><label className={ui.field}>Source cutoff<input type="datetime-local" value={sourceCutoffAt} onChange={(event) => setSourceCutoffAt(event.target.value)} disabled={isProcessing} /></label><label className={ui.field}>Market data cutoff<input type="datetime-local" value={marketDataCutoffAt} onChange={(event) => setMarketDataCutoffAt(event.target.value)} disabled={isProcessing} /></label></div>
+      </div></details>
+      <div className={ui.actions}><span /><button className={ui.primary} disabled={isProcessing || !input.trim()}>{isProcessing ? "Creating…" : "Create research plan"}</button></div>
+    </form> : phase === "plan" ? <>
+      <h2 className="mb-8 text-[22px]">Review research plan</h2>
+      <ResearchPlanCard plan={researchPlan} />
+      <div className={`${ui.form} mt-8`}><label className={ui.field}>Requested changes<textarea rows={3} value={planChangeNotes} onChange={(event) => setPlanChangeNotes(event.target.value)} disabled={isProcessing} /></label><div className={ui.actions}>
+        <button className={ui.secondary} onClick={handleRequestPlanChanges} disabled={isProcessing || !planChangeNotes.trim()}>Request changes</button>
+        <button className={ui.primary} onClick={handleApprovePlan} disabled={isProcessing}>{isProcessing ? "Saving…" : "Approve plan & start"}</button>
+      </div></div>
+    </> : progress ? <>
+      {finalReviewWaiting && <div className={`${ui.actions} mb-8 mt-0 border-t-0 pt-0`}><p className={ui.muted}>Ready for your review.</p><Link className={ui.primary} href={`/review?run=${runId}`}>Review research</Link></div>}
+      <RunDetails progress={progress} theater={theater} quality={quality} messages={messages} />
+    </> : null}
+    {runId && progress && <>
+      <details className={ui.section}><summary>Sources <span className={ui.muted}>{theater.sources.length}</span></summary><div className={ui.sectionBody}>
+        {theater.sources.length ? theater.sources.map((source) => <div key={source.id} className={ui.row}><div><div className={ui.rowTitle}>{source.url ? <a href={source.url} target="_blank" rel="noreferrer" className="underline underline-offset-4">{source.title}</a> : source.title}</div><p className={ui.rowMeta}>{[humanize(source.source_type), source.publisher].filter(Boolean).join(" · ")}</p></div></div>) : <p>No sources attached.</p>}
+        <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" aria-label="Upload source file" />
+        <div className={ui.actions}><button className={ui.secondary} onClick={() => fileInputRef.current?.click()} disabled={isUploading}>{isUploading ? "Attaching…" : "Attach file"}</button><button className={ui.textLink} onClick={() => setShowLinkInput(!showLinkInput)} disabled={isUploading}>Attach link</button></div>
+        {showLinkInput && <form className="mt-6" onSubmit={(event) => { event.preventDefault(); handleLinkAttach(); }}><label className={ui.field}>Source URL<input type="url" value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} required disabled={isUploading} /></label><div className={ui.actions}><button type="button" className={ui.textLink} onClick={() => { setShowLinkInput(false); setLinkUrl(""); }}>Cancel</button><button className={ui.primary} disabled={isUploading || !linkUrl.trim()}>Attach source</button></div></form>}
+      </div></details>
+      <details className={ui.section}><summary>Backtests <span className={ui.muted}>{theater.backtests.length}</span></summary><div className={ui.sectionBody}>
+        {theater.backtests.map((test) => <div key={test.id} className={ui.row}><div><div className={ui.rowTitle}>{test.strategy_name || `${test.symbol} backtest`}</div><p className={ui.rowMeta}>{test.error_message || test.strategy_prompt}</p></div><StatusBadge status={test.status} /></div>)}
+        <form className="mt-6" onSubmit={(event) => { event.preventDefault(); handleBacktestRequest(); }}><label className={ui.field}>Strategy<textarea rows={3} value={backtestPrompt} onChange={(event) => setBacktestPrompt(event.target.value)} disabled={isBacktestSubmitting} placeholder="Describe the strategy to test" required /></label><div className={ui.actions}><span /><button className={ui.primary} disabled={isBacktestSubmitting || !backtestPrompt.trim()}>{isBacktestSubmitting ? "Queueing…" : "Queue backtest"}</button></div></form>
+      </div></details>
+      {phase === "pipeline" && <footer className={ui.actions}><Link href={`/assets/${assetId}/view?run=${runId}`} className={ui.textLink}>Read research<ArrowUpRight size={16} /></Link><button className={ui.secondary} onClick={() => { activeRunRef.current = null; window.history.replaceState(null, "", `/assets/${assetId}/run?new=1`); setRunId(null); setProgress(null); setQuality(null); setResearchPlan(null); setPhase("intake"); setMessages([]); setTheater({ sources: [], traces: [], modelCalls: [], backtests: [] }); setLoadError(""); }}>New research</button></footer>}
+    </>}
+    {lastMessage && !lastMessage.content.startsWith("Loaded research run") && <p className={`${ui.notes} ${ui.notice}`} role="status">{lastMessage.content}</p>}
+  </div>;
 }

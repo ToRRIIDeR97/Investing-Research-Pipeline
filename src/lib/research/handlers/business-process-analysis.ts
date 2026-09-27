@@ -1,13 +1,11 @@
-import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
-import { makeValidationResult } from "../run-context";
+import type { ResearchRunContext, StageHandler } from "../run-context";
 import { callResearchAgent, exactJsonPrompt } from "../run-context";
 import { BUSINESS_PROCESS_CONTRACT } from "../stage-contracts";
-import { loadAcceptedEvidencePacket } from "../system-pipeline";
+import { loadAcceptedEvidencePacket } from "../sources/corpus";
 import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { createHash } from "node:crypto";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 
 export const businessProcessAnalysisHandler: StageHandler<Record<string, unknown>> = {
@@ -29,11 +27,7 @@ export const businessProcessAnalysisHandler: StageHandler<Record<string, unknown
         marketDataCutoffAt: ctx.marketDataCutoffAt?.toISOString() || null,
         pipelineVersion: CURRENT_PIPELINE_VERSION,
       });
-      const evidenceFingerprint = createHash("sha256")
-        .update(JSON.stringify(evidenceClaims))
-        .digest("hex")
-        .slice(0, 12);
-      const taskKey = `business-model-analyst:process-map:v4:${evidenceFingerprint}`;
+      const taskKey = "business-model-analyst:process-map";
       const packet = {
         asset: {
           runId: ctx.runId,
@@ -43,6 +37,7 @@ export const businessProcessAnalysisHandler: StageHandler<Record<string, unknown
           profileKey: ctx.profileKey,
         },
         required_modules: ["customer_funnel_mechanics", "segment_economics", "business_process_flow"],
+        required_process_nodes: ctx.composedProfile?.required_process_nodes || [],
         output_contract: "business_process_analysis",
         output_schema: BUSINESS_PROCESS_CONTRACT.schema,
         evidence_claims: evidenceClaims,
@@ -55,8 +50,10 @@ export const businessProcessAnalysisHandler: StageHandler<Record<string, unknown
         extraRules: [
           "Document segment unit-economics and trace buyer/seller/user acquisition and transaction flow diagrams.",
           "Follow output_schema exactly, including every nested required field and primitive type.",
+          "For a Lending or Credit segment, include lender_details with nonempty funding_cost and credit_losses grounded in evidence. For a Marketplace or Commerce segment, include marketplace_details with buyers, transactions, gmv, and take_rate.",
           "The canonical bottleneck key and artifact_type are both bottleneck_register.",
-          "Keep the response bounded: one representative segment, one customer group, two process_nodes, one bottleneck, and one competitor with one response scenario.",
+          "Cover every reportable company segment supported by evidence_claims, including distinct Lending, Financial Services, and Technology Platform segments when the sources establish them.",
+          "Cover each applicable required_process_node. For a node without supporting evidence, list it in business_process_map.source_gaps instead of inventing a process or citation.",
           "business_process_map must contain process_nodes, never process_steps.",
           "Each process node must cite only UUIDs copied exactly from evidence_claims in supporting_claim_ids.",
           "If competitor market share is not disclosed, use 0 rather than inventing a percentage.",
@@ -70,6 +67,23 @@ export const businessProcessAnalysisHandler: StageHandler<Record<string, unknown
         packet, promptFactory,
         outputFormat: BUSINESS_PROCESS_CONTRACT,
       });
+      const processMap = output.business_process_map;
+      if (processMap && Array.isArray(packet.required_process_nodes)) {
+        const covered = new Set((Array.isArray(processMap.process_nodes) ? processMap.process_nodes : [])
+          .map((node: any) => String(node.process_node)));
+        const gaps = Array.isArray(processMap.source_gaps) ? processMap.source_gaps : [];
+        processMap.required_node_coverage = packet.required_process_nodes
+          .filter((node: any) => node.required)
+          .map((node: any) => {
+            const key = String(node.node_key);
+            const gap = gaps.find((item: any) => item.node_key === key);
+            return {
+              node_key: key,
+              status: covered.has(key) ? "documented" : "blocked",
+              ...(covered.has(key) ? {} : { gap_reason: String(gap?.reason || "No supported process node was produced") }),
+            };
+          });
+      }
 
       // Persist generated sub-artifacts
       const db = drizzle(sql, { schema });
@@ -99,25 +113,4 @@ export const businessProcessAnalysisHandler: StageHandler<Record<string, unknown
       await sql.end();
     }
   },
-  async validate(ctx: ResearchRunContext, _output: unknown): Promise<ValidationResult> {
-    const sql = postgres(process.env.DATABASE_URL!);
-    try {
-      const errors: string[] = [];
-      const artifactKeys = BUSINESS_PROCESS_CONTRACT.requiredKeys;
-      for (const k of artifactKeys) {
-        const rows = await sql`
-          SELECT COUNT(*) as cnt FROM research_artifacts
-          WHERE research_run_id = ${ctx.runId}
-            AND artifact_type = ${k}
-            AND status IN ('validated', 'accepted')
-        `;
-        if (Number(rows[0].cnt) === 0) {
-          errors.push(`Missing required artifact: ${k}`);
-        }
-      }
-      return makeValidationResult(errors);
-    } finally {
-      await sql.end();
-    }
-  }
 };

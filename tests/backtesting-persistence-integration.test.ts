@@ -50,13 +50,13 @@ describe("SOFI framework backtest persistence", { skip: !runIntegration }, () =>
       const ctx = await loadRunContext(sql, runId);
 
       const indicatorOutput = await indicatorDesignHandler.execute(ctx);
-      assert.equal((await indicatorDesignHandler.validate(ctx, indicatorOutput)).valid, true);
+      assert.equal((await indicatorDesignHandler.validate!(ctx, indicatorOutput)).valid, true);
       const strategyOutput = await strategyDesignHandler.execute(ctx);
-      assert.equal((await strategyDesignHandler.validate(ctx, strategyOutput)).valid, true);
+      assert.equal((await strategyDesignHandler.validate!(ctx, strategyOutput)).valid, true);
       const executionOutput = await backtestExecutionHandler.execute(ctx);
-      assert.equal((await backtestExecutionHandler.validate(ctx, executionOutput)).valid, true);
+      assert.equal((await backtestExecutionHandler.validate!(ctx, executionOutput)).valid, true);
       const reviewOutput = await backtestReviewHandler.execute(ctx);
-      assert.equal((await backtestReviewHandler.validate(ctx, reviewOutput)).valid, true);
+      assert.equal((await backtestReviewHandler.validate!(ctx, reviewOutput)).valid, true);
 
       const [counts] = await sql`
         SELECT

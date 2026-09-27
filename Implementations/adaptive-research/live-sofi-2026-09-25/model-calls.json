@@ -1,0 +1,2109 @@
+[
+  {
+    "id": "3571a1b9-347e-4b46-8aa0-378f77d37134",
+    "agent_name": "source-reader",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 7935,
+    "output_tokens": 12451,
+    "cost_usd": "0.017322",
+    "latency_ms": 84476,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 31649,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 31649
+    },
+    "created_at": "2026-09-25T03:50:35.742Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T03:49:11.126Z",
+      "completed_at": "2026-09-25T03:50:35.602Z",
+      "reasoning_tokens": 10462,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.017322,
+          "latencyMs": 84474,
+          "startedAt": "2026-09-25T03:49:11.127Z",
+          "completedAt": "2026-09-25T03:50:35.601Z",
+          "inputTokens": 7935,
+          "outputTokens": 12451,
+          "reasoningTokens": 10462,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "249924fd-6c5e-4ba8-8cdb-32963ff9fed3",
+    "agent_name": "source-reader",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 7644,
+    "output_tokens": 12558,
+    "cost_usd": "0.017363",
+    "latency_ms": 78924,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 31530,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 31530
+    },
+    "created_at": "2026-09-25T03:51:54.792Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T03:50:35.837Z",
+      "completed_at": "2026-09-25T03:51:54.761Z",
+      "reasoning_tokens": 10395,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.017363,
+          "latencyMs": 78923,
+          "startedAt": "2026-09-25T03:50:35.838Z",
+          "completedAt": "2026-09-25T03:51:54.761Z",
+          "inputTokens": 7644,
+          "outputTokens": 12558,
+          "reasoningTokens": 10395,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "bb4b49f7-784f-4234-8c50-607729766c67",
+    "agent_name": "source-reader",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 9984,
+    "output_tokens": 13065,
+    "cost_usd": "0.018673",
+    "latency_ms": 79577,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 31816,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 31816
+    },
+    "created_at": "2026-09-25T03:53:14.464Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T03:51:54.847Z",
+      "completed_at": "2026-09-25T03:53:14.424Z",
+      "reasoning_tokens": 10528,
+      "repair_attempted": true,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.016495,
+          "latencyMs": 70805,
+          "startedAt": "2026-09-25T03:51:54.847Z",
+          "completedAt": "2026-09-25T03:53:05.652Z",
+          "inputTokens": 8452,
+          "outputTokens": 11633,
+          "reasoningTokens": 10321,
+          "validationErrors": [
+            {
+              "path": "evidence_claims",
+              "message": "Expected array, got object"
+            },
+            {
+              "path": "contradictions",
+              "message": "Expected array, got object"
+            },
+            {
+              "path": "source_gaps",
+              "message": "Expected array, got object"
+            },
+            {
+              "path": "low_confidence_items",
+              "message": "Expected array, got object"
+            },
+            {
+              "path": "rejected_candidates",
+              "message": "Expected array, got object"
+            }
+          ]
+        },
+        {
+          "kind": "repair",
+          "status": "success",
+          "costUsd": 0.002178,
+          "latencyMs": 8772,
+          "startedAt": "2026-09-25T03:53:05.652Z",
+          "completedAt": "2026-09-25T03:53:14.424Z",
+          "inputTokens": 1532,
+          "outputTokens": 1432,
+          "reasoningTokens": 207,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "2947199a-01c6-4bf1-b01b-f8b45da271bd",
+    "agent_name": "source-reader",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 8694,
+    "output_tokens": 11569,
+    "cost_usd": "0.016491",
+    "latency_ms": 71131,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 31563,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 31563
+    },
+    "created_at": "2026-09-25T03:54:25.684Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T03:53:14.519Z",
+      "completed_at": "2026-09-25T03:54:25.650Z",
+      "reasoning_tokens": 9352,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.016491,
+          "latencyMs": 71130,
+          "startedAt": "2026-09-25T03:53:14.519Z",
+          "completedAt": "2026-09-25T03:54:25.649Z",
+          "inputTokens": 8694,
+          "outputTokens": 11569,
+          "reasoningTokens": 9352,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "cd98c779-6700-48b2-a7b2-abcea1ad756b",
+    "agent_name": "metric-normalizer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 10015,
+    "output_tokens": 45453,
+    "cost_usd": "0.057548",
+    "latency_ms": 224696,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 18817,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 18817
+    },
+    "created_at": "2026-09-25T03:58:10.955Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T03:54:26.229Z",
+      "completed_at": "2026-09-25T03:58:10.925Z",
+      "reasoning_tokens": 24086,
+      "repair_attempted": true,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.0411,
+          "latencyMs": 168038,
+          "startedAt": "2026-09-25T03:54:26.229Z",
+          "completedAt": "2026-09-25T03:57:14.267Z",
+          "inputTokens": 5927,
+          "outputTokens": 32768,
+          "reasoningTokens": 16773,
+          "validationErrors": [
+            {
+              "path": "root",
+              "message": "No valid JSON object found in response"
+            }
+          ]
+        },
+        {
+          "kind": "repair",
+          "status": "success",
+          "costUsd": 0.016448,
+          "latencyMs": 56658,
+          "startedAt": "2026-09-25T03:57:14.267Z",
+          "completedAt": "2026-09-25T03:58:10.925Z",
+          "inputTokens": 4088,
+          "outputTokens": 12685,
+          "reasoningTokens": 7313,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "868df24d-27a7-419c-b134-49b269e510f8",
+    "agent_name": "asset-analyst",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 9659,
+    "output_tokens": 20409,
+    "cost_usd": "0.027388",
+    "latency_ms": 115860,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 36435,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 36435
+    },
+    "created_at": "2026-09-25T04:00:07.758Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T03:58:11.857Z",
+      "completed_at": "2026-09-25T04:00:07.717Z",
+      "reasoning_tokens": 12205,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.027388,
+          "latencyMs": 115855,
+          "startedAt": "2026-09-25T03:58:11.857Z",
+          "completedAt": "2026-09-25T04:00:07.712Z",
+          "inputTokens": 9659,
+          "outputTokens": 20409,
+          "reasoningTokens": 12205,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "7e0a89ae-922b-41e9-9f47-7658015fd549",
+    "agent_name": "asset-analyst",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 9329,
+    "output_tokens": 16785,
+    "cost_usd": "0.022941",
+    "latency_ms": 111573,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 36559,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 36559
+    },
+    "created_at": "2026-09-25T04:02:00.089Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:00:08.479Z",
+      "completed_at": "2026-09-25T04:02:00.052Z",
+      "reasoning_tokens": 10641,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.022941,
+          "latencyMs": 111570,
+          "startedAt": "2026-09-25T04:00:08.479Z",
+          "completedAt": "2026-09-25T04:02:00.049Z",
+          "inputTokens": 9329,
+          "outputTokens": 16785,
+          "reasoningTokens": 10641,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "cc0fde76-50ee-44f7-ac2e-cb33227c3e6b",
+    "agent_name": "asset-analyst",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 1957,
+    "output_tokens": 8696,
+    "cost_usd": "0.011022",
+    "latency_ms": 62452,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 9462,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 9462
+    },
+    "created_at": "2026-09-25T04:05:03.138Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:04:00.655Z",
+      "completed_at": "2026-09-25T04:05:03.107Z",
+      "reasoning_tokens": 6083,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.011022,
+          "latencyMs": 62446,
+          "startedAt": "2026-09-25T04:04:00.656Z",
+          "completedAt": "2026-09-25T04:05:03.102Z",
+          "inputTokens": 1957,
+          "outputTokens": 8696,
+          "reasoningTokens": 6083,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "8bbfc77d-245d-499b-9481-6e79d616af7d",
+    "agent_name": "asset-analyst",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 12162,
+    "output_tokens": 15972,
+    "cost_usd": "0.022815",
+    "latency_ms": 96967,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 42044,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 42044
+    },
+    "created_at": "2026-09-25T04:06:40.446Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:05:03.435Z",
+      "completed_at": "2026-09-25T04:06:40.402Z",
+      "reasoning_tokens": 14407,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.022815,
+          "latencyMs": 96962,
+          "startedAt": "2026-09-25T04:05:03.436Z",
+          "completedAt": "2026-09-25T04:06:40.398Z",
+          "inputTokens": 12162,
+          "outputTokens": 15972,
+          "reasoningTokens": 14407,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "a567803d-b922-445e-8be0-cb25784a8787",
+    "agent_name": "asset-analyst",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 3269,
+    "output_tokens": 12474,
+    "cost_usd": "0.01595",
+    "latency_ms": 79215,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 15267,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 15267
+    },
+    "created_at": "2026-09-25T04:08:00.019Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:06:40.773Z",
+      "completed_at": "2026-09-25T04:07:59.988Z",
+      "reasoning_tokens": 8824,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.01595,
+          "latencyMs": 79212,
+          "startedAt": "2026-09-25T04:06:40.773Z",
+          "completedAt": "2026-09-25T04:07:59.985Z",
+          "inputTokens": 3269,
+          "outputTokens": 12474,
+          "reasoningTokens": 8824,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "b8f50466-f802-46ec-a5be-00a4e34b3368",
+    "agent_name": "valuation-analyst",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 11100,
+    "output_tokens": 29911,
+    "cost_usd": "0.039223",
+    "latency_ms": 163453,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 42216,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 42216
+    },
+    "created_at": "2026-09-25T04:10:44.547Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:08:01.054Z",
+      "completed_at": "2026-09-25T04:10:44.507Z",
+      "reasoning_tokens": 26561,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.039223,
+          "latencyMs": 163451,
+          "startedAt": "2026-09-25T04:08:01.054Z",
+          "completedAt": "2026-09-25T04:10:44.505Z",
+          "inputTokens": 11100,
+          "outputTokens": 29911,
+          "reasoningTokens": 26561,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "39963119-8b3d-41fa-84e3-c82846deee94",
+    "agent_name": "asset-analyst",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "failed",
+    "input_tokens": 33223,
+    "output_tokens": 32072,
+    "cost_usd": "0.048453",
+    "latency_ms": 189037,
+    "error_message": "Structured output validation failed: catalyst_register.catalysts.0.expected_date_range: Invalid input: expected string, received undefined | catalyst_register.catalysts.0.event_mechanism: Invalid input: expected string, received undefined | catalyst_register.catalysts.0.direction: Invalid option: expected one of \"upside\"|\"downside\" | catalyst_register.catalysts.0.model_input_affected: Invalid input: expected string, received undefined | catalyst_register.catalysts.0.evidence: Invalid input: expected string, received undefined | catalyst_register.catalysts.1.expected_date_range: Invalid input: expected string, received undefined | catalyst_register.catalysts.1.event_mechanism: Invalid input: expected string, received undefined | catalyst_register.catalysts.1.direction: Invalid option: expected one of \"upside\"|\"downside\" | catalyst_register.catalysts.1.model_input_affected: Invalid input: expected string, received undefined | catalyst_register.catalysts.1.evidence: Invalid input: expected string, received undefined | catalyst_register.catalysts.2.expected_date_range: Invalid input: expected string, received undefined | catalyst_register.catalysts.2.event_mechanism: Invalid input: expected string, received undefined | catalyst_register.catalysts.2.direction: Invalid option: expected one of \"upside\"|\"downside\" | catalyst_register.catalysts.2.model_input_affected: Invalid input: expected string, received undefined | catalyst_register.catalysts.2.evidence: Invalid input: expected string, received undefined | catalyst_register.catalysts.3.expected_date_range: Invalid input: expected string, received undefined | catalyst_register.catalysts.3.event_mechanism: Invalid input: expected string, received undefined | catalyst_register.catalysts.3.direction: Invalid option: expected one of \"upside\"|\"downside\" | catalyst_register.catalysts.3.model_input_affected: Invalid input: expected string, received undefined | catalyst_register.catalysts.3.evidence: Invalid input: expected string, received undefined | catalyst_register.catalysts.4.expected_date_range: Invalid input: expected string, received undefined | catalyst_register.catalysts.4.event_mechanism: Invalid input: expected string, received undefined | catalyst_register.catalysts.4.direction: Invalid option: expected one of \"upside\"|\"downside\" | catalyst_register.catalysts.4.model_input_affected: Invalid input: expected string, received undefined | catalyst_register.catalysts.4.evidence: Invalid input: expected string, received undefined | catalyst_register.catalysts.5.expected_date_range: Invalid input: expected string, received undefined | catalyst_register.catalysts.5.event_mechanism: Invalid input: expected string, received undefined | catalyst_register.catalysts.5.direction: Invalid option: expected one of \"upside\"|\"downside\" | catalyst_register.catalysts.5.model_input_affected: Invalid input: expected string, received undefined | catalyst_register.catalysts.5.evidence: Invalid input: expected string, received undefined | catalyst_register.catalysts.6.expected_date_range: Invalid input: expected string, received undefined | catalyst_register.catalysts.6.event_mechanism: Invalid input: expected string, received undefined | catalyst_register.catalysts.6.direction: Invalid option: expected one of \"upside\"|\"downside\" | catalyst_register.catalysts.6.model_input_affected: Invalid input: expected string, received undefined | catalyst_register.catalysts.6.evidence: Invalid input: expected string, received undefined | catalyst_register.catalysts.7.expected_date_range: Invalid input: expected string, received undefined | catalyst_register.catalysts.7.event_mechanism: Invalid input: expected string, received undefined | catalyst_register.catalysts.7.direction: Invalid option: expected one of \"upside\"|\"downside\" | catalyst_register.catalysts.7.model_input_affected: Invalid input: expected string, received undefined | catalyst_register.catalysts.7.evidence: Invalid input: expected string, received undefined | expected_return_matrix.bear_return: Invalid input: expected number, received undefined | expected_return_matrix.base_return: Invalid input: expected number, received undefined | expected_return_matrix.bull_return: Invalid input: expected number, received undefined | expected_return_matrix.probability_weighted_return: Invalid input: expected number, received undefined | expected_return_matrix.no_rerating_return: Invalid input: expected number, received undefined | expected_return_matrix.weak_stock_outcome: Invalid input: expected number, received undefined | expected_return_matrix.permanent_loss_limit: Invalid input: expected number, received undefined | thesis_breakers.breakers.0.name: Invalid input: expected string, received undefined | thesis_breakers.breakers.0.model_consequence: Invalid input: expected string, received undefined | thesis_breakers.breakers.1.name: Invalid input: expected string, received undefined | thesis_breakers.breakers.1.model_consequence: Invalid input: expected string, received undefined | thesis_breakers.breakers.2.name: Invalid input: expected string, received undefined | thesis_breakers.breakers.2.model_consequence: Invalid input: expected string, received undefined | thesis_breakers.breakers.3.name: Invalid input: expected string, received undefined | thesis_breakers.breakers.3.model_consequence: Invalid input: expected string, received undefined | thesis_breakers.breakers.4.name: Invalid input: expected string, received undefined | thesis_breakers.breakers.4.model_consequence: Invalid input: expected string, received undefined | thesis_breakers.breakers.5.name: Invalid input: expected string, received undefined | thesis_breakers.breakers.5.model_consequence: Invalid input: expected string, received undefined | monitoring_dashboard.items: Invalid input: expected array, received undefined | confidence_assessment.data: Invalid input: expected number, received undefined | confidence_assessment.history: Invalid input: expected number, received undefined | confidence_assessment.process: Invalid input: expected number, received undefined | confidence_assessment.moat: Invalid input: expected number, received undefined | confidence_assessment.forecast: Invalid input: expected number, received undefined | confidence_assessment.valuation: Invalid input: expected number, received undefined | confidence_assessment.downside: Invalid input: expected number, received undefined",
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 106436,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 106436
+    },
+    "created_at": "2026-09-25T04:17:40.732Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:14:31.654Z",
+      "completed_at": "2026-09-25T04:17:40.691Z",
+      "reasoning_tokens": 17469,
+      "repair_attempted": true,
+      "validation_errors": [
+        {
+          "path": "catalyst_register.catalysts.0.expected_date_range",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.0.event_mechanism",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.0.direction",
+          "message": "Invalid option: expected one of \"upside\"|\"downside\""
+        },
+        {
+          "path": "catalyst_register.catalysts.0.model_input_affected",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.0.evidence",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.1.expected_date_range",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.1.event_mechanism",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.1.direction",
+          "message": "Invalid option: expected one of \"upside\"|\"downside\""
+        },
+        {
+          "path": "catalyst_register.catalysts.1.model_input_affected",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.1.evidence",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.2.expected_date_range",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.2.event_mechanism",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.2.direction",
+          "message": "Invalid option: expected one of \"upside\"|\"downside\""
+        },
+        {
+          "path": "catalyst_register.catalysts.2.model_input_affected",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.2.evidence",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.3.expected_date_range",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.3.event_mechanism",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.3.direction",
+          "message": "Invalid option: expected one of \"upside\"|\"downside\""
+        },
+        {
+          "path": "catalyst_register.catalysts.3.model_input_affected",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.3.evidence",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.4.expected_date_range",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.4.event_mechanism",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.4.direction",
+          "message": "Invalid option: expected one of \"upside\"|\"downside\""
+        },
+        {
+          "path": "catalyst_register.catalysts.4.model_input_affected",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.4.evidence",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.5.expected_date_range",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.5.event_mechanism",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.5.direction",
+          "message": "Invalid option: expected one of \"upside\"|\"downside\""
+        },
+        {
+          "path": "catalyst_register.catalysts.5.model_input_affected",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.5.evidence",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.6.expected_date_range",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.6.event_mechanism",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.6.direction",
+          "message": "Invalid option: expected one of \"upside\"|\"downside\""
+        },
+        {
+          "path": "catalyst_register.catalysts.6.model_input_affected",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.6.evidence",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.7.expected_date_range",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.7.event_mechanism",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.7.direction",
+          "message": "Invalid option: expected one of \"upside\"|\"downside\""
+        },
+        {
+          "path": "catalyst_register.catalysts.7.model_input_affected",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "catalyst_register.catalysts.7.evidence",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "expected_return_matrix.bear_return",
+          "message": "Invalid input: expected number, received undefined"
+        },
+        {
+          "path": "expected_return_matrix.base_return",
+          "message": "Invalid input: expected number, received undefined"
+        },
+        {
+          "path": "expected_return_matrix.bull_return",
+          "message": "Invalid input: expected number, received undefined"
+        },
+        {
+          "path": "expected_return_matrix.probability_weighted_return",
+          "message": "Invalid input: expected number, received undefined"
+        },
+        {
+          "path": "expected_return_matrix.no_rerating_return",
+          "message": "Invalid input: expected number, received undefined"
+        },
+        {
+          "path": "expected_return_matrix.weak_stock_outcome",
+          "message": "Invalid input: expected number, received undefined"
+        },
+        {
+          "path": "expected_return_matrix.permanent_loss_limit",
+          "message": "Invalid input: expected number, received undefined"
+        },
+        {
+          "path": "thesis_breakers.breakers.0.name",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "thesis_breakers.breakers.0.model_consequence",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "thesis_breakers.breakers.1.name",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "thesis_breakers.breakers.1.model_consequence",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "thesis_breakers.breakers.2.name",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "thesis_breakers.breakers.2.model_consequence",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "thesis_breakers.breakers.3.name",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "thesis_breakers.breakers.3.model_consequence",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "thesis_breakers.breakers.4.name",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "thesis_breakers.breakers.4.model_consequence",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "thesis_breakers.breakers.5.name",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "thesis_breakers.breakers.5.model_consequence",
+          "message": "Invalid input: expected string, received undefined"
+        },
+        {
+          "path": "monitoring_dashboard.items",
+          "message": "Invalid input: expected array, received undefined"
+        },
+        {
+          "path": "confidence_assessment.data",
+          "message": "Invalid input: expected number, received undefined"
+        },
+        {
+          "path": "confidence_assessment.history",
+          "message": "Invalid input: expected number, received undefined"
+        },
+        {
+          "path": "confidence_assessment.process",
+          "message": "Invalid input: expected number, received undefined"
+        },
+        {
+          "path": "confidence_assessment.moat",
+          "message": "Invalid input: expected number, received undefined"
+        },
+        {
+          "path": "confidence_assessment.forecast",
+          "message": "Invalid input: expected number, received undefined"
+        },
+        {
+          "path": "confidence_assessment.valuation",
+          "message": "Invalid input: expected number, received undefined"
+        },
+        {
+          "path": "confidence_assessment.downside",
+          "message": "Invalid input: expected number, received undefined"
+        }
+      ],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.033789,
+          "latencyMs": 125775,
+          "startedAt": "2026-09-25T04:14:31.655Z",
+          "completedAt": "2026-09-25T04:16:37.430Z",
+          "inputTokens": 29902,
+          "outputTokens": 20682,
+          "reasoningTokens": 12560,
+          "validationErrors": [
+            {
+              "path": "risk_register",
+              "message": "Risk 'Forecast and disclosure gaps' is classified as a source gap only; it must describe an operational risk with a causal mechanism."
+            },
+            {
+              "path": "catalyst_register",
+              "message": "Catalyst 'FY2026 adjusted net revenue guidance achievement' is a continuous business driver without an event or measurable transition."
+            },
+            {
+              "path": "catalyst_register",
+              "message": "Catalyst 'Deposit growth and lower funding cost' is a continuous business driver without an event or measurable transition."
+            },
+            {
+              "path": "catalyst_register",
+              "message": "Catalyst 'Loan Platform Business scaling' is a continuous business driver without an event or measurable transition."
+            },
+            {
+              "path": "catalyst_register",
+              "message": "Catalyst 'Credit deterioration' is a continuous business driver without an event or measurable transition."
+            },
+            {
+              "path": "catalyst_register",
+              "message": "Catalyst 'Interest rate cuts reduce deposit costs' is a continuous business driver without an event or measurable transition."
+            },
+            {
+              "path": "catalyst_register",
+              "message": "Catalyst 'Share issuance or dilution' is a continuous business driver without an event or measurable transition."
+            },
+            {
+              "path": "catalyst_register",
+              "message": "Catalyst 'Technology Platform recovery' is a continuous business driver without an event or measurable transition."
+            },
+            {
+              "path": "catalyst_register",
+              "message": "Catalyst 'Member and product growth momentum' is a continuous business driver without an event or measurable transition."
+            }
+          ]
+        },
+        {
+          "kind": "repair",
+          "status": "success",
+          "costUsd": 0.014664,
+          "latencyMs": 63254,
+          "startedAt": "2026-09-25T04:16:37.435Z",
+          "completedAt": "2026-09-25T04:17:40.689Z",
+          "inputTokens": 3321,
+          "outputTokens": 11390,
+          "reasoningTokens": 4909,
+          "validationErrors": [
+            {
+              "path": "catalyst_register.catalysts.0.expected_date_range",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.0.event_mechanism",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.0.direction",
+              "message": "Invalid option: expected one of \"upside\"|\"downside\""
+            },
+            {
+              "path": "catalyst_register.catalysts.0.model_input_affected",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.0.evidence",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.1.expected_date_range",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.1.event_mechanism",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.1.direction",
+              "message": "Invalid option: expected one of \"upside\"|\"downside\""
+            },
+            {
+              "path": "catalyst_register.catalysts.1.model_input_affected",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.1.evidence",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.2.expected_date_range",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.2.event_mechanism",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.2.direction",
+              "message": "Invalid option: expected one of \"upside\"|\"downside\""
+            },
+            {
+              "path": "catalyst_register.catalysts.2.model_input_affected",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.2.evidence",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.3.expected_date_range",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.3.event_mechanism",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.3.direction",
+              "message": "Invalid option: expected one of \"upside\"|\"downside\""
+            },
+            {
+              "path": "catalyst_register.catalysts.3.model_input_affected",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.3.evidence",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.4.expected_date_range",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.4.event_mechanism",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.4.direction",
+              "message": "Invalid option: expected one of \"upside\"|\"downside\""
+            },
+            {
+              "path": "catalyst_register.catalysts.4.model_input_affected",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.4.evidence",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.5.expected_date_range",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.5.event_mechanism",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.5.direction",
+              "message": "Invalid option: expected one of \"upside\"|\"downside\""
+            },
+            {
+              "path": "catalyst_register.catalysts.5.model_input_affected",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.5.evidence",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.6.expected_date_range",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.6.event_mechanism",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.6.direction",
+              "message": "Invalid option: expected one of \"upside\"|\"downside\""
+            },
+            {
+              "path": "catalyst_register.catalysts.6.model_input_affected",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.6.evidence",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.7.expected_date_range",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.7.event_mechanism",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.7.direction",
+              "message": "Invalid option: expected one of \"upside\"|\"downside\""
+            },
+            {
+              "path": "catalyst_register.catalysts.7.model_input_affected",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "catalyst_register.catalysts.7.evidence",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "expected_return_matrix.bear_return",
+              "message": "Invalid input: expected number, received undefined"
+            },
+            {
+              "path": "expected_return_matrix.base_return",
+              "message": "Invalid input: expected number, received undefined"
+            },
+            {
+              "path": "expected_return_matrix.bull_return",
+              "message": "Invalid input: expected number, received undefined"
+            },
+            {
+              "path": "expected_return_matrix.probability_weighted_return",
+              "message": "Invalid input: expected number, received undefined"
+            },
+            {
+              "path": "expected_return_matrix.no_rerating_return",
+              "message": "Invalid input: expected number, received undefined"
+            },
+            {
+              "path": "expected_return_matrix.weak_stock_outcome",
+              "message": "Invalid input: expected number, received undefined"
+            },
+            {
+              "path": "expected_return_matrix.permanent_loss_limit",
+              "message": "Invalid input: expected number, received undefined"
+            },
+            {
+              "path": "thesis_breakers.breakers.0.name",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "thesis_breakers.breakers.0.model_consequence",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "thesis_breakers.breakers.1.name",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "thesis_breakers.breakers.1.model_consequence",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "thesis_breakers.breakers.2.name",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "thesis_breakers.breakers.2.model_consequence",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "thesis_breakers.breakers.3.name",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "thesis_breakers.breakers.3.model_consequence",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "thesis_breakers.breakers.4.name",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "thesis_breakers.breakers.4.model_consequence",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "thesis_breakers.breakers.5.name",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "thesis_breakers.breakers.5.model_consequence",
+              "message": "Invalid input: expected string, received undefined"
+            },
+            {
+              "path": "monitoring_dashboard.items",
+              "message": "Invalid input: expected array, received undefined"
+            },
+            {
+              "path": "confidence_assessment.data",
+              "message": "Invalid input: expected number, received undefined"
+            },
+            {
+              "path": "confidence_assessment.history",
+              "message": "Invalid input: expected number, received undefined"
+            },
+            {
+              "path": "confidence_assessment.process",
+              "message": "Invalid input: expected number, received undefined"
+            },
+            {
+              "path": "confidence_assessment.moat",
+              "message": "Invalid input: expected number, received undefined"
+            },
+            {
+              "path": "confidence_assessment.forecast",
+              "message": "Invalid input: expected number, received undefined"
+            },
+            {
+              "path": "confidence_assessment.valuation",
+              "message": "Invalid input: expected number, received undefined"
+            },
+            {
+              "path": "confidence_assessment.downside",
+              "message": "Invalid input: expected number, received undefined"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "5878f82b-21c2-4983-af34-8f895b1f9915",
+    "agent_name": "asset-analyst",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 70105,
+    "output_tokens": 37786,
+    "cost_usd": "0.066375",
+    "latency_ms": 209542,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 106436,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 106436
+    },
+    "created_at": "2026-09-25T04:25:01.872Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:21:32.290Z",
+      "completed_at": "2026-09-25T04:25:01.832Z",
+      "reasoning_tokens": 20706,
+      "repair_attempted": true,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.037724,
+          "latencyMs": 137325,
+          "startedAt": "2026-09-25T04:21:32.292Z",
+          "completedAt": "2026-09-25T04:23:49.617Z",
+          "inputTokens": 29902,
+          "outputTokens": 23961,
+          "reasoningTokens": 15387,
+          "validationErrors": [
+            {
+              "path": "risk_register",
+              "message": "Risk 'Segment and quarterly disclosure gaps' is classified as a source gap only; it must describe an operational risk with a causal mechanism."
+            },
+            {
+              "path": "catalyst_register",
+              "message": "Catalyst 'Continued deposit growth and funding cost reduction' is a continuous business driver without an event or measurable transition."
+            },
+            {
+              "path": "catalyst_register",
+              "message": "Catalyst 'Loan Platform Business scaling' is a continuous business driver without an event or measurable transition."
+            }
+          ]
+        },
+        {
+          "kind": "repair",
+          "status": "success",
+          "costUsd": 0.028651,
+          "latencyMs": 72207,
+          "startedAt": "2026-09-25T04:23:49.624Z",
+          "completedAt": "2026-09-25T04:25:01.831Z",
+          "inputTokens": 40203,
+          "outputTokens": 13825,
+          "reasoningTokens": 5319,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "3ea4d1b4-522c-4d7b-b663-2eb4f7cfcdb3",
+    "agent_name": "asset-analyst",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 260577,
+    "output_tokens": 19952,
+    "cost_usd": "0.102115",
+    "latency_ms": 120590,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 1055807,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 1055807
+    },
+    "created_at": "2026-09-25T04:27:03.044Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:25:02.416Z",
+      "completed_at": "2026-09-25T04:27:03.006Z",
+      "reasoning_tokens": 11070,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.102115,
+          "latencyMs": 120574,
+          "startedAt": "2026-09-25T04:25:02.420Z",
+          "completedAt": "2026-09-25T04:27:02.994Z",
+          "inputTokens": 260577,
+          "outputTokens": 19952,
+          "reasoningTokens": 11070,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "00272e06-0726-4902-bf71-5912fd06e796",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 58439,
+    "output_tokens": 15634,
+    "cost_usd": "0.036292",
+    "latency_ms": 92070,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 108251,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 108251
+    },
+    "created_at": "2026-09-25T04:28:35.252Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:27:03.139Z",
+      "completed_at": "2026-09-25T04:28:35.209Z",
+      "reasoning_tokens": 8995,
+      "repair_attempted": true,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.021113,
+          "latencyMs": 66855,
+          "startedAt": "2026-09-25T04:27:03.140Z",
+          "completedAt": "2026-09-25T04:28:09.995Z",
+          "inputTokens": 27398,
+          "outputTokens": 10745,
+          "reasoningTokens": 7598,
+          "validationErrors": [
+            {
+              "path": "report",
+              "message": "Error: Error: Unknown table path content_json.material_claims; Error: Unknown table path content_json.present_day_implications; Error: Unknown table path content_json.motivations; Error: Unknown table path content_json.events"
+            }
+          ]
+        },
+        {
+          "kind": "repair",
+          "status": "success",
+          "costUsd": 0.015179,
+          "latencyMs": 25202,
+          "startedAt": "2026-09-25T04:28:09.997Z",
+          "completedAt": "2026-09-25T04:28:35.199Z",
+          "inputTokens": 31041,
+          "outputTokens": 4889,
+          "reasoningTokens": 1397,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "27f1b756-08e1-4fd7-9b10-6426cd735922",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 25260,
+    "output_tokens": 15631,
+    "cost_usd": "0.026335",
+    "latency_ms": 86523,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 97053,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 97053
+    },
+    "created_at": "2026-09-25T04:30:01.875Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:28:35.314Z",
+      "completed_at": "2026-09-25T04:30:01.837Z",
+      "reasoning_tokens": 10402,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.026335,
+          "latencyMs": 86513,
+          "startedAt": "2026-09-25T04:28:35.315Z",
+          "completedAt": "2026-09-25T04:30:01.828Z",
+          "inputTokens": 25260,
+          "outputTokens": 15631,
+          "reasoningTokens": 10402,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "aedf1f9f-df55-495c-9d12-cb125634c063",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 206204,
+    "output_tokens": 13958,
+    "cost_usd": "0.078611",
+    "latency_ms": 89530,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 797967,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 797967
+    },
+    "created_at": "2026-09-25T04:31:31.649Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:30:02.074Z",
+      "completed_at": "2026-09-25T04:31:31.604Z",
+      "reasoning_tokens": 9930,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.078611,
+          "latencyMs": 89514,
+          "startedAt": "2026-09-25T04:30:02.076Z",
+          "completedAt": "2026-09-25T04:31:31.590Z",
+          "inputTokens": 206204,
+          "outputTokens": 13958,
+          "reasoningTokens": 9930,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "da3cf472-c756-45f5-8f44-27eedb17f366",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 399313,
+    "output_tokens": 22459,
+    "cost_usd": "0.146745",
+    "latency_ms": 103794,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 755856,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 755856
+    },
+    "created_at": "2026-09-25T04:33:15.572Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:31:31.744Z",
+      "completed_at": "2026-09-25T04:33:15.538Z",
+      "reasoning_tokens": 11785,
+      "repair_attempted": true,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.079126,
+          "latencyMs": 66699,
+          "startedAt": "2026-09-25T04:31:31.747Z",
+          "completedAt": "2026-09-25T04:32:38.446Z",
+          "inputTokens": 196589,
+          "outputTokens": 16791,
+          "reasoningTokens": 11183,
+          "validationErrors": [
+            {
+              "path": "report",
+              "message": "Error: Error: Unknown table path content_json.observations; Error: Unknown table path content_json.ttm_series; Error: Unknown table path content_json.statistics; Error: Unknown table path content_json.coverage.gaps; Error: Unknown table path content_json.diagnoses; Error: Unknown table path content_json.unexplained_inflections; Error: Unknown table path content_json.items"
+            }
+          ]
+        },
+        {
+          "kind": "repair",
+          "status": "success",
+          "costUsd": 0.067619,
+          "latencyMs": 37077,
+          "startedAt": "2026-09-25T04:32:38.447Z",
+          "completedAt": "2026-09-25T04:33:15.524Z",
+          "inputTokens": 202724,
+          "outputTokens": 5668,
+          "reasoningTokens": 602,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "5d6077a3-4412-4720-9448-22a3206189fd",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 22642,
+    "output_tokens": 14929,
+    "cost_usd": "0.024707",
+    "latency_ms": 85454,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 88453,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 88453
+    },
+    "created_at": "2026-09-25T04:34:41.133Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:33:15.635Z",
+      "completed_at": "2026-09-25T04:34:41.089Z",
+      "reasoning_tokens": 10323,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.024707,
+          "latencyMs": 85447,
+          "startedAt": "2026-09-25T04:33:15.635Z",
+          "completedAt": "2026-09-25T04:34:41.082Z",
+          "inputTokens": 22642,
+          "outputTokens": 14929,
+          "reasoningTokens": 10323,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "17f47191-b1b9-45c0-8167-77726b0ad775",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 380023,
+    "output_tokens": 19470,
+    "cost_usd": "0.13737",
+    "latency_ms": 164650,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 735976,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 735976
+    },
+    "created_at": "2026-09-25T04:37:25.903Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:34:41.215Z",
+      "completed_at": "2026-09-25T04:37:25.865Z",
+      "reasoning_tokens": 10288,
+      "repair_attempted": true,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.072902,
+          "latencyMs": 105463,
+          "startedAt": "2026-09-25T04:34:41.217Z",
+          "completedAt": "2026-09-25T04:36:26.680Z",
+          "inputTokens": 187456,
+          "outputTokens": 13888,
+          "reasoningTokens": 9290,
+          "validationErrors": [
+            {
+              "path": "report",
+              "message": "Error: Error: Unknown table path content_json.observations; Error: Unknown table path content_json.coverage.gaps; Error: Unknown table path content_json.process_nodes; Error: Unknown table path content_json.bottlenecks; Error: Unknown table path content_json.risks; Error: Unknown table path content_json.items"
+            }
+          ]
+        },
+        {
+          "kind": "repair",
+          "status": "success",
+          "costUsd": 0.064468,
+          "latencyMs": 59170,
+          "startedAt": "2026-09-25T04:36:26.681Z",
+          "completedAt": "2026-09-25T04:37:25.851Z",
+          "inputTokens": 192567,
+          "outputTokens": 5582,
+          "reasoningTokens": 998,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "e9d3e0ef-4e98-4193-9837-b6bea9c8c92d",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 377150,
+    "output_tokens": 18456,
+    "cost_usd": "0.135292",
+    "latency_ms": 129348,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 733961,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 733961
+    },
+    "created_at": "2026-09-25T04:39:35.379Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:37:25.992Z",
+      "completed_at": "2026-09-25T04:39:35.340Z",
+      "reasoning_tokens": 11822,
+      "repair_attempted": true,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.073235,
+          "latencyMs": 96124,
+          "startedAt": "2026-09-25T04:37:25.996Z",
+          "completedAt": "2026-09-25T04:39:02.120Z",
+          "inputTokens": 186650,
+          "outputTokens": 14367,
+          "reasoningTokens": 11042,
+          "validationErrors": [
+            {
+              "path": "report",
+              "message": "Error: Error: Unknown table path content_json.observations; Error: Unknown table path content_json.ttm_series; Error: Unknown table path content_json.coverage.gaps; Error: Unknown table path content_json.risks; Error: Unknown table path content_json.catalysts; Error: Unknown table path content_json.segments; Error: Unknown table path content_json.process_nodes"
+            }
+          ]
+        },
+        {
+          "kind": "repair",
+          "status": "success",
+          "costUsd": 0.062057,
+          "latencyMs": 33204,
+          "startedAt": "2026-09-25T04:39:02.121Z",
+          "completedAt": "2026-09-25T04:39:35.325Z",
+          "inputTokens": 190500,
+          "outputTokens": 4089,
+          "reasoningTokens": 780,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "3461a6c2-9416-4fad-928b-362ef499f85d",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 38852,
+    "output_tokens": 11701,
+    "cost_usd": "0.025697",
+    "latency_ms": 73482,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 136953,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 136953
+    },
+    "created_at": "2026-09-25T04:40:48.950Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:39:35.440Z",
+      "completed_at": "2026-09-25T04:40:48.922Z",
+      "reasoning_tokens": 7786,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.025697,
+          "latencyMs": 73473,
+          "startedAt": "2026-09-25T04:39:35.440Z",
+          "completedAt": "2026-09-25T04:40:48.913Z",
+          "inputTokens": 38852,
+          "outputTokens": 11701,
+          "reasoningTokens": 7786,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "60e7a2f9-f687-4f92-8004-996ad54c100c",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 21316,
+    "output_tokens": 8871,
+    "cost_usd": "0.01704",
+    "latency_ms": 60182,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 84041,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 84041
+    },
+    "created_at": "2026-09-25T04:41:49.251Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:40:49.029Z",
+      "completed_at": "2026-09-25T04:41:49.211Z",
+      "reasoning_tokens": 5575,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.01704,
+          "latencyMs": 60173,
+          "startedAt": "2026-09-25T04:40:49.030Z",
+          "completedAt": "2026-09-25T04:41:49.203Z",
+          "inputTokens": 21316,
+          "outputTokens": 8871,
+          "reasoningTokens": 5575,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "b53b9fe6-dd62-411c-98a3-87ddc14a3825",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 23302,
+    "output_tokens": 12392,
+    "cost_usd": "0.021861",
+    "latency_ms": 82091,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 85757,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 85757
+    },
+    "created_at": "2026-09-25T04:43:11.445Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:41:49.315Z",
+      "completed_at": "2026-09-25T04:43:11.406Z",
+      "reasoning_tokens": 8806,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.021861,
+          "latencyMs": 82083,
+          "startedAt": "2026-09-25T04:41:49.315Z",
+          "completedAt": "2026-09-25T04:43:11.398Z",
+          "inputTokens": 23302,
+          "outputTokens": 12392,
+          "reasoningTokens": 8806,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "9fa45cd9-6ae8-4e08-aa24-b2207918e56c",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 21959,
+    "output_tokens": 17290,
+    "cost_usd": "0.027336",
+    "latency_ms": 116327,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 86153,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 86153
+    },
+    "created_at": "2026-09-25T04:45:07.878Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:43:11.520Z",
+      "completed_at": "2026-09-25T04:45:07.847Z",
+      "reasoning_tokens": 12583,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.027336,
+          "latencyMs": 116316,
+          "startedAt": "2026-09-25T04:43:11.521Z",
+          "completedAt": "2026-09-25T04:45:07.837Z",
+          "inputTokens": 21959,
+          "outputTokens": 17290,
+          "reasoningTokens": 12583,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "ca71a8da-4474-4879-a505-eda6094e2ee1",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 24255,
+    "output_tokens": 12217,
+    "cost_usd": "0.021937",
+    "latency_ms": 84401,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 94261,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 94261
+    },
+    "created_at": "2026-09-25T04:46:32.388Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:45:07.940Z",
+      "completed_at": "2026-09-25T04:46:32.341Z",
+      "reasoning_tokens": 8844,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.021937,
+          "latencyMs": 84391,
+          "startedAt": "2026-09-25T04:45:07.941Z",
+          "completedAt": "2026-09-25T04:46:32.332Z",
+          "inputTokens": 24255,
+          "outputTokens": 12217,
+          "reasoningTokens": 8844,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "efebb150-bbe4-4fe0-923e-3cfff7f49361",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 20207,
+    "output_tokens": 15366,
+    "cost_usd": "0.024501",
+    "latency_ms": 98562,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 73226,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 73226
+    },
+    "created_at": "2026-09-25T04:48:11.040Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:46:32.445Z",
+      "completed_at": "2026-09-25T04:48:11.007Z",
+      "reasoning_tokens": 10982,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.024501,
+          "latencyMs": 98552,
+          "startedAt": "2026-09-25T04:46:32.446Z",
+          "completedAt": "2026-09-25T04:48:10.998Z",
+          "inputTokens": 20207,
+          "outputTokens": 15366,
+          "reasoningTokens": 10982,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "a71eedcb-72d2-45de-8933-80bd3bb17359",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 20676,
+    "output_tokens": 14099,
+    "cost_usd": "0.023122",
+    "latency_ms": 98053,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 77086,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 77086
+    },
+    "created_at": "2026-09-25T04:49:49.181Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:48:11.099Z",
+      "completed_at": "2026-09-25T04:49:49.152Z",
+      "reasoning_tokens": 9866,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.023122,
+          "latencyMs": 98044,
+          "startedAt": "2026-09-25T04:48:11.099Z",
+          "completedAt": "2026-09-25T04:49:49.143Z",
+          "inputTokens": 20676,
+          "outputTokens": 14099,
+          "reasoningTokens": 9866,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "739bc539-af6c-4f1e-b5a1-435eda70532d",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 78827,
+    "output_tokens": 10014,
+    "cost_usd": "0.035665",
+    "latency_ms": 71959,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 301555,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 301555
+    },
+    "created_at": "2026-09-25T04:51:01.248Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:49:49.254Z",
+      "completed_at": "2026-09-25T04:51:01.213Z",
+      "reasoning_tokens": 5882,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.035665,
+          "latencyMs": 71949,
+          "startedAt": "2026-09-25T04:49:49.255Z",
+          "completedAt": "2026-09-25T04:51:01.204Z",
+          "inputTokens": 78827,
+          "outputTokens": 10014,
+          "reasoningTokens": 5882,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "87b4b627-e598-4dd8-bea8-5ee21499ae35",
+    "agent_name": "export-writer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 90822,
+    "output_tokens": 11793,
+    "cost_usd": "0.041398",
+    "latency_ms": 85550,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 347698,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 347698
+    },
+    "created_at": "2026-09-25T04:52:26.940Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:51:01.356Z",
+      "completed_at": "2026-09-25T04:52:26.906Z",
+      "reasoning_tokens": 7415,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.041398,
+          "latencyMs": 85541,
+          "startedAt": "2026-09-25T04:51:01.358Z",
+          "completedAt": "2026-09-25T04:52:26.899Z",
+          "inputTokens": 90822,
+          "outputTokens": 11793,
+          "reasoningTokens": 7415,
+          "validationErrors": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "71eff5f3-5e9a-490a-a455-f564c3dbff6e",
+    "agent_name": "research-reviewer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "failed",
+    "input_tokens": null,
+    "output_tokens": null,
+    "cost_usd": "0",
+    "latency_ms": 19306,
+    "error_message": "Provider HTTP 400: Bad Request",
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 4199973,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 4199973
+    },
+    "created_at": "2026-09-25T04:52:46.711Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:52:27.356Z",
+      "completed_at": "2026-09-25T04:52:46.662Z",
+      "reasoning_tokens": 0,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "failed",
+          "costUsd": 0,
+          "latencyMs": 19289,
+          "startedAt": "2026-09-25T04:52:27.373Z",
+          "completedAt": "2026-09-25T04:52:46.662Z",
+          "inputTokens": 0,
+          "errorMessage": "Provider HTTP 400: Bad Request",
+          "outputTokens": 0,
+          "errorCategory": "invalid_request",
+          "reasoningTokens": 0
+        }
+      ]
+    }
+  },
+  {
+    "id": "95883661-7739-4f37-a3b7-74e4b12127dd",
+    "agent_name": "research-reviewer",
+    "model_provider": "opencode-go-direct",
+    "model_name": "deepseek-v4.1-flash",
+    "status": "success",
+    "input_tokens": 335085,
+    "output_tokens": 9202,
+    "cost_usd": "0.111568",
+    "latency_ms": 83719,
+    "error_message": null,
+    "request_metadata_json": {
+      "attempt": 1,
+      "fallback": false,
+      "input_bytes": 1350236,
+      "model_attempt": 1,
+      "compaction_occurred": false,
+      "original_input_bytes": 1350236
+    },
+    "created_at": "2026-09-25T04:56:50.979Z",
+    "response_metadata": {
+      "request_id": null,
+      "started_at": "2026-09-25T04:55:27.208Z",
+      "completed_at": "2026-09-25T04:56:50.927Z",
+      "reasoning_tokens": 6805,
+      "repair_attempted": false,
+      "validation_errors": [],
+      "provider_requests": [
+        {
+          "kind": "generation",
+          "status": "success",
+          "costUsd": 0.111568,
+          "latencyMs": 83713,
+          "startedAt": "2026-09-25T04:55:27.213Z",
+          "completedAt": "2026-09-25T04:56:50.926Z",
+          "inputTokens": 335085,
+          "outputTokens": 9202,
+          "reasoningTokens": 6805,
+          "validationErrors": []
+        }
+      ]
+    }
+  }
+]

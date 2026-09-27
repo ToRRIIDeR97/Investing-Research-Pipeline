@@ -38,7 +38,6 @@ export interface ResearchAgentConfig {
   defaultModel: string;
   modelEnvVar: string;
   promptVersion: string;
-  tools: Record<string, boolean>;
   outputSchemaKey: string;
   outputSchemaVersion: number;
   outputFormat: Record<string, unknown>;
@@ -186,6 +185,7 @@ export function normalizeModelEnvValue(value: string): string {
 
   const aliases: Record<string, string> = {
     deepseekv4flash: "deepseek-v4-flash",
+    deepseekv41flash: "deepseek-v4.1-flash",
     deepseekv4pro: "deepseek-v4-pro",
     qwen37plus: "qwen3.7-plus",
     qwen3v7plus: "qwen3.7-plus",
@@ -236,7 +236,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "deepseek-v4-pro",
     modelEnvVar: "RESEARCH_MID_MODEL",
     promptVersion: "intake-planner-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "research_plan",
     outputSchemaVersion: 1,
     outputFormat: schema(
@@ -277,7 +276,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "deepseek-v4-flash",
     modelEnvVar: "RESEARCH_CHEAP_MODEL",
     promptVersion: "asset-classifier-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "profile_assignment",
     outputSchemaVersion: 1,
     outputFormat: schema(
@@ -315,7 +313,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "deepseek-v4-flash",
     modelEnvVar: "RESEARCH_CHEAP_MODEL",
     promptVersion: "source-discovery-agent-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "source_inventory",
     outputSchemaVersion: 1,
     outputFormat: schema(
@@ -347,7 +344,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "deepseek-v4-flash",
     modelEnvVar: "RESEARCH_CHEAP_MODEL",
     promptVersion: "source-reader-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "evidence_claim_batch",
     outputSchemaVersion: 1,
     outputFormat: schema(
@@ -369,7 +365,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "deepseek-v4-pro",
     modelEnvVar: "RESEARCH_MID_MODEL",
     promptVersion: "table-normalizer-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "metric_observation_batch",
     outputSchemaVersion: 1,
     outputFormat: schema(
@@ -399,7 +394,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "deepseek-v4-flash",
     modelEnvVar: "RESEARCH_CHEAP_MODEL",
     promptVersion: "metric-normalizer-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "normalized_metric_batch",
     outputSchemaVersion: 1,
     outputFormat: schema(
@@ -429,7 +423,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "deepseek-v4-pro",
     modelEnvVar: "RESEARCH_ASSET_ANALYST_MODEL",
     promptVersion: "asset-analyst-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "analysis_sections",
     outputSchemaVersion: 1,
     outputFormat: schema(
@@ -463,7 +456,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "kimi-k2.7-code",
     modelEnvVar: "RESEARCH_VALUATION_ANALYST_MODEL",
     promptVersion: "valuation-analyst-v2",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "valuation_signal_batch",
     outputSchemaVersion: 2,
     outputFormat: schema(
@@ -502,7 +494,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "kimi-k2.7-code",
     modelEnvVar: "RESEARCH_VALUATION_CODER_MODEL",
     promptVersion: "valuation-coder-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "valuation_code_artifact",
     outputSchemaVersion: 1,
     outputFormat: schema(
@@ -536,7 +527,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "kimi-k2.7-code",
     modelEnvVar: "RESEARCH_BACKTEST_CODER_MODEL",
     promptVersion: "backtest-coder-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "backtest_code_artifact",
     outputSchemaVersion: 1,
     outputFormat: backtestCodegenOutputFormat,
@@ -549,7 +539,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "deepseek-v4-pro",
     modelEnvVar: "RESEARCH_RESEARCH_REVIEWER_MODEL",
     promptVersion: "research-reviewer-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "review_findings",
     outputSchemaVersion: 1,
     outputFormat: schema(
@@ -585,7 +574,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "deepseek-v4-pro",
     modelEnvVar: "RESEARCH_MID_MODEL",
     promptVersion: "export-writer-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "export_artifact",
     outputSchemaVersion: 1,
     outputFormat: schema(
@@ -610,7 +598,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "qwen3.7-plus",
     modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "document-vision-agent-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "visual_regions",
     outputSchemaVersion: 1,
     outputFormat: schema(
@@ -633,7 +620,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "qwen3.7-plus",
     modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "chart-interpreter-agent-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "chart_interpretation",
     outputSchemaVersion: 1,
     outputFormat: schema(
@@ -667,7 +653,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "qwen3.7-plus",
     modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "table-vision-agent-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "visual_table",
     outputSchemaVersion: 1,
     outputFormat: schema(
@@ -691,7 +676,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "qwen3.7-plus",
     modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "visual-evidence-agent-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "visual_evidence_claim_batch",
     outputSchemaVersion: 1,
     outputFormat: schema(
@@ -721,7 +705,6 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     defaultModel: "qwen3.7-plus",
     modelEnvVar: "RESEARCH_VISION_MODEL",
     promptVersion: "ui-output-qa-vision-agent-v1",
-    tools: { bash: false, edit: false, write: false },
     outputSchemaKey: "visual_qa_findings",
     outputSchemaVersion: 1,
     outputFormat: schema(
@@ -761,7 +744,7 @@ export function getAgentConfig(agentName: string): ResearchAgentConfig {
 export function resolveAgentModel(agentName: ResearchAgentName, modelOverride?: string): string {
   const config = getAgentConfig(agentName);
   const agentModelKey = `RESEARCH_${agentName.toUpperCase().replace(/-/g, "_")}_MODEL`;
-  const configured = modelOverride || process.env[agentModelKey] || process.env[config.modelEnvVar] || config.defaultModel;
+  const configured = modelOverride || process.env.RESEARCH_ALL_AGENTS_MODEL || process.env[agentModelKey] || process.env[config.modelEnvVar] || config.defaultModel;
   return normalizeModelEnvValue(configured);
 }
 

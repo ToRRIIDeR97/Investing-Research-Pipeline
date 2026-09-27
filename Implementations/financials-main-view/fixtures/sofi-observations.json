@@ -1,0 +1,6122 @@
+[
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-08-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 20063089000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e16187e1-827c-4693-b545-da3787c80472",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 21587350000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 22862749000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 25454796000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 29737289000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "financial_services_segment_contribution_profit_non_gaap",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-09-30",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 99800000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "financial_services_segment_net_revenue_gaap",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-09-30",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 238300000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "total_deposits",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-09-30",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 24400000000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "noninterest_income_gaap",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-09-30",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 84200000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "ratio",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "noninterest_income_yoy_growth",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-09-30",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 2.35,
+    "fiscal_quarter": 3,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "loan_platform_fees",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-09-30",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 55600000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "personal_loans_originated_for_third_parties",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-09-30",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 1000000000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "technology_platform_net_revenue_gaap",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-03-31",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 94400000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "ratio",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "technology_platform_net_revenue_yoy_growth",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-03-31",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 0.21,
+    "fiscal_quarter": 1,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "financial_services_segment_contribution_profit_non_gaap",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-03-31",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 37200000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "financial_services_segment_contribution_profit_non_gaap",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-03-31",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": -24200000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "financial_services_segment_net_revenue_gaap",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-03-31",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 150600000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "ratio",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "financial_services_segment_net_revenue_yoy_growth",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-03-31",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 0.86,
+    "fiscal_quarter": 1,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "total_deposits",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-03-31",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 21600000000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "count",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "financial_services_products",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-03-31",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 10100000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "ratio",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "financial_services_products_yoy_growth",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-03-31",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 0.42,
+    "fiscal_quarter": 1,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "financial_services_segment_net_revenue_gaap",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-09-30",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 118200000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "ratio",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "financial_services_segment_net_revenue_yoy_growth",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-09-30",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 1.42,
+    "fiscal_quarter": 3,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "financial_services_segment_contribution_profit_non_gaap",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-09-30",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 3300000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.85,
+    "metric_key": "total_deposits",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-09-30",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 15700000000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "as_reported",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-11-09",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 272006000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "2f59f2fb-324f-4730-9f3f-a34801102714",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2021,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2024-02-27",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 285608000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "a14e741f-bfd1-4218-97c9-fad88d96d75b",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-05-10",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 330344000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "90d7d5d3-7b9e-444c-ad19-05006b625ccb",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-08-08",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 362527000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "061b5b78-52bb-48d3-a17a-d18915dca1fa",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-11-08",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 423985000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "3e55bd07-90c6-49b2-b8b6-02a438e898b5",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2022,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2025-02-24",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 456679000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "df46afb5-f500-4251-bdb7-0a7be0111f70",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-05-07",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 472158000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "d2344c26-0c88-4a95-bf29-6642745989c2",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-08-06",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 498018000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "7c953a8a-7925-48a0-9308-1154d942528c",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 537209000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2023,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 615404000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-05-06",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 644995000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "8b6bee92-f64b-46f4-8ec9-6bdfd11b961f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-08-07",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 598618000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e16187e1-827c-4693-b545-da3787c80472",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 697121000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2024,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 734125000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 771759000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 854944000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 961600000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2025,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 1025051000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 1100368000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_revenue",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 1218676000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-11-09",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 61188000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "2f59f2fb-324f-4730-9f3f-a34801102714",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2021,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2024-02-27",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 70851000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "a14e741f-bfd1-4218-97c9-fad88d96d75b",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-05-10",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 77022000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "90d7d5d3-7b9e-444c-ad19-05006b625ccb",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-08-08",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 98420000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "061b5b78-52bb-48d3-a17a-d18915dca1fa",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-11-08",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 102004000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "3e55bd07-90c6-49b2-b8b6-02a438e898b5",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2022,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2025-02-24",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 99649000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "df46afb5-f500-4251-bdb7-0a7be0111f70",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 95482000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "d2344c26-0c88-4a95-bf29-6642745989c2",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 104693000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "7c953a8a-7925-48a0-9308-1154d942528c",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 104944000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2023,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 116335000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-05-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 115609000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "8b6bee92-f64b-46f4-8ec9-6bdfd11b961f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-08-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 120782000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e16187e1-827c-4693-b545-da3787c80472",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 131225000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2024,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 135507000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 140382000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 151890000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 156791000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2025,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 170290000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 129504000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "contract_revenue",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 153577000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_income",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-11-09",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": -30047000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "2f59f2fb-324f-4730-9f3f-a34801102714",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "net_income",
+    "fiscal_year": 2021,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2024-02-27",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": -111012000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "a14e741f-bfd1-4218-97c9-fad88d96d75b",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_income",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-05-10",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": -110357000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "90d7d5d3-7b9e-444c-ad19-05006b625ccb",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_income",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-08-08",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": -95835000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "061b5b78-52bb-48d3-a17a-d18915dca1fa",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_income",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-11-08",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": -74209000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "3e55bd07-90c6-49b2-b8b6-02a438e898b5",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "net_income",
+    "fiscal_year": 2022,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2025-02-24",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": -40006000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "df46afb5-f500-4251-bdb7-0a7be0111f70",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_income",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": -34422000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "d2344c26-0c88-4a95-bf29-6642745989c2",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_income",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": -47549000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "7c953a8a-7925-48a0-9308-1154d942528c",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_income",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": -266684000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "net_income",
+    "fiscal_year": 2023,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 47913000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_income",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-05-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 88043000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "8b6bee92-f64b-46f4-8ec9-6bdfd11b961f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_income",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-08-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 17404000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e16187e1-827c-4693-b545-da3787c80472",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_income",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 60745000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "net_income",
+    "fiscal_year": 2024,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 332473000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_income",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 71116000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_income",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 97263000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_income",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 139392000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "net_income",
+    "fiscal_year": 2025,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 173549000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_income",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 166731000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_income",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 156592000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-11-09",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 72375000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "2f59f2fb-324f-4730-9f3f-a34801102714",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2021,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2024-02-27",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 76577000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "a14e741f-bfd1-4218-97c9-fad88d96d75b",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-05-10",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 94933000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "90d7d5d3-7b9e-444c-ad19-05006b625ccb",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-08-08",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 122729000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "061b5b78-52bb-48d3-a17a-d18915dca1fa",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-11-08",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 157850000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "3e55bd07-90c6-49b2-b8b6-02a438e898b5",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2022,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2025-02-24",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 208584000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "df46afb5-f500-4251-bdb7-0a7be0111f70",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 236010000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "d2344c26-0c88-4a95-bf29-6642745989c2",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 291126000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "7c953a8a-7925-48a0-9308-1154d942528c",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 344963000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2023,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 389641000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-05-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 402718000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "8b6bee92-f64b-46f4-8ec9-6bdfd11b961f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-08-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 412584000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e16187e1-827c-4693-b545-da3787c80472",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 431010000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2024,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 470169000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 498726000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 517837000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 585114000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2025,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 617279000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 692988000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "net_interest_income",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 788195000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-11-09",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 199631000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "2f59f2fb-324f-4730-9f3f-a34801102714",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2021,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2024-02-27",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 209031000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "a14e741f-bfd1-4218-97c9-fad88d96d75b",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-05-10",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 235411000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "90d7d5d3-7b9e-444c-ad19-05006b625ccb",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-08-08",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 239798000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "061b5b78-52bb-48d3-a17a-d18915dca1fa",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-11-08",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 266135000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "3e55bd07-90c6-49b2-b8b6-02a438e898b5",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2022,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2025-02-24",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 248095000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "df46afb5-f500-4251-bdb7-0a7be0111f70",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 236148000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "d2344c26-0c88-4a95-bf29-6642745989c2",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 206892000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "7c953a8a-7925-48a0-9308-1154d942528c",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 192246000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2023,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 225763000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-05-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 242277000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "8b6bee92-f64b-46f4-8ec9-6bdfd11b961f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-08-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 186034000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e16187e1-827c-4693-b545-da3787c80472",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 266111000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2024,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 263956000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 273033000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 337107000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 376486000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2025,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 407772000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 407380000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "non_interest_income",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 430481000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-11-09",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 2401000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "2f59f2fb-324f-4730-9f3f-a34801102714",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2021,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2024-02-27",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 4686000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "a14e741f-bfd1-4218-97c9-fad88d96d75b",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-05-10",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 12961000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "90d7d5d3-7b9e-444c-ad19-05006b625ccb",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-08-08",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 10103000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "061b5b78-52bb-48d3-a17a-d18915dca1fa",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-11-08",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 16323000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "3e55bd07-90c6-49b2-b8b6-02a438e898b5",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2022,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2025-02-24",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 14945000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "df46afb5-f500-4251-bdb7-0a7be0111f70",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 8407000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "d2344c26-0c88-4a95-bf29-6642745989c2",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 12615000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "7c953a8a-7925-48a0-9308-1154d942528c",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 21831000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2023,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 12092000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-05-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 7182000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "8b6bee92-f64b-46f4-8ec9-6bdfd11b961f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-08-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 11640000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e16187e1-827c-4693-b545-da3787c80472",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 6013000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2024,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 6877000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 5678000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 10035000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 9199000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2025,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 5407000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 8895000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "credit_losses",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 13755000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-11-09",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 0,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "2f59f2fb-324f-4730-9f3f-a34801102714",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2021,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2024-02-27",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 0,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "a14e741f-bfd1-4218-97c9-fad88d96d75b",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-05-10",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 431000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "90d7d5d3-7b9e-444c-ad19-05006b625ccb",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-08-08",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 4543000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "061b5b78-52bb-48d3-a17a-d18915dca1fa",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-11-08",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 14149000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "3e55bd07-90c6-49b2-b8b6-02a438e898b5",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2022,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2025-02-24",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 40670000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "df46afb5-f500-4251-bdb7-0a7be0111f70",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 73116000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "d2344c26-0c88-4a95-bf29-6642745989c2",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 106529000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "7c953a8a-7925-48a0-9308-1154d942528c",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 145563000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2023,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 182612000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-05-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 211451000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "8b6bee92-f64b-46f4-8ec9-6bdfd11b961f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-08-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 231815000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e16187e1-827c-4693-b545-da3787c80472",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 248292000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2024,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 238596000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 225399000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 233232000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 264901000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2025,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 290511000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 287229000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposit_interest_expense",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "income_statement"
+    },
+    "value_numeric": 320463000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2021,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2022-11-09",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -196536000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "2f59f2fb-324f-4730-9f3f-a34801102714",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2021,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2024-02-27",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -1236289000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "a14e741f-bfd1-4218-97c9-fad88d96d75b",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-05-10",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -1011224000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "90d7d5d3-7b9e-444c-ad19-05006b625ccb",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2022,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2023-08-08",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -945499000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "061b5b78-52bb-48d3-a17a-d18915dca1fa",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2022,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2023-11-08",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -2880300000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "3e55bd07-90c6-49b2-b8b6-02a438e898b5",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2022,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2025-02-24",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -2418835000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "df46afb5-f500-4251-bdb7-0a7be0111f70",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-05-07",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -2212760000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "d2344c26-0c88-4a95-bf29-6642745989c2",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2023,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2024-08-06",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -2079919000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "7c953a8a-7925-48a0-9308-1154d942528c",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2023,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -2686519000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2023,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -247941000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-05-06",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": 738248000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "8b6bee92-f64b-46f4-8ec9-6bdfd11b961f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2024,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2025-08-07",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -484371000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e16187e1-827c-4693-b545-da3787c80472",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2024,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -1173581000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2024,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -200103000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": 21502000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2025,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -1466908000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2025,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -1305874000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2025,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -991178000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -2314994000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.9,
+    "metric_key": "operating_cash_flow",
+    "fiscal_year": 2026,
+    "metric_type": "calculated",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "cash_flow"
+    },
+    "value_numeric": -3890444000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2021-11-15",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 8083324000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-03-01",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 9176326000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e7b2af6d-5117-413c-82fb-7a8467692944",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-05-10",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 12246576000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-08-09",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 12670886000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-11-09",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 15834903000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "2f59f2fb-324f-4730-9f3f-a34801102714",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-02-27",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 19007675000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "a14e741f-bfd1-4218-97c9-fad88d96d75b",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-05-10",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 22452961000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "90d7d5d3-7b9e-444c-ad19-05006b625ccb",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-08-08",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 25561449000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "061b5b78-52bb-48d3-a17a-d18915dca1fa",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-11-08",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 27977153000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "3e55bd07-90c6-49b2-b8b6-02a438e898b5",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-02-24",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 30074858000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "df46afb5-f500-4251-bdb7-0a7be0111f70",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-05-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 31305760000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "d2344c26-0c88-4a95-bf29-6642745989c2",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 32641979000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "7c953a8a-7925-48a0-9308-1154d942528c",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 34380176000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 36250951000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-05-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 37749286000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "8b6bee92-f64b-46f4-8ec9-6bdfd11b961f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-08-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 41112171000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e16187e1-827c-4693-b545-da3787c80472",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 45293450000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 50660478000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 53698258000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_assets",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 60947548000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2021-11-15",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 3514421000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-03-01",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 4478623000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e7b2af6d-5117-413c-82fb-7a8467692944",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-05-10",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 6715903000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-08-09",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 7164332000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-11-09",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 10333526000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "2f59f2fb-324f-4730-9f3f-a34801102714",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-02-27",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 13479199000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "a14e741f-bfd1-4218-97c9-fad88d96d75b",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-05-10",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 16898515000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "90d7d5d3-7b9e-444c-ad19-05006b625ccb",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-08-08",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 19983414000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "061b5b78-52bb-48d3-a17a-d18915dca1fa",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-11-08",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 22603391000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "3e55bd07-90c6-49b2-b8b6-02a438e898b5",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-02-24",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 24519872000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "df46afb5-f500-4251-bdb7-0a7be0111f70",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-05-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 25159781000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "d2344c26-0c88-4a95-bf29-6642745989c2",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 26740485000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "7c953a8a-7925-48a0-9308-1154d942528c",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 28258695000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 29725817000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-05-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 31070772000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "8b6bee92-f64b-46f4-8ec9-6bdfd11b961f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-08-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 34251591000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e16187e1-827c-4693-b545-da3787c80472",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 36513487000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 40170983000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 42886667000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "total_liabilities",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 49871321000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-11-09",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 4248529000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "2f59f2fb-324f-4730-9f3f-a34801102714",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-02-24",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 4377329000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "df46afb5-f500-4251-bdb7-0a7be0111f70",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-08-08",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 5210299000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "061b5b78-52bb-48d3-a17a-d18915dca1fa",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-11-08",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 5186180000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "3e55bd07-90c6-49b2-b8b6-02a438e898b5",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-11-08",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 5181003000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "3e55bd07-90c6-49b2-b8b6-02a438e898b5",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 5208102000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 5234072000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "7c953a8a-7925-48a0-9308-1154d942528c",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 5257661000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 5053388000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 5234612000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-08-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 5825605000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e16187e1-827c-4693-b545-da3787c80472",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 5901494000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 6121481000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 6525134000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 6678514000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 6860580000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 8779963000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 10489495000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 10811591000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "stockholders_equity",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 11076227000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-03-01",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 0,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e7b2af6d-5117-413c-82fb-7a8467692944",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-05-10",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 1155922000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-08-09",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 2712264000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-11-09",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 5031630000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "2f59f2fb-324f-4730-9f3f-a34801102714",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-02-27",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 7342296000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "a14e741f-bfd1-4218-97c9-fad88d96d75b",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-05-10",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 10088441000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "90d7d5d3-7b9e-444c-ad19-05006b625ccb",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-08-08",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 12740073000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "061b5b78-52bb-48d3-a17a-d18915dca1fa",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-11-08",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 15671973000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "3e55bd07-90c6-49b2-b8b6-02a438e898b5",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-02-24",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 18620663000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "df46afb5-f500-4251-bdb7-0a7be0111f70",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-05-07",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 21604594000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "d2344c26-0c88-4a95-bf29-6642745989c2",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-08-06",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 22996963000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "7c953a8a-7925-48a0-9308-1154d942528c",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 24407786000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 25978204000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-05-06",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 27256528000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "8b6bee92-f64b-46f4-8ec9-6bdfd11b961f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-08-07",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 29540674000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e16187e1-827c-4693-b545-da3787c80472",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 32946399000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 37505395000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 40242697000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "deposits",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "financial"
+    },
+    "value_numeric": 45543160000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2021-11-15",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 3000000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-03-01",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 7037000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e7b2af6d-5117-413c-82fb-7a8467692944",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-05-10",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 17866000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-08-09",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 23178000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "c8fd809a-7176-4376-8759-ff075d71e272",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2022-11-09",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 34370000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "2f59f2fb-324f-4730-9f3f-a34801102714",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-02-27",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 40788000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "a14e741f-bfd1-4218-97c9-fad88d96d75b",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-05-10",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 38937000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "90d7d5d3-7b9e-444c-ad19-05006b625ccb",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-08-08",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 41227000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "061b5b78-52bb-48d3-a17a-d18915dca1fa",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-11-08",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 51923000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "3e55bd07-90c6-49b2-b8b6-02a438e898b5",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-02-24",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 54695000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "df46afb5-f500-4251-bdb7-0a7be0111f70",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-05-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 51313000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "d2344c26-0c88-4a95-bf29-6642745989c2",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 51908000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "7c953a8a-7925-48a0-9308-1154d942528c",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 48419000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 46684000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-05-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 44369000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "8b6bee92-f64b-46f4-8ec9-6bdfd11b961f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-08-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 47838000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e16187e1-827c-4693-b545-da3787c80472",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 50634000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 50934000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 51934000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loan_loss_reserve",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 56459000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_investment_net",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-02-24",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 836159000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "df46afb5-f500-4251-bdb7-0a7be0111f70",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_investment_net",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-05-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 1250231000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "d2344c26-0c88-4a95-bf29-6642745989c2",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_investment_net",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 2172528000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "7c953a8a-7925-48a0-9308-1154d942528c",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_investment_net",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 1417262000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_investment_net",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 1246458000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_investment_net",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-05-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 1296413000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "8b6bee92-f64b-46f4-8ec9-6bdfd11b961f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_investment_net",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-08-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 1413385000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e16187e1-827c-4693-b545-da3787c80472",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_investment_net",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-11-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 1483950000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "6015a72b-d460-42a7-b4af-8355203ffe10",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_investment_net",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 1516736000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_investment_net",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-05-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 1381174000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "70411660-222c-4e0e-917f-7b9b373a6018",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_investment_net",
+    "fiscal_year": 2026,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 1275529000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "841b6308-ad62-4532-88d7-30602316b22f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2021,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-03-01",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 5952972000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "e7b2af6d-5117-413c-82fb-7a8467692944",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2022,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-02-27",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 13557074000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "a14e741f-bfd1-4218-97c9-fad88d96d75b",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-05-10",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 15858105000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "90d7d5d3-7b9e-444c-ad19-05006b625ccb",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-08-08",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 18213667000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "061b5b78-52bb-48d3-a17a-d18915dca1fa",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2023-11-08",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 20993836000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "3e55bd07-90c6-49b2-b8b6-02a438e898b5",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2023,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-02-24",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 15396771000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "df46afb5-f500-4251-bdb7-0a7be0111f70",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-05-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 15116482000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "d2344c26-0c88-4a95-bf29-6642745989c2",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-08-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 15893565000,
+    "fiscal_quarter": 2,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "7c953a8a-7925-48a0-9308-1154d942528c",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2024-11-07",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 17324514000,
+    "fiscal_quarter": 3,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "dd716bc3-85f2-4556-9deb-7a79bdabb504",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2024,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2026-02-17",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 17684892000,
+    "fiscal_quarter": 4,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "508ef6cb-e3ee-4097-ae07-11fcc9412c5f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  },
+  {
+    "unit": "USD",
+    "currency": "USD",
+    "confidence": 0.95,
+    "metric_key": "loans_held_for_sale",
+    "fiscal_year": 2025,
+    "metric_type": "reported",
+    "periodicity": "quarterly",
+    "available_at": "2025-05-06",
+    "metadata_json": {
+      "metric_category": "balance_sheet"
+    },
+    "value_numeric": 18226063000,
+    "fiscal_quarter": 1,
+    "reporting_basis": "gaap",
+    "evidence_claim_id": null,
+    "source_document_id": "8b6bee92-f64b-46f4-8ec9-6bdfd11b961f",
+    "restatement_version": 0,
+    "comparability_status": "comparable"
+  }
+]

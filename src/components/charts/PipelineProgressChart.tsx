@@ -13,12 +13,12 @@ interface PipelineProgressChartProps {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  completed: "#059669",
-  running: "#2563eb",
+  completed: "#469172",
+  running: "#7a91a6",
   pending: "#e5e7eb",
-  failed: "#dc2626",
+  failed: "#bf5549",
   skipped: "#f3f4f6",
-  waiting_for_human: "#f59e0b",
+  waiting_for_human: "#b7893e",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -52,38 +52,12 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 export function PipelineProgressChart({ data }: PipelineProgressChartProps) {
-  if (!data || data.length === 0) {
-    return (
-      <div className="flex h-[220px] items-center justify-center rounded-xl border border-gray-100 bg-[#fbfcfd]">
-        <div className="text-center">
-          <svg
-            className="w-6 h-6 mx-auto mb-2 text-gray-300"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="1.5"
-              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
-            />
-          </svg>
-          <p className="text-[11px] text-gray-400 font-medium">
-            No pipeline data yet
-          </p>
-          <p className="text-[10px] text-gray-300 mt-0.5">
-            Start a research run to see progress
-          </p>
-        </div>
-      </div>
-    );
-  }
+  if (!data || data.length === 0) return <p className="py-8 text-sm text-[#626b78]">No pipeline data yet.</p>;
 
   // Sort by stage_order and build chart data
   const sorted = [...data].sort((a, b) => a.stage_order - b.stage_order);
   const chartData = sorted.map((s) => ({
-    name: STAGE_LABELS[s.stage_key] ?? s.stage_key,
+    name: STAGE_LABELS[s.stage_key] ?? s.stage_key.replace(/_/g, " "),
     fullName: s.stage_key,
     value: 1,
     status: s.status,
@@ -94,10 +68,10 @@ export function PipelineProgressChart({ data }: PipelineProgressChartProps) {
   const totalRelevant = data.filter((d) => d.status !== "skipped").length;
 
   return (
-    <div className="h-[220px] flex flex-col">
+    <div className="flex flex-col" style={{ height: Math.max(220, data.length * 28 + 40) }}>
       {/* Summary line */}
       <div className="flex items-center justify-between px-1 mb-2">
-        <span className="text-[10px] text-gray-400 font-medium">
+        <span className="text-xs text-gray-400 font-medium">
           {completedCount}/{totalRelevant} stages complete
         </span>
         <div className="flex gap-2">
@@ -107,7 +81,7 @@ export function PipelineProgressChart({ data }: PipelineProgressChartProps) {
             return (
               <span
                 key={status}
-                className="flex items-center gap-1 text-[9px] text-gray-500"
+                className="flex items-center gap-1 text-xs text-gray-500"
               >
                 <span
                   className="h-1.5 w-1.5 rounded-full"
@@ -132,15 +106,16 @@ export function PipelineProgressChart({ data }: PipelineProgressChartProps) {
             <YAxis
               type="category"
               dataKey="name"
-              width={72}
-              tick={{ fontSize: 9, fill: "#9ca3af" }}
+              width={150}
+              tick={{ fontSize: 12, fill: "#626b78" }}
               tickLine={false}
+              interval={0}
               axisLine={false}
             />
             <Tooltip
               cursor={false}
               contentStyle={{
-                fontSize: 11,
+                fontSize: 12,
                 fontFamily: "inherit",
                 borderRadius: 8,
                 border: "1px solid #e5e7eb",

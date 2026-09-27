@@ -1,0 +1,145 @@
+{
+  "round": 0,
+  "findings": [
+    {
+      "issue": "Executive judgment appears first as a preview, contrary to the framework instruction to write executive judgment last. It duplicates final conclusions before historical causes, business processes, forecasts, and valuation are established.",
+      "category": "writing",
+      "severity": "low",
+      "section_id": "executive_judgment_preview",
+      "concrete_repair": "Replace the preview with a neutral roadmap or move the executive judgment to the end after monitoring_final_decision, keeping the final judgment section last."
+    },
+    {
+      "issue": "Specific Q2 2026 deposit metrics such as average deposits over 90% of average liabilities, deposit rate 156 bps below warehouse facilities, NIM 5.98%, NII $788.2M, and TBVPS $7.34 are cited or relied upon, but the supplied evidence_ids do not entail those specific claims. The underlying Q2 2026 evidence claims, such as 82d53398 and d2732558, are absent from the supplied evidence_claims array.",
+      "category": "evidence",
+      "severity": "high",
+      "section_id": "funding_liquidity_capital_constraints",
+      "concrete_repair": "Add primary Q2 2026 earnings release or 10-Q evidence claims for each metric, or label these consistently as artifact-level analyst inputs and remove mismatched evidence_ids."
+    },
+    {
+      "issue": "The base scenario uses Q2 2026 net interest income, NIM, deposit share and deposit-rate advantage, net revenue, net income, and credit loss expense as factual inputs, but these are mostly artifact-level or missing from the supplied evidence_claims. The segment operating model is proxy-derived and not reported segment profit.",
+      "category": "evidence",
+      "severity": "high",
+      "section_id": "scenario_architecture",
+      "concrete_repair": "Reconcile scenario inputs to current segment and consolidated evidence claims, disclose proxy status in scenario tables, and run sensitivity ranges if Q2 2026 source claims remain unavailable."
+    },
+    {
+      "issue": "Current Financial Services and Technology Platform segment revenue, contribution profit or operating income, client concentration, retention, backlog, churn, and integration costs are not supplied. Latest hard segment data are Q3 2024 and Q1 2024, while the report's latest company-level period is Q2 2026.",
+      "category": "research_gap",
+      "severity": "high",
+      "section_id": "financial_services_galileo_technisys",
+      "concrete_repair": "Obtain current segment disclosures and client/retention data, then reconcile Financial Services and Galileo/Technisys economics to consolidated results before using them in forecasts."
+    },
+    {
+      "issue": "No delinquency, charge-off, vintage, or segment-level provision data are supplied. Allowance coverage cannot be tested against annualized net charge-offs, so credit quality and downside severity remain unverified.",
+      "category": "research_gap",
+      "severity": "high",
+      "section_id": "lending_credit_capital_markets",
+      "concrete_repair": "Add quarterly delinquency, charge-off, vintage, and segment provision data, and reconcile allowance coverage to the risk-register and thesis-breaker thresholds."
+    },
+    {
+      "issue": "Residual income and tangible-book NAV outputs depend on segment profitability, capex, working capital, and dilution inputs that are missing. Segment reconciliation is false and future share issuance beyond the reported diluted count is unmodeled.",
+      "category": "research_gap",
+      "severity": "high",
+      "section_id": "valuation_residual_income_nav_reverse",
+      "concrete_repair": "Supply segment-level operating income, capex and working-capital schedules, share issuance and stock-based compensation assumptions, and TAM reconciliation, then rerun the accepted valuation model outside prose."
+    },
+    {
+      "issue": "Top-down reconciliation is blocked because TAM and customer budget are null, while capex and working-capital forecasts are empty. Operating drivers therefore cannot be bridged to reinvestment, cash conversion, or per-share value.",
+      "category": "research_gap",
+      "severity": "high",
+      "section_id": "operating_drivers_reinvestment",
+      "concrete_repair": "Obtain TAM, customer budget, and capex/working-capital forecasts, then complete top-down/bottom-up reconciliation and the reinvestment bridge."
+    },
+    {
+      "issue": "Ownership, governance, compensation, insider/founder influence, and future share issuance are not disclosed. Per-share outcomes and value accrual to common shareholders cannot be fully assessed.",
+      "category": "research_gap",
+      "severity": "medium",
+      "section_id": "management_ownership_per_share",
+      "concrete_repair": "Add proxy and governance filings, ownership tables, compensation and share-based compensation details, and capital issuance plans, reconciled to the diluted share count."
+    },
+    {
+      "issue": "A definitional conflict exists between the Q3 2024 noninterest income evidence claim ($84.2M, up 235%) and the historical record consolidated quarterly noninterest income ($266.111M). The report notes the conflict but does not resolve the measurement basis.",
+      "category": "calculation",
+      "severity": "medium",
+      "section_id": "reported_history_ttm",
+      "concrete_repair": "Reconcile segment versus consolidated definitions and label the measurement basis in the historical table. Avoid treating the two figures as interchangeable."
+    },
+    {
+      "issue": "The historical record is incomplete at 99 of 200 required cells and lacks Tier 1 capital, loan portfolio, NIM, funding cost, and delinquency histories. Some conclusions rely on stale segment data or proxy-derived operating data.",
+      "category": "evidence",
+      "severity": "medium",
+      "section_id": "evidence_quality_and_conventions",
+      "concrete_repair": "Complete targeted 20-quarter banking history and mark each missing metric as unavailable rather than zero. Update the historical diagnosis with sourced causal explanations where available."
+    },
+    {
+      "issue": "Several thesis breakers are not currently measurable. Allowance coverage requires annualized net charge-offs, the Tier 1 capital breaker requires current capital ratios, and segment KPI current levels are null.",
+      "category": "evidence",
+      "severity": "medium",
+      "section_id": "monitoring_final_decision",
+      "concrete_repair": "Add the missing denominators and current values, then update the monitoring dashboard before relying on those breakers for decision changes."
+    },
+    {
+      "issue": "The backtest source alignment uses price-derived proxies for fundamental, quality, valuation, macro, commodity, and asset-specific external indicators. No strategy was classified Robust, and positive out-of-sample excess return was false.",
+      "category": "evidence",
+      "severity": "low",
+      "section_id": "evidence_quality_and_conventions",
+      "concrete_repair": "Keep the backtest as risk and timing evidence only. Replace proxies with release-date-aligned filing, macro, industry, and asset-specific datasets before using it for thesis validation."
+    },
+    {
+      "issue": "Some Q2 2026 company-level figures are presented as facts but rely on artifact-level claims without evidence_ids in the supplied evidence_claims array. The report sometimes labels these as artifact-level, but not consistently.",
+      "category": "evidence",
+      "severity": "medium",
+      "section_id": "strategic_identity_evolution",
+      "concrete_repair": "Either add Q2 2026 earnings release evidence claims or consistently label artifact-level figures as unverified outside the supplied artifacts."
+    },
+    {
+      "issue": "The probability-weighted return and weighted target use analyst-assumed 25/55/20 probabilities and scenario outputs while bear and bull numeric statements are withheld. This may imply more precision than the underlying analysis supports.",
+      "category": "calculation",
+      "severity": "medium",
+      "section_id": "scenario_architecture",
+      "concrete_repair": "Label the probability-weighted return as a conditional scenario output, present weights and returns as sensitivity ranges, and avoid reporting a single-point expected value without explicit caveats."
+    },
+    {
+      "issue": "The executive preview states current P/E of 36.26 and P/TBV of 2.41 as facts, but these are artifact-derived valuation outputs rather than disclosed company facts or directly sourced evidence claims.",
+      "category": "evidence",
+      "severity": "medium",
+      "section_id": "executive_judgment_preview",
+      "concrete_repair": "Cite the artifact path for valuation metrics and mark them as derived estimates, not disclosed facts."
+    }
+  ],
+  "input_hash": "8781851b274d8159046fd85e4776fcae8fcc2506f0a9cb6d0ba6006bf8f67dbe",
+  "report_hash": "61ac57651a58c24ba3214a5d4f2a87e0d56444350899a1893ce5885869d71b3e",
+  "quality_score": 0.72,
+  "review_summary": "The report is comprehensive, transparently qualified, and correctly withholds an investment decision. It adequately explains SoFi's founding and strategic evolution, tests the claimed moat against customer behavior, separates disclosed facts from assumptions in many places, and discloses major gaps including stale segment data, incomplete 20-quarter banking history, missing current capital and credit metrics, unmodeled dilution, and proxy-limited backtest evidence. The main review issues are citation entailment for several Q2 2026 metrics, unresolved definitional conflicts, missing analytical artifacts for segment profitability, credit quality, reinvestment, and dilution, and some overprecision in scenario outputs. No unsupported investment recommendation was found; the report's decision is appropriately pending human review.",
+  "review_verdict": "conditional_pass",
+  "recommendations": [
+    {
+      "action": "Add primary source evidence claims for Q2 2026 deposits, NIM, NII, TBVPS, deposit share, and segment profitability, or consistently downgrade those figures to artifact-level assumptions.",
+      "priority": "high"
+    },
+    {
+      "action": "Complete the 20-quarter banking history for Tier 1 capital, loan portfolio, NIM, funding cost, delinquency, charge-offs, and segment provisions.",
+      "priority": "high"
+    },
+    {
+      "action": "Reconcile segment revenue and operating income definitions and replace proxy segment allocations with reported contribution profit before using them in valuation.",
+      "priority": "high"
+    },
+    {
+      "action": "Supply capex, working capital, TAM/customer budget, and dilution schedules, then rerun valuation and reinvestment models outside prose.",
+      "priority": "high"
+    },
+    {
+      "action": "Update the monitoring dashboard with current segment KPI values and measurable denominators for all thesis breakers.",
+      "priority": "medium"
+    },
+    {
+      "action": "Replace price-derived backtest proxies with release-date-aligned filing, macro, industry, and asset-specific datasets; keep backtest evidence separate from the fundamental thesis.",
+      "priority": "medium"
+    },
+    {
+      "action": "Move or relabel the executive judgment preview so the final executive judgment appears last in the report.",
+      "priority": "low"
+    }
+  ]
+}

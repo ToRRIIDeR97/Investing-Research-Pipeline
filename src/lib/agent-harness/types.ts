@@ -16,7 +16,6 @@ export interface ModelRequest {
   prompt: string;
   temperature?: number;
   maxTokens?: number;
-  tools?: Array<Record<string, unknown>>;
   agentName?: string;
 }
 
@@ -45,11 +44,9 @@ export interface ExecutionPolicy {
   totalTimeoutMs: number;
   inactivityTimeoutMs: number;
   maxResponseBytes: number;
-  /** Omitted by default so providers may complete naturally. */
+  /** Per-request ceiling, including schema repair requests. */
   maxOutputTokens?: number;
   maxRepairAttempts: number;
-  maxToolTurns: number;
-  maxToolCalls: number;
   maxAttempts: number;
   retryBaseDelayMs: number;
 }
@@ -78,7 +75,6 @@ export interface AgentAttempt {
   originalInputBytes?: number;
   rawResponseExcerpt: string;
   validationErrors: Array<{ path: string; message: string }>;
-  toolCalls: Array<{ name: string; status: "success" | "failed" }>;
   passes?: AgentPassTelemetry[];
   localCoercionApplied?: boolean;
   completionRecoveredAtTimeout?: boolean;
@@ -124,6 +120,7 @@ export interface AgentRequest<T = unknown> {
 export interface AgentOutputFormat {
   requiredKeys: string[];
   schema?: Record<string, unknown>;
+  validate?: (value: unknown) => Array<{ path: string; message: string }>;
 }
 
 export interface AgentUsage {

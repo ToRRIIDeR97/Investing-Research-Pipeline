@@ -5,6 +5,12 @@
 import type { HistoricalObservation } from "./contracts";
 import { enumerateQuarters, findObservation } from "./normalizer";
 
+export const STOCK_METRICS = new Set([
+  "deposits", "deposit_base", "loan_loss_reserve", "loan_portfolio",
+  "loans_held_for_investment_net", "loans_held_for_sale", "total_assets",
+  "total_liabilities", "stockholders_equity",
+]);
+
 export function buildTTMSeries(
   quarterly: HistoricalObservation[],
   metricKeys: string[],
@@ -17,6 +23,11 @@ export function buildTTMSeries(
   const quarters = enumerateQuarters(startFiscalYear, startFiscalQuarter, endFiscalYear, endFiscalQuarter);
 
   for (const metricKey of metricKeys) {
+    // Balance-sheet amounts are point-in-time stocks; summing four snapshots
+    // would inflate deposits, loans, assets, liabilities, and reserves.
+    if (STOCK_METRICS.has(metricKey) || quarterly.some((observation) =>
+      observation.metric_key === metricKey && observation.metadata_json?.metric_category === "balance_sheet"
+    )) continue;
     for (let i = 3; i < quarters.length; i++) {
       const q = quarters[i];
       const window = [quarters[i - 3], quarters[i - 2], quarters[i - 1], quarters[i]];

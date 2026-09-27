@@ -209,7 +209,7 @@ const VARIANTS = [
   ["Volatility/risk indicators", "volatility_compression", ">=", 0, "Quality/profitability indicators", "balance_sheet_or_profitability_quality", ">=", -0.25, "size down without quality support", "compressed-volatility breakout"],
 ] as const;
 
-export function generateStrategyCombinations(thesis = "The documented company thesis"): StrategyCombination[] {
+export function generateStrategyCombinations(_thesis = "The documented company thesis"): StrategyCombination[] {
   const combinations: StrategyCombination[] = [];
   for (const blueprint of BLUEPRINTS) {
     for (const variant of VARIANTS) {
@@ -229,7 +229,7 @@ export function generateStrategyCombinations(thesis = "The documented company th
         indicatorsUsed: [...new Set([entryIndicator, confirmationIndicator, riskIndicator])],
         familiesUsed,
         thesisDriver: `${thesisDriver} in a ${regimeAssumption} regime`,
-        hypothesis: `If ${thesis} is investable, returns should improve when ${thesisDriver}, ${confirmationIndicator} confirms, and the named risk control holds.`,
+        hypothesis: `If ${thesisDriver} strengthens while ${confirmationIndicator} confirms and ${riskControl}, returns should improve in a ${regimeAssumption} regime.`,
         entryRule: `${entryIndicator} ${entryOperator} ${entryThreshold} and ${confirmationIndicator} ${confirmationOperator} ${confirmationThreshold}`,
         exitRule: `Exit when ${entryIndicator} fails or ${riskIndicator} breaches ${riskThreshold}.`,
         riskControl,
@@ -327,7 +327,7 @@ export function runFrameworkBacktest(
     const finalScore =
       0.25 * full.cagr +
       0.2 * (1 + full.max_drawdown) +
-      0.15 * Math.max(full.sharpe, full.sortino) +
+      0.15 * Math.min(3, Math.max(-3, full.sharpe, full.sortino)) +
       0.15 * benchmarkRelative +
       0.1 * outOfSample.total_return +
       0.1 * consistencyScore +
@@ -379,6 +379,14 @@ export function runFrameworkBacktest(
       family_peer_mean_oos_return: finite(mean(peerReturns)),
       positive_family_peer_fraction: peers.length ? peers.filter((value) => value.metrics.out_of_sample.total_return > 0).length / peers.length : 0,
     };
+    const promisingEvidence = result.metrics.number_of_trades >= 12
+      && result.metrics.out_of_sample_return > 0
+      && result.metrics.out_of_sample_excess_return > 0
+      && result.metrics.benchmark_relative_return > 0;
+    if (result.status === "Robust" && (
+      !promisingEvidence || result.metrics.parameter_stability.positive_family_peer_fraction < 0.5
+    )) result.status = promisingEvidence ? "Promising" : "Needs review";
+    if (result.status === "Promising" && !promisingEvidence) result.status = "Needs review";
   }
   const rankings = [...results].sort((a, b) => b.final_score - a.final_score);
   return {
