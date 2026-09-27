@@ -2,7 +2,7 @@
  * Company genesis and strategic identity artifact contracts for Research OS v3.
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 
 export const FounderMotivation = z.enum([
   "personal_problem",
@@ -33,7 +33,7 @@ export type EvidenceWeight = z.infer<typeof EvidenceWeight>;
 export const HistoricalClaim = z.object({
   claim: z.string().min(1),
   evidence_weight: EvidenceWeight,
-  evidence_claim_ids: z.array(z.string().uuid()).min(1, "A material claim must link to evidence"),
+  evidence_claim_ids: z.array(z.guid()).min(1, "A material claim must link to evidence"),
   confidence: z.number().min(0).max(1),
   alternative_interpretations: z.array(z.string()).optional(),
   contradictions: z.array(z.string()).optional(),
@@ -50,7 +50,7 @@ export const CompanyGenesis = z.object({
   founder_background: z.string().min(1),
   founder_motivations: z.array(z.object({
     motivation: FounderMotivation,
-    evidence_claim_ids: z.array(z.string().uuid()).min(1),
+    evidence_claim_ids: z.array(z.guid()).min(1),
     confidence: z.number().min(0).max(1),
   })).min(1),
   alternative_motivation_interpretations: z.array(z.string()).min(1),
@@ -74,7 +74,7 @@ export const FounderProfile = z.object({
   background_summary: z.string().min(1),
   motivations: z.array(z.object({
     motivation: FounderMotivation,
-    evidence_claim_ids: z.array(z.string().uuid()).min(1),
+    evidence_claim_ids: z.array(z.guid()).min(1),
     confidence: z.number().min(0).max(1),
   })).min(1),
   alternative_interpretations: z.array(z.string()).min(1),
@@ -89,7 +89,7 @@ export const StrategicHistoryEvent = z.object({
   event: z.string().min(1),
   objective_at_the_time: z.string().min(1),
   decision: z.string().min(1),
-  evidence_claim_ids: z.array(z.string().uuid()).min(1),
+  evidence_claim_ids: z.array(z.guid()).min(1),
   immediate_effect: z.string().min(1),
   lasting_consequence: z.string().min(1),
   strategy_changed: z.boolean(),
@@ -125,7 +125,7 @@ export const MissionEvolution = z.object({
   mission_changes: z.array(z.object({
     date_or_period: z.string().min(1),
     new_mission: z.string().min(1),
-    evidence_claim_ids: z.array(z.string().uuid()).min(1),
+    evidence_claim_ids: z.array(z.guid()).min(1),
   })).min(1),
   current_mission: z.string().min(1),
   gap_or_inconsistency: z.string().optional(),

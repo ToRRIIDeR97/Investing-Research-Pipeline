@@ -7,7 +7,7 @@ import {
   deterministicEvidenceFallback,
   loadAcceptedEvidencePacket,
   reconcileSourceGaps,
-} from "../system-pipeline";
+} from "../sources/corpus";
 import {
   createSourceReaderBatches,
   mergeSourceReaderOutputs,
@@ -15,6 +15,8 @@ import {
 } from "../source-reader-batching";
 import postgres from "postgres";
 import { CURRENT_PIPELINE_VERSION } from "../version";
+import { isValidSourceRole } from "../sources/roles";
+import { isPlausibleSourceRole } from "../sources/role-discovery";
 
 const SOURCE_READER_OUTPUT_KEYS = [
   "evidence_claims",
@@ -50,6 +52,7 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
         SELECT sd.id as "sourceId", dp.id as "parseId", dc.id as "chunkId",
                sd.source_type as "sourceType", sd.title, sd.publisher, sd.url,
                sd.published_at as "publishedAt", sd.period_end as "periodEnd",
+               sd.created_at as "createdAt",
                sd.metadata_json as metadata
         FROM source_documents sd
         JOIN document_parses dp ON dp.source_document_id = sd.id AND dp.status = 'completed'
@@ -57,7 +60,40 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
         LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
         WHERE sd.research_run_id = ${ctx.runId} OR rrs.research_run_id = ${ctx.runId}
       `;
-      const sources = sourceRows.map(row => ({
+      const excludedSourceIds = [...new Set(sourceRows.filter((row) => {
+        const role = String((row.metadata as Record<string, unknown> | null)?.source_role ||
+          (String(row.sourceType).startsWith("web_") ? String(row.sourceType).slice(4) : ""));
+        return Boolean(row.url) && isValidSourceRole(role) && !isPlausibleSourceRole(String(row.url), role);
+      }).map((row) => String(row.sourceId)))];
+      if (excludedSourceIds.length) {
+        await sql`
+          UPDATE evidence_claims ec
+          SET review_status = 'rejected', reviewed_by = 'system:source-role-reconciliation', reviewed_at = NOW()
+          WHERE ec.research_run_id = ${ctx.runId} AND ec.review_status != 'rejected'
+            AND EXISTS (
+              SELECT 1 FROM evidence_links el JOIN source_locations sl ON sl.id = el.source_location_id
+              WHERE el.evidence_claim_id = ec.id AND sl.source_document_id = ANY(${excludedSourceIds}::uuid[])
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM evidence_links el JOIN source_locations sl ON sl.id = el.source_location_id
+              WHERE el.evidence_claim_id = ec.id AND sl.source_document_id != ALL(${excludedSourceIds}::uuid[])
+            )
+        `;
+      }
+      const eligibleSourceRows = sourceRows.filter((row) => !excludedSourceIds.includes(String(row.sourceId)));
+      const latestByUrl = new Map<string, { id: string; createdAt: number }>();
+      for (const row of eligibleSourceRows) {
+        const key = String(row.url || row.sourceId);
+        const createdAt = new Date(row.createdAt).getTime();
+        const prior = latestByUrl.get(key);
+        if (!prior || createdAt > prior.createdAt) {
+          latestByUrl.set(key, { id: String(row.sourceId), createdAt });
+        }
+      }
+      const currentSourceRows = eligibleSourceRows.filter((row) =>
+        latestByUrl.get(String(row.url || row.sourceId))?.id === String(row.sourceId)
+      );
+      const sources = currentSourceRows.map(row => ({
         sourceId: String(row.sourceId),
         parseId: String(row.parseId),
         chunkId: String(row.chunkId),
@@ -88,6 +124,7 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
         packet,
         extraRules: [
           "Each evidence_claim must include claim_text, claim_type, claim_category, source_id and document_chunk_id copied exactly from source_corpus, plus char_start/char_end within the original document when available, as_of_date or period_end, and confidence.",
+          "claim_category must be exactly one of: fact, estimate, assumption, opinion. Put topical labels such as strategy or funding in claim_type, never in claim_category.",
           `Return up to ${target} distinct, decision-relevant evidence claims supported by this batch. Never return schema examples or placeholder values.`,
           "Use only source_corpus in this packet. Do not invent or alter source or chunk identifiers.",
           "Prefer annual and quarterly SEC filings for financial facts.",
@@ -100,23 +137,17 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       for (const batch of batches) {
         const fingerprint = sourceReaderBatchFingerprint(batch);
         const taskKey = `source-reader:batch:${batch.id}:${fingerprint}`;
-        let output = await sql`
-          SELECT output_json FROM research_tasks
-          WHERE research_run_id = ${ctx.runId} AND task_key = ${taskKey} AND status = 'completed'
-        `.then(rows => rows[0]?.output_json as Record<string, any>);
 
-        if (!output) {
-          const packet = {
-            asset: v2Ctx,
-            batch: { id: batch.id, count: batches.length, claim_target: batchTarget },
-            source_corpus: batch.chunks,
-          };
-          output = await callResearchAgent<Record<string, unknown>>({
-            sql, ctx, stageKey: "evidence_extraction", taskKey,
-            taskType: "evidence_extraction_batch", agentName: "source-reader", modelTier: "cheap",
-            packet, promptFactory: promptFactory(batchTarget),
-          });
-        }
+        const packet = {
+          asset: v2Ctx,
+          batch: { id: batch.id, count: batches.length, claim_target: batchTarget },
+          source_corpus: batch.chunks,
+        };
+        const output = await callResearchAgent<Record<string, unknown>>({
+          sql, ctx, stageKey: "evidence_extraction", taskKey,
+          taskType: "evidence_extraction_batch", agentName: "source-reader", modelTier: "cheap",
+          packet, promptFactory: promptFactory(batchTarget),
+        });
         outputs.push(output);
       }
 
@@ -194,6 +225,7 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
                 "At least one claim must identify the founder or founding team and why the relevant technology or company was pursued.",
                 "Prioritize contemporary statements and university archives over later corporate narrative.",
                 "Each claim must copy source_id and document_chunk_id exactly and include claim_text, claim_type, claim_category, confidence, and the most precise available date.",
+                "claim_category must be exactly one of: fact, estimate, assumption, opinion. Use claim_type for the topic.",
                 "Do not infer a financial, mission, status, or other motivation unless the source text directly supports it.",
               ],
             }),
@@ -250,6 +282,10 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
           AND sra.role = 'founder_and_company_history'
           AND (
             LOWER(ec.claim_text) LIKE '%founder%'
+            OR LOWER(ec.claim_text) LIKE '%founded%'
+            OR LOWER(ec.claim_text) LIKE '%founding%'
+            OR LOWER(ec.claim_text) LIKE '%origin%'
+            OR LOWER(ec.claim_text) LIKE '%started by%'
             OR LOWER(ec.claim_text) LIKE '%josé%'
             OR LOWER(ec.claim_text) LIKE '%jose%'
             OR LOWER(ec.claim_text) LIKE '%motivat%'

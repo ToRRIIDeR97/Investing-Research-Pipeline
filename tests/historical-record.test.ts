@@ -3,6 +3,7 @@ import assert from "node:assert";
 import {
   buildHistoricalRecord,
   computeStartPeriod,
+  latestCompletedQuarter,
   buildMELIAdjustedFCFBridge,
   separateMELIRevenueDefinition,
 } from "@/lib/research/history/normalizer";
@@ -49,6 +50,10 @@ function makeAnnual(metricKey: string, year: number, value: number): HistoricalO
 }
 
 describe("historical record", () => {
+  it("uses the last completed quarter at the research cutoff", () => {
+    assert.deepEqual(latestCompletedQuarter(new Date("2026-09-23T00:00:00Z")), { year: 2026, quarter: 2 });
+    assert.deepEqual(latestCompletedQuarter(new Date("2026-01-15T00:00:00Z")), { year: 2025, quarter: 4 });
+  });
   it("C6-T1: Twenty complete comparable quarters pass historical record gate", () => {
     const obs: HistoricalObservation[] = [];
     for (let y = 2020; y <= 2025; y++) {
@@ -150,6 +155,13 @@ describe("historical record", () => {
 });
 
 describe("TTM and diagnostics", () => {
+  it("does not sum balance-sheet snapshots into a TTM value", () => {
+    const deposits = [1, 2, 3, 4].map((value, index) => ({
+      ...makeObs("deposits", 2024, index + 1, value),
+      metadata_json: { metric_category: "financial" },
+    }));
+    assert.deepEqual(buildTTMSeries(deposits, ["deposits"], 2024, 1, 2024, 4), []);
+  });
   it("C6-T1: TTM calculation sums four quarters", () => {
     const obs: HistoricalObservation[] = [
       makeObs("revenue", 2024, 1, 100),

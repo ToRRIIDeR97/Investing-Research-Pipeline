@@ -4,6 +4,10 @@
 
 import type { HistoricalObservation, ReconciliationIssue } from "./contracts";
 
+import {STOCK_METRICS} from "./diagnostics";
+const sameBasis=(a:HistoricalObservation,b:HistoricalObservation)=>a.unit===b.unit&&a.currency===b.currency&&a.reporting_basis===b.reporting_basis&&a.segment===b.segment&&a.geography===b.geography;
+const additive=(o:HistoricalObservation)=>!STOCK_METRICS.has(o.metric_key)&&o.metadata_json?.metric_category!=="balance_sheet"&&(!o.unit||/^[A-Z]{3}$/.test(o.unit));
+
 const RELATIVE_TOLERANCE = 0.02;
 
 export function reconcileRecord(
@@ -27,11 +31,11 @@ export function reconcileAnnualToQuarters(observations: HistoricalObservation[])
 
   for (const [metricKey, annualObs] of byMetric.entries()) {
     for (const annual of annualObs) {
-      if (annual.fiscal_year == null) continue;
+      if (annual.fiscal_year == null || !additive(annual)) continue;
       const matchingQuarters = quarters.filter(
-        (q) => q.metric_key === metricKey && q.fiscal_year === annual.fiscal_year
+        (q) => q.metric_key === metricKey && q.fiscal_year === annual.fiscal_year && sameBasis(q,annual)
       );
-      if (matchingQuarters.length !== 4) continue;
+      if (matchingQuarters.length !== 4 || new Set(matchingQuarters.map(q=>q.fiscal_quarter)).size !== 4) continue;
       const sum = matchingQuarters.reduce((acc, q) => acc + (q.value_numeric ?? 0), 0);
       const annualValue = annual.value_numeric ?? 0;
       if (annualValue === 0) continue;
@@ -58,7 +62,7 @@ export function reconcileGAAPvsNonGAAP(observations: HistoricalObservation[]): R
   const issues: ReconciliationIssue[] = [];
   const byKeyPeriod = groupBy(
     observations.filter((o) => o.value_numeric != null),
-    (o) => `${o.metric_key}|${o.fiscal_year}|${o.fiscal_quarter}`
+    (o) => `${o.metric_key}|${o.periodicity}|${o.fiscal_year}|${o.fiscal_quarter}|${o.unit}|${o.currency}`
   );
   for (const [key, obs] of byKeyPeriod.entries()) {
     const gaap = obs.find((o) => o.reporting_basis === "gaap");
@@ -87,11 +91,11 @@ export function reconcileSegmentToConsolidated(observations: HistoricalObservati
   const consolidated = observations.filter((o) => !o.segment && o.value_numeric != null);
   const segments = observations.filter((o) => o.segment && o.value_numeric != null);
 
-  const byMetricYear = groupBy(consolidated, (o) => `${o.metric_key}|${o.fiscal_year}|${o.fiscal_quarter}`);
+  const byMetricYear = groupBy(consolidated, (o) => `${o.metric_key}|${o.periodicity}|${o.fiscal_year}|${o.fiscal_quarter}|${o.unit}|${o.currency}`);
   for (const [key, consObs] of byMetricYear.entries()) {
     const cons = consObs[0];
     const segmentSum = segments
-      .filter((s) => `${s.metric_key}|${s.fiscal_year}|${s.fiscal_quarter}` === key)
+      .filter((s) => `${s.metric_key}|${s.periodicity}|${s.fiscal_year}|${s.fiscal_quarter}|${s.unit}|${s.currency}` === key && s.reporting_basis === cons.reporting_basis && s.geography === cons.geography && !s.metadata_json?.dimensions)
       .reduce((acc, s) => acc + (s.value_numeric ?? 0), 0);
     if (segmentSum === 0 || !cons.value_numeric) continue;
     if (Math.abs(segmentSum - cons.value_numeric) / Math.abs(cons.value_numeric) > RELATIVE_TOLERANCE) {
@@ -137,9 +141,9 @@ export function reconcileTTMToAnnual(
   const issues: ReconciliationIssue[] = [];
   const annuals = quarterly.filter((o) => o.periodicity === "annual" && o.value_numeric != null);
   for (const annual of annuals) {
-    if (annual.fiscal_year == null) continue;
+    if (annual.fiscal_year == null || !additive(annual)) continue;
     const ttmObs = ttm.find(
-      (t) => t.metric_key === annual.metric_key && t.fiscal_year === annual.fiscal_year && t.fiscal_quarter === 4
+      (t) => t.metric_key === annual.metric_key && t.fiscal_year === annual.fiscal_year && t.fiscal_quarter === 4 && sameBasis(t,annual)
     );
     if (ttmObs && ttmObs.value_numeric && annual.value_numeric) {
       if (Math.abs(ttmObs.value_numeric - annual.value_numeric) / Math.abs(annual.value_numeric) > RELATIVE_TOLERANCE) {

@@ -2,7 +2,7 @@
  * Business analysis contracts (Component 8) for Research OS v3.
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 
 export const MarketplaceDetails = z.object({
   buyers: z.string().min(1),
@@ -83,7 +83,7 @@ export const ProcessNode = z.object({
   financial_line_affected: z.string().min(1),
   leading_indicator: z.string().min(1),
   failure_condition: z.string().min(1),
-  supporting_claim_ids: z.array(z.string().uuid()).min(1),
+  supporting_claim_ids: z.array(z.guid()).min(1),
   confidence: z.number().min(0).max(1),
 });
 export type ProcessNode = z.infer<typeof ProcessNode>;

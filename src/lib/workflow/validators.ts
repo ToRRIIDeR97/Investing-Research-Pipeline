@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { getStageOutputContract, validateArtifactContent } from "@/lib/research/stage-contracts";
 import { STAGE_CONFIG_MAP, getStageConfig } from "./stages";
 import { evaluateResearchQuality } from "./quality-gates";
 
@@ -22,6 +23,9 @@ export async function validateStageCompletion(
   runId: string,
   stageKey: string
 ): Promise<ValidationResult> {
+  if (stageKey !== "ai_reviewer" && getStageOutputContract(stageKey)) {
+    return validateStageArtifacts(runId, stageKey);
+  }
   const sql = postgres(process.env.DATABASE_URL!);
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -250,84 +254,6 @@ export async function validateStageCompletion(
           break;
         }
 
-        case "genesis_artifacts": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM research_tasks
-            WHERE research_run_id = ${runId}
-              AND (task_key = 'genesis-researcher:meli-genesis' OR task_type = 'company_genesis')
-              AND status = 'completed'
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No completed company genesis artifact found");
-          }
-          break;
-        }
-
-        case "historical_diagnosis": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM research_tasks
-            WHERE research_run_id = ${runId}
-              AND (task_key = 'historical-diagnostician:diagnosis' OR task_type = 'historical_diagnosis')
-              AND status = 'completed'
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No completed historical diagnosis artifact found");
-          }
-          break;
-        }
-
-        case "business_process_map": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM research_tasks
-            WHERE research_run_id = ${runId}
-              AND (task_key = 'business-model-analyst:process-map' OR task_type = 'business_process_analysis')
-              AND status = 'completed'
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No completed business process map found");
-          }
-          break;
-        }
-
-        case "moat_assessment": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM research_tasks
-            WHERE research_run_id = ${runId}
-              AND (task_key = 'moat-analyst:assessment' OR task_type = 'moat_analysis')
-              AND status = 'completed'
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No completed moat assessment found");
-          }
-          break;
-        }
-
-        case "operating_model": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM research_tasks
-            WHERE research_run_id = ${runId}
-              AND (task_key = 'forecast-analyst:operating-model' OR task_type = 'operating_model')
-              AND status = 'completed'
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No completed operating model found");
-          }
-          break;
-        }
-
-        case "operating_scenario_set": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM research_tasks
-            WHERE research_run_id = ${runId}
-              AND (task_key = 'forecast-analyst:scenarios' OR task_type = 'operating_scenarios')
-              AND status = 'completed'
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No completed operating scenario set found");
-          }
-          break;
-        }
-
         case "export_artifact": {
           const rows = await sql`
             SELECT COUNT(*) as cnt FROM exports
@@ -350,14 +276,6 @@ export async function validateStageCompletion(
       warnings,
       checkedAt: new Date().toISOString(),
     };
-
-    // Persist validation result on the stage record
-    await sql`
-      UPDATE research_stages
-      SET validation_result_json = ${sql.json(result as any)},
-          updated_at = NOW()
-      WHERE research_run_id = ${runId} AND stage_key = ${stageKey}
-    `;
 
     return result;
   } finally {
@@ -771,6 +689,17 @@ export async function validateCompletionCriteria(
       errors.push("No export artifact exists for this run");
     }
 
+    const terminalStages = await sql`
+      SELECT stage_key FROM research_stages WHERE research_run_id = ${runId}
+        AND stage_key IN ('export', 'refresh_schedule') AND status = 'completed'
+    `;
+    if (terminalStages.length !== 2) errors.push("Export and refresh scheduling must complete before the run");
+    const refresh = await sql`
+      SELECT id FROM research_artifacts WHERE research_run_id = ${runId}
+        AND artifact_type = 'refresh_schedule' AND status IN ('validated', 'accepted') LIMIT 1
+    `;
+    if (!refresh.length) errors.push("No validated refresh schedule exists for this run");
+
     return {
       valid: errors.length === 0,
       errors,
@@ -828,6 +757,7 @@ export async function validatePointInTime(
         SELECT id, metric_definition_id, available_at, as_of_date
         FROM metric_observations
         WHERE research_run_id = ${runId}
+          AND review_status != 'rejected'
           AND available_at IS NOT NULL
           AND available_at > ${run.market_data_cutoff_at}
       `;
@@ -916,163 +846,28 @@ export async function validatePointInTime(
 // missing artifacts fail closed.
 // ============================================================
 
-import {
-  validateGenesisArtifact,
-  validateFounderProfile,
-  validateStrategicHistoryTimeline,
-  validateStrategicDNA,
-} from "@/lib/research/genesis/validation";
-import { validateHistoricalDiagnosis } from "@/lib/research/diagnosis/contracts";
-import {
-  validateSegmentModel,
-  validateCustomerDecisionMap,
-  validateBusinessProcessMap,
-  validateBottleneckRegister,
-  validateCompetitiveResponseMatrix,
-} from "@/lib/research/business/validation";
-import {
-  validateMoatAssessment,
-  validateMoatAttackMatrix,
-  validateNoMoatCounterfactual,
-} from "@/lib/research/moat/validation";
-import {
-  validateDriverTree,
-  validateOperatingModel,
-  validateOperatingScenarioSet,
-} from "@/lib/research/forecast/validation";
-import {
-  validateInvestmentThesis,
-  validateRiskRegister,
-  validateCatalystRegister,
-  validateThesisBreakers,
-  validateMonitoringDashboard,
-  validateExpectedReturnMatrix,
-} from "@/lib/research/decision/validation";
-import {
-  validateValuationScenarioSet,
-  validateReverseValuation,
-} from "@/lib/research/valuation/validation";
-
-type ModuleValidation = { valid: boolean; errors: string[]; warnings: string[] };
-type ArtifactRequirement = {
-  artifactType: string;
-  label: string;
-  validate?: (content: unknown) => ModuleValidation;
-};
-
-async function validateV3ArtifactSet(
-  runId: string,
-  requirements: ArtifactRequirement[]
-): Promise<ValidationResult> {
-  const sql = postgres(process.env.DATABASE_URL!);
+export async function validateStageArtifacts(runId: string, stageKey: string): Promise<ValidationResult> {
+  const contract = getStageOutputContract(stageKey);
   const errors: string[] = [];
   const warnings: string[] = [];
-
+  if (!contract) return { valid: false, errors: [`Unknown artifact stage: ${stageKey}`], warnings, checkedAt: new Date().toISOString() };
+  const sql = postgres(process.env.DATABASE_URL!);
   try {
     const rows = await sql`
-      SELECT artifact_type, scope_key, content_json
-      FROM research_artifacts
-      WHERE research_run_id = ${runId}
-        AND status IN ('validated', 'accepted')
+      SELECT artifact_type, content_json FROM research_artifacts
+      WHERE research_run_id = ${runId} AND status IN ('validated', 'accepted')
+        AND artifact_type = ANY(${contract.requiredKeys}::text[])
     `;
-    const byType = new Map<string, Record<string, unknown>[]>();
-    for (const row of rows) {
-      const list = byType.get(String(row.artifact_type)) || [];
-      list.push(row.content_json as Record<string, unknown>);
-      byType.set(String(row.artifact_type), list);
-    }
-
-    for (const requirement of requirements) {
-      const artifacts = byType.get(requirement.artifactType) || [];
-      if (artifacts.length === 0) {
-        errors.push(`Missing accepted v3 artifact: ${requirement.label} (${requirement.artifactType})`);
-        continue;
-      }
-      if (requirement.validate) {
-        for (const content of artifacts) {
-          const result = requirement.validate(content);
-          if (!result.valid) {
-            errors.push(
-              ...result.errors.map((error) => `${requirement.label}: ${error}`)
-            );
-          }
-          warnings.push(...result.warnings.map((warning) => `${requirement.label}: ${warning}`));
-        }
+    for (const key of contract.requiredKeys) {
+      const artifacts = rows.filter((row) => row.artifact_type === key);
+      if (!artifacts.length) errors.push(`Missing validated artifact: ${key}`);
+      for (const artifact of artifacts) {
+        const validation = validateArtifactContent(key, artifact.content_json);
+        errors.push(...validation.errors.map((error) => `${key}: ${error}`));
+        warnings.push(...validation.warnings);
       }
     }
 
-    return {
-      valid: errors.length === 0,
-      errors,
-      warnings,
-      checkedAt: new Date().toISOString(),
-    };
-  } finally {
-    await sql.end();
-  }
-}
-
-export async function validateV3Genesis(runId: string): Promise<ValidationResult> {
-  return validateV3ArtifactSet(runId, [
-    { artifactType: "company_genesis", label: "Company genesis", validate: validateGenesisArtifact },
-    { artifactType: "founder_profile", label: "Founder profile", validate: validateFounderProfile },
-    { artifactType: "strategic_history_timeline", label: "Strategic history timeline", validate: validateStrategicHistoryTimeline },
-    { artifactType: "strategic_dna", label: "Strategic DNA", validate: validateStrategicDNA },
-  ]);
-}
-
-export async function validateV3Diagnosis(runId: string): Promise<ValidationResult> {
-  return validateV3ArtifactSet(runId, [
-    { artifactType: "historical_diagnosis", label: "Historical diagnosis", validate: validateHistoricalDiagnosis },
-  ]);
-}
-
-export async function validateV3BusinessProcess(runId: string): Promise<ValidationResult> {
-  return validateV3ArtifactSet(runId, [
-    { artifactType: "segment_model", label: "Segment model", validate: validateSegmentModel },
-    { artifactType: "customer_decision_map", label: "Customer decision map", validate: validateCustomerDecisionMap },
-    { artifactType: "business_process_map", label: "Business process map", validate: validateBusinessProcessMap },
-    { artifactType: "bottleneck_register", label: "Bottleneck register", validate: validateBottleneckRegister },
-    { artifactType: "competitive_response_matrix", label: "Competitive response matrix", validate: validateCompetitiveResponseMatrix },
-  ]);
-}
-
-export async function validateV3Moat(runId: string): Promise<ValidationResult> {
-  return validateV3ArtifactSet(runId, [
-    { artifactType: "moat_assessment", label: "Moat assessment", validate: validateMoatAssessment },
-    { artifactType: "moat_attack_matrix", label: "Moat attack matrix", validate: validateMoatAttackMatrix },
-    { artifactType: "no_moat_counterfactual", label: "No-moat counterfactual", validate: validateNoMoatCounterfactual },
-  ]);
-}
-
-export async function validateV3OperatingModel(runId: string): Promise<ValidationResult> {
-  return validateV3ArtifactSet(runId, [
-    { artifactType: "driver_tree", label: "Driver tree", validate: validateDriverTree },
-    { artifactType: "operating_model", label: "Operating model", validate: validateOperatingModel },
-  ]);
-}
-
-export async function validateV3OperatingScenarios(runId: string): Promise<ValidationResult> {
-  return validateV3ArtifactSet(runId, [
-    { artifactType: "operating_scenario_set", label: "Operating scenario set", validate: validateOperatingScenarioSet },
-  ]);
-}
-
-export async function validateV3Valuation(runId: string): Promise<ValidationResult> {
-  return validateV3ArtifactSet(runId, [
-    { artifactType: "valuation_scenario_set", label: "Valuation scenario set", validate: validateValuationScenarioSet },
-    { artifactType: "reverse_valuation", label: "Reverse valuation", validate: validateReverseValuation },
-    { artifactType: "annual_price_target_path", label: "Annual price target path" },
-  ]);
-}
-
-export async function validateV3Decision(runId: string): Promise<ValidationResult> {
-  return validateV3ArtifactSet(runId, [
-    { artifactType: "investment_thesis", label: "Investment thesis", validate: validateInvestmentThesis },
-    { artifactType: "risk_register", label: "Risk register", validate: validateRiskRegister },
-    { artifactType: "catalyst_register", label: "Catalyst register", validate: validateCatalystRegister },
-    { artifactType: "thesis_breakers", label: "Thesis breakers", validate: validateThesisBreakers },
-    { artifactType: "monitoring_dashboard", label: "Monitoring dashboard", validate: validateMonitoringDashboard },
-    { artifactType: "expected_return_matrix", label: "Expected return matrix", validate: validateExpectedReturnMatrix },
-  ]);
+    return { valid: errors.length === 0, errors, warnings, checkedAt: new Date().toISOString() };
+  } finally { await sql.end(); }
 }

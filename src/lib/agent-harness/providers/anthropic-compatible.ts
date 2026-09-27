@@ -5,6 +5,7 @@ export interface AnthropicProviderOptions {
   baseUrl: string;
   apiKey: string;
   allowedHosts: string[];
+  headers?: Record<string, string>;
 }
 
 function validateBaseUrl(baseUrl: string, allowedHosts: string[]) {
@@ -40,6 +41,7 @@ export class AnthropicCompatibleProvider implements ModelProvider {
           "Content-Type": "application/json",
           "x-api-key": this.options.apiKey,
           "anthropic-version": "2023-06-01",
+          ...this.options.headers,
         },
         body: JSON.stringify({
           model: request.model,
@@ -49,13 +51,6 @@ export class AnthropicCompatibleProvider implements ModelProvider {
           max_tokens: request.maxTokens || Number(process.env.RESEARCH_ANTHROPIC_PROTOCOL_MAX_TOKENS || 65_536),
           temperature: request.temperature ?? 0.2,
           stream: true,
-          ...(request.tools?.length ? {
-            tools: request.tools.map((tool: any) => ({
-              name: tool.function?.name,
-              description: tool.function?.description,
-              input_schema: tool.function?.parameters,
-            })),
-          } : {}),
         }),
         signal,
         redirect: "error",

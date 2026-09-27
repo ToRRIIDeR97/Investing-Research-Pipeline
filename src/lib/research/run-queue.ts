@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { CURRENT_PIPELINE_VERSION } from "./version";
+import { resumeResearchRun } from "@/lib/workflow/orchestrator";
 
 export const RESEARCH_RUN_JOB_TYPE = "pipeline" as const;
 export const DEFAULT_RESEARCH_RUN_LEASE_MS = 5 * 60 * 1000;
@@ -65,6 +66,7 @@ export async function enqueueResearchRun(
   requestedBy = "user",
   options: { maxAttempts?: number } = {}
 ): Promise<ResearchRunJob> {
+  await resumeResearchRun(runId);
   const sql = database();
   try {
     const result = await sql.begin(async (tx) => {

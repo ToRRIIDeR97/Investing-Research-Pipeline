@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { STAGE_OUTPUT_CONTRACTS } from "@/lib/research/stage-contracts";
 import { canonicalResearchKey, contractForProfile, sourceFamiliesPresent } from "@/lib/research/v2-contracts";
 
 type Row = Record<string, any>;
@@ -39,6 +40,7 @@ interface RunQualityData {
   profile?: Row;
   stages: Row[];
   tasks: Row[];
+  artifacts?: Row[];
   sources: Row[];
   evidence: Row[];
   metrics: Row[];
@@ -297,11 +299,9 @@ export function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQua
     (item) => item.requiredForCompletion && ["high", "critical"].includes(item.severity)
   );
   const hasFailures = errors.length > 0 || blockingMissingCoverage.length > 0;
-  const status: ResearchQualityGateResult["status"] = hasFailures
+  const status: ResearchQualityGateResult["status"] = hasFailures || missingCoverage.length > 0
     ? "needs_more_work"
-    : warnings.length > 0 || missingCoverage.length > 0
-      ? "needs_more_work"
-      : "pass";
+    : "pass";
   const actionReadiness = actionReadinessFor(data, threshold, status);
 
   return {
@@ -352,6 +352,7 @@ async function loadRunQualityData(
     backtests,
     backtestArtifacts,
     unlinkedFactClaims,
+    artifacts,
   ] = await Promise.all([
     sql`SELECT * FROM research_stages WHERE research_run_id = ${runId} ORDER BY stage_order`,
     sql`SELECT * FROM research_tasks WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
@@ -389,6 +390,7 @@ async function loadRunQualityData(
         AND ec.review_status != 'rejected'
         AND el.id IS NULL
     `,
+    sql`SELECT artifact_type, status, content_json FROM research_artifacts WHERE research_run_id = ${runId}`,
   ]);
 
   return {
@@ -410,82 +412,24 @@ async function loadRunQualityData(
     combinations,
     backtests,
     backtestArtifacts,
+    artifacts,
     unlinkedFactClaimCount: Number(unlinkedFactClaims[0]?.cnt || 0),
   };
 }
 
-function addV3ArtifactCoverage(
-  data: RunQualityData,
-  errors: string[],
-  missingCoverage: MissingCoverageItem[]
-) {
-  if (Number(data.run.pipeline_version || 1) < 3) return;
-
-  const addMissing = (key: string, area: string, description: string) => {
-    errors.push(description);
-    missingCoverage.push({ key, area, description, severity: "high", requiredForCompletion: true });
-  };
-
-  const runType = data.run.run_type;
-  const isFullOrDeep = ["deep_dive", "full_initiation_report"].includes(runType);
-
-  if (!isFullOrDeep) return;
-
-  // 1. Genesis Check
-  const hasGenesis = data.tasks.some(
-    (t) => t.status === "completed" && (t.task_key === "genesis-researcher:meli-genesis" || t.task_type === "company_genesis")
-  );
-  if (!hasGenesis) {
-    addMissing("v3_genesis", "company genesis", "Required v3 Company Genesis artifact is missing or incomplete.");
-  }
-
-  // 2. Historical Diagnosis Check
-  const hasDiagnosis = data.tasks.some(
-    (t) => t.status === "completed" && (t.task_key === "historical-diagnostician:diagnosis" || t.task_type === "historical_diagnosis")
-  );
-  if (!hasDiagnosis) {
-    addMissing("v3_diagnosis", "historical diagnosis", "Required v3 Historical Diagnosis artifact is missing or incomplete.");
-  }
-
-  // 3. Business Process Analysis Check
-  const hasProcessMap = data.tasks.some(
-    (t) => t.status === "completed" && (t.task_key === "business-model-analyst:process-map" || t.task_type === "business_process_analysis")
-  );
-  if (!hasProcessMap) {
-    addMissing("v3_process_map", "business process map", "Required v3 Business Process Map is missing or incomplete.");
-  }
-
-  // 4. Moat Analysis Check
-  const hasMoat = data.tasks.some(
-    (t) => t.status === "completed" && (t.task_key === "moat-analyst:assessment" || t.task_type === "moat_analysis")
-  );
-  if (!hasMoat) {
-    addMissing("v3_moat", "moat analysis", "Required v3 Moat Assessment is missing or incomplete.");
-  }
-
-  // 5. Operating Model Check
-  const hasOperatingModel = data.tasks.some(
-    (t) => t.status === "completed" && (t.task_key === "forecast-analyst:operating-model" || t.task_type === "operating_model")
-  );
-  if (!hasOperatingModel) {
-    addMissing("v3_operating_model", "operating model", "Required v3 Operating Model is missing or incomplete.");
-  }
-
-  // 6. Operating Scenarios Check
-  const hasScenarios = data.tasks.some(
-    (t) => t.status === "completed" && (t.task_key === "forecast-analyst:scenarios" || t.task_type === "operating_scenarios")
-  );
-  if (!hasScenarios) {
-    addMissing("v3_operating_scenarios", "operating scenarios", "Required v3 Operating Scenario Set is missing or incomplete.");
-  }
-
-  // 7. Decision Synthesis Check (only for full_initiation_report)
-  if (runType === "full_initiation_report") {
-    const hasThesis = data.tasks.some(
-      (t) => t.status === "completed" && (t.task_key === "decision-synthesizer:thesis" || t.task_type === "decision_synthesis")
-    );
-    if (!hasThesis) {
-      addMissing("v3_decision_synthesis", "decision synthesis", "Required v3 Decision Synthesis (Thesis/Risks/Expected Return) is missing or incomplete.");
+function addV3ArtifactCoverage(data: RunQualityData, errors: string[], missingCoverage: MissingCoverageItem[]) {
+  if (!["deep_dive", "full_initiation_report"].includes(data.run.run_type)) return;
+  const available = new Set((data.artifacts || [])
+    .filter((artifact) => ["validated", "accepted"].includes(artifact.status))
+    .map((artifact) => artifact.artifact_type));
+  for (const [stage, contract] of Object.entries(STAGE_OUTPUT_CONTRACTS)) {
+    if (stage === "ai_reviewer") continue;
+    for (const key of contract.requiredKeys) {
+      if (available.has(key)) continue;
+      const label = key.split("_").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ");
+      const description = `Required v3 ${label} artifact is missing or incomplete.`;
+      errors.push(description);
+      missingCoverage.push({ key: `v3_${key}`, area: key, description, severity: "high", requiredForCompletion: true });
     }
   }
 }
@@ -592,7 +536,9 @@ function addAnalysisCoverage(
     return;
   }
 
-  const taskText = data.tasks
+  const taskText = (Number(data.run.pipeline_version || 1) >= 3
+    ? (data.artifacts || []).filter((artifact) => ["validated", "accepted"].includes(artifact.status)).map((artifact): Row => ({ task_type: artifact.artifact_type, output_json: artifact.content_json, status: "completed" }))
+    : data.tasks)
     .filter((task) => task.status === "completed")
     .map((task) =>
       [
@@ -720,11 +666,23 @@ function addAiReviewCoverage(
   }
 
   const output = normalizeReviewOutput(reviewTask.output_json);
-  const passFail = String(output.pass_fail || output.passFail || output.status || "").toLowerCase();
+  const passFail = String(output.pass_fail || output.passFail || output.status || output.review_verdict || "").toLowerCase();
 
   if (!passFail) {
-    warnings.push("AI review output has no parsed pass_fail/status field.");
+    const description = "AI review output has no parsed verdict.";
+    errors.push(description);
+    missingCoverage.push({
+      key: "ai_review_outcome",
+      severity: "high",
+      area: "AI review",
+      description,
+      requiredForCompletion: true,
+    });
     return;
+  }
+
+  if (passFail === "conditional_pass") {
+    warnings.push("AI review outcome is conditional_pass.");
   }
 
   if (passFail === "needs_more_work" || passFail === "fail" || passFail === "failed") {
@@ -791,6 +749,10 @@ function actionReadinessFor(
 
   const decision = String(data.reviewDecisions[0]?.status || "").toLowerCase();
   const baseReadiness = (decision === "approved_for_tracking" || decision === "watchlist") ? "review_ready" : "investment_ready";
+  const reviewTask = data.tasks.find((task) => task.task_type === "ai_review" && task.status === "completed");
+  const reviewOutput = normalizeReviewOutput(reviewTask?.output_json);
+  const reviewVerdict = String(reviewOutput.pass_fail || reviewOutput.passFail || reviewOutput.status || reviewOutput.review_verdict || "").toLowerCase();
+  if (reviewVerdict === "conditional_pass" && baseReadiness === "investment_ready") return "review_ready";
 
   const metadata = typeof data.run.metadata_json === "string"
     ? JSON.parse(data.run.metadata_json)
@@ -874,7 +836,8 @@ export function evaluateQualityGates(data: Partial<RunQualityData> & Record<stri
     scenarios: (data.scenarios ?? []) as Row[],
     sourceGaps: (data.sourceGaps ?? []) as Row[],
     reviewDecisions: (data.reviewDecisions ?? []) as Row[],
-    analysisSections: (data.analysisSections ?? data.artifacts ?? []) as Row[],
+    analysisSections: (data.analysisSections ?? []) as Row[],
+    artifacts: (data.artifacts ?? []) as Row[],
     valuationModels: (data.valuationModels ?? []) as Row[],
     indicators: (data.indicators ?? []) as Row[],
     combinations: (data.combinations ?? []) as Row[],

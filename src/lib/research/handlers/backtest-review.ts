@@ -90,6 +90,7 @@ export const backtestReviewHandler: StageHandler<Record<string, unknown>> = {
         && fiveBucketMixComplete
         && everyRunHasControls;
       const review = {
+        artifact_type: "backtest_review",
         framework_gate: {
           minimum_combinations: MINIMUM_COMBINATION_COUNT,
           combinations_tested: ranked.length,

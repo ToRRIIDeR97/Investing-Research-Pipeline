@@ -8,6 +8,7 @@ export interface ProviderOptions {
   baseUrl: string;
   apiKey?: string;
   allowedHosts?: string[];
+  headers?: Record<string, string>;
 }
 
 function privateOrLoopback(host: string) {
@@ -24,11 +25,13 @@ export class OpenAICompatibleProvider implements ModelProvider {
   readonly id: string;
   private readonly baseUrl: string;
   private readonly apiKey: string;
+  private readonly extraHeaders: Record<string, string>;
 
   constructor(options: ProviderOptions) {
     this.id = options.mode === "local" ? "local-openai-compatible" : "direct-openai-compatible";
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.apiKey = options.apiKey || "";
+    this.extraHeaders = options.headers || {};
     const url = this.validateUrl(options);
     if (options.mode === "direct" && !this.apiKey) {
       throw new ProviderError("Direct provider requires RESEARCH_MODEL_API_KEY", "invalid_request");
@@ -68,7 +71,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   private headers() {
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    const headers: Record<string, string> = { "Content-Type": "application/json", ...this.extraHeaders };
     if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
     return headers;
   }
@@ -97,7 +100,6 @@ export class OpenAICompatibleProvider implements ModelProvider {
           stream_options: { include_usage: true },
           ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
           ...(request.maxTokens !== undefined ? { max_tokens: request.maxTokens } : {}),
-          ...(request.tools?.length ? { tools: request.tools } : {}),
         }),
         signal,
         redirect: "error",

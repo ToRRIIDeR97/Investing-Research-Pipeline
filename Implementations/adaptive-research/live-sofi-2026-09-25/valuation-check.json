@@ -1,0 +1,7 @@
+{
+  "passed": true,
+  "projections_checked": 5,
+  "targets_checked": 15,
+  "reported_minimum_raw_shares": 1351990000,
+  "description": "Compared persisted forecasts against the actual live output, checking raw/million units, reported-share floor, and target scaling."
+}

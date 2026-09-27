@@ -1,0 +1,24 @@
+{
+  "checked_at": "2026-09-25T05:01:28.713Z",
+  "run_id": "d2ea550f-7068-4706-9a62-abc89b4ceb9f",
+  "status": "passed",
+  "all_six_roles_completed_on_requested_model": true,
+  "logged_harness_attempts": 32,
+  "logged_provider_requests": 40,
+  "costs_reconcile": true,
+  "report_and_source_hashes_match": true,
+  "local_credential_values_absent": true,
+  "types": "passed",
+  "unit": {
+    "passed": 190,
+    "failed": 0,
+    "skipped": 3
+  },
+  "targeted_database": {
+    "passed": 23,
+    "failed": 0,
+    "skipped": 0
+  },
+  "whitespace": "passed",
+  "limitations": "Local telemetry and hashes establish reproducibility; this is not independent provider billing verification or independent financial fact checking."
+}

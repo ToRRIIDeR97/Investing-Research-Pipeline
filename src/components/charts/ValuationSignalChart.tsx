@@ -25,9 +25,9 @@ interface ValuationSignalChartProps {
 
 const SIGNAL_COLORS: Record<string, string> = {
   very_cheap: "#065f46",
-  cheap: "#059669",
+  cheap: "#469172",
   neutral: "#6b7280",
-  expensive: "#dc2626",
+  expensive: "#bf5549",
   very_expensive: "#991b1b",
   inconclusive: "#d1d5db",
   not_applicable: "#e5e7eb",
@@ -44,33 +44,7 @@ const SIGNAL_LABELS: Record<string, string> = {
 };
 
 export function ValuationSignalChart({ data }: ValuationSignalChartProps) {
-  if (!data || data.length === 0) {
-    return (
-      <div className="flex h-[220px] items-center justify-center rounded-xl border border-gray-100 bg-[#fbfcfd]">
-        <div className="text-center">
-          <svg
-            className="w-6 h-6 mx-auto mb-2 text-gray-300"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="1.5"
-              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z"
-            />
-          </svg>
-          <p className="text-[11px] text-gray-400 font-medium">
-            No valuation signals yet
-          </p>
-          <p className="text-[10px] text-gray-300 mt-0.5">
-            Complete a research run to generate signals
-          </p>
-        </div>
-      </div>
-    );
-  }
+  if (!data || data.length === 0) return <p className="py-8 text-sm text-[#626b78]">No valuation signals yet.</p>;
 
   // Sort by cheapness_score descending (cheapest first)
   const chartData = data
@@ -88,15 +62,7 @@ export function ValuationSignalChart({ data }: ValuationSignalChartProps) {
     }))
     .sort((a, b) => b.score - a.score);
 
-  if (chartData.length === 0) {
-    return (
-      <div className="flex h-[220px] items-center justify-center rounded-xl border border-gray-100 bg-[#fbfcfd]">
-        <p className="text-[11px] text-gray-400 font-medium">
-          All signals marked N/A
-        </p>
-      </div>
-    );
-  }
+  if (chartData.length === 0) return <p className="py-8 text-sm text-[#626b78]">No applicable valuation signals.</p>;
 
   const barHeight = Math.max(28, Math.min(40, 220 / chartData.length));
 
@@ -117,7 +83,7 @@ export function ValuationSignalChart({ data }: ValuationSignalChartProps) {
           <XAxis
             type="number"
             domain={[0, 100]}
-            tick={{ fontSize: 10, fill: "#9ca3af" }}
+            tick={{ fontSize: 12, fill: "#626b78" }}
             tickLine={false}
             axisLine={{ stroke: "#e5e7eb" }}
             tickFormatter={(v) => `${v}`}
@@ -126,14 +92,14 @@ export function ValuationSignalChart({ data }: ValuationSignalChartProps) {
             type="category"
             dataKey="name"
             width={100}
-            tick={{ fontSize: 10, fill: "#6b7280" }}
+            tick={{ fontSize: 12, fill: "#6b7280" }}
             tickLine={false}
             axisLine={false}
           />
           <Tooltip
             cursor={{ fill: "rgba(0,0,0,0.02)" }}
             contentStyle={{
-              fontSize: 11,
+              fontSize: 12,
               fontFamily: "inherit",
               borderRadius: 8,
               border: "1px solid #e5e7eb",
@@ -153,7 +119,7 @@ export function ValuationSignalChart({ data }: ValuationSignalChartProps) {
                       Value: {d.value.toLocaleString()}
                     </div>
                   )}
-                  <div className="text-gray-400 text-[10px]">{d.lens}</div>
+                  <div className="text-gray-400 text-xs">{d.lens}</div>
                 </div>,
                 "",
               ];

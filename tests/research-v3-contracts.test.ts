@@ -1,8 +1,17 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import { createProfile, validateArchetypes, isBacktestApplicable } from "@/lib/research/pipeline-contracts";
+import { BUSINESS_PROCESS_CONTRACT } from "@/lib/research/stage-contracts";
 
 describe("research v3 contracts", () => {
+  it("business process contract exposes conditional lender and marketplace fields", () => {
+    const schema = BUSINESS_PROCESS_CONTRACT.schema as any;
+    const segment = schema.properties.segment_model.properties.segments.items;
+    assert.ok(segment.properties.lender_details.properties.funding_cost);
+    assert.ok(segment.properties.lender_details.properties.credit_losses);
+    assert.ok(segment.properties.marketplace_details.properties.take_rate);
+    assert.ok(!segment.required.includes("lender_details"));
+  });
   it("C2-T1: Compose MELI archetypes", () => {
     const result = createProfile("meli-test", {
       asset_id: "meli",
@@ -47,6 +56,17 @@ describe("research v3 contracts", () => {
     assert.ok(!metrics.includes("loan_portfolio"));
     assert.ok(!metrics.includes("gmv"));
     assert.ok(metrics.includes("orders_and_backlog"));
+  });
+
+  it("composes a bank with lending and platform businesses", () => {
+    const result = createProfile("sofi", {
+      asset_id: "sofi",
+      archetypes: ["bank", "lender", "marketplace", "payments_network"],
+      overlays: [],
+    });
+    assert.ok(result.valid);
+    assert.ok(result.composed.source_roles.length > 0);
+    assert.ok(result.composed.valuation_methods.some((method) => method.method === "nav" && method.required));
   });
 
   it("C2-T3: Compose conflicting valuation rules", () => {

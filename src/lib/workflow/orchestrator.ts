@@ -1,4 +1,10 @@
 import postgres from "postgres";
+import { getReportState, loadReportInputs } from "@/lib/research/reporting/store";
+import { assertReportApproval } from "@/lib/research/reporting/report";
+import type { Sql } from "@/lib/research/run-context";
+import { CURRENT_PIPELINE_VERSION } from "@/lib/research/version";
+import { readyStages } from "@/lib/research/team-plan";
+import { getStageOutputContract } from "@/lib/research/stage-contracts";
 import { STAGE_CONFIGS, STAGE_CONFIG_MAP, getAllStagesForRun, getApplicableStages, getStageConfig } from "./stages";
 import { evaluateResearchQuality } from "./quality-gates";
 import {
@@ -12,14 +18,6 @@ import {
   validateValuationDepth,
   validateReviewOutcome,
   validateHumanReviewOutcome,
-  validateV3Genesis,
-  validateV3Diagnosis,
-  validateV3BusinessProcess,
-  validateV3Moat,
-  validateV3OperatingModel,
-  validateV3OperatingScenarios,
-  validateV3Valuation,
-  validateV3Decision,
   ValidationResult,
 } from "./validators";
 
@@ -188,7 +186,9 @@ export async function startRun(runId: string): Promise<void> {
  * §26.1: orchestrator should decide to continue, retry, escalate, pause, or fail.
  */
 export async function advanceStage(
-  runId: string
+  runId: string,
+  handlerValidation?: ValidationResult,
+  options: { stageKey?: string; deferNext?: boolean } = {}
 ): Promise<{ success: boolean; nextStage?: string; action?: string; error?: string }> {
   const sql = postgres(process.env.DATABASE_URL!);
 
@@ -199,6 +199,7 @@ export async function advanceStage(
       FROM research_stages
       WHERE research_run_id = ${runId}
         AND status = 'running'
+        AND (${options.stageKey || null}::text IS NULL OR stage_key = ${options.stageKey || null})
       ORDER BY stage_order ASC
       LIMIT 1
     `;
@@ -235,21 +236,19 @@ export async function advanceStage(
                 updated_at = NOW()
             WHERE id = ${currentStage.id}
           `;
-          const next = await startNextStage(runId);
+          const next = options.deferNext ? undefined : await startNextStage(runId);
           return { success: true, nextStage: next, action: "skip_and_continue" };
         }
       }
     }
 
     // Validate stage completion
-    // Acceptance tests may skip content validation with SKIP_V3_CONTENT_VALIDATORS=true
-    const skipContentValidation = process.env.SKIP_V3_CONTENT_VALIDATORS === "true";
 
-    let validation: ValidationResult = { valid: true, errors: [], warnings: [], checkedAt: new Date().toISOString() };
-    if (!skipContentValidation) {
+    let validation: ValidationResult = handlerValidation || { valid: true, errors: [], warnings: [], checkedAt: new Date().toISOString() };
+    if (validation.valid) {
       validation = await validateStageCompletion(runId, currentStage.stage_key);
     }
-    if (!skipContentValidation && validation.valid && config?.validationRules && config.validationRules.length > 0) {
+    if (validation.valid && config?.validationRules && config.validationRules.length > 0) {
       for (const rule of config.validationRules) {
         let ruleResult: ValidationResult;
         switch (rule) {
@@ -276,30 +275,6 @@ export async function advanceStage(
             break;
           case "point_in_time_validation":
             ruleResult = await validatePointInTime(runId);
-            break;
-          case "genesis_validation":
-            ruleResult = await validateV3Genesis(runId);
-            break;
-          case "diagnosis_validation":
-            ruleResult = await validateV3Diagnosis(runId);
-            break;
-          case "business_process_validation":
-            ruleResult = await validateV3BusinessProcess(runId);
-            break;
-          case "moat_validation":
-            ruleResult = await validateV3Moat(runId);
-            break;
-          case "operating_model_validation":
-            ruleResult = await validateV3OperatingModel(runId);
-            break;
-          case "operating_scenario_validation":
-            ruleResult = await validateV3OperatingScenarios(runId);
-            break;
-          case "valuation_path_validation":
-            ruleResult = await validateV3Valuation(runId);
-            break;
-          case "decision_validation":
-            ruleResult = await validateV3Decision(runId);
             break;
           default:
             ruleResult = {
@@ -331,8 +306,17 @@ export async function advanceStage(
           ? JSON.parse(currentStage.validation_result_json)
           : currentStage.validation_result_json;
       const retryCount = Number(previousValidation?.retryCount ?? 0);
-      const maxRetries = currentStage.max_retries || 2;
+      const maxRetries = currentStage.max_retries ?? 2;
 
+      // Completed requests from an invalid stage must not bypass its next attempt.
+      await sql`UPDATE research_tasks SET validation_status = 'invalid', updated_at = NOW()
+        WHERE stage_id = ${currentStage.id} AND status = 'completed'`;
+      const artifactTypes = getStageOutputContract(currentStage.stage_key)?.requiredKeys || [];
+      if (artifactTypes.length) await sql`
+        UPDATE research_artifacts SET status = 'needs_more_work', updated_at = NOW()
+        WHERE research_run_id = ${runId} AND artifact_type = ANY(${artifactTypes}::text[])
+          AND status = 'validated'
+      `;
       if (retryCount < maxRetries) {
         const retryValidation = {
           ...validation,
@@ -373,9 +357,14 @@ export async function advanceStage(
               updated_at = NOW()
           WHERE id = ${currentStage.id}
         `;
-        const next = await startNextStage(runId);
+        const next = options.deferNext ? undefined : await startNextStage(runId);
         return { success: true, nextStage: next, action: "skip_and_continue" };
       }
+    }
+
+    if (config?.requiresHumanApproval) {
+      await pauseForHumanReview(runId, `Stage ${currentStage.stage_key} requires human approval`);
+      return { success: true, action: "pause_for_human" };
     }
 
     // Validation passed — mark stage completed
@@ -389,7 +378,7 @@ export async function advanceStage(
     `;
 
     // Start next stage
-    const next = await startNextStage(runId);
+    const next = options.deferNext ? undefined : await startNextStage(runId);
     return { success: true, nextStage: next, action: "continue" };
   } finally {
     await sql.end();
@@ -423,6 +412,11 @@ export async function approveResearchPlan(
         if (stages[0].status === "completed") return { success: true as const };
         return { success: false as const, error: `Research plan is not waiting for approval (status: ${stages[0].status})` };
       }
+      const [plan] = await tx`
+        SELECT id FROM research_artifacts WHERE research_run_id = ${runId}
+          AND artifact_type = 'research_plan' AND status IN ('validated', 'accepted') LIMIT 1
+      `;
+      if (!plan) return { success: false as const, error: "A persisted research plan is required before approval" };
       await tx`
         UPDATE research_stages
         SET status = 'completed', completed_at = NOW(),
@@ -468,6 +462,7 @@ export async function approveHumanReview(
       checkedAt: new Date().toISOString(),
     };
     const transition = await sql.begin(async (tx) => {
+      await tx`SELECT id FROM research_runs WHERE id = ${runId} FOR UPDATE`;
       const stages = await tx`
         SELECT id, status FROM research_stages
         WHERE research_run_id = ${runId} AND stage_key = 'human_review'
@@ -484,6 +479,13 @@ export async function approveHumanReview(
       `;
       if (!decisions[0] || !isApprovedHumanDecision(decisions[0].status)) {
         return { success: false as const, error: "A persisted approved human review decision is required before approving the human-review stage" };
+      }
+      const report = await getReportState(tx as unknown as Sql, runId);
+      if (report.required) {
+        if (!report.document || report.approval?.decision_id !== decisions[0].id) return { success: false as const, error: "Approval of the current report version is required" };
+        const inputs = await loadReportInputs(tx as unknown as Sql, runId, report.cutoff);
+        try { assertReportApproval(report.document, report.approval, inputs.input_hash); }
+        catch (error) { return { success: false as const, error: String(error) }; }
       }
       await tx`
         UPDATE research_stages
@@ -551,12 +553,32 @@ export async function requestResearchPlanChanges(
 /**
  * Helper: start the next pending stage. Returns the stage key or undefined.
  */
-async function startNextStage(
+export async function startNextStage(
   runId: string
 ): Promise<string | undefined> {
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
+    const [runState] = await sql`SELECT status FROM research_runs WHERE id = ${runId}`;
+    if (!runState || runState.status !== "running") return undefined;
+    const failures = await sql`
+      SELECT stage_key, failure_reason FROM research_stages
+      WHERE research_run_id = ${runId} AND status = 'failed'
+    `;
+    const requiredFailure = failures.find((stage) =>
+      getStageConfig(stage.stage_key)?.failureState === "fail_run" ||
+      !String(stage.failure_reason).startsWith("Failed after")
+    );
+    if (requiredFailure) {
+      await failRun(runId, `Run contains a failed stage (${requiredFailure.stage_key}): ${requiredFailure.failure_reason}`, "needs_more_work");
+      return undefined;
+    }
+    const [active] = await sql`
+      SELECT stage_key FROM research_stages
+      WHERE research_run_id = ${runId} AND status IN ('running', 'waiting_for_human')
+      ORDER BY stage_order LIMIT 1
+    `;
+    if (active) return active.stage_key;
     const nextStages = await sql`
       SELECT id, stage_key
       FROM research_stages
@@ -566,52 +588,15 @@ async function startNextStage(
       LIMIT 1
     `;
     if (nextStages.length === 0) {
-      // Acceptance test mode skips quality gate evaluation (mock data lacks real sources/evidence)
-      const skipQualityGate = process.env.SKIP_V3_CONTENT_VALIDATORS === "true"
-        || process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock";
-      const quality = skipQualityGate
-        ? { status: "pass" as const, coverage: [], gaps: [] }
-        : await evaluateResearchQuality(runId);
-      // No more pending stages — check if any stages failed
-      // §25.3: If required validators failed, status should be needs_more_work
-      const failedStages = await sql`
-        SELECT stage_key, failure_reason
-        FROM research_stages
-        WHERE research_run_id = ${runId}
-          AND status = 'failed'
-      `;
-
-      if (failedStages.length > 0 || quality.status !== "pass") {
-        // Some stages failed — mark run as needs_more_work
-        const failedKeys = failedStages.map((s) => s.stage_key);
-        await sql`
-          UPDATE research_runs
-          SET status = 'needs_more_work',
-              completed_at = NOW(),
-              updated_at = NOW(),
-              metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
-                failed_stages: failedKeys,
-                failure_summary: failedStages.map((s) => `${s.stage_key}: ${s.failure_reason}`),
-                quality_gate: quality as any,
-              })}
-          WHERE id = ${runId}
-        `;
-      } else {
-        await sql`
-          UPDATE research_runs
-          SET status = 'completed',
-              completed_at = COALESCE(completed_at, NOW()),
-              metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
-                quality_gate: quality as any,
-              })},
-              updated_at = NOW()
-          WHERE id = ${runId}
-        `;
-      }
-      return undefined; // No more stages
+      await completeRun(runId);
+      return undefined;
     }
 
-    const nextStage = nextStages[0];
+    const ledger = await sql`SELECT stage_key, status FROM research_stages WHERE research_run_id = ${runId} ORDER BY stage_order`;
+    const ready = readyStages(ledger.map(s => ({ stage_key: String(s.stage_key), status: String(s.status) })));
+    if (!ready.length) throw new Error("Pending research stages have unsatisfied dependencies");
+    const [nextStage] = await sql`SELECT id, stage_key FROM research_stages
+      WHERE research_run_id = ${runId} AND stage_key = ${ready[0]}`;
 
     const runRows = await sql`
       SELECT run_type, asset_id
@@ -654,7 +639,7 @@ async function startNextStage(
       }
     }
 
-    if (config?.requiresHumanApproval) {
+    if (config?.requiresHumanApproval && nextStage.stage_key !== "research_plan") {
       await sql`
         UPDATE research_stages
         SET status = 'waiting_for_human',
@@ -682,6 +667,25 @@ async function startNextStage(
   } finally {
     await sql.end();
   }
+}
+
+/** Claim every independent stage under the same run lock used by approvals. */
+export async function startReadyStages(runId: string): Promise<string[]> {
+  await startNextStage(runId);
+  const sql = postgres(process.env.DATABASE_URL!);
+  try {
+    return await sql.begin(async tx => {
+      const [run] = await tx`SELECT status FROM research_runs WHERE id = ${runId} FOR UPDATE`;
+      if (run?.status !== "running") return [];
+      const stages = await tx`SELECT stage_key, status FROM research_stages WHERE research_run_id = ${runId} ORDER BY stage_order`;
+      const keys = readyStages(stages.map(s => ({ stage_key: String(s.stage_key), status: String(s.status) })))
+        .filter(key => key !== "human_review");
+      if (keys.length) await tx`UPDATE research_stages SET status = 'running',
+        started_at = COALESCE(started_at, NOW()), updated_at = NOW()
+        WHERE research_run_id = ${runId} AND stage_key = ANY(${keys}::text[]) AND status = 'pending'`;
+      return keys;
+    });
+  } finally { await sql.end(); }
 }
 
 /**
@@ -800,14 +804,15 @@ export async function pauseForHumanReview(
  */
 export async function failRun(
   runId: string,
-  reason: string
+  reason: string,
+  status: "failed" | "needs_more_work" = "failed"
 ): Promise<void> {
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
     await sql`
       UPDATE research_runs
-      SET status = 'failed',
+      SET status = ${status},
           failure_reason = ${reason},
           completed_at = NOW(),
           updated_at = NOW()
@@ -889,6 +894,46 @@ export async function completeRun(runId: string): Promise<void> {
           })}
       WHERE id = ${runId}
     `;
+  } finally {
+    await sql.end();
+  }
+}
+
+export async function resumeResearchRun(runId: string) {
+  const sql = postgres(process.env.DATABASE_URL!);
+  try {
+    await sql.begin(async (tx) => {
+      const [run] = await tx`SELECT status, pipeline_version FROM research_runs WHERE id = ${runId} FOR UPDATE`;
+      if (!run || Number(run.pipeline_version) !== CURRENT_PIPELINE_VERSION || !["needs_more_work", "failed"].includes(run.status)) return;
+      const active = await tx`SELECT id FROM research_run_jobs WHERE research_run_id = ${runId} AND status IN ('queued', 'running') LIMIT 1`;
+      if (active.length) return;
+      const stages = await tx`
+        SELECT id, stage_order, status FROM research_stages
+        WHERE research_run_id = ${runId} AND status IN ('failed', 'running', 'waiting_for_human')
+        ORDER BY stage_order
+      `;
+      if (stages.some((stage) => stage.status !== "failed") || !stages.length) {
+        throw new Error("Cannot resume: expected failed stages and no active stage");
+      }
+      await tx`
+        UPDATE research_stages
+        SET status = 'running', failure_reason = NULL, validation_result_json = NULL,
+            started_at = NOW(), completed_at = NULL, updated_at = NOW()
+        WHERE id = ${stages[0].id}
+      `;
+      await tx`
+        UPDATE research_stages
+        SET status = 'pending', failure_reason = NULL, started_at = NULL,
+            completed_at = NULL, validation_result_json = NULL, updated_at = NOW()
+        WHERE research_run_id = ${runId} AND stage_order > ${stages[0].stage_order}
+          AND status IN ('failed', 'cancelled')
+      `;
+      await tx`
+        UPDATE research_runs
+        SET status = 'running', failure_reason = NULL, completed_at = NULL, updated_at = NOW()
+        WHERE id = ${runId}
+      `;
+    });
   } finally {
     await sql.end();
   }

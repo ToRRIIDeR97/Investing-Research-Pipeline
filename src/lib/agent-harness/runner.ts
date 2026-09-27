@@ -4,9 +4,8 @@ import { parseStructuredOutput } from "./output-parser";
 import { getProvider } from "./providers/provider";
 import { getAgentConfig, normalizeModelEnvValue, resolveAgentModel, type ResearchAgentName } from "./registry";
 import { calculateCost } from "./telemetry";
-import { executeTool, toolDefinitionsForAgent } from "./tools";
 import type {
-  AgentAttempt, AgentPassTelemetry, AgentRequest, AgentResult, AgentUsage, ExecutionPolicy, ModelEvent, ModelProvider, ModelUsage, ToolCall,
+  AgentAttempt, AgentPassTelemetry, AgentRequest, AgentResult, AgentUsage, ExecutionPolicy, ModelEvent, ModelProvider,
 } from "./types";
 import { coerceStructuredOutput, validateSchema, type SchemaValidationError } from "./validation";
 
@@ -17,8 +16,6 @@ const DEFAULT_POLICY: ExecutionPolicy = {
   inactivityTimeoutMs: 90_000,
   maxResponseBytes: 1_000_000,
   maxRepairAttempts: 1,
-  maxToolTurns: 4,
-  maxToolCalls: 8,
   maxAttempts: 4,
   retryBaseDelayMs: 1_000,
 };
@@ -32,7 +29,7 @@ function optionalPositiveNumberEnv(...names: string[]) {
   for (const name of names) {
     if (!(name in process.env)) continue;
     const value = Number(process.env[name]);
-    return Number.isFinite(value) && value > 0 ? value : undefined;
+    if (Number.isFinite(value) && value > 0) return value;
   }
   return undefined;
 }
@@ -46,17 +43,15 @@ function executionPolicy(input: AgentRequest): ExecutionPolicy {
     totalTimeoutMs: numberEnv(`RESEARCH_${key}_TIMEOUT_MS`, numberEnv("RESEARCH_AGENT_TIMEOUT_MS", totalDefault, 10_000), 10_000),
     inactivityTimeoutMs: numberEnv(`RESEARCH_${key}_INACTIVITY_TIMEOUT_MS`, numberEnv("RESEARCH_INACTIVITY_TIMEOUT_MS", DEFAULT_POLICY.inactivityTimeoutMs, 1_000), 1_000),
     maxResponseBytes: numberEnv(`RESEARCH_${key}_MAX_RESPONSE_BYTES`, numberEnv("RESEARCH_MAX_RESPONSE_BYTES", DEFAULT_POLICY.maxResponseBytes)),
-    maxOutputTokens: optionalPositiveNumberEnv(`RESEARCH_${key}_MAX_OUTPUT_TOKENS`, "RESEARCH_MAX_OUTPUT_TOKENS"),
+    maxOutputTokens: optionalPositiveNumberEnv(`RESEARCH_${key}_MAX_OUTPUT_TOKENS`, "RESEARCH_MAX_OUTPUT_TOKENS") ?? 32_768,
     maxRepairAttempts: numberEnv("RESEARCH_MAX_REPAIR_ATTEMPTS", DEFAULT_POLICY.maxRepairAttempts, 0),
-    maxToolTurns: numberEnv("RESEARCH_MAX_TOOL_TURNS", DEFAULT_POLICY.maxToolTurns, 0),
-    maxToolCalls: numberEnv("RESEARCH_MAX_TOOL_CALLS", DEFAULT_POLICY.maxToolCalls, 0),
     maxAttempts: numberEnv("RESEARCH_MAX_MODEL_ATTEMPTS", DEFAULT_POLICY.maxAttempts),
     retryBaseDelayMs: numberEnv("RESEARCH_RETRY_BASE_DELAY_MS", DEFAULT_POLICY.retryBaseDelayMs),
     ...input.policy,
   };
 }
 
-function buildTaskPrompt(input: AgentRequest, config: ReturnType<typeof getAgentConfig>) {
+export function buildTaskPrompt(input: Pick<AgentRequest, "agentName" | "taskPacket" | "prompt" | "promptFactory">, config: ReturnType<typeof getAgentConfig>) {
   if (input.promptFactory) return input.promptFactory(input.taskPacket);
   if (input.prompt) return input.prompt;
   return [
@@ -80,7 +75,7 @@ function modelCandidates(agentName: ResearchAgentName, maxAttempts: number) {
   const builtIns: Partial<Record<ResearchAgentName, string>> = {
     "source-reader": "deepseek-v4-pro", "asset-analyst": "qwen3.7-plus", "valuation-analyst": "deepseek-v4-pro",
   };
-  const fallback = process.env[fallbackKey] || builtIns[agentName];
+  const fallback = process.env.RESEARCH_ALL_AGENTS_MODEL ? undefined : process.env[fallbackKey] || builtIns[agentName];
   const models = [primary, fallback ? normalizeModelEnvValue(fallback) : null]
     .filter((model): model is string => Boolean(model))
     .filter((model, index, all) => all.indexOf(model) === index);
@@ -138,140 +133,75 @@ interface PassResult {
   rawText: string;
   usage: { inputTokens: number; outputTokens: number; reasoningTokens: number; costUsd: number };
   requestId?: string;
-  toolCalls: Array<{ name: string; status: "success" | "failed" }>;
 }
 
 async function executePass(params: {
   provider: ModelProvider; model: string; prompt: string; agentName: string; policy: ExecutionPolicy;
   deadline: ReturnType<typeof createDeadlineController>; maxOutputTokens?: number;
 }): Promise<PassResult> {
-  let prompt = params.prompt;
   let rawText = "";
   let inputTokens = 0;
   let outputTokens = 0;
   let reasoningTokens = 0;
-  let costUsd = 0;
-  let costReportedByProvider = false;
+  let costUsd: number | undefined;
   let providerStarted = false;
   let requestId: string | undefined;
-  let toolTurns = 0;
-  let toolCount = 0;
-  const toolSummaries: PassResult["toolCalls"] = [];
-  const tools = toolDefinitionsForAgent(params.agentName);
-
   const snapshot = (): PassResult => {
-    if (!providerStarted && inputTokens === 0 && outputTokens === 0 && !rawText) {
-      return {
-        rawText: "",
-        usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, costUsd: 0 },
-        requestId,
-        toolCalls: [...toolSummaries],
-      };
-    }
-    const effectiveInputTokens = inputTokens || Math.ceil(params.prompt.length / 4);
-    const effectiveOutputTokens = outputTokens || Math.ceil(rawText.length / 4);
-    const effectiveCost = costReportedByProvider
-      ? costUsd
-      : calculateCost(params.model, effectiveInputTokens, effectiveOutputTokens);
-    return {
-      rawText,
-      usage: { inputTokens: effectiveInputTokens, outputTokens: effectiveOutputTokens, reasoningTokens, costUsd: effectiveCost },
-      requestId,
-      toolCalls: [...toolSummaries],
-    };
+    const started = providerStarted || inputTokens > 0 || outputTokens > 0 || Boolean(rawText);
+    const input = started ? inputTokens || Math.ceil(params.prompt.length / 4) : 0;
+    const output = started ? outputTokens || Math.ceil(rawText.length / 4) : 0;
+    return { rawText, requestId, usage: {
+      inputTokens: input, outputTokens: output, reasoningTokens,
+      costUsd: costUsd ?? calculateCost(params.model, input, output),
+    } };
   };
-
+  const iterator = params.provider.stream({
+    model: params.model, prompt: params.prompt, temperature: 0.2,
+    maxTokens: params.maxOutputTokens ?? params.policy.maxOutputTokens, agentName: params.agentName,
+  }, params.deadline.signal)[Symbol.asyncIterator]();
   try {
+    let completed = false;
     while (true) {
-      const calls: ToolCall[] = [];
-      let completed = false;
-      const stream = params.provider.stream({
-        model: params.model, prompt, temperature: 0.2, maxTokens: params.maxOutputTokens ?? params.policy.maxOutputTokens,
-        tools, agentName: params.agentName,
-      }, params.deadline.signal);
-      const iterator = stream[Symbol.asyncIterator]();
-      while (true) {
-        if (params.deadline.remainingMs() <= 0) {
-          throw new ProviderError("Provider request exceeded total deadline", "provider_timeout", { timeoutType: "total" });
-        }
-        const next = iterator.next();
-        let abortHandler: (() => void) | undefined;
-        const aborted = new Promise<never>((_, reject) => {
-          if (params.deadline.signal.aborted) {
-            reject(new ProviderError("Provider request cancelled", "cancellation"));
-            return;
-          }
-          abortHandler = () => reject(new ProviderError("Provider request cancelled", "cancellation"));
-          params.deadline.signal.addEventListener(
-            "abort",
-            abortHandler,
-            { once: true }
-          );
-        });
-        let item: IteratorResult<ModelEvent>;
-        try {
-          item = await Promise.race([next, aborted]);
-        } catch (error) {
-          void iterator.return?.().catch(() => undefined);
-          throw error;
-        } finally {
-          if (abortHandler) params.deadline.signal.removeEventListener("abort", abortHandler);
-        }
-        if (item.done) break;
-        const event = item.value;
-        if (params.deadline.remainingMs() <= 0) {
-          void iterator.return?.().catch(() => undefined);
-          throw new ProviderError("Provider request exceeded total deadline", "provider_timeout", { timeoutType: "total" });
-        }
-        if (["response.started", "text.delta", "reasoning.delta", "usage", "tool.call", "response.completed"].includes(event.type)) {
-          params.deadline.resetInactivity();
-        }
-        if (event.type === "response.started") {
-          providerStarted = true;
-          requestId = event.requestId || requestId;
-        }
-        if (event.type === "text.delta") {
+      if (params.deadline.remainingMs() <= 0) {
+        throw new ProviderError("Provider request exceeded total deadline", "provider_timeout", { timeoutType: "total" });
+      }
+      const next = iterator.next();
+      let abortHandler: (() => void) | undefined;
+      const aborted = new Promise<never>((_, reject) => {
+        abortHandler = () => reject(new ProviderError("Provider request cancelled", "cancellation"));
+        if (params.deadline.signal.aborted) abortHandler();
+        else params.deadline.signal.addEventListener("abort", abortHandler, { once: true });
+      });
+      let item: IteratorResult<ModelEvent>;
+      try { item = await Promise.race([next, aborted]); }
+      finally { if (abortHandler) params.deadline.signal.removeEventListener("abort", abortHandler); }
+      if (item.done) break;
+      if (params.deadline.remainingMs() <= 0) {
+        throw new ProviderError("Provider request exceeded total deadline", "provider_timeout", { timeoutType: "total" });
+      }
+      const event = item.value;
+      params.deadline.resetInactivity();
+      switch (event.type) {
+        case "response.started": providerStarted = true; requestId = event.requestId || requestId; break;
+        case "text.delta":
           rawText += event.text;
           if (Buffer.byteLength(rawText, "utf8") > params.policy.maxResponseBytes) {
             throw new ProviderError("Model response exceeded maximum size", "response_limit");
           }
-        }
-        if (event.type === "usage") {
-          inputTokens += event.usage.inputTokens || 0;
-          outputTokens += event.usage.outputTokens || 0;
-          reasoningTokens += event.usage.reasoningTokens || 0;
-          if (event.usage.costUsd !== undefined) {
-            costReportedByProvider = true;
-            costUsd += event.usage.costUsd;
-          }
-        }
-        if (event.type === "tool.call") calls.push(event.call);
-        if (event.type === "response.failed") throw event.error;
-        if (event.type === "response.completed") completed = true;
+          break;
+        case "usage":
+          inputTokens = event.usage.inputTokens ?? inputTokens;
+          outputTokens = event.usage.outputTokens ?? outputTokens;
+          reasoningTokens = event.usage.reasoningTokens ?? reasoningTokens;
+          costUsd = event.usage.costUsd ?? costUsd;
+          break;
+        case "tool.call": throw new ProviderError("Research model calls do not permit tools", "invalid_request");
+        case "response.failed": throw event.error;
+        case "response.completed": completed = true; break;
       }
-      if (!completed) throw new ProviderError("Provider did not emit completion", "malformed_stream");
-      if (!calls.length && !rawText.trim()) throw new ProviderError("Provider completed without text output", "malformed_stream");
-      if (!calls.length) break;
-      toolTurns += 1;
-      if (toolTurns > params.policy.maxToolTurns || toolCount + calls.length > params.policy.maxToolCalls) {
-        throw new ProviderError("Tool execution limit exceeded", "invalid_request");
-      }
-      const results: Array<{ name: string; result?: unknown; error?: string }> = [];
-      for (const call of calls) {
-        toolCount += 1;
-        try {
-          const result = await executeTool(params.agentName, call);
-          results.push({ name: call.name, result });
-          toolSummaries.push({ name: call.name, status: "success" });
-        } catch (error) {
-          const message = redact(error instanceof Error ? error.message : String(error));
-          results.push({ name: call.name, error: message });
-          toolSummaries.push({ name: call.name, status: "failed" });
-        }
-      }
-      prompt = `${prompt}\n\nTool results:\n${JSON.stringify(results)}\n\nContinue and return exactly one JSON object.`;
     }
-
+    if (!completed) throw new ProviderError("Provider did not emit completion", "malformed_stream");
+    if (!rawText.trim()) throw new ProviderError("Provider completed without text output", "malformed_stream");
     const result = snapshot();
     const outputLimit = params.maxOutputTokens ?? params.policy.maxOutputTokens;
     if (outputLimit !== undefined && result.usage.outputTokens > outputLimit) {
@@ -279,9 +209,8 @@ async function executePass(params: {
     }
     return result;
   } catch (error) {
-    if (error instanceof ProviderError) {
-      throw new ProviderError(error.message, error.category, { ...error.details, partial: snapshot() });
-    }
+    void iterator.return?.().catch(() => undefined);
+    if (error instanceof ProviderError) throw new ProviderError(error.message, error.category, { ...error.details, partial: snapshot() });
     throw error;
   }
 }
@@ -379,7 +308,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
     const started = Date.now();
     const startedAt = new Date(started).toISOString();
     const deadline = createDeadlineController(input.signal, policy.totalTimeoutMs, policy.inactivityTimeoutMs);
-    let pass: PassResult = { rawText: "", usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, costUsd: 0 }, toolCalls: [] };
+    let pass: PassResult = { rawText: "", usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, costUsd: 0 } };
     let repairAttempted = false;
     let validationErrors: SchemaValidationError[] = [];
     const passes: AgentPassTelemetry[] = [];
@@ -453,10 +382,13 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
           `Required top-level keys: ${keys.join(", ")}`,
           `Validation errors: ${validationErrors.map((error) => `${error.path}: ${error.message}`).join(" | ").slice(0, 4000)}`,
           "",
-          "Original task context (compact):",
-          JSON.stringify({ title: input.title, agentName: input.agentName, output_contract: (input.taskPacket as any).output_contract, providedKeys: Object.keys(input.taskPacket).slice(0, 20) }),
+          "Original submitted task and evidence:",
+          input.outputFormat ? prompt : JSON.stringify({ title: input.title, agentName: input.agentName,
+            output_contract: (input.taskPacket as any).output_contract, providedKeys: Object.keys(input.taskPacket).slice(0, 20) }),
+          "Required output schema:",
+          JSON.stringify(effectiveOutputFormat.schema || effectiveOutputFormat),
           "",
-          `Previous response: ${pass.rawText.slice(0, 12_000)}`,
+          `Previous response: ${input.outputFormat ? pass.rawText : pass.rawText.slice(0, 12_000)}`,
         ].join("\n\n");
         if (deadline.remainingMs() < 10_000) {
           throw new ProviderError("Insufficient time remaining for structured-output repair", "provider_timeout", {
@@ -480,7 +412,6 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
                   reasoningTokens: pass.usage.reasoningTokens + (repairPartial?.usage.reasoningTokens || 0),
                   costUsd: pass.usage.costUsd + (repairPartial?.usage.costUsd || 0),
                 },
-                toolCalls: [...pass.toolCalls, ...(repairPartial?.toolCalls || [])],
               } satisfies PassResult,
             });
           }
@@ -494,7 +425,6 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
             reasoningTokens: pass.usage.reasoningTokens + repair.usage.reasoningTokens,
             costUsd: pass.usage.costUsd + repair.usage.costUsd,
           },
-          toolCalls: [...pass.toolCalls, ...repair.toolCalls],
         };
         try {
           parsed = parseStructuredOutput(repair.rawText, keys);
@@ -536,7 +466,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         costUsd: Number(pass.usage.costUsd.toFixed(6)), status: "success", repairAttempted,
         fallback, compactionOccurred: compactedFallback.compacted,
         inputBytes: Buffer.byteLength(buildTaskPrompt(currentInput, config), "utf8"), originalInputBytes: originalPromptBytes,
-        rawResponseExcerpt: redact(pass.rawText.slice(0, 12_000)), validationErrors, toolCalls: pass.toolCalls,
+        rawResponseExcerpt: redact(pass.rawText.slice(0, 12_000)), validationErrors,
         passes,
         localCoercionApplied,
         completionRecoveredAtTimeout,
@@ -568,7 +498,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         timeoutType: reason === "total" || reason === "inactivity" ? reason : undefined,
         repairAttempted, fallback, compactionOccurred: compactedFallback.compacted,
         inputBytes: Buffer.byteLength(buildTaskPrompt(currentInput, config), "utf8"), originalInputBytes: originalPromptBytes,
-        rawResponseExcerpt: redact(pass.rawText.slice(0, 12_000)), validationErrors, toolCalls: pass.toolCalls,
+        rawResponseExcerpt: redact(pass.rawText.slice(0, 12_000)), validationErrors,
         passes,
         localCoercionApplied,
         completionRecoveredAtTimeout,

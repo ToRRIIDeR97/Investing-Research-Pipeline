@@ -9,6 +9,13 @@ import { computeHistoricalStatistics } from "./diagnostics";
 
 const QUARTERS_REQUIRED = 20;
 
+export function latestCompletedQuarter(cutoff: Date): { year: number; quarter: number } {
+  const currentQuarter = Math.floor(cutoff.getUTCMonth() / 3) + 1;
+  return currentQuarter === 1
+    ? { year: cutoff.getUTCFullYear() - 1, quarter: 4 }
+    : { year: cutoff.getUTCFullYear(), quarter: currentQuarter - 1 };
+}
+
 export type BuildHistoricalRecordInput = {
   asset_id: string;
   run_id?: string;
@@ -47,6 +54,8 @@ export function buildHistoricalRecord(input: BuildHistoricalRecordInput): Histor
   });
 
   const canonical = takeLatestRestatement(filtered);
+  const annual = takeLatestRestatement(observations.filter(obs => obs.periodicity === 'annual' &&
+    obs.fiscal_year != null && obs.fiscal_year >= startFiscalYear && obs.fiscal_year <= endFiscalYear - (endFiscalQuarter < 4 ? 1 : 0)));
 
   const ttm = buildTTMSeries(
     canonical,
@@ -57,13 +66,13 @@ export function buildHistoricalRecord(input: BuildHistoricalRecordInput): Histor
     endFiscalQuarter
   );
 
-  const reconciliationIssues = reconcileRecord(canonical, ttm);
+  const reconciliationIssues = reconcileRecord([...canonical, ...annual], ttm);
   const statistics = computeHistoricalStatistics(canonical, ttm);
 
   return {
     asset_id,
     run_id: run_id ?? null,
-    observations: canonical,
+    observations: [...canonical, ...annual],
     coverage,
     reconciliation_issues: reconciliationIssues,
     ttm_series: ttm,
@@ -197,7 +206,7 @@ export function findObservation(
 export function takeLatestRestatement(observations: HistoricalObservation[]): HistoricalObservation[] {
   const map = new Map<string, HistoricalObservation>();
   for (const obs of observations) {
-    const key = `${obs.metric_key}|${obs.fiscal_year}|${obs.fiscal_quarter}|${obs.periodicity}|${obs.reporting_basis}|${obs.segment ?? ""}|${obs.geography ?? ""}`;
+    const key = `${obs.metric_key}|${obs.fiscal_year}|${obs.fiscal_quarter}|${obs.periodicity}|${obs.reporting_basis}|${obs.unit}|${obs.currency}|${obs.segment ?? ""}|${obs.geography ?? ""}`;
     const existing = map.get(key);
     if (!existing || (obs.restatement_version ?? 0) > (existing.restatement_version ?? 0)) {
       map.set(key, obs);

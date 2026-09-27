@@ -2,7 +2,7 @@
 
 Research OS calls configured inference endpoints directly. It does not start an OpenCode server or use the OpenCode SDK, localhost sidecar, session database, or history API.
 
-For an OpenCode Go subscription, `opencode-go-direct` calls the published HTTPS inference API without the OpenCode SDK, localhost server, or session/history layer. It routes GLM, Kimi, and DeepSeek models through `/chat/completions`, and Qwen or MiniMax models through `/messages` according to the provider's published protocol table.
+For an OpenCode Go subscription, `opencode-go-direct` calls the published HTTPS inference API without the OpenCode SDK or localhost server. Each provider instance sends an `x-opencode-session` ID and identifies itself as `research-os/0.1`. It routes GLM, Kimi, and DeepSeek models through `/chat/completions`, and Qwen or MiniMax models through `/messages` according to the provider's published protocol table.
 
 ```dotenv
 RESEARCH_MODEL_PROVIDER=opencode-go-direct
@@ -56,12 +56,16 @@ Ollama's OpenAI-compatible endpoint uses the `/v1` base path. The configured mod
 
 ## Execution controls
 
-The harness requests plain text, parses JSON locally, and performs at most one bounded repair by default. Total and inactivity deadlines, response/token limits, model attempts, tool turns, and tool calls use the `RESEARCH_*` settings documented in `.env.example`. Research agents have no tool permissions unless a tool is explicitly registered and allowed by that agent's definition.
+The harness requests plain text, parses JSON locally, and performs at most one bounded repair by default. Total and inactivity deadlines, response/token limits, and model attempts use the `RESEARCH_*` settings documented in `.env.example`. Model calls cannot execute tools; an unexpected tool request fails the attempt.
+
+Analytical stages derive their prompt schemas and runtime checks from the artifact Zod contracts. Invalid model output enters repair before a task is marked complete. The artifact repository checks those contracts again before saving validated or accepted content.
+
+Completed tasks are reused only when the request fingerprint matches: packet, prompt, output contract, agent, model, provider endpoint, and version fields. Reuse revalidates the stored output. Failed stage validation invalidates that stage's cached tasks so a retry generates new output.
 
 Source-reader extraction is partitioned in retrieval order into stable `source-reader:batch:NN` tasks. Each batch is bounded by both chunk count and serialized bytes, so completed batches can be reused after a later batch fails. The merge rejects invented source/chunk identifiers and invalid character ranges before evidence is persisted. A fallback receives only the failed batch with shortened excerpts; it never receives the complete research corpus.
 
-Source-reader model attempts currently omit `max_tokens` on OpenAI-compatible requests so observed completion and reasoning usage can be measured before production ceilings are selected. The hard time deadline is ten minutes, while batches remain bounded at eight chunks and 36,000 serialized bytes. The response-byte safety bound and the run's dollar budget remain enforced.
+Source-reader requests cap output at 16,384 tokens by default. Other agents cap output at 32,768 tokens. The source-reader deadline is ten minutes, with batches bounded at eight chunks and 36,000 serialized bytes. Set `RESEARCH_ALL_AGENTS_MODEL=deepseek-v4.1-flash` to route every agent to that model during a run.
 
-Anthropic-compatible `/messages` requests (used by Qwen and MiniMax on OpenCode Go) require `max_tokens`; Research OS supplies the high protocol value in `RESEARCH_ANTHROPIC_PROTOCOL_MAX_TOKENS` instead of treating it as an agent policy ceiling. Set a positive `RESEARCH_MAX_OUTPUT_TOKENS` or agent-specific `RESEARCH_*_MAX_OUTPUT_TOKENS` later to restore an explicit harness ceiling.
+Anthropic-compatible `/messages` requests (used by Qwen and MiniMax on OpenCode Go) require `max_tokens`; Research OS sends the agent's output ceiling, with `RESEARCH_ANTHROPIC_PROTOCOL_MAX_TOKENS` as a protocol fallback.
 
 Provider credentials, authorization headers, and bounded raw-response excerpts are redacted before errors or attempt traces are persisted.

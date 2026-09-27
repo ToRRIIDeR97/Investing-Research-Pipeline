@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { ArrowLeft, ArrowUpRight } from "lucide-react";
+import ui from "@/components/research-ui.module.css";
 import {
   MetricHistoryChart,
   ValuationSignalChart,
@@ -98,6 +100,7 @@ export default function AssetDetailPage() {
   const [stages, setStages] = useState<StageInfo[]>([]);
   const [backtests, setBacktests] = useState<BacktestRun[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -111,6 +114,7 @@ export default function AssetDetailPage() {
             fetch(`/api/assets/${assetId}/research-cost`),
             fetch(`/api/assets/${assetId}/pipeline-stages`),
           ]);
+        if (!assetRes.ok || !runsRes.ok) throw new Error("Unable to load asset details.");
         if (assetRes.ok && runsRes.ok) {
           const assetData = await assetRes.json();
           const runsData = await runsRes.json();
@@ -137,7 +141,7 @@ export default function AssetDetailPage() {
         if (costRes.ok) setCostData(await costRes.json());
         if (stagesRes.ok) setStages(await stagesRes.json());
       } catch (error) {
-        console.error("Failed to load asset details:", error);
+        setError("Unable to load asset details.");
       } finally {
         setLoading(false);
       }
@@ -145,335 +149,37 @@ export default function AssetDetailPage() {
     load();
   }, [assetId]);
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-[#f4f7fa] font-mono text-[13px] text-gray-500">
-        Loading project metadata...
-      </div>
-    );
-  }
+  if (loading) return <div className={ui.page} role="status">Loading asset…</div>;
+  if (!asset) return <div className={ui.page}><p className={ui.error} role="alert">{error || "Asset not found."}</p><Link href="/assets" className={ui.textLink}>Back to research</Link></div>;
+  const listing = asset.listings?.find((item) => item.is_primary) || asset.listings?.[0];
 
-  if (!asset) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-[#f4f7fa] font-mono text-red-500">
-        Project profile not found.
-      </div>
-    );
-  }
-
-  return (
-    <div className="p-8 max-w-5xl mx-auto">
-      {/* Breadcrumbs */}
-      <div className="flex items-center gap-1.5 text-[11px] font-medium text-gray-400 mb-2">
-        <span>Projects</span>
-        <span>&rsaquo;</span>
-        <span className="text-gray-500 font-semibold">{asset.canonical_name}</span>
-      </div>
-
-      {/* Asset Header */}
-      <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
-          <h2 className="text-xl font-bold tracking-tight text-black">{asset.canonical_name}</h2>
-          <span
-            className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-              asset.asset_kind === "equity"
-                ? "bg-blue-50 text-blue-700"
-                : "bg-orange-50 text-orange-700"
-            }`}
-          >
-            {asset.asset_kind.replace(/_asset/g, "")}
-          </span>
-          {asset.listings && asset.listings.length > 0 && (
-            <span className="text-xs font-mono text-gray-400">
-              {asset.listings.find((l) => l.is_primary)?.symbol || asset.listings[0].symbol}
-              {asset.listings.find((l) => l.is_primary)?.exchange
-                ? ` · ${asset.listings.find((l) => l.is_primary)?.exchange}`
-                : ""}
-            </span>
-          )}
-        </div>
-        <p className="text-xs text-gray-400">
-          {asset.sector || "General Market"}
-          {asset.industry ? ` · ${asset.industry}` : ""}
-          {asset.home_country ? ` · ${asset.home_country}` : ""}
-        </p>
-        {asset.description && (
-          <p className="mt-3 text-[13px] text-gray-500 max-w-2xl leading-relaxed">
-            {asset.description}
-          </p>
-        )}
-      </div>
-
-      {/* Actions (Launch View/Run) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-        <Link
-          href={`/assets/${assetId}/run`}
-          className="relative group block rounded-[16px] border border-gray-200 bg-white p-6 pt-8 hover:translate-y-[-2px] hover:shadow-sm hover:border-gray-300 transition-all text-left"
-        >
-          <div className="absolute top-[-7px] left-4 h-2.5 w-14 rounded-t-md bg-white border-t border-x border-gray-200 group-hover:border-gray-300" />
-          <div className="text-gray-400 mb-2.5">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-            </svg>
-          </div>
-          <h3 className="font-bold text-[14px] text-black group-hover:text-blue-600 transition-colors">
-            Run Research
-          </h3>
-          <p className="text-xs text-gray-400 mt-1 leading-normal">
-            Start, continue, or check in on an AI-led pipeline orchestration.
-          </p>
-        </Link>
-
-        <Link
-          href={`/assets/${assetId}/view`}
-          className="relative group block rounded-[16px] border border-gray-200 bg-white p-6 pt-8 hover:translate-y-[-2px] hover:shadow-sm hover:border-gray-300 transition-all text-left"
-        >
-          <div className="absolute top-[-7px] left-4 h-2.5 w-14 rounded-t-md bg-white border-t border-x border-gray-200 group-hover:border-gray-300" />
-          <div className="text-gray-400 mb-2.5">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-            </svg>
-          </div>
-          <h3 className="font-bold text-[14px] text-black group-hover:text-blue-600 transition-colors">
-            View Research Archive
-          </h3>
-          <p className="text-xs text-gray-400 mt-1 leading-normal">
-            Browse ingested papers, DCF sheets, evidence models, and final memos.
-          </p>
-        </Link>
-      </div>
-
-      {/* Properties Cards grid */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Research Runs</p>
-          <p className="mt-1 text-xl font-bold text-black">{runs.length}</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Last Run Date</p>
-          <p className="mt-1 text-[13px] font-semibold text-black leading-tight">
-            {runs.length > 0
-              ? new Date(runs[0].created_at).toLocaleDateString()
-              : "Never"}
-          </p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Status</p>
-          <p className="mt-1 text-[13px] font-semibold text-black uppercase tracking-wider">{asset.status}</p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Assigned Profile</p>
-          <p className="mt-1 text-[13px] font-semibold text-black leading-tight">
-            {asset.profile_name || "General Standard"}
-          </p>
-        </div>
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Currency</p>
-          <p className="mt-1 text-[13px] font-semibold text-black font-mono">{asset.base_currency || "—"}</p>
-        </div>
-      </div>
-
-      {/* Research Dashboard — Charts */}
-      <div className="mb-8">
-        <h3 className="font-bold text-[14px] text-black mb-4">Research Dashboard</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {/* Metric History */}
-          <div className="rounded-[16px] border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-[12px] font-bold text-black uppercase tracking-wider">
-                Metric History
-              </h4>
-              <span className="text-[10px] text-gray-400 font-mono">
-                {metrics.length} observations
-              </span>
-            </div>
-            <MetricHistoryChart data={metrics} />
-          </div>
-
-          {/* Valuation Signals */}
-          <div className="rounded-[16px] border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-[12px] font-bold text-black uppercase tracking-wider">
-                Valuation Signals
-              </h4>
-              <span className="text-[10px] text-gray-400 font-mono">
-                {signals.length} signals
-              </span>
-            </div>
-            <ValuationSignalChart data={signals} />
-          </div>
-
-          {/* Research Cost */}
-          <div className="rounded-[16px] border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-[12px] font-bold text-black uppercase tracking-wider">
-                Research Cost
-              </h4>
-              <span className="text-[10px] text-gray-400 font-mono">
-                by model tier
-              </span>
-            </div>
-            <ResearchCostChart data={costData} />
-          </div>
-
-          {/* Pipeline Progress */}
-          <div className="rounded-[16px] border border-gray-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-[12px] font-bold text-black uppercase tracking-wider">
-                Pipeline Progress
-              </h4>
-              <span className="text-[10px] text-gray-400 font-mono">
-                latest run
-              </span>
-            </div>
-            <PipelineProgressChart data={stages} />
-          </div>
-        </div>
-      </div>
-
-      {/* Backtests */}
-      {runs.length > 0 && (
-        <div className="mb-8 rounded-[16px] border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between border-b border-gray-100 pb-3">
-            <h3 className="font-bold text-[14px] text-black">
-              Latest Backtests
-            </h3>
-            <span className="font-mono text-[10px] uppercase tracking-wider text-gray-400">
-              {backtests.length} runs
-            </span>
-          </div>
-
-          {backtests.length === 0 ? (
-            <p className="text-[12px] leading-normal text-gray-400">
-              No backtests have been requested for the latest research run.
-            </p>
-          ) : (
-            <div className="space-y-2">
-              {backtests.slice(0, 4).map((backtest) => (
-                <div
-                  key={backtest.id}
-                  className="rounded-xl border border-gray-100/70 bg-[#fbfcfd] px-4 py-3"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[13px] font-semibold text-black">
-                          {backtest.strategy_name || "Backtest request"}
-                        </span>
-                        <span className="font-mono text-[10px] text-gray-400">
-                          {backtest.symbol}
-                          {backtest.benchmark_symbol
-                            ? ` vs ${backtest.benchmark_symbol}`
-                            : ""}
-                        </span>
-                      </div>
-                      <p className="mt-1 max-w-xl truncate text-[11.5px] text-gray-400">
-                        {backtest.error_message || backtest.strategy_prompt}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
-                          backtest.status === "completed"
-                            ? "bg-green-50 text-green-700"
-                            : backtest.status === "failed"
-                            ? "bg-rose-50 text-rose-700"
-                            : "bg-yellow-50 text-yellow-700"
-                        }`}
-                      >
-                        {backtest.status}
-                      </span>
-                      <Link
-                        href={`/api/backtests/${backtest.id}/artifacts`}
-                        className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-[10px] font-bold text-gray-500 transition-colors hover:border-gray-300 hover:text-black"
-                      >
-                        Artifacts
-                      </Link>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
-                    <div>
-                      <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">
-                        Return
-                      </p>
-                      <p className="font-mono text-[12px] font-semibold text-black">
-                        {formatPercent(backtest.metrics_json?.total_return)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">
-                        Sharpe
-                      </p>
-                      <p className="font-mono text-[12px] font-semibold text-black">
-                        {formatNumber(backtest.metrics_json?.sharpe)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">
-                        Drawdown
-                      </p>
-                      <p className="font-mono text-[12px] font-semibold text-black">
-                        {formatPercent(backtest.metrics_json?.max_drawdown)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-[9px] font-bold uppercase tracking-wider text-gray-400">
-                        Trades
-                      </p>
-                      <p className="font-mono text-[12px] font-semibold text-black">
-                        {formatNumber(backtest.metrics_json?.trade_count, 0)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Recent Runs list */}
-      {runs.length > 0 && (
-        <div className="rounded-[16px] border border-gray-200 bg-white p-6 shadow-sm">
-          <h3 className="font-bold text-[14px] text-black border-b border-gray-100 pb-3 mb-4">
-            Recent Research Runs
-          </h3>
-          <div className="space-y-2">
-            {runs.slice(0, 5).map((run) => (
-              <div
-                key={run.id}
-                className="flex items-center justify-between rounded-xl border border-gray-100/60 bg-[#fbfcfd] px-4 py-3 hover:border-gray-200 transition-all"
-              >
-                <div>
-                  <span className="text-[13px] font-semibold text-black block leading-snug">
-                    {run.run_type.replace(/_/g, " ")}
-                  </span>
-                  {run.research_question && (
-                    <p className="text-[11.5px] text-gray-400 mt-0.5 truncate max-w-md">
-                      {run.research_question}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
-                      run.status === "completed"
-                        ? "bg-green-50 text-green-700"
-                        : "bg-yellow-50 text-yellow-700"
-                    }`}
-                  >
-                    {run.status}
-                  </span>
-                  <span className="text-[11px] text-gray-400 font-mono">
-                    {new Date(run.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+  return <div className={`${ui.page} ${ui.withBack}`}>
+    <Link href={`/assets/${assetId}/view`} className={ui.back}><ArrowLeft size={17} />Research brief</Link>
+    <header className={ui.heading}><h1>{asset.canonical_name}</h1><span className={ui.muted}>{listing?.symbol || asset.asset_kind.replace(/_asset/g, "")}</span></header>
+    {asset.description && <p className={ui.lead}>{asset.description}</p>}
+    <div className={ui.actions}>
+      <Link href={`/assets/${assetId}/view`} className={ui.textLink}>Read research<ArrowUpRight size={16} /></Link>
+      <Link href={`/assets/${assetId}/run`} className={ui.primary}>{runs.length ? "Open run" : "Start research"}</Link>
     </div>
-  );
+    <details className={ui.section} open><summary>Asset details</summary><dl className={`${ui.metadata} ${ui.sectionBody}`}>
+      {[["Sector", asset.sector], ["Industry", asset.industry], ["Country", asset.home_country], ["Currency", asset.base_currency], ["Profile", asset.profile_name], ["Status", asset.status], ["Exchange", listing?.exchange], ["Last run", runs[0] ? new Date(runs[0].created_at).toLocaleDateString() : "None"]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || "Not set"}</dd></div>)}
+    </dl></details>
+    <details className={ui.section}><summary>Metrics</summary><div className={ui.chart}><MetricHistoryChart data={metrics} /></div></details>
+    <details className={ui.section}><summary>Valuation signals</summary><div className={ui.chart}><ValuationSignalChart data={signals} /></div></details>
+    <details className={ui.section}><summary>Research cost</summary><div className={ui.chart}><ResearchCostChart data={costData} /></div></details>
+    <details className={ui.section}><summary>Pipeline progress</summary><div className={ui.sectionBody}><PipelineProgressChart data={stages} /></div></details>
+    <details className={ui.section}><summary>Backtests <span className={ui.muted}>{backtests.length}</span></summary>
+      <div className={ui.sectionBody}>{!backtests.length ? <p>No backtests for the latest run.</p> : backtests.map((test) => <div key={test.id} className={ui.row}>
+        <div><div className={ui.rowTitle}>{test.strategy_name || "Backtest"}</div><p className={ui.rowMeta}>{test.symbol}{test.benchmark_symbol ? ` · ${test.benchmark_symbol}` : ""} · {test.status}</p><p className={ui.rowMeta}>{test.error_message || test.strategy_prompt}</p>
+          <p className={ui.rowMeta}>Return {formatPercent(test.metrics_json?.total_return)} · Sharpe {formatNumber(test.metrics_json?.sharpe)} · Drawdown {formatPercent(test.metrics_json?.max_drawdown)} · Trades {formatNumber(test.metrics_json?.trade_count, 0)}</p>
+          <Link href={`/api/backtests/${test.id}/artifacts`} className={ui.textLink}>Artifacts<ArrowUpRight size={15} /></Link>
+        </div>
+      </div>)}</div>
+    </details>
+    <details className={ui.section}><summary>Run history <span className={ui.muted}>{runs.length}</span></summary><div className={ui.sectionBody}>
+      {runs.length ? runs.map((run) => <Link key={run.id} href={`/assets/${assetId}/run?run=${run.id}`} className={ui.row}>
+        <div><div className={ui.rowTitle}>{run.run_type.replace(/_/g, " ")}</div><div className={ui.rowMeta}>{new Date(run.created_at).toLocaleDateString()} · {run.id.slice(0, 8)} · {run.status.replace(/_/g, " ")}</div></div><ArrowUpRight size={17} />
+      </Link>) : <p>No research runs yet.</p>}
+    </div></details>
+  </div>;
 }

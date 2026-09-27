@@ -1,8 +1,9 @@
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
 import { makeValidationResult } from "../run-context";
-import { fetchProfileResearchContext, storeSourceCorpus, reconcileSourceGaps } from "../system-pipeline";
+import { fetchProfileResearchContext, storeSourceCorpus, reconcileSourceGaps } from "../sources/corpus";
 import { buildSourcePlan, planMissingRoles } from "../sources/planner";
-import { SOURCE_ROLES, type SourceRole } from "../sources/roles";
+import { SOURCE_ROLES, isValidSourceRole, type SourceRole } from "../sources/roles";
+import { isPlausibleSourceRole } from "../sources/role-discovery";
 import postgres from "postgres";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 
@@ -10,13 +11,20 @@ function mapToSourceRole(
   sourceType: string,
   title: string,
   metadata?: Record<string, unknown>
-): SourceRole {
+): SourceRole | null {
   const explicitRole = String(metadata?.source_role || "");
   if (SOURCE_ROLES.includes(explicitRole as SourceRole)) return explicitRole as SourceRole;
   const normType = sourceType.toLowerCase();
   const normTitle = title.toLowerCase();
+  if (normType.startsWith("web_") && isValidSourceRole(normType.slice(4))) {
+    return normType.slice(4) as SourceRole;
+  }
 
-  if (normType.includes("filing") || normType.includes("primary_document") || normType.includes("sec")) {
+  if (metadata?.semanticRole === "earnings_release" || metadata?.semanticRole === "earnings_exhibit") {
+    return "earnings_release";
+  }
+  if (normType === "peer_industry_context") return "industry_primary";
+  if (normType === "primary_source_context" || normType.includes("filing") || normType.includes("primary_document") || normType.includes("sec")) {
     return "regulatory_filing";
   }
   if (normType.includes("investor") || normType.includes("ir_presentation") || normType.includes("ir")) {
@@ -58,7 +66,7 @@ function mapToSourceRole(
   if (normType.includes("market") || normTitle.includes("market data") || normTitle.includes("yahoo")) {
     return "market_data";
   }
-  return "regulatory_filing"; // Default fallback
+  return null;
 }
 
 export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
@@ -85,19 +93,57 @@ export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
       // 2. Fetch public/SEC context
       const secContext = await fetchProfileResearchContext(v2Ctx);
 
+      // Follow the report's concrete questions through the same cutoff/role checks
+      // as normal discovery. Search snippets never count as fetched evidence.
+      const { getTeamRequests } = await import("../team");
+      const { discoverRoleSources } = await import("../sources/role-discovery");
+      const batch = await getTeamRequests(sql, ctx.runId);
+      const requests = batch?.requests.filter(r => !r.response && (r.needs_sources || r.role === "data")) || [];
+      if (requests.length) {
+        const roleQueries: Partial<Record<SourceRole, string[]>> = {};
+        for (const request of requests) (roleQueries[request.source_role] ||= []).push(`"${ctx.assetName}" ${ctx.symbol} ${request.question}`);
+        const extra = await discoverRoleSources({ assetName: ctx.assetName, symbol: ctx.symbol,
+          cutoffAt: ctx.cutoffAt.toISOString(), roleQueries }, requests.map(r => r.source_role));
+        const context = secContext as Record<string, any>;
+        context.supplementalSources = [...(context.supplementalSources || []), ...extra];
+        for (const request of requests) await sql`INSERT INTO source_retrieval_attempts
+          (research_run_id, source_role, attempt_status, failure_reason, attempt_metadata_json)
+          VALUES (${ctx.runId}, ${request.source_role}, 'attempted', NULL,
+            ${sql.json({ request_id: request.id, question: request.question, fetched_documents: extra.filter(s => s.metadata.source_role === request.source_role).length })})`;
+      }
+
       // 3. Store source corpus in database (creates source_documents, parses, chunks, etc.)
       const sourceCorpus = await storeSourceCorpus(sql, v2Ctx, secContext);
 
       // 4. Create source plan
       const requiredArtifacts = ctx.composedProfile?.required_artifacts || [];
-      const sourcePlan = buildSourcePlan(ctx.runId, ctx.assetId, requiredArtifacts as any);
+      const sourcePlan = buildSourcePlan(ctx.runId, ctx.assetId, requiredArtifacts as any,
+        (ctx.composedProfile?.source_roles || [])
+          .filter((item: any) => isValidSourceRole(String(item.role)))
+          .map((item: any) => ({
+            role: item.role as SourceRole,
+            required: item.required,
+            rationale: item.rationale,
+            blockedArtifacts: item.blockedArtifacts,
+          }))
+      );
+
+      // Replays must remove obsolete role/artifact matches from earlier source discovery.
+      await sql`DELETE FROM source_role_coverage WHERE research_run_id = ${ctx.runId}`;
 
       // 5. Create assignments and insert into source_role_assignments
       const coveredRoles = new Set<SourceRole>();
       for (const source of sourceCorpus.sources) {
         if (source.sourceId.startsWith("candidate-")) continue;
-        const role = mapToSourceRole(source.sourceType, source.title || "", source.metadata);
-        coveredRoles.add(role);
+        const mapped = mapToSourceRole(source.sourceType, source.title || "", source.metadata);
+        const roles = mapped ? [mapped] : [];
+        if (source.sourceType === "peer_industry_context" && source.url
+          && isPlausibleSourceRole(source.url, "regulatory_or_government")) {
+          roles.push("regulatory_or_government");
+        }
+        for (const role of new Set(roles)) {
+          if (!source.url || !isPlausibleSourceRole(source.url, role)) continue;
+          coveredRoles.add(role);
 
         await sql`
           INSERT INTO source_retrieval_attempts (
@@ -131,14 +177,15 @@ export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
           SET confidence = 100
         `;
 
-        // Populate source_role_coverage
-        for (const art of requiredArtifacts) {
+        // A role covers only the artifacts explicitly linked by the composed profile.
+        const linkedArtifacts = sourcePlan.items.find((item) => item.source_role === role)?.artifact_types || [];
+        for (const artifactType of linkedArtifacts) {
           await sql`
             INSERT INTO source_role_coverage (
               research_run_id, source_role, artifact_type, source_document_id,
               coverage_status, confidence, rationale, blocked_artifact_types
             ) VALUES (
-              ${ctx.runId}, ${role}, ${art.artifact_type}, ${source.sourceId},
+              ${ctx.runId}, ${role}, ${artifactType}, ${source.sourceId},
               'covered', 100, 'Substantive source document assigned to role', ${sql.json([])}
             )
             ON CONFLICT (research_run_id, source_role, artifact_type) DO UPDATE
@@ -148,6 +195,7 @@ export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
                 rationale = 'Substantive source document assigned to role',
                 updated_at = NOW()
           `;
+        }
         }
       }
 

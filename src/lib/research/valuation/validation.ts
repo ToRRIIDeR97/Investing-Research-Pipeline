@@ -7,6 +7,7 @@ import {
   ValuationScenarioSet,
   ReverseValuation,
 } from "./contracts";
+import {validateMethodInputs} from './schedules';
 
 export type ValidationResult = {
   valid: boolean;
@@ -20,7 +21,7 @@ export function validateAnnualPriceTargetPath(
 ): ValidationResult {
   const parsed = AnnualPriceTargetPath.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -93,17 +94,22 @@ export function validateAnnualPriceTargetPath(
 export function validateValuationScenarioSet(content: unknown): ValidationResult {
   const parsed = ValuationScenarioSet.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
+  if(parsed.data.method_inputs){
+    try { validateMethodInputs(parsed.data.method_inputs); }
+    catch(error){errors.push(error instanceof Error?error.message:String(error));}
+    if(!parsed.data.method_inputs.length&&!parsed.data.omitted_methods?.length)errors.push('Provide numerical valuation schedules or explain the missing inputs for every omitted method.');
+  }
   return { valid: errors.length === 0, errors, warnings };
 }
 
 export function validateReverseValuation(content: unknown): ValidationResult {
   const parsed = ReverseValuation.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];

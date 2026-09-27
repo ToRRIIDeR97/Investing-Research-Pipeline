@@ -14,6 +14,7 @@ import {
   ASSUMPTION_CLASSIFICATIONS,
 } from "./contracts";
 import type { schema } from "@/db";
+import { ARTIFACT_SCHEMAS, validateArtifactContent } from "../stage-contracts";
 
 type Db = PostgresJsDatabase<typeof schema>;
 
@@ -57,6 +58,10 @@ export interface CreateAssumptionInput {
 
 export function createArtifactRepository(db: Db) {
   async function upsertArtifact(input: CreateArtifactInput) {
+    if (ARTIFACT_SCHEMAS[input.artifact_type] && ["validated", "accepted"].includes(input.status)) {
+      const validation = validateArtifactContent(input.artifact_type, input.content_json);
+      if (!validation.valid) throw new Error(`Invalid ${input.artifact_type}: ${validation.errors.join("; ")}`);
+    }
     if (input.idempotency_key) {
       const existing = await db
         .select()

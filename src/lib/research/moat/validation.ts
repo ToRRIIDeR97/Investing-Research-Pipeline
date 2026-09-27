@@ -17,7 +17,7 @@ export type ValidationResult = {
 export function validateMoatAssessment(content: unknown): ValidationResult {
   const parsed = MoatAssessment.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -57,7 +57,7 @@ export function validateMoatAssessment(content: unknown): ValidationResult {
 export function validateMoatAttackMatrix(content: unknown): ValidationResult {
   const parsed = MoatAttackMatrix.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -79,7 +79,7 @@ export function validateMoatAttackMatrix(content: unknown): ValidationResult {
 export function validateNoMoatCounterfactual(content: unknown): ValidationResult {
   const parsed = NoMoatCounterfactual.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];

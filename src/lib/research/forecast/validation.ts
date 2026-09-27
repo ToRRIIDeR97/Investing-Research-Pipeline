@@ -18,7 +18,7 @@ export type ValidationResult = {
 export function validateDriverTree(content: unknown): ValidationResult {
   const parsed = DriverTree.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -40,7 +40,7 @@ export function validateDriverTree(content: unknown): ValidationResult {
 export function validateOperatingScenarioSet(content: unknown): ValidationResult {
   const parsed = OperatingScenarioSet.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -81,7 +81,7 @@ export function validateOperatingScenarioSet(content: unknown): ValidationResult
 export function validateOperatingModel(content: unknown): ValidationResult {
   const parsed = OperatingModel.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -104,17 +104,17 @@ export function validateOperatingModel(content: unknown): ValidationResult {
 export function validateTopDownBottomUpReconciliation(content: unknown): ValidationResult {
   const parsed = TopDownBottomUpReconciliation.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
   const data = parsed.data;
 
   // C10-T5: Forecast exceeds TAM or customer budget
-  if (data.bottom_up_forecast_total > data.tam_limit) {
+  if (data.tam_limit !== null && data.bottom_up_forecast_total > data.tam_limit) {
     errors.push(`Bottom-up forecast (${data.bottom_up_forecast_total}) exceeds the TAM limit (${data.tam_limit}).`);
   }
-  if (data.bottom_up_forecast_total > data.customer_budget_limit) {
+  if (data.customer_budget_limit !== null && data.bottom_up_forecast_total > data.customer_budget_limit) {
     errors.push(`Bottom-up forecast (${data.bottom_up_forecast_total}) exceeds the customer budget limit (${data.customer_budget_limit}).`);
   }
 

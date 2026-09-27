@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { canonicalResearchKey, contractForProfile, sourceFamiliesPresent } from "../src/lib/research/v2-contracts";
-import { selectResearchFilings } from "../src/lib/research/system-pipeline";
+import { selectResearchFilings } from "../src/lib/research/sources/corpus";
 
 test("MELI receives the fintech-platform operating-company overlay", () => {
   const contract = contractForProfile("operating_company", "mercado-libre");

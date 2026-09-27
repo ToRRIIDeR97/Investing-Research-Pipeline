@@ -23,6 +23,13 @@ function makeObs(metricKey: string, year: number, quarter: number, value: number
 const claimIds = ["00000000-0000-0000-0000-000000000001"];
 
 describe("historical diagnosis", () => {
+  it("does not infer stability from one observation", () => {
+    const diagnosis = diagnoseMetric("revenue", [makeObs("revenue", 2026, 2, 100)], undefined, claimIds);
+    assert.equal(diagnosis.trend, "insufficient_history");
+    assert.equal(diagnosis.stability, 0);
+    assert.equal(diagnosis.observation_count, 1);
+    assert.ok(diagnosis.confidence <= 0.2);
+  });
   it("C7-T1: Margin change caused by identified mix shift with evidence", () => {
     const observations: HistoricalObservation[] = [
       makeObs("gross_margin", 2020, 1, 0.30),

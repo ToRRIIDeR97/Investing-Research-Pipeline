@@ -1,8 +1,7 @@
-import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
-import { makeValidationResult } from "../run-context";
+import type { ResearchRunContext, StageHandler } from "../run-context";
 import { callResearchAgent, exactJsonPrompt } from "../run-context";
 import { COMPANY_GENESIS_CONTRACT } from "../stage-contracts";
-import { loadAcceptedEvidencePacket } from "../system-pipeline";
+import { loadAcceptedEvidencePacket } from "../sources/corpus";
 import {
   missingRequiredSourceRoles,
   validateArtifactCitationIds,
@@ -11,7 +10,6 @@ import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { createHash } from "node:crypto";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 
 export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
@@ -50,11 +48,7 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
         marketDataCutoffAt: ctx.marketDataCutoffAt?.toISOString() || null,
         pipelineVersion: CURRENT_PIPELINE_VERSION,
       });
-      const evidenceFingerprint = createHash("sha256")
-        .update(JSON.stringify(evidenceClaims))
-        .digest("hex")
-        .slice(0, 12);
-      const taskKey = `genesis-researcher:${ctx.symbol?.toLowerCase() || "asset"}-genesis:v6:${evidenceFingerprint}`;
+      const taskKey = "genesis-researcher:genesis";
       const packet = {
         asset: {
           runId: ctx.runId,
@@ -105,6 +99,7 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
         requiredKeys: COMPANY_GENESIS_CONTRACT.requiredKeys,
         packet: p,
         extraRules: [
+          "Every factual statement in current_implications must have matching cited historical_evidence. Omit unsupported statements; never add an issuer-specific exception.",
           "Provide a detailed synthesis of the company genesis, founders, and early corporate structure.",
           "Return each nested artifact as an object with the exact artifact_type and required_fields supplied in artifact_shape.",
           "Every narrative field named in required_fields is a non-empty string unless explicitly described below; do not return arrays for narrative strings.",
@@ -196,25 +191,4 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
       await sql.end();
     }
   },
-  async validate(ctx: ResearchRunContext, _output: unknown): Promise<ValidationResult> {
-    const sql = postgres(process.env.DATABASE_URL!);
-    try {
-      const errors: string[] = [];
-      const artifactKeys = COMPANY_GENESIS_CONTRACT.requiredKeys;
-      for (const k of artifactKeys) {
-        const rows = await sql`
-          SELECT COUNT(*) as cnt FROM research_artifacts
-          WHERE research_run_id = ${ctx.runId}
-            AND artifact_type = ${k}
-            AND status IN ('validated', 'accepted')
-        `;
-        if (Number(rows[0].cnt) === 0) {
-          errors.push(`Missing required artifact: ${k}`);
-        }
-      }
-      return makeValidationResult(errors);
-    } finally {
-      await sql.end();
-    }
-  }
 };

@@ -6,7 +6,7 @@ import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { createHash } from "node:crypto";
+import { draftAndReviewReport } from "../reporting/runtime";
 
 export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "ai_reviewer",
@@ -18,6 +18,7 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
         FROM research_artifacts
         WHERE research_run_id = ${ctx.runId}
           AND status IN ('validated', 'accepted')
+          AND artifact_type NOT IN ('review_summary', 'findings', 'quality_score', 'recommendations', 'review_verdict')
         ORDER BY artifact_type
       `;
       const packet = {
@@ -32,10 +33,7 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
           artifacts.map((artifact) => [artifact.artifact_type, artifact.content_json])
         ),
       };
-      const taskKey = `research-reviewer:review:v2:${createHash("sha256")
-        .update(JSON.stringify(packet))
-        .digest("hex")
-        .slice(0, 12)}`;
+      const taskKey = "research-reviewer:review";
 
       const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
         agentName: "research-reviewer",
@@ -43,11 +41,13 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
         packet: p,
         extraRules: [
           "Perform a comprehensive review checking consistency and rules compliance across all generated artifacts.",
+          "Judge the current artifacts in this packet; do not repeat findings from an earlier review.",
           "Verify that the backtest executed at least 50 thesis-distinct combinations, ranked a top 10, reviewed at least five weak or failed combinations, used shifted signals and transaction costs, and disclosed proxy-data limitations.",
         ],
       });
 
-      const output = await callResearchAgent<Record<string, unknown>>({
+      const adaptive = artifacts.some(artifact => artifact.artifact_type === "research_plan" && artifact.content_json?.report_standard);
+      const output = adaptive ? (await draftAndReviewReport(sql, ctx)).review : await callResearchAgent<Record<string, unknown>>({
         sql, ctx, stageKey: "ai_reviewer", taskKey,
         taskType: "ai_review", agentName: "research-reviewer", modelTier: "cheap",
         packet, promptFactory,

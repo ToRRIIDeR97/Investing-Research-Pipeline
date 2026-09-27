@@ -1,0 +1,35 @@
+{
+  "started_at": "2026-09-25T03:50:12.172Z",
+  "completed_at": "2026-09-25T03:50:14.130Z",
+  "endpoint": "https://opencode.ai/zen/go/v1/chat/completions",
+  "requested_model": "deepseek-v4.1-flash",
+  "http_status": 200,
+  "response": {
+    "id": "02179030821428835c9db62ef7a9766eeb1c4efe709aaa9ebd582",
+    "object": "chat.completion",
+    "created": 1790308215,
+    "model": "deepseek-v4.1-flash",
+    "choices": [
+      {
+        "index": 0,
+        "finish_reason": "stop",
+        "logprobs": null,
+        "message": {
+          "role": "assistant",
+          "content": "{\"ok\":true}"
+        }
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 41,
+      "completion_tokens": 22,
+      "total_tokens": 63,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 16
+      }
+    }
+  }
+}

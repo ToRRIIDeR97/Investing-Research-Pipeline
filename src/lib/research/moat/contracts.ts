@@ -2,7 +2,7 @@
  * Moat contracts (Component 9) for Research OS v3.
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 
 export const MoatAssessmentEntry = z.object({
   claimed_moat: z.string().min(1),

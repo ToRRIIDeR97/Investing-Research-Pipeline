@@ -4,13 +4,18 @@ import { callResearchAgent, exactJsonPrompt } from "../run-context";
 import {
   loadAcceptedEvidencePacket,
   persistMetrics,
-} from "../system-pipeline";
-import { buildHistoricalRecord } from "../history/normalizer";
+} from "../sources/corpus";
+import { buildHistoricalRecord, latestCompletedQuarter } from "../history/normalizer";
+import { secQuarterlyObservations } from "../history/sec-companyfacts";
+import { captureFilingStatements } from '../history/filing-store';
+import { HistoricalObservation } from '../history/contracts';
 import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { CURRENT_PIPELINE_VERSION } from "../version";
+import { readFile } from "node:fs/promises";
+import { resolve, sep } from "node:path";
 
 const NORMALIZER_OUTPUT_KEYS = [
   "normalized_observations",
@@ -48,51 +53,79 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
 
       // 3. Call metric-normalizer agent
       const taskKey = "metric-normalizer:observations";
-      let output = await sql`
-        SELECT output_json FROM research_tasks
-        WHERE research_run_id = ${ctx.runId} AND task_key = ${taskKey} AND status = 'completed'
-      `.then(rows => rows[0]?.output_json as Record<string, any>);
 
-      if (!output) {
-        const packet = {
-          asset: v2Ctx,
-          evidence_claims: evidenceClaims,
-          required_modules: v2Ctx.requiredModules,
-        };
-        const promptFactory = (packet: Record<string, unknown>) => exactJsonPrompt({
-          agentName: "metric-normalizer",
-          requiredKeys: NORMALIZER_OUTPUT_KEYS,
-          packet,
-          extraRules: [
-            "Normalize and standardize all numbers, currencies, units, and dates into canonical observations.",
-            "Separate GAAP and non-GAAP measurements explicitly (use distinct metric_keys, e.g. net_revenue vs gross_revenue).",
-            "Identify the latest restatement version where applicable.",
-          ],
-        });
+      const packet = {
+        asset: v2Ctx,
+        evidence_claims: evidenceClaims,
+        required_modules: v2Ctx.requiredModules,
+      };
+      const promptFactory = (packet: Record<string, unknown>) => exactJsonPrompt({
+        agentName: "metric-normalizer",
+        requiredKeys: NORMALIZER_OUTPUT_KEYS,
+        packet,
+        extraRules: [
+          "Normalize and standardize all numbers, currencies, units, and dates into canonical observations.",
+          "Separate GAAP and non-GAAP measurements explicitly (use distinct metric_keys, e.g. net_revenue vs gross_revenue).",
+          "Identify the latest restatement version where applicable.",
+          "Each normalized observation must include period_end, source_id, and evidence_claim_id from its supporting evidence. Use ISO dates; reporting periods do not establish publication dates.",
+        ],
+      });
 
-        output = await callResearchAgent<Record<string, unknown>>({
-          sql, ctx, stageKey: "historical_record", taskKey,
-          taskType: "metric_normalization", agentName: "metric-normalizer", modelTier: "cheap",
-          packet, promptFactory,
-        });
-      }
+      const output = await callResearchAgent<Record<string, unknown>>({
+        sql, ctx, stageKey: "historical_record", taskKey,
+        taskType: "metric_normalization", agentName: "metric-normalizer", modelTier: "cheap",
+        packet, promptFactory,
+      });
 
       // Find primary source to link (fallback)
       const primaryDoc = await sql`
-        SELECT id FROM source_documents WHERE research_run_id = ${ctx.runId} LIMIT 1
+        SELECT d.id, d.storage_path
+        FROM source_documents d
+        JOIN research_run_sources r ON r.source_document_id = d.id
+        WHERE r.research_run_id = ${ctx.runId} AND d.source_type = 'primary_source_context'
+        LIMIT 1
       `;
-      const primarySourceId = primaryDoc[0]?.id || "00000000-0000-4000-8000-000000000001";
+      if (!primaryDoc[0]) throw new Error("Primary source context is missing");
+      const primarySourceId = String(primaryDoc[0].id);
 
       // 4. Persist observations in metric_observations table
       await persistMetrics(sql, v2Ctx, primarySourceId, output);
 
+      // The stored SEC file carries a full point-in-time series; model-extracted
+      // claims alone usually cover only the latest quarter.
+      const sourceRoot = resolve(process.cwd(), "storage", "sources");
+      const sourcePath = resolve(process.cwd(), String(primaryDoc[0].storage_path));
+      if (!sourcePath.startsWith(sourceRoot + sep)) throw new Error("Invalid primary source path");
+      const secContext = JSON.parse(await readFile(sourcePath, "utf8"));
+      const secFacts = secQuarterlyObservations(secContext.companyFacts, ctx.marketDataCutoffAt || ctx.cutoffAt);
+      if (secFacts.length) {
+        const filingRows = await sql`
+          SELECT d.id, d.metadata_json->>'accessionNumber' AS accession_number
+          FROM source_documents d
+          JOIN research_run_sources r ON r.source_document_id = d.id
+          WHERE r.research_run_id = ${ctx.runId}
+            AND d.metadata_json->>'accessionNumber' IS NOT NULL
+        `;
+        const filingIds = new Map(filingRows.map((row) => [String(row.accession_number), String(row.id)]));
+        await persistMetrics(sql, v2Ctx, primarySourceId, {
+          normalized_observations: secFacts.map((fact) => ({
+            ...fact,
+            source_id: filingIds.get(fact.accession_number) || primarySourceId,
+          })),
+        }, 500);
+      }
+
       // 5. Fetch all observations from the DB and construct twenty-quarter HistoricalRecord
       const obsRows = await sql`
         SELECT mo.value_numeric, mo.period_start, mo.period_end, mo.unit, mo.currency, mo.confidence,
-               md.metric_key, md.metric_category
+               mo.source_document_id, mo.evidence_claim_id, mo.available_at, mo.data_provider,
+               mo.revision_number, mo.metadata_json, md.metric_key, md.metric_category
         FROM metric_observations mo
         JOIN metric_definitions md ON md.id = mo.metric_definition_id
         WHERE mo.research_run_id = ${ctx.runId}
+          AND mo.review_status = 'accepted'
+          AND mo.period_end <= ${(ctx.marketDataCutoffAt || ctx.cutoffAt).toISOString().slice(0, 10)}
+          AND (mo.available_at IS NULL OR mo.available_at <= ${(ctx.marketDataCutoffAt || ctx.cutoffAt).toISOString()})
       `;
 
       const observations = obsRows.map(row => {
@@ -107,27 +140,47 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
           fiscal_year: end.getFullYear(),
           fiscal_quarter,
           periodicity: periodicity as "annual" | "quarterly",
-          reporting_basis: "gaap" as const, // Default
-          metric_type: "reported" as const,
-          value_numeric: row.value_numeric ? Number(row.value_numeric) : null,
+          reporting_basis: (row.data_provider === "sec_companyfacts" ? "gaap" : (row.metadata_json?.agent_output?.reporting_basis || "as_reported")) as "gaap" | "as_reported",
+          metric_type: (row.metadata_json?.agent_output?.formula_or_adjustment ? "calculated" : "reported") as "calculated" | "reported",
+          value_numeric: row.value_numeric !== null ? Number(row.value_numeric) : null,
           unit: String(row.unit || ""),
           currency: String(row.currency || "USD"),
           confidence: Number(row.confidence || 1),
-          restatement_version: 0,
+          source_document_id: row.source_document_id,
+          evidence_claim_id: row.evidence_claim_id,
+          available_at: row.available_at ? new Date(row.available_at).toISOString().slice(0, 10) : null,
+          restatement_version: Number(row.revision_number || 0),
           comparability_status: "comparable" as const,
-          metadata_json: {},
+          metadata_json: { ...(row.metadata_json || {}), metric_category: row.metric_category },
         };
       });
 
       // Find start/end periods
-      const currentYear = new Date().getFullYear();
+      let end = latestCompletedQuarter(ctx.marketDataCutoffAt || ctx.cutoffAt);
+      const [planRow] = await sql`
+        SELECT content_json->'required_historical_metrics' AS metrics
+        FROM research_artifacts
+        WHERE research_run_id = ${ctx.runId} AND artifact_type = 'research_plan'
+        ORDER BY created_at DESC LIMIT 1
+      `;
+      const plannedMetrics = Array.isArray(planRow?.metrics) ? planRow.metrics : [];
+      const requiredMetricKeys = [...new Set(plannedMetrics
+        .filter((metric: any) => metric.required === true && typeof metric.metric_family === "string")
+        .map((metric: any) => metric.metric_family === "deposit_base" ? "deposits" : metric.metric_family))] as string[];
+      const filings = await captureFilingStatements(sql, ctx);
+      if(filings.failures.length||filings.coverage.some(c=>c.status==='incomplete')||filings.reconciliation.some(c=>c.status==='mismatch'))throw new Error('Primary financial statements are incomplete or do not reconcile. Inspect financial_statement_set coverage before continuing.');
+      const latestFiling=[...filings.tables].sort((a,b)=>b.period_end.localeCompare(a.period_end))[0];
+      if(latestFiling?.fiscal_year&&latestFiling?.fiscal_quarter)end={year:latestFiling.fiscal_year,quarter:latestFiling.fiscal_quarter};
+      const filingObservations = filings.observations.map(row => HistoricalObservation.parse(row));
+      const observationKey=(row:Record<string,any>)=>JSON.stringify([row.metric_key,row.periodicity,row.fiscal_year,row.fiscal_quarter,row.unit,row.currency,row.reporting_basis,row.segment??'',row.geography??'']);
+      const filingKeys = new Set(filingObservations.map(observationKey));
       const record = buildHistoricalRecord({
         asset_id: ctx.assetId,
         run_id: ctx.runId,
-        observations,
-        requiredMetricKeys: [...new Set(observations.map(o => o.metric_key))],
-        endFiscalYear: currentYear - 1,
-        endFiscalQuarter: 4,
+        observations: [...filingObservations, ...observations.filter(row => !filingKeys.has(observationKey(row)))],
+        requiredMetricKeys: requiredMetricKeys.length ? requiredMetricKeys : [...new Set(observations.map(o => o.metric_key))],
+        endFiscalYear: end.year,
+        endFiscalQuarter: end.quarter,
       });
 
       // 6. Save artifact using repository
@@ -139,7 +192,7 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
         artifact_type: "historical_record",
         scope_key: `${ctx.assetSlug}-historical-record`,
         status: "validated",
-        content_json: record as any,
+        content_json: { artifact_type: "historical_record", ...record } as any,
         schema_version: "3.0.0",
         validator_version: "1.0.0",
         prompt_version: "current",
@@ -151,6 +204,8 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
         status: "success",
         observationsCount: observations.length,
         ttmSeriesCount: record.ttm_series.length,
+        filingTableCount: filings.tables.length,
+        filingCoverage: filings.coverage,
       };
     } finally {
       await sql.end();

@@ -2,7 +2,7 @@
  * Forecast contracts (Component 10) for Research OS v3.
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 
 export const ForecastDriver = z.object({
   driver_key: z.string().min(1),
@@ -23,7 +23,10 @@ export const DriverTree = z.object({
 });
 export type DriverTree = z.infer<typeof DriverTree>;
 
+export const NumericAssumption=z.object({driver_key:z.string().min(1),fiscal_year:z.number().int(),value:z.number(),unit:z.string().min(1),rationale:z.string().min(1),source_ids:z.array(z.string())});
+
 export const OperatingScenarioEntry = z.object({
+  numeric_assumptions:z.array(NumericAssumption).optional(),
   scenario_type: z.enum(["bear", "base", "bull"]),
   end_market: z.string().min(1),
   customer_economics: z.string().min(1),
@@ -36,7 +39,7 @@ export const OperatingScenarioEntry = z.object({
   reinvestment: z.string().min(1),
   working_capital: z.string().min(1),
   balance_sheet: z.string().min(1),
-  resulting_financial_statements_json: z.record(z.unknown()),
+  resulting_financial_statements_json: z.record(z.string(), z.unknown()),
   maintenance_spend: z.number().optional(), // For coherence checks
   revenue_cagr: z.number().optional(), // For blanket % check
   operating_margin: z.number().optional(), // For blanket % check
@@ -70,10 +73,10 @@ export type OperatingModel = z.infer<typeof OperatingModel>;
 
 export const TopDownBottomUpReconciliation = z.object({
   artifact_type: z.literal("top_down_bottom_up_reconciliation"),
-  top_down_forecast_total: z.number(),
+  top_down_forecast_total: z.number().nullable(),
   bottom_up_forecast_total: z.number(),
-  tam_limit: z.number(),
-  customer_budget_limit: z.number(),
+  tam_limit: z.number().nullable(),
+  customer_budget_limit: z.number().nullable(),
 });
 export type TopDownBottomUpReconciliation = z.infer<typeof TopDownBottomUpReconciliation>;
 

@@ -32,5 +32,8 @@ export const schema = {
 
 const connectionString = process.env.DATABASE_URL!;
 
-const client = postgres(connectionString);
+// Keep hot reloads from creating a new connection pool for every module update.
+const globalForDb = globalThis as typeof globalThis & { researchDbClient?: ReturnType<typeof postgres> };
+const client = globalForDb.researchDbClient ?? postgres(connectionString);
+if (process.env.NODE_ENV !== "production") globalForDb.researchDbClient = client;
 export const db = drizzle(client, { schema });

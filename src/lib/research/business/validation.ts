@@ -24,7 +24,7 @@ export type ValidationResult = {
 export function validateSegmentModel(content: unknown): ValidationResult {
   const parsed = SegmentModel.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -56,7 +56,7 @@ export function validateSegmentModel(content: unknown): ValidationResult {
 export function validateCustomerDecisionMap(content: unknown): ValidationResult {
   const parsed = CustomerDecisionMap.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -78,7 +78,7 @@ export function validateCustomerDecisionMap(content: unknown): ValidationResult 
 export function validateBusinessProcessMap(content: unknown): ValidationResult {
   const parsed = BusinessProcessMap.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -98,7 +98,7 @@ export function validateBusinessProcessMap(content: unknown): ValidationResult {
 export function validateBottleneckRegister(content: unknown): ValidationResult {
   const parsed = BottleneckRegister.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -108,7 +108,7 @@ export function validateBottleneckRegister(content: unknown): ValidationResult {
 export function validateCompetitiveResponseMatrix(content: unknown): ValidationResult {
   const parsed = CompetitiveResponseMatrix.safeParse(content);
   if (!parsed.success) {
-    return { valid: false, errors: parsed.error.errors.map((e) => e.message), warnings: [] };
+    return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
   }
   const errors: string[] = [];
   const warnings: string[] = [];

@@ -3,11 +3,40 @@ import { existsSync, readFileSync } from "node:fs";
 import test, { before, after, describe } from "node:test";
 import postgres from "postgres";
 import crypto from "node:crypto";
+import { NextRequest } from "next/server";
+import { db } from "../src/db";
+import { POST as createRun } from "../src/app/api/assets/[id]/research-runs/route";
+import { POST as queueRun } from "../src/app/api/research-runs/[id]/run-system-pipeline/route";
+import { POST as approvePlan } from "../src/app/api/research-runs/[id]/approve-plan/route";
+import { POST as submitReview } from "../src/app/api/research-runs/[id]/review/route";
+import {POST as askResearch, GET as loadChat} from '../src/app/api/research-runs/[id]/chat/route';
+import {loadReportInputs} from '../src/lib/research/reporting/store';
+import { processNextResearchRunJob } from "../src/workers/research-worker";
+import { getLatestResearchRunJob, claimNextResearchRun, requeueExpiredResearchRunJobs } from "../src/lib/research/run-queue";
+import { callResearchAgent, loadRunContext } from "../src/lib/research/run-context";
 import { runResearchPipeline } from "../src/lib/research/pipeline-runner";
 import { runSystemResearchPipeline } from "../src/lib/research/system-pipeline";
-import { createStagesForRun, approveResearchPlan, approveHumanReview } from "../src/lib/workflow/orchestrator";
+import { createStagesForRun, approveResearchPlan, advanceStage, resumeResearchRun } from "../src/lib/workflow/orchestrator";
+import { createArtifactRepository } from "../src/lib/research/artifacts/repository";
 import { evaluateQualityGates } from "../src/lib/workflow/quality-gates";
 import { generateMarkdownReport } from "../src/lib/export/report-generator";
+import { MockProvider } from "../src/lib/agent-harness/providers/mock";
+import { assertModelBudgetAvailable, recordModelCall } from "../src/lib/agents/model-calls";
+import { createV3Task } from "../src/lib/research/run-context";
+import { getTeamRequests } from "../src/lib/research/team";
+
+function request(body: Record<string, unknown> = {}) {
+  return new NextRequest("http://localhost/api/test", { method: "POST", body: JSON.stringify(body) });
+}
+const paramsFor = (id: string) => ({ params: Promise.resolve({ id }) });
+
+async function runQueuedJob(runId: string) {
+  assert.equal(await processNextResearchRunJob(), true);
+  const job = await getLatestResearchRunJob(runId);
+  assert.equal(job?.status, "completed", job?.failure_reason || "Worker should finish its job");
+  assert.ok(job?.result_json);
+  return job.result_json as { status: string; failure_reason?: string };
+}
 
 function loadLocalEnv() {
   if (!existsSync(".env.local")) return;
@@ -26,7 +55,8 @@ async function deleteAssetCascade(sql: ReturnType<typeof postgres>, targetAssetI
   const runQ = targetRunId
     ? sql`SELECT id FROM research_runs WHERE id = ${targetRunId} AND asset_id = ${targetAssetId}`
     : sql`SELECT id FROM research_runs WHERE asset_id = ${targetAssetId}`;
-  const docQ = sql`SELECT id FROM source_documents WHERE asset_id = ${targetAssetId}`;
+  const docQ = sql`SELECT id FROM source_documents WHERE asset_id = ${targetAssetId}
+    ${targetRunId ? sql`AND research_run_id = ${targetRunId}` : sql``}`;
   const stageQ = sql`SELECT id FROM research_stages WHERE research_run_id IN (${runQ})`;
   const taskQ = sql`SELECT id FROM research_tasks WHERE research_run_id IN (${runQ})`;
   const parseQ = sql`SELECT id FROM document_parses WHERE source_document_id IN (${docQ})`;
@@ -98,11 +128,12 @@ async function deleteAssetCascade(sql: ReturnType<typeof postgres>, targetAssetI
   await sql`DELETE FROM valuation_model_runs WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM research_assumptions WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM research_artifacts WHERE research_run_id IN (${runQ})`;
-  await sql`DELETE FROM source_documents WHERE asset_id = ${targetAssetId}`;
+  await sql`DELETE FROM source_documents WHERE id IN (${docQ})`;
   await sql`DELETE FROM source_gaps WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM review_decisions WHERE research_run_id IN (${runQ})`;
 
   // Phase 7: infrastructure
+  await sql`DELETE FROM research_run_jobs WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM research_tasks WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM research_stages WHERE research_run_id IN (${runQ})`;
   await sql`DELETE FROM asset_profile_assignments WHERE ${targetRunId ? sql`research_run_id IN (${runQ})` : sql`asset_id = ${targetAssetId}`}`;
@@ -188,47 +219,51 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     }
 
     await sql.end();
+    await db.$client.end();
   });
 
   test("C9-T1: Full research flow through all three pipeline invocations and gates", async () => {
-    const runId = crypto.randomUUID();
-    // Fixed historical cutoff date (Component 8/9 non-negotiable requirement)
     const cutoffAt = "2026-01-01T00:00:00.000Z";
+    const created = await createRun(request({
+      run_type: "deep_dive", research_question: "Mock SOFI Deep Dive?",
+      requested_by: "system-test-harness", budget_limit_usd: 100,
+      source_cutoff_at: cutoffAt, market_data_cutoff_at: cutoffAt,
+    }), paramsFor(testAssetId));
+    assert.equal(created.status, 201);
+    const { id: runId } = await created.json();
+    assert.ok(runId);
+    const queued = await queueRun(request(), paramsFor(runId));
+    assert.equal(queued.status, 202);
+    const firstJob = await queued.json();
+    const duplicate = await queueRun(request(), paramsFor(runId));
+    assert.equal((await duplicate.json()).jobId, firstJob.jobId, "Queue requests are idempotent");
 
-    await sql`
-      INSERT INTO research_runs (
-        id, asset_id, run_type, status, research_question, requested_by,
-        profile_id, profile_version, source_cutoff_at, market_data_cutoff_at,
-        budget_limit_usd, pipeline_version, metadata_json
-      ) VALUES (
-        ${runId}, ${testAssetId}, 'deep_dive', 'pending', 'Mock SOFI Deep Dive?', 'system-test-harness',
-        ${financialsProfileId}, 1, ${cutoffAt}, ${cutoffAt},
-        100.00, 3, ${sql.json({ acceptance_provider: "mock" })}
-      )
-    `;
-
-    await sql`
-      INSERT INTO asset_profile_assignments (
-        asset_id, research_run_id, profile_id, assignment_reason,
-        assigned_by, confidence, status
-      ) VALUES (
-        ${testAssetId}, ${runId}, ${financialsProfileId},
-        'Run-scoped assignment', 'system-test-harness', '1.0', 'active'
-      )
-    `;
-
-    await createStagesForRun(runId);
+    // Simulate a worker dying after claiming; only the expired lease may be reclaimed.
+    const claimed = await claimNextResearchRun("expired-test-worker");
+    assert.equal(claimed?.id, firstJob.jobId);
+    assert.equal(await claimNextResearchRun("other-test-worker"), null);
+    await sql`UPDATE research_run_jobs SET lease_expires_at = NOW() - INTERVAL '1 second' WHERE id = ${firstJob.jobId}`;
+    const recovered = await requeueExpiredResearchRunJobs();
+    assert.ok(recovered.some((job) => job.id === firstJob.jobId && job.status === "queued"));
 
     // ==========================================
     // Invocation 1: Reach research-plan gate
     // ==========================================
-    let state = await runResearchPipeline(runId);
+    let state = await runQueuedJob(runId);
     assert.equal(state.status, "waiting_for_human");
 
     const [planStage] = await sql`
       SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'research_plan'
     `;
     assert.equal(planStage?.status, "waiting_for_human");
+    const [persistedPlan] = await sql`
+      SELECT id, content_json FROM research_artifacts
+      WHERE research_run_id = ${runId} AND artifact_type = 'research_plan'
+        AND status IN ('validated', 'accepted')
+    `;
+    assert.ok(persistedPlan, "Research plan must exist before approval");
+    assert.deepEqual(persistedPlan.content_json.composed_archetypes, ["bank", "lender"]);
+    assert.equal(persistedPlan.content_json.required_historical_metrics.some((item: any) => item.metric_family === "gmv"), false);
 
     // Zero non-human running work
     const runningTasks1 = await sql`SELECT id FROM research_tasks WHERE research_run_id = ${runId} AND status = 'running'`;
@@ -237,13 +272,22 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     // ==========================================
     // Gate 1 Approval: Approve Research Plan
     // ==========================================
-    await approveResearchPlan(runId, "system-test-harness");
+    const planApproval = await approvePlan(request({ approved_by: "system-test-harness" }), paramsFor(runId));
+    assert.equal(planApproval.status, 200);
+    assert.equal((await planApproval.json()).success, true);
 
     // ==========================================
     // Invocation 2: Execute research through decision synthesis & AI review to human_review gate
     // ==========================================
-    state = await runResearchPipeline(runId);
-    assert.equal(state.status, "waiting_for_human");
+    state = await runQueuedJob(runId);
+    if (state.status !== "waiting_for_human") {
+      const failed = await sql`
+        SELECT stage_key, status, failure_reason FROM research_stages
+        WHERE research_run_id = ${runId} AND status IN ('failed', 'needs_more_work')
+        ORDER BY stage_order
+      `;
+      assert.fail(`Expected final review gate, got ${state.status}: ${JSON.stringify(failed)}`);
+    }
 
     const [finalStage] = await sql`
       SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'human_review'
@@ -275,7 +319,7 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
       "company_genesis", "founder_profile", "strategic_history_timeline", "strategic_dna",
       "historical_diagnosis", "segment_model", "customer_decision_map", "business_process_map",
       "bottleneck_register", "competitive_response_matrix", "moat_assessment", "moat_attack_matrix",
-      "no_moat_counterfactual", "driver_tree", "operating_model", "operating_scenario_set",
+      "no_moat_counterfactual", "driver_tree", "operating_model", "top_down_bottom_up_reconciliation", "reinvestment_model", "operating_scenario_set",
       "valuation_scenario_set", "reverse_valuation", "annual_price_target_path", "investment_thesis",
       "risk_register", "catalyst_register", "expected_return_matrix", "thesis_breakers",
       "monitoring_dashboard", "confidence_assessment", "decision_record"
@@ -284,6 +328,30 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     for (const type of expectedTypes) {
       assert.ok(artifactTypes.includes(type), `Missing expected artifact in registry: ${type}`);
     }
+
+    const researchPlan = artifacts.find((a) => a.artifact_type === "research_plan")?.content_json as any;
+    const roleCoverage = await sql`
+      SELECT source_role, artifact_type FROM source_role_coverage WHERE research_run_id = ${runId}
+    `;
+    const allowedCoverage = new Set((researchPlan.required_source_roles || []).flatMap((role: any) =>
+      (role.blockedArtifacts || []).map((artifact: string) => `${role.role}:${artifact}`)
+    ));
+    assert.ok(roleCoverage.length > 0, "source roles must have covered artifacts");
+    assert.ok(roleCoverage.every((row) => allowedCoverage.has(`${row.source_role}:${row.artifact_type}`)));
+
+    const operatingModel = artifacts.find((a) => a.artifact_type === "operating_model")?.content_json as any;
+    const reinvestmentModel = artifacts.find((a) => a.artifact_type === "reinvestment_model")?.content_json as any;
+    const scenarioSet = artifacts.find((a) => a.artifact_type === "operating_scenario_set")?.content_json as any;
+    const baseStatements = scenarioSet.scenarios.find((scenario: any) => scenario.scenario_type === "base")?.resulting_financial_statements_json;
+    assert.equal(baseStatements.consolidated_revenue, operatingModel.consolidated_revenue);
+    assert.equal(baseStatements.consolidated_operating_income, operatingModel.consolidated_operating_income);
+    assert.deepEqual(baseStatements.working_capital_forecast, reinvestmentModel.working_capital_forecast);
+    assert.deepEqual(baseStatements.segment_revenue, Object.fromEntries(
+      operatingModel.segments.map((segment: any) => [segment.segment_name, segment.forecast_revenue])
+    ));
+    assert.deepEqual(baseStatements.segment_operating_income, Object.fromEntries(
+      operatingModel.segments.map((segment: any) => [segment.segment_name, segment.forecast_operating_income])
+    ));
 
     // ==========================================
     // Annual Price Target Acceptance Table Validation
@@ -319,6 +387,32 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     `;
     assert.equal(reviewStage?.status, "completed");
 
+    // The first live request must include the contract, not discover it in a repair.
+    const [operatingTask] = await sql`SELECT input_json FROM research_tasks
+      WHERE research_run_id = ${runId} AND task_type = 'operating_model' ORDER BY started_at DESC LIMIT 1`;
+    const operatingPacket = operatingTask.input_json.packet;
+    assert.ok(Object.keys(operatingPacket.recent_reported_history).length > 0);
+    assert.ok(operatingPacket.team_context.upstream_artifacts.some((a: any) => a.artifact_type === 'historical_diagnosis'));
+    assert.ok(!operatingPacket.team_context.upstream_artifacts.some((a: any) => a.artifact_type === 'historical_record'),
+      'Specialists must not receive the complete archive again alongside their tailored historical inputs');
+    const reportTasks = await sql`SELECT input_json FROM research_tasks
+      WHERE research_run_id = ${runId} AND task_key LIKE 'report:%'`;
+    assert.ok(reportTasks.length >= 3);
+    for (const task of reportTasks) {
+      const request = task.input_json;
+      assert.deepEqual(request.packet.output_schema, request.output_format.schema,
+        `Missing first-attempt schema for ${request.packet.output_contract}`);
+      const sentPacket = JSON.parse(request.prompt.split("Task packet:\n").at(-1));
+      assert.deepEqual(sentPacket.output_schema, request.output_format.schema);
+      if (sentPacket.output_contract === "report_review") {
+        assert.equal("markdown" in sentPacket.report_document, false, "Review must not duplicate rendered tables and source passages");
+        assert.equal("artifacts" in sentPacket.report_document, false);
+        assert.equal("evidence" in sentPacket.report_document, false);
+        assert.ok(sentPacket.artifacts.length > 0);
+        assert.ok(sentPacket.report_document.sections.length > 0);
+      }
+    }
+
     // Zero running non-human work
     const runningStages2 = await sql`SELECT id FROM research_stages WHERE research_run_id = ${runId} AND status = 'running'`;
     assert.equal(runningStages2.length, 0);
@@ -340,24 +434,49 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     // ==========================================
     // Gate 2 Approval: Persist decision & approve Human Review
     // ==========================================
-    const decisionId = crypto.randomUUID();
-    await sql`
-      INSERT INTO review_decisions (
-        id, asset_id, research_run_id, status, reviewed_by, reviewed_at
-      ) VALUES (
-        ${decisionId}, ${testAssetId}, ${runId}, 'approved_for_tracking',
-        'human-reviewer-1', NOW()
-      )
-    `;
-
-    const approvalRes = await approveHumanReview(runId, "system-test-harness");
-    assert.ok(approvalRes.success, `approveHumanReview failed: ${approvalRes.error}`);
+    let [draft] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId}
+      AND artifact_type = 'report_document' AND status = 'validated' ORDER BY artifact_version DESC LIMIT 1`;
+    assert.ok(draft?.content_json?.content_hash, "report must exist before human approval");
+    const inputsBeforeChat=await loadReportInputs(sql,runId,cutoffAt);
+    const reply=await askResearch(request({message:'What drives the base-case valuation?'}),paramsFor(runId));
+    assert.equal(reply.status,200,JSON.stringify(await reply.clone().json()));
+    const conversation=await reply.json();assert.equal(conversation.messages.length,2);
+    const chat=await loadChat(new NextRequest('http://localhost/api/test'),paramsFor(runId));
+    assert.equal((await chat.json()).messages.length,2);
+    assert.equal((await loadReportInputs(sql,runId,cutoffAt)).input_hash,inputsBeforeChat.input_hash,'Chat must not change report inputs or invalidate approval');
+    const maliciousOrigin=new NextRequest('http://localhost/api/test',{method:'POST',headers:{origin:'https://unrelated.example'},body:JSON.stringify({message:'Test'})});
+    assert.equal((await askResearch(maliciousOrigin,paramsFor(runId))).status,403);
+    const methods=artifacts.find(a=>a.artifact_type==='valuation_scenario_set')!.content_json.method_schedules;
+    assert.equal(methods.length,3);assert.ok(methods.every((m:any)=>Number.isFinite(m.value_per_share)));
+    assert.equal(draft.content_json.sections.filter((s:any)=>s.coverage.includes('valuation')).length,1);
+    assert.ok(!draft.content_json.sections.some((s:any)=>s.coverage.every((k:string)=>['history','evidence'].includes(k))));
+    const staleReview = await submitReview(request({ status: "approved_for_tracking", reportHash: "stale", reviewed_by: "human-reviewer-1" }), paramsFor(runId));
+    assert.equal(staleReview.status, 409, "stale report approval must be rejected");
+    const firstHash = draft.content_json.content_hash;
+    const revision = await submitReview(request({ status: "needs_more_work", reportHash: firstHash,
+      open_questions: "Explain capital spending versus returns on that spending.", reviewed_by: "human-reviewer-1" }), paramsFor(runId));
+    assert.equal(revision.status, 201);
+    assert.equal((await revision.json()).workflow.status, "revision_queued");
+    assert.equal((await runQueuedJob(runId)).status, "waiting_for_human", "revision must return to the human gate");
+    [draft] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId}
+      AND artifact_type = 'report_document' AND status = 'validated' ORDER BY artifact_version DESC LIMIT 1`;
+    assert.notEqual(draft.content_json.content_hash, firstHash, "a substantive revision changes the report hash");
+    const [oldVersion] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId}
+      AND artifact_type = 'report_document' AND content_json->>'content_hash' = ${firstHash}`;
+    assert.equal(oldVersion.content_json.content_hash, firstHash, "prior report text remains available");
+    const reviewResponse = await submitReview(request({
+      status: "approved_for_tracking", reviewed_by: "human-reviewer-1",
+      reportHash: draft.content_json.content_hash,
+    }), paramsFor(runId));
+    assert.equal(reviewResponse.status, 201);
+    assert.equal((await reviewResponse.json()).workflow.success, true);
 
     // ==========================================
     // Invocation 3: Execute terminal export and refresh_schedule stages
     // ==========================================
-    state = await runResearchPipeline(runId);
-    assert.equal(state.status, "completed");
+    state = await runQueuedJob(runId);
+    const [completion] = await sql`SELECT metadata_json->'quality_gate' AS quality FROM research_runs WHERE id = ${runId}`;
+    assert.equal(state.status, "completed", JSON.stringify(completion.quality));
 
     const [exportStage] = await sql`SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'export'`;
     assert.equal(exportStage?.status, "completed");
@@ -370,6 +489,10 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
       SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId} AND artifact_type = 'synthetic_report'
     `;
     assert.ok(syntheticArtifact, "synthetic_report artifact must be created by export handler");
+    const report = readFileSync(syntheticArtifact.content_json.storagePath, "utf8");
+    assert.equal(report, draft.content_json.markdown, "export must reproduce the report approved by the human");
+    assert.equal(syntheticArtifact.content_json.humanDecision, "approved_for_tracking", "export metadata must retain the human decision");
+    assert.ok(!report.includes("[object Object]"), "export must render typed artifacts as readable text");
 
     const [refreshArtifact] = await sql`
       SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId} AND artifact_type = 'refresh_schedule'
@@ -377,6 +500,137 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     assert.ok(refreshArtifact, "refresh_schedule artifact must be created by refresh handler");
 
     // Clean up run in FK-safe order without deleting the shared test asset.
+    await deleteAssetCascade(sql, testAssetId, runId);
+  });
+
+  test("five specialist plans overlap and report requests escalate to collection and return to review", { timeout: 120_000 }, async () => {
+    const created = await createRun(request({ run_type: "deep_dive", budget_limit_usd: 100, research_question: "Which disclosed cash flows support the valuation?",
+      source_cutoff_at: "2026-01-01T00:00:00.000Z", market_data_cutoff_at: "2026-01-01T00:00:00.000Z" }), paramsFor(testAssetId));
+    const { id: runId } = await created.json();
+    const original = MockProvider.prototype.stream;
+    let briefCount = 0;
+    let interrupted = false;
+    let release!: () => void;
+    const allBriefsStarted = new Promise<void>(resolve => { release = resolve; });
+    MockProvider.prototype.stream = async function* (req, signal) {
+      const packet = JSON.parse(req.prompt.slice(req.prompt.lastIndexOf("Task packet:") + 12).trim());
+      if (packet.output_contract === "team_brief") {
+        briefCount++;
+        if (briefCount === 5) release();
+        await allBriefsStarted;
+      }
+      let response;
+      if (packet.output_contract === "team_requests" && !packet.previous_requests.length) {
+        response = { requests: [{ role: "valuation", question: "What maintenance capex is disclosed separately from growth capex?",
+          material: true, needs_sources: false, source_role: "regulatory_filing" }] };
+      } else if (packet.output_contract === "team_answer") {
+        if (!interrupted) { interrupted = true; throw new Error("Simulated interrupted specialist answer"); }
+        response = { status: packet.source_search_attempted ? "unavailable" : "needs_sources",
+          answer: "Maintenance capex is not disclosed separately in the available documents.", evidence_ids: [], artifact_ids: [] };
+      }
+      if (response) {
+        yield { type: "response.started", requestId: "team-test" };
+        yield { type: "text.delta", text: JSON.stringify(response) };
+        yield { type: "usage", usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 } };
+        yield { type: "response.completed" };
+      } else yield* original.call(this, req, signal);
+    };
+    try {
+      const initial = await runResearchPipeline(runId);
+      assert.equal(initial.status, "waiting_for_human", initial.failure_reason || initial.notes.join("\n"));
+      assert.equal(briefCount, 0, "specialists must not start before plan approval");
+      await approveResearchPlan(runId, "team-test");
+      const interruptedRun = await runResearchPipeline(runId);
+      assert.equal(interruptedRun.status, "needs_more_work");
+      assert.match(interruptedRun.failure_reason || "", /Simulated interrupted specialist/);
+      assert.equal((await getTeamRequests(sql, runId))?.state, "processing");
+      await resumeResearchRun(runId);
+      const result = await runResearchPipeline(runId);
+      assert.equal(result.status, "waiting_for_human", result.failure_reason || result.notes.join("\n"));
+      assert.equal(briefCount, 5, "all five roles actually entered concurrent model calls");
+      const batch = await getTeamRequests(sql, runId);
+      assert.equal(batch?.state, "answered");
+      assert.equal(batch?.source_escalated, true);
+      assert.equal(batch?.requests[0].response?.status, "unavailable");
+      const attempts = await sql`SELECT id FROM source_retrieval_attempts WHERE research_run_id = ${runId}
+        AND attempt_metadata_json->>'request_id' = ${batch!.requests[0].id}`;
+      assert.equal(attempts.length, 1, "specialist's missing evidence was routed back to the collector");
+      const [report] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId}
+        AND artifact_type = 'report_document' AND status = 'validated'`;
+      assert.equal(report.content_json.conclusion_status, "withheld");
+      const callsBeforeResume = await sql`SELECT id FROM model_call_logs WHERE research_run_id = ${runId}`;
+      assert.equal((await runResearchPipeline(runId)).status, "waiting_for_human");
+      const callsAfterResume = await sql`SELECT id FROM model_call_logs WHERE research_run_id = ${runId}`;
+      assert.equal(callsAfterResume.length, callsBeforeResume.length, "restarting at a gate does not repeat specialist work");
+      const [exportStage] = await sql`SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'export'`;
+      assert.equal(exportStage.status, "pending");
+    } finally {
+      release();
+      MockProvider.prototype.stream = original;
+      await deleteAssetCascade(sql, testAssetId, runId);
+    }
+  });
+
+  test("concurrent calls reserve shared budget and record spend above estimates", async () => {
+    const created = await createRun(request({ run_type: "deep_dive", budget_limit_usd: 0.15 }), paramsFor(testAssetId));
+    const { id: runId } = await created.json();
+    try {
+      const tasks = await Promise.all(["a", "b"].map(key => createV3Task(sql, runId, "historical_record", `budget-${key}`, "team_brief", "metric-normalizer")));
+      const outcomes = await Promise.allSettled(tasks.map(task => assertModelBudgetAvailable({ researchRunId: runId,
+        taskId: task.id, stageId: task.stage_id, modelTier: "cheap", reserveUsd: 0.1 })));
+      assert.equal(outcomes.filter(r => r.status === "fulfilled").length, 1);
+      assert.equal(outcomes.filter(r => r.status === "rejected").length, 1);
+      const winner = tasks[outcomes.findIndex(r => r.status === "fulfilled")];
+      await recordModelCall({ researchRunId: runId, taskId: winner.id, stageId: winner.stage_id,
+        modelProvider: "mock", modelName: "test", modelTier: "cheap", costUsd: 0.2, status: "success" });
+      const [run] = await sql`SELECT actual_cost_usd FROM research_runs WHERE id = ${runId}`;
+      assert.equal(Number(run.actual_cost_usd), 0.2, "actual cost must never disappear because it exceeded the estimate");
+      const [task] = await sql`SELECT input_json FROM research_tasks WHERE id = ${winner.id}`;
+      assert.equal(task.input_json.budget_reservation, undefined);
+      await assert.rejects(assertModelBudgetAvailable({ researchRunId: runId, taskId: winner.id, stageId: winner.stage_id,
+        modelTier: "cheap", reserveUsd: 0.1 }), /budget exceeded/);
+    } finally { await deleteAssetCascade(sql, testAssetId, runId); }
+  });
+
+  test("model task reuse follows inputs and contracts, and rejects invalid cached output", async () => {
+    const response = await createRun(request({ run_type: "deep_dive", budget_limit_usd: 100 }), paramsFor(testAssetId));
+    assert.equal(response.status, 201);
+    const { id: runId } = await response.json();
+    const ctx = await loadRunContext(sql, runId);
+    const params = {
+      sql, ctx, stageKey: "historical_record", taskKey: "cache-regression",
+      taskType: "metric_normalization", agentName: "metric-normalizer" as const, modelTier: "cheap",
+      packet: { revision: 1 }, prompt: "Normalize this fixture.",
+      outputFormat: { requiredKeys: ["normalized_observations"], schema: {
+        type: "object", required: ["normalized_observations"],
+        properties: { normalized_observations: { type: "array" } },
+      } },
+    };
+    const calls = async () => Number((await sql`SELECT count(*) AS count FROM model_call_logs WHERE research_run_id = ${runId}`)[0].count);
+    await callResearchAgent(params);
+    assert.equal(await calls(), 1);
+    await callResearchAgent(params);
+    assert.equal(await calls(), 1, "Identical successful request is reused");
+    await callResearchAgent({ ...params, packet: { revision: 2 } });
+    await callResearchAgent({ ...params, prompt: "Normalize the revised fixture." });
+    await callResearchAgent({ ...params, outputFormat: { ...params.outputFormat, schema: { ...params.outputFormat.schema, description: "Revised contract" } } });
+    assert.equal(await calls(), 4, "Input, prompt, and contract changes each require a new call");
+    await sql`UPDATE research_tasks SET output_json = '{}'::jsonb WHERE research_run_id = ${runId}`;
+    await callResearchAgent(params);
+    assert.equal(await calls(), 5, "An invalid cached result is regenerated");
+    const rejected = await sql`SELECT id FROM research_tasks WHERE research_run_id = ${runId} AND validation_status = 'invalid'`;
+    assert.equal(rejected.length, 1);
+    await sql`UPDATE research_runs SET status = 'running' WHERE id = ${runId}`;
+    await sql`UPDATE research_stages SET status = 'running' WHERE research_run_id = ${runId} AND stage_key = 'historical_record'`;
+    const retry = await advanceStage(runId, { valid: false, errors: ["Invalid fixture stage"], warnings: [], checkedAt: new Date().toISOString() });
+    assert.equal(retry.action, "retry");
+    await callResearchAgent(params);
+    assert.equal(await calls(), 6, "Stage retry must not replay output rejected by stage validation");
+    await assert.rejects(createArtifactRepository(db).upsertArtifact({
+      research_run_id: runId, asset_id: testAssetId, artifact_type: "company_genesis",
+      scope_key: "invalid-fixture", status: "validated", content_json: {},
+      schema_version: "3.0.0", validator_version: "1.0.0", prompt_version: "test", created_by: "test",
+    }), /Invalid company_genesis/);
     await deleteAssetCascade(sql, testAssetId, runId);
   });
 
@@ -428,11 +682,13 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     const exports = await sql`SELECT id FROM research_artifacts WHERE research_run_id = ${runId} AND artifact_type = 'synthetic_report'`;
     assert.equal(exports.length, 0);
 
-    // Cleanup
-    await sql`DELETE FROM asset_profile_assignments WHERE research_run_id = ${runId}`;
-    await sql`DELETE FROM research_stages WHERE research_run_id = ${runId}`;
-    await sql`DELETE FROM research_artifacts WHERE research_run_id = ${runId}`;
-    await sql`DELETE FROM research_tasks WHERE research_run_id = ${runId}`;
-    await sql`DELETE FROM research_runs WHERE id = ${runId}`;
+    // The same public enqueue path resets failed stages and resumes at the first gate.
+    const resumed = await queueRun(request(), paramsFor(runId));
+    assert.equal(resumed.status, 202);
+    const resumedState = await runQueuedJob(runId);
+    assert.equal(resumedState.status, "waiting_for_human");
+    const failedStages = await sql`SELECT id FROM research_stages WHERE research_run_id = ${runId} AND status = 'failed'`;
+    assert.equal(failedStages.length, 0);
+    await deleteAssetCascade(sql, testAssetId, runId);
   });
 });

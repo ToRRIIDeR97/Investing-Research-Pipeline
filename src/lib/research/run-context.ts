@@ -8,12 +8,20 @@
  */
 
 import postgres from "postgres";
-import { runResearchAgent } from "@/lib/agent-harness/runner";
+import { createHash } from "node:crypto";
+import { runResearchAgent, buildTaskPrompt } from "@/lib/agent-harness/runner";
+import { getAgentConfig, resolveAgentModel, type ResearchAgentName } from "@/lib/agent-harness/registry";
+import { validateSchema } from "@/lib/agent-harness/validation";
 import { assertModelBudgetAvailable, recordModelCall } from "@/lib/agents/model-calls";
 import { composeProfile } from "./archetypes/compose";
 import type { ComposedProfile } from "./archetypes/types";
 import type { ValidationResult } from "@/lib/workflow/validators";
 import { CURRENT_PIPELINE_VERSION } from "./version";
+import { RESEARCH_DOCTRINE } from "./reporting/contracts";
+import { STAGE_OWNERS, TEAM_ROLES, STAGE_DEPENDENCIES } from "./team-plan";
+import { loadReportInputs } from "./reporting/store";
+import { getStageOutputContract } from "./stage-contracts";
+import { researchPacketForModel } from "./reporting/packet";
 export type { ValidationResult };
 
 export type Sql = ReturnType<typeof postgres>;
@@ -55,7 +63,7 @@ export interface ResearchRunContext {
 export interface StageHandler<TOutput = unknown> {
   stageKey: string;
   execute(context: ResearchRunContext): Promise<TOutput>;
-  validate(context: ResearchRunContext, output: TOutput): Promise<ValidationResult>;
+  validate?(context: ResearchRunContext, output: TOutput): Promise<ValidationResult>;
 }
 
 type RunRow = {
@@ -199,7 +207,8 @@ export async function createV3Task(
   stageKey: string,
   taskKey: string,
   taskType: string,
-  agentName: string
+  agentName: string,
+  input: Record<string, unknown> = {}
 ): Promise<{ id: string; stage_id: string }> {
   const existing = await sql`
     SELECT id, stage_id, status FROM research_tasks
@@ -223,7 +232,7 @@ export async function createV3Task(
       status, priority, input_json, started_at
     ) VALUES (
       ${runId}, ${stage[0].id}, ${taskKey}, ${taskType}, ${agentName},
-      'running', 80, ${JSON.stringify({ system_generated: true, pipeline_version: CURRENT_PIPELINE_VERSION })}::jsonb, NOW()
+      'running', 80, ${JSON.stringify({ system_generated: true, pipeline_version: CURRENT_PIPELINE_VERSION, ...input })}::text::jsonb, NOW()
     )
     RETURNING id, stage_id
   `;
@@ -241,6 +250,7 @@ export async function latestV3TaskOutput(
     WHERE research_run_id = ${runId}
       AND task_key = ${taskKey}
       AND status = 'completed'
+      AND validation_status IS DISTINCT FROM 'invalid'
       AND output_json IS NOT NULL
     ORDER BY completed_at DESC NULLS LAST, created_at DESC
     LIMIT 1
@@ -264,7 +274,7 @@ export async function completeV3Task(sql: Sql, taskId: string, output: unknown):
   await sql`
     UPDATE research_tasks
     SET status = 'completed',
-        output_json = ${JSON.stringify(output ?? {})}::jsonb,
+        output_json = ${JSON.stringify(output ?? {})}::text::jsonb,
         failure_reason = NULL,
         completed_at = NOW(),
         updated_at = NOW()
@@ -297,11 +307,17 @@ export function exactJsonPrompt(params: {
     `The top-level object must contain exactly these required keys: ${params.requiredKeys.join(", ")}.`,
     "For every top-level artifact object, artifact_type must exactly equal its enclosing top-level key.",
     "If evidence is insufficient, return empty arrays for the relevant fields and explain gaps in source_gaps or unresolved fields.",
+    ...(["asset-analyst", "valuation-analyst", "research-reviewer", "metric-normalizer", "table-normalizer", "source-reader", "export-writer"].includes(params.agentName) ? RESEARCH_DOCTRINE : []),
     ...(params.extraRules || []),
     "",
     "Task packet:",
-    JSON.stringify(params.packet, null, 2),
+    JSON.stringify(params.packet),
   ].join("\n");
+}
+
+/** A completed model task is reusable only for the same request and contract. */
+export function researchTaskKey(taskKey: string, request: Record<string, unknown>): string {
+  return `${taskKey}:${createHash("sha256").update(JSON.stringify(request)).digest("hex").slice(0, 24)}`;
 }
 
 /**
@@ -321,9 +337,51 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
   promptFactory?: (packet: Record<string, unknown>) => string;
   outputFormat?: Parameters<typeof runResearchAgent>[0]["outputFormat"];
 }): Promise<T> {
-  const task = await createV3Task(params.sql, params.ctx.runId, params.stageKey, params.taskKey, params.taskType, params.agentName);
-  const prior = await latestV3TaskOutput(params.sql, params.ctx.runId, params.taskKey);
-  if (prior) return prior as T;
+  const role = STAGE_OWNERS[params.stageKey];
+  if (role && !params.taskType.startsWith("team_")) {
+    const rows = await params.sql`SELECT artifact_type, scope_key, content_json FROM research_artifacts
+      WHERE research_run_id = ${params.ctx.runId} AND status = 'validated'
+        AND (artifact_type = 'team_requests' OR (artifact_type = 'agent_brief' AND scope_key = ${role}))`;
+    const requests = rows.find(r => r.artifact_type === "team_requests")?.content_json?.requests || [];
+    // Handlers supply tailored views of older inputs; do not copy the whole archive into every successor.
+    const dependencies = STAGE_DEPENDENCIES[params.stageKey] || [];
+    const types = new Set(dependencies.flatMap(key => getStageOutputContract(key)?.requiredKeys || []));
+    if (dependencies.includes("historical_record")) types.add("historical_record");
+    const inputs = role === "data" ? { artifacts: [], evidence: [] } :
+      await loadReportInputs(params.sql, params.ctx.runId, params.ctx.cutoffAt.toISOString());
+    params = { ...params, packet: { ...params.packet,
+      ...(!params.packet.evidence_claims && role !== "data" ? { evidence_claims: inputs.evidence } : {}),
+      team_context: { role, purpose: TEAM_ROLES[role].purpose,
+        brief: rows.find(r => r.artifact_type === "agent_brief")?.content_json || null,
+        requests, upstream_artifacts: inputs.artifacts.filter(a => types.has(a.artifact_type)) },
+    } };
+  }
+  params = { ...params, packet: researchPacketForModel(params.packet) };
+  const config = getAgentConfig(params.agentName);
+  const outputFormat = params.outputFormat || config.outputFormat;
+  const request = {
+    packet: params.packet,
+    prompt: buildTaskPrompt({ agentName: params.agentName, taskPacket: params.packet, prompt: params.prompt, promptFactory: params.promptFactory }, config),
+    output_format: outputFormat,
+    agent: params.agentName,
+    model: resolveAgentModel(params.agentName as ResearchAgentName),
+    provider: process.env.RESEARCH_MODEL_PROVIDER || "direct-openai-compatible",
+    base_url: process.env.RESEARCH_MODEL_BASE_URL || null,
+    prompt_version: PROMPT_VERSION,
+    agent_prompt_version: config.promptVersion,
+    validator_version: VALIDATOR_VERSION,
+  };
+  const taskKey = researchTaskKey(params.taskKey, request);
+  const prior = await latestV3TaskOutput(params.sql, params.ctx.runId, taskKey);
+  if (prior && validateSchema(prior, outputFormat).length === 0) return prior as T;
+  // A previously generated output can become invalid after a validator change.
+  // Preserve its audit record, but do not replay it through the same failed stage.
+  await params.sql`
+    UPDATE research_tasks SET status = 'failed', validation_status = 'invalid', updated_at = NOW()
+    WHERE research_run_id = ${params.ctx.runId} AND task_key = ${taskKey}
+      AND status = 'completed'
+  `;
+  const task = await createV3Task(params.sql, params.ctx.runId, params.stageKey, taskKey, params.taskType, params.agentName, request);
 
   const escalationReason = params.modelTier === "premium" || params.modelTier === "specialist"
     ? "Research OS v3 stage requires specialist reasoning"
@@ -382,7 +440,6 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
               repair_attempted: attempt.repairAttempted,
               validation_errors: attempt.validationErrors,
               raw_response_excerpt: attempt.rawResponseExcerpt,
-              tool_calls: attempt.toolCalls,
               provider_requests: attempt.passes,
               local_coercion_applied: attempt.localCoercionApplied,
               completion_recovered_at_timeout: attempt.completionRecoveredAtTimeout,

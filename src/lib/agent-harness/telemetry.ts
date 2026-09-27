@@ -4,6 +4,7 @@ export interface ModelPricing {
 }
 
 const PRICING_DB: Record<string, ModelPricing> = {
+  "deepseek-v4.1-flash": { inputCostPerMillion: 0.3, outputCostPerMillion: 1.2 },
   "deepseek-v4-flash": { inputCostPerMillion: 0.05, outputCostPerMillion: 0.1 },
   "deepseek-v4-pro": { inputCostPerMillion: 0.14, outputCostPerMillion: 0.28 },
   "qwen3.7-plus": { inputCostPerMillion: 0.3, outputCostPerMillion: 0.6 },

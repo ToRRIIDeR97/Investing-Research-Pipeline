@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ModelEvent, ModelProvider, ModelRequest, ProviderHealth } from "../types";
 import { AnthropicCompatibleProvider } from "./anthropic-compatible";
 import { OpenAICompatibleProvider } from "./openai-compatible";
@@ -8,8 +9,9 @@ export class OpenCodeGoProvider implements ModelProvider {
   private readonly anthropic: AnthropicCompatibleProvider;
 
   constructor(baseUrl: string, apiKey: string, allowedHosts: string[]) {
-    this.openai = new OpenAICompatibleProvider({ mode: "direct", baseUrl, apiKey, allowedHosts });
-    this.anthropic = new AnthropicCompatibleProvider({ baseUrl, apiKey, allowedHosts });
+    const headers = { "x-opencode-session": randomUUID(), "User-Agent": "research-os/0.1" };
+    this.openai = new OpenAICompatibleProvider({ mode: "direct", baseUrl, apiKey, allowedHosts, headers });
+    this.anthropic = new AnthropicCompatibleProvider({ baseUrl, apiKey, allowedHosts, headers });
   }
 
   healthCheck(): Promise<ProviderHealth> {

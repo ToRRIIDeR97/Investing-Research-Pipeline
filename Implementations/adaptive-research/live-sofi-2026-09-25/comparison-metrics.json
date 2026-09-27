@@ -1,0 +1,276 @@
+{
+  "method": "Descriptive counts only, not a quality score. Body excludes sources, research-completeness appendix, tables and headings.",
+  "yesterday": {
+    "body_words_excluding_tables_and_headings": 1801,
+    "second_level_headings": 25,
+    "table_rows": 229
+  },
+  "same_inputs_legacy": {
+    "body_words_excluding_tables_and_headings": 2011,
+    "second_level_headings": 25,
+    "table_rows": 230
+  },
+  "adaptive": {
+    "body_words_excluding_tables_and_headings": 24724,
+    "second_level_headings": 16,
+    "table_rows": 2700
+  },
+  "section_details": [
+    {
+      "id": "executive_judgment_preview",
+      "title": "Executive Judgment Preview: SoFi’s Bank-Funded Platform Is Real, but Durable Moat and Segment Economics Remain Unproven",
+      "paragraphs": 13,
+      "paragraph_words": 1240,
+      "tables": 8,
+      "gaps": 10
+    },
+    {
+      "id": "genesis_and_founding_problem",
+      "title": "Genesis and Founding Problem: Student-Loan Market Failure, Alumni Funds, and the 2011–2012 Proof Point",
+      "paragraphs": 11,
+      "paragraph_words": 913,
+      "tables": 4,
+      "gaps": 6
+    },
+    {
+      "id": "strategic_identity_evolution",
+      "title": "Strategic Identity Evolution: From Student Lending to Bank Holding Company and Three-Segment Platform",
+      "paragraphs": 16,
+      "paragraph_words": 1211,
+      "tables": 4,
+      "gaps": 9
+    },
+    {
+      "id": "evidence_quality_and_conventions",
+      "title": "Evidence Quality, Reporting Conventions, and Missing Disclosures: What the 20-Quarter Record Can and Cannot Prove",
+      "paragraphs": 14,
+      "paragraph_words": 1310,
+      "tables": 10,
+      "gaps": 11
+    },
+    {
+      "id": "reported_history_ttm",
+      "title": "Reported History and TTM Diagnosis: Deposits, Net Interest Income, Noninterest Income, Credit Costs, and Net Income",
+      "paragraphs": 20,
+      "paragraph_words": 1690,
+      "tables": 7,
+      "gaps": 10
+    },
+    {
+      "id": "business_processes_customer_decisions",
+      "title": "Business Processes and Customer Decisions: Deposits, Loan Origination, Rate Risk, Credit, Funding, and Compliance",
+      "paragraphs": 15,
+      "paragraph_words": 1362,
+      "tables": 5,
+      "gaps": 9
+    },
+    {
+      "id": "funding_liquidity_capital_constraints",
+      "title": "Funding, Liquidity, and Capital Constraints: Deposit Cost Advantage Versus Wholesale Reliance and Regulatory Capital",
+      "paragraphs": 19,
+      "paragraph_words": 1098,
+      "tables": 6,
+      "gaps": 7
+    },
+    {
+      "id": "lending_credit_capital_markets",
+      "title": "Lending Volumes, Credit Quality, and Capital-Markets Dependence: Gain-on-Sale Meets Deposit Funding",
+      "paragraphs": 11,
+      "paragraph_words": 931,
+      "tables": 7,
+      "gaps": 9
+    },
+    {
+      "id": "financial_services_galileo_technisys",
+      "title": "Financial Services Monetization and Galileo/Technisys Economics: Stale Segment Evidence Limits Precision",
+      "paragraphs": 10,
+      "paragraph_words": 1028,
+      "tables": 5,
+      "gaps": 6
+    },
+    {
+      "id": "moat_test",
+      "title": "Moat Test: Cross-Buy Claims, Bank Charter, Switching Costs, and No-Moat Baseline",
+      "paragraphs": 8,
+      "paragraph_words": 1126,
+      "tables": 5,
+      "gaps": 10
+    },
+    {
+      "id": "management_ownership_per_share",
+      "title": "Management, Governance, Ownership, and Per-Share Outcomes: Founder Influence, Share Count, and Capital Allocation",
+      "paragraphs": 9,
+      "paragraph_words": 934,
+      "tables": 5,
+      "gaps": 9
+    },
+    {
+      "id": "operating_drivers_reinvestment",
+      "title": "Operating Drivers and Reinvestment: Members, Products, NIM, Credit Cost, and the Missing Capex/Working-Capital Bridge",
+      "paragraphs": 15,
+      "paragraph_words": 1782,
+      "tables": 5,
+      "gaps": 10
+    },
+    {
+      "id": "scenario_architecture",
+      "title": "Scenario Architecture: Bear, Base, and Bull Cases With Withheld Numeric Segment Forecasts",
+      "paragraphs": 11,
+      "paragraph_words": 1164,
+      "tables": 6,
+      "gaps": 7
+    },
+    {
+      "id": "valuation_residual_income_nav_reverse",
+      "title": "Valuation: Residual Income, Tangible-Book Cross-Check, and Reverse Expectations",
+      "paragraphs": 15,
+      "paragraph_words": 1076,
+      "tables": 6,
+      "gaps": 12
+    },
+    {
+      "id": "downside_permanent_impairment",
+      "title": "Downside, Permanent Impairment, and Returns Without Rerating: Credit, Funding, Capital-Markets, and Dilution",
+      "paragraphs": 14,
+      "paragraph_words": 1273,
+      "tables": 5,
+      "gaps": 8
+    },
+    {
+      "id": "monitoring_final_decision",
+      "title": "Monitoring, Thesis Breakers, and Final Decision: What Evidence Would Change the Call",
+      "paragraphs": 15,
+      "paragraph_words": 1574,
+      "tables": 10,
+      "gaps": 11
+    }
+  ],
+  "total_paragraphs": 216,
+  "paragraph_words_total": 19712,
+  "paragraphs_with_source_claim_citations": 127,
+  "paragraphs_with_artifact_only_support": 89,
+  "distinct_cited_claims": 16,
+  "conclusion_status": "withheld",
+  "coverage": [
+    {
+      "area": "ownership",
+      "status": "qualified"
+    },
+    {
+      "area": "evidence",
+      "status": "qualified"
+    },
+    {
+      "area": "history",
+      "status": "qualified"
+    },
+    {
+      "area": "business",
+      "status": "qualified"
+    },
+    {
+      "area": "constraints",
+      "status": "qualified"
+    },
+    {
+      "area": "moat",
+      "status": "satisfied"
+    },
+    {
+      "area": "management",
+      "status": "qualified"
+    },
+    {
+      "area": "forecasts",
+      "status": "qualified"
+    },
+    {
+      "area": "valuation",
+      "status": "qualified"
+    },
+    {
+      "area": "downside",
+      "status": "qualified"
+    },
+    {
+      "area": "monitoring",
+      "status": "qualified"
+    },
+    {
+      "area": "conclusion",
+      "status": "blocked"
+    }
+  ],
+  "questions": [
+    {
+      "question": "Why was SoFi founded and what was its original product, customer, and funding model?",
+      "status": "answered",
+      "materiality": "material"
+    },
+    {
+      "question": "How did SoFi evolve from student lending into a diversified financial-services and technology-platform company?",
+      "status": "answered",
+      "materiality": "critical"
+    },
+    {
+      "question": "Does member growth and cross-buying demonstrate durable customer retention or a moat?",
+      "status": "qualified",
+      "materiality": "critical"
+    },
+    {
+      "question": "Are deposits and funding costs durable enough to support the base valuation?",
+      "status": "qualified",
+      "materiality": "critical"
+    },
+    {
+      "question": "What do lending volumes and credit quality show, and what is missing?",
+      "status": "qualified",
+      "materiality": "critical"
+    },
+    {
+      "question": "Is Financial Services monetization durable enough to support the segment contribution assumed in the thesis?",
+      "status": "qualified",
+      "materiality": "material"
+    },
+    {
+      "question": "What are the economics of Galileo and Technisys, and are they creating durable value?",
+      "status": "blocked",
+      "materiality": "material"
+    },
+    {
+      "question": "Do capital requirements and share issuance threaten per-share value?",
+      "status": "qualified",
+      "materiality": "critical"
+    },
+    {
+      "question": "Is there a demonstrated moat in cross-buy, bank charter, or technology platform switching costs?",
+      "status": "answered",
+      "materiality": "critical"
+    },
+    {
+      "question": "What does the current valuation imply, and do the base residual-income targets require multiple compression?",
+      "status": "qualified",
+      "materiality": "critical"
+    },
+    {
+      "question": "How should bear, base, and bull scenarios be weighted, and what is withheld?",
+      "status": "qualified",
+      "materiality": "critical"
+    },
+    {
+      "question": "Does the backtest support the investment thesis, and what contradictions appear?",
+      "status": "qualified",
+      "materiality": "material"
+    },
+    {
+      "question": "Can the bottom-up forecast be reconciled with a top-down market or customer budget constraint?",
+      "status": "blocked",
+      "materiality": "material"
+    },
+    {
+      "question": "What material gaps block an approve or reject decision?",
+      "status": "blocked",
+      "materiality": "critical"
+    }
+  ]
+}

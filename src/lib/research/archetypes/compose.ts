@@ -53,7 +53,7 @@ export function composeProfile(
 ): { profile: ComposedProfile; errors: ArchetypeCompositionError[] } {
   const errors: ArchetypeCompositionError[] = [];
 
-  if (!archetypeKeys.includes("operating_company_core") && !archetypeKeys.includes("etf_fund")) {
+  if (!archetypeKeys.includes("operating_company_core") && !archetypeKeys.includes("etf_fund") && !archetypeKeys.includes("bank")) {
     errors.push({
       code: "missing_base",
       message: "A profile must include 'operating_company_core' or 'etf_fund' as a base archetype.",
@@ -104,7 +104,7 @@ export function composeProfile(
     const required = rules.some((r) => r.required);
     if (allowed && required) {
       // fine
-    } else if (!allowed && required) {
+    } else if (!allowed && required && !(method === "nav" && archetypeKeys.includes("bank"))) {
       errors.push({
         code: "conflict",
         message: `Valuation method '${method}' is both required and forbidden by the selected archetypes/overlays.`,
@@ -132,7 +132,9 @@ export function composeProfile(
   const valuation_methods = dedupeByKey<ValuationMethodRule>(
     [...resolvedArchetypes.flatMap((a) => a.valuation_methods), ...resolvedOverlays.flatMap((o) => o.valuation_methods)],
     "method"
-  );
+  ).map((rule) => rule.method === "nav" && archetypeKeys.includes("bank")
+    ? { ...rule, allowed: true, required: true, rationale: "Bank valuation uses tangible book value" }
+    : rule);
   const required_scenario_drivers = dedupeByKey<ScenarioDriverRequirement>(
     [...resolvedArchetypes.flatMap((a) => a.required_scenario_drivers), ...resolvedOverlays.flatMap((o) => o.required_scenario_drivers)],
     "driver_key"

@@ -5,9 +5,8 @@ import { ProviderError, ResearchAgentRunError } from "../src/lib/agent-harness/e
 import { parseStructuredOutput } from "../src/lib/agent-harness/output-parser";
 import { runResearchAgent } from "../src/lib/agent-harness/runner";
 import { calculateCost } from "../src/lib/agent-harness/telemetry";
-import { clearRegisteredTools, registerTool } from "../src/lib/agent-harness/tools";
 import type { ModelEvent, ModelProvider, ModelRequest } from "../src/lib/agent-harness/types";
-import { getAgentConfig } from "../src/lib/agent-harness/registry";
+import { getAgentConfig, RESEARCH_AGENT_NAMES, resolveAgentModel } from "../src/lib/agent-harness/registry";
 import { coerceStructuredOutput, validateSchema } from "../src/lib/agent-harness/validation";
 
 const classifierOutput = {
@@ -166,6 +165,31 @@ test("runner preserves an explicit zero provider cost", async () => {
   const result = await runResearchAgent({ agentName: "asset-classifier", title: "test", taskPacket: {}, provider });
   assert.equal(result.usage.costUsd, 0);
   assert.equal(result.attempts[0].costUsd, 0);
+});
+
+test("runner uses the latest cumulative usage report for one provider request", async () => {
+  const provider = new ScriptedProvider((request) => (async function* () {
+    assert.equal(request.maxTokens, 256);
+    yield { type: "response.started" } as ModelEvent;
+    yield { type: "text.delta", text: JSON.stringify(classifierOutput) } as ModelEvent;
+    yield { type: "usage", usage: { inputTokens: 10, outputTokens: 20 } } as ModelEvent;
+    yield { type: "usage", usage: { inputTokens: 15, outputTokens: 25 } } as ModelEvent;
+    yield { type: "response.completed" } as ModelEvent;
+  })());
+  const result = await runResearchAgent({ agentName: "asset-classifier", title: "usage", taskPacket: {}, provider, policy: { maxOutputTokens: 256 } });
+  assert.equal(result.usage.inputTokens, 15);
+  assert.equal(result.usage.outputTokens, 25);
+});
+
+test("single-model route covers every research agent", () => {
+  const prior = process.env.RESEARCH_ALL_AGENTS_MODEL;
+  try {
+    process.env.RESEARCH_ALL_AGENTS_MODEL = "DeepSeek V4.1 Flash";
+    for (const agent of RESEARCH_AGENT_NAMES) assert.equal(resolveAgentModel(agent), "deepseek-v4.1-flash");
+  } finally {
+    if (prior === undefined) delete process.env.RESEARCH_ALL_AGENTS_MODEL;
+    else process.env.RESEARCH_ALL_AGENTS_MODEL = prior;
+  }
 });
 
 test("runner repairs malformed schema once with a bounded repair prompt", async () => {
@@ -407,23 +431,40 @@ test("runner recovers complete schema-valid JSON at the inactivity boundary", as
   assert.equal(result.attempts[0].passes?.[0].completionRecoveredAtTimeout, true);
 });
 
-test("tools are deny-by-default and enforce call limits", async () => {
-  clearRegisteredTools();
-  const config = getAgentConfig("asset-classifier");
-  config.tools.lookup = true;
-  registerTool({ name: "lookup", description: "lookup", inputSchema: { type: "object", required: ["id"] }, execute: async ({ id }) => ({ id }) });
-  const provider = new ScriptedProvider((_request, call) => call === 1
-    ? (async function* () { yield { type: "response.started" } as ModelEvent; yield { type: "tool.call", call: { id: "1", name: "lookup", arguments: '{"id":1}' } } as ModelEvent; yield { type: "response.completed" } as ModelEvent; })()
-    : textResponse(JSON.stringify(classifierOutput)));
-  try {
-    const result = await runResearchAgent({ agentName: "asset-classifier", title: "x", taskPacket: {}, provider });
-    assert.equal(result.attempts[0].toolCalls[0].status, "success");
-  } finally {
-    delete config.tools.lookup;
-    clearRegisteredTools();
-  }
+test("unexpected model tool calls fail without execution or a continuation request", async () => {
+  const provider = new ScriptedProvider(() => (async function* () {
+    yield { type: "response.started" } as ModelEvent;
+    yield { type: "tool.call", call: { id: "1", name: "lookup", arguments: '{"id":1}' } } as ModelEvent;
+    yield { type: "response.completed" } as ModelEvent;
+  })());
+  await assert.rejects(runResearchAgent({ agentName: "asset-classifier", title: "x", taskPacket: {}, provider }), /do not permit tools/);
+  assert.equal(provider.calls, 1);
 });
 
 test("telemetry computes deterministic costs", () => {
   assert.equal(calculateCost("deepseek-v4-pro", 10_000, 20_000), 0.007);
+  assert.equal(calculateCost("deepseek-v4.1-flash", 10_000, 20_000), 0.027);
+});
+
+test("artifact contract errors enter the model repair loop before a task can complete", async () => {
+  const { MockProvider } = await import("../src/lib/agent-harness/providers/mock");
+  const { COMPANY_GENESIS_CONTRACT, validateArtifactContent } = await import("../src/lib/research/stage-contracts");
+  const packet = { output_contract: "company_genesis", asset: { assetName: "Example company" } };
+  let raw = "";
+  for await (const event of new MockProvider().stream({ model: "mock", agentName: "asset-analyst", prompt: JSON.stringify(packet) }, new AbortController().signal)) {
+    if (event.type === "text.delta") raw += event.text;
+  }
+  const valid = JSON.parse(raw);
+  const invalid = structuredClone(valid);
+  invalid.company_genesis.material_claims[0].confidence = 2;
+  assert.equal(validateArtifactContent("company_genesis", invalid.company_genesis).valid, false);
+  assert.ok(validateSchema(invalid, COMPANY_GENESIS_CONTRACT).some((error) => error.path.includes("confidence")));
+  const provider = new ScriptedProvider((_request, call) => textResponse(JSON.stringify(call === 1 ? invalid : valid)));
+  const result = await runResearchAgent<any>({
+    agentName: "asset-analyst", title: "contract repair", taskPacket: packet,
+    outputFormat: COMPANY_GENESIS_CONTRACT, provider, policy: { maxAttempts: 1 },
+  });
+  assert.equal(provider.calls, 2);
+  assert.equal(result.attempts[0].repairAttempted, true);
+  assert.equal(validateArtifactContent("company_genesis", result.structured.company_genesis).valid, true);
 });
