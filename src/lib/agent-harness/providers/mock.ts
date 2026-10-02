@@ -161,6 +161,16 @@ function sourceReaderResponse(packet: Record<string, unknown>) {
       quoted_text: String(source.content_excerpt || "").slice(0, 240),
     };
   });
+  // The founder pass gets a founder fact from its first passage, as a real reader would.
+  const batch = (packet.batch || {}) as Record<string, unknown>;
+  const founderSource = batch.required_source_role === "founder_and_company_history" ? sources[0] : undefined;
+  if (founderSource) claims.unshift({
+    claim_text: `${asset.name} was founded by its mock founding team to serve customers that incumbents underserved.`,
+    claim_type: "founder_origin", claim_category: "fact", confidence: 0.9,
+    source_id: String(founderSource.source_id), document_chunk_id: founderSource.document_chunk_id,
+    char_start: founderSource.char_start, char_end: founderSource.char_end,
+    quoted_text: String(founderSource.content_excerpt || "").slice(0, 240),
+  });
   return { evidence_claims: claims, contradictions: [], source_gaps: [], low_confidence_items: [], rejected_candidates: [] };
 }
 

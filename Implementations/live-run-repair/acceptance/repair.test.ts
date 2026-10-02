@@ -35,7 +35,8 @@ test("AC-7: the repair specialist is registered, on demand, and cannot be reques
   assert.equal(TEAM_ROLES.repair.stage, "historical_record");
   assert.equal(getAgentConfig("repair-agent").name, "repair-agent");
   assert.ok(!BRIEF_ROLES.includes("repair"));
-  assert.deepEqual([...BRIEF_ROLES].sort(), ["business", "data", "financials", "report", "valuation"]);
+  // The collector (data) reviews its corpus during discovery instead of writing a brief (team-plan.ts BRIEF_ROLES).
+  assert.deepEqual([...BRIEF_ROLES].sort(), ["business", "financials", "report", "valuation"]);
   assert.equal(ResearchRequest.safeParse({ role: "repair", question: "Repair the parser for this filing please",
     material: true, needs_sources: false, source_role: "regulatory_filing" }).success, false);
 });

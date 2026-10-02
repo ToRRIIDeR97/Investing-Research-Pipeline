@@ -77,6 +77,8 @@ export interface AgentAttempt {
   reasoningTokens?: number;
   cacheReadTokens?: number;
   cacheWriteTokens?: number;
+  /** Output limit this attempt sent; it grows after an attempt spends its whole limit on reasoning. */
+  maxOutputTokens?: number;
   costUsd: number;
   status: "success" | "failed" | "cancelled";
   errorCategory?: string;

@@ -7,4 +7,4 @@ export {
   retrievePassages, openingPassages, runDocuments,
   type CoverageGap, type RetrievalNeed, type RetrievalResult, type RetrievedPassage, type RunDocument,
 } from "./retrieve";
-export { FOUNDER_ORIGIN_NEED, evidenceNeeds } from "./needs";
+export { FOUNDER_ORIGIN_NEED, FOUNDER_FILINGS_NEED, FOUNDER_NEED_KEYS, evidenceNeeds } from "./needs";

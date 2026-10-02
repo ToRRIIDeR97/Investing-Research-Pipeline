@@ -12,6 +12,10 @@ export type HarnessErrorCategory =
   | "malformed_stream"
   | "schema_validation"
   | "response_limit"
+  /** The model used its whole output limit (usually on reasoning) before writing an answer. */
+  | "output_exhausted"
+  /** The provider account's usage or billing limit is spent; retrying will not help until it resets. */
+  | "quota_exceeded"
   | "budget_exhausted"
   | "unknown";
 
@@ -37,3 +41,9 @@ export class ResearchAgentRunError extends Error {
     this.name = "ResearchAgentRunError";
   }
 }
+
+/** A 429 that reports a spent account limit (OpenCode Go's GoUsageLimitError, quota, billing) rather than throttling. */
+export function usageLimitBody(body: string): boolean {
+  return /usage ?limit|UsageLimitError|insufficient_quota|quota exceeded|exceeded your (current )?quota|billing|credit balance/i.test(body);
+}
+
