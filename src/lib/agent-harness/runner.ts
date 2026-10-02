@@ -1,3 +1,7 @@
+import {
+  deriveCacheAffinityId, observeWireRequest, passCacheTelemetry, promptMessages, stablePrefixHash, wireRequestTracker,
+  type PassCacheTelemetry, type WireRequestRecord,
+} from "./cache";
 import { createDeadlineController } from "./deadlines";
 import { ProviderError, ResearchAgentRunError, type HarnessErrorCategory } from "./errors";
 import { parseStructuredOutput } from "./output-parser";
@@ -129,35 +133,73 @@ function redact(value: string) {
     .replace(/(bearer\s+)[^\s"']+/gi, "$1[REDACTED]");
 }
 
+interface PassUsage {
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  costUsd: number;
+}
+
 interface PassResult {
   rawText: string;
-  usage: { inputTokens: number; outputTokens: number; reasoningTokens: number; costUsd: number };
+  usage: PassUsage;
   requestId?: string;
+  cache?: PassCacheTelemetry;
+}
+
+/** Cache counts stay absent, not zero, when the provider did not report them. */
+function cacheTokens(usage?: Partial<PassUsage>): Pick<PassUsage, "cacheReadTokens" | "cacheWriteTokens"> {
+  return {
+    ...(usage?.cacheReadTokens === undefined ? {} : { cacheReadTokens: usage.cacheReadTokens }),
+    ...(usage?.cacheWriteTokens === undefined ? {} : { cacheWriteTokens: usage.cacheWriteTokens }),
+  };
+}
+
+const addOptional = (left?: number, right?: number) => left === undefined && right === undefined ? undefined : (left || 0) + (right || 0);
+
+function combineUsage(left: PassUsage, right?: Partial<PassUsage>): PassUsage {
+  return {
+    inputTokens: left.inputTokens + (right?.inputTokens || 0),
+    outputTokens: left.outputTokens + (right?.outputTokens || 0),
+    reasoningTokens: left.reasoningTokens + (right?.reasoningTokens || 0),
+    ...cacheTokens({
+      cacheReadTokens: addOptional(left.cacheReadTokens, right?.cacheReadTokens),
+      cacheWriteTokens: addOptional(left.cacheWriteTokens, right?.cacheWriteTokens),
+    }),
+    costUsd: left.costUsd + (right?.costUsd || 0),
+  };
 }
 
 async function executePass(params: {
-  provider: ModelProvider; model: string; prompt: string; agentName: string; policy: ExecutionPolicy;
-  deadline: ReturnType<typeof createDeadlineController>; maxOutputTokens?: number;
+  provider: ModelProvider; model: string; system?: string; prompt: string; agentName: string; policy: ExecutionPolicy;
+  deadline: ReturnType<typeof createDeadlineController>; maxOutputTokens?: number; cacheAffinityId: string;
 }): Promise<PassResult> {
   let rawText = "";
   let inputTokens = 0;
   let outputTokens = 0;
   let reasoningTokens = 0;
+  let cacheReadTokens: number | undefined;
+  let cacheWriteTokens: number | undefined;
   let costUsd: number | undefined;
   let providerStarted = false;
   let requestId: string | undefined;
+  let wire: WireRequestRecord | undefined;
   const snapshot = (): PassResult => {
     const started = providerStarted || inputTokens > 0 || outputTokens > 0 || Boolean(rawText);
-    const input = started ? inputTokens || Math.ceil(params.prompt.length / 4) : 0;
+    const input = started ? inputTokens || Math.ceil(((params.system?.length || 0) + params.prompt.length) / 4) : 0;
     const output = started ? outputTokens || Math.ceil(rawText.length / 4) : 0;
+    const cache = cacheTokens({ cacheReadTokens, cacheWriteTokens });
     return { rawText, requestId, usage: {
-      inputTokens: input, outputTokens: output, reasoningTokens,
-      costUsd: costUsd ?? calculateCost(params.model, input, output),
-    } };
+      inputTokens: input, outputTokens: output, reasoningTokens, ...cache,
+      costUsd: costUsd ?? calculateCost(params.model, input, output, cache),
+    }, ...(wire ? { cache: passCacheTelemetry(wire, cacheReadTokens) } : {}) };
   };
   const iterator = params.provider.stream({
-    model: params.model, prompt: params.prompt, temperature: 0.2,
+    model: params.model, ...(params.system ? { system: params.system } : {}), prompt: params.prompt, temperature: 0.2,
     maxTokens: params.maxOutputTokens ?? params.policy.maxOutputTokens, agentName: params.agentName,
+    cacheAffinityId: params.cacheAffinityId,
   }, params.deadline.signal)[Symbol.asyncIterator]();
   try {
     let completed = false;
@@ -182,6 +224,14 @@ async function executePass(params: {
       const event = item.value;
       params.deadline.resetInactivity();
       switch (event.type) {
+        case "request.sent":
+          try {
+            const observation = observeWireRequest(event.body, { providerId: params.provider.id, modelId: params.model, affinityId: params.cacheAffinityId });
+            wire = wireRequestTracker.record(params.cacheAffinityId, event.body, observation);
+          } catch {
+            // Cache telemetry never fails a model request.
+          }
+          break;
         case "response.started": providerStarted = true; requestId = event.requestId || requestId; break;
         case "text.delta":
           rawText += event.text;
@@ -193,6 +243,8 @@ async function executePass(params: {
           inputTokens = event.usage.inputTokens ?? inputTokens;
           outputTokens = event.usage.outputTokens ?? outputTokens;
           reasoningTokens = event.usage.reasoningTokens ?? reasoningTokens;
+          cacheReadTokens = event.usage.cacheReadTokens ?? cacheReadTokens;
+          cacheWriteTokens = event.usage.cacheWriteTokens ?? cacheWriteTokens;
           costUsd = event.usage.costUsd ?? costUsd;
           break;
         case "tool.call": throw new ProviderError("Research model calls do not permit tools", "invalid_request");
@@ -212,7 +264,13 @@ async function executePass(params: {
     void iterator.return?.().catch(() => undefined);
     if (error instanceof ProviderError) throw new ProviderError(error.message, error.category, { ...error.details, partial: snapshot() });
     throw error;
+  } finally {
+    if (wire) wireRequestTracker.complete(params.cacheAffinityId, wire.observation.wireRequestHash);
   }
+}
+
+function cacheFields(pass?: PassResult): Pick<AgentPassTelemetry, "cacheReadTokens" | "cacheWriteTokens" | "cache"> {
+  return { ...cacheTokens(pass?.usage), ...(pass?.cache ? { cache: pass.cache } : {}) };
 }
 
 async function executeTrackedPass(
@@ -227,7 +285,7 @@ async function executeTrackedPass(
       kind, startedAt: new Date(started).toISOString(), completedAt: new Date().toISOString(),
       latencyMs: Date.now() - started, requestId: result.requestId,
       inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens,
-      reasoningTokens: result.usage.reasoningTokens, costUsd: result.usage.costUsd, status: "success",
+      reasoningTokens: result.usage.reasoningTokens, ...cacheFields(result), costUsd: result.usage.costUsd, status: "success",
     });
     return result;
   } catch (error) {
@@ -236,12 +294,17 @@ async function executeTrackedPass(
       kind, startedAt: new Date(started).toISOString(), completedAt: new Date().toISOString(),
       latencyMs: Date.now() - started, requestId: partial?.requestId,
       inputTokens: partial?.usage.inputTokens || 0, outputTokens: partial?.usage.outputTokens || 0,
-      reasoningTokens: partial?.usage.reasoningTokens || 0, costUsd: partial?.usage.costUsd || 0,
+      reasoningTokens: partial?.usage.reasoningTokens || 0, ...cacheFields(partial), costUsd: partial?.usage.costUsd || 0,
       status: "failed", errorCategory: category(error),
       errorMessage: redact(error instanceof Error ? error.message : String(error)),
     });
     throw error;
   }
+}
+
+function optionalTotal(key: "cacheReadTokens" | "cacheWriteTokens", attempts: AgentAttempt[]) {
+  const reported = attempts.filter((attempt) => attempt[key] !== undefined);
+  return reported.length ? { [key]: reported.reduce((sum, attempt) => sum + attempt[key]!, 0) } : {};
 }
 
 function aggregateUsage(attempts: AgentAttempt[], fallback: { provider: string; model: string; promptVersion?: string }): AgentUsage {
@@ -253,6 +316,8 @@ function aggregateUsage(attempts: AgentAttempt[], fallback: { provider: string; 
     inputTokens: attempts.reduce((sum, attempt) => sum + attempt.inputTokens, 0),
     outputTokens: attempts.reduce((sum, attempt) => sum + attempt.outputTokens, 0),
     reasoningTokens: attempts.reduce((sum, attempt) => sum + (attempt.reasoningTokens || 0), 0),
+    ...optionalTotal("cacheReadTokens", attempts),
+    ...optionalTotal("cacheWriteTokens", attempts),
     costUsd: Number(attempts.reduce((sum, attempt) => sum + attempt.costUsd, 0).toFixed(6)),
     latencyMs: attempts.reduce((sum, attempt) => sum + attempt.latencyMs, 0),
     requestId: final?.requestId,
@@ -296,6 +361,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
   const candidates = modelCandidates(input.agentName as ResearchAgentName, policy.maxAttempts);
   const primaryModel = candidates[0];
   const originalPromptBytes = Buffer.byteLength(buildTaskPrompt(input, config), "utf8");
+  const cacheScope = input.cacheScope || `agent:${input.agentName}`;
 
   for (let index = 0; index < candidates.length; index += 1) {
     const attemptNumber = index + 1;
@@ -317,9 +383,14 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
     let generationWasMalformed = false;
 
     try {
-      const prompt = buildTaskPrompt(currentInput, config);
+      // Stable instructions travel as the system message; generation and repair share it and one affinity key.
+      const messages = promptMessages(buildTaskPrompt(currentInput, config));
+      const cacheAffinityId = deriveCacheAffinityId({
+        scopeId: cacheScope, providerId: provider.id, modelId: model, stablePrefixHash: stablePrefixHash(messages.system),
+      });
+      const passParams = { provider, model, system: messages.system, agentName: input.agentName, policy, deadline, cacheAffinityId };
       try {
-        pass = await executeTrackedPass("generation", { provider, model, prompt, agentName: input.agentName, policy, deadline }, passes);
+        pass = await executeTrackedPass("generation", { ...passParams, prompt: messages.prompt }, passes);
       } catch (error) {
         const timeoutReason = deadline.reason();
         const partial = error instanceof ProviderError ? error.details.partial as PassResult | undefined : undefined;
@@ -375,21 +446,23 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
 
       if (validationErrors.length && policy.maxRepairAttempts > 0) {
         repairAttempted = true;
-        const repairPrompt = [
+        const repairInstructions = [
           `REPAIR TASK: ${input.title}`,
           "",
           "The previous model output failed schema validation. Repair it into exactly one JSON object.",
           `Required top-level keys: ${keys.join(", ")}`,
           `Validation errors: ${validationErrors.map((error) => `${error.path}: ${error.message}`).join(" | ").slice(0, 4000)}`,
           "",
-          "Original submitted task and evidence:",
-          input.outputFormat ? prompt : JSON.stringify({ title: input.title, agentName: input.agentName,
-            output_contract: (input.taskPacket as any).output_contract, providedKeys: Object.keys(input.taskPacket).slice(0, 20) }),
+          ...(input.outputFormat ? [] : ["Original submitted task and evidence:", JSON.stringify({ title: input.title, agentName: input.agentName,
+            output_contract: (input.taskPacket as any).output_contract, providedKeys: Object.keys(input.taskPacket).slice(0, 20) })]),
           "Required output schema:",
           JSON.stringify(effectiveOutputFormat.schema || effectiveOutputFormat),
           "",
           `Previous response: ${input.outputFormat ? pass.rawText : pass.rawText.slice(0, 12_000)}`,
         ].join("\n\n");
+        // A full-task repair repeats the generation request and appends the repair, so the
+        // provider can serve the repeated task and evidence from its cache.
+        const repairPrompt = input.outputFormat ? `${messages.prompt}\n\n${repairInstructions}` : repairInstructions;
         if (deadline.remainingMs() < 10_000) {
           throw new ProviderError("Insufficient time remaining for structured-output repair", "provider_timeout", {
             timeoutType: "total", partial: pass,
@@ -397,7 +470,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         }
         let repair: PassResult;
         try {
-          repair = await executeTrackedPass("repair", { provider, model, prompt: repairPrompt, agentName: input.agentName, policy, deadline }, passes);
+          repair = await executeTrackedPass("repair", { ...passParams, prompt: repairPrompt }, passes);
         } catch (error) {
           if (error instanceof ProviderError) {
             const repairPartial = error.details.partial as PassResult | undefined;
@@ -406,12 +479,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
               partial: {
                 rawText: repairPartial?.rawText || pass.rawText,
                 requestId: repairPartial?.requestId || pass.requestId,
-                usage: {
-                  inputTokens: pass.usage.inputTokens + (repairPartial?.usage.inputTokens || 0),
-                  outputTokens: pass.usage.outputTokens + (repairPartial?.usage.outputTokens || 0),
-                  reasoningTokens: pass.usage.reasoningTokens + (repairPartial?.usage.reasoningTokens || 0),
-                  costUsd: pass.usage.costUsd + (repairPartial?.usage.costUsd || 0),
-                },
+                usage: combineUsage(pass.usage, repairPartial?.usage),
               } satisfies PassResult,
             });
           }
@@ -419,12 +487,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         }
         pass = {
           ...repair,
-          usage: {
-            inputTokens: pass.usage.inputTokens + repair.usage.inputTokens,
-            outputTokens: pass.usage.outputTokens + repair.usage.outputTokens,
-            reasoningTokens: pass.usage.reasoningTokens + repair.usage.reasoningTokens,
-            costUsd: pass.usage.costUsd + repair.usage.costUsd,
-          },
+          usage: combineUsage(pass.usage, repair.usage),
         };
         try {
           parsed = parseStructuredOutput(repair.rawText, keys);
@@ -463,6 +526,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         attempt: attemptNumber, provider: provider.id, model, modelAttempt, requestId: pass.requestId,
         startedAt, completedAt: new Date(completed).toISOString(), latencyMs: completed - started,
         inputTokens: pass.usage.inputTokens, outputTokens: pass.usage.outputTokens, reasoningTokens: pass.usage.reasoningTokens,
+        ...cacheTokens(pass.usage),
         costUsd: Number(pass.usage.costUsd.toFixed(6)), status: "success", repairAttempted,
         fallback, compactionOccurred: compactedFallback.compacted,
         inputBytes: Buffer.byteLength(buildTaskPrompt(currentInput, config), "utf8"), originalInputBytes: originalPromptBytes,
@@ -493,6 +557,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         attempt: attemptNumber, provider: provider.id, model, modelAttempt, requestId: pass.requestId,
         startedAt, completedAt: new Date(completed).toISOString(), latencyMs: completed - started,
         inputTokens: pass.usage.inputTokens, outputTokens: pass.usage.outputTokens, reasoningTokens: pass.usage.reasoningTokens,
+        ...cacheTokens(pass.usage),
         costUsd: Number(pass.usage.costUsd.toFixed(6)), status: errorCategory === "cancellation" ? "cancelled" : "failed",
         errorCategory, errorMessage: redact(failure instanceof Error ? failure.message : String(failure)),
         timeoutType: reason === "total" || reason === "inactivity" ? reason : undefined,

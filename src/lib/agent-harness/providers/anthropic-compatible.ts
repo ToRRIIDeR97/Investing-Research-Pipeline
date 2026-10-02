@@ -23,6 +23,21 @@ function safeBody(value: string) {
   return value.slice(0, 2_000).replace(/((?:bearer|x-api-key)[:\s]+)[^\s"']+/gi, "$1[REDACTED]");
 }
 
+const count = (value: unknown): number | undefined => typeof value === "number" ? value : undefined;
+
+/** Anthropic reports uncached, cache-read and cache-write prompt tokens separately; inputTokens is their sum. */
+function promptUsage(usage: Record<string, unknown>) {
+  const input = count(usage.input_tokens);
+  const cacheRead = count(usage.cache_read_input_tokens);
+  const cacheWrite = count(usage.cache_creation_input_tokens);
+  if (input === undefined) return {};
+  return {
+    inputTokens: input + (cacheRead ?? 0) + (cacheWrite ?? 0),
+    ...(cacheRead === undefined ? {} : { cacheReadTokens: cacheRead }),
+    ...(cacheWrite === undefined ? {} : { cacheWriteTokens: cacheWrite }),
+  };
+}
+
 export class AnthropicCompatibleProvider implements ModelProvider {
   readonly id = "direct-anthropic-compatible";
   private readonly baseUrl: string;
@@ -32,7 +47,22 @@ export class AnthropicCompatibleProvider implements ModelProvider {
     this.baseUrl = validateBaseUrl(options.baseUrl, options.allowedHosts);
   }
 
-  async *stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent> {
+  async *stream(request: ModelRequest, signal: AbortSignal, options: { headers?: Record<string, string> } = {}): AsyncIterable<ModelEvent> {
+    // One breakpoint after the stable instructions. Set RESEARCH_ANTHROPIC_CACHE_CONTROL=0 for endpoints that reject it.
+    const cacheControl = process.env.RESEARCH_ANTHROPIC_CACHE_CONTROL !== "0";
+    const body = JSON.stringify({
+      model: request.model,
+      ...(request.system ? { system: cacheControl
+        ? [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }]
+        : request.system } : {}),
+      messages: [{ role: "user", content: request.prompt }],
+      // Anthropic's messages protocol requires this field even when the
+      // shared harness intentionally leaves generation uncapped.
+      max_tokens: request.maxTokens || Number(process.env.RESEARCH_ANTHROPIC_PROTOCOL_MAX_TOKENS || 65_536),
+      temperature: request.temperature ?? 0.2,
+      stream: true,
+    });
+    yield { type: "request.sent", body };
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}/messages`, {
@@ -42,16 +72,9 @@ export class AnthropicCompatibleProvider implements ModelProvider {
           "x-api-key": this.options.apiKey,
           "anthropic-version": "2023-06-01",
           ...this.options.headers,
+          ...options.headers,
         },
-        body: JSON.stringify({
-          model: request.model,
-          messages: [{ role: "user", content: request.prompt }],
-          // Anthropic's messages protocol requires this field even when the
-          // shared harness intentionally leaves generation uncapped.
-          max_tokens: request.maxTokens || Number(process.env.RESEARCH_ANTHROPIC_PROTOCOL_MAX_TOKENS || 65_536),
-          temperature: request.temperature ?? 0.2,
-          stream: true,
-        }),
+        body,
         signal,
         redirect: "error",
       });
@@ -105,7 +128,7 @@ export class AnthropicCompatibleProvider implements ModelProvider {
       }
       const events: ModelEvent[] = [];
       if (payload.type === "message_start" && payload.message?.usage) {
-        events.push({ type: "usage", usage: { inputTokens: payload.message.usage.input_tokens } });
+        events.push({ type: "usage", usage: promptUsage(payload.message.usage) });
       }
       if (payload.type === "content_block_start" && payload.content_block?.type === "tool_use") {
         tools.set(Number(payload.index || 0), {
@@ -125,7 +148,7 @@ export class AnthropicCompatibleProvider implements ModelProvider {
         }
       }
       if (payload.type === "message_delta") {
-        if (payload.usage) events.push({ type: "usage", usage: { outputTokens: payload.usage.output_tokens } });
+        if (payload.usage) events.push({ type: "usage", usage: { ...promptUsage(payload.usage), outputTokens: payload.usage.output_tokens } });
         if (payload.delta?.stop_reason) {
           finishReason = String(payload.delta.stop_reason);
           terminal = true;

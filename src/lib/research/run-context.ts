@@ -31,7 +31,8 @@ export type Sql = ReturnType<typeof postgres>;
 export const HANDLER_VERSION = "3.0.0";
 export const SCHEMA_VERSION = "3.0.0";
 export const VALIDATOR_VERSION = "1.0.0";
-export const PROMPT_VERSION = "v3-runtime-v1";
+// v2: instructions sent as a system message and run-wide packet context first, for provider prompt caching.
+export const PROMPT_VERSION = "v3-runtime-v2";
 
 export interface ResearchRunContext {
   runId: string;
@@ -296,6 +297,17 @@ export async function failV3Task(sql: Sql, taskId: string, error: unknown): Prom
   `;
 }
 
+// Run-wide context leads the packet, so calls with the same instructions (report sections, extraction
+// batches, retries) also share the packet's leading bytes and the provider can reuse them from cache.
+const RUN_CONTEXT_KEYS = ["asset", "research_question", "source_cutoff", "profile", "coverage_requirements", "evidence_claims"];
+
+export function runContextFirst(packet: Record<string, unknown>): Record<string, unknown> {
+  const leading = RUN_CONTEXT_KEYS.filter(key => key in packet);
+  const keys = Object.keys(packet);
+  if (leading.every((key, index) => keys[index] === key)) return packet;
+  return { ...Object.fromEntries(leading.map(key => [key, packet[key]])), ...packet };
+}
+
 export function exactJsonPrompt(params: {
   agentName: string;
   requiredKeys: string[];
@@ -313,7 +325,7 @@ export function exactJsonPrompt(params: {
     ...(params.extraRules || []),
     "",
     "Task packet:",
-    JSON.stringify(params.packet),
+    JSON.stringify(runContextFirst(params.packet)),
   ].join("\n");
 }
 
@@ -428,6 +440,7 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
       prompt: params.prompt,
       promptFactory: params.promptFactory,
       outputFormat: params.outputFormat,
+      cacheScope: params.ctx.runId,
       hooks: {
         beforeAttempt: async () => {
           await assertModelBudgetAvailable({
@@ -470,6 +483,8 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
               error_category: attempt.errorCategory,
               timeout_type: attempt.timeoutType,
               reasoning_tokens: attempt.reasoningTokens,
+              cache_read_tokens: attempt.cacheReadTokens,
+              cache_write_tokens: attempt.cacheWriteTokens,
               repair_attempted: attempt.repairAttempted,
               validation_errors: attempt.validationErrors,
               raw_response_excerpt: attempt.rawResponseExcerpt,

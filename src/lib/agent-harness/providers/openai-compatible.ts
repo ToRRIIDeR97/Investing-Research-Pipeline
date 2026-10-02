@@ -87,20 +87,25 @@ export class OpenAICompatibleProvider implements ModelProvider {
     }
   }
 
-  async *stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent> {
+  async *stream(request: ModelRequest, signal: AbortSignal, options: { headers?: Record<string, string> } = {}): AsyncIterable<ModelEvent> {
+    const body = JSON.stringify({
+      model: request.model,
+      messages: [
+        ...(request.system ? [{ role: "system", content: request.system }] : []),
+        { role: "user", content: request.prompt },
+      ],
+      stream: true,
+      stream_options: { include_usage: true },
+      ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+      ...(request.maxTokens !== undefined ? { max_tokens: request.maxTokens } : {}),
+    });
+    yield { type: "request.sent", body };
     let response: Response;
     try {
       response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: "POST",
-        headers: this.headers(),
-        body: JSON.stringify({
-          model: request.model,
-          messages: [{ role: "user", content: request.prompt }],
-          stream: true,
-          stream_options: { include_usage: true },
-          ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
-          ...(request.maxTokens !== undefined ? { max_tokens: request.maxTokens } : {}),
-        }),
+        headers: { ...this.headers(), ...options.headers },
+        body,
         signal,
         redirect: "error",
       });
@@ -172,10 +177,16 @@ export class OpenAICompatibleProvider implements ModelProvider {
         toolFragments.set(index, current);
       }
       if (payload.usage) {
+        // OpenAI reports cached_tokens; DeepSeek reports prompt_cache_hit_tokens. Both are part of prompt_tokens.
+        const details = payload.usage.prompt_tokens_details;
+        const cacheRead = details?.cached_tokens ?? payload.usage.prompt_cache_hit_tokens;
+        const cacheWrite = details?.cache_write_tokens;
         events.push({ type: "usage", usage: {
           inputTokens: payload.usage.prompt_tokens,
           outputTokens: payload.usage.completion_tokens,
           reasoningTokens: payload.usage.completion_tokens_details?.reasoning_tokens,
+          ...(typeof cacheRead === "number" ? { cacheReadTokens: cacheRead } : {}),
+          ...(typeof cacheWrite === "number" ? { cacheWriteTokens: cacheWrite } : {}),
         } });
       }
       if (choice?.finish_reason) {
