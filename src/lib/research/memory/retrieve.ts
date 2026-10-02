@@ -1,6 +1,8 @@
 // Run-scoped passage retrieval with provenance and coverage gaps.
 import type postgres from "postgres";
 import { ensureDocumentIndexed, MEMORY_PARSER, MEMORY_PARSER_VERSION } from "./indexing";
+import { cosineSimilarity, embedTexts, type EmbeddingProvider } from "./embeddings";
+import { graphPassages } from "./graph";
 
 export interface RetrievalNeed {
   key: string;
@@ -101,7 +103,75 @@ function toPassage(row: Record<string, any>, documents: Map<string, RunDocument>
   };
 }
 
-export async function retrievePassages(sql: postgres.Sql, input: { runId: string; need: RetrievalNeed; embeddings?: unknown }): Promise<RetrievalResult> {
+/** Reciprocal rank fusion constant. */
+const RRF_K = 60;
+
+/** Competition ranks ("1224"): equal keys share a rank, so ties stay ties after fusion. */
+function competitionRanks<T>(items: T[], key: (item: T) => string): Map<T, number> {
+  const ranks = new Map<T, number>();
+  items.forEach((item, index) => {
+    const previous = items[index - 1];
+    ranks.set(item, index > 0 && key(previous) === key(item) ? ranks.get(previous)! : index + 1);
+  });
+  return ranks;
+}
+
+/** Latest completed research-memory parse of each document. */
+async function latestParses(sql: postgres.Sql, ids: string[]): Promise<string[]> {
+  return (await sql`SELECT DISTINCT ON (source_document_id) id FROM document_parses
+    WHERE source_document_id = ANY(${ids}::uuid[]) AND parser_name = ${MEMORY_PARSER} AND parser_version = ${MEMORY_PARSER_VERSION} AND status = 'completed'
+    ORDER BY source_document_id, completed_at DESC NULLS LAST, created_at DESC`).map(row => String(row.id));
+}
+
+/**
+ * Passages nearest the query by cosine similarity, using only vectors of the provider's model.
+ * Vectors are streamed in batches and only their scores are kept, so a large corpus is never
+ * held in memory at once. Null when no passage in scope has such a vector or the query could
+ * not be embedded.
+ */
+async function vectorRanking(sql: postgres.Sql, input: { runId: string; parseIds: string[]; query: string; embeddings: EmbeddingProvider; depth: number }) {
+  if (!input.query.trim()) return null;
+  const [{ present }] = await sql`SELECT EXISTS (SELECT 1 FROM document_chunks dc
+    JOIN document_embeddings de ON de.document_chunk_id = dc.id AND de.embedding_model = ${input.embeddings.model}
+    WHERE dc.document_parse_id = ANY(${input.parseIds}::uuid[])) AS present`;
+  if (!present) return null;
+  let queryVector: number[];
+  try {
+    [queryVector] = await embedTexts(input.embeddings, [input.query], { runId: input.runId, purpose: "query" });
+  } catch {
+    return null;
+  }
+  const scored: Array<{ id: string; doc: string; chunk: number; similarity: number }> = [];
+  await sql`SELECT dc.id, dc.source_document_id, dc.chunk_index, de.embedding FROM document_chunks dc
+    JOIN document_embeddings de ON de.document_chunk_id = dc.id AND de.embedding_model = ${input.embeddings.model}
+    WHERE dc.document_parse_id = ANY(${input.parseIds}::uuid[])`.cursor(500, rows => {
+    for (const row of rows) {
+      const similarity = Array.isArray(row.embedding) ? cosineSimilarity(queryVector, row.embedding as number[]) : 0;
+      if (similarity > 0) scored.push({ id: String(row.id), doc: String(row.source_document_id), chunk: Number(row.chunk_index), similarity });
+    }
+  });
+  return scored
+    .sort((a, b) => b.similarity - a.similarity || a.doc.localeCompare(b.doc) || a.chunk - b.chunk)
+    .slice(0, input.depth);
+}
+
+interface Candidate {
+  row: Record<string, any>;
+  keywordRank?: number;
+  vectorRank?: number;
+  sectionMatch: boolean;
+  textRank: number;
+  graph?: { seed: boolean };
+}
+
+/**
+ * Passages for one need from the run's documents in scope. Keyword relevance ranks passages whose
+ * section path matches above body-only matches. With an embedding provider and stored vectors for
+ * its model, keyword and vector rankings are fused (RRF, k = 60). Seed claims and artifacts add
+ * the passages holding them and their one-hop neighbours; a graph link breaks relevance ties, and
+ * graph-only passages take up to half of the slots after the relevance matches.
+ */
+export async function retrievePassages(sql: postgres.Sql, input: { runId: string; need: RetrievalNeed; embeddings?: EmbeddingProvider | null }): Promise<RetrievalResult> {
   const { need } = input;
   const all = await runDocuments(sql, input.runId);
   const scoped = scopedDocuments(all, need);
@@ -113,19 +183,16 @@ export async function retrievePassages(sql: postgres.Sql, input: { runId: string
   }
   const ids = scoped.map(doc => doc.id);
   await ensureIndexed(sql, ids, input.runId);
+  const parseIds = await latestParses(sql, ids);
   const query = orQuery(need.query);
   const limit = Math.max(1, Math.floor(need.maxPassages ?? 8));
-  const rows = query ? await sql`
+  const depth = Math.max(limit * 5, 50);
+  const keywordRows = query && parseIds.length ? await sql`
     WITH q AS (SELECT websearch_to_tsquery('english', ${query}) AS q),
-    parses AS (
-      SELECT DISTINCT ON (source_document_id) id FROM document_parses
-      WHERE source_document_id = ANY(${ids}::uuid[]) AND parser_name = ${MEMORY_PARSER} AND parser_version = ${MEMORY_PARSER_VERSION} AND status = 'completed'
-      ORDER BY source_document_id, completed_at DESC NULLS LAST, created_at DESC
-    ),
     candidates AS (
       SELECT dc.*, q.q,
         COALESCE((SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(COALESCE(dc.metadata_json->'section_path', '[]'::jsonb))), '') AS section_text
-      FROM document_chunks dc JOIN parses ON parses.id = dc.document_parse_id CROSS JOIN q
+      FROM document_chunks dc CROSS JOIN q WHERE dc.document_parse_id = ANY(${parseIds}::uuid[])
     )
     SELECT id, source_document_id, document_parse_id, chunk_index, section_title, page_start, char_start, char_end, text, metadata_json,
       ts_rank_cd(to_tsvector('english', text), q) AS text_rank,
@@ -133,9 +200,53 @@ export async function retrievePassages(sql: postgres.Sql, input: { runId: string
     FROM candidates
     WHERE to_tsvector('english', text) @@ q OR to_tsvector('english', section_text) @@ q
     ORDER BY section_match DESC, text_rank DESC, source_document_id, chunk_index
-    LIMIT ${limit}` : [];
+    LIMIT ${depth}` : [];
+  const vectors = input.embeddings && parseIds.length
+    ? await vectorRanking(sql, { runId: input.runId, parseIds, query: need.query, embeddings: input.embeddings, depth })
+    : null;
+  const graph = await graphPassages(sql, { parseIds, seedClaimIds: need.seedClaimIds, seedArtifactIds: need.seedArtifactIds });
+
+  const candidates = new Map<string, Candidate>();
+  const keywordKey = (row: Record<string, any>) => `${row.section_match ? 1 : 0}:${Number(row.text_rank)}`;
+  const keywordRanks = competitionRanks(keywordRows as Record<string, any>[], keywordKey);
+  for (const row of keywordRows) {
+    candidates.set(String(row.id), { row, keywordRank: keywordRanks.get(row), sectionMatch: Boolean(row.section_match), textRank: Number(row.text_rank) });
+  }
+  if (vectors) {
+    const vectorRanks = competitionRanks(vectors, item => String(item.similarity));
+    for (const item of vectors) {
+      const candidate = candidates.get(item.id) || { row: {}, sectionMatch: false, textRank: 0 };
+      candidates.set(item.id, { ...candidate, vectorRank: vectorRanks.get(item) });
+    }
+  }
+  for (const link of graph) {
+    const candidate = candidates.get(link.passageId) || { row: {}, sectionMatch: false, textRank: 0 };
+    candidates.set(link.passageId, { ...candidate, graph: { seed: link.seed } });
+  }
+  const missingRows = [...candidates].filter(([, candidate]) => !candidate.row.id).map(([id]) => id);
+  if (missingRows.length) {
+    for (const row of await sql`SELECT id, source_document_id, document_parse_id, chunk_index, section_title, page_start, char_start, char_end, text, metadata_json
+      FROM document_chunks WHERE id = ANY(${missingRows}::uuid[])`) candidates.get(String(row.id))!.row = row;
+  }
+
+  const hybrid = vectors !== null;
+  result.ranking = hybrid ? "hybrid" : "keyword";
+  const fused = (c: Candidate) => (c.keywordRank ? 1 / (RRF_K + c.keywordRank) : 0) + (c.vectorRank ? 1 / (RRF_K + c.vectorRank) : 0);
+  const score = (c: Candidate) => hybrid ? fused(c) : c.textRank + (c.sectionMatch ? 1 : 0);
+  const byPosition = (a: Candidate, b: Candidate) =>
+    String(a.row.source_document_id).localeCompare(String(b.row.source_document_id)) || Number(a.row.chunk_index) - Number(b.row.chunk_index);
+  const relevance = [...candidates.values()].filter(c => c.keywordRank || c.vectorRank).sort((a, b) =>
+    (hybrid ? fused(b) - fused(a) : Number(b.sectionMatch) - Number(a.sectionMatch) || b.textRank - a.textRank)
+    || Number(Boolean(b.graph)) - Number(Boolean(a.graph)) || byPosition(a, b));
+  const graphOnly = [...candidates.values()].filter(c => !c.keywordRank && !c.vectorRank && c.graph)
+    .sort((a, b) => Number(Boolean(b.graph?.seed)) - Number(Boolean(a.graph?.seed)) || byPosition(a, b));
+  const head = relevance.slice(0, limit - Math.min(graphOnly.length, Math.ceil(limit / 2)));
+  const chosen = [...head, ...graphOnly.slice(0, limit - head.length)];
+
   const documents = new Map(scoped.map(doc => [doc.id, doc]));
-  result.passages = rows.map(row => toPassage(row, documents, Number(row.text_rank) + (row.section_match ? 1 : 0), "keyword"));
+  const matchOf = (c: Candidate): RetrievedPassage["matched"] =>
+    c.keywordRank && c.vectorRank ? "both" : c.keywordRank ? "keyword" : c.vectorRank ? "vector" : "graph";
+  result.passages = chosen.map(c => toPassage(c.row, documents, score(c), matchOf(c)));
   if (!result.passages.length) {
     result.gaps.push({ need_key: need.key, reason: "no_matching_passages", ...(need.sourceRoles?.length ? { source_role: need.sourceRoles.join(",") } : {}),
       detail: `No passage in ${scoped.length} document${scoped.length === 1 ? "" : "s"} matched "${need.query}".` });

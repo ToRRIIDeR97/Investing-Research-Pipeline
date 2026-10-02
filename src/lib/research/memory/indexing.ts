@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { parseDocument } from "./passages";
+import { EMBEDDING_BATCH_SIZE, embedTexts, passageEmbeddingText, type EmbeddingProvider } from "./embeddings";
 
 type Sql = postgres.Sql | postgres.TransactionSql;
 
@@ -88,22 +89,64 @@ async function recordUnreadable(sql: postgres.Sql, sourceId: string, warning: st
   return { parseId: String(parse.id), passages: 0, status: "unreadable", warnings: [warning] };
 }
 
-/** Index a stored document from its file when it has no current `research-memory` parse. */
-export async function ensureDocumentIndexed(sql: postgres.Sql, input: { sourceId: string; runId?: string; embeddings?: unknown }): Promise<IndexResult> {
-  const existing = await currentParse(sql, input.sourceId);
+/**
+ * Store a vector for every passage of a parse that has none for the provider's model. A refused
+ * budget or a failed call stops embedding for this document; the parse keeps its keyword index
+ * and records the failure in its warnings.
+ */
+export async function embedParse(sql: postgres.Sql, input: { parseId: string; sourceId: string; runId?: string; embeddings: EmbeddingProvider }): Promise<string[]> {
+  const { embeddings } = input;
+  const missing = await sql`SELECT dc.id, dc.text, dc.metadata_json->'section_path' AS section_path FROM document_chunks dc
+    WHERE dc.document_parse_id = ${input.parseId}
+      AND NOT EXISTS (SELECT 1 FROM document_embeddings de WHERE de.document_chunk_id = dc.id AND de.embedding_model = ${embeddings.model})
+    ORDER BY dc.chunk_index`;
+  for (let start = 0; start < missing.length; start += EMBEDDING_BATCH_SIZE) {
+    const batch = missing.slice(start, start + EMBEDDING_BATCH_SIZE);
+    const texts = batch.map(row => passageEmbeddingText(Array.isArray(row.section_path) ? row.section_path.map(String) : [], String(row.text)));
+    let vectors: number[][];
+    try {
+      vectors = await embedTexts(embeddings, texts, { runId: input.runId, purpose: "passages", sourceId: input.sourceId });
+    } catch (error) {
+      const warning = error instanceof Error ? error.message : String(error);
+      await sql`UPDATE document_parses SET warnings_json = COALESCE(warnings_json, '[]'::jsonb) || ${sql.json([warning])}
+        WHERE id = ${input.parseId} AND NOT COALESCE(warnings_json, '[]'::jsonb) @> ${sql.json([warning])}`;
+      return [warning];
+    }
+    const rows = batch.map((row, i) => ({ document_chunk_id: row.id, embedding_model: embeddings.model,
+      embedding_dimension: vectors[i].length, embedding: sql.json(vectors[i]) }));
+    await sql`INSERT INTO document_embeddings ${sql(rows, "document_chunk_id", "embedding_model", "embedding_dimension", "embedding")}
+      ON CONFLICT (document_chunk_id, embedding_model) DO NOTHING`;
+  }
+  return [];
+}
+
+/**
+ * Index a stored document from its file when it has no current `research-memory` parse. With an
+ * embedding provider, passages that lack a vector for its model get one, also on a document that
+ * was indexed earlier without embeddings.
+ */
+export async function ensureDocumentIndexed(sql: postgres.Sql, input: { sourceId: string; runId?: string; embeddings?: EmbeddingProvider | null }): Promise<IndexResult> {
+  const result = await indexStoredDocument(sql, input.sourceId);
+  if (!input.embeddings || result.status === "unreadable" || !result.passages) return result;
+  const warnings = await embedParse(sql, { parseId: result.parseId, sourceId: input.sourceId, runId: input.runId, embeddings: input.embeddings });
+  return { ...result, warnings: [...result.warnings, ...warnings] };
+}
+
+async function indexStoredDocument(sql: postgres.Sql, sourceId: string): Promise<IndexResult> {
+  const existing = await currentParse(sql, sourceId);
   if (existing) return { ...existing, status: "current", warnings: [] };
-  const [doc] = await sql`SELECT id, storage_path, mime_type, title FROM source_documents WHERE id = ${input.sourceId}`;
-  if (!doc) throw new Error(`Source document ${input.sourceId} does not exist`);
+  const [doc] = await sql`SELECT id, storage_path, mime_type, title FROM source_documents WHERE id = ${sourceId}`;
+  if (!doc) throw new Error(`Source document ${sourceId} does not exist`);
   const storageRoot = resolve(process.cwd(), "storage");
   const path = resolve(process.cwd(), String(doc.storage_path || ""));
   if (!doc.storage_path || !path.startsWith(storageRoot + sep)) {
-    return recordUnreadable(sql, input.sourceId, `The stored file path ${String(doc.storage_path || "(none)")} is outside the source storage folder.`);
+    return recordUnreadable(sql, sourceId, `The stored file path ${String(doc.storage_path || "(none)")} is outside the source storage folder.`);
   }
   let content: string;
   try {
     content = await readFile(path, "utf8");
   } catch (error) {
-    return recordUnreadable(sql, input.sourceId, `The stored file could not be read: ${(error as NodeJS.ErrnoException).code || (error as Error).message}.`);
+    return recordUnreadable(sql, sourceId, `The stored file could not be read: ${(error as NodeJS.ErrnoException).code || (error as Error).message}.`);
   }
-  return indexDocumentContent(sql, { sourceId: input.sourceId, content, mimeType: String(doc.mime_type || "text/plain"), title: String(doc.title || "") });
+  return indexDocumentContent(sql, { sourceId, content, mimeType: String(doc.mime_type || "text/plain"), title: String(doc.title || "") });
 }

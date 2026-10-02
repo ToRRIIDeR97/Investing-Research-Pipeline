@@ -102,7 +102,7 @@ test("AC-11: out-of-range confidence and malformed claim lists are skipped", { s
       contradictions: [{ claim_texts: [a, b], description: "Too confident", confidence: 1.5 }, { claim_texts: a, description: "Not a list", confidence: 0.5 },
         { claim_texts: [a, b], description: "Negative", confidence: -0.1 }],
     });
-    const edges = await sql`SELECT id FROM claim_relationships cr JOIN evidence_claims ec ON ec.id = cr.from_claim_id WHERE ec.research_run_id = ${run.runId}`;
+    const edges = await sql`SELECT cr.id FROM claim_relationships cr JOIN evidence_claims ec ON ec.id = cr.from_claim_id WHERE ec.research_run_id = ${run.runId}`;
     assert.equal(edges.length, 0);
   } finally { await removeRuns(sql, [run]); await sql.end(); }
 });

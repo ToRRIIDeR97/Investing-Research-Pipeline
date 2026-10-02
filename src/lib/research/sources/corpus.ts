@@ -4,7 +4,9 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { canonicalResearchKey } from "@/lib/research/v2-contracts";
 import { canonicalMetricPlan, normalizeSourceGap, positiveFiniteNumber, selectLatestFact } from "@/lib/research/pipeline-helpers";
-import { evidenceNeeds, FOUNDER_NEED_KEYS, indexDocumentContent, openingPassages, retrievePassages, runDocuments, type RetrievedPassage } from "@/lib/research/memory";
+import { ensureDocumentIndexed, evidenceNeeds, FOUNDER_NEED_KEYS, getEmbeddingProvider, indexDocumentContent, openingPassages, recordContradictions,
+  retrievePassages, runDocuments, type RetrievedPassage } from "@/lib/research/memory";
+import { getAgentConfig } from "@/lib/agent-harness/registry";
 import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
 import { SourceRole } from "@/lib/research/sources/roles";
 
@@ -165,6 +167,9 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
   const needs = evidenceNeeds(roles, { name: ctx.assetName });
   const roleless = documents.filter((doc) => !doc.role).map((doc) => doc.id);
   if (roleless.length) needs.push({ key: "general", query: `${ctx.assetName} business revenue growth risk strategy`, sourceIds: roleless, maxPassages: 4 });
+  // With embeddings configured, every passage the packet can draw on gets a vector first.
+  const embeddings = getEmbeddingProvider();
+  if (embeddings) for (const sourceId of sourceIds) await ensureDocumentIndexed(sql, { sourceId, runId: ctx.runId, embeddings });
   const chunks: ReturnType<typeof packetChunk>[] = [];
   const seen = new Set<string>();
   const add = (passage: RetrievedPassage, need: string) => {
@@ -173,7 +178,7 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
     chunks.push(packetChunk(passage, typeOf.get(passage.source_id) || "", need));
   };
   for (const need of needs) {
-    const result = await retrievePassages(sql, { runId: ctx.runId, need: { ...need, sourceIds: need.sourceIds || sourceIds } });
+    const result = await retrievePassages(sql, { runId: ctx.runId, need: { ...need, sourceIds: need.sourceIds || sourceIds }, embeddings });
     for (const passage of result.passages) add(passage, need.key);
     if (!result.passages.length && !FOUNDER_NEED_KEYS.includes(need.key)) {
       const ids = documents.filter((doc) => need.sourceIds ? need.sourceIds.includes(doc.id) : need.sourceRoles?.includes(doc.role || "")).map((doc) => doc.id);
@@ -1699,6 +1704,14 @@ export async function persistEvidence(
     `;
       persisted += 1;
     }
+    // Contradictions name claims by text; only pairs from this output that are stored become edges.
+    await recordContradictions(tx, {
+      runId: ctx.runId,
+      claimTexts: claims.map((claim) => textValue(claim.claim_text || claim.text || claim.claim, "")).filter(Boolean),
+      contradictions: output.contradictions,
+      extractor: "source-reader",
+      extractorVersion: getAgentConfig("source-reader").promptVersion,
+    });
     return persisted;
   });
 }

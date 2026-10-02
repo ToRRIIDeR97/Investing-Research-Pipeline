@@ -1,4 +1,5 @@
 import type { Sql, ResearchRunContext } from "../run-context";
+import { linkArtifactCitations } from "../memory/graph";
 import { createReport, fingerprint, inputFingerprint, type ReportArtifact, type ReportEvidence, type ReportDocument } from "./report";
 
 // Review/export products cannot become their own upstream inputs.
@@ -39,13 +40,17 @@ export async function saveReportArtifact(sql: Sql, ctx: Pick<ResearchRunContext,
       WHERE research_run_id = ${ctx.runId} AND artifact_type = ${type} AND scope_key = ${scope}
       ORDER BY artifact_version DESC, created_at DESC LIMIT 1`;
     if (expectedVersion !== undefined && Number(prior?.artifact_version ?? 0) !== expectedVersion) throw new Error('Another answer was saved. Reopen the conversation before continuing.');
-    if (prior && ['validated', 'accepted'].includes(prior.status) && fingerprint(prior.content_json) === fingerprint(content)) return prior;
+    if (prior && ['validated', 'accepted'].includes(prior.status) && fingerprint(prior.content_json) === fingerprint(content)) {
+      await linkArtifactCitations(tx, { artifactId: prior.id, runId: ctx.runId, content: prior.content_json });
+      return prior;
+    }
     const [row] = await tx`INSERT INTO research_artifacts
       (research_run_id, asset_id, artifact_type, scope_key, artifact_version, status, content_json,
        schema_version, validator_version, prompt_version, created_by, supersedes_artifact_id)
       VALUES (${ctx.runId}, ${ctx.assetId}, ${type}, ${scope}, ${Number(prior?.artifact_version || 0) + 1},
        'validated', ${JSON.stringify(content)}::text::jsonb, '1.0.0', '1.0.0', 'adaptive-report-1', 'system-research-os', ${prior?.id || null}) RETURNING *`;
     if (prior) await tx`UPDATE research_artifacts SET status = 'superseded' WHERE id = ${prior.id}`;
+    await linkArtifactCitations(tx, { artifactId: row.id, runId: ctx.runId, content });
     return row;
   });
 }

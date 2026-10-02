@@ -431,3 +431,57 @@ Decisions and limits:
   exercised by an automated test; it needs a live fetch (manual check above).
 - The MELI run `d6f3fbee` has not been resumed. Resuming it is a paid run.
 
+
+### Phase 2 (2026-10-02)
+
+Implemented by the same agent that wrote the plan and tests, on branch
+`feat/research-memory-phase-2` from `main` 19abbd29 (phase 1 and the live-run fixes merged).
+
+- Acceptance `graph.test.ts`: 8/8. Verification `graph.test.ts`: 6/6.
+- One verification test was corrected, not weakened: the AC-11 case selected `id` from a join
+  of `claim_relationships` and `evidence_claims`, which Postgres rejects as ambiguous before
+  any assertion runs. It now selects `cr.id`; the assertion (no edges) is unchanged.
+- Added `tests/research-memory-graph.test.ts` (6 tests) for behaviour the plan leaves open:
+  citation ids are deduplicated case-insensitively, the embedding endpoint rejects
+  credentials and queries, a contradiction named in either order is one edge, graph-only
+  passages keep a slot when keyword matches fill the limit, and an artifact updated in place
+  drops citations it no longer makes. The first of these found a real defect (mixed-case
+  duplicates), fixed before completion.
+- `npx tsc --noEmit`: no errors. `npm run test:unit`: 240 pass, 0 fail, 8 skipped.
+- `npm run test:db` (every `tests/` suite and every plan's acceptance and verification set,
+  one file at a time, mock provider, local database on 5432): 375 of 394 pass. All 19
+  failures are phase 3 tests (AC-13 six, AC-14 three, AC-15 five, AC-16 five), which fail
+  because phase 3 is not built yet. Every phase 1 and phase 2 test and every existing suite
+  passes, including the mock end-to-end run in `tests/sofi-research-e2e.test.ts`.
+- Scale check, no model calls: 4,000 passages with 1,536-dimension vectors on the local
+  database rank in about 0.95 s per hybrid retrieval, with about 60 MB of peak heap. The
+  stored MELI run `d6f3fbee` has 12,751 passages over 53 documents; a role-scoped need reads a
+  subset of them.
+
+Decisions and limits:
+
+- Migration `drizzle/0009_research_memory_graph.sql` (journal index 7 on `main`). It is
+  numbered 0009 because the unmerged `codex-opencode-harness-backend` branch already uses
+  0007 and 0008, and the local database has both applied; merging that branch only needs
+  the journal entries reordered. Besides the planned columns it adds a nullable
+  `description`, so reviewers can read why the source reader flagged a contradiction, and an
+  index on `to_claim_id` for graph lookups. It was applied to the local database on 5432;
+  the 5433 test database was not running.
+- Evidence extraction embeds the passages of the run's eligible documents before building
+  the packet, rather than at storage time, so a run only pays for documents it reads.
+  Retrieval itself never embeds passages, only the query, and only when passages in scope
+  already have vectors for the model.
+- Contradictions are stored as one edge per claim pair in id order, because the relationship
+  is symmetric. Claim texts are matched after collapsing whitespace and case.
+- Graph-only passages rank after relevance matches but take up to half of the slots, so a
+  seed is not crowded out by a broad keyword query. Passages that match the query and are
+  graph-linked keep their `keyword`, `vector` or `both` label.
+- Graph seeds are followed only to passages of the latest `research-memory` parse. Claims
+  located in legacy raw chunks are not mapped onto passages.
+- Artifacts written directly by `handlers/export.ts` and `handlers/refresh-schedule.ts` do
+  not go through either save path and get no citation links.
+- The source-reader prompt now describes the contradiction shape, and its prompt version is
+  `source-reader-v2`. The prompt change alters task keys, so a resumed run re-runs its
+  source-reader batches.
+- The manual comparison of keyword and hybrid results on the MELI corpus needs a real
+  embedding endpoint and was not done.
