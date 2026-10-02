@@ -197,6 +197,10 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
         requestMetadata: {
           backtest_run_id: backtest.id,
         },
+        responseMetadata: {
+          cache_read_tokens: codegen.usage.cacheReadTokens,
+          cache_write_tokens: codegen.usage.cacheWriteTokens,
+        },
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

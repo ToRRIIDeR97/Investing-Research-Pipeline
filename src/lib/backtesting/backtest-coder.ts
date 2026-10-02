@@ -22,6 +22,8 @@ export type BacktestCodegenResult = z.infer<typeof backtestCodegenSchema> & {
     model: string;
     inputTokens?: number;
     outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
     costUsd?: number;
     latencyMs: number;
     promptVersion?: string;

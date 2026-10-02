@@ -1,3 +1,5 @@
+import type { PassCacheTelemetry } from "./cache";
+
 export interface ToolCall {
   id: string;
   name: string;
@@ -5,21 +7,31 @@ export interface ToolCall {
 }
 
 export interface ModelUsage {
+  /** All prompt tokens, including any served from or written to the provider cache. */
   inputTokens?: number;
   outputTokens?: number;
   reasoningTokens?: number;
+  /** Prompt tokens served from the provider cache; undefined when the provider does not report it. */
+  cacheReadTokens?: number;
+  /** Prompt tokens written to the provider cache; undefined when the provider does not report it. */
+  cacheWriteTokens?: number;
   costUsd?: number;
 }
 
 export interface ModelRequest {
   model: string;
+  /** Stable instructions, sent ahead of the prompt so providers can reuse them from cache. */
+  system?: string;
   prompt: string;
   temperature?: number;
   maxTokens?: number;
   agentName?: string;
+  /** Opaque key that keeps requests sharing a prompt prefix on the same provider cache. */
+  cacheAffinityId?: string;
 }
 
 export type ModelEvent =
+  | { type: "request.sent"; body: string }
   | { type: "response.started"; requestId?: string }
   | { type: "text.delta"; text: string }
   | { type: "reasoning.delta"; text: string }
@@ -63,6 +75,8 @@ export interface AgentAttempt {
   inputTokens: number;
   outputTokens: number;
   reasoningTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
   costUsd: number;
   status: "success" | "failed" | "cancelled";
   errorCategory?: string;
@@ -89,6 +103,10 @@ export interface AgentPassTelemetry {
   inputTokens: number;
   outputTokens: number;
   reasoningTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  /** Content-free comparison with the previous request in the same cache affinity group. */
+  cache?: PassCacheTelemetry;
   costUsd: number;
   status: "success" | "failed";
   errorCategory?: string;
@@ -113,6 +131,8 @@ export interface AgentRequest<T = unknown> {
   policy?: Partial<ExecutionPolicy>;
   hooks?: AgentLifecycleHooks;
   provider?: ModelProvider;
+  /** Local grouping for provider cache affinity, such as a research run ID. Never sent verbatim. */
+  cacheScope?: string;
   outputFormat?: AgentOutputFormat;
   _outputType?: T;
 }
@@ -129,6 +149,8 @@ export interface AgentUsage {
   inputTokens: number;
   outputTokens: number;
   reasoningTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
   costUsd: number;
   latencyMs: number;
   requestId?: string;
