@@ -976,12 +976,26 @@ export class MockProvider implements ModelProvider {
       response = this.config.responseText;
     } else if (packet.output_contract === "team_brief") {
       response = { approach: `Synthetic ${packet.role} specialist plan`, checks: ["Verify source coverage and trace assumptions"], information_needed: [] };
+    } else if (packet.output_contract === "source_review") {
+      response = { sufficient: true, assessment: "Synthetic collector review: the corpus covers the research plan.",
+        searches: [], accepted_gaps: ((packet.missing_required_roles as string[]) || []).map(role => ({ source_role: role, reason: "Not available in the synthetic corpus." })) };
     } else if (packet.output_contract === "team_requests") {
       response = { requests: [] };
     } else if (packet.output_contract === "team_answer") {
       response = { status: "answered", answer: "Synthetic specialist answer grounded in the supplied research.",
         evidence_ids: ((packet.evidence as any[]) || []).slice(0, 1).map(e => e.id),
         artifact_ids: ((packet.artifacts as any[]) || []).slice(0, 1).map(a => a.id) };
+    } else if (packet.output_contract === "statement_repair_module") {
+      response = { rationale: "Locate missing statements by heading words in the candidate's preceding text.", module_source: [
+        "function locateStatements(filings) {",
+        "  const words = { balance: /balance|financial position|financial condition/i, income: /income|operations|earnings/i, cashflow: /cash flow/i };",
+        "  const out = [];",
+        "  for (const filing of filings) for (const statement of filing.missing) {",
+        "    const hit = filing.candidates.find(c => !c.identified_as && words[statement] && words[statement].test(c.preceding_text.join(' ')));",
+        "    if (hit) out.push({ source_document_id: filing.source_document_id, table_index: hit.table_index, statement });",
+        "  }",
+        "  return out;",
+        "}"].join("\n") };
     } else if (packet.output_contract === "research_chat") {
       response = {answer:"This is a synthetic chat response for workflow testing. The selected research and cited source provide the context.", evidence_ids:((packet.evidence as any[])||[]).slice(0,1).map(e=>e.id),proposals:[]};
     } else if (["report_outline", "report_section", "report_review"].includes(String(packet.output_contract))) {

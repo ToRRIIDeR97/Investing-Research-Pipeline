@@ -8,6 +8,7 @@ import {
 import { buildHistoricalRecord, latestCompletedQuarter } from "../history/normalizer";
 import { secQuarterlyObservations } from "../history/sec-companyfacts";
 import { captureFilingStatements } from '../history/filing-store';
+import { repairModuleWriter } from '../repair/agent';
 import { HistoricalObservation } from '../history/contracts';
 import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
@@ -167,8 +168,9 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       const requiredMetricKeys = [...new Set(plannedMetrics
         .filter((metric: any) => metric.required === true && typeof metric.metric_family === "string")
         .map((metric: any) => metric.metric_family === "deposit_base" ? "deposits" : metric.metric_family))] as string[];
-      const filings = await captureFilingStatements(sql, ctx);
-      if(filings.failures.length||filings.coverage.some(c=>c.status==='incomplete')||filings.reconciliation.some(c=>c.status==='mismatch'))throw new Error('Primary financial statements are incomplete or do not reconcile. Inspect financial_statement_set coverage before continuing.');
+      const filings = await captureFilingStatements(sql, ctx, { writeModule: repairModuleWriter(sql, ctx) });
+      if(filings.failures.length||filings.coverage.some(c=>c.status==='incomplete')||filings.reconciliation.some(c=>c.status==='mismatch'))throw new Error('Primary financial statements are incomplete or do not reconcile. Inspect financial_statement_set coverage before continuing.'+
+        (filings.repair?` Repair specialist: ${filings.repair.status} after ${filings.repair.attempts} attempt(s)${filings.repair.last_errors.length?`; last errors: ${filings.repair.last_errors.slice(0,3).join('; ')}`:''}.`:''));
       const latestFiling=[...filings.tables].sort((a,b)=>b.period_end.localeCompare(a.period_end))[0];
       if(latestFiling?.fiscal_year&&latestFiling?.fiscal_quarter)end={year:latestFiling.fiscal_year,quarter:latestFiling.fiscal_quarter};
       const filingObservations = filings.observations.map(row => HistoricalObservation.parse(row));

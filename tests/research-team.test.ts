@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readyStages, dependentStages, STAGE_DEPENDENCIES, TEAM_ROLES } from "../src/lib/research/team-plan";
-import { requestStageRoots, includeUnansweredQuestions, ResearchRequest, type TeamRequest } from "../src/lib/research/team";
+import { readyStages, dependentStages, STAGE_DEPENDENCIES, TEAM_ROLES, BRIEF_ROLES } from "../src/lib/research/team-plan";
+import { requestStageRoots, includeUnansweredQuestions, keepCurrentReferences, ResearchRequest, type TeamRequest } from "../src/lib/research/team";
 import { STAGE_CONFIGS } from "../src/lib/workflow/stages";
 import { discoverRoleSources } from "../src/lib/research/sources/role-discovery";
 
 const ledger = (completed: string[]) => STAGE_CONFIGS.map(s => ({ stage_key: s.key, status: completed.includes(s.key) ? "completed" : "pending" }));
-test("the five specialists cover every stage with an acyclic dependency graph", () => {
-  assert.equal(Object.keys(TEAM_ROLES).length, 5);
+test("four planning specialists, the collector and on-demand repair cover every stage with an acyclic dependency graph", () => {
+  assert.equal(BRIEF_ROLES.length, 4);
+  // The collector reviews its corpus during discovery rather than writing a brief before it.
+  assert.deepEqual(Object.keys(TEAM_ROLES).filter(role => !BRIEF_ROLES.includes(role as never)), ["data", "repair"]);
   assert.deepEqual(Object.keys(STAGE_DEPENDENCIES), STAGE_CONFIGS.map(s => s.key));
   const stages = ledger([]);
   let finished = 0;
@@ -72,4 +74,13 @@ test("missing disclosure routes to the collector and unresolved material questio
   assert.equal(outline.questions[0].materiality, "material");
   assert.equal(ResearchRequest.safeParse({ ...request, role: "unknown" }).success, false);
   assert.equal(ResearchRequest.safeParse({ ...request, source_role: "invented" }).success, false);
+});
+test("a specialist answer keeps only current citations instead of failing on a stale one", () => {
+  const inputs = { evidence: [{ id: "e1" }, { id: "e2" }], artifacts: [{ id: "a1" }] };
+  const kept = keepCurrentReferences({ status: "answered", answer: "Partial KPI history", evidence_ids: ["e1", "stale-evidence", "e2"],
+    artifact_ids: ["a1", "superseded-artifact"] }, inputs);
+  assert.deepEqual(kept.evidence_ids, ["e1", "e2"]);
+  assert.deepEqual(kept.artifact_ids, ["a1"]);
+  const unsupported = keepCurrentReferences({ status: "answered", answer: "No support", evidence_ids: ["stale"], artifact_ids: [] }, inputs);
+  assert.equal(unsupported.evidence_ids.length + unsupported.artifact_ids.length, 0, "the caller rejects an answered status with no support left");
 });

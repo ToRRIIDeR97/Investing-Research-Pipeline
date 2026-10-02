@@ -3,7 +3,7 @@ import { getReportState, loadReportInputs } from "@/lib/research/reporting/store
 import { assertReportApproval } from "@/lib/research/reporting/report";
 import type { Sql } from "@/lib/research/run-context";
 import { CURRENT_PIPELINE_VERSION } from "@/lib/research/version";
-import { readyStages } from "@/lib/research/team-plan";
+import { readyStages, dependentStages } from "@/lib/research/team-plan";
 import { getStageOutputContract } from "@/lib/research/stage-contracts";
 import { STAGE_CONFIGS, STAGE_CONFIG_MAP, getAllStagesForRun, getApplicableStages, getStageConfig } from "./stages";
 import { evaluateResearchQuality } from "./quality-gates";
@@ -594,7 +594,14 @@ export async function startNextStage(
 
     const ledger = await sql`SELECT stage_key, status FROM research_stages WHERE research_run_id = ${runId} ORDER BY stage_order`;
     const ready = readyStages(ledger.map(s => ({ stage_key: String(s.stage_key), status: String(s.status) })));
-    if (!ready.length) throw new Error("Pending research stages have unsatisfied dependencies");
+    if (!ready.length) {
+      // Name the failed stage that blocks the remaining work instead of a generic dependency error.
+      const pending = new Set(ledger.filter(s => s.status === "pending").map(s => String(s.stage_key)));
+      const blocker = failures.find(f => dependentStages([String(f.stage_key)]).some(key => pending.has(key)));
+      if (!blocker) throw new Error("Pending research stages have unsatisfied dependencies");
+      await failRun(runId, `Stage "${blocker.stage_key}" failed and blocks the remaining stages: ${blocker.failure_reason}`, "needs_more_work");
+      return undefined;
+    }
     const [nextStage] = await sql`SELECT id, stage_key FROM research_stages
       WHERE research_run_id = ${runId} AND stage_key = ${ready[0]}`;
 

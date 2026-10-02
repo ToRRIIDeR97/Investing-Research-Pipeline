@@ -153,6 +153,22 @@ describe("business process and segment artifacts (Component 8)", () => {
     assert.ok(result.errors.some((e) => e.includes("no market share loss response scenario is modeled")));
   });
 
+  it("C8-T6: common phrasings of a share-loss scenario satisfy the competitor check", () => {
+    const matrix = (threat: string): CompetitiveResponseMatrix => ({
+      artifact_type: "competitive_response_matrix",
+      competitors: [{ competitor_name: "Amazon", market_share: 0.177, main_advantages: ["Logistics"],
+        response_scenarios: [{ scenario_name: "Amazon expansion", threat_description: threat, response_mechanism: "Invest in fulfillment",
+          time_to_response: "2 quarters", financial_impact: "-150bp margin" }] }],
+    });
+    for (const threat of ["MELI loses share in Mexico to Amazon", "Share erosion in Brazil as Amazon scales Prime",
+      "Market share loss of 3 points over two years", "MELI is losing market share in electronics", "Market share reduction in Mexico"]) {
+      assert.equal(validateCompetitiveResponseMatrix(matrix(threat)).valid, true, threat);
+    }
+    for (const threat of ["Amazon cuts prices by 10%", "Amazon shares its logistics network"]) {
+      assert.equal(validateCompetitiveResponseMatrix(matrix(threat)).valid, false, threat);
+    }
+  });
+
   it("C8-T7: Customer can multi-home warning is triggered if switching costs not addressed", () => {
     const map: CustomerDecisionMap = {
       artifact_type: "customer_decision_map",

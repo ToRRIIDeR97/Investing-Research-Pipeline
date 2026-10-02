@@ -105,6 +105,9 @@ export function validateBottleneckRegister(content: unknown): ValidationResult {
   return { valid: errors.length === 0, errors, warnings };
 }
 
+/** A scenario in which share shifts away from someone: "loses share", "share loss", "share erosion" and similar. */
+const MARKET_SHARE_LOSS = /\b(los(e|es|ing|t)|ced(e|es|ing)|giv(e|es|ing) up)\b[^.]{0,30}\b(market )?share\b|\b(market )?share (loss|losses|erosion|decline|reduction|shift)\b|market share reduction/i;
+
 export function validateCompetitiveResponseMatrix(content: unknown): ValidationResult {
   const parsed = CompetitiveResponseMatrix.safeParse(content);
   if (!parsed.success) {
@@ -116,7 +119,7 @@ export function validateCompetitiveResponseMatrix(content: unknown): ValidationR
 
   for (const comp of data.competitors) {
     // C8-T6: Competitor loses share but no response is modeled
-    const hasMarketShareLossScenario = comp.response_scenarios.some((s) => s.threat_description.toLowerCase().includes("lose share") || s.threat_description.toLowerCase().includes("loses share") || s.threat_description.toLowerCase().includes("market share reduction"));
+    const hasMarketShareLossScenario = comp.response_scenarios.some((s) => MARKET_SHARE_LOSS.test(`${s.scenario_name} ${s.threat_description}`));
     if (comp.market_share > 0.1 && !hasMarketShareLossScenario) {
       errors.push(`Competitor '${comp.competitor_name}' has significant market share (${comp.market_share * 100}%) but no market share loss response scenario is modeled.`);
     }

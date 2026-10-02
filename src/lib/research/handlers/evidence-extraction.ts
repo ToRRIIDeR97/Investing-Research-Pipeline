@@ -17,6 +17,7 @@ import postgres from "postgres";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 import { isValidSourceRole } from "../sources/roles";
 import { isPlausibleSourceRole } from "../sources/role-discovery";
+import { v2RunContext } from "../sources/role-coverage";
 
 const SOURCE_READER_OUTPUT_KEYS = [
   "evidence_claims",
@@ -25,6 +26,57 @@ const SOURCE_READER_OUTPUT_KEYS = [
   "low_confidence_items",
   "rejected_candidates",
 ];
+
+const sourceReaderPrompt = (target: number) => (packet: Record<string, unknown>) => exactJsonPrompt({
+  agentName: "source-reader",
+  requiredKeys: [...SOURCE_READER_OUTPUT_KEYS],
+  packet,
+  extraRules: [
+    "Each evidence_claim must include claim_text, claim_type, claim_category, source_id and document_chunk_id copied exactly from source_corpus, plus char_start/char_end within the original document when available, as_of_date or period_end, and confidence.",
+    "claim_category must be exactly one of: fact, estimate, assumption, opinion. Put topical labels such as strategy or funding in claim_type, never in claim_category.",
+    `Return up to ${target} distinct, decision-relevant evidence claims supported by this batch. Never return schema examples or placeholder values.`,
+    "Use only source_corpus in this packet. Do not invent or alter source or chunk identifiers.",
+    "Prefer annual and quarterly SEC filings for financial facts.",
+    "Extract at least one decision-relevant claim from every substantive source_corpus chunk before taking additional claims from the same chunk.",
+    "For source_role=founder_and_company_history, prioritize the founder's identity, background, stated motivation, problem being solved, company origin, early constraints, and first proof point.",
+    "For source_role=industry_primary or peer_company_primary, prioritize independent industry structure and comparative evidence rather than repeating issuer claims.",
+  ],
+});
+
+/**
+ * Read only documents fetched for a specialist's request. The completed extraction stage is not
+ * replayed, so earlier evidence and its downstream analyses stay intact.
+ */
+export async function extractEvidenceForSources(sql: ReturnType<typeof postgres>, ctx: ResearchRunContext, sourceIds: string[]) {
+  if (!sourceIds.length) return 0;
+  const v2Ctx = v2RunContext(ctx);
+  const rows = await sql`
+    SELECT sd.id as "sourceId", dp.id as "parseId", dc.id as "chunkId",
+           sd.source_type as "sourceType", sd.title, sd.metadata_json as metadata
+    FROM source_documents sd
+    JOIN document_parses dp ON dp.source_document_id = sd.id AND dp.status = 'completed'
+    JOIN document_chunks dc ON dc.source_document_id = sd.id AND dc.document_parse_id = dp.id
+    WHERE sd.id = ANY(${sourceIds}::uuid[])
+  `;
+  const sources = rows.map(row => ({ sourceId: String(row.sourceId), parseId: String(row.parseId), chunkId: String(row.chunkId),
+    content: "", title: String(row.title), sourceType: String(row.sourceType), metadata: (row.metadata as Record<string, any>) || {} }));
+  const sourcePacket = await buildSourcePacket(sql, v2Ctx, sources);
+  const batches = createSourceReaderBatches(sourcePacket as any[], {
+    maxChunks: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_CHUNKS || 8),
+    maxBytes: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_BYTES || 36_000),
+  });
+  const outputs: Record<string, unknown>[] = [];
+  for (const batch of batches) {
+    outputs.push(await callResearchAgent<Record<string, unknown>>({
+      sql, ctx, stageKey: "evidence_extraction",
+      taskKey: `source-reader:requested:${batch.id}:${sourceReaderBatchFingerprint(batch)}`,
+      taskType: "evidence_extraction_batch", agentName: "source-reader", modelTier: "cheap",
+      packet: { asset: v2Ctx, batch: { id: batch.id, count: batches.length, claim_target: 5 }, source_corpus: batch.chunks },
+      promptFactory: sourceReaderPrompt(5),
+    }));
+  }
+  return persistEvidence(sql, v2Ctx, sources, mergeSourceReaderOutputs(outputs, batches));
+}
 
 export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "evidence_extraction",
@@ -118,21 +170,7 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
 
       const batchTarget = Math.max(5, Math.ceil(evidenceTarget / batches.length) + 1);
       const outputs: Record<string, unknown>[] = [];
-      const promptFactory = (target: number) => (packet: Record<string, unknown>) => exactJsonPrompt({
-        agentName: "source-reader",
-        requiredKeys: [...SOURCE_READER_OUTPUT_KEYS],
-        packet,
-        extraRules: [
-          "Each evidence_claim must include claim_text, claim_type, claim_category, source_id and document_chunk_id copied exactly from source_corpus, plus char_start/char_end within the original document when available, as_of_date or period_end, and confidence.",
-          "claim_category must be exactly one of: fact, estimate, assumption, opinion. Put topical labels such as strategy or funding in claim_type, never in claim_category.",
-          `Return up to ${target} distinct, decision-relevant evidence claims supported by this batch. Never return schema examples or placeholder values.`,
-          "Use only source_corpus in this packet. Do not invent or alter source or chunk identifiers.",
-          "Prefer annual and quarterly SEC filings for financial facts.",
-          "Extract at least one decision-relevant claim from every substantive source_corpus chunk before taking additional claims from the same chunk.",
-          "For source_role=founder_and_company_history, prioritize the founder's identity, background, stated motivation, problem being solved, company origin, early constraints, and first proof point.",
-          "For source_role=industry_primary or peer_company_primary, prioritize independent industry structure and comparative evidence rather than repeating issuer claims.",
-        ],
-      });
+      const promptFactory = sourceReaderPrompt;
 
       for (const batch of batches) {
         const fingerprint = sourceReaderBatchFingerprint(batch);

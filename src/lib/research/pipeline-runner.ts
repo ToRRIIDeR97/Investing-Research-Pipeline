@@ -4,6 +4,8 @@ import { loadRunContext } from "./run-context";
 import { STAGE_HANDLERS } from "./handlers";
 import { CURRENT_PIPELINE_VERSION } from "./version";
 import { prepareResearchTeam, processResearchRequests, ResearchRequestsPending } from "./team";
+import { processSourceRequests } from "./sources/collector";
+import { SourceRequestsPending } from "./sources/source-requests";
 
 export interface SystemPipelineResult {
   runId: string;
@@ -42,6 +44,8 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
         if (!stages.length) break;
         const context = await loadRunContext(sql, runId);
         await prepareResearchTeam(sql, context);
+        // Specialists paused on document requests rerun once the collector has served them.
+        if (await processSourceRequests(sql, context)) continue;
         if (await processResearchRequests(sql, context)) continue;
         // Drain all in-flight work before any failure, replay, or gate transition.
         const results = await Promise.allSettled(stages.map(async key => {
@@ -54,7 +58,9 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
         for (let i = 0; i < stages.length; i++) {
           const result = results[i];
           if (result.status === "rejected") {
-            if (result.reason instanceof ResearchRequestsPending) { notes.push(result.reason.message); continue; }
+            if (result.reason instanceof ResearchRequestsPending || result.reason instanceof SourceRequestsPending) {
+              notes.push(result.reason.message); continue;
+            }
             throw result.reason;
           }
           const advance = await advanceStage(runId, result.value, { stageKey: stages[i], deferNext: true });

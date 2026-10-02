@@ -551,6 +551,15 @@ function deterministicMetricOutput(ctx: RunContext, secContext: Record<string, u
   };
 }
 
+/** Record a gap as open, reopening it when an earlier pass resolved or superseded it. */
+export async function openSourceGap(sql: Sql, gap: { assetId: string; runId: string; gapKey: string; description: string; severity: string; owner: string }) {
+  const reopened = await sql`UPDATE source_gaps SET description = ${gap.description}, severity = ${gap.severity}, status = 'open',
+      resolved_at = NULL, resolution_note = NULL
+    WHERE research_run_id = ${gap.runId} AND gap_key = ${gap.gapKey} RETURNING id`;
+  if (!reopened.length) await sql`INSERT INTO source_gaps (asset_id, research_run_id, gap_key, description, severity, status, owner)
+    VALUES (${gap.assetId}, ${gap.runId}, ${gap.gapKey}, ${gap.description}, ${gap.severity}, 'open', ${gap.owner})`;
+}
+
 export async function reconcileSourceGaps(sql: Sql, ctx: RunContext, output: Record<string, unknown>, owner: string) {
   if (!owner.startsWith("system:")) throw new Error(`System gap owner must use the system: prefix: ${owner}`);
   const normalized = arrayValue(output.source_gaps).slice(0, 48).map((gap) => normalizeSourceGap(gap, owner));
@@ -1508,6 +1517,13 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
   };
 }
 
+/** Store follow-up documents without re-collecting the run's base corpus. */
+export async function storeDiscoveredSources(sql: Sql, ctx: RunContext, discovered: SourcePayload[]): Promise<StoredSource[]> {
+  const stored: StoredSource[] = [];
+  for (const payload of discovered) stored.push(await storeSourcePayload(sql, ctx, payload));
+  return stored;
+}
+
 export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: unknown): Promise<StoredSourceCorpus> {
   const context = objectValue(secContext);
   const publisher = textValue(context.source, "Primary source context");
@@ -1818,11 +1834,8 @@ export async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string
       if (!sourceRows.length || !periodEndValue || !availableAt ||
           (ctx.marketDataCutoffAt && new Date(availableAt) > new Date(ctx.marketDataCutoffAt))) {
         const gapKey = `metric_lineage_${metricKey}_${textValue(obs.period || periodEndValue)}`.slice(0, 96);
-        await tx`INSERT INTO source_gaps (asset_id, research_run_id, gap_key, description, severity, status, owner)
-          SELECT ${ctx.assetId}, ${ctx.runId}, ${gapKey},
-            ${`Excluded ${metricKey}: its reporting period, source, or availability before the run cutoff could not be verified.`},
-            'high', 'open', 'metric-normalizer'
-          WHERE NOT EXISTS (SELECT 1 FROM source_gaps WHERE research_run_id = ${ctx.runId} AND gap_key = ${gapKey})`;
+        await openSourceGap(tx as unknown as Sql, { assetId: ctx.assetId, runId: ctx.runId, gapKey, severity: "high", owner: "metric-normalizer",
+          description: `Excluded ${metricKey}: its reporting period, source, or availability before the run cutoff could not be verified.` });
         continue;
       }
       const metricRows = await tx`

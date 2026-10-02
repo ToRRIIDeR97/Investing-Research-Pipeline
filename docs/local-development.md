@@ -32,6 +32,8 @@ npm run test:sofi-v3
 
 On this Windows checkout, PostgreSQL 18 is available as the `postgresql-x64-18` service on port 5433. Docker is not running, and the local `.env` contains entries Docker Compose cannot parse. Use the configured `WINDOWS_DATABASE_ADMIN_URL` to create a separate `research_os` database, then point `DATABASE_URL` at that database before running migrations, seed, or tests. The npm `test:sofi-v3` command hardcodes the Docker credentials, so invoke `npx tsx --test tests/sofi-research-e2e.test.ts` with `RUN_DB_INTEGRATION=1`, `RESEARCH_MODEL_PROVIDER=mock`, and `RESEARCH_ACCEPTANCE_PROVIDER=mock` for the Windows service. The mock acceptance test passes without `SKIP_V3_CONTENT_VALIDATORS`.
 
+Run all database-backed suites one file at a time with `npm run test:db`. The suites share one database, so parallel runs let their runs, jobs and cleanup interfere. The command forces the mock provider and reads only `DATABASE_URL` from `.env.local`. `tests/research-run-harness.test.ts` inserts an asset with the slug `sofi` and fails its setup on a database that already holds the real SoFi asset.
+
 For a live run, `scripts/new-equity-run.ts` requires `RUN_PAID_RESEARCH=1` and respects `RESEARCH_ACCEPTANCE_BUDGET_USD`. It stops at the research-plan gate. Review and explicitly approve that persisted plan before resuming paid work.
 
 Keep credentials and provider settings in `.env.local`; do not commit them.

@@ -503,7 +503,7 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     await deleteAssetCascade(sql, testAssetId, runId);
   });
 
-  test("five specialist plans overlap and report requests escalate to collection and return to review", { timeout: 120_000 }, async () => {
+  test("four specialist plans overlap and report requests escalate to collection and return to review", { timeout: 120_000 }, async () => {
     const created = await createRun(request({ run_type: "deep_dive", budget_limit_usd: 100, research_question: "Which disclosed cash flows support the valuation?",
       source_cutoff_at: "2026-01-01T00:00:00.000Z", market_data_cutoff_at: "2026-01-01T00:00:00.000Z" }), paramsFor(testAssetId));
     const { id: runId } = await created.json();
@@ -516,7 +516,7 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
       const packet = JSON.parse(req.prompt.slice(req.prompt.lastIndexOf("Task packet:") + 12).trim());
       if (packet.output_contract === "team_brief") {
         briefCount++;
-        if (briefCount === 5) release();
+        if (briefCount === 4) release();
         await allBriefsStarted;
       }
       let response;
@@ -547,7 +547,7 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
       await resumeResearchRun(runId);
       const result = await runResearchPipeline(runId);
       assert.equal(result.status, "waiting_for_human", result.failure_reason || result.notes.join("\n"));
-      assert.equal(briefCount, 5, "all five roles actually entered concurrent model calls");
+      assert.equal(briefCount, 4, "all four specialist roles actually entered concurrent model calls");
       const batch = await getTeamRequests(sql, runId);
       assert.equal(batch?.state, "answered");
       assert.equal(batch?.source_escalated, true);
@@ -566,6 +566,73 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
       assert.equal(exportStage.status, "pending");
     } finally {
       release();
+      MockProvider.prototype.stream = original;
+      await deleteAssetCascade(sql, testAssetId, runId);
+    }
+  });
+
+  test("specialists plan only after discovery, and a specialist's document request pauses and reruns only its stage", { timeout: 120_000 }, async () => {
+    const created = await createRun(request({ run_type: "deep_dive", budget_limit_usd: 100, research_question: "How durable is the lending moat?",
+      source_cutoff_at: "2026-01-01T00:00:00.000Z", market_data_cutoff_at: "2026-01-01T00:00:00.000Z" }), paramsFor(testAssetId));
+    const { id: runId } = await created.json();
+    const original = MockProvider.prototype.stream;
+    const discoveryAtBrief: string[] = [];
+    const moatPackets: any[] = [];
+    const peerQuery = "Upstart Holdings 2025 annual report 10-K";
+    MockProvider.prototype.stream = async function* (req, signal) {
+      const packet = JSON.parse(req.prompt.slice(req.prompt.lastIndexOf("Task packet:") + 12).trim());
+      if (packet.output_contract === "team_brief") {
+        const [stage] = await sql`SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'source_discovery'`;
+        discoveryAtBrief.push(stage.status);
+      }
+      if (packet.output_contract !== "moat_analysis") { yield* original.call(this, req, signal); return; }
+      moatPackets.push(packet);
+      let text = "";
+      for await (const event of original.call(this, req, signal)) if (event.type === "text.delta") text += event.text;
+      const output = JSON.parse(text);
+      if (moatPackets.length === 1) output.source_requests = [{ source_role: "peer_company_primary", query: peerQuery, reason: "Compare origination economics with a named lending peer" }];
+      yield { type: "response.started", requestId: "source-request-test" };
+      yield { type: "text.delta", text: JSON.stringify(output) };
+      yield { type: "usage", usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 } };
+      yield { type: "response.completed" };
+    };
+    try {
+      assert.equal((await runResearchPipeline(runId)).status, "waiting_for_human");
+      // A role gap written by the pre-collector discovery must not block the replayed stage.
+      await sql`INSERT INTO source_gaps (asset_id, research_run_id, gap_key, description, severity, status, owner)
+        VALUES (${testAssetId}, ${runId}, 'system_source_reader_required_source_role_peer_company_primary_is_not_covered_by_any_',
+          'Required source role ''peer_company_primary'' is not covered by any fetched documents', 'high', 'open', 'system:source-reader')`;
+      await approveResearchPlan(runId, "source-request-test");
+      const result = await runResearchPipeline(runId);
+      assert.equal(result.status, "waiting_for_human", result.failure_reason || result.notes.join("\n"));
+      assert.ok(discoveryAtBrief.length > 0 && discoveryAtBrief.every(status => status === "completed"), "briefs start only after the collector finishes");
+      const [review] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId}
+        AND artifact_type = 'source_review' AND status = 'validated'`;
+      assert.equal(review.content_json.sufficient, true);
+      assert.ok(result.notes.some(note => /moat_analysis is waiting for requested sources/.test(note)));
+      const [ledger] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId}
+        AND artifact_type = 'source_requests' AND scope_key = 'moat_analysis' AND status = 'validated'`;
+      assert.equal(ledger.content_json.rounds.length, 1);
+      assert.equal(ledger.content_json.rounds[0].state, "fetched");
+      assert.equal(ledger.content_json.rounds[0].requests[0].query, peerQuery);
+      // The mock collector fetches nothing, so the specialist reruns knowing the search came back empty.
+      assert.equal(ledger.content_json.rounds[0].requests[0].status, "unavailable");
+      assert.equal(moatPackets.length, 2);
+      assert.equal(moatPackets[1].team_context.source_requests.previous[0].status, "unavailable");
+      const [attempt] = await sql`SELECT attempt_metadata_json FROM source_retrieval_attempts WHERE research_run_id = ${runId}
+        AND attempt_metadata_json->>'query' = ${peerQuery}`;
+      assert.equal(attempt.attempt_metadata_json.requested_by, "business:moat_analysis");
+      const legacy = await sql`SELECT status FROM source_gaps WHERE research_run_id = ${runId} AND owner = 'system:source-reader'
+        AND description LIKE 'Required source role%'`;
+      assert.deepEqual(legacy.map(gap => gap.status), ["resolved"]);
+      const roleGaps = await sql`SELECT gap_key, severity FROM source_gaps WHERE research_run_id = ${runId}
+        AND owner = 'system:source-collector' AND status = 'open'`;
+      assert.ok(roleGaps.every(gap => gap.gap_key.startsWith("missing_") && gap.severity === "medium"));
+      const [moat] = await sql`SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'moat_analysis'`;
+      assert.equal(moat.status, "completed");
+      const [reviewStage] = await sql`SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'human_review'`;
+      assert.equal(reviewStage.status, "waiting_for_human");
+    } finally {
       MockProvider.prototype.stream = original;
       await deleteAssetCascade(sql, testAssetId, runId);
     }

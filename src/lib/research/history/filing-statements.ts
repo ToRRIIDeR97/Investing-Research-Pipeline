@@ -3,13 +3,60 @@ import { METRICS } from './sec-companyfacts';
 
 export type FilingSource = { id:string; url:string; published_at:string; period_end:string; metadata_json:Record<string,any> };
 export type FilingFact = { concept:string; value:number|null; text:string; unit:string; start:string|null; end:string; dimensions:string; locator:string; scale:number; fiscal_year:number|null; fiscal_quarter:number|null; periodicity:'quarterly'|'annual'|'ytd'|'instant' };
-export type FilingTable = { statement:'income'|'balance'|'cashflow'|'equity'; title:string; source_document_id:string; source_url:string; accession:string; filed:string; form:string; period_end:string; fiscal_year:number; fiscal_quarter:number; table_index:number; rows:{cells:{text:string; colspan:number; rowspan:number; facts:FilingFact[]}[]}[]; warnings:string[] };
+export type StatementKind = 'income'|'balance'|'cashflow'|'equity';
+export type FilingTable = { statement:StatementKind; identified_by:'heading'|'xbrl_tags'|'repair'; title:string; source_document_id:string; source_url:string; accession:string; filed:string; form:string; period_end:string; fiscal_year:number; fiscal_quarter:number; table_index:number; rows:{cells:{text:string; colspan:number; rowspan:number; facts:FilingFact[]}[]}[]; warnings:string[] };
+/** A table summary given to the repair specialist's module; it never contains values. */
+export type StatementCandidate = { table_index:number; preceding_text:string[]; concepts:string[]; fact_count:number; row_labels:string[]; identified_as:StatementKind|null };
 const clean=(s:string)=>s.replace(/\s+/g,' ').trim();
+// Issuer prefixes may use a dash ("Inc. - Interim Condensed Consolidated ...").
+const STATEMENT_HEADING=/^(?:.{0,150}?(?:Inc\.?|TABLE OF CONTENTS)\s*(?:[-–—:]\s*)?)?(?:(?:Interim|Unaudited|Condensed)\s+){0,3}Consolidated\s+(?:Interim\s+)?(balance sheets|statements? of)/i;
+const STATEMENT_TYPE=/consolidated\s+(?:interim\s+)?(?:balance sheets|statements? of\s+(?:operations|income|earnings|financial condition|financial position|cash flows|changes in.{0,25}equity|stockholders.{0,10}equity|shareholders.{0,10}equity|comprehensive income))/i;
+// Non-dimensional us-gaap tags that together identify a primary statement without its heading.
+const FINGERPRINTS:Record<'balance'|'income'|'cashflow',string[][]>={
+  balance:[['Assets'],['Liabilities','LiabilitiesAndStockholdersEquity'],['StockholdersEquity','StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest']],
+  income:[['Revenues','RevenueFromContractWithCustomerExcludingAssessedTax','RevenueFromContractWithCustomerIncludingAssessedTax','RevenuesNetOfInterestExpense','SalesRevenueNet'],['NetIncomeLoss'],['EarningsPerShareBasic','EarningsPerShareBasicAndDiluted']],
+  cashflow:['Operating','Investing','Financing'].map(k=>[`NetCashProvidedByUsedIn${k}Activities`,`NetCashProvidedByUsedIn${k}ActivitiesContinuingOperations`]),
+};
 
-/** Extract the actual primary tables, including custom tags, headings and comparative columns. */
-export function extractFilingStatements(html:string, source:FilingSource):FilingTable[] {
-  const $=load(html); const contexts=new Map<string,{start:string|null;end:string;dimensions:string}>();
+type Contexts=Map<string,{start:string|null;end:string;dimensions:string}>;
+function parseFiling(html:string){
+  const $=load(html); const contexts:Contexts=new Map();
   $('xbrli\\:context').each((_,el)=>{const c=$(el);contexts.set(c.attr('id')!,{start:c.find('xbrli\\:startdate').text()||null,end:c.find('xbrli\\:enddate, xbrli\\:instant').text(),dimensions:clean(c.find('xbrli\\:segment, xbrli\\:scenario').text())});});
+  return {$,contexts,tables:$('table').toArray()};
+}
+
+/** Nearest non-blank sibling texts, in document order, stopping at a table that holds text. */
+function precedingText($:ReturnType<typeof load>, el:any):string[] {
+  const texts:string[]=[];let node=$(el);
+  for(let depth=0;depth<3;depth++,node=node.parent()) {
+    // Blank paragraphs and empty layout spacer tables sit between some issuers' headings and statements.
+    let seen=0;
+    for(const prev of node.prevAll().toArray()){const text=clean($(prev).text());if(!text)continue;if(++seen>6)return texts.reverse();
+      if(($(prev).is('table')?[prev]:$(prev).find('table').toArray()).some(t=>clean($(t).text())))return texts.reverse();
+      texts.push(text);if(STATEMENT_HEADING.test(text))return texts.reverse();}
+  }
+  return texts.reverse();
+}
+
+function headingFor($:ReturnType<typeof load>, el:any):string {
+  const caption=$(el).find('caption').text();if(caption)return caption;
+  const texts=precedingText($,el);const start=texts.findIndex(t=>STATEMENT_HEADING.test(t));
+  return start<0?'':texts.slice(start).join(' ');
+}
+
+function fingerprint($:ReturnType<typeof load>, el:any, contexts:Contexts):'balance'|'income'|'cashflow'|null {
+  const names=new Set($(el).find('ix\\:nonfraction').toArray().filter(f=>{const c=contexts.get($(f).attr('contextref')||'');return c&&!c.dimensions;})
+    .map(f=>String($(f).attr('name')||'')).filter(n=>n.startsWith('us-gaap:')).map(n=>n.slice(8)));
+  return (Object.keys(FINGERPRINTS) as ('balance'|'income'|'cashflow')[]).find(k=>FINGERPRINTS[k].every(group=>group.some(n=>names.has(n))))||null;
+}
+
+/**
+ * Extract the actual primary tables, including custom tags, headings and comparative columns.
+ * Headings identify statements first; tags fill statements still missing; overrides come
+ * only from a validated repair module.
+ */
+export function extractFilingStatements(html:string, source:FilingSource, overrides:Record<number,StatementKind>={}):FilingTable[] {
+  const {$,contexts,tables:elements}=parseFiling(html);
   const units=new Map<string,string>();
   $('xbrli\\:unit').each((_,el)=>{const u=$(el);const num=u.find('xbrli\\:unitnumerator').text();const den=u.find('xbrli\\:unitdenominator').text();units.set(u.attr('id')!,clean(num?`${num}/${den}`:u.text()).replace(/iso4217:|xbrli:/g,''));});
   const dei=(name:string)=>$('ix\\:nonnumeric').filter((_,e)=>$(e).attr('name')===`dei:${name}`).first().text();
@@ -17,21 +64,10 @@ export function extractFilingStatements(html:string, source:FilingSource):Filing
   const reportedEnd=dei('DocumentPeriodEndDate');
   const focusEnd=/^\d{4}-\d{2}-\d{2}$/.test(reportedEnd)?reportedEnd:reportedEnd&&Number.isFinite(Date.parse(`${reportedEnd} UTC`))?new Date(Date.parse(`${reportedEnd} UTC`)).toISOString().slice(0,10):source.period_end?.slice(0,10);
   const form=source.metadata_json.form||'';
-  const tables:FilingTable[]=[];
-  $('table').each((tableIndex,el)=>{
-    const table=$(el);if(!table.find('ix\\:nonfraction').length)return;
-    let heading=table.find('caption').text();let node=table;
-    for(let depth=0;depth<3&&!heading;depth++,node=node.parent()) {
-      const previous=node.prevAll().slice(0,6).toArray();
-      for(const prev of previous){if($(prev).is('table')||$(prev).find('table').length)break; const text=clean($(prev).text());heading=text+' '+heading;if(/^(?:.{0,150}?(?:Inc\.?|TABLE OF CONTENTS)\s*)?(?:Unaudited\s+)?(?:Condensed\s+)?Consolidated\s+(balance sheets|statements of)/i.test(text))break;}
-      if(!/^(?:.{0,150}?(?:Inc\.?|TABLE OF CONTENTS)\s*)?(?:Unaudited\s+)?(?:Condensed\s+)?Consolidated\s+(balance sheets|statements of)/i.test(heading))heading='';
-    }
-    if(!heading&&tables.at(-1)?.statement==='equity'&&tables.at(-1)!.table_index===tableIndex-1&&table.find('[name="us-gaap:CommonStockSharesOutstanding"]').length)heading=tables.at(-1)!.title;
-    const match=/consolidated\s+(?:balance sheets|statements of\s+(?:operations|income|earnings|financial condition|financial position|cash flows|changes in.{0,25}equity|stockholders.{0,10}equity|shareholders.{0,10}equity|comprehensive income))/i.exec(heading);
-    if(!match)return;
-    const statement=/balance sheets|financial condition|financial position/i.test(match[0])?'balance':/cash flows/i.test(match[0])?'cashflow':/equity/i.test(match[0])?'equity':'income';
-    const warnings:string[]=[];
-    const rows=table.find('tr').filter((_,tr)=>$(tr).closest('table')[0]===el).toArray().map(tr=>({cells:$(tr).children('td,th').toArray().map(cell=>({
+  const tables:FilingTable[]=[];const unlabelled:number[]=[];
+  const build=(tableIndex:number,statement:StatementKind,title:string,identified_by:FilingTable['identified_by']):FilingTable=>{
+    const el=elements[tableIndex];const warnings:string[]=[];
+    const rows=$(el).find('tr').filter((_,tr)=>$(tr).closest('table')[0]===el).toArray().map(tr=>({cells:$(tr).children('td,th').toArray().map(cell=>({
       text:clean($(cell).text()),colspan:Math.max(1,Number($(cell).attr('colspan')||1)),rowspan:Math.max(1,Number($(cell).attr('rowspan')||1)),
       facts:$(cell).find('ix\\:nonfraction').toArray().map(f=>{
         const fact=$(f),context=contexts.get(fact.attr('contextref')||'');const text=clean(fact.text());const format=(fact.attr('format')||'').split(':').pop()?.toLowerCase();
@@ -48,9 +84,35 @@ export function extractFilingStatements(html:string, source:FilingSource):Filing
           fiscal_year:validFiscal?Math.floor(qIndex/4):null,fiscal_quarter:validFiscal?qIndex%4+1:null,periodicity} as FilingFact;
       })
     }))}));
-    tables.push({statement,title:clean(heading),source_document_id:source.id,source_url:source.url,accession:source.metadata_json.accessionNumber||'',filed:source.published_at.slice(0,10),form,period_end:focusEnd||source.period_end?.slice(0,10),fiscal_year:focusYear,fiscal_quarter:focusQuarter,table_index:tableIndex,rows,warnings:[...new Set(warnings)]});
+    return {statement,identified_by,title:clean(title),source_document_id:source.id,source_url:source.url,accession:source.metadata_json.accessionNumber||'',filed:source.published_at.slice(0,10),form,period_end:focusEnd||source.period_end?.slice(0,10),fiscal_year:focusYear,fiscal_quarter:focusQuarter,table_index:tableIndex,rows,warnings:[...new Set(warnings)]};
+  };
+  elements.forEach((el,tableIndex)=>{
+    const table=$(el);if(!table.find('ix\\:nonfraction').length)return;
+    if(overrides[tableIndex]){tables.push(build(tableIndex,overrides[tableIndex],`Located by repair module as ${overrides[tableIndex]}`,'repair'));return;}
+    let heading=headingFor($,el);
+    if(!heading&&tables.at(-1)?.statement==='equity'&&tables.at(-1)!.table_index===tableIndex-1&&table.find('[name="us-gaap:CommonStockSharesOutstanding"]').length)heading=tables.at(-1)!.title;
+    const match=STATEMENT_TYPE.exec(heading);
+    if(!match){unlabelled.push(tableIndex);return;}
+    const statement=/balance sheets|financial condition|financial position/i.test(match[0])?'balance':/cash flows/i.test(match[0])?'cashflow':/equity/i.test(match[0])?'equity':'income';
+    tables.push(build(tableIndex,statement,heading,'heading'));
   });
-  return tables;
+  for(const statement of Object.keys(FINGERPRINTS) as ('balance'|'income'|'cashflow')[]) {
+    if(tables.some(t=>t.statement===statement))continue;
+    const hit=unlabelled.find(i=>fingerprint($,elements[i],contexts)===statement);
+    if(hit!==undefined)tables.push(build(hit,statement,`Identified by XBRL tags as ${statement}`,'xbrl_tags'));
+  }
+  return tables.sort((a,b)=>a.table_index-b.table_index);
+}
+
+/** Describe every fact-bearing table so a repair module can locate statements without values. */
+export function statementCandidates(html:string, identified:FilingTable[]):StatementCandidate[] {
+  const {$,tables:elements}=parseFiling(html);
+  return elements.flatMap((el,table_index)=>{
+    const facts=$(el).find('ix\\:nonfraction').toArray();if(!facts.length)return [];
+    const row_labels=$(el).find('tr').toArray().map(tr=>clean($(tr).children('td,th').first().text())).filter(Boolean).slice(0,15);
+    return [{table_index,preceding_text:precedingText($,el).map(t=>t.slice(0,200)),concepts:[...new Set(facts.map(f=>String($(f).attr('name')||'')))].slice(0,60),
+      fact_count:facts.length,row_labels,identified_as:identified.find(t=>t.table_index===table_index)?.statement??null}];
+  });
 }
 
 export function filingCoverage(tables:FilingTable[], sources:FilingSource[]) {
@@ -102,5 +164,23 @@ export function statementObservations(tables:FilingTable[]) {
       if(prior&&!direct)observations.push({...base,periodicity:'quarterly',period_start:new Date(Date.parse(prior.fact.end)+86400000).toISOString().slice(0,10),value_numeric:f.value-prior.fact.value!,metric_type:'calculated',formula_or_adjustment:`Standalone quarter = ${f.value} − ${prior.fact.value}; reported cumulative periods ending ${f.end} and ${prior.fact.end}.`,metadata_json:{...base.metadata_json,prior_source_document_id:prior.table.source_document_id,prior_source_url:prior.table.source_url,prior_source_locator:prior.fact.locator}});
     }
   }
-  return observations;
+  return latestFiledObservations(observations);
+}
+
+/**
+ * Issuers recast earlier periods, sometimes under a different tag that maps to the same metric.
+ * Keep one observation per metric and period: the latest filing wins; within one filing a
+ * reported value beats a derived one and the metric's documented concept order breaks ties.
+ */
+function latestFiledObservations(observations:Record<string,any>[]) {
+  const conceptRank=(o:Record<string,any>)=>{const short=String(o.metadata_json.concept).split(':')[1];const rank=METRICS.find(m=>(m.concepts as readonly string[]).includes(short))?.concepts.indexOf(short as never);return rank===undefined||rank<0?99:rank;};
+  const preferred=(a:Record<string,any>,b:Record<string,any>)=>a.available_at!==b.available_at?a.available_at>b.available_at:
+    a.metric_type!==b.metric_type?a.metric_type==='reported':conceptRank(a)<conceptRank(b);
+  const groups=new Map<string,Record<string,any>[]>();
+  for(const o of observations){const key=JSON.stringify([o.metric_key,o.periodicity,o.fiscal_year,o.fiscal_quarter,o.unit,o.segment??'',o.reporting_basis]);(groups.get(key)||groups.set(key,[]).get(key)!).push(o);}
+  return [...groups.values()].map(group=>{
+    const winner=group.reduce((best,o)=>preferred(o,best)?o:best);
+    const superseded=group.filter(o=>o!==winner&&o.available_at<winner.available_at&&o.value_numeric!==winner.value_numeric).length;
+    return superseded?{...winner,restatement_version:winner.restatement_version+superseded}:winner;
+  });
 }

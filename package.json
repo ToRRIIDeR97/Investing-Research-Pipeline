@@ -9,6 +9,7 @@
     "lint": "next lint",
     "test:unit": "tsx --test tests/*.test.ts",
     "test:integration": "RUN_DB_INTEGRATION=1 tsx --test tests/persistence-integration.test.ts",
+    "test:db": "node scripts/test-db.cjs",
     "test:provider-smoke": "tsx scripts/provider-smoke.ts",
     "test:source-reader-smoke": "tsx scripts/source-reader-smoke.ts",
     "test:meli-mock": "tsx scripts/new-meli-run.ts",

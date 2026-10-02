@@ -22,6 +22,13 @@ test('filing capture keeps custom rows, annual values, nil cells and derives Q4 
  assert.equal(rows.find(r=>r.metric_key==='issuer_Missing')?.value_numeric,null);
  assert.deepEqual(filingCoverage(tables,[source])[0].missing,['income','balance']);
 });
+test('interim statement headings separated by empty spacer tables are captured',()=>{
+ const spacer='<div><table><tbody><tr><td></td><td></td></tr></tbody></table></div>';
+ const html=`<ix:nonNumeric name="dei:DocumentFiscalYearFocus">2026</ix:nonNumeric><ix:nonNumeric name="dei:DocumentFiscalPeriodFocus">Q2</ix:nonNumeric><ix:nonNumeric name="dei:DocumentPeriodEndDate">2026-06-30</ix:nonNumeric><xbrli:unit id="usd"><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unit>${context('i','','2026-06-30')}${context('q','2026-04-01','2026-06-30')}<body><div><span>MercadoLibre, Inc.</span><span> - </span><span>Interim Condensed Consolidated Balance Sheets</span><span> as of June 30, 2026</span></div><div>(In millions of U.S. dollars) (Unaudited)</div>${spacer}<div><table><tr><td>Total assets</td><td>${fact('i','us-gaap:Assets','500')}</td></tr></table></div><div>MercadoLibre, Inc.</div><div>Interim Condensed Consolidated Statement of Income</div><p></p><p> </p><p></p><div>(In millions)</div><div>(Unaudited)</div><div>For the three-month period ended June 30, 2026${spacer.slice(5,-6)}</div><div><table><tr><td>Net revenues</td><td>${fact('q','us-gaap:Revenues','90')}</td></tr></table></div></body>`;
+ const tables=extractFilingStatements(html,{...source,period_end:'2026-06-30',metadata_json:{form:'10-Q'}});
+ assert.deepEqual(tables.map(t=>t.statement),['balance','income']);
+ assert.match(tables[0].title,/Interim Condensed Consolidated Balance Sheets/);
+});
 const row=(metric_key:string,value_numeric:number,quarter=1,year=2025)=>({metric_key,value_numeric,fiscal_year:year,fiscal_quarter:quarter,periodicity:'quarterly',unit:'USD',currency:'USD',reporting_basis:'gaap',metric_type:'reported',metadata_json:{},segment:null,geography:null});
 test('cash snapshots inside a cash-flow statement are not summed as cash flows',()=>{
  const ends=['2024-03-31','2024-06-30','2024-09-30','2024-12-31'];

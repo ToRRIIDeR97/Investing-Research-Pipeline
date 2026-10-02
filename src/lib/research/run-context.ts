@@ -18,7 +18,9 @@ import type { ComposedProfile } from "./archetypes/types";
 import type { ValidationResult } from "@/lib/workflow/validators";
 import { CURRENT_PIPELINE_VERSION } from "./version";
 import { RESEARCH_DOCTRINE } from "./reporting/contracts";
-import { STAGE_OWNERS, TEAM_ROLES, STAGE_DEPENDENCIES } from "./team-plan";
+import { STAGE_OWNERS, TEAM_ROLES, STAGE_DEPENDENCIES, SOURCE_REQUEST_ROLES } from "./team-plan";
+import { SourceRequestsPending, getStageSourceRequests, parseSourceRequests, queueSourceRequests,
+  sourceRequestContext, sourceRequestRule } from "./sources/source-requests";
 import { loadReportInputs } from "./reporting/store";
 import { getStageOutputContract } from "./stage-contracts";
 import { researchPacketForModel } from "./reporting/packet";
@@ -338,6 +340,23 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
   outputFormat?: Parameters<typeof runResearchAgent>[0]["outputFormat"];
 }): Promise<T> {
   const role = STAGE_OWNERS[params.stageKey];
+  // Only the stage owner's own analysis may ask the collector for documents; helpers such as the
+  // repair agent and team coordination calls cannot.
+  const asksForSources = Boolean(role && SOURCE_REQUEST_ROLES.includes(role) && !params.taskType.startsWith("team_")
+    && params.agentName === TEAM_ROLES[role].agent);
+  const sourceLedger = asksForSources ? await getStageSourceRequests(params.sql, params.ctx.runId, params.stageKey) : null;
+  const sourceRequests = asksForSources ? sourceRequestContext(sourceLedger) : null;
+  if (sourceRequests) {
+    const rule = sourceRequestRule(sourceRequests.allowed);
+    // Rules precede the task packet, which stays the last part of the prompt.
+    const withRule = (text: string) => {
+      const at = text.lastIndexOf("\n\nTask packet:");
+      return at >= 0 ? `${text.slice(0, at)}\n${rule}${text.slice(at)}` : `${rule}\n${text}`;
+    };
+    const factory = params.promptFactory;
+    if (factory) params = { ...params, promptFactory: packet => withRule(factory(packet)) };
+    else if (params.prompt) params = { ...params, prompt: withRule(params.prompt) };
+  }
   if (role && !params.taskType.startsWith("team_")) {
     const rows = await params.sql`SELECT artifact_type, scope_key, content_json FROM research_artifacts
       WHERE research_run_id = ${params.ctx.runId} AND status = 'validated'
@@ -353,7 +372,8 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
       ...(!params.packet.evidence_claims && role !== "data" ? { evidence_claims: inputs.evidence } : {}),
       team_context: { role, purpose: TEAM_ROLES[role].purpose,
         brief: rows.find(r => r.artifact_type === "agent_brief")?.content_json || null,
-        requests, upstream_artifacts: inputs.artifacts.filter(a => types.has(a.artifact_type)) },
+        requests, upstream_artifacts: inputs.artifacts.filter(a => types.has(a.artifact_type)),
+        ...(sourceRequests ? { source_requests: { ...sourceRequests, instructions: sourceRequestRule(sourceRequests.allowed) } } : {}) },
     } };
   }
   params = { ...params, packet: researchPacketForModel(params.packet) };
@@ -372,8 +392,20 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
     validator_version: VALIDATOR_VERSION,
   };
   const taskKey = researchTaskKey(params.taskKey, request);
+  // A specialist that asks for documents pauses its stage; the runner fetches them and reruns the stage.
+  const finish = async (output: Record<string, unknown>): Promise<T> => {
+    if (!sourceRequests) return output as T;
+    const { source_requests: asked, ...rest } = output;
+    const searches = sourceRequests.allowed ? parseSourceRequests(asked, sourceLedger) : [];
+    const waiting = sourceLedger?.rounds.some(round => round.task_key === taskKey && round.state === "queued");
+    if (searches.length || waiting) {
+      if (searches.length) await queueSourceRequests(params.sql, params.ctx, params.stageKey, role!, taskKey, searches);
+      throw new SourceRequestsPending(params.stageKey);
+    }
+    return rest as T;
+  };
   const prior = await latestV3TaskOutput(params.sql, params.ctx.runId, taskKey);
-  if (prior && validateSchema(prior, outputFormat).length === 0) return prior as T;
+  if (prior && validateSchema(prior, outputFormat).length === 0) return finish(prior);
   // A previously generated output can become invalid after a validator change.
   // Preserve its audit record, but do not replay it through the same failed stage.
   await params.sql`
@@ -387,6 +419,7 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
     ? "Research OS v3 stage requires specialist reasoning"
     : undefined;
   let recordedAttempts = 0;
+  let structured: T;
   try {
     const result = await runResearchAgent<T>({
       agentName: params.agentName,
@@ -450,7 +483,7 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
       },
     });
     await completeV3Task(params.sql, task.id, result.structured);
-    return result.structured as T;
+    structured = result.structured as T;
   } catch (error) {
     if (!recordedAttempts) {
       await recordModelCall({
@@ -470,6 +503,7 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
     await failV3Task(params.sql, task.id, error);
     throw error;
   }
+  return finish(structured);
 }
 
 export function makeValidationResult(errors: string[] = [], warnings: string[] = []): ValidationResult {

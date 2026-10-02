@@ -1,72 +1,58 @@
+import { z } from "zod/v4";
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
-import { makeValidationResult } from "../run-context";
-import { fetchProfileResearchContext, storeSourceCorpus, reconcileSourceGaps } from "../sources/corpus";
-import { buildSourcePlan, planMissingRoles } from "../sources/planner";
-import { SOURCE_ROLES, isValidSourceRole, type SourceRole } from "../sources/roles";
-import { isPlausibleSourceRole } from "../sources/role-discovery";
+import { makeValidationResult, callResearchAgent, exactJsonPrompt } from "../run-context";
+import { fetchProfileResearchContext, storeSourceCorpus } from "../sources/corpus";
+import { runSearches, type SearchResult } from "../sources/collector";
+import { planMissingRoles, type SourcePlan } from "../sources/planner";
+import { SOURCE_ROLES, type SourceRole } from "../sources/roles";
+import { discoverRoleSources } from "../sources/role-discovery";
+import { recordSourceCoverage, reconcileRoleGaps, sourcePlanFor, v2RunContext, withLinkedRunSources,
+  type CoverageSource } from "../sources/role-coverage";
+import { SourceSearch } from "../sources/source-requests";
+import { outputContract } from "../reporting/contracts";
+import { saveReportArtifact } from "../reporting/store";
+import { MAX_DISCOVERY_ROUNDS, TEAM_ROLES } from "../team-plan";
 import postgres from "postgres";
-import { CURRENT_PIPELINE_VERSION } from "../version";
 
-function mapToSourceRole(
-  sourceType: string,
-  title: string,
-  metadata?: Record<string, unknown>
-): SourceRole | null {
-  const explicitRole = String(metadata?.source_role || "");
-  if (SOURCE_ROLES.includes(explicitRole as SourceRole)) return explicitRole as SourceRole;
-  const normType = sourceType.toLowerCase();
-  const normTitle = title.toLowerCase();
-  if (normType.startsWith("web_") && isValidSourceRole(normType.slice(4))) {
-    return normType.slice(4) as SourceRole;
-  }
+export { mapToSourceRole, withLinkedRunSources, type CoverageSource } from "../sources/role-coverage";
 
-  if (metadata?.semanticRole === "earnings_release" || metadata?.semanticRole === "earnings_exhibit") {
-    return "earnings_release";
-  }
-  if (normType === "peer_industry_context") return "industry_primary";
-  if (normType === "primary_source_context" || normType.includes("filing") || normType.includes("primary_document") || normType.includes("sec")) {
-    return "regulatory_filing";
-  }
-  if (normType.includes("investor") || normType.includes("ir_presentation") || normType.includes("ir")) {
-    return "company_investor_relations";
-  }
-  if (normType.includes("release") || normTitle.includes("earnings release")) {
-    return "earnings_release";
-  }
-  if (normType.includes("presentation") || normTitle.includes("presentation")) {
-    return "earnings_presentation";
-  }
-  if (normType.includes("transcript") || normTitle.includes("transcript")) {
-    return "earnings_transcript";
-  }
-  if (normType.includes("proxy") || normTitle.includes("proxy")) {
-    return "proxy_and_governance";
-  }
-  if (normType.includes("founder") || normType.includes("history") || normTitle.includes("history") || normTitle.includes("founder")) {
-    return "founder_and_company_history";
-  }
-  if (normType.includes("peer") || normTitle.includes("peer")) {
-    return "peer_company_primary";
-  }
-  if (normType.includes("industry") || normTitle.includes("industry")) {
-    return "industry_primary";
-  }
-  if (normType.includes("customer") || normTitle.includes("customer")) {
-    return "customer_or_channel";
-  }
-  if (normType.includes("supplier") || normTitle.includes("supplier")) {
-    return "supplier_or_partner";
-  }
-  if (normType.includes("regulatory") || normTitle.includes("fdic") || normTitle.includes("federal")) {
-    return "regulatory_or_government";
-  }
-  if (normType.includes("macro") || normTitle.includes("macro")) {
-    return "macro_dataset";
-  }
-  if (normType.includes("market") || normTitle.includes("market data") || normTitle.includes("yahoo")) {
-    return "market_data";
-  }
-  return null;
+type Sql = ReturnType<typeof postgres>;
+
+const REVIEW_CONTRACT = outputContract({
+  sufficient: z.boolean(),
+  assessment: z.string().min(1),
+  searches: z.array(SourceSearch).max(6),
+  accepted_gaps: z.array(z.object({ source_role: z.enum(SOURCE_ROLES), reason: z.string().min(1) })),
+});
+type SourceReview = { sufficient: boolean; assessment: string; searches: SourceSearch[]; accepted_gaps: { source_role: SourceRole; reason: string }[] };
+type DiscoveryRound = Omit<SourceReview, "searches"> & { round: number; searches: SearchResult[] };
+
+/** The collector reviews the current corpus and either hands it to the specialists or names what to search next. */
+async function reviewSources(sql: Sql, ctx: ResearchRunContext, plan: SourcePlan, covered: Set<SourceRole>,
+  sources: CoverageSource[], rounds: DiscoveryRound[]): Promise<SourceReview> {
+  const round = rounds.length + 1;
+  const packet = {
+    asset: { name: ctx.assetName, symbol: ctx.symbol }, research_question: ctx.researchQuestion,
+    output_contract: "source_review", round, max_rounds: MAX_DISCOVERY_ROUNDS,
+    source_plan: plan.items.map(item => ({ source_role: item.source_role, required: item.required,
+      artifact_types: item.artifact_types, rationale: item.rationale })),
+    covered_roles: [...covered], missing_required_roles: planMissingRoles(plan, [...covered]),
+    documents: sources.filter(source => !source.sourceId.startsWith("candidate-")).slice(0, 80)
+      .map(source => ({ title: source.title, url: source.url || null, source_type: source.sourceType,
+        source_role: String(source.metadata?.source_role || "") || null })),
+    previous_rounds: rounds.map(previous => ({ round: previous.round, assessment: previous.assessment,
+      searches: previous.searches.map(search => ({ source_role: search.source_role, query: search.query, status: search.status,
+        documents: (search.documents || []).map(document => document.title) })) })),
+  };
+  return callResearchAgent<SourceReview>({ sql, ctx, stageKey: "source_discovery", taskKey: `source-review:${round}`,
+    taskType: "source_review", agentName: TEAM_ROLES.data.agent, modelTier: "cheap", packet, outputFormat: REVIEW_CONTRACT,
+    promptFactory: p => exactJsonPrompt({ agentName: TEAM_ROLES.data.agent, requiredKeys: REVIEW_CONTRACT.requiredKeys!, packet: p,
+      extraRules: [TEAM_ROLES.data.purpose,
+        "The specialists (financials, business, valuation and report) start only after you set sufficient to true. Judge whether the documents can answer the research question and cover every required source role in source_plan.",
+        "If not, return up to 6 searches {source_role, query, reason}. Each query must name a specific document or entity: for peer_company_primary, name a competitor and its filing (for example a named competitor's latest annual report or 20-F); for industry or regulatory roles, name the regulator, dataset or report. Never search generic phrases such as 'peer 10-K' or 'competitor report', and do not repeat a query from previous_rounds.",
+        "Set sufficient to true when the required roles are covered, or when further public searches are unlikely to help; list each uncovered required role in accepted_gaps with the reason. Specialists can request more documents later.",
+        "Do not claim documents that are not in the documents list."] }),
+  });
 }
 
 export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
@@ -74,29 +60,14 @@ export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
-      // 1. Map ctx to V2-style RunContext
-      const v2Ctx = {
-        runId: ctx.runId,
-        runType: ctx.runType,
-        assetId: ctx.assetId,
-        assetName: ctx.assetName,
-        assetSlug: ctx.assetSlug,
-        symbol: ctx.symbol,
-        profileId: ctx.profileId || "",
-        profileKey: ctx.profileKey || "",
-        requiredModules: ctx.composedProfile?.required_artifacts.map((a: any) => a.artifact_type) || [],
-        requiredLenses: ctx.composedProfile?.valuation_methods.map((m: any) => m.method) || [],
-        marketDataCutoffAt: ctx.marketDataCutoffAt ? ctx.marketDataCutoffAt.toISOString() : null,
-        pipelineVersion: CURRENT_PIPELINE_VERSION,
-      };
+      const v2Ctx = v2RunContext(ctx);
 
-      // 2. Fetch public/SEC context
+      // Fetch public/SEC context
       const secContext = await fetchProfileResearchContext(v2Ctx);
 
       // Follow the report's concrete questions through the same cutoff/role checks
       // as normal discovery. Search snippets never count as fetched evidence.
       const { getTeamRequests } = await import("../team");
-      const { discoverRoleSources } = await import("../sources/role-discovery");
       const batch = await getTeamRequests(sql, ctx.runId);
       const requests = batch?.requests.filter(r => !r.response && (r.needs_sources || r.role === "data")) || [];
       if (requests.length) {
@@ -112,129 +83,53 @@ export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
             ${sql.json({ request_id: request.id, question: request.question, fetched_documents: extra.filter(s => s.metadata.source_role === request.source_role).length })})`;
       }
 
-      // 3. Store source corpus in database (creates source_documents, parses, chunks, etc.)
+      // Store source corpus in database (creates source_documents, parses, chunks, etc.)
       const sourceCorpus = await storeSourceCorpus(sql, v2Ctx, secContext);
-
-      // 4. Create source plan
-      const requiredArtifacts = ctx.composedProfile?.required_artifacts || [];
-      const sourcePlan = buildSourcePlan(ctx.runId, ctx.assetId, requiredArtifacts as any,
-        (ctx.composedProfile?.source_roles || [])
-          .filter((item: any) => isValidSourceRole(String(item.role)))
-          .map((item: any) => ({
-            role: item.role as SourceRole,
-            required: item.required,
-            rationale: item.rationale,
-            blockedArtifacts: item.blockedArtifacts,
-          }))
-      );
+      const sourcePlan = sourcePlanFor(ctx);
 
       // Replays must remove obsolete role/artifact matches from earlier source discovery.
       await sql`DELETE FROM source_role_coverage WHERE research_run_id = ${ctx.runId}`;
+      // Role gaps were once owned by the source reader; the collector owns them now.
+      await sql`UPDATE source_gaps SET status = 'resolved', resolved_at = NOW(),
+        resolution_note = 'Superseded: role coverage gaps are owned by the source collector.'
+        WHERE research_run_id = ${ctx.runId} AND owner = 'system:source-reader' AND status = 'open'
+          AND description LIKE 'Required source role % is not covered by any fetched documents%'`;
 
-      // 5. Create assignments and insert into source_role_assignments
-      const coveredRoles = new Set<SourceRole>();
-      for (const source of sourceCorpus.sources) {
-        if (source.sourceId.startsWith("candidate-")) continue;
-        const mapped = mapToSourceRole(source.sourceType, source.title || "", source.metadata);
-        const roles = mapped ? [mapped] : [];
-        if (source.sourceType === "peer_industry_context" && source.url
-          && isPlausibleSourceRole(source.url, "regulatory_or_government")) {
-          roles.push("regulatory_or_government");
+      let sources = await withLinkedRunSources(sql, ctx.runId, sourceCorpus.sources);
+      let coveredRoles = await recordSourceCoverage(sql, ctx.runId, sources, sourcePlan);
+
+      // The collector decides when the corpus is sufficient for the specialists to start.
+      const rounds: DiscoveryRound[] = [];
+      for (let round = 1; round <= MAX_DISCOVERY_ROUNDS; round += 1) {
+        // A failed review must not strand the run: the corpus goes forward with its gaps recorded.
+        const review = await reviewSources(sql, ctx, sourcePlan, coveredRoles, sources, rounds).catch((error): SourceReview => ({
+          sufficient: false, searches: [], accepted_gaps: [],
+          assessment: `Collector review failed: ${error instanceof Error ? error.message : String(error)}`,
+        }));
+        const searches = review.sufficient ? [] : review.searches;
+        if (!searches.length) {
+          rounds.push({ ...review, round, searches: [] });
+          break;
         }
-        for (const role of new Set(roles)) {
-          if (!source.url || !isPlausibleSourceRole(source.url, role)) continue;
-          coveredRoles.add(role);
-
-        await sql`
-          INSERT INTO source_retrieval_attempts (
-            research_run_id, source_role, source_url, source_title,
-            attempt_status, attempt_metadata_json
-          )
-          SELECT
-            ${ctx.runId}, ${role}, ${source.url || null},
-            ${source.title || null}, 'fetched',
-            ${sql.json({
-              source_document_id: source.sourceId,
-              fetch_status: String(source.metadata?.fetch_status || "fetched"),
-              substantive: true,
-            })}
-          WHERE NOT EXISTS (
-            SELECT 1 FROM source_retrieval_attempts
-            WHERE research_run_id = ${ctx.runId}
-              AND source_role = ${role}
-              AND attempt_status = 'fetched'
-              AND source_title = ${source.title || null}
-          )
-        `;
-
-        await sql`
-          INSERT INTO source_role_assignments (
-            source_document_id, role, confidence, rationale, assigned_by, assigned_at
-          ) VALUES (
-            ${source.sourceId}, ${role}, 100, 'Mapped from document metadata', 'system-discovery', NOW()
-          )
-          ON CONFLICT (source_document_id, role) DO UPDATE
-          SET confidence = 100
-        `;
-
-        // A role covers only the artifacts explicitly linked by the composed profile.
-        const linkedArtifacts = sourcePlan.items.find((item) => item.source_role === role)?.artifact_types || [];
-        for (const artifactType of linkedArtifacts) {
-          await sql`
-            INSERT INTO source_role_coverage (
-              research_run_id, source_role, artifact_type, source_document_id,
-              coverage_status, confidence, rationale, blocked_artifact_types
-            ) VALUES (
-              ${ctx.runId}, ${role}, ${artifactType}, ${source.sourceId},
-              'covered', 100, 'Substantive source document assigned to role', ${sql.json([])}
-            )
-            ON CONFLICT (research_run_id, source_role, artifact_type) DO UPDATE
-            SET coverage_status = 'covered',
-                source_document_id = ${source.sourceId},
-                confidence = 100,
-                rationale = 'Substantive source document assigned to role',
-                updated_at = NOW()
-          `;
-        }
-        }
+        const results = await runSearches(sql, ctx, searches, TEAM_ROLES.data.agent);
+        rounds.push({ ...review, round, searches: results });
+        sources = await withLinkedRunSources(sql, ctx.runId, sourceCorpus.sources);
+        coveredRoles = await recordSourceCoverage(sql, ctx.runId, sources, sourcePlan);
       }
 
-      // 6. Enforce source gaps
-      const missingRoles = planMissingRoles(sourcePlan, Array.from(coveredRoles));
-      const gaps = missingRoles.map((role: any) => ({
-        gapKey: `missing_${role}`,
-        description: `Required source role '${role}' is not covered by any fetched documents`,
-        severity: "high",
-      }));
-      for (const role of missingRoles) {
-        const planItem = sourcePlan.items.find((item) => item.source_role === role);
-        await sql`
-          INSERT INTO source_retrieval_attempts (
-            research_run_id, source_role, attempt_status,
-            failure_reason, attempt_metadata_json
-          )
-          SELECT
-            ${ctx.runId}, ${role}, 'unavailable', 'no_substantive_source_fetched',
-            ${sql.json({
-              generated_queries: planItem?.search_keywords || [],
-              artifact_types: planItem?.artifact_types || [],
-            })}
-          WHERE NOT EXISTS (
-            SELECT 1 FROM source_retrieval_attempts
-            WHERE research_run_id = ${ctx.runId}
-              AND source_role = ${role}
-              AND attempt_status = 'unavailable'
-              AND failure_reason = 'no_substantive_source_fetched'
-          )
-        `;
-      }
-
-      await reconcileSourceGaps(sql, v2Ctx, { source_gaps: gaps }, "system:source-reader");
+      const final = rounds[rounds.length - 1];
+      const notes = Object.fromEntries((final?.accepted_gaps || []).map(gap => [gap.source_role, gap.reason]));
+      const { missingRoles, gaps } = await reconcileRoleGaps(sql, v2Ctx, sourcePlan, coveredRoles, notes);
+      await saveReportArtifact(sql, ctx, "source_review", "discovery", {
+        sufficient: Boolean(final?.sufficient), assessment: final?.assessment || "", rounds,
+        covered_roles: [...coveredRoles], missing_required_roles: missingRoles,
+      });
 
       return {
         status: "success",
-        sourcesFetched: sourceCorpus.sources.length,
+        sourcesFetched: sources.filter(source => !source.sourceId.startsWith("candidate-")).length,
         coveredRoles: Array.from(coveredRoles),
+        discoveryRounds: rounds.length,
         gaps: gaps.map((g: any) => g.gapKey),
       };
     } finally {

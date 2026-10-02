@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { model_call_logs } from "@/db/schema/ai";
 import { research_runs } from "@/db/schema/workflow";
 import { handleApiError, successResponse } from "@/lib/api/errors";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 
 export async function GET(
   _request: NextRequest,
@@ -32,9 +32,7 @@ export async function GET(
         calls: sql<string>`count(*)`,
       })
       .from(model_call_logs)
-      .where(
-        sql`${model_call_logs.research_run_id} = ANY(${runIds})`
-      )
+      .where(inArray(model_call_logs.research_run_id, runIds))
       .groupBy(model_call_logs.model_tier);
 
     const chartData = costByTier.map((row) => ({

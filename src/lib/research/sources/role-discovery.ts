@@ -14,6 +14,8 @@ export type RoleDiscoveryContext = {
   seedUrls?: string[];
   roleSeedUrls?: Partial<Record<SourceRole, string[]>>;
   roleQueries?: Partial<Record<SourceRole, string[]>>;
+  /** Search only roleQueries: skip seed sites and the generic per-role queries. */
+  requestedOnly?: boolean;
 };
 
 export type DiscoveredRoleSource = {
@@ -194,13 +196,13 @@ export async function discoverRoleSources(
   const maxPerRole = positiveInteger(process.env.RESEARCH_WEB_DISCOVERY_MAX_PER_ROLE, 2);
   const maxRoles = positiveInteger(process.env.RESEARCH_WEB_DISCOVERY_MAX_ROLES, 8);
   const selectedRoles = [...new Set(roles)].slice(0, maxRoles);
-  const seedCandidates = await discoverSeedCandidates(
+  const seedCandidates = context.requestedOnly ? new Map<SourceRole, SearchCandidate[]>() : await discoverSeedCandidates(
     context.seedUrls || [],
     selectedRoles.filter((role) => ISSUER_SITE_ROLES.includes(role)),
     fetchImpl,
     context.assetName
   );
-  for (const [role, urls] of Object.entries(context.roleSeedUrls || {}) as [SourceRole, string[]][]) {
+  for (const [role, urls] of (context.requestedOnly ? [] : Object.entries(context.roleSeedUrls || {})) as [SourceRole, string[]][]) {
     if (!selectedRoles.includes(role)) continue;
     const explicitCandidates = (urls || [])
       .map((value) => normalizeSeedUrl(value))
@@ -219,17 +221,26 @@ export async function discoverRoleSources(
   for (const role of selectedRoles) {
     const candidates = seedCandidates.get(role) || [];
     const requested = context.roleQueries?.[role] || [];
-    const queries = [...requested, ...buildRoleSearchQueries(context.assetName, context.symbol, role)];
+    const queries = [...requested, ...(context.requestedOnly ? [] : buildRoleSearchQueries(context.assetName, context.symbol, role))];
+    // Each targeted query names a distinct document, so each may contribute one.
+    const roleLimit = context.requestedOnly ? Math.min(4, Math.max(maxPerRole, requested.length)) : maxPerRole;
+    // Requested queries go first, in the order they were asked.
+    let requestedEnd = 0;
     for (const query of queries) {
       if (!requested.includes(query) && candidates.length >= maxPerRole * 3) break;
       const found = await searchWeb(query, fetchImpl);
-      if (requested.includes(query)) candidates.unshift(...found);
-      else candidates.push(...found);
+      if (requested.includes(query)) {
+        candidates.splice(requestedEnd, 0, ...found);
+        requestedEnd += found.length;
+      } else candidates.push(...found);
     }
 
     for (const candidate of dedupeCandidates(candidates)) {
-      if (discovered.filter((source) => source.metadata.source_role === role).length >= maxPerRole) break;
-      const source = await fetchCandidate(candidate, role, context.cutoffAt, context.assetName, fetchImpl);
+      if (discovered.filter((source) => source.metadata.source_role === role).length >= roleLimit) break;
+      if (context.requestedOnly && discovered.some((source) => source.metadata.discovery_query === candidate.query)) continue;
+      // A named peer's own filing need not mention the researched company.
+      const identity = role === "peer_company_primary" && requested.includes(candidate.query) ? "" : context.assetName;
+      const source = await fetchCandidate(candidate, role, context.cutoffAt, identity, fetchImpl);
       if (!source) continue;
       discovered.push(source);
       if (role === "company_investor_relations" && isIssuerSeedSite(source.url, context.seedUrls || [])) {
