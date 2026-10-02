@@ -140,7 +140,9 @@ function extractPdfPages(pdf: Uint8Array, options?: { ocr?: OcrClient | null }):
 ### Phase 1: structured passages and per-need retrieval
 
 - **AC-1 HTML structure.** `documentPassages(html, "text/html")` drops `script`,
-  `style`, `head` and hidden content (`display:none` elements and `ix:header`). `h1`–`h6`
+  `style`, `head` and hidden content (`display:none` elements and `ix:header`). Elements
+  with only the `hidden` attribute are kept, because streaming server rendering (React)
+  delivers the page body inside `<div hidden>` containers. `h1`–`h6`
   start sections; a heading replaces headings at its level or deeper. A `p` or `div`
   whose entire text is bold (`b`, `strong`, or `font-weight: bold|700`), at most 120
   characters and not ending with a period, is a heading: level 1 when all letters are

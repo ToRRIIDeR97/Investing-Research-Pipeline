@@ -57,3 +57,14 @@ test("AC-3: passages stay inside one section, respect maxChars and start with th
     assert.ok(passages[i].charStart >= passages[i - 1].charEnd, "offsets follow reading order");
   }
 });
+
+test("AC-1: streamed page bodies inside hidden-attribute containers are kept (React streaming rendering)", () => {
+  const { documentPassages, htmlToStructuredText } = loadMemory();
+  const page = `<html><body><a href="#main">Skip to main content</a><main id="main-content"><template id="B:0"></template></main>
+    <div hidden id="S:0"><h1>Mike Cagney</h1><h2>Background</h2><p>Mike Cagney co-founded SoFi in 2011 while at Stanford.</p></div>
+    <script>document.getElementById("B:0").replaceWith(document.getElementById("S:0"))</script></body></html>`;
+  const story = (documentPassages(page, "text/html") as Passage[]).find(p => p.text.includes("co-founded SoFi"));
+  assert.deepEqual(story?.sectionPath, ["Mike Cagney", "Background"]);
+  const reparsed = (documentPassages(htmlToStructuredText(page), "text/plain") as Passage[]).find(p => p.text.includes("co-founded SoFi"));
+  assert.deepEqual(reparsed?.sectionPath, ["Mike Cagney", "Background"], "stored web-page text keeps the sections");
+});

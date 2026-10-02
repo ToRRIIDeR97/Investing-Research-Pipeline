@@ -35,7 +35,9 @@ const isElement = (node: DomNode) => node.type === "tag" || node.type === "scrip
 
 function skipped(node: DomNode): boolean {
   if (!isElement(node)) return false;
-  return SKIPPED.has(tag(node)) || styleOf(node).includes("display:none") || node.attribs?.hidden !== undefined;
+  // The `hidden` attribute is not treated as hidden: streaming server rendering (React) delivers the
+  // page body inside `<div hidden>` containers that scripts move into place.
+  return SKIPPED.has(tag(node)) || styleOf(node).includes("display:none");
 }
 
 function isBold(node: DomNode): boolean {
