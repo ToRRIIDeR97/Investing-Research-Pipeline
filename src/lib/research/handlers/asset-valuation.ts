@@ -69,7 +69,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         SELECT dc.text
         FROM research_run_sources rrs
         JOIN source_documents sd ON sd.id = rrs.source_document_id
-        JOIN document_parses dp ON dp.source_document_id = sd.id
+        JOIN document_parses dp ON dp.source_document_id = sd.id AND dp.parser_name <> 'research-memory'
         JOIN document_chunks dc ON dc.document_parse_id = dp.id
         WHERE rrs.research_run_id = ${ctx.runId}
           AND sd.source_type = 'market_data_snapshot'
@@ -117,6 +117,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
           const [chunk] = await sql`
             SELECT dc.id, dc.document_parse_id, dc.char_start, dc.char_end, dc.text
             FROM document_chunks dc
+            JOIN document_parses dp ON dp.id = dc.document_parse_id AND dp.parser_name <> 'research-memory'
             WHERE dc.source_document_id = ${primaryDoc.id}
               AND dc.text LIKE ${`%"val": ${shareFact.value}%`}
             ORDER BY dc.chunk_index

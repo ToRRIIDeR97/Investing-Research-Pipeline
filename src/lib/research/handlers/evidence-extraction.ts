@@ -18,6 +18,7 @@ import { CURRENT_PIPELINE_VERSION } from "../version";
 import { isValidSourceRole } from "../sources/roles";
 import { isPlausibleSourceRole } from "../sources/role-discovery";
 import { v2RunContext } from "../sources/role-coverage";
+import { FOUNDER_ORIGIN_NEED } from "../memory";
 
 const SOURCE_READER_OUTPUT_KEYS = [
   "evidence_claims",
@@ -100,8 +101,9 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       };
 
       // 2. Fetch Stored Sources for this run from DB
+      // One row per document; its passages come from the research memory.
       const sourceRows = await sql`
-        SELECT sd.id as "sourceId", dp.id as "parseId", dc.id as "chunkId",
+        SELECT DISTINCT ON (sd.id) sd.id as "sourceId", dp.id as "parseId", dc.id as "chunkId",
                sd.source_type as "sourceType", sd.title, sd.publisher, sd.url,
                sd.published_at as "publishedAt", sd.period_end as "periodEnd",
                sd.created_at as "createdAt",
@@ -111,6 +113,7 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
         JOIN document_chunks dc ON dc.source_document_id = sd.id AND dc.document_parse_id = dp.id
         LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
         WHERE sd.research_run_id = ${ctx.runId} OR rrs.research_run_id = ${ctx.runId}
+        ORDER BY sd.id, dc.chunk_index
       `;
       const excludedSourceIds = [...new Set(sourceRows.filter((row) => {
         const role = String((row.metadata as Record<string, unknown> | null)?.source_role ||
@@ -228,9 +231,8 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       }
 
       if (!hasFounderOriginClaim(evidenceOutput)) {
-        const founderChunks = (sourcePacket as any[]).filter(
-          (chunk) => chunk.source_role === "founder_and_company_history"
-        );
+        // Only passages that answered the founder need; never a founder document's opening pages.
+        const founderChunks = (sourcePacket as any[]).filter((chunk) => chunk.need === FOUNDER_ORIGIN_NEED.key);
         if (founderChunks.length > 0) {
           const [founderBatch] = createSourceReaderBatches(founderChunks, {
             maxChunks: Math.max(1, founderChunks.length),
