@@ -185,7 +185,14 @@ function extractPdfPages(pdf: Uint8Array, options?: { ocr?: OcrClient | null }):
   the existing source-reader fields (`source_id`, `document_parse_id`,
   `document_chunk_id`, `source_type`, `source_role`, `title`, `section_title`,
   `chunk_index`, `char_start`, `char_end`, `content_excerpt`) and add `section_path`
-  and `need`. The founder pass reads only passages returned for `FOUNDER_ORIGIN_NEED`.
+  and `need`. The founder pass reads only passages returned for `FOUNDER_ORIGIN_NEED` and,
+  after them, `FOUNDER_FILINGS_NEED` (founding statements in filings, investor relations and
+  proxy documents, such as "was founded in 2011 to offer…"). Founder needs come first in the
+  packet, and the founder pass's claims are persisted before other claims, so the evidence
+  cap cannot drop them. The founder check counts only accepted claims that affirm the founder
+  or origin. Absence statements ("does not name the founder"), claims about the supplied
+  excerpt, and system inventory or metric claims do not count, and claims about the supplied
+  excerpt are never stored as evidence.
   For a run whose founder source is a long prospectus with the founding story past the
   first 9,000 characters, a source-reader task packet contains the "History of
   MercadoLibre" passage, and the founder pass never receives the cover page.

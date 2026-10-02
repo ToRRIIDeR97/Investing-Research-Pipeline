@@ -474,6 +474,7 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
               model_attempt: attempt.modelAttempt,
               compaction_occurred: attempt.compactionOccurred,
               input_bytes: attempt.inputBytes,
+              max_output_tokens: attempt.maxOutputTokens,
               original_input_bytes: attempt.originalInputBytes,
             },
             responseMetadata: {

@@ -4,7 +4,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { canonicalResearchKey } from "@/lib/research/v2-contracts";
 import { canonicalMetricPlan, normalizeSourceGap, positiveFiniteNumber, selectLatestFact } from "@/lib/research/pipeline-helpers";
-import { evidenceNeeds, indexDocumentContent, openingPassages, retrievePassages, runDocuments, type RetrievedPassage } from "@/lib/research/memory";
+import { evidenceNeeds, FOUNDER_NEED_KEYS, indexDocumentContent, openingPassages, retrievePassages, runDocuments, type RetrievedPassage } from "@/lib/research/memory";
 import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
 import { SourceRole } from "@/lib/research/sources/roles";
 
@@ -175,7 +175,7 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
   for (const need of needs) {
     const result = await retrievePassages(sql, { runId: ctx.runId, need: { ...need, sourceIds: need.sourceIds || sourceIds } });
     for (const passage of result.passages) add(passage, need.key);
-    if (!result.passages.length && need.key !== "founder_origin") {
+    if (!result.passages.length && !FOUNDER_NEED_KEYS.includes(need.key)) {
       const ids = documents.filter((doc) => need.sourceIds ? need.sourceIds.includes(doc.id) : need.sourceRoles?.includes(doc.role || "")).map((doc) => doc.id);
       for (const passage of await openingPassages(sql, { runId: ctx.runId, sourceIds: ids, perDocument: 2 })) add(passage, `${need.key}:opening`);
     }
@@ -1769,11 +1769,17 @@ export function deterministicEvidenceFallback(
   };
 }
 
+/**
+ * Statements about the supplied excerpt itself ("The supplied passage does not name the founder")
+ * describe what the reader saw, not the company; they belong in source gaps, never in evidence.
+ */
+export const SOURCE_META_CLAIM = /\b(?:supplied|provided)\s+(?:source\s+)?(?:chunk|passage|excerpt|corpus|document|text)s?\b|\b(?:the|this)\s+(?:source\s+)?(?:chunk|excerpt)s?\b/i;
+
 function usableEvidenceClaims(output: Record<string, unknown>) {
   const placeholders = new Set(["string", "claim", "claim text", "n/a", "none", "null"]);
   return arrayValue(output.evidence_claims).filter((claim) => {
     const claimText = textValue(claim.claim_text || claim.text || claim.claim, "");
-    return claimText.length >= 20 && !placeholders.has(claimText.toLowerCase());
+    return claimText.length >= 20 && !placeholders.has(claimText.toLowerCase()) && !SOURCE_META_CLAIM.test(claimText);
   });
 }
 

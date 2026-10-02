@@ -7,6 +7,7 @@ import {
   deterministicEvidenceFallback,
   loadAcceptedEvidencePacket,
   reconcileSourceGaps,
+  SOURCE_META_CLAIM,
 } from "../sources/corpus";
 import {
   createSourceReaderBatches,
@@ -18,7 +19,7 @@ import { CURRENT_PIPELINE_VERSION } from "../version";
 import { isValidSourceRole } from "../sources/roles";
 import { isPlausibleSourceRole } from "../sources/role-discovery";
 import { v2RunContext } from "../sources/role-coverage";
-import { FOUNDER_ORIGIN_NEED } from "../memory";
+import { FOUNDER_NEED_KEYS } from "../memory";
 
 const SOURCE_READER_OUTPUT_KEYS = [
   "evidence_claims",
@@ -27,6 +28,15 @@ const SOURCE_READER_OUTPUT_KEYS = [
   "low_confidence_items",
   "rejected_candidates",
 ];
+
+const NO_META_CLAIMS = "Every evidence claim states a fact about the company or its environment. Never write a claim about the supplied chunk or passage itself, or about information it lacks; record missing information in source_gaps instead.";
+
+/**
+ * A founder claim must affirm something: claims that only report the founder as missing, or that
+ * describe the supplied excerpt, do not count.
+ */
+export const FOUNDER_TERMS = /founder|founded|founding|co-?founded|started by|origin|motivat|professor|mission|lab to the market/i;
+export const ABSENCE_STATEMENT = /\b(?:does|do|did)\s+not\b|\bdoesn['’]t\b|\bcannot\b|\bnot\s+(?:name|named|identif\w*|state[ds]?|disclos\w*|mention\w*|provide[ds]?|support\w*|present|available|known)\b|\bno\s+(?:founder|founding|information|evidence|mention|narrative)\b|\b(?:is|are|remains?)\s+(?:unknown|unclear|absent|missing)\b/i;
 
 const sourceReaderPrompt = (target: number) => (packet: Record<string, unknown>) => exactJsonPrompt({
   agentName: "source-reader",
@@ -37,6 +47,7 @@ const sourceReaderPrompt = (target: number) => (packet: Record<string, unknown>)
     "claim_category must be exactly one of: fact, estimate, assumption, opinion. Put topical labels such as strategy or funding in claim_type, never in claim_category.",
     `Return up to ${target} distinct, decision-relevant evidence claims supported by this batch. Never return schema examples or placeholder values.`,
     "Use only source_corpus in this packet. Do not invent or alter source or chunk identifiers.",
+    NO_META_CLAIMS,
     "Prefer annual and quarterly SEC filings for financial facts.",
     "Extract at least one decision-relevant claim from every substantive source_corpus chunk before taking additional claims from the same chunk.",
     "For source_role=founder_and_company_history, prioritize the founder's identity, background, stated motivation, problem being solved, company origin, early constraints, and first proof point.",
@@ -195,17 +206,11 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       let evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
 
       const usableClaims = (out: any) => Array.isArray(out?.evidence_claims) ? out.evidence_claims : [];
-      const hasFounderOriginClaim = (out: any) => usableClaims(out).some((claim: any) =>
-        claim?.source_role === "founder_and_company_history" ||
-        (
-          (sourcePacket as any[]).some(
-            (chunk) =>
-              chunk.source_role === "founder_and_company_history" &&
-              chunk.source_id === claim?.source_id
-          ) &&
-          /founder|founded|motivat|origin|professor|research program/i.test(String(claim?.claim_text || ""))
-        )
-      );
+      // The founder pass is skipped only when a claim already affirms the founder or origin.
+      const hasFounderOriginClaim = (out: any) => usableClaims(out).some((claim: any) => {
+        const text = String(claim?.claim_text || "");
+        return FOUNDER_TERMS.test(text) && !ABSENCE_STATEMENT.test(text) && !SOURCE_META_CLAIM.test(text);
+      });
 
       if (usableClaims(evidenceOutput).length < evidenceTarget) {
         for (let index = 0; index < batches.length && usableClaims(evidenceOutput).length < evidenceTarget; index += 1) {
@@ -231,8 +236,9 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       }
 
       if (!hasFounderOriginClaim(evidenceOutput)) {
-        // Only passages that answered the founder need; never a founder document's opening pages.
-        const founderChunks = (sourcePacket as any[]).filter((chunk) => chunk.need === FOUNDER_ORIGIN_NEED.key);
+        // Only passages that answered a founder need (founder-history documents first, then filings and
+        // investor material); never a founder document's opening pages.
+        const founderChunks = FOUNDER_NEED_KEYS.flatMap((key) => (sourcePacket as any[]).filter((chunk) => chunk.need === key));
         if (founderChunks.length > 0) {
           const [founderBatch] = createSourceReaderBatches(founderChunks, {
             maxChunks: Math.max(1, founderChunks.length),
@@ -267,11 +273,13 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
                 "Each claim must copy source_id and document_chunk_id exactly and include claim_text, claim_type, claim_category, confidence, and the most precise available date.",
                 "claim_category must be exactly one of: fact, estimate, assumption, opinion. Use claim_type for the topic.",
                 "Do not infer a financial, mission, status, or other motivation unless the source text directly supports it.",
+                NO_META_CLAIMS,
               ],
             }),
           });
-          outputs.push(founderOutput);
-          batches.push(roleBatch);
+          // First, so the evidence cap in persistEvidence never drops the claims the founder check needs.
+          outputs.unshift(founderOutput);
+          batches.unshift(roleBatch);
           evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
         }
       }
@@ -311,32 +319,20 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       if (Number(rows[0].cnt) === 0) {
         errors.push("No evidence claims extracted for this run");
       }
-      const founderRows = await sql`
-        SELECT COUNT(DISTINCT ec.id) AS cnt
+      // System inventory and metric claims name document types, not founders.
+      const founderClaims = await sql`
+        SELECT ec.claim_text
         FROM evidence_claims ec
-        JOIN evidence_links el ON el.evidence_claim_id = ec.id
-        JOIN source_locations sl ON sl.id = el.source_location_id
-        JOIN source_role_assignments sra ON sra.source_document_id = sl.source_document_id
         WHERE ec.research_run_id = ${ctx.runId}
           AND ec.review_status = 'accepted'
-          AND sra.role = 'founder_and_company_history'
-          AND (
-            LOWER(ec.claim_text) LIKE '%founder%'
-            OR LOWER(ec.claim_text) LIKE '%founded%'
-            OR LOWER(ec.claim_text) LIKE '%founding%'
-            OR LOWER(ec.claim_text) LIKE '%origin%'
-            OR LOWER(ec.claim_text) LIKE '%started by%'
-            OR LOWER(ec.claim_text) LIKE '%josé%'
-            OR LOWER(ec.claim_text) LIKE '%jose%'
-            OR LOWER(ec.claim_text) LIKE '%motivat%'
-            OR LOWER(ec.claim_text) LIKE '%professor%'
-            OR LOWER(ec.claim_text) LIKE '%mission%'
-            OR LOWER(ec.claim_text) LIKE '%sacrifice%'
-            OR LOWER(ec.claim_text) LIKE '%lab to the market%'
-          )
+          AND ec.claim_type NOT IN ('source_inventory_fact', 'deterministic_metric_observation')
       `;
+      const founderRows = [{ cnt: founderClaims.filter((row) => {
+        const text = String(row.claim_text || "");
+        return FOUNDER_TERMS.test(text) && !ABSENCE_STATEMENT.test(text) && !SOURCE_META_CLAIM.test(text);
+      }).length }];
       if (Number(founderRows[0]?.cnt || 0) === 0) {
-        errors.push("No accepted founder/origin evidence was extracted from founder_and_company_history sources");
+        errors.push("No accepted claim affirms the founder or company origin (absence statements and claims about the supplied excerpt do not count)");
       }
       return makeValidationResult(errors);
     } finally {

@@ -80,6 +80,36 @@ export function buildHistoricalRecord(input: BuildHistoricalRecordInput): Histor
   };
 }
 
+// Research plans require metric families ("income_statement", "share_count"); observations carry
+// line-item keys ("revenue", "us_gaap_WeightedAverageNumberOfDilutedSharesOutstanding"). A family is
+// present in a quarter when any observation for that quarter belongs to it.
+const FAMILY_PATTERNS: Record<string, RegExp> = {
+  income_statement: /revenue|net_?income|operating_?income|gross_?profit|cost_?of|expense|earnings|eps/i,
+  balance_sheet: /assets|liabilities|equity|cash_and/i,
+  cash_flow: /cash_?flow|NetCashProvidedBy|operating_?cash/i,
+  share_count: /shares?(_|outstanding|$)|SharesOutstanding|NumberOf.*Shares/i,
+  capital_allocation: /repurchase|buyback|dividend|capex|capital_?expend|PaymentsToAcquirePropertyPlant|PaymentsForRepurchase|PaymentsOfDividends/i,
+  capex: /capex|capital_?expend|PaymentsToAcquirePropertyPlant|PaymentsToAcquireProductiveAssets/i,
+  capex_and_depreciation: /capex|capital_?expend|PaymentsToAcquirePropertyPlant|depreciation|amortization/i,
+  deposits: /deposit/i,
+  net_debt: /debt|borrowing|notes_?payable/i,
+  working_capital: /receivable|payable|inventor|AssetsCurrent|LiabilitiesCurrent|current_(assets|liabilities)/i,
+  credit_losses: /credit_?loss|provision_?for|charge_?offs?/i,
+  loan_loss_reserve: /allowance|loan_?loss_?reserve/i,
+  loan_portfolio: /loans?(_|$)|LoansAndLeases|FinancingReceivable/i,
+  net_interest_income: /net_?interest_?income|InterestIncomeExpenseNet/i,
+  non_interest_income: /non_?interest_?income|NoninterestIncome/i,
+  gross_margin: /gross_?(profit|margin)/i,
+  marketing_spend: /marketing|advertising/i,
+};
+
+export function belongsToFamily(observation: HistoricalObservation, family: string): boolean {
+  if (observation.metric_key === family) return true;
+  if ((observation.metadata_json as Record<string, unknown> | undefined)?.metric_category === family) return true;
+  if (family === "share_count" && observation.unit === "shares") return true;
+  return FAMILY_PATTERNS[family]?.test(observation.metric_key) ?? false;
+}
+
 export function buildCoverageMatrix(
   asset_id: string,
   run_id: string | null,
@@ -99,7 +129,9 @@ export function buildCoverageMatrix(
 
   for (const metricKey of requiredMetricKeys) {
     for (const q of quarters) {
-      const obs = findObservation(observations, metricKey, q.fiscal_year, q.fiscal_quarter);
+      const obs = findObservation(observations, metricKey, q.fiscal_year, q.fiscal_quarter)
+        ?? observations.find(o => o.periodicity === "quarterly" && o.fiscal_year === q.fiscal_year
+          && o.fiscal_quarter === q.fiscal_quarter && belongsToFamily(o, metricKey)) ?? null;
       const present = obs != null;
       if (present) quartersPresent++;
       cells.push({

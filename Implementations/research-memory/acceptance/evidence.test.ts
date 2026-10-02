@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
-import { storeDiscoveredSources } from "../../../src/lib/research/sources/corpus";
+import { persistEvidence, storeDiscoveredSources } from "../../../src/lib/research/sources/corpus";
 import { evidenceExtractionHandler } from "../../../src/lib/research/handlers/evidence-extraction";
 import { getStageSourceRequests, saveStageSourceRequests, SourceRequestsPending } from "../../../src/lib/research/sources/source-requests";
 import { cleanup, corpusCtx, createRun, earningsText, loadEnv, payload, prospectusHtml, skipDb as skip, stageCtx } from "./fixtures";
@@ -64,5 +64,52 @@ test("AC-14: a founder need with no passages asks the collector before any model
       requests: [{ ...queued!.requests[0], id: `evidence_extraction-${round}-1`, status: "unavailable" as const, documents: [] }] })) });
     await assert.rejects(() => evidenceExtractionHandler.execute(stageCtx(run)), (error: unknown) =>
       !(error instanceof SourceRequestsPending) && /founder_origin/.test(String((error as Error).message)) && /no_matching_passages/.test(String((error as Error).message)));
+  } finally { await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
+});
+
+const tenQ = (nonce: string) => [
+  "Organization", "",
+  `MercadoLibre Fixture is a financial services platform that was founded in 2011 to offer student loan refinancing. Fixture ${nonce}.`, "",
+  "Liquidity", "", "Cash and equivalents were 3.1 billion dollars at quarter end.",
+].join("\n");
+
+test("AC-6: when founder documents lack the story, a filing that states the founding feeds the founder pass", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!);
+  const run = await createRun(sql);
+  try {
+    await storeDiscoveredSources(sql, corpusCtx(run) as any, [
+      payload({ title: "SPAC profile", content: "Sponsor Overview\n\nThe sponsor completed the merger in 2021.", mimeType: "text/plain", role: "founder_and_company_history" }),
+      payload({ title: "10-Q", content: tenQ(run.runId), mimeType: "text/plain", role: "regulatory_filing" }),
+    ]);
+    await evidenceExtractionHandler.execute(stageCtx(run));
+    const founderPass = (await sourceReaderPackets(sql, run.runId)).filter(p => p.taskKey.startsWith("source-reader:role:founder-origin"));
+    assert.equal(founderPass.length, 1, "the founder pass ran");
+    const filing = founderPass[0].corpus.find(c => String(c.content_excerpt).includes("founded in 2011"));
+    assert.equal(filing?.need, "founder_origin_filings");
+    assert.equal((await evidenceExtractionHandler.validate!(stageCtx(run), {})).valid, true);
+  } finally { await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
+});
+
+test("AC-6: absence statements, excerpt descriptions and inventory claims do not satisfy the founder check", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!);
+  const run = await createRun(sql);
+  try {
+    const [stored] = await storeDiscoveredSources(sql, corpusCtx(run) as any, [
+      payload({ title: "Founder history", content: `Background\n\nA page about the company. ${run.runId}`, mimeType: "text/plain", role: "founder_and_company_history" }),
+    ]);
+    const [chunk] = await sql`SELECT id FROM document_chunks WHERE source_document_id = ${stored.sourceId} ORDER BY chunk_index LIMIT 1`;
+    const claim = (claim_text: string, claim_type = "company_history") => ({ claim_text, claim_type, claim_category: "fact", confidence: 0.8, source_id: stored.sourceId, document_chunk_id: chunk.id });
+    await persistEvidence(sql, corpusCtx(run) as any, [stored], { evidence_claims: [
+      claim("The filing does not name the company's founders or why it was started."),
+      claim("The supplied passage names a SPAC sponsor rather than the founder of the company."),
+      claim("Founder history was retrieved as a web_founder_and_company_history primary research document.", "source_inventory_fact"),
+    ] });
+    const stored_ = await sql`SELECT claim_text FROM evidence_claims WHERE research_run_id = ${run.runId}`;
+    assert.ok(!stored_.some(r => /supplied passage/.test(String(r.claim_text))), "claims about the excerpt are not stored as evidence");
+    const failing = await evidenceExtractionHandler.validate!(stageCtx(run), {});
+    assert.equal(failing.valid, false);
+    assert.ok(failing.errors.some(e => /affirms the founder/.test(e)));
+    await persistEvidence(sql, corpusCtx(run) as any, [stored], { evidence_claims: [claim("MercadoLibre Fixture was founded in 2011 by four graduate students.")] });
+    assert.equal((await evidenceExtractionHandler.validate!(stageCtx(run), {})).valid, true);
   } finally { await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
 });

@@ -15,6 +15,13 @@ import { coerceStructuredOutput, validateSchema, type SchemaValidationError } fr
 
 export { ResearchAgentRunError };
 
+const DEFAULT_OUTPUT_TOKENS = 32_768;
+
+/** Largest output limit an attempt may escalate to after a pass spent its whole limit on reasoning. */
+function outputTokenCeiling() {
+  return numberEnv("RESEARCH_MAX_OUTPUT_TOKENS_CEILING", 131_072);
+}
+
 const DEFAULT_POLICY: ExecutionPolicy = {
   totalTimeoutMs: 240_000,
   inactivityTimeoutMs: 90_000,
@@ -47,7 +54,8 @@ function executionPolicy(input: AgentRequest): ExecutionPolicy {
     totalTimeoutMs: numberEnv(`RESEARCH_${key}_TIMEOUT_MS`, numberEnv("RESEARCH_AGENT_TIMEOUT_MS", totalDefault, 10_000), 10_000),
     inactivityTimeoutMs: numberEnv(`RESEARCH_${key}_INACTIVITY_TIMEOUT_MS`, numberEnv("RESEARCH_INACTIVITY_TIMEOUT_MS", DEFAULT_POLICY.inactivityTimeoutMs, 1_000), 1_000),
     maxResponseBytes: numberEnv(`RESEARCH_${key}_MAX_RESPONSE_BYTES`, numberEnv("RESEARCH_MAX_RESPONSE_BYTES", DEFAULT_POLICY.maxResponseBytes)),
-    maxOutputTokens: optionalPositiveNumberEnv(`RESEARCH_${key}_MAX_OUTPUT_TOKENS`, "RESEARCH_MAX_OUTPUT_TOKENS") ?? 32_768,
+    // Zero or unset uses the 32,768 default; a pass that spends it all on reasoning gets a larger limit on retry.
+    maxOutputTokens: optionalPositiveNumberEnv(`RESEARCH_${key}_MAX_OUTPUT_TOKENS`, "RESEARCH_MAX_OUTPUT_TOKENS") ?? DEFAULT_OUTPUT_TOKENS,
     maxRepairAttempts: numberEnv("RESEARCH_MAX_REPAIR_ATTEMPTS", DEFAULT_POLICY.maxRepairAttempts, 0),
     maxAttempts: numberEnv("RESEARCH_MAX_MODEL_ATTEMPTS", DEFAULT_POLICY.maxAttempts),
     retryBaseDelayMs: numberEnv("RESEARCH_RETRY_BASE_DELAY_MS", DEFAULT_POLICY.retryBaseDelayMs),
@@ -124,7 +132,8 @@ function category(error: unknown): HarnessErrorCategory {
 }
 
 function retryable(value: HarnessErrorCategory) {
-  return value === "rate_limit" || value === "provider_timeout" || value === "connection" || value === "malformed_stream";
+  return value === "rate_limit" || value === "provider_timeout" || value === "connection" || value === "malformed_stream"
+    || value === "output_exhausted";
 }
 
 function redact(value: string) {
@@ -185,6 +194,7 @@ async function executePass(params: {
   let costUsd: number | undefined;
   let providerStarted = false;
   let requestId: string | undefined;
+  let finishReason: string | undefined;
   let wire: WireRequestRecord | undefined;
   const snapshot = (): PassResult => {
     const started = providerStarted || inputTokens > 0 || outputTokens > 0 || Boolean(rawText);
@@ -249,13 +259,20 @@ async function executePass(params: {
           break;
         case "tool.call": throw new ProviderError("Research model calls do not permit tools", "invalid_request");
         case "response.failed": throw event.error;
-        case "response.completed": completed = true; break;
+        case "response.completed": completed = true; finishReason = event.finishReason || finishReason; break;
       }
     }
     if (!completed) throw new ProviderError("Provider did not emit completion", "malformed_stream");
-    if (!rawText.trim()) throw new ProviderError("Provider completed without text output", "malformed_stream");
-    const result = snapshot();
     const outputLimit = params.maxOutputTokens ?? params.policy.maxOutputTokens;
+    if (!rawText.trim()) {
+      const atLimit = /^(length|max_tokens)$/.test(finishReason || "") || (outputLimit !== undefined && outputTokens >= outputLimit);
+      if (atLimit) {
+        throw new ProviderError(`The model used its whole output limit (${outputLimit ?? outputTokens} tokens${reasoningTokens ? `, ${reasoningTokens} of them reasoning` : ""}) before writing an answer`,
+          "output_exhausted", { outputLimit });
+      }
+      throw new ProviderError("Provider completed without text output", "malformed_stream");
+    }
+    const result = snapshot();
     if (outputLimit !== undefined && result.usage.outputTokens > outputLimit) {
       throw new ProviderError("Model output exceeded token ceiling", "response_limit");
     }
@@ -362,6 +379,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
   const primaryModel = candidates[0];
   const originalPromptBytes = Buffer.byteLength(buildTaskPrompt(input, config), "utf8");
   const cacheScope = input.cacheScope || `agent:${input.agentName}`;
+  let outputLimit = policy.maxOutputTokens;
 
   for (let index = 0; index < candidates.length; index += 1) {
     const attemptNumber = index + 1;
@@ -369,6 +387,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
     const fallback = model !== primaryModel;
     const modelAttempt = candidates.slice(0, index + 1).filter((candidate) => candidate === model).length;
     const compactedFallback = fallback ? compactFallback(input) : { request: input, compacted: false };
+    const attemptOutputLimit = outputLimit;
     const currentInput = compactedFallback.request;
     await input.hooks?.beforeAttempt?.({ attempt: attemptNumber, provider: provider.id, model });
     const started = Date.now();
@@ -388,7 +407,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
       const cacheAffinityId = deriveCacheAffinityId({
         scopeId: cacheScope, providerId: provider.id, modelId: model, stablePrefixHash: stablePrefixHash(messages.system),
       });
-      const passParams = { provider, model, system: messages.system, agentName: input.agentName, policy, deadline, cacheAffinityId };
+      const passParams = { provider, model, system: messages.system, agentName: input.agentName, policy, deadline, cacheAffinityId, maxOutputTokens: outputLimit };
       try {
         pass = await executeTrackedPass("generation", { ...passParams, prompt: messages.prompt }, passes);
       } catch (error) {
@@ -526,7 +545,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         attempt: attemptNumber, provider: provider.id, model, modelAttempt, requestId: pass.requestId,
         startedAt, completedAt: new Date(completed).toISOString(), latencyMs: completed - started,
         inputTokens: pass.usage.inputTokens, outputTokens: pass.usage.outputTokens, reasoningTokens: pass.usage.reasoningTokens,
-        ...cacheTokens(pass.usage),
+        ...cacheTokens(pass.usage), maxOutputTokens: passParams.maxOutputTokens,
         costUsd: Number(pass.usage.costUsd.toFixed(6)), status: "success", repairAttempted,
         fallback, compactionOccurred: compactedFallback.compacted,
         inputBytes: Buffer.byteLength(buildTaskPrompt(currentInput, config), "utf8"), originalInputBytes: originalPromptBytes,
@@ -557,7 +576,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         attempt: attemptNumber, provider: provider.id, model, modelAttempt, requestId: pass.requestId,
         startedAt, completedAt: new Date(completed).toISOString(), latencyMs: completed - started,
         inputTokens: pass.usage.inputTokens, outputTokens: pass.usage.outputTokens, reasoningTokens: pass.usage.reasoningTokens,
-        ...cacheTokens(pass.usage),
+        ...cacheTokens(pass.usage), maxOutputTokens: attemptOutputLimit,
         costUsd: Number(pass.usage.costUsd.toFixed(6)), status: errorCategory === "cancellation" ? "cancelled" : "failed",
         errorCategory, errorMessage: redact(failure instanceof Error ? failure.message : String(failure)),
         timeoutType: reason === "total" || reason === "inactivity" ? reason : undefined,
@@ -570,6 +589,10 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
       };
       attempts.push(record);
       await input.hooks?.onAttemptComplete?.(record);
+      // A pass that spent its whole limit on reasoning gets twice the limit next time, up to the ceiling.
+      if (errorCategory === "output_exhausted" && outputLimit !== undefined) {
+        outputLimit = Math.min(outputLimit * 2, Math.max(outputLimit, outputTokenCeiling()));
+      }
       if (!retryable(errorCategory) || index === candidates.length - 1) {
         const usage = aggregateUsage(attempts, { provider: provider.id, model, promptVersion: config.promptVersion });
         throw new ResearchAgentRunError(

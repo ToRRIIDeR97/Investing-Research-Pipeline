@@ -1,4 +1,4 @@
-import { ProviderError, type HarnessErrorCategory } from "../errors";
+import { ProviderError, usageLimitBody, type HarnessErrorCategory } from "../errors";
 import type { ModelEvent, ModelProvider, ModelRequest, ToolCall } from "../types";
 
 export interface AnthropicProviderOptions {
@@ -88,7 +88,7 @@ export class AnthropicCompatibleProvider implements ModelProvider {
       const body = safeBody(await response.text().catch(() => ""));
       let category: HarnessErrorCategory = "unknown";
       if (response.status === 401 || response.status === 403) category = "authentication";
-      else if (response.status === 429) category = "rate_limit";
+      else if (response.status === 429) category = usageLimitBody(body) ? "quota_exceeded" : "rate_limit";
       else if (response.status === 408 || response.status === 504) category = "provider_timeout";
       else if (response.status === 400 && /context|token|length/i.test(body)) category = "context_limit";
       else if (response.status >= 400 && response.status < 500) category = "invalid_request";

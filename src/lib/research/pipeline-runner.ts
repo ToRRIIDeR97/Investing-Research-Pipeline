@@ -82,12 +82,14 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
       FROM research_runs rr LEFT JOIN research_stages rs ON rs.research_run_id = rr.id
       WHERE rr.id = ${runId} GROUP BY rr.id
     `;
+    console.log(`research run ${runId}: pipeline stopped with status ${result.status}`);
     return { runId, status: result.status, completedStages: Number(result.completed),
       totalStages: Number(result.total), notes, failure_reason: result.failure_reason };
   } finally {
     if (locked) await lease`SELECT pg_advisory_unlock(hashtextextended(${`research-run:${runId}`}, 0))`;
     lease.release();
-    await sql.end();
+    // Bounded: a stalled connection must not keep the worker from closing the job (seen in run dd02bb41).
+    await sql.end({ timeout: 5 });
   }
 }
 
