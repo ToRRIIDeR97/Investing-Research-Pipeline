@@ -138,11 +138,12 @@ export function classifyCacheMiss(
   next: WireRequestObservation,
   providerCacheRead: number,
 ): CacheMissReason {
+  // A provider cache can be shared beyond one affinity group, so a hit is never reported as a miss.
+  if (providerCacheRead > 0) return "none";
   if (!previous) return "first-request";
   const prior = previous.observation;
   if (prior.providerId !== next.providerId || prior.modelId !== next.modelId || prior.affinityIdHash !== next.affinityIdHash) return "affinity-changed";
   if (prior.stablePrefixHash !== next.stablePrefixHash) return "prefix-changed";
-  if (providerCacheRead > 0) return "none";
   // Automatic-prefix providers publish a cache entry once the earlier request completes.
   return previous.inFlight ? "previous-in-flight" : "unexplained-provider-miss";
 }

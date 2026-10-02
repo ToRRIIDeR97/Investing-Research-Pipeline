@@ -82,6 +82,7 @@ test("wire observations separate the stable prefix from the dynamic tail without
   assert.notEqual(second.stablePrefixHash, hotter.stablePrefixHash);
   assert.doesNotMatch(JSON.stringify(first), /stable research rules|first packet|secret-affinity/);
   assert.equal(classifyCacheMiss(undefined, first, 0), "first-request");
+  assert.equal(classifyCacheMiss(undefined, first, 64), "none", "a hit from another group is still a hit");
   assert.equal(classifyCacheMiss({ observation: first, inFlight: false }, second, 64), "none");
   assert.equal(classifyCacheMiss({ observation: first, inFlight: false }, second, 0), "unexplained-provider-miss");
   assert.equal(classifyCacheMiss({ observation: first, inFlight: true }, second, 0), "previous-in-flight");
