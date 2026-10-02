@@ -2,8 +2,9 @@ import postgres from "postgres";
 import { createHash } from "node:crypto";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { canonicalResearchKey, contractForProfile } from "@/lib/research/v2-contracts";
-import { canonicalMetricPlan, ensureFilingFamilyCoverage, normalizeSourceGap, positiveFiniteNumber, selectLatestFact, selectRelevantChunks, type RetrievalChunk } from "@/lib/research/pipeline-helpers";
+import { canonicalResearchKey } from "@/lib/research/v2-contracts";
+import { canonicalMetricPlan, normalizeSourceGap, positiveFiniteNumber, selectLatestFact } from "@/lib/research/pipeline-helpers";
+import { evidenceNeeds, indexDocumentContent, openingPassages, retrievePassages, runDocuments, type RetrievedPassage } from "@/lib/research/memory";
 import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
 import { SourceRole } from "@/lib/research/sources/roles";
 
@@ -138,76 +139,48 @@ export function mergeGroupOutputs(groups: Array<Record<string, any> | string>): 
   return merged;
 }
 
+/** One source-reader packet chunk: a retrieved passage with its provenance and the need that selected it. */
+function packetChunk(passage: RetrievedPassage, sourceType: string, need: string) {
+  return {
+    source_id: passage.source_id, document_parse_id: passage.parse_id, document_chunk_id: passage.passage_id,
+    source_type: sourceType, source_role: passage.source_role || "", title: passage.title,
+    section_title: passage.section_path.at(-1) || passage.title, section_path: passage.section_path,
+    chunk_index: passage.chunk_index, char_start: passage.char_start, char_end: passage.char_end,
+    content_excerpt: passage.text, need,
+  };
+}
+
+/**
+ * The source-reader corpus: each source role present asks the research memory for its own
+ * need, so long documents contribute the sections that answer it, not their opening pages.
+ * A role whose need matches nothing contributes its documents' first passages instead,
+ * except founder history, which reports the gap rather than reading a cover page.
+ */
 export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: StoredSource[]) {
-  const sourceIds = sources.filter((source) => !source.sourceId.startsWith("candidate-")).map((source) => source.sourceId);
-  const contract = contractForProfile(ctx.profileKey, ctx.assetSlug);
-  const retrievalTerms = [
-    ...ctx.requiredModules, ...(contract?.requiredModules || []), ...(contract?.requiredMetricKeys || []),
-    "segment", "working capital", "credit loss", "loan", "customer funds", "cash flow",
-    "founder", "founded", "company origin", "founder motivation", "company history",
-    "mission", "move from lab to market", "early funding", "first customer",
-  ];
-  const searchQuery = [...new Set(retrievalTerms.map((term) => term.replace(/_/g, " ").trim()).filter(Boolean))]
-    .slice(0, 40).map((term) => `"${term.replace(/"/g, "")}"`).join(" OR ");
-  const rows = sourceIds.length ? await sql`
-    WITH latest_parses AS (
-      SELECT DISTINCT ON (source_document_id) id, source_document_id
-      FROM document_parses
-      WHERE status = 'completed'
-      ORDER BY source_document_id, completed_at DESC NULLS LAST, created_at DESC
-    ), query AS (SELECT websearch_to_tsquery('english', ${searchQuery}) AS q), ranked_chunks AS (
-      SELECT dc.id, dc.source_document_id, dc.document_parse_id, dc.chunk_index,
-             dc.char_start, dc.char_end, dc.section_title, dc.text,
-             sd.title, sd.source_type,
-             COALESCE(sd.metadata_json->>'source_role',
-               CASE WHEN sd.metadata_json->>'semanticRole' IN ('earnings_release', 'earnings_exhibit') THEN 'earnings_release'
-                    WHEN sd.source_type = 'peer_industry_context' THEN 'industry_primary'
-               END,
-               role_assignment.role) AS source_role,
-             ts_rank_cd(to_tsvector('english', dc.text), query.q) AS relevance
-      FROM document_chunks dc
-      JOIN source_documents sd ON sd.id = dc.source_document_id
-      JOIN latest_parses lp ON lp.id = dc.document_parse_id
-      LEFT JOIN LATERAL (
-        SELECT role
-        FROM source_role_assignments
-        WHERE source_document_id = sd.id
-        ORDER BY confidence DESC NULLS LAST, assigned_at ASC
-        LIMIT 1
-      ) role_assignment ON TRUE
-      CROSS JOIN query
-      WHERE dc.source_document_id = ANY(${sourceIds}::uuid[])
-        AND (dc.chunk_index = 0 OR to_tsvector('english', dc.text) @@ query.q)
-    )
-    SELECT * FROM ranked_chunks
-    ORDER BY (chunk_index = 0) DESC, relevance DESC, source_document_id, chunk_index
-    LIMIT 500
-  ` : [];
-  const chunks: RetrievalChunk[] = rows.map((row) => ({
-    id: String(row.id), sourceId: String(row.source_document_id), parseId: String(row.document_parse_id),
-    chunkIndex: Number(row.chunk_index), charStart: Number(row.char_start || 0), charEnd: Number(row.char_end || 0),
-    sectionTitle: textValue(row.section_title), text: String(row.text), sourceTitle: String(row.title), sourceType: String(row.source_type),
-  }));
-  const packetLimit = Math.min(32, Math.max(18, sourceIds.length));
-  const selected = selectRelevantChunks(chunks, retrievalTerms, packetLimit, 3000);
-  const filingCovered = ensureFilingFamilyCoverage(selected, chunks, retrievalTerms, packetLimit, 3000);
-  const founderSourceIds = new Set(rows
-    .filter((row) => row.source_role === "founder_and_company_history")
-    .map((row) => String(row.source_document_id)));
-  const founderOpenings = chunks
-    .filter((chunk) => chunk.chunkIndex === 0 && founderSourceIds.has(chunk.sourceId))
-    .slice(0, 4)
-    .map((chunk) => ({ ...chunk, text: chunk.text.slice(0, 3000) }));
-  const packetChunks = [...new Map([...founderOpenings, ...filingCovered]
-    .map((chunk) => [chunk.id, chunk])).values()].slice(0, packetLimit);
-  return packetChunks.map((chunk) => ({
-    source_id: chunk.sourceId, document_parse_id: chunk.parseId, document_chunk_id: chunk.id,
-    source_type: chunk.sourceType,
-    source_role: String((rows.find((row) => String(row.id) === chunk.id)?.source_role) || ""),
-    title: chunk.sourceTitle, section_title: chunk.sectionTitle,
-    chunk_index: chunk.chunkIndex, char_start: chunk.charStart, char_end: chunk.charEnd,
-    content_excerpt: chunk.text,
-  }));
+  const sourceIds = [...new Set(sources.filter((source) => !source.sourceId.startsWith("candidate-")).map((source) => source.sourceId))];
+  if (!sourceIds.length) return [];
+  const documents = (await runDocuments(sql, ctx.runId)).filter((doc) => sourceIds.includes(doc.id));
+  const typeOf = new Map(documents.map((doc) => [doc.id, doc.sourceType]));
+  const roles = [...new Set(documents.map((doc) => doc.role).filter((role): role is string => Boolean(role)))];
+  const needs = evidenceNeeds(roles, { name: ctx.assetName });
+  const roleless = documents.filter((doc) => !doc.role).map((doc) => doc.id);
+  if (roleless.length) needs.push({ key: "general", query: `${ctx.assetName} business revenue growth risk strategy`, sourceIds: roleless, maxPassages: 4 });
+  const chunks: ReturnType<typeof packetChunk>[] = [];
+  const seen = new Set<string>();
+  const add = (passage: RetrievedPassage, need: string) => {
+    if (seen.has(passage.passage_id)) return;
+    seen.add(passage.passage_id);
+    chunks.push(packetChunk(passage, typeOf.get(passage.source_id) || "", need));
+  };
+  for (const need of needs) {
+    const result = await retrievePassages(sql, { runId: ctx.runId, need: { ...need, sourceIds: need.sourceIds || sourceIds } });
+    for (const passage of result.passages) add(passage, need.key);
+    if (!result.passages.length && need.key !== "founder_origin") {
+      const ids = documents.filter((doc) => need.sourceIds ? need.sourceIds.includes(doc.id) : need.sourceRoles?.includes(doc.role || "")).map((doc) => doc.id);
+      for (const passage of await openingPassages(sql, { runId: ctx.runId, sourceIds: ids, perDocument: 2 })) add(passage, `${need.key}:opening`);
+    }
+  }
+  return chunks;
 }
 
 function factRows(companyFacts: Record<string, unknown>, taxonomy: string, conceptNames: string[], unit = "USD"): Record<string, unknown>[] {
@@ -1503,6 +1476,13 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
       `;
       if (!chunkId) chunkId = chunkRows[0].id as string;
     }
+  }
+
+  // Passages for retrieval sit next to the raw chunks, which valuation reads verbatim.
+  try {
+    await indexDocumentContent(sql, { sourceId, content, mimeType: payload.mimeType, title: payload.title });
+  } catch (error) {
+    console.warn(`Research memory indexing deferred for ${sourceId}: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   return {

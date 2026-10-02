@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { htmlToStructuredText } from "@/lib/research/memory/blocks";
 
 const execFileAsync = promisify(execFile);
 
@@ -429,10 +430,10 @@ async function fetchCandidate(
     if (publishedAt && cutoffAt && new Date(publishedAt) > new Date(cutoffAt)) return null;
     if (/html/i.test(contentType)) {
       const article = content.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1];
-      content = stripHtml(article && isSubstantiveFetchedContent(article, title) ? article : content)
-        .replace(/\s+/g, " ").trim();
+      // Keep headings and paragraphs so stored pages can be split into sections later.
+      content = htmlToStructuredText(article && isSubstantiveFetchedContent(article, title) ? article : content);
       storedMimeType = "text/plain";
-      extractionMethod = "html_text";
+      extractionMethod = "html_structured_text";
     }
     const finalUrl = response.url || candidate.url;
     if (!isPlausibleSourceRole(finalUrl, role)) return null;

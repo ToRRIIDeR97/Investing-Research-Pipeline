@@ -380,3 +380,45 @@ one file at a time with `RUN_DB_INTEGRATION=1`:
 Test-safety rules built into the fixtures: `loadEnv` clears `RESEARCH_EMBEDDING_PROVIDER`
 and `RESEARCH_OCR_URL`, so tests never reach a configured paid endpoint. Model-calling
 tests pin `RESEARCH_MODEL_PROVIDER=mock`.
+
+### Phase 1 (2026-10-02)
+
+Implemented by the same agent that wrote the plan and tests, on branch
+`feat/research-memory-phase-1` from `main` 1f91a6c5. The test files were not changed
+during implementation.
+
+- Acceptance, phase 1 files: `passages.test.ts` 5/5 and `retrieval.test.ts` 4/4.
+  `evidence.test.ts` has AC-6 passing; its AC-14 case is phase 3 and still fails as
+  expected.
+- Verification, phase 1 files: `passages.test.ts` 7/7 and `retrieval.test.ts` 5/5.
+  `evidence.test.ts` has AC-6 passing; its two AC-14 cases are phase 3 and still fail.
+- `npx tsc --noEmit`: no errors outside the untracked `Temp Download/` folder.
+- `npm run test:unit`: 229 pass, 0 fail, 5 skipped.
+- `node scripts/test-db.cjs 'tests/*.test.ts' 'Implementations/live-run-repair/acceptance/*.test.ts'
+  'Implementations/live-run-repair/verification/*.test.ts'`: 281 of 286 pass. Two failures
+  happen identically on `main` without these changes, so they are not regressions:
+  - live-run-repair AC-7 expects `data` among the planning roles, which
+    `team-plan.ts` no longer includes.
+  - `tests/research-run-harness.test.ts` has its subtests cancelled because the parent
+    test finishes first.
+- Real-data check, no model calls: retrieving `FOUNDER_ORIGIN_NEED` for MELI run
+  `d6f3fbee` indexed the stored prospectus on first use (0.2 s) and returned the "History
+  of MercadoLibre … Marcos Galperín, our co-founder" passage as the second of six. That
+  prospectus was stored as one flattened line before this change, so it has no sections;
+  keyword retrieval still finds the passage.
+- Parse cost: the largest stored filing (12.3 MB 10-K) parses in about 1 s into 442
+  passages and 150 sections, such as "PART I > Risks related to doing business in Latin
+  America" and "PART II > Argentine Segment".
+
+Decisions and limits:
+
+- Raw `system-source-payload` chunks are still written for every source and the
+  `research-memory` parse sits beside them. Valuation reads raw chunks verbatim (the
+  market-data JSON and the companyfacts `"val":` lookup), so its two queries now exclude
+  `research-memory` chunks. The source viewer and `/api/search` show both kinds of chunk
+  until they are filtered.
+- Cover pages of SEC filings produce some noise headings (for example a bold "OR").
+- Web pages are stored as structured text with Markdown headings. This path was not
+  exercised by an automated test; it needs a live fetch (manual check above).
+- The MELI run `d6f3fbee` has not been resumed. Resuming it is a paid run.
+
