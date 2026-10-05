@@ -31,6 +31,9 @@ const SOURCE_READER_OUTPUT_KEYS = [
 
 const NO_META_CLAIMS = "Every evidence claim states a fact about the company or its environment. Never write a claim about the supplied chunk or passage itself, or about information it lacks; record missing information in source_gaps instead.";
 
+/** Contradictions become `contradicts` edges between the two named claims once both are stored. */
+const CONTRADICTION_SHAPE = "Each contradictions entry is {claim_texts: [two claim_text values copied exactly from your evidence_claims], description, confidence from 0 to 1}. List only conflicts between claims you return.";
+
 /**
  * A founder claim must affirm something: claims that only report the founder as missing, or that
  * describe the supplied excerpt, do not count.
@@ -48,6 +51,7 @@ const sourceReaderPrompt = (target: number) => (packet: Record<string, unknown>)
     `Return up to ${target} distinct, decision-relevant evidence claims supported by this batch. Never return schema examples or placeholder values.`,
     "Use only source_corpus in this packet. Do not invent or alter source or chunk identifiers.",
     NO_META_CLAIMS,
+    CONTRADICTION_SHAPE,
     "Prefer annual and quarterly SEC filings for financial facts.",
     "Extract at least one decision-relevant claim from every substantive source_corpus chunk before taking additional claims from the same chunk.",
     "For source_role=founder_and_company_history, prioritize the founder's identity, background, stated motivation, problem being solved, company origin, early constraints, and first proof point.",
@@ -274,6 +278,7 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
                 "claim_category must be exactly one of: fact, estimate, assumption, opinion. Use claim_type for the topic.",
                 "Do not infer a financial, mission, status, or other motivation unless the source text directly supports it.",
                 NO_META_CLAIMS,
+                CONTRADICTION_SHAPE,
               ],
             }),
           });

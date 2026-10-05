@@ -1,4 +1,4 @@
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, inArray, notInArray, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import {
   research_artifacts,
@@ -7,6 +7,8 @@ import {
   research_assumptions,
   research_assumption_claim_links,
 } from "@/db/schema/research-artifacts";
+import { evidence_claims } from "@/db/schema/evidence";
+import { citedClaimIds } from "../memory/graph";
 import {
   artifactStatusSchema,
   type ArtifactAcceptanceCheck,
@@ -57,6 +59,27 @@ export interface CreateAssumptionInput {
 }
 
 export function createArtifactRepository(db: Db) {
+  /** Link the artifact to the run's claims its content cites; an in-place update drops citations it no longer makes. */
+  async function linkCitations(artifact: typeof research_artifacts.$inferSelect, replace = false) {
+    const cited = citedClaimIds(artifact.content_json);
+    const claims = cited.length ? await db.select({ id: evidence_claims.id }).from(evidence_claims)
+      .where(and(inArray(evidence_claims.id, cited), eq(evidence_claims.research_run_id, artifact.research_run_id))) : [];
+    if (replace) {
+      const keep = claims.map((claim) => claim.id);
+      await db.delete(research_artifact_claim_links).where(and(
+        eq(research_artifact_claim_links.artifact_id, artifact.id),
+        eq(research_artifact_claim_links.support_type, "cites"),
+        ...(keep.length ? [notInArray(research_artifact_claim_links.evidence_claim_id, keep)] : [])
+      ));
+    }
+    if (claims.length) {
+      await db.insert(research_artifact_claim_links)
+        .values(claims.map((claim) => ({ artifact_id: artifact.id, evidence_claim_id: claim.id, support_type: "cites" })))
+        .onConflictDoNothing();
+    }
+    return artifact;
+  }
+
   async function upsertArtifact(input: CreateArtifactInput) {
     if (ARTIFACT_SCHEMAS[input.artifact_type] && ["validated", "accepted"].includes(input.status)) {
       const validation = validateArtifactContent(input.artifact_type, input.content_json);
@@ -95,7 +118,7 @@ export function createArtifactRepository(db: Db) {
           })
           .where(eq(research_artifacts.id, current.id))
           .returning();
-        return updated;
+        return linkCitations(updated, true);
       }
     }
 
@@ -117,7 +140,7 @@ export function createArtifactRepository(db: Db) {
         supersedes_artifact_id: input.supersedes_artifact_id,
       })
       .returning();
-    return inserted;
+    return linkCitations(inserted);
   }
 
   async function acceptArtifact(

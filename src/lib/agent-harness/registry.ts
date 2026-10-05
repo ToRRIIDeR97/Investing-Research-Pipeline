@@ -344,7 +344,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
     modelTier: "cheap",
     defaultModel: "deepseek-v4-flash",
     modelEnvVar: "RESEARCH_CHEAP_MODEL",
-    promptVersion: "source-reader-v1",
+    promptVersion: "source-reader-v2",
     outputSchemaKey: "evidence_claim_batch",
     outputSchemaVersion: 1,
     outputFormat: schema(

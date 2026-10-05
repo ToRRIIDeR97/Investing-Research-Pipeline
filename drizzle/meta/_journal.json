@@ -50,6 +50,13 @@
       "when": 1784283000000,
       "tag": "0006_backend_ui_stitch",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790900000000,
+      "tag": "0009_research_memory_graph",
+      "breakpoints": true
     }
   ]
 }

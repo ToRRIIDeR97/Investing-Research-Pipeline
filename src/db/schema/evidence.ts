@@ -6,6 +6,8 @@ import {
   timestamp,
   date,
   jsonb,
+  index,
+  unique,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { assets } from "./core";
@@ -57,14 +59,26 @@ export const evidence_links = pgTable("evidence_links", {
 // ============================================================
 // claim_relationships — §27.8
 // ============================================================
-export const claim_relationships = pgTable("claim_relationships", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  from_claim_id: uuid("from_claim_id").notNull().references(() => evidence_claims.id),
-  to_claim_id: uuid("to_claim_id").notNull().references(() => evidence_claims.id),
-  relationship_type: text("relationship_type").notNull(), // supports, contradicts, updates, derives_from, duplicates
-  confidence: numeric("confidence"),
-  created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const claim_relationships = pgTable(
+  "claim_relationships",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    from_claim_id: uuid("from_claim_id").notNull().references(() => evidence_claims.id),
+    to_claim_id: uuid("to_claim_id").notNull().references(() => evidence_claims.id),
+    relationship_type: text("relationship_type").notNull(), // supports, contradicts, updates, derives_from, duplicates
+    confidence: numeric("confidence"),
+    extractor: text("extractor"), // agent that proposed the edge, e.g. source-reader
+    extractor_version: text("extractor_version"),
+    evidence_location_ids: jsonb("evidence_location_ids").notNull().default([]),
+    review_status: text("review_status").notNull().default("unreviewed"), // unreviewed, accepted, rejected
+    description: text("description"),
+    created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("claim_relationships_from_to_type_unique").on(table.from_claim_id, table.to_claim_id, table.relationship_type),
+    index("claim_relationships_to_claim_idx").on(table.to_claim_id),
+  ]
+);
 
 // ============================================================
 // source_gaps — §27.8
