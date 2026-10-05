@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 700" width="1100" height="700" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" font-size="13">
+<title id="t">Research OS — UML component view (current)</title><desc id="d">Browser UI calls unauthenticated Next.js API routes; the API writes Postgres and enqueues jobs; a separate worker claims jobs and runs the 24-stage pipeline, which calls the agent harness, source discovery and ingestion, backtesting (Python), and export; all state lives in Postgres and ./storage.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker><marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10" fill="none" stroke="#333"/></marker></defs>
+<rect x="0" y="0" width="1100" height="700" fill="#ffffff"/>
+<text x="16" y="26" font-size="16" font-weight="bold" fill="#111">Research OS — UML component view (current)</text>
+<rect x="30" y="60" width="220" height="70" rx="6" fill="#e8f1fb" stroke="#3b6ea8" stroke-width="1.4"/>
+<text x="140.0" y="78" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«actor/UI»</text>
+<text x="140.0" y="94" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Analyst browser</text>
+<text x="140.0" y="111" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/app/** client pages</text>
+<rect x="310" y="50" width="260" height="90" rx="6" fill="#eef6ec" stroke="#4a8a3f" stroke-width="1.4"/>
+<text x="440.0" y="68" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«component»</text>
+<text x="440.0" y="84" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Next.js API routes</text>
+<text x="440.0" y="101" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/app/api/** (≈49 handlers)</text>
+<text x="440.0" y="116" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">no auth middleware</text>
+<rect x="640" y="50" width="200" height="90" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
+<text x="740.0" y="68" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«component»</text>
+<text x="740.0" y="84" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Run queue</text>
+<text x="740.0" y="101" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/lib/research/run-queue.ts</text>
+<text x="740.0" y="116" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">enqueue / claim / lease</text>
+<rect x="880" y="170" width="200" height="110" rx="6" fill="#fdf3e3" stroke="#b07a1f" stroke-width="1.4"/>
+<text x="980.0" y="188" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«process»</text>
+<text x="980.0" y="204" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Research worker</text>
+<text x="980.0" y="221" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/workers/research-worker.ts</text>
+<text x="980.0" y="236" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">poll 5s · heartbeat 10s</text>
+<text x="980.0" y="251" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">lease 5 min · run advisory lock</text>
+<rect x="310" y="200" width="260" height="110" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
+<text x="440.0" y="218" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«component»</text>
+<text x="440.0" y="234" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Workflow orchestrator</text>
+<text x="440.0" y="251" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/lib/workflow/orchestrator.ts</text>
+<text x="440.0" y="266" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">advanceStage · gates · resume</text>
+<text x="440.0" y="281" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">stages.ts · team-plan.ts (DAG)</text>
+<rect x="610" y="200" width="230" height="110" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
+<text x="725.0" y="218" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«component»</text>
+<text x="725.0" y="234" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Pipeline runner + team</text>
+<text x="725.0" y="251" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">pipeline-runner.ts (parallel)</text>
+<text x="725.0" y="266" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">handlers/** (STAGE_HANDLERS)</text>
+<text x="725.0" y="281" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">team.ts · source/research requests</text>
+<rect x="30" y="370" width="230" height="100" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
+<text x="145.0" y="388" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«component»</text>
+<text x="145.0" y="404" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Agent harness</text>
+<text x="145.0" y="421" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/lib/agent-harness/**</text>
+<text x="145.0" y="436" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">runner · providers · registry</text>
+<text x="145.0" y="451" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">cache.ts (prompt caching)</text>
+<rect x="290" y="370" width="230" height="100" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
+<text x="405.0" y="388" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«component»</text>
+<text x="405.0" y="404" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Sources &amp; memory</text>
+<text x="405.0" y="421" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">sources/** (discovery, collector)</text>
+<text x="405.0" y="436" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">memory/** (passages, embeddings,</text>
+<text x="405.0" y="451" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">graph) · ingestion/** · market-data/**</text>
+<rect x="550" y="370" width="230" height="100" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
+<text x="665.0" y="388" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«component»</text>
+<text x="665.0" y="404" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Backtesting &amp; repair</text>
+<text x="665.0" y="421" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">backtesting/** (executor, framework)</text>
+<text x="665.0" y="436" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">research/repair/** (statement</text>
+<text x="665.0" y="451" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">repair, node sandbox)</text>
+<rect x="810" y="370" width="260" height="100" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
+<text x="940.0" y="388" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«component»</text>
+<text x="940.0" y="404" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Reporting &amp; export</text>
+<text x="940.0" y="421" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">research/reporting/** (adaptive)</text>
+<text x="940.0" y="436" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/lib/export/** · valuation/**</text>
+<text x="940.0" y="451" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">agents/staging.ts (promotion)</text>
+<rect x="260" y="560" width="300" height="100" rx="6" fill="#eaf4f4" stroke="#2f7f7f" stroke-width="1.4"/>
+<text x="410.0" y="578" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«datastore»</text>
+<text x="410.0" y="594" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">PostgreSQL 16 + pgvector</text>
+<text x="410.0" y="611" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/db/schema/** · drizzle 0000–0006, 0009</text>
+<text x="410.0" y="626" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">runs, stages, tasks, jobs, artifacts,</text>
+<text x="410.0" y="641" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">evidence graph, passages, embeddings</text>
+<rect x="600" y="560" width="220" height="100" rx="6" fill="#eaf4f4" stroke="#2f7f7f" stroke-width="1.4"/>
+<text x="710.0" y="578" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«filesystem»</text>
+<text x="710.0" y="594" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">./storage</text>
+<text x="710.0" y="611" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">sources/&lt;sha256&gt;.&lt;ext&gt;</text>
+<text x="710.0" y="626" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">backtests/&lt;run&gt;/ · exports/</text>
+<rect x="860" y="540" width="220" height="140" rx="6" fill="#f4f4f4" stroke="#666666" stroke-width="1.4"/>
+<text x="970.0" y="558" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«external»</text>
+<text x="970.0" y="574" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">External services</text>
+<text x="970.0" y="591" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">LLM + embedding endpoints</text>
+<text x="970.0" y="606" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">(OpenAI/Anthropic-compatible)</text>
+<text x="970.0" y="621" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">search endpoint · DuckDuckGo · Bing</text>
+<text x="970.0" y="636" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">SEC · FRED · Yahoo · World Bank</text>
+<text x="970.0" y="651" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">EIA · FDIC · Coinbase · …</text>
+<rect x="30" y="560" width="190" height="100" rx="6" fill="#fdf3e3" stroke="#b07a1f" stroke-width="1.4"/>
+<text x="125.0" y="578" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«process»</text>
+<text x="125.0" y="594" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Child processes</text>
+<text x="125.0" y="611" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">python3 run_backtest*.py</text>
+<text x="125.0" y="626" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">python3 docling_parser.py</text>
+<text x="125.0" y="641" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">node --permission (repair)</text>
+<path d="M250,95 L310,95" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="280.0" y="90.0" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">fetch JSON</text>
+<path d="M570,95 L640,95" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="605.0" y="90.0" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">enqueue</text>
+<path d="M840,95 L980,95 L980,170" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="920" y="88" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">claim job</text>
+<path d="M880,255 L840,255" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="860.0" y="250.0" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">run</text>
+<path d="M610,255 L570,255" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="590" y="238" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">advance</text>
+<text x="590" y="251" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">Stage</text>
+<path d="M440,140 L440,200" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="500" y="165" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">approve / review</text>
+<text x="500" y="178" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">/ advance</text>
+<path d="M680,310 L145,340 L145,370" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="330" y="322" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">callResearchAgent</text>
+<path d="M700,310 L405,370" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M725,310 L665,370" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M770,310 L940,370" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M200,470 L200,525 L845,525 L845,600 L860,600" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="560" y="519" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">HTTPS: models, search, data APIs</text>
+<path d="M470,470 L470,525" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4"/>
+<path d="M380,470 L380,560" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="395" y="545" font-size="11" text-anchor="start" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">write</text>
+<path d="M600,470 L600,505 L110,505 L110,560" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="150" y="499" font-size="11" text-anchor="start" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">execFile / spawn</text>
+<path d="M510,470 L510,490 L580,490 L580,545 L650,545 L650,560" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M940,470 L760,560" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M310,125 L280,125 L280,560" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="276" y="458" font-size="11" text-anchor="end" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">Drizzle / SQL</text>
+<text x="16" y="690" font-size="11" font-weight="normal" text-anchor="start" fill="#555">Solid: call/dependency · Dashed: network or DB access. All library components also read/write Postgres (omitted for clarity).</text>
+</svg>

@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 870" width="1120" height="870" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" font-size="13">
+<title id="t">Research run — UML sequence view</title><desc id="d">Ordered messages from run creation through enqueue, worker claim, advisory lock, parallel stage execution with model calls, plan gate pause, approval and re-enqueue, plus the lease-expiry retry path.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker><marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10" fill="none" stroke="#333"/></marker></defs>
+<rect x="0" y="0" width="1120" height="870" fill="#ffffff"/>
+<text x="16" y="26" font-size="16" font-weight="bold" fill="#111">Research run — UML sequence view</text>
+<rect x="10" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
+<text x="70.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Analyst UI</text>
+<line x1="70" y1="79" x2="70" y2="840" stroke="#999" stroke-dasharray="4 4"/>
+<rect x="150" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
+<text x="210.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">API route</text>
+<line x1="210" y1="79" x2="210" y2="840" stroke="#999" stroke-dasharray="4 4"/>
+<rect x="290" y="45" width="120" height="34" rx="6" fill="#eaf4f4" stroke="#2f7f7f" stroke-width="1.4"/>
+<text x="350.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Postgres</text>
+<line x1="350" y1="79" x2="350" y2="840" stroke="#999" stroke-dasharray="4 4"/>
+<rect x="430" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
+<text x="490.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Worker</text>
+<line x1="490" y1="79" x2="490" y2="840" stroke="#999" stroke-dasharray="4 4"/>
+<rect x="570" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
+<text x="630.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Pipeline runner</text>
+<line x1="630" y1="79" x2="630" y2="840" stroke="#999" stroke-dasharray="4 4"/>
+<rect x="710" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
+<text x="770.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Stage handler</text>
+<line x1="770" y1="79" x2="770" y2="840" stroke="#999" stroke-dasharray="4 4"/>
+<rect x="850" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
+<text x="910.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Agent harness</text>
+<line x1="910" y1="79" x2="910" y2="840" stroke="#999" stroke-dasharray="4 4"/>
+<rect x="990" y="45" width="120" height="34" rx="6" fill="#f4f4f4" stroke="#666666" stroke-width="1.4"/>
+<text x="1050.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">LLM provider</text>
+<line x1="1050" y1="79" x2="1050" y2="840" stroke="#999" stroke-dasharray="4 4"/>
+<path d="M70,100 L210,100" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="140.0" y="95" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">POST /assets/:id/research-runs</text>
+<path d="M210,128 L350,128" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="280.0" y="123" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">insert run (pending, v3) + 24 stages [txn]</text>
+<path d="M210,156 L70,156" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#o)"/>
+<text x="140.0" y="151" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">201 run</text>
+<path d="M70,184 L210,184" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="140.0" y="179" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">POST /research-runs/:id/run-system-pipeline</text>
+<path d="M210,212 L350,212" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="280.0" y="207" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">enqueueResearchRun (FOR UPDATE, 1 active job)</text>
+<path d="M210,240 L70,240" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#o)"/>
+<text x="140.0" y="235" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">202 jobId</text>
+<path d="M490,268 L350,268" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="420.0" y="263" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">requeueExpired; claim job SKIP LOCKED (lease 5m)</text>
+<path d="M490,296 L630,296" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="560.0" y="291" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">runResearchPipeline(runId)</text>
+<path d="M630,324 L350,324" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="490.0" y="319" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">pg_try_advisory_lock(run); startRun / resume</text>
+<text x="286" y="360" font-size="11" font-weight="bold" text-anchor="start" fill="#6f4fa3">loop [scheduling pass while stages are ready]</text>
+<path d="M630,382 L350,382" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="490.0" y="377" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">startReadyStages (dependency graph)</text>
+<path d="M630,410 L770,410" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="700.0" y="405" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">execute(ctx) × ready stages (parallel)</text>
+<path d="M770,438 L910,438" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="840.0" y="433" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">callResearchAgent(role, packet)</text>
+<path d="M910,466 L1050,466" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="980.0" y="461" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">HTTPS chat/completions | messages (cached prefix)</text>
+<path d="M1050,494 L910,494" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#o)"/>
+<text x="980.0" y="489" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">JSON text + usage</text>
+<path d="M910,522 L770,522" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#o)"/>
+<text x="840.0" y="517" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">schema-validated output (repair/retry)</text>
+<path d="M770,550 L350,550" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="560.0" y="545" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">persist artifacts, evidence, tasks, model_call_logs</text>
+<path d="M630,578 h40 v14 h-40" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="676" y="589" font-size="11" font-weight="normal" text-anchor="start" fill="#222">validate → advanceStage(deferNext)</text>
+<rect x="280" y="346" width="835" height="252" fill="none" stroke="#6f4fa3" stroke-dasharray="6 3"/>
+<text x="16" y="624" font-size="11" font-weight="bold" text-anchor="start" fill="#b23b3b">alt [stage 4 research_plan gate]</text>
+<path d="M630,646 L350,646" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="490.0" y="641" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">run + stage → waiting_for_human; release lock</text>
+<path d="M490,674 L350,674" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="420.0" y="669" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">completeResearchRunJob (owner-guarded)</text>
+<path d="M70,702 L210,702" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="140.0" y="697" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">POST …/approve-plan</text>
+<path d="M210,730 L350,730" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="280.0" y="725" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">approveResearchPlan + enqueue new job</text>
+<rect x="10" y="610" width="690" height="138" fill="none" stroke="#b23b3b" stroke-dasharray="6 3"/>
+<text x="286" y="774" font-size="11" font-weight="bold" text-anchor="start" fill="#b07a1f">alt [worker crash]</text>
+<path d="M490,796 L350,796" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="420.0" y="791" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">lease expires → requeue if attempts &lt; 3, else failed</text>
+<rect x="280" y="760" width="420" height="54" fill="none" stroke="#b07a1f" stroke-dasharray="6 3"/>
+<text x="16" y="860" font-size="11" font-weight="normal" text-anchor="start" fill="#555">Same pattern repeats at stage 22 human_review (POST …/review writes review_decisions; approve → enqueue). Final checks call completeRun or set needs_more_work.</text>
+</svg>
