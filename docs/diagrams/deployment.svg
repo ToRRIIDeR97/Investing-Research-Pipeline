@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 520" width="1060" height="520" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" font-size="13">
+<title id="t">Research OS — UML deployment view (local only)</title><desc id="d">All runtime nodes run on one developer machine: Next.js server, research worker, python3 child processes, ./storage, and a Docker Postgres container. Outbound HTTPS to LLM and data providers. No hosted deployment exists.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker><marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10" fill="none" stroke="#333"/></marker></defs>
+<rect x="0" y="0" width="1060" height="520" fill="#ffffff"/>
+<text x="16" y="26" font-size="16" font-weight="bold" fill="#111">Research OS — UML deployment view (local only)</text>
+<rect x="20" y="50" width="700" height="450" rx="10" fill="none" stroke="#3b6ea8" stroke-width="1.6" stroke-dasharray="8 5"/>
+<text x="30" y="68" font-size="12" font-weight="bold" text-anchor="start" fill="#3b6ea8">«device» Developer macOS host</text>
+<rect x="40" y="85" width="300" height="110" rx="6" fill="#eef6ec" stroke="#4a8a3f" stroke-width="1.4"/>
+<text x="190.0" y="103" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«execution environment»</text>
+<text x="190.0" y="119" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Next.js 15 server</text>
+<text x="190.0" y="136" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">npm run dev | build &amp;&amp; start</text>
+<text x="190.0" y="151" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">UI + /api/* route handlers</text>
+<text x="190.0" y="166" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">:3000 (dev-with-db.cjs) · :3002 alt</text>
+<rect x="380" y="85" width="320" height="110" rx="6" fill="#fdf3e3" stroke="#b07a1f" stroke-width="1.4"/>
+<text x="540.0" y="103" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«execution environment»</text>
+<text x="540.0" y="119" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Research worker</text>
+<text x="540.0" y="136" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">npm run worker:research [-- --once]</text>
+<text x="540.0" y="151" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">tsx src/workers/research-worker.ts</text>
+<text x="540.0" y="166" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">env: DATABASE_URL, RESEARCH_*</text>
+<rect x="380" y="230" width="320" height="90" rx="6" fill="#fdf3e3" stroke="#b07a1f" stroke-width="1.4"/>
+<text x="540.0" y="248" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«execution environment»</text>
+<text x="540.0" y="264" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Child processes</text>
+<text x="540.0" y="281" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">python3 run_backtest*.py · docling_parser.py</text>
+<text x="540.0" y="296" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">pdftotext · node --permission (repair)</text>
+<rect x="40" y="230" width="300" height="90" rx="6" fill="#eaf4f4" stroke="#2f7f7f" stroke-width="1.4"/>
+<text x="190.0" y="248" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«artifact»</text>
+<text x="190.0" y="264" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Filesystem ./storage</text>
+<text x="190.0" y="281" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">sources/ · backtests/ · exports/</text>
+<text x="190.0" y="296" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">gitignored</text>
+<rect x="40" y="350" width="660" height="135" rx="10" fill="none" stroke="#2f7f7f" stroke-width="1.6" stroke-dasharray="8 5"/>
+<text x="50" y="368" font-size="12" font-weight="bold" text-anchor="start" fill="#2f7f7f">«execution environment» Docker (docker-compose.yml)</text>
+<rect x="70" y="380" width="300" height="90" rx="6" fill="#eaf4f4" stroke="#2f7f7f" stroke-width="1.4"/>
+<text x="220.0" y="398" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«node»</text>
+<text x="220.0" y="414" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">research-os-postgres</text>
+<text x="220.0" y="431" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">image pgvector/pgvector:pg16</text>
+<text x="220.0" y="446" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">host port 5432 · volume postgres_data</text>
+<rect x="400" y="380" width="280" height="90" rx="6" fill="#fdecec" stroke="#b23b3b" stroke-width="1.4" stroke-dasharray="6 4"/>
+<text x="540.0" y="398" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«node · assumption»</text>
+<text x="540.0" y="414" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Postgres on :5433</text>
+<text x="540.0" y="431" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">used by npm run test:sofi-v3</text>
+<text x="540.0" y="446" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">Windows PG service, not in compose</text>
+<rect x="760" y="85" width="280" height="120" rx="6" fill="#f4f4f4" stroke="#666666" stroke-width="1.4"/>
+<text x="900.0" y="103" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«external node»</text>
+<text x="900.0" y="119" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">LLM + embedding</text>
+<text x="900.0" y="136" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">RESEARCH_MODEL_BASE_URL</text>
+<text x="900.0" y="151" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">RESEARCH_EMBEDDING_BASE_URL</text>
+<text x="900.0" y="166" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">HTTPS + host allowlist</text>
+<text x="900.0" y="181" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">or local OpenAI-compatible</text>
+<rect x="760" y="240" width="280" height="110" rx="6" fill="#f4f4f4" stroke="#666666" stroke-width="1.4"/>
+<text x="900.0" y="258" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«external node»</text>
+<text x="900.0" y="274" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Search &amp; web</text>
+<text x="900.0" y="291" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">RESEARCH_WEB_SEARCH_ENDPOINT</text>
+<text x="900.0" y="306" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">or DuckDuckGo / Bing HTML</text>
+<text x="900.0" y="321" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">discovered public URLs</text>
+<rect x="760" y="380" width="280" height="110" rx="6" fill="#f4f4f4" stroke="#666666" stroke-width="1.4"/>
+<text x="900.0" y="398" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«external node»</text>
+<text x="900.0" y="414" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Data APIs</text>
+<text x="900.0" y="431" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">SEC EDGAR · FRED · World Bank</text>
+<text x="900.0" y="446" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">Yahoo Finance / yfinance</text>
+<text x="900.0" y="461" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">EIA · FDIC · Coinbase · blockchain.info</text>
+<path d="M190,195 L190,380" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="220" y="340" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">TCP 5432</text>
+<path d="M400,195 L400,212 L360,212 L360,380" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="365" y="340" font-size="11" text-anchor="start" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">SQL</text>
+<path d="M540,195 L540,230" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="565" y="215" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">spawn</text>
+<path d="M380,275 L340,275" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="360.0" y="270.0" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">files</text>
+<path d="M700,140 L760,140" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="730.0" y="135.0" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">HTTPS</text>
+<path d="M700,170 L760,290" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="735" y="225" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">HTTPS</text>
+<path d="M700,300 L760,430" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="740" y="360" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">HTTPS</text>
+<path d="M340,120 L380,120" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="345" y="112" font-size="10" font-weight="normal" text-anchor="start" fill="#555">DB-mediated</text>
+</svg>

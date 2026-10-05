@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 800" width="1100" height="800" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" font-size="13">
+<title id="t">Research run — UML activity view</title><desc id="d">Run creation with run-type skips, enqueue, worker claim with per-run advisory lock, scheduling pass over the stage dependency graph, team briefs, source and research request loops, parallel handlers, validation, per-stage retries and failureState, human gates, final quality gate.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker><marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10" fill="none" stroke="#333"/></marker></defs>
+<rect x="0" y="0" width="1100" height="800" fill="#ffffff"/>
+<text x="16" y="26" font-size="16" font-weight="bold" fill="#111">Research run — UML activity view</text>
+<circle cx="330" cy="55" r="7" fill="#222"/>
+<rect x="130" y="75" width="400" height="46" rx="6" fill="#eef6ec" stroke="#4a8a3f" stroke-width="1.4"/>
+<text x="330.0" y="93" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">POST /api/assets/:id/research-runs</text>
+<text x="330.0" y="110" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">run pending (v3) + 24 stages; run-type skips set at creation</text>
+<rect x="130" y="140" width="400" height="46" rx="6" fill="#eef6ec" stroke="#4a8a3f" stroke-width="1.4"/>
+<text x="330.0" y="158" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">POST …/run-system-pipeline (or approve-plan / review)</text>
+<text x="330.0" y="175" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">enqueueResearchRun (resumes failed runs) → job queued</text>
+<rect x="130" y="205" width="400" height="46" rx="6" fill="#fdf3e3" stroke="#b07a1f" stroke-width="1.4"/>
+<text x="330.0" y="223" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Worker: requeueExpired → claim (SKIP LOCKED)</text>
+<text x="330.0" y="240" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">lease 5 min, renewed ~100 s</text>
+<rect x="130" y="270" width="400" height="46" rx="6" fill="#fdf3e3" stroke="#b07a1f" stroke-width="1.4"/>
+<text x="330.0" y="288" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">runResearchPipeline: pg_try_advisory_lock(run)</text>
+<text x="330.0" y="305" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">fail stale running tasks · startRun if pending</text>
+<path d="M330,62 L330,74" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M330,121 L330,140" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M330,186 L330,205" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M330,251 L330,270" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M330,316 L330,336" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<rect x="130" y="336" width="400" height="46" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
+<text x="330.0" y="354" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Scheduling pass (≤192 iterations)</text>
+<text x="330.0" y="371" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">startReadyStages (team-plan DAG) · prepareResearchTeam</text>
+<path d="M330,382 L330,398" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M330,398 L344,412 L330,426 L316,412 z" fill="#fff8dc" stroke="#8a6d00" stroke-width="1.3"/>
+<text x="310" y="400" font-size="11" font-weight="normal" text-anchor="end" fill="#5a4700" font-style="italic">source / team requests pending?</text>
+<rect x="470" y="395" width="300" height="46" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
+<text x="620.0" y="413" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Collector fetches + reads requested docs</text>
+<text x="620.0" y="430" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">or owner answers team_requests; reopen stage</text>
+<path d="M344,412 L470,412" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="420" y="406" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">yes</text>
+<path d="M620,395 L620,359 L530,359" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M330,426 L330,444" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="345" y="438" font-size="11" text-anchor="start" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">no</text>
+<path d="M330,444 L344,458 L330,472 L316,458 z" fill="#fff8dc" stroke="#8a6d00" stroke-width="1.3"/>
+<text x="310" y="446" font-size="11" font-weight="normal" text-anchor="end" fill="#5a4700" font-style="italic">any ready / running stage?</text>
+<path d="M344,458 L900,458 L900,488" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="600" y="452" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">no</text>
+<path d="M900,488 L914,502 L900,516 L886,502 z" fill="#fff8dc" stroke="#8a6d00" stroke-width="1.3"/>
+<text x="920" y="488" font-size="11" font-weight="normal" text-anchor="start" fill="#5a4700" font-style="italic">criteria + quality gate pass?</text>
+<rect x="960" y="540" width="120" height="34" rx="14" fill="#eef6ec" stroke="#4a8a3f" stroke-width="1.4"/>
+<text x="1020.0" y="561.0" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">run completed</text>
+<rect x="760" y="540" width="160" height="34" rx="14" fill="#fdecec" stroke="#b23b3b" stroke-width="1.4"/>
+<text x="840.0" y="561.0" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">run needs_more_work</text>
+<path d="M914,502 L1020,502 L1020,540" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="990" y="518" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">yes</text>
+<path d="M886,502 L840,502 L840,540" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="860" y="518" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">no</text>
+<path d="M330,472 L330,494" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="345" y="486" font-size="11" text-anchor="start" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">yes</text>
+<path d="M330,494 L344,508 L330,522 L316,508 z" fill="#fff8dc" stroke="#8a6d00" stroke-width="1.3"/>
+<text x="310" y="496" font-size="11" font-weight="normal" text-anchor="end" fill="#5a4700" font-style="italic">human gate (stage 4 / 22)?</text>
+<rect x="480" y="540" width="260" height="56" rx="6" fill="#fdecec" stroke="#b23b3b" stroke-width="1.4"/>
+<text x="610.0" y="558" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">waiting_for_human; job completes</text>
+<text x="610.0" y="575" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">approval → new job enqueued</text>
+<path d="M344,508 L610,508 L610,540" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="580" y="502" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">yes</text>
+<path d="M330,522 L330,544" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="345" y="536" font-size="11" text-anchor="start" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">no</text>
+<rect x="130" y="544" width="300" height="46" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
+<text x="280.0" y="562" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Ready handlers in parallel</text>
+<text x="280.0" y="579" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">Promise.allSettled → advanceStage(deferNext)</text>
+<path d="M330,590 L330,610" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M330,610 L344,624 L330,638 L316,624 z" fill="#fff8dc" stroke="#8a6d00" stroke-width="1.3"/>
+<text x="310" y="612" font-size="11" font-weight="normal" text-anchor="end" fill="#5a4700" font-style="italic">output valid &amp; validators pass?</text>
+<path d="M316,624 L40,624 L40,326 L330,326" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="50" y="644" font-size="11" text-anchor="start" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">yes → stage completed</text>
+<path d="M330,638 L330,660" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="345" y="652" font-size="11" text-anchor="start" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">no</text>
+<text x="470" y="652" font-size="11" font-weight="normal" text-anchor="start" fill="#555">invalid → tasks invalid, artifacts needs_more_work</text>
+<path d="M330,660 L344,674 L330,688 L316,674 z" fill="#fff8dc" stroke="#8a6d00" stroke-width="1.3"/>
+<text x="310" y="666" font-size="11" font-weight="normal" text-anchor="end" fill="#5a4700" font-style="italic">retryCount &lt; stage max_retries (0–3)?</text>
+<path d="M344,674 L445,674 L445,567 L430,567" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="450" y="690" font-size="11" text-anchor="start" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">yes → retry</text>
+<path d="M330,688 L330,710" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="345" y="702" font-size="11" text-anchor="start" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">no</text>
+<rect x="110" y="710" width="440" height="60" rx="6" fill="#fdecec" stroke="#b23b3b" stroke-width="1.4"/>
+<text x="330.0" y="728" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Apply stage failureState</text>
+<text x="330.0" y="745" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">fail_run → run failed, pending stages cancelled</text>
+<text x="330.0" y="760" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">pause_for_human → waiting · skip_and_continue → stage failed, continue</text>
+<rect x="860" y="640" width="220" height="90" rx="6" fill="#fdecec" stroke="#b23b3b" stroke-width="1.4"/>
+<text x="970.0" y="658" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Exception anywhere</text>
+<text x="970.0" y="675" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">tasks/stages failed,</text>
+<text x="970.0" y="690" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">run needs_more_work;</text>
+<text x="970.0" y="705" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">lock released</text>
+<path d="M900,640 L900,600 L840,600 L840,574" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="16" y="790" font-size="11" font-weight="normal" text-anchor="start" fill="#555">Source: pipeline-runner.ts:20-93, orchestrator.ts:188-944, team-plan.ts:41-75, team.ts, sources/collector.ts, run-queue.ts, stages.ts.</text>
+</svg>

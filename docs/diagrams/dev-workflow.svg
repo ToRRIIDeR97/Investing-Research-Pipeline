@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 200" width="1100" height="200" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" font-size="13">
+<title id="t">Development workflow</title><desc id="d">Feature branch, implement, local checks (type-check, unit tests, build), update owning docs when boundaries change, PR, user approval, merge to main, delete branch.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker><marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10" fill="none" stroke="#333"/></marker></defs>
+<rect x="0" y="0" width="1100" height="200" fill="#ffffff"/>
+<text x="16" y="26" font-size="16" font-weight="bold" fill="#111">Development workflow</text>
+<rect x="20" y="70" width="135" height="64" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
+<text x="87.5" y="88" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Feature branch</text>
+<text x="87.5" y="105" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">off main</text>
+<rect x="177" y="70" width="135" height="64" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
+<text x="244.5" y="88" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Implement</text>
+<text x="244.5" y="105" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">+ tests</text>
+<path d="M155,102 L177,102" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<rect x="334" y="70" width="135" height="64" rx="6" fill="#eef6ec" stroke="#4a8a3f" stroke-width="1.4"/>
+<text x="401.5" y="88" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Local checks</text>
+<text x="401.5" y="105" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">tsc · test:unit · build</text>
+<path d="M312,102 L334,102" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<rect x="491" y="70" width="135" height="64" rx="6" fill="#eaf4f4" stroke="#2f7f7f" stroke-width="1.4"/>
+<text x="558.5" y="88" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Docs if needed</text>
+<text x="558.5" y="105" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">boundary/flow change</text>
+<path d="M469,102 L491,102" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<rect x="648" y="70" width="135" height="64" rx="6" fill="#e8f1fb" stroke="#3b6ea8" stroke-width="1.4"/>
+<text x="715.5" y="88" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Pull request</text>
+<text x="715.5" y="105" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">→ main</text>
+<path d="M626,102 L648,102" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<rect x="805" y="70" width="135" height="64" rx="6" fill="#fdecec" stroke="#b23b3b" stroke-width="1.4"/>
+<text x="872.5" y="88" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">User approval</text>
+<text x="872.5" y="105" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">explicit</text>
+<path d="M783,102 L805,102" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<rect x="962" y="70" width="135" height="64" rx="6" fill="#fdf3e3" stroke="#b07a1f" stroke-width="1.4"/>
+<text x="1029.5" y="88" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Merge + clean up</text>
+<text x="1029.5" y="105" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">delete branch, prune</text>
+<path d="M940,102 L962,102" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M411,134 L411,165 L255,165 L255,134" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="333" y="160" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">fail → fix</text>
+</svg>

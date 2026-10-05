@@ -2,18 +2,24 @@
 
 Research OS creates evidence-backed investment research for an asset. PostgreSQL stores the workflow, sources, artifacts, decisions, and exported report. The Next.js app provides the UI and API; a separate worker runs queued research jobs.
 
-```mermaid
-flowchart LR
-  User --> Next[Next.js UI and API]
-  Next --> DB[(PostgreSQL)]
-  Next --> Queue[research_run_jobs]
-  Queue --> Worker[research worker]
-  Worker --> Pipeline[research pipeline]
-  Pipeline --> Provider[Mock or configured model provider]
-  Pipeline --> DB
-  DB --> Report[Artifact read model and report]
-  Report --> Next
-```
+![UML component view: browser UI → unauthenticated API routes → run queue → worker → pipeline runner and orchestrator → agent harness, sources and memory, backtesting and repair, reporting; Postgres, ./storage, child processes and external services](diagrams/component.svg)
+
+| Component | Responsibility | Source |
+| --- | --- | --- |
+| UI pages | Client components that call the API: command center, asset catalog and detail, run cockpit, report view, review queue | `src/app/**/page.tsx`, `src/components/**` |
+| API routes | 49 route files. Reads and writes over research tables, run control (create, enqueue, approve plan, review), upload ingest, chat, export. No authentication | `src/app/api/**`, `src/lib/api/*` |
+| Run service and queue | Creates a run (`pending`, version 3) and its 24 stage rows. Enforces one active job per run. Claims with `SKIP LOCKED` under a 5-minute lease, with up to 3 attempts and worker heartbeats | `src/lib/research/run-service.ts`, `run-queue.ts` |
+| Research worker | Polls every 5 s. Requeues expired jobs, claims a job, renews the lease and runs the pipeline. When idle, runs backtest tasks | `src/workers/research-worker.ts` |
+| Pipeline runner and team | Per-run advisory lock. Scheduling passes over ready stages, team briefs, source and research requests, handlers run in parallel | `src/lib/research/pipeline-runner.ts`, `handlers/**`, `team.ts`, `team-plan.ts`, `sources/collector.ts` |
+| Workflow orchestrator | Stage configs (retries, budget, `failureState`), `advanceStage` validation, gates, resume, `completeRun` and `failRun` | `src/lib/workflow/stages.ts`, `orchestrator.ts` |
+| Agent harness | Provider selection and model resolution, prompt caching, structured-output parsing and repair, deadlines, telemetry | `src/lib/agent-harness/**`; [local-agent-harness.md](local-agent-harness.md) |
+| Sources and research memory | Discovery and safe fetch, structured data fetchers, passages, per-need retrieval, embeddings, evidence graph | `src/lib/research/sources/**`, `src/lib/research/memory/**`, `src/lib/ingestion/**`, `src/lib/market-data/**` |
+| Backtesting and repair | Framework backtests for stage 18. Python backtest tasks run model-written code. The statement-repair module runs in a Node sandbox | `src/lib/backtesting/**`, `python/backtesting/**`, `src/lib/research/repair/**` |
+| Reporting and export | Adaptive report sections, report snapshot, memo and research-package export | `src/lib/research/reporting/**`, `src/lib/export/**`, `src/lib/valuation/**` |
+| Database | 15 schema modules; migrations `0000`–`0006` and `0009` | `src/db/schema/**`, `drizzle/` |
+
+Deeper views are in [architecture.md](architecture.md): deployment, class, the run activity, the state machines and the sequence.
+
 
 The API creates a version 3 run with its 24 stage rows. A job lets the worker continue the pipeline outside the HTTP request. The research plan and final review stop for a human decision; approval queues another job. Stage contracts validate outputs before the pipeline persists typed artifacts. Export and refresh scheduling finish the run.
 
@@ -93,3 +99,21 @@ Historical v1 and v2 rows remain in the database. The current runner accepts ver
 New plans enable [adaptive reports](adaptive-research.md). The review stage composes
 company-specific sections before reviewing the complete document. Human approval
 binds the report and its input snapshot; export reproduces that approved version.
+
+## Invariants
+
+- PostgreSQL owns all research state. Files under `storage/` are referenced from database rows by path and hash.
+- Agents propose and validators accept. Model calls have no tool execution. Output passes structured-output parsing, then stage contracts and validators, before artifacts are `validated`.
+- Execution goes only through `research_run_jobs`, which are owner-guarded by `lease_owner`, and through the per-run advisory lock in `runResearchPipeline`. The API never runs the pipeline in-process.
+- The 24 stages, their retries (0–3), budgets and `failureState` come from `STAGE_CONFIGS`. Dependencies come from `STAGE_DEPENDENCIES`. Human gates sit at stage 4 (research plan) and stage 22 (human review).
+- Paid model calls are opt-in, and budget is reserved under a database lock before every attempt.
+
+## Known gaps
+
+Verified in source on 2026-10-05 and tracked as GitHub issues:
+
+- No API authentication ([#8](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/8)). `/advance` bypasses the run lock and the handlers ([#16](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/16)).
+- `accepted` artifacts are never written ([#14](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/14)). No writer sets a run to `cancelled` ([#15](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/15)).
+- `src/db/index.ts` leaves out the `source-intelligence` and `market-data` schemas ([#17](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/17)).
+- Data fetchers in `corpus.ts` and `yahoo.ts` have no timeouts ([#23](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/23)). Docling parsing blocks the event loop ([#24](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/24)).
+- Security findings are listed in [security.md](security.md).

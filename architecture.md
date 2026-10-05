@@ -2,6 +2,10 @@
 
 Date: 2026-07-03
 Status: Proposed working architecture
+
+> **Current-state documentation:** this is the original July 2026 target-state proposal. For the system as built, see
+> [docs/system.md](docs/system.md), [docs/architecture.md](docs/architecture.md) (master UML views) and
+> [docs/security.md](docs/security.md).
 Scope: Investment research application, research data model, AI agent orchestration, source ingestion, valuation workflows, and export strategy
 
 ## 1. Product Definition

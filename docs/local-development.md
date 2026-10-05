@@ -1,5 +1,7 @@
 # Local Research OS development
 
+Repository rules and required checks are in [AGENTS.md](../AGENTS.md). Runtime topology is in the [deployment view](architecture.md#2-structural--deployment).
+
 Start the database, apply migrations, then run the Next.js app and the durable research worker in separate terminals:
 
 ```bash
