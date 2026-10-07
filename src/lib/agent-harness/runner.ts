@@ -244,7 +244,7 @@ async function executePass(params: {
           break;
         case "response.started": providerStarted = true; requestId = event.requestId || requestId; break;
         case "text.delta":
-          rawText += event.text;
+          rawText += event.text.replace(/\u0000/g, "");
           if (Buffer.byteLength(rawText, "utf8") > params.policy.maxResponseBytes) {
             throw new ProviderError("Model response exceeded maximum size", "response_limit");
           }
