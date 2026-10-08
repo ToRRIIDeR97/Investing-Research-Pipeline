@@ -50,10 +50,14 @@ export type ReportOutline = z.infer<typeof Outline>;
 export type ResearchQuestion = z.infer<typeof Question>;
 export type CoverageCheck = z.infer<typeof CoverageResult>;
 
+/** Reports every violation at once and names the sections, so one repair pass can fix them all. */
 export function validateProductOutline(outline:ReportOutline) {
-  if(outline.sections.some(s=>s.coverage.length>0&&s.coverage.every(k=>k==='history'||k==='evidence')))throw new Error('Integrate historical causes and material uncertainty into the company analysis; do not create standalone financial-history or evidence-limitations chapters.');
+  const errors:string[]=[];
+  const standalone=outline.sections.filter(s=>s.coverage.length>0&&s.coverage.every(k=>k==='history'||k==='evidence'));
+  if(standalone.length)errors.push(`Integrate historical causes and material uncertainty into the company analysis; do not create standalone financial-history or evidence-limitations chapters. Add a company coverage key to, or merge: ${standalone.map(s=>`"${s.title}"`).join(', ')}.`);
   const valuation=outline.sections.filter(s=>s.coverage.includes('valuation'));
-  if(valuation.length!==1||!['forecasts','downside'].every(k=>valuation[0].coverage.includes(k)))throw new Error('Combine forecasts, scenarios, valuation and permanent-loss analysis in one Valuation chapter.');
+  if(valuation.length!==1||!['forecasts','downside'].every(k=>valuation[0].coverage.includes(k)))errors.push(`Combine forecasts, scenarios, valuation and permanent-loss analysis in one Valuation chapter: exactly one section may list valuation, together with forecasts and downside. Sections listing valuation now: ${valuation.map(s=>`"${s.title}"`).join(', ')||'none'}.`);
+  if(errors.length)throw new Error(errors.join(' '));
 }
 
 export function outputContract(shape: Record<string, z.ZodType>): AgentOutputFormat {
