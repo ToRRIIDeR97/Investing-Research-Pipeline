@@ -52,7 +52,7 @@ export function parseStructuredOutput(text: string, requiredKeys: string[] = [])
 
   for (const json of jsonObjects) {
     try {
-      const parsed = JSON.parse(json);
+      const parsed = JSON.parse(json, stripNul);
       parsedObjects.push(parsed);
       if (hasRequiredKeys(parsed, requiredKeys)) matches.push(parsed);
     } catch {
@@ -79,6 +79,11 @@ export function parseStructuredOutput(text: string, requiredKeys: string[] = [])
   }
 
   throw new Error("No valid JSON object found in response");
+}
+
+// PostgreSQL jsonb rejects U+0000, so a \u0000 escape in model output would fail persistence.
+function stripNul(_key: string, value: unknown): unknown {
+  return typeof value === "string" ? value.replace(/\u0000/g, "") : value;
 }
 
 function hasRequiredKeys(value: unknown, requiredKeys: string[]): boolean {

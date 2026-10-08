@@ -1,5 +1,6 @@
 import type { ModelProvider } from "../types";
 import { ProviderError } from "../errors";
+import { AnthropicCompatibleProvider } from "./anthropic-compatible";
 import { OpenAICompatibleProvider } from "./openai-compatible";
 import { MockProvider } from "./mock";
 import { OpenCodeGoProvider } from "./opencode-go";
@@ -17,6 +18,10 @@ export function getProvider(providerTypeOverride?: string): ModelProvider {
   if (providerType === "opencode-go-direct") {
     const apiKey = process.env.RESEARCH_MODEL_API_KEY || process.env.OPENCODE_GO_API_KEY || "";
     return new OpenCodeGoProvider(baseUrl, apiKey, allowedHosts());
+  }
+  if (providerType === "anthropic-direct") {
+    const apiKey = process.env.RESEARCH_MODEL_API_KEY || process.env.ANTHROPIC_API_KEY || "";
+    return new AnthropicCompatibleProvider({ baseUrl, apiKey, allowedHosts: allowedHosts() });
   }
   if (providerType === "direct-openai-compatible") {
     return new OpenAICompatibleProvider({

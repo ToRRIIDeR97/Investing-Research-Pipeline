@@ -24,6 +24,7 @@ Labels in the views: *unverified* means the relationship wasn't proven from sour
   - `mock`;
   - `direct-openai-compatible` (the default);
   - `opencode-go-direct`, which uses the Anthropic protocol for qwen and minimax models;
+  - `anthropic-direct`, which calls the Anthropic Messages API (`api.anthropic.com`) and omits `temperature` for Claude models;
   - `local-openai-compatible`.
 - `registry.ts` picks the model in this order:
   1. an explicit override;

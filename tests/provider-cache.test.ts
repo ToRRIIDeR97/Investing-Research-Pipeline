@@ -6,6 +6,7 @@ import {
 import { AnthropicCompatibleProvider } from "../src/lib/agent-harness/providers/anthropic-compatible";
 import { OpenAICompatibleProvider } from "../src/lib/agent-harness/providers/openai-compatible";
 import { OpenCodeGoProvider } from "../src/lib/agent-harness/providers/opencode-go";
+import { getProvider } from "../src/lib/agent-harness/providers/provider";
 import { runResearchAgent } from "../src/lib/agent-harness/runner";
 import { calculateCost } from "../src/lib/agent-harness/telemetry";
 import type { AgentOutputFormat, ModelEvent, ModelProvider, ModelRequest, ModelUsage } from "../src/lib/agent-harness/types";
@@ -152,6 +153,48 @@ test("Anthropic-compatible provider marks the instructions cacheable and totals 
       if (prior === undefined) delete process.env.RESEARCH_ANTHROPIC_CACHE_CONTROL;
       else process.env.RESEARCH_ANTHROPIC_CACHE_CONTROL = prior;
     }
+  });
+});
+
+test("anthropic-direct calls the Messages API without temperature for Claude models", async () => {
+  const keys = ["RESEARCH_MODEL_BASE_URL", "RESEARCH_MODEL_ALLOWED_HOSTS", "RESEARCH_MODEL_API_KEY", "ANTHROPIC_API_KEY"] as const;
+  const prior = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  Object.assign(process.env, { RESEARCH_MODEL_BASE_URL: "https://api.anthropic.com/v1", RESEARCH_MODEL_ALLOWED_HOSTS: "api.anthropic.com", ANTHROPIC_API_KEY: "fixture-key" });
+  delete process.env.RESEARCH_MODEL_API_KEY;
+  try {
+    await withFetch(() => anthropicStream({ input_tokens: 2 }), async (calls) => {
+      const provider = getProvider("anthropic-direct");
+      await collect(provider.stream({ model: "claude-haiku-5-5", prompt: "x", temperature: 0.2 }, new AbortController().signal));
+      await collect(provider.stream({ model: "qwen3.7-plus", prompt: "x" }, new AbortController().signal));
+      assert.equal(calls[0].url, "https://api.anthropic.com/v1/messages");
+      assert.equal(calls[0].headers.get("x-api-key"), "fixture-key");
+      assert.equal("temperature" in calls[0].body, false);
+      assert.equal(calls[1].body.temperature, 0.2);
+    });
+  } finally {
+    for (const key of keys) {
+      if (prior[key] === undefined) delete process.env[key];
+      else process.env[key] = prior[key];
+    }
+  }
+});
+
+test("Anthropic provider emits heartbeats for pings and hidden thinking so the inactivity timer sees a live stream", async () => {
+  const stream = [
+    `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg-1", usage: { input_tokens: 2 } } })}`,
+    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}',
+    'event: ping\ndata: {"type":"ping"}',
+    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}',
+    'event: content_block_delta\ndata: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"{\\"ok\\":true}"}}',
+    'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}',
+    'event: message_stop\ndata: {"type":"message_stop"}',
+  ].join("\n\n") + "\n\n";
+  await withFetch(() => stream, async () => {
+    const provider = new AnthropicCompatibleProvider({ baseUrl: "https://example.com/v1", apiKey: "k", allowedHosts: ["example.com"] });
+    const types = (await collect(provider.stream({ model: "claude-haiku-5-5", prompt: "x" }, new AbortController().signal))).map((event) => event.type);
+    assert.equal(types.filter((type) => type === "heartbeat").length, 4);
+    assert.ok(types.includes("text.delta"));
+    assert.equal(types.at(-1), "response.completed");
   });
 });
 

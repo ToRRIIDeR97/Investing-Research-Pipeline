@@ -11,6 +11,18 @@ RESEARCH_MODEL_API_KEY=replace-locally
 RESEARCH_MODEL_ALLOWED_HOSTS=opencode.ai
 ```
 
+## Anthropic API
+
+`anthropic-direct` calls the Anthropic Messages API (`/v1/messages`) with `x-api-key` and `anthropic-version: 2023-06-01`. It reads `RESEARCH_MODEL_API_KEY`, then `ANTHROPIC_API_KEY`. Claude models get no `temperature`, because current Claude models reject non-default sampling values.
+
+```dotenv
+RESEARCH_MODEL_PROVIDER=anthropic-direct
+RESEARCH_MODEL_BASE_URL=https://api.anthropic.com/v1
+RESEARCH_MODEL_ALLOWED_HOSTS=api.anthropic.com
+ANTHROPIC_API_KEY=replace-locally
+RESEARCH_ALL_AGENTS_MODEL=claude-haiku-5-5
+```
+
 ## Direct HTTPS provider
 
 Set these values in `.env.local` without committing credentials:
@@ -56,7 +68,7 @@ Ollama's OpenAI-compatible endpoint uses the `/v1` base path. The configured mod
 
 ## Execution controls
 
-The harness requests plain text, parses JSON locally, and performs at most one bounded repair by default. Total and inactivity deadlines, response/token limits, and model attempts use the `RESEARCH_*` settings documented in `.env.example`. Model calls cannot execute tools; an unexpected tool request fails the attempt.
+The harness requests plain text, parses JSON locally, and performs at most one bounded repair by default. Total and inactivity deadlines, response/token limits, and model attempts use the `RESEARCH_*` settings documented in `.env.example`. Model calls cannot execute tools; an unexpected tool request fails the attempt. On the Anthropic protocol, pings and hidden adaptive-thinking events count as stream activity, so the inactivity deadline measures real provider silence rather than time to the first answer text.
 
 Analytical stages derive their prompt schemas and runtime checks from the artifact Zod contracts. Invalid model output enters repair before a task is marked complete. The artifact repository checks those contracts again before saving validated or accepted content.
 

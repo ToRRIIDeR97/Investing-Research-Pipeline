@@ -39,6 +39,12 @@ test("JSON parser accepts one direct/fenced object and rejects ambiguity or trun
   assert.throws(() => parseStructuredOutput('{"ok":', ["ok"]), /no valid JSON/i);
 });
 
+test("JSON parser strips NUL characters that PostgreSQL jsonb rejects", () => {
+  const parsed = parseStructuredOutput('{"ok":true,"quote":"Meta\\u0000 Platforms","items":["a\\u0000b"]}', ["ok"]) as any;
+  assert.equal(parsed.quote, "Meta Platforms");
+  assert.deepEqual(parsed.items, ["ab"]);
+});
+
 test("schema validation detects missing keys and wrong types", () => {
   const schema = { schema: { type: "object", required: ["name", "confidence"], properties: { name: { type: "string" }, confidence: { type: "number" } } } };
   assert.equal(validateSchema({ name: "x", confidence: 0.9 }, schema).length, 0);

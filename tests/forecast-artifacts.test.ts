@@ -175,6 +175,23 @@ describe("operating forecasts and scenarios (Component 10)", () => {
     assert.ok(result.errors.some((e) => e.includes("does not reconcile")));
   });
 
+  it("C10-T4: Undisclosed segment revenue skips reconciliation with a warning", () => {
+    const model: OperatingModel = {
+      artifact_type: "operating_model",
+      segments: [
+        { segment_name: "Family of Apps", forecast_revenue: null, forecast_operating_income: 102469 },
+        { segment_name: "Reality Labs", forecast_revenue: null, forecast_operating_income: -19193 },
+      ],
+      consolidated_revenue: 200965,
+      consolidated_operating_income: 83276,
+      credit_capital_required: 0,
+      balance_sheet_effect_present: false,
+    };
+    const result = validateOperatingModel(model);
+    assert.equal(result.valid, true);
+    assert.ok(result.warnings.some((w) => w.includes("revenue reconciliation skipped")));
+  });
+
   it("C10-T5: Forecast exceeds TAM or customer budget fails", () => {
     const recon: TopDownBottomUpReconciliation = {
       artifact_type: "top_down_bottom_up_reconciliation",

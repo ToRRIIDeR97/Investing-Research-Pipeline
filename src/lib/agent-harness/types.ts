@@ -38,6 +38,8 @@ export type ModelEvent =
   | { type: "tool.call"; call: ToolCall }
   | { type: "usage"; usage: ModelUsage }
   | { type: "response.completed"; finishReason?: string }
+  /** A valid stream event with no content (ping, hidden thinking, signature). Keeps the inactivity timer honest. */
+  | { type: "heartbeat" }
   | { type: "response.failed"; error: Error };
 
 export interface ProviderHealth {

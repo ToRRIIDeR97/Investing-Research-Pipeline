@@ -50,10 +50,14 @@ export type ReportOutline = z.infer<typeof Outline>;
 export type ResearchQuestion = z.infer<typeof Question>;
 export type CoverageCheck = z.infer<typeof CoverageResult>;
 
+/** Reports every violation at once and names the sections, so one repair pass can fix them all. */
 export function validateProductOutline(outline:ReportOutline) {
-  if(outline.sections.some(s=>s.coverage.length>0&&s.coverage.every(k=>k==='history'||k==='evidence')))throw new Error('Integrate historical causes and material uncertainty into the company analysis; do not create standalone financial-history or evidence-limitations chapters.');
+  const errors:string[]=[];
+  const standalone=outline.sections.filter(s=>s.coverage.length>0&&s.coverage.every(k=>k==='history'||k==='evidence'));
+  if(standalone.length)errors.push(`Integrate historical causes and material uncertainty into the company analysis; do not create standalone financial-history or evidence-limitations chapters. Add a company coverage key to, or merge: ${standalone.map(s=>`"${s.title}"`).join(', ')}.`);
   const valuation=outline.sections.filter(s=>s.coverage.includes('valuation'));
-  if(valuation.length!==1||!['forecasts','downside'].every(k=>valuation[0].coverage.includes(k)))throw new Error('Combine forecasts, scenarios, valuation and permanent-loss analysis in one Valuation chapter.');
+  if(valuation.length!==1||!['forecasts','downside'].every(k=>valuation[0].coverage.includes(k)))errors.push(`Combine forecasts, scenarios, valuation and permanent-loss analysis in one Valuation chapter: exactly one section may list valuation, together with forecasts and downside. Sections listing valuation now: ${valuation.map(s=>`"${s.title}"`).join(', ')||'none'}.`);
+  if(errors.length)throw new Error(errors.join(' '));
 }
 
 export function outputContract(shape: Record<string, z.ZodType>): AgentOutputFormat {
@@ -69,7 +73,7 @@ export const RESEARCH_DOCTRINE = [
   "The Financials deliverable is the complete issuer-reported primary statements from 10-Q and 10-K filings, with quarterly AND annual observations. Preserve custom line items, hierarchy, subtotals, fiscal calendars, units, source locations and restatements. A selected-metric shortlist is not complete. Check coverage against filing tables and reconcile totals. Never label annualized quarters or TTM as reported annual data.",
   "Collect quarterly histories for every monitoring KPI, with stable metric_key, definition, unit, period, reporting basis and sources. Link thresholds and thesis breakers to model inputs. The KPI Dashboard and Monitoring and decision must use the same definitions and observations; never imply real-time disclosure where only a dated observation exists.",
   "Financials Metrics must expose sourced net income margin, gross margin, SG&A margin, ROE, ROIC and company-relevant ratios. State formulas and period conventions, align units and basis, use average balances when required, and distinguish unavailable inputs from economically inapplicable measures. Never invent missing inputs.",
-  "Write company analysis directly in an analyst's voice, with adjacent citations. Do not narrate artifacts, packets, saved records, database fields or the research workflow. Retain material uncertainty beside the affected claim. Do not create standalone Financial history or Evidence and limitations chapters; financial tables live in Financials and citations retain source access.",
+  "Write company analysis directly in an analyst's voice, with adjacent citations. Do not narrate artifacts, packets, saved records, database fields or the research workflow. Retain material uncertainty beside the affected claim. Do not create standalone Financial history or Evidence and limitations chapters. Financials is a separate tab of filing tables beside the Report, not a report chapter: discuss financial history inside the business, constraints, management or valuation chapter it explains, and citations retain source access.",
   "Combine operating scenarios, valuation, downside and permanent loss in one Valuation chapter. Present numerical driver assumptions and annual schedules with explicit Bear, Base and Bull cases. Select appropriate valuation methods separately from scenarios, rather than forcing three DCF methods. Show actual discounting, terminal value, capital/share bridges or the chosen method's equivalent calculation. Do not describe an exit multiple or interpolated price path as a DCF.",
   "Select exhibits to explain a material trend, comparison or business mechanism. No mandatory graph slot or Supporting evidence block in every chapter. Use relevant segment numbers where available. Management should include a sourced organization chart with names, roles, effective dates and documented reporting lines; never infer hierarchy from seniority.",
   "Use Asset Research Agent Framework v2.1. Explain business processes and historical causes before relying on forecasts; write the executive judgment last.",

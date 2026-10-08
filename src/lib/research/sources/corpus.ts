@@ -806,13 +806,23 @@ function filingSourcePayload(ctx: RunContext, cik: string, filing: Record<string
   };
 }
 
+const MACRO_RECENT_ROWS = 260;
+
+/** FRED returns the whole series from 1962. Keep the latest year of observations up to the cutoff. */
+export function recentFredObservations(csv: string, cutoffDate: string, rows = MACRO_RECENT_ROWS): string {
+  const [header, ...lines] = csv.trim().split(/\r?\n/);
+  const kept = lines.filter((line) => line.slice(0, 10) <= cutoffDate).slice(-rows);
+  return [header, ...kept].join("\n");
+}
+
 async function macroSourcePayload(ctx: RunContext): Promise<SourcePayload | null> {
   const url = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10";
   try {
     const response = await fetch(url, { headers: { "User-Agent": "ResearchOS/0.1 research-pipeline@example.com" } });
     if (!response.ok) return null;
-    const content = await response.text();
-    if (!content.includes("observation_date") || content.length < 100) return null;
+    const raw = await response.text();
+    if (!raw.includes("observation_date") || raw.length < 100) return null;
+    const content = recentFredObservations(raw, ctx.marketDataCutoffAt?.slice(0, 10) || new Date().toISOString().slice(0, 10));
     const retrievedAt = new Date().toISOString();
     return {
       sourceType: "macro_context",

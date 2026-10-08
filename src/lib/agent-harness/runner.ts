@@ -137,7 +137,7 @@ function retryable(value: HarnessErrorCategory) {
 }
 
 function redact(value: string) {
-  const secrets = [process.env.RESEARCH_MODEL_API_KEY, process.env.DATABASE_URL].filter(Boolean) as string[];
+  const secrets = [process.env.RESEARCH_MODEL_API_KEY, process.env.ANTHROPIC_API_KEY, process.env.DATABASE_URL].filter(Boolean) as string[];
   return secrets.reduce((message, secret) => secret.length > 5 ? message.split(secret).join("[REDACTED]") : message, value)
     .replace(/(bearer\s+)[^\s"']+/gi, "$1[REDACTED]");
 }
@@ -244,7 +244,7 @@ async function executePass(params: {
           break;
         case "response.started": providerStarted = true; requestId = event.requestId || requestId; break;
         case "text.delta":
-          rawText += event.text;
+          rawText += event.text.replace(/\u0000/g, "");
           if (Buffer.byteLength(rawText, "utf8") > params.policy.maxResponseBytes) {
             throw new ProviderError("Model response exceeded maximum size", "response_limit");
           }

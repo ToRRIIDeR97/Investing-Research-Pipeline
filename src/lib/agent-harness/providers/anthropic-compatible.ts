@@ -1,5 +1,5 @@
 import { ProviderError, usageLimitBody, type HarnessErrorCategory } from "../errors";
-import type { ModelEvent, ModelProvider, ModelRequest, ToolCall } from "../types";
+import type { ModelEvent, ModelProvider, ModelRequest, ProviderHealth, ToolCall } from "../types";
 
 export interface AnthropicProviderOptions {
   baseUrl: string;
@@ -47,6 +47,20 @@ export class AnthropicCompatibleProvider implements ModelProvider {
     this.baseUrl = validateBaseUrl(options.baseUrl, options.allowedHosts);
   }
 
+  async healthCheck(): Promise<ProviderHealth> {
+    try {
+      const response = await fetch(`${this.baseUrl}/models`, {
+        headers: { "x-api-key": this.options.apiKey, "anthropic-version": "2023-06-01", ...this.options.headers },
+        redirect: "error",
+      });
+      if (!response.ok) return { status: "unhealthy", message: `HTTP ${response.status}` };
+      const body = await response.json().catch(() => ({})) as { data?: Array<{ id?: string }> };
+      return { status: "healthy", models: (body.data || []).map((item) => item.id || "").filter(Boolean) };
+    } catch (error) {
+      return { status: "unhealthy", message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
   async *stream(request: ModelRequest, signal: AbortSignal, options: { headers?: Record<string, string> } = {}): AsyncIterable<ModelEvent> {
     // One breakpoint after the stable instructions. Set RESEARCH_ANTHROPIC_CACHE_CONTROL=0 for endpoints that reject it.
     const cacheControl = process.env.RESEARCH_ANTHROPIC_CACHE_CONTROL !== "0";
@@ -59,7 +73,8 @@ export class AnthropicCompatibleProvider implements ModelProvider {
       // Anthropic's messages protocol requires this field even when the
       // shared harness intentionally leaves generation uncapped.
       max_tokens: request.maxTokens || Number(process.env.RESEARCH_ANTHROPIC_PROTOCOL_MAX_TOKENS || 65_536),
-      temperature: request.temperature ?? 0.2,
+      // Current Claude models reject non-default sampling values with a 400.
+      ...(/^claude-/i.test(request.model) ? {} : { temperature: request.temperature ?? 0.2 }),
       stream: true,
     });
     yield { type: "request.sent", body };
@@ -165,7 +180,12 @@ export class AnthropicCompatibleProvider implements ModelProvider {
         buffer += decoder.decode(value, { stream: true });
         const blocks = buffer.split(/\r?\n\r?\n/);
         buffer = blocks.pop() || "";
-        for (const block of blocks) for (const event of parseBlock(block)) yield event;
+        for (const block of blocks) {
+          const events = parseBlock(block);
+          // Pings and hidden adaptive thinking carry no content but prove the stream is alive.
+          if (!events.length && block.trim()) yield { type: "heartbeat" };
+          for (const event of events) yield event;
+        }
       }
       buffer += decoder.decode();
       if (buffer.trim()) for (const event of parseBlock(buffer)) yield event;

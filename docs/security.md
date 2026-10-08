@@ -14,7 +14,7 @@ This document was verified against source on 2026-10-05. Each claim says whether
 
 | Asset | Where | Sensitivity |
 | --- | --- | --- |
-| Provider and search keys | Process environment or ignored `.env.local`: `RESEARCH_MODEL_API_KEY`, `OPENCODE_GO_API_KEY`, `RESEARCH_EMBEDDING_API_KEY`, `RESEARCH_WEB_SEARCH_API_KEY`. `.env.example` documents names only | High: direct spend |
+| Provider and search keys | Process environment or ignored `.env.local`: `RESEARCH_MODEL_API_KEY`, `OPENCODE_GO_API_KEY`, `ANTHROPIC_API_KEY`, `RESEARCH_EMBEDDING_API_KEY`, `RESEARCH_WEB_SEARCH_API_KEY`. `.env.example` documents names only | High: direct spend |
 | Model budget | `model_budget_limits`, `model_budget_ledger`, `model_budget_reservations` | High: paid calls |
 | Research state and decisions | Postgres: runs, stages, artifacts, evidence, `claim_relationships`, `document_embeddings`, `review_decisions`, … | Medium: private analysis; integrity matters |
 | Prompts, outputs, call metadata | `model_call_logs`, agent traces. Cache metadata stores hashes and byte counts, never prompt content | Medium |
@@ -51,7 +51,7 @@ This document was verified against source on 2026-10-05. Each claim says whether
   - `RUN_PAID_MELI` for `new-meli-run.ts`;
   - `RUN_PROVIDER_SMOKE=1` for `provider-smoke.ts`;
   - `RUN_SOURCE_READER_SMOKE` for `source-reader-smoke.ts`.
-- The harness `redact()` (`src/lib/agent-harness/runner.ts:139`) only replaces `RESEARCH_MODEL_API_KEY`, `DATABASE_URL` and `bearer` tokens. Provider error bodies are truncated and pattern-scrubbed. The embedding provider removes only its own key. `OPENCODE_GO_API_KEY` and `RESEARCH_WEB_SEARCH_API_KEY` aren't covered ([#10](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/10)).
+- The harness `redact()` (`src/lib/agent-harness/runner.ts:139`) only replaces `RESEARCH_MODEL_API_KEY`, `ANTHROPIC_API_KEY`, `DATABASE_URL` and `bearer` tokens. Provider error bodies are truncated and pattern-scrubbed. The embedding provider removes only its own key. `OPENCODE_GO_API_KEY` and `RESEARCH_WEB_SEARCH_API_KEY` aren't covered ([#10](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/10)).
 - **Observed:** the backtest child process receives the full worker environment, `env: { ...process.env }` (`src/lib/backtesting/executor.ts:283`), so model-written code can read every key ([#11](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/11)).
 - The web-search key is re-sent on every redirect hop, and `http:` is allowed ([#22](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/22)).
 

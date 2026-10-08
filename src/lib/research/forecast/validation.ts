@@ -87,10 +87,15 @@ export function validateOperatingModel(content: unknown): ValidationResult {
   const warnings: string[] = [];
   const data = parsed.data;
 
-  // C10-T4: Segment revenue does not equal consolidated revenue
-  const segmentRevenueSum = data.segments.reduce((acc, s) => acc + s.forecast_revenue, 0);
-  if (Math.abs(segmentRevenueSum - data.consolidated_revenue) > 1e-2) {
-    errors.push(`Segment revenue sum (${segmentRevenueSum}) does not reconcile to consolidated revenue (${data.consolidated_revenue}).`);
+  // C10-T4: Segment revenue does not equal consolidated revenue. Only checkable when every segment has revenue.
+  const missingRevenue = data.segments.filter((s) => s.forecast_revenue === null).map((s) => s.segment_name);
+  if (missingRevenue.length) {
+    warnings.push(`Segment revenue is not disclosed for ${missingRevenue.join(", ")}; revenue reconciliation skipped.`);
+  } else {
+    const segmentRevenueSum = data.segments.reduce((acc, s) => acc + (s.forecast_revenue ?? 0), 0);
+    if (Math.abs(segmentRevenueSum - data.consolidated_revenue) > 1e-2) {
+      errors.push(`Segment revenue sum (${segmentRevenueSum}) does not reconcile to consolidated revenue (${data.consolidated_revenue}).`);
+    }
   }
 
   // C10-T6: Growth requires credit capital but no balance-sheet effect exists

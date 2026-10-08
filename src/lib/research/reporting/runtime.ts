@@ -8,19 +8,48 @@ import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { VISUAL_GUIDELINES } from './visuals';
 import { getTeamRequests, includeUnansweredQuestions, requestMissingResearch } from "../team";
 
-function checkedContract(base: AgentOutputFormat, check: (value: any) => void): AgentOutputFormat {
+function checkedContract(base: AgentOutputFormat, check: (value: any) => void, clean: (value: any) => any = (value) => value): AgentOutputFormat {
   return { ...base, validate(value) {
     const errors = base.validate?.(value) || [];
     if (errors.length) return errors;
-    try { check(value); return []; }
+    try { check(clean(value)); return []; }
     catch (error) { return [{ path: "report", message: String(error) }]; }
   } };
+}
+
+/**
+ * The analysis stages see every accepted claim, but the report may cite only dated, linked evidence
+ * and current artifacts. A citation outside that set is dropped, as for team answers, and a section
+ * records the removal in its gaps. A fact left without support still fails validation.
+ */
+export function keepUsableReferences<T>(value: T, artifacts: { id: string }[], evidence: { id: string }[]): T {
+  const usableArtifacts = new Set(artifacts.map((a) => a.id));
+  const usableEvidence = new Set(evidence.map((e) => e.id));
+  const dropped: string[] = [];
+  const keep = (ids: string[] | undefined, usable: Set<string>) => (ids || []).filter((id) => usable.has(id) || (dropped.push(id), false));
+  const refs = (item: any) => item && ({ ...item,
+    ...(item.evidence_ids ? { evidence_ids: keep(item.evidence_ids, usableEvidence) } : {}),
+    ...(item.artifact_ids ? { artifact_ids: keep(item.artifact_ids, usableArtifacts) } : {}) });
+  const section = (s: any) => {
+    const start = dropped.length;
+    const next = { ...refs(s), ...(s.paragraphs ? { paragraphs: s.paragraphs.map(refs) } : {}) };
+    const removed = dropped.slice(start);
+    return removed.length && Array.isArray(s.gaps)
+      ? { ...next, gaps: [...s.gaps, `Citations removed because their source is undated or outside the report inputs: ${removed.join(", ")}.`] }
+      : next;
+  };
+  const v = value as any;
+  if (v?.outline) return { ...v, outline: { ...v.outline, sections: (v.outline.sections || []).map(section),
+    questions: (v.outline.questions || []).map(refs) } };
+  if (v?.section) return { ...v, section: section(v.section) };
+  return value;
 }
 
 export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
   await requestMissingResearch(sql, ctx);
   const teamRequests = await getTeamRequests(sql, ctx.runId);
   const { artifacts, evidence } = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
+  const usable = <T>(value: T) => keepUsableReferences(value, artifacts, evidence);
   const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}`;
   const common = { asset: { assetName: ctx.assetName, symbol: ctx.symbol, profile: ctx.profileKey },
     research_question: ctx.researchQuestion, source_cutoff: ctx.cutoffAt.toISOString(),
@@ -31,20 +60,20 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
   return composeReviewedReport(reportInput, {
     async plan(feedback) {
       const packet = { ...common, feedback, output_contract: "report_outline", output_schema: OUTLINE_CONTRACT.schema };
-      const output = await callResearchAgent<{ outline: ReportOutline }>({ sql, ctx, stageKey: "ai_reviewer",
+      const output = usable(await callResearchAgent<{ outline: ReportOutline }>({ sql, ctx, stageKey: "ai_reviewer",
         taskKey: "report:outline", taskType: "report_outline", agentName: "asset-analyst", modelTier: "mid", packet,
         outputFormat: checkedContract(OUTLINE_CONTRACT, ({ outline }: { outline: ReportOutline }) => {
           validateProductOutline(outline);
           createReport({ ...reportInput, ...outline, sections: outline.sections.map(section => ({ ...section,
             paragraphs: [{ kind: "analysis", text: section.purpose, evidence_ids: [], artifact_ids: section.artifact_ids }],
             counterevidence: "Outline validation", implication: "Outline validation", gaps: [], tables: [] })) });
-        }), promptFactory: p => exactJsonPrompt({ agentName: "asset-analyst", requiredKeys: ["outline"], packet: p,
+        }, usable), promptFactory: p => exactJsonPrompt({ agentName: "asset-analyst", requiredKeys: ["outline"], packet: p,
           extraRules: [...RESEARCH_DOCTRINE,
-            "Design a report outline around the material investment questions. Use company-specific section titles. Cover every coverage_requirements key exactly once in coverage, mapping it to one or more sections. First section should summarize the eventual judgment.",
-            "Section coverage rules: every section whose coverage includes history or evidence must also include at least one other key (for example business, moat, management or constraints); a section covering only history and/or evidence is rejected. Exactly one section may include valuation, and that section must also include forecasts and downside.",
+            "Design a report outline around the material investment questions. Use company-specific section titles. Cover every coverage_requirements key exactly once in coverage, mapping it to one or more sections. First section should summarize the eventual judgment, and its coverage is conclusion only.",
+            "Section coverage rules: every section whose coverage includes history or evidence must also include at least one other key (for example business, moat, management or constraints); a section covering only history and/or evidence is rejected. Exactly one section may include valuation, and that section must also include forecasts and downside; the opening summary section must not list valuation. Backtest and market-timing evidence belongs in a section that lists monitoring, because it tests timing indicators, not the fundamental thesis.",
             "Use full artifacts and evidence to investigate the questions. Record an answer, evidence/artifact IDs, materiality, status, and specific next evidence needed. Add questions discovered from contradictions or missing disclosures. Do not claim you fetched new evidence.",
             "Coverage states: satisfied for evidenced analysis including a no-moat finding; qualified for usable analysis with explained limits; blocked for a decision-critical gap; not_applicable only with asset-specific justification. A missing artifact is not evidence of inapplicability.",
-            "Use only supplied artifact and evidence IDs. Keep numerical models unchanged. Request missing analysis in follow_up when artifacts cannot answer a material question. Prefer 8-16 substantial sections, maximum 24. No word-count target."] }) });
+            "Use only supplied artifact and evidence IDs. Keep numerical models unchanged. Request missing analysis in follow_up when artifacts cannot answer a material question. Prefer 8-16 substantial sections, maximum 24. No word-count target."] }) }));
       const unanswered = output.outline.questions.filter(q => q.status === "blocked" && q.materiality !== "supporting")
         .map(q => ({ category: "research_gap", question: q.question, follow_up: q.follow_up }));
       if (unanswered.length) await requestMissingResearch(sql, ctx, unanswered);
@@ -55,19 +84,19 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
       const packet = { ...common, artifacts: selected.length ? selected : artifacts, section_plan: section, outline,
         feedback, completed_sections: section.coverage.includes("conclusion") ? completed : [],
         visual_guidelines: VISUAL_GUIDELINES, output_contract: "report_section", output_schema: SECTION_CONTRACT.schema };
-      const output = await callResearchAgent<{ section: ReportSection }>({ sql, ctx, stageKey: "ai_reviewer",
+      const output = usable(await callResearchAgent<{ section: ReportSection }>({ sql, ctx, stageKey: "ai_reviewer",
         taskKey: `report:section:${section.id}`, taskType: "report_section", agentName: "export-writer", modelTier: "mid", packet,
         outputFormat: checkedContract(SECTION_CONTRACT, (result: { section: ReportSection }) => {
           if (result.section.id !== section.id || JSON.stringify(result.section.coverage) !== JSON.stringify(section.coverage)) throw new Error("Preserve section id and coverage exactly");
           createReport({ ...reportInput, required_coverage: section.coverage, sections: [result.section], questions: [],
             coverage: section.coverage.map(key => ({ key, status: "qualified", rationale: "Section validation", section_ids: [section.id] })) });
-        }), promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: ["section"], packet: p,
+        }, usable), promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: ["section"], packet: p,
           extraRules: [...RESEARCH_DOCTRINE,
             "Write a detailed analytical section. Preserve section_plan.id and coverage exactly. Explain evidence, mechanism, historical context, counterevidence, uncertainty and investment consequences. Develop the reasoning in connected paragraphs; do not merely restate artifact fields.",
             "Paragraph kinds are fact, analysis, assumption or speculation. Cite exact supporting evidence_ids and artifact_ids for each paragraph. Unknown figures remain unknown. Uncited counterevidence and implication fields may synthesize the cited paragraphs but must not introduce new facts.",
             "Use plain text inside paragraphs; no HTML, embedded links or Markdown tables. Request tables as artifact_id and dot-separated path to the supplied data, with an empty path meaning the artifact root. Do not author or recalculate table values.",
             "Follow packet.visual_guidelines when choosing optional section.visuals. Omit visuals where they add no explanatory value. Visual claims require the same evidence and accounting discipline as paragraphs.",
-            "If any material question or required coverage is blocked, withhold the investment conclusion. Describe the unresolved issue and what research is needed. Never turn a repair request into invented support."] }) });
+            "If any material question or required coverage is blocked, withhold the investment conclusion. Describe the unresolved issue and what research is needed. Never turn a repair request into invented support."] }) }));
       return output.section;
     },
     async review(document) {
