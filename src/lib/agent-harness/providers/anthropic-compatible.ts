@@ -180,7 +180,12 @@ export class AnthropicCompatibleProvider implements ModelProvider {
         buffer += decoder.decode(value, { stream: true });
         const blocks = buffer.split(/\r?\n\r?\n/);
         buffer = blocks.pop() || "";
-        for (const block of blocks) for (const event of parseBlock(block)) yield event;
+        for (const block of blocks) {
+          const events = parseBlock(block);
+          // Pings and hidden adaptive thinking carry no content but prove the stream is alive.
+          if (!events.length && block.trim()) yield { type: "heartbeat" };
+          for (const event of events) yield event;
+        }
       }
       buffer += decoder.decode();
       if (buffer.trim()) for (const event of parseBlock(buffer)) yield event;

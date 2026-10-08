@@ -179,6 +179,25 @@ test("anthropic-direct calls the Messages API without temperature for Claude mod
   }
 });
 
+test("Anthropic provider emits heartbeats for pings and hidden thinking so the inactivity timer sees a live stream", async () => {
+  const stream = [
+    `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg-1", usage: { input_tokens: 2 } } })}`,
+    'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}',
+    'event: ping\ndata: {"type":"ping"}',
+    'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}',
+    'event: content_block_delta\ndata: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"{\\"ok\\":true}"}}',
+    'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}',
+    'event: message_stop\ndata: {"type":"message_stop"}',
+  ].join("\n\n") + "\n\n";
+  await withFetch(() => stream, async () => {
+    const provider = new AnthropicCompatibleProvider({ baseUrl: "https://example.com/v1", apiKey: "k", allowedHosts: ["example.com"] });
+    const types = (await collect(provider.stream({ model: "claude-haiku-5-5", prompt: "x" }, new AbortController().signal))).map((event) => event.type);
+    assert.equal(types.filter((type) => type === "heartbeat").length, 4);
+    assert.ok(types.includes("text.delta"));
+    assert.equal(types.at(-1), "response.completed");
+  });
+});
+
 test("OpenCode Go keeps one session per affinity group across provider instances", async () => {
   await withFetch((url) => url.endsWith("/messages") ? anthropicStream({ input_tokens: 2 }) : openAiStream({ prompt_tokens: 2, completion_tokens: 3 }), async (calls) => {
     const make = () => new OpenCodeGoProvider("https://opencode.ai/zen/go/v1", "fixture-key", ["opencode.ai"]);
