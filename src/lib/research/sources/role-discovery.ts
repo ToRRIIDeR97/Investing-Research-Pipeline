@@ -426,7 +426,9 @@ async function fetchCandidate(
     )) {
       return null;
     }
-    const publishedAt = extractPublishedAt(content);
+    const metaPublishedAt = extractPublishedAt(content);
+    // SEC filing documents carry no date tags; the EDGAR filing index states the filing date.
+    const publishedAt = metaPublishedAt ?? await secFilingDate(response.url || candidate.url, fetchImpl);
     if (publishedAt && cutoffAt && new Date(publishedAt) > new Date(cutoffAt)) return null;
     if (/html/i.test(contentType)) {
       const article = content.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1];
@@ -455,7 +457,7 @@ async function fetchCandidate(
         substantive: true,
         original_mime_type: contentType.split(";")[0] || null,
         extraction_method: extractionMethod,
-        point_in_time_status: publishedAt ? "verified_publication_date" : "publication_date_unknown",
+        point_in_time_status: metaPublishedAt ? "verified_publication_date" : publishedAt ? "sec_filing_date" : "publication_date_unknown",
       },
       chunkTitle: title,
     };
@@ -514,6 +516,31 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
     return stdout.slice(0, 1_000_000);
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+}
+
+/** The EDGAR filing index page for a document under /Archives/edgar/data/<cik>/<accession>/. */
+export function secFilingIndexUrl(url: string): string | null {
+  const match = url.match(/^https:\/\/www\.sec\.gov\/Archives\/edgar\/data\/(\d+)\/(\d{18})\//i);
+  if (!match) return null;
+  const [, cik, accession] = match;
+  const dashed = `${accession.slice(0, 10)}-${accession.slice(10, 12)}-${accession.slice(12)}`;
+  return `https://www.sec.gov/Archives/edgar/data/${cik}/${accession}/${dashed}-index.htm`;
+}
+
+export function parseSecFilingDate(indexHtml: string): string | null {
+  const date = indexHtml.match(/Filing Date<\/div>\s*<div[^>]*class=["']info["'][^>]*>\s*(\d{4}-\d{2}-\d{2})\s*</i)?.[1];
+  return date ? new Date(`${date}T00:00:00Z`).toISOString() : null;
+}
+
+export async function secFilingDate(url: string, fetchImpl: typeof fetch): Promise<string | null> {
+  const indexUrl = secFilingIndexUrl(url);
+  if (!indexUrl) return null;
+  try {
+    const response = await safeFetch(indexUrl, fetchImpl);
+    return response.ok ? parseSecFilingDate(await boundedText(response)) : null;
+  } catch {
+    return null;
   }
 }
 
