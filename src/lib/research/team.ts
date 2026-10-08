@@ -76,7 +76,8 @@ export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, 
     packet, outputFormat: REQUEST_CONTRACT, promptFactory: p => exactJsonPrompt({ agentName: "export-writer",
       requiredKeys: ["requests"], packet: p, extraRules: [TEAM_ROLES.report.purpose,
         "Request only specific unanswered investment questions or material inconsistencies. Return an empty requests array when the supplied research is adequate. Do not request information already present or repeat answered/unavailable requests.",
-        "Route financial extraction/reconciliation to financials, management/operations/scenarios to business, valuation calculations to valuation, and missing documents to data. Set needs_sources when new external evidence is required; source_role tells the collector where to search. The collector can obtain new documents and the dependent analyses will rerun."] }) });
+        "Route financial extraction/reconciliation to financials, management/operations/scenarios to business, valuation calculations to valuation, and missing documents to data. Set needs_sources when new external evidence is required; source_role tells the collector where to search. The collector can obtain new documents and the dependent analyses will rerun.",
+        "role names the specialist and must be exactly one of: data, financials, business, valuation. Document types such as regulatory_filing or market_data belong in source_role, never in role."] }) });
   const oldQuestions = new Set(previous?.requests.map(r => r.question.trim().toLowerCase()));
   const fresh = result.requests.filter(r => {
     const key = r.question.trim().toLowerCase();
