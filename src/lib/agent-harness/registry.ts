@@ -144,9 +144,10 @@ const valuationMethodProposal = {
   },
 };
 
+// No per-batch minimum: a batch without usable facts returns source_gaps instead of invented claims.
+// evidence_extraction enforces the run-wide claim target with gap retries.
 const evidenceClaimArray = {
   type: "array",
-  minItems: 5,
   items: {
     type: "object",
     additionalProperties: true,
