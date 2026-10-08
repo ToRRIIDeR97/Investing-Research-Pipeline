@@ -57,7 +57,8 @@ export type OperatingScenarioSet = z.infer<typeof OperatingScenarioSet>;
 
 export const SegmentForecast = z.object({
   segment_name: z.string().min(1),
-  forecast_revenue: z.number(),
+  // null when the sources do not disclose segment revenue; never a placeholder 0.
+  forecast_revenue: z.number().nullable(),
   forecast_operating_income: z.number(),
 });
 
