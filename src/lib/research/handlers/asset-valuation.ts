@@ -120,6 +120,10 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
             JOIN document_parses dp ON dp.id = dc.document_parse_id AND dp.parser_name <> 'research-memory'
             WHERE dc.source_document_id = ${primaryDoc.id}
               AND dc.text LIKE ${`%"val": ${shareFact.value}%`}
+              -- The same value can appear under another concept; require the fact's own period and filing.
+              AND dc.text LIKE ${`%${shareFact.start}%`}
+              AND dc.text LIKE ${`%${shareFact.end}%`}
+              AND dc.text LIKE ${`%${shareFact.accession_number}%`}
             ORDER BY dc.chunk_index
             LIMIT 1
           `;
