@@ -6,6 +6,7 @@ import {
 import { AnthropicCompatibleProvider } from "../src/lib/agent-harness/providers/anthropic-compatible";
 import { OpenAICompatibleProvider } from "../src/lib/agent-harness/providers/openai-compatible";
 import { OpenCodeGoProvider } from "../src/lib/agent-harness/providers/opencode-go";
+import { getProvider } from "../src/lib/agent-harness/providers/provider";
 import { runResearchAgent } from "../src/lib/agent-harness/runner";
 import { calculateCost } from "../src/lib/agent-harness/telemetry";
 import type { AgentOutputFormat, ModelEvent, ModelProvider, ModelRequest, ModelUsage } from "../src/lib/agent-harness/types";
@@ -153,6 +154,29 @@ test("Anthropic-compatible provider marks the instructions cacheable and totals 
       else process.env.RESEARCH_ANTHROPIC_CACHE_CONTROL = prior;
     }
   });
+});
+
+test("anthropic-direct calls the Messages API without temperature for Claude models", async () => {
+  const keys = ["RESEARCH_MODEL_BASE_URL", "RESEARCH_MODEL_ALLOWED_HOSTS", "RESEARCH_MODEL_API_KEY", "ANTHROPIC_API_KEY"] as const;
+  const prior = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  Object.assign(process.env, { RESEARCH_MODEL_BASE_URL: "https://api.anthropic.com/v1", RESEARCH_MODEL_ALLOWED_HOSTS: "api.anthropic.com", ANTHROPIC_API_KEY: "fixture-key" });
+  delete process.env.RESEARCH_MODEL_API_KEY;
+  try {
+    await withFetch(() => anthropicStream({ input_tokens: 2 }), async (calls) => {
+      const provider = getProvider("anthropic-direct");
+      await collect(provider.stream({ model: "claude-haiku-5-5", prompt: "x", temperature: 0.2 }, new AbortController().signal));
+      await collect(provider.stream({ model: "qwen3.7-plus", prompt: "x" }, new AbortController().signal));
+      assert.equal(calls[0].url, "https://api.anthropic.com/v1/messages");
+      assert.equal(calls[0].headers.get("x-api-key"), "fixture-key");
+      assert.equal("temperature" in calls[0].body, false);
+      assert.equal(calls[1].body.temperature, 0.2);
+    });
+  } finally {
+    for (const key of keys) {
+      if (prior[key] === undefined) delete process.env[key];
+      else process.env[key] = prior[key];
+    }
+  }
 });
 
 test("OpenCode Go keeps one session per affinity group across provider instances", async () => {

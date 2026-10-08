@@ -11,6 +11,18 @@ RESEARCH_MODEL_API_KEY=replace-locally
 RESEARCH_MODEL_ALLOWED_HOSTS=opencode.ai
 ```
 
+## Anthropic API
+
+`anthropic-direct` calls the Anthropic Messages API (`/v1/messages`) with `x-api-key` and `anthropic-version: 2023-06-01`. It reads `RESEARCH_MODEL_API_KEY`, then `ANTHROPIC_API_KEY`. Claude models get no `temperature`, because current Claude models reject non-default sampling values.
+
+```dotenv
+RESEARCH_MODEL_PROVIDER=anthropic-direct
+RESEARCH_MODEL_BASE_URL=https://api.anthropic.com/v1
+RESEARCH_MODEL_ALLOWED_HOSTS=api.anthropic.com
+ANTHROPIC_API_KEY=replace-locally
+RESEARCH_ALL_AGENTS_MODEL=claude-haiku-5-5
+```
+
 ## Direct HTTPS provider
 
 Set these values in `.env.local` without committing credentials:

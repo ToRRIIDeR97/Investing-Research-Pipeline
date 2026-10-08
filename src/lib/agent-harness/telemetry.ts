@@ -15,6 +15,8 @@ const PRICING_DB: Record<string, ModelPricing> = {
   "qwen3.7-max": { inputCostPerMillion: 0.6, outputCostPerMillion: 1.2 },
   "glm-5.2": { inputCostPerMillion: 0.3, outputCostPerMillion: 0.6 },
   "kimi-k2.7-code": { inputCostPerMillion: 0.5, outputCostPerMillion: 1.0 },
+  // Prompts up to 100k tokens; longer prompts cost 5x.
+  "claude-haiku-5-5": { inputCostPerMillion: 0.1, outputCostPerMillion: 0.5, cacheReadCostPerMillion: 0.01, cacheWriteCostPerMillion: 0.125 },
 };
 
 const DEFAULT_PRICING: ModelPricing = {

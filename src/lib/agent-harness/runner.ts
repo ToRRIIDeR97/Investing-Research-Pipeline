@@ -137,7 +137,7 @@ function retryable(value: HarnessErrorCategory) {
 }
 
 function redact(value: string) {
-  const secrets = [process.env.RESEARCH_MODEL_API_KEY, process.env.DATABASE_URL].filter(Boolean) as string[];
+  const secrets = [process.env.RESEARCH_MODEL_API_KEY, process.env.ANTHROPIC_API_KEY, process.env.DATABASE_URL].filter(Boolean) as string[];
   return secrets.reduce((message, secret) => secret.length > 5 ? message.split(secret).join("[REDACTED]") : message, value)
     .replace(/(bearer\s+)[^\s"']+/gi, "$1[REDACTED]");
 }
