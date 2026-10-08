@@ -6,6 +6,22 @@ import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
+/** Latest reported values per metric, oldest first. Annual rows sort after the quarters of their year. */
+export function recentByMetric(observations: Array<Record<string, any>>, limit: number) {
+  const byMetric = new Map<string, Array<Record<string, any>>>();
+  for (const observation of observations) {
+    const key = String(observation.metric_key || "");
+    if (!key || observation.value_numeric == null) continue;
+    byMetric.set(key, [...(byMetric.get(key) || []), observation]);
+  }
+  const order = (row: Record<string, any>) => row.fiscal_year * 10 + (row.fiscal_quarter ?? 5);
+  return Object.fromEntries([...byMetric].map(([key, rows]) => [key,
+    rows.sort((a, b) => order(a) - order(b)).slice(-limit).map((row) => ({
+      period: row.fiscal_quarter == null ? `FY${row.fiscal_year}` : `${row.fiscal_year}Q${row.fiscal_quarter}`,
+      value: row.value_numeric, unit: row.unit, source_document_id: row.source_document_id,
+    }))]));
+}
+
 export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "operating_model",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
@@ -21,16 +37,11 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
       const upstream = Object.fromEntries(upstreamRows.map((row) => [String(row.artifact_type), row.content_json])) as Record<string, any>;
       const history = Array.isArray(upstream.historical_record?.observations)
         ? upstream.historical_record.observations as Array<Record<string, any>> : [];
-      const historyByMetric = new Map<string, Array<Record<string, any>>>();
-      for (const observation of history) {
-        const key = String(observation.metric_key || "");
-        if (!key || observation.value_numeric == null) continue;
-        historyByMetric.set(key, [...(historyByMetric.get(key) || []), observation]);
-      }
-      const recentHistory = Object.fromEntries([...historyByMetric].map(([key, rows]) => [key,
-        rows.sort((a, b) => (a.fiscal_year * 10 + a.fiscal_quarter) - (b.fiscal_year * 10 + b.fiscal_quarter))
-          .slice(-6).map((row) => ({ period: `${row.fiscal_year}Q${row.fiscal_quarter}`, value: row.value_numeric, unit: row.unit, source_document_id: row.source_document_id }))
-      ]));
+      const recentHistory = recentByMetric(history.filter((observation) => !observation.segment), 6);
+      // Reported segment revenue and operating income from the filings' segment note, keyed by segment member.
+      const segmentRows = history.filter((observation) => observation.segment && observation.metadata_json?.statement === "segment");
+      const reportedSegmentHistory = Object.fromEntries([...new Set(segmentRows.map((row) => String(row.segment)))].map((segment) =>
+        [segment, recentByMetric(segmentRows.filter((row) => row.segment === segment), 8)]));
       const packet = {
         asset: {
           runId: ctx.runId,
@@ -42,6 +53,7 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
         required_modules: ["operating_model_structure", "driver_tree_specification", "driver_tree", "top_down_bottom_up_reconciliation", "reinvestment_model"],
         required_scenario_drivers: ctx.composedProfile?.required_scenario_drivers || [],
         recent_reported_history: recentHistory,
+        reported_segment_history: reportedSegmentHistory,
         historical_diagnoses: (upstream.historical_diagnosis?.diagnoses || []).map((item: any) => ({
           metric_key: item.metric_key, trend: item.trend, observation_count: item.observation_count, confidence: item.confidence,
         })),
@@ -61,6 +73,7 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
           "Construct a driver-based forecast tree structure, mapping historical inputs to future drivers.",
           "Follow output_schema exactly, including every nested required field and primitive type.",
           "Cover each reportable segment and reconcile their forecast revenue and operating income to consolidated totals.",
+          "Use reported_segment_history (XBRL segment members such as meta:FamilyOfAppsMember) as the anchor for segment revenue and operating income; values are in the reported unit.",
           "Use recent_reported_history as the quantitative anchor. Label units and forecast horizon in optional explanatory fields.",
           "Set bottom_up_forecast_total to the sum of segment forecast revenue. Independently derive top_down_forecast_total from sourced market and customer constraints when available.",
           "If TAM or customer budget cannot be supported, set the unavailable limit and top_down_forecast_total to null, mark reconciliation_status as blocked_source_gap, and list the gap. Never use zero as a missing-data placeholder or invent a bound.",

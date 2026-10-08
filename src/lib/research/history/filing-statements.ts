@@ -3,7 +3,8 @@ import { METRICS } from './sec-companyfacts';
 
 export type FilingSource = { id:string; url:string; published_at:string; period_end:string; metadata_json:Record<string,any> };
 export type FilingFact = { concept:string; value:number|null; text:string; unit:string; start:string|null; end:string; dimensions:string; locator:string; scale:number; fiscal_year:number|null; fiscal_quarter:number|null; periodicity:'quarterly'|'annual'|'ytd'|'instant' };
-export type StatementKind = 'income'|'balance'|'cashflow'|'equity';
+/** 'segment' tables hold only facts for one reportable segment (the segment note); they never count toward statement coverage. */
+export type StatementKind = 'income'|'balance'|'cashflow'|'equity'|'segment';
 export type FilingTable = { statement:StatementKind; identified_by:'heading'|'xbrl_tags'|'repair'; title:string; source_document_id:string; source_url:string; accession:string; filed:string; form:string; period_end:string; fiscal_year:number; fiscal_quarter:number; table_index:number; rows:{cells:{text:string; colspan:number; rowspan:number; facts:FilingFact[]}[]}[]; warnings:string[] };
 /** A table summary given to the repair specialist's module; it never contains values. */
 export type StatementCandidate = { table_index:number; preceding_text:string[]; concepts:string[]; fact_count:number; row_labels:string[]; identified_as:StatementKind|null };
@@ -18,10 +19,15 @@ const FINGERPRINTS:Record<'balance'|'income'|'cashflow',string[][]>={
   cashflow:['Operating','Investing','Financing'].map(k=>[`NetCashProvidedByUsedIn${k}Activities`,`NetCashProvidedByUsedIn${k}ActivitiesContinuingOperations`]),
 };
 
-type Contexts=Map<string,{start:string|null;end:string;dimensions:string}>;
+// Segment-note facts kept as segment observations: revenue and operating income per reportable segment.
+const SEGMENT_CONCEPTS=new Set([...METRICS.filter(m=>m.key==='revenue'||m.key==='net_revenue').flatMap(m=>m.concepts),'OperatingIncomeLoss'].map(c=>`us-gaap:${c}`));
+type Contexts=Map<string,{start:string|null;end:string;dimensions:string;segmentMember:string|null}>;
 function parseFiling(html:string){
   const $=load(html); const contexts:Contexts=new Map();
-  $('xbrli\\:context').each((_,el)=>{const c=$(el);contexts.set(c.attr('id')!,{start:c.find('xbrli\\:startdate').text()||null,end:c.find('xbrli\\:enddate, xbrli\\:instant').text(),dimensions:clean(c.find('xbrli\\:segment, xbrli\\:scenario').text())});});
+  $('xbrli\\:context').each((_,el)=>{const c=$(el);const members=c.find('xbrldi\\:explicitmember, xbrldi\\:typedmember').toArray();
+    // Only a context whose sole dimension is the business-segment axis is a whole reportable segment.
+    const segmentMember=members.length===1&&$(members[0]).attr('dimension')==='us-gaap:StatementBusinessSegmentsAxis'&&members[0].tagName?.toLowerCase()==='xbrldi:explicitmember'?clean($(members[0]).text()):null;
+    contexts.set(c.attr('id')!,{start:c.find('xbrli\\:startdate').text()||null,end:c.find('xbrli\\:enddate, xbrli\\:instant').text(),dimensions:clean(c.find('xbrli\\:segment, xbrli\\:scenario').text()),segmentMember});});
   return {$,contexts,tables:$('table').toArray()};
 }
 
@@ -65,11 +71,11 @@ export function extractFilingStatements(html:string, source:FilingSource, overri
   const focusEnd=/^\d{4}-\d{2}-\d{2}$/.test(reportedEnd)?reportedEnd:reportedEnd&&Number.isFinite(Date.parse(`${reportedEnd} UTC`))?new Date(Date.parse(`${reportedEnd} UTC`)).toISOString().slice(0,10):source.period_end?.slice(0,10);
   const form=source.metadata_json.form||'';
   const tables:FilingTable[]=[];const unlabelled:number[]=[];
-  const build=(tableIndex:number,statement:StatementKind,title:string,identified_by:FilingTable['identified_by']):FilingTable=>{
+  const build=(tableIndex:number,statement:StatementKind,title:string,identified_by:FilingTable['identified_by'],keep:(fact:any)=>boolean=()=>true):FilingTable=>{
     const el=elements[tableIndex];const warnings:string[]=[];
     const rows=$(el).find('tr').filter((_,tr)=>$(tr).closest('table')[0]===el).toArray().map(tr=>({cells:$(tr).children('td,th').toArray().map(cell=>({
       text:clean($(cell).text()),colspan:Math.max(1,Number($(cell).attr('colspan')||1)),rowspan:Math.max(1,Number($(cell).attr('rowspan')||1)),
-      facts:$(cell).find('ix\\:nonfraction').toArray().map(f=>{
+      facts:$(cell).find('ix\\:nonfraction').toArray().filter(keep).map(f=>{
         const fact=$(f),context=contexts.get(fact.attr('contextref')||'');const text=clean(fact.text());const format=(fact.attr('format')||'').split(':').pop()?.toLowerCase();
         const supported=!format||['num-dot-decimal','numdotdecimal','zerodash','zero-dash','numdash','fixed-zero'].includes(format);
         const raw=/^[—–-]$/.test(text)?0:Number(text.replace(/[,\s()$%−]/g,'').replace(/^\+/,''));
@@ -101,6 +107,12 @@ export function extractFilingStatements(html:string, source:FilingSource, overri
     const hit=unlabelled.find(i=>fingerprint($,elements[i],contexts)===statement);
     if(hit!==undefined)tables.push(build(hit,statement,`Identified by XBRL tags as ${statement}`,'xbrl_tags'));
   }
+  // Segment revenue and operating income live in the segment note, not the primary statements.
+  const isSegmentFact=(f:any)=>SEGMENT_CONCEPTS.has(String($(f).attr('name')||''))&&!!contexts.get($(f).attr('contextref')||'')?.segmentMember;
+  elements.forEach((el,tableIndex)=>{
+    if(tables.some(t=>t.table_index===tableIndex)||!$(el).find('ix\\:nonfraction').toArray().some(isSegmentFact))return;
+    tables.push(build(tableIndex,'segment','Reportable segment facts identified by XBRL segment axis','xbrl_tags',isSegmentFact));
+  });
   return tables.sort((a,b)=>a.table_index-b.table_index);
 }
 
@@ -116,7 +128,7 @@ export function statementCandidates(html:string, identified:FilingTable[]):State
 }
 
 export function filingCoverage(tables:FilingTable[], sources:FilingSource[]) {
-  return sources.map(source=>{const found=tables.filter(t=>t.source_document_id===source.id);const missing=['income','balance','cashflow'].filter(s=>!found.some(t=>t.statement===s));return {source_document_id:source.id,form:source.metadata_json.form,period_end:source.period_end,missing,table_count:found.length,unresolved_facts:found.reduce((n,t)=>n+t.warnings.length,0),status:missing.length||found.some(t=>t.warnings.length)?'incomplete':'extracted'};});
+  return sources.map(source=>{const found=tables.filter(t=>t.source_document_id===source.id&&t.statement!=='segment');const missing=['income','balance','cashflow'].filter(s=>!found.some(t=>t.statement===s));return {source_document_id:source.id,form:source.metadata_json.form,period_end:source.period_end,missing,table_count:found.length,unresolved_facts:found.reduce((n,t)=>n+t.warnings.length,0),status:missing.length||found.some(t=>t.warnings.length)?'incomplete':'extracted'};});
 }
 
 export function reconcileFiledBalances(tables:FilingTable[]) {
@@ -152,7 +164,7 @@ export function statementObservations(tables:FilingTable[]) {
   for(const {fact:f,table,order,label,revision} of selected.values()) {
     const key=f.concept.startsWith('us-gaap:')?METRICS.find(m=>(m.concepts as readonly string[]).includes(f.concept.split(':')[1]))?.key:undefined;
     const metric=key==='revenue'&&candidates.some(c=>c.fact.concept==='us-gaap:RevenuesNetOfInterestExpense')?'contract_revenue':key||f.concept.replace(/[^a-zA-Z0-9_]/g,'_');
-    const base={metric_key:metric,value_numeric:f.value,unit:f.unit,currency:/^[A-Z]{3}$/.test(f.unit)?f.unit:null,segment:f.dimensions||null,fiscal_year:f.fiscal_year,fiscal_quarter:f.fiscal_quarter,period_start:f.start,period_end:f.end,reporting_basis:'gaap',metric_type:'reported',source_document_id:table.source_document_id,available_at:table.filed,confidence:1,restatement_version:revision,comparability_status:'comparable',metadata_json:{metric_category:f.periodicity==='instant'?'balance_sheet':{income:'income_statement',balance:'balance_sheet',cashflow:'cash_flow'}[table.statement as 'income'],dimensions:f.dimensions||null,statement_label:label,statement_order:order,concept:f.concept,source_url:table.source_url,source_locator:f.locator,statement:table.statement}};
+    const base={metric_key:metric,value_numeric:f.value,unit:f.unit,currency:/^[A-Z]{3}$/.test(f.unit)?f.unit:null,segment:f.dimensions||null,fiscal_year:f.fiscal_year,fiscal_quarter:f.fiscal_quarter,period_start:f.start,period_end:f.end,reporting_basis:'gaap',metric_type:'reported',source_document_id:table.source_document_id,available_at:table.filed,confidence:1,restatement_version:revision,comparability_status:'comparable',metadata_json:{metric_category:f.periodicity==='instant'?'balance_sheet':{income:'income_statement',segment:'income_statement',balance:'balance_sheet',cashflow:'cash_flow'}[table.statement as 'income'],dimensions:f.dimensions||null,statement_label:label,statement_order:order,concept:f.concept,source_url:table.source_url,source_locator:f.locator,statement:table.statement}};
     if(f.periodicity==='quarterly'||f.periodicity==='annual')observations.push({...base,periodicity:f.periodicity,fiscal_quarter:f.periodicity==='annual'?null:f.fiscal_quarter});
     if(f.periodicity==='instant'){
       observations.push({...base,periodicity:'quarterly'});
