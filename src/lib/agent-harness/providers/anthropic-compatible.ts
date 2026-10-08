@@ -1,5 +1,7 @@
 import { ProviderError, usageLimitBody, type HarnessErrorCategory } from "../errors";
-import type { ModelEvent, ModelProvider, ModelRequest, ProviderHealth, ToolCall } from "../types";
+import type { ModelEvent, ModelProvider, ModelRequest, ModelUsage, ProviderHealth, ToolCall } from "../types";
+import { calculateCost, oneHourCacheWriteSurcharge } from "../telemetry";
+import { anthropicPromptFields } from "./anthropic-cache";
 
 export interface AnthropicProviderOptions {
   baseUrl: string;
@@ -62,14 +64,10 @@ export class AnthropicCompatibleProvider implements ModelProvider {
   }
 
   async *stream(request: ModelRequest, signal: AbortSignal, options: { headers?: Record<string, string> } = {}): AsyncIterable<ModelEvent> {
-    // One breakpoint after the stable instructions. Set RESEARCH_ANTHROPIC_CACHE_CONTROL=0 for endpoints that reject it.
-    const cacheControl = process.env.RESEARCH_ANTHROPIC_CACHE_CONTROL !== "0";
+    // Cache breakpoints are placed by anthropic-cache.ts.
     const body = JSON.stringify({
       model: request.model,
-      ...(request.system ? { system: cacheControl
-        ? [{ type: "text", text: request.system, cache_control: { type: "ephemeral" } }]
-        : request.system } : {}),
-      messages: [{ role: "user", content: request.prompt }],
+      ...anthropicPromptFields(request),
       // Anthropic's messages protocol requires this field even when the
       // shared harness intentionally leaves generation uncapped.
       max_tokens: request.maxTokens || Number(process.env.RESEARCH_ANTHROPIC_PROTOCOL_MAX_TOKENS || 65_536),
@@ -123,6 +121,10 @@ export class AnthropicCompatibleProvider implements ModelProvider {
     let buffer = "";
     let terminal = false;
     let finishReason: string | undefined;
+    // Usage from message_start; 1-hour cache writes need a cost above the default 5-minute write price.
+    let startUsage: ModelUsage = {};
+    let oneHourWrites = 0;
+    const noteOneHour = (usage: any) => { oneHourWrites = count(usage?.cache_creation?.ephemeral_1h_input_tokens) ?? oneHourWrites; };
 
     const parseBlock = (block: string): ModelEvent[] => {
       const dataLines = block.split(/\r?\n/).filter((line) => line.startsWith("data:"));
@@ -143,7 +145,9 @@ export class AnthropicCompatibleProvider implements ModelProvider {
       }
       const events: ModelEvent[] = [];
       if (payload.type === "message_start" && payload.message?.usage) {
-        events.push({ type: "usage", usage: promptUsage(payload.message.usage) });
+        startUsage = promptUsage(payload.message.usage);
+        noteOneHour(payload.message.usage);
+        events.push({ type: "usage", usage: startUsage });
       }
       if (payload.type === "content_block_start" && payload.content_block?.type === "tool_use") {
         tools.set(Number(payload.index || 0), {
@@ -163,7 +167,16 @@ export class AnthropicCompatibleProvider implements ModelProvider {
         }
       }
       if (payload.type === "message_delta") {
-        if (payload.usage) events.push({ type: "usage", usage: { ...promptUsage(payload.usage), outputTokens: payload.usage.output_tokens } });
+        if (payload.usage) {
+          noteOneHour(payload.usage);
+          const usage: ModelUsage = { ...promptUsage(payload.usage), outputTokens: payload.usage.output_tokens };
+          if (oneHourWrites) {
+            const total = { ...startUsage, ...usage };
+            usage.costUsd = Number((calculateCost(request.model, total.inputTokens, total.outputTokens, total)
+              + oneHourCacheWriteSurcharge(request.model, oneHourWrites)).toFixed(6));
+          }
+          events.push({ type: "usage", usage });
+        }
         if (payload.delta?.stop_reason) {
           finishReason = String(payload.delta.stop_reason);
           terminal = true;

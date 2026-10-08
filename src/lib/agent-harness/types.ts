@@ -23,6 +23,8 @@ export interface ModelRequest {
   /** Stable instructions, sent ahead of the prompt so providers can reuse them from cache. */
   system?: string;
   prompt: string;
+  /** Length of the prompt's leading part that later passes resend unchanged (a repair appends to it). Defaults to the whole prompt. */
+  cacheablePromptChars?: number;
   temperature?: number;
   maxTokens?: number;
   agentName?: string;

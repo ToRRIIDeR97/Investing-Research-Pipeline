@@ -143,6 +143,7 @@ test("Anthropic-compatible provider marks the instructions cacheable and totals 
     const provider = new AnthropicCompatibleProvider({ baseUrl: "https://example.com/v1", apiKey: "k", allowedHosts: ["example.com"] });
     const events = await collect(provider.stream({ model: "qwen3.7-plus", system: "rules", prompt: "Task packet:\n{}" }, new AbortController().signal));
     assert.deepEqual(calls[0].body.system, [{ type: "text", text: "rules", cache_control: { type: "ephemeral" } }]);
+    assert.equal(calls[0].body.messages[0].content, "Task packet:\n{}", "non-Claude prompts get no extra breakpoint");
     assert.deepEqual(usageOf(events), { inputTokens: 100, cacheReadTokens: 70, cacheWriteTokens: 20, outputTokens: 3 });
     const prior = process.env.RESEARCH_ANTHROPIC_CACHE_CONTROL;
     process.env.RESEARCH_ANTHROPIC_CACHE_CONTROL = "0";
@@ -154,6 +155,54 @@ test("Anthropic-compatible provider marks the instructions cacheable and totals 
       else process.env.RESEARCH_ANTHROPIC_CACHE_CONTROL = prior;
     }
   });
+});
+
+test("Claude requests cache the instructions and the repeatable prompt, with a configurable TTL", async () => {
+  const keys = ["RESEARCH_ANTHROPIC_CACHE_CONTROL", "RESEARCH_ANTHROPIC_CACHE_PROMPT", "RESEARCH_ANTHROPIC_CACHE_TTL"] as const;
+  const prior = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) delete process.env[key];
+  const marker = { type: "ephemeral" };
+  try {
+    await withFetch(() => anthropicStream({ input_tokens: 10, cache_creation_input_tokens: 990 }), async (calls) => {
+      const provider = new AnthropicCompatibleProvider({ baseUrl: "https://api.anthropic.com/v1", apiKey: "k", allowedHosts: ["api.anthropic.com"] });
+      const send = (request: Partial<ModelRequest>) => collect(provider.stream({ model: "claude-haiku-5-5", system: "rules", prompt: "packet", ...request }, new AbortController().signal));
+      await send({});
+      assert.deepEqual(calls[0].body.system, [{ type: "text", text: "rules", cache_control: marker }]);
+      assert.deepEqual(calls[0].body.messages[0].content, [{ type: "text", text: "packet", cache_control: marker }]);
+      assert.equal("cache_control" in calls[0].body, false, "no top-level automatic breakpoint");
+      // A repair resends the packet as an identical cached block and appends its instructions uncached.
+      await send({ prompt: "packet\n\nREPAIR TASK", cacheablePromptChars: 6 });
+      assert.deepEqual(calls[1].body.messages[0].content, [{ type: "text", text: "packet", cache_control: marker }, { type: "text", text: "\n\nREPAIR TASK" }]);
+      await send({ prompt: "volatile", cacheablePromptChars: 0 });
+      assert.equal(calls[2].body.messages[0].content, "volatile");
+      const breakpoints = (body: any) => JSON.stringify(body).split('"cache_control"').length - 1;
+      assert.ok(calls.every((call) => breakpoints(call.body) <= 4));
+
+      process.env.RESEARCH_ANTHROPIC_CACHE_TTL = "1h";
+      const events = await send({});
+      const hour = { type: "ephemeral", ttl: "1h" };
+      assert.deepEqual(calls[3].body.system[0].cache_control, hour);
+      assert.deepEqual(calls[3].body.messages[0].content[0].cache_control, hour);
+      assert.equal(usageOf(events).costUsd, undefined, "usage without a 1h breakdown keeps the default pricing");
+
+      process.env.RESEARCH_ANTHROPIC_CACHE_PROMPT = "0";
+      await send({});
+      assert.equal(calls[4].body.messages[0].content, "packet");
+      assert.deepEqual(calls[4].body.system[0].cache_control, hour);
+    });
+    await withFetch(() => anthropicStream({ input_tokens: 10, cache_creation_input_tokens: 990, cache_creation: { ephemeral_1h_input_tokens: 990 } }), async () => {
+      const provider = new AnthropicCompatibleProvider({ baseUrl: "https://api.anthropic.com/v1", apiKey: "k", allowedHosts: ["api.anthropic.com"] });
+      const usage = usageOf(await collect(provider.stream({ model: "claude-haiku-5-5", prompt: "packet" }, new AbortController().signal)));
+      // 10 uncached at $0.10/M, 990 written at 2x ($0.20/M), 3 output at $0.50/M.
+      assert.ok(Math.abs(usage.costUsd - (10 * 0.1 + 990 * 0.2 + 3 * 0.5) / 1_000_000) <= 1e-6, JSON.stringify(usage));
+      assert.ok(usage.costUsd > calculateCost("claude-haiku-5-5", 1_000, 3, { cacheWriteTokens: 990 }));
+    });
+  } finally {
+    for (const key of keys) {
+      if (prior[key] === undefined) delete process.env[key];
+      else process.env[key] = prior[key];
+    }
+  }
 });
 
 test("anthropic-direct calls the Messages API without temperature for Claude models", async () => {
@@ -256,6 +305,8 @@ test("repair repeats the generation request as its prefix and records cache tele
   assert.ok(repair.prompt.startsWith(`${generation.prompt}\n\nREPAIR TASK: cache repair`));
   assert.ok(repair.prompt.includes('Previous response: {"answer":"wrong"}'));
   assert.ok(generation.cacheAffinityId && generation.cacheAffinityId === repair.cacheAffinityId);
+  assert.equal(generation.cacheablePromptChars, undefined);
+  assert.equal(repair.cacheablePromptChars, generation.prompt.length);
 
   const [first, second] = result.attempts[0].passes!;
   assert.equal(first.cacheReadTokens, undefined);
