@@ -182,7 +182,7 @@ function combineUsage(left: PassUsage, right?: Partial<PassUsage>): PassUsage {
 }
 
 async function executePass(params: {
-  provider: ModelProvider; model: string; system?: string; prompt: string; agentName: string; policy: ExecutionPolicy;
+  provider: ModelProvider; model: string; system?: string; prompt: string; cacheablePromptChars?: number; agentName: string; policy: ExecutionPolicy;
   deadline: ReturnType<typeof createDeadlineController>; maxOutputTokens?: number; cacheAffinityId: string;
 }): Promise<PassResult> {
   let rawText = "";
@@ -207,7 +207,8 @@ async function executePass(params: {
     }, ...(wire ? { cache: passCacheTelemetry(wire, cacheReadTokens) } : {}) };
   };
   const iterator = params.provider.stream({
-    model: params.model, ...(params.system ? { system: params.system } : {}), prompt: params.prompt, temperature: 0.2,
+    model: params.model, ...(params.system ? { system: params.system } : {}), prompt: params.prompt,
+    ...(params.cacheablePromptChars === undefined ? {} : { cacheablePromptChars: params.cacheablePromptChars }), temperature: 0.2,
     maxTokens: params.maxOutputTokens ?? params.policy.maxOutputTokens, agentName: params.agentName,
     cacheAffinityId: params.cacheAffinityId,
   }, params.deadline.signal)[Symbol.asyncIterator]();
@@ -489,7 +490,8 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         }
         let repair: PassResult;
         try {
-          repair = await executeTrackedPass("repair", { ...passParams, prompt: repairPrompt }, passes);
+          repair = await executeTrackedPass("repair", { ...passParams, prompt: repairPrompt,
+            ...(input.outputFormat ? { cacheablePromptChars: messages.prompt.length } : {}) }, passes);
         } catch (error) {
           if (error instanceof ProviderError) {
             const repairPartial = error.details.partial as PassResult | undefined;

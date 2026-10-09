@@ -23,6 +23,23 @@ ANTHROPIC_API_KEY=replace-locally
 RESEARCH_ALL_AGENTS_MODEL=claude-haiku-5-5
 ```
 
+### Prompt caching
+
+`src/lib/agent-harness/providers/anthropic-cache.ts` places every `cache_control` breakpoint ([Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)). Claude models get two of the four allowed breakpoints:
+
+1. the system block, which holds the agent's instructions;
+2. the end of the task prompt. A transport retry, fallback or schema repair resends that prompt as an identical block, so it reads from cache. A repair's own instructions follow in a separate block that isn't cached.
+
+Other models on the Anthropic protocol (Qwen and MiniMax on OpenCode Go) keep only the system breakpoint. Prompts shorter than the model minimum (512 tokens for Claude 5.5 models) are processed uncached without an error.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `RESEARCH_ANTHROPIC_CACHE_CONTROL` | on | `0` sends no `cache_control`, for endpoints that reject it. |
+| `RESEARCH_ANTHROPIC_CACHE_PROMPT` | on | `0` keeps only the system breakpoint for Claude models. |
+| `RESEARCH_ANTHROPIC_CACHE_TTL` | `5m` | `1h` keeps entries for an hour, applied to Claude breakpoints only. |
+
+Cost: a 5-minute write costs 1.25x input and a 1-hour write costs 2x; a read costs 0.1x on Haiku 5.5 (0.05x on Opus and Sonnet 5.5). The prompt breakpoint writes the whole packet on every call, so it pays off once more than about 28% of calls resend it. In two Haiku 5.5 runs, 15 of 59 calls needed a repair; retries and fallbacks add to that. Set `RESEARCH_ANTHROPIC_CACHE_PROMPT=0` if repairs become rare. The cost ledger prices 1-hour writes at 2x from the `cache_creation` usage breakdown.
+
 ## Direct HTTPS provider
 
 Set these values in `.env.local` without committing credentials:

@@ -35,6 +35,15 @@ export interface CacheTokenUsage {
   cacheWriteTokens?: number;
 }
 
+/** Extra cost of 1-hour cache writes, billed at 2x input, over the 5-minute write price calculateCost applies. */
+export function oneHourCacheWriteSurcharge(model: string, tokens: number): number {
+  if (!(tokens > 0)) return 0;
+  const normalized = model.toLowerCase();
+  const pricing = Object.entries(PRICING_DB).find(([key]) => normalized.includes(key))?.[1] ?? DEFAULT_PRICING;
+  const fiveMinute = pricing.cacheWriteCostPerMillion ?? pricing.inputCostPerMillion * CACHE_WRITE_PRICE_RATIO;
+  return (tokens / 1_000_000) * (pricing.inputCostPerMillion * 2 - fiveMinute);
+}
+
 /** inputTokens includes cached prompt tokens; cache reads and writes are priced separately from the rest. */
 export function calculateCost(model: string, inputTokens = 0, outputTokens = 0, cache: CacheTokenUsage = {}): number {
   const normalized = model.toLowerCase();
