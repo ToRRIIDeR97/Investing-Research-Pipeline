@@ -227,6 +227,7 @@ export function findObservation(
     .filter(
       (o) =>
         o.metric_key === metricKey &&
+        !o.segment && !o.geography &&
         o.fiscal_year === fiscalYear &&
         o.fiscal_quarter === fiscalQuarter &&
         o.periodicity === "quarterly"
