@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {extractFilingStatements,statementObservations,filingCoverage} from '../src/lib/research/history/filing-statements';
-import {financialRatios,researchObservations,readerSections} from '../src/lib/research/reporting/data-views';
+import {MetricBook,METRICS,evaluateMetric,researchObservations,readerSections} from '../src/lib/research/reporting/data-views';
 import {calculateValuationSchedule,validateMethodInputs,ValuationMethodInput} from '../src/lib/research/valuation/schedules';
 import {buildHistoricalRecord} from '../src/lib/research/history/normalizer';
 import {reconcileAnnualToQuarters} from '../src/lib/research/history/reconciliation';
@@ -50,13 +50,14 @@ test('non-calendar filing dates retain fiscal periods and later filings retain r
  assert.equal(values[0].fiscal_year,2024);assert.equal(values[0].value_numeric,1_100_000);assert.equal(values[0].restatement_version,1);
  assert.equal(values[0].source_document_id,amended[0].source_document_id);
 });
-test('ratios align units, use average equity and never turn missing inputs into zero',()=>{
- const rows=[row('net_revenue',100),row('net_income',10),row('stockholders_equity',120),row('stockholders_equity',80,4,2024)];
- const ratios=financialRatios(rows,'quarterly');
- assert.equal(ratios.find(r=>r.metric_key==='net_income_margin')?.value_numeric,10);
- assert.equal(ratios.find(r=>r.metric_key==='roe')?.value_numeric,40);
- assert.equal(ratios.find(r=>r.metric_key==='gross_margin')?.value_numeric,null);
- assert.equal(financialRatios([...rows,{...row('net_income',4),unit:'EUR',currency:'EUR'}],'quarterly').find(r=>r.metric_key==='net_income_margin')?.value_numeric,null);
+test('catalogue ratios align units, use average equity and never turn missing inputs into zero',()=>{
+ const rows=[row('revenue',100),row('net_income',10),...[[2024,2],[2024,3],[2024,4]].map(([y,q])=>row('net_income',10,q,y)),row('stockholders_equity',120),row('stockholders_equity',80,1,2024)];
+ const value=(key:string,list=rows)=>evaluateMetric(new MetricBook(list,'quarterly'),METRICS.find(m=>m.key===key)!,{year:2025,quarter:1});
+ assert.equal(value('net_margin').value,0.1);
+ assert.equal(value('roe').value,40/100);
+ assert.equal(value('gross_margin').value,null);
+ assert.match(value('gross_margin').missing!,/Cost of revenue for Q1 2025 is not captured/);
+ assert.equal(value('net_margin',[...rows.filter(r=>r.metric_key!=='net_income'||r.fiscal_year!==2025),{...row('net_income',4),unit:'EUR',currency:'EUR'}]).value,null);
 });
 test('annual observations survive normalization, while stocks are never summed across quarters',()=>{
  const annual={...row('total_assets',100,4,2024),periodicity:'annual',fiscal_quarter:null};

@@ -79,14 +79,14 @@ export function financialPeriod(row) {
   return Number.isInteger(row.fiscal_quarter) && row.fiscal_quarter >= 1 && row.fiscal_quarter <= 4
     ? `${row.fiscal_year}-Q${row.fiscal_quarter}` : null;
 }
-export function financialWindow(observations, frequency = 'quarterly', end = '') {
+export function financialWindow(observations, frequency = 'quarterly', end = '', size = 5) {
   const periods = [...new Set(observations.filter(r => r.periodicity === frequency).map(financialPeriod).filter(Boolean))].sort();
   const index = periods.indexOf(end);
   const last = index < 0 ? periods.length - 1 : index;
-  const first = Math.max(0, last - 4);
+  const first = Math.max(0, last - (size - 1));
   return {periods:periods.slice(first,last+1), all:periods,
-    earlier:first > 0 ? periods[Math.max(0,last-5)] : null,
-    later:last < periods.length-1 ? periods[Math.min(periods.length-1,last+5)] : null};
+    earlier:first > 0 ? periods[Math.max(0,last-size)] : null,
+    later:last < periods.length-1 ? periods[Math.min(periods.length-1,last+size)] : null};
 }
 
 /** Refuse ambiguous series; keep missing periods as gaps instead of joining across them. */
