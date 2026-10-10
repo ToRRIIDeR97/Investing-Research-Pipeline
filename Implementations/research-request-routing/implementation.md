@@ -431,10 +431,61 @@ alone, so the report agent has to ask again for anything the system answer leave
 
 ## Completion evidence
 
-To be filled after implementation: who wrote the plan, the tests and the code; commands actually run
-and their results; criteria met; remaining limitations.
-
 The plan and both test sets were written by the same agent before any implementation. The
 verification set uses different fixtures, boundaries and sequences, but it is not independently
 authored. Both sets live in this folder; if a separate worker implements the plan, move
 `verification/` out of its checkout first and run it afterwards against the worker's exact revision.
+
+**Implementation (2026-10-11).** A separate implementer agent wrote the code on branch
+`feat/research-request-routing` (from `main` 594024e3) in its own worktree. It received this plan,
+`diagrams/` and `acceptance/`, not `verification/`, which it has not read or run. No acceptance
+assertion was changed.
+
+Commands run from the worktree root. Database commands used `research_os_test` only
+(`DATABASE_URL` from `.env.local` with the database name replaced); the development database was
+not used, no job was queued against it, and no paid model call was made.
+
+| Command | Result |
+| --- | --- |
+| `npx tsx --test Implementations/research-request-routing/acceptance/*.test.ts` | 11 pass, 0 fail, 10 skipped (database tests) |
+| `npm run test:db -- 'Implementations/research-request-routing/acceptance/*.test.ts'` | 21 pass, 0 fail |
+| `npx tsc --noEmit` | no errors |
+| `npm run test:unit` | 318 pass, 0 fail, 10 skipped (same as `main`) |
+| `npm run build` | succeeds; `/api/research-runs/[id]/request-reset` listed |
+| `RUN_DB_INTEGRATION=1 RESEARCH_MODEL_PROVIDER=mock RESEARCH_ACCEPTANCE_PROVIDER=mock npx tsx --test tests/sofi-research-e2e.test.ts` | 6 pass, 0 fail, unchanged test file |
+| `npm run test:db -- 'tests/*.test.ts' 'Implementations/live-run-repair/*/*.test.ts'` | 380 pass, 0 fail |
+| `npm run test:db` (all suites present in the worktree) | 476 pass, 19 fail: `research-memory` AC-13 to AC-16 (missing `extractPdfPages`, `createOcrClient`, corpus questions). The same 19 fail on `main` 594024e3 |
+| `python3 docs/diagrams/_source/make_diagrams.py docs/diagrams` | regenerated `component`, `activity-research-run`, `state-machines`, `sequence-research-run` |
+
+Manual check: on a scratch run paused by a financials `requires_rerun` answer in `research_os_test`,
+`POST /api/research-runs/:id/request-reset` with `skip` returned 200 with a job id; the run and
+`ai_reviewer` returned to `running`, the batch was `answered`, and a second call returned 422. The
+queued job and the run were then deleted. The run-page panel was not checked in a browser: the
+Browser pane's dev servers start from the main checkout, not this worktree.
+
+Existing tests updated (step 7):
+
+- `tests/research-team.test.ts`: asserted that an unanswered request routes to `source_discovery`
+  or to its owner's stage. Under AC-5 neither arriving request names a root; the test now checks
+  that only an answer with `requires_rerun` names `asset_valuation`.
+- `Implementations/live-run-repair/acceptance/orchestration.test.ts` AC-5: gaps were superseded when
+  a request arrived. The reset now follows a financials `requires_rerun` answer (10 analysis stages,
+  so a pause) and an approved re-run; the same gap assertions hold.
+- `Implementations/live-run-repair/verification/orchestration.test.ts` AC-5: a data request needing
+  sources no longer supersedes `system:source-reader` gaps, because `source_discovery` never reopens.
+  The test now checks that arriving requests supersede nothing and that an approved financials re-run
+  supersedes only the `metric-normalizer` gap. Web discovery is disabled in the test.
+- Both `tests/sofi-research-e2e.test.ts` tests named in step 7 pass without change.
+
+Choices the plan left open:
+
+- The automatic re-run is recorded in `metadata_json.request_auto_reset`; a decision in
+  `metadata_json.request_reset_decision` (decision, actor, stages, request IDs, time).
+- The batch keeps `rerun_stages` (the reopened analysis stages it waits for) and each searched
+  request keeps `source_searched`, so a restart never searches twice.
+- `requestResetPlan.request_ids` and the roots exclude `data` requests, which never reopen a stage.
+- `approveRequestReset` also refuses while the research-plan or final-review gate is waiting.
+
+Remaining before merge: the `team_answer` and `team_requests` prompt changes need the small paid
+live provider test (step 5) with the user's approval, the run-page panel needs a browser check, and
+the `verification/` set needs to be run against this revision.
