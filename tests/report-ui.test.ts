@@ -163,3 +163,25 @@ test('Valuation summary handles verified prices, reconciled schedules and missin
   const unverified = valuationSummary(valuationArtifacts({ current_market_price_source: { trading_date: '2026-06-30', verified: false, verification_status: 'single_source' } }))!;
   assert.ok(unverified.issues.includes('The $719.87 close on 2026-06-30 isn’t verified (single source).'));
 });
+
+test('Yearly value per share comes from the annual price-target path, per scenario', () => {
+  const target = (scenario_type: string, fiscal_year: number, price_target: number, extra: Record<string, any> = {}) =>
+    ({ scenario_type, fiscal_year, price_target, valuation_method: 'fcff_dcf_terminal_multiple', dividend_per_share: 0, is_interpolated: false, ...extra });
+  const path = artifact('annual_price_target_path', { currency: 'USD', price_target_path: [
+    target('base', 2028, 563.5, { total_return_target: -0.21722 }),
+    target('base', 2026, 433.6, { total_return_target: -0.397669 }),
+    target('base', 2027, 500, { is_interpolated: true }),
+    target('bear', 2026, 284.2, { total_return_target: -0.605206 }),
+  ] });
+  const s = valuationSummary([...valuationArtifacts(), path])!;
+  const base = s.calculations.find(c => c.type === 'base')!.priceTargets!;
+  assert.deepEqual(base.years, [2026, 2027, 2028]);
+  assert.deepEqual(base.values, [433.6, 500, 563.5]);
+  assert.deepEqual(base.interpolated, [false, true, false]);
+  assert.equal(base.returns[0], -0.397669);
+  assert.equal(base.returns[1]!.toFixed(4), (500 / 719.87 - 1).toFixed(4)); // recomputed when missing
+  assert.deepEqual(s.calculations.find(c => c.type === 'bear')!.priceTargets!.values, [284.2]);
+  assert.equal(s.calculations.find(c => c.type === 'bull')!.priceTargets, null);
+  // No price-target artifact: the table is hidden.
+  assert.ok(valuationSummary(valuationArtifacts())!.calculations.every(c => c.priceTargets === null));
+});

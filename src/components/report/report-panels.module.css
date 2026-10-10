@@ -90,6 +90,8 @@
 .numbers .strong :is(th,td) { font-weight:600; }
 .numbers .negative { color:#a23b32; }
 .numbers tbody tr:last-child :is(th,td) { border-bottom:0; }
+.targets { margin-top:20px; }
+.caption { margin:0 0 4px;font-size:12px;color:#626b78; }
 .valuation .steps { list-style:decimal;margin:16px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px; }
 .valuation :is(.steps,.issues) li { margin:0; }
 .steps b { color:#181818;font-weight:600; }

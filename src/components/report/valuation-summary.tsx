@@ -1,7 +1,7 @@
 "use client";
 import {useMemo,useState,type ReactNode} from 'react';
-import {scenarioNames,scenarioTypes,valuationSummary,type ScenarioType} from '@/lib/research/reporting/valuation-summary';
-import {moneyMillions,price} from '@/lib/research/reporting/plain-english';
+import {scenarioNames,scenarioTypes,valuationSummary,type PriceTargets,type ScenarioType} from '@/lib/research/reporting/valuation-summary';
+import {moneyMillions,percent,price} from '@/lib/research/reporting/plain-english';
 import styles from './report-panels.module.css';
 type Row=Record<string,any>;
 
@@ -12,6 +12,20 @@ const tone=(r:number|null)=>r==null?undefined:r<0?styles.down:styles.up;
 
 function Item({title,open=false,children}:{title:string;open?:boolean;children:ReactNode}) {
   return <details open={open}><summary><svg className={styles.chev} width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5L7.5 6 4 9.5" stroke="#515d70" strokeWidth="1.6" fill="none" strokeLinecap="round"/></svg><span>{title}</span></summary>{children}</details>;
+}
+
+function PriceTargetTable({targets,currency}:{targets:PriceTargets;currency:string}) {
+  const marked=targets.interpolated.some(Boolean);
+  return <div className={styles.targets}>
+    <p className={styles.caption}>Value per share at the end of each year{marked?'. * Estimated between modelled years.':''}</p>
+    <table className={styles.numbers}>
+      <thead><tr><th scope="col"><span className={styles.srOnly}>Measure</span></th>{targets.years.map((y,i)=><th scope="col" key={y}>{y}{targets.interpolated[i]?'*':''}</th>)}</tr></thead>
+      <tbody>
+        <tr><th scope="row">Value per share</th>{targets.values.map((v,i)=><td key={i}>{price(v,currency,true)}</td>)}</tr>
+        <tr><th scope="row">Return vs today’s price</th>{targets.returns.map((r,i)=><td key={i} className={r!=null&&r<0?styles.negative:undefined}>{r!=null&&r>0?'+':''}{percent(r)}</td>)}</tr>
+      </tbody>
+    </table>
+  </div>;
 }
 
 export function ValuationSummaryView({artifacts,conclusionStatus}:{artifacts:Row[];conclusionStatus?:string}) {
@@ -43,6 +57,7 @@ export function ValuationSummaryView({artifacts,conclusionStatus}:{artifacts:Row
             <thead><tr><th scope="col">{currencyNames[c.toUpperCase()]??c}</th>{calc.years.map(y=><th scope="col" key={y}>{y}</th>)}</tr></thead>
             <tbody>{calc.rows.map(row=><tr key={row.label} className={row.strong?styles.strong:undefined}><th scope="row">{row.label}</th>{row.values.map((v,i)=><td key={i} className={v!=null&&v<0?styles.negative:undefined}>{moneyMillions(v,c)}</td>)}</tr>)}</tbody>
           </table>}
+          {calc.priceTargets&&<PriceTargetTable targets={calc.priceTargets} currency={c}/>}
           {!!calc.steps.length&&<ol className={styles.steps}>{calc.steps.map((step,i)=><li key={i}>{step.text}: <b>{step.value}</b>.</li>)}</ol>}
           {calc.note&&<p className={styles.note}>{calc.note}</p>}
         </div>

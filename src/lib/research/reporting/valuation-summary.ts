@@ -10,7 +10,8 @@ export const scenarioNames:Record<ScenarioType,string>={bear:'Bear',base:'Base',
 
 export type ScenarioValue={type:ScenarioType;value:number;probability:number|null;return:number|null};
 export type CalcRow={label:string;values:(number|null)[];strong?:boolean};
-export type Calculation={type:ScenarioType;years:number[];rows:CalcRow[];steps:{text:string;value:string}[];valuePerShare:number|null;anchor:number|null;note:string|null};
+export type PriceTargets={years:number[];values:(number|null)[];returns:(number|null)[];interpolated:boolean[]};
+export type Calculation={type:ScenarioType;years:number[];rows:CalcRow[];steps:{text:string;value:string}[];valuePerShare:number|null;anchor:number|null;note:string|null;priceTargets:PriceTargets|null};
 export type AssumptionRow={label:string;values:(string|null)[]};
 export type NoteGroup={type:ScenarioType;method:string|null;rationale:string|null;sourceNotes:string[];bridge:string|null;assumptions:{year:number;label:string;value:string;note:string}[]};
 export type ValuationSummary={
@@ -81,11 +82,23 @@ export function valuationSummary(artifacts:Row[],options:{conclusionStatus?:stri
   const statementScale=(t:ScenarioType)=>{const u=parseUnit(statement(t)?.units);return u?u.scale/1e6:1;};
   const line=(t:ScenarioType,y:number,keys:string[])=>{const v=pick(yearRecord(t,y),keys);return v==null?null:v*statementScale(t);};
 
+  // Yearly value per share from the annual price-target path, per scenario.
+  const pathRows:Row[]=Array.isArray(path.price_target_path)?path.price_target_path:[];
+  const priceTargets=(t:ScenarioType):PriceTargets|null=>{
+    const rows=pathRows.filter(r=>r.scenario_type===t&&num(r.fiscal_year)!=null).sort((a,b)=>Number(a.fiscal_year)-Number(b.fiscal_year));
+    if(!rows.some(r=>num(r.price_target)!=null))return null;
+    const values=rows.map(r=>num(r.price_target));
+    return {years:rows.map(r=>Number(r.fiscal_year)),values,
+      returns:rows.map((r,i)=>num(r.total_return_target)??(values[i]!=null&&marketPrice?values[i]!/marketPrice-1:null)),
+      interpolated:rows.map(r=>r.is_interpolated===true)};
+  };
+
   // How the value is calculated, per scenario.
   const calculations:Calculation[]=scenarioTypes.flatMap(t=>{
     const s=schedule(t);
+    const targets=priceTargets(t);
     const years:number[]=s?.years?.length?s.years.map((y:Row)=>Number(y.fiscal_year)):Object.keys(statement(t)?.years??{}).map(Number).filter(Number.isFinite).sort();
-    if(!years.length)return [];
+    if(!years.length&&!targets)return [];
     const rows:CalcRow[]=[
       {label:'Revenue',values:years.map(y=>line(t,y,revenueKeys))},
       {label:'Operating profit',values:years.map(y=>line(t,y,profitKeys))},
@@ -108,7 +121,7 @@ export function valuationSummary(artifacts:Row[],options:{conclusionStatus?:stri
     const vps=num(s?.value_per_share),anchor=anchors[t];
     const note=vps!=null&&anchor!=null&&Math.abs(vps-anchor)>0.01*Math.abs(anchor)
       ?`This gives ${price(vps,currency)}, ${vps<anchor?'lower':'higher'} than the ${price(anchor,currency)} scenario value above. The two haven’t been reconciled yet, which is why the result is marked not final.`:null;
-    return [{type:t,years,rows,steps,valuePerShare:vps,anchor,note}];
+    return [{type:t,years,rows,steps,valuePerShare:vps,anchor,note,priceTargets:targets}];
   });
 
   // Three reasons, computed from the base case (omitted when the data is not there).
@@ -116,7 +129,7 @@ export function valuationSummary(artifacts:Row[],options:{conclusionStatus?:stri
   const base=calculations.find(c=>c.type==='base');
   const actual=latestActual(artifacts);
   const ty=terminalYear??base?.years.at(-1)??null;
-  if(base){
+  if(base?.years.length){
     const rev=base.years.map(y=>line('base',y,revenueKeys));
     const prior=(i:number)=>i>0?rev[i-1]:actual&&actual.year===base.years[0]-1?actual.revenue/1e6:null;
     const growth=rev.map((v,i)=>{const p=prior(i);return v!=null&&p?v/p-1:null;});
