@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="702" viewBox="0 0 680 702" role="img" font-family="Helvetica, Arial, sans-serif">
+<title>Report requests, proposed</title>
+<desc>Requests no longer reset stages when they arrive. Each request is answered in order: by the system from stored market history or the FRED series, otherwise by the owner with research-memory passages, with a collector search for new documents only when sources are needed. A re-run happens only when the owner asks for it: automatically once if it is small, otherwise after a reviewer approves it on the run page. Specialist source requests check the run corpus first. Both human gates are unchanged.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M2 1L8 5L2 9" fill="none" stroke="#73726c" stroke-width="1.5"/></marker></defs>
+<rect width="680" height="702" fill="#ffffff"/>
+<text x="20" y="28" font-size="14" font-weight="600" fill="#2c2c2a">Proposed: answer from what the run holds; re-runs are bounded</text>
+<text x="20" y="46" font-size="12" fill="#5f5e5a">Green: new. Amber: changed. Grey: unchanged. AC labels refer to implementation.md.</text>
+<g font-size="13" fill="#2c2c2a">
+<rect x="20" y="60" width="310" height="64" rx="6" fill="#faeeda" stroke="#854f0b"/>
+<text x="34" y="82" fill="#633806">Report agent asks (ai_reviewer)</text>
+<text x="34" y="100" font-size="12" fill="#633806">requestMissingResearch uses nextRequestBatch:</text>
+<text x="34" y="116" font-size="12" fill="#633806">carries source_escalated, 2 rounds (AC-8)</text>
+<rect x="350" y="60" width="310" height="64" rx="6" fill="#faeeda" stroke="#854f0b"/>
+<text x="364" y="82" fill="#633806">team_requests batch: queued, processing</text>
+<text x="364" y="100" font-size="12" fill="#633806">no stage is reset when requests arrive</text>
+<text x="364" y="116" font-size="12" fill="#633806">processResearchRequests (team.ts)</text>
+<text x="185" y="152" font-size="12" fill="#5f5e5a">each request without a response, in order</text>
+<rect x="20" y="158" width="310" height="64" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="34" y="180" fill="#27500a">1. systemAnswer (AC-1, AC-2)</text>
+<text x="34" y="198" font-size="12" fill="#27500a">market_price_history: system:market-history</text>
+<text x="34" y="214" font-size="12" fill="#27500a">FRED DGS10 document: system:fred</text>
+<rect x="350" y="158" width="310" height="64" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="364" y="180" fill="#27500a">answered without a model call</text>
+<text x="364" y="198" font-size="12" fill="#27500a">artifact_ids or source_ids, resolved_by;</text>
+<text x="364" y="214" font-size="12" fill="#27500a">no stage changes, no search</text>
+<rect x="20" y="236" width="310" height="64" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="34" y="258" fill="#27500a">2. retrievePassages (AC-3)</text>
+<text x="34" y="276" font-size="12" fill="#27500a">run documents of the request's source_role,</text>
+<text x="34" y="292" font-size="12" fill="#27500a">keyword ranking (memory/retrieve.ts)</text>
+<rect x="350" y="236" width="310" height="64" rx="6" fill="#faeeda" stroke="#854f0b"/>
+<text x="364" y="258" fill="#633806">owner team_answer with packet.passages</text>
+<text x="364" y="276" font-size="12" fill="#633806">answered, unavailable or needs_sources;</text>
+<text x="364" y="292" font-size="12" fill="#633806">may cite source_ids, may set requires_rerun</text>
+<rect x="20" y="314" width="310" height="64" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="34" y="336" fill="#27500a">3. Collector, new documents only (AC-4)</text>
+<text x="34" y="354" font-size="12" fill="#27500a">no passages and needs_sources, or a</text>
+<text x="34" y="370" font-size="12" fill="#27500a">needs_sources answer (once per run)</text>
+<rect x="350" y="314" width="310" height="64" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="364" y="336" fill="#27500a">one more answer attempt</text>
+<text x="364" y="354" font-size="12" fill="#27500a">needs_sources again becomes unavailable;</text>
+<text x="364" y="370" font-size="12" fill="#27500a">the search is recorded with request_id</text>
+<rect x="20" y="392" width="310" height="64" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="34" y="414" fill="#27500a">4. requestResetPlan (AC-5, AC-6)</text>
+<text x="34" y="432" font-size="12" fill="#27500a">owner stage + dependents; role data adds none</text>
+<text x="34" y="448" font-size="12" fill="#27500a">count analysis stages, tail excluded</text>
+<rect x="350" y="392" width="310" height="64" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="364" y="414" fill="#27500a">at most 6 stages, first time: auto reset</text>
+<text x="364" y="432" font-size="12" fill="#27500a">existing reset transaction; the owner answers</text>
+<text x="364" y="448" font-size="12" fill="#27500a">again once the reopened stages complete</text>
+<rect x="350" y="470" width="310" height="64" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="364" y="492" fill="#27500a">otherwise pause the run</text>
+<text x="364" y="510" font-size="12" fill="#27500a">run and ai_reviewer waiting_for_human;</text>
+<text x="364" y="526" font-size="12" fill="#27500a">metadata.request_reset with estimated cost</text>
+<rect x="20" y="470" width="310" height="64" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="34" y="492" fill="#27500a">approveRequestReset (AC-7)</text>
+<text x="34" y="510" font-size="12" fill="#27500a">rerun: reset, run running, worker queued</text>
+<text x="34" y="526" font-size="12" fill="#27500a">skip: requests unavailable, report goes on</text>
+<rect x="20" y="562" width="310" height="64" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="34" y="584" fill="#27500a">Route and run page panel (AC-7)</text>
+<text x="34" y="602" font-size="12" fill="#27500a">POST /api/research-runs/[id]/request-reset</text>
+<text x="34" y="618" font-size="12" fill="#27500a">two buttons, stage list, estimated cost</text>
+<rect x="350" y="562" width="310" height="64" rx="6" fill="#faeeda" stroke="#854f0b"/>
+<text x="364" y="584" fill="#633806">Specialist source requests (AC-9)</text>
+<text x="364" y="602" font-size="12" fill="#633806">retrieval first: matched queries in_corpus,</text>
+<text x="364" y="618" font-size="12" fill="#633806">only unmatched queries are searched</text>
+<rect x="20" y="644" width="640" height="44" rx="6" fill="#f1efe8" stroke="#888780"/>
+<text x="34" y="664" font-size="12">Unchanged: research_plan and human_review gates, budget preflight, export before refresh,</text>
+<text x="34" y="680" font-size="12">embeddings off by default (RESEARCH_EMBEDDING_PROVIDER turns on hybrid ranking later)</text>
+</g>
+<g fill="none" stroke="#73726c" stroke-width="1.5" marker-end="url(#a)">
+<path d="M330 92H348"/>
+<path d="M505 124V136H175V156"/>
+<path d="M330 190H348"/>
+<path d="M175 222V234"/>
+<path d="M330 268H348"/>
+<path d="M175 300V312"/>
+<path d="M330 346H348"/>
+<path d="M175 378V390"/>
+<path d="M330 412H348"/>
+<path d="M330 444H340V496H348"/>
+<path d="M350 518H332"/>
+<path d="M175 562V536"/>
+</g>
+<g font-size="12" fill="#5f5e5a">
+<text x="182" y="232">else</text>
+<text x="182" y="310">sources needed</text>
+<text x="182" y="388">requires_rerun</text>
+</g>
+</svg>
