@@ -12,6 +12,9 @@ import {
   DecisionRecord,
 } from "./contracts";
 
+/** Prefix decision synthesis puts on expected_return_linkage when the valuation was withheld. */
+export const WITHHELD_VALUATION_LINKAGE = "Conclusion withheld - valuation withheld.";
+
 export type ValidationResult = {
   valid: boolean;
   errors: string[];
@@ -27,8 +30,9 @@ export function validateInvestmentThesis(content: unknown): ValidationResult {
   const warnings: string[] = [];
   const data = parsed.data;
 
-  // C12-T3: Thesis generated before accepted valuation
-  if (!data.valuation_accepted_first) {
+  // C12-T3: Thesis generated before accepted valuation. A withheld valuation has no target to
+  // accept, so the thesis may stand only as an explicitly withheld conclusion.
+  if (!data.valuation_accepted_first && !data.expected_return_linkage.startsWith(WITHHELD_VALUATION_LINKAGE)) {
     errors.push("Investment thesis cannot be finalized before the valuation is accepted.");
   }
 

@@ -6,9 +6,10 @@ import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { loadAcceptedEvidencePacket } from "../sources/corpus";
-import { validateArtifactCitationIds } from "../sources/artifact-evidence";
+import { dropInvalidCitationIds, validateArtifactCitationIds } from "../sources/artifact-evidence";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 import { withheldValuationReason } from "../valuation/contracts";
+import { WITHHELD_VALUATION_LINKAGE } from "../decision/validation";
 
 export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "decision_synthesis",
@@ -135,7 +136,7 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           "Copy risk supporting_claim_ids exactly from evidence_claims; never invent UUIDs.",
           "Derive material risks from this asset's business, applicable archetypes, overlays and accepted evidence. Include regulatory capital only when relevant to the business. Explain capital allocation, ownership and dilution where material; do not import another company's metrics. Map confidence to specific evidence gaps.",
           ...(valuationWithheld ? [
-            "accepted_valuation is withheld: no price target exists. Begin investment_thesis.expected_return_linkage with exactly: Conclusion withheld - valuation withheld. Set investment_thesis.valuation_accepted_first to false. Set every expected_return_matrix return to 0 and add valuation_withheld: true; those zeros are markers, not estimates. Name the missing valuation inputs in confidence_assessment.",
+            `accepted_valuation is withheld: no price target exists. Begin investment_thesis.expected_return_linkage with exactly: ${WITHHELD_VALUATION_LINKAGE} Set investment_thesis.valuation_accepted_first to false. Set every expected_return_matrix return to 0 and add valuation_withheld: true; those zeros are markers, not estimates. Name the missing valuation inputs in confidence_assessment.`,
           ] : [
             "Set investment_thesis.valuation_accepted_first to true because accepted_valuation is supplied by the completed valuation stage.",
           ]),
@@ -169,7 +170,8 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           + Number(probabilities.probability_bull) * Number(returns.bull_return);
         if (Number.isFinite(weighted)) returns.probability_weighted_return = Number(weighted.toFixed(6));
       }
-      if (terminalReturnInputs && output.investment_thesis && probabilities && returns) {
+      // A withheld valuation has zero placeholder targets; describing them as returns would read as -100%.
+      if (!valuationWithheld && terminalReturnInputs && output.investment_thesis && probabilities && returns) {
         output.investment_thesis.horizon = `Through fiscal ${terminalYear}`;
         output.investment_thesis.expected_return_linkage =
           `Fiscal ${terminalYear} diluted-share price targets imply bear ${(returns.bear_return * 100).toFixed(1)}%, ` +
@@ -187,8 +189,9 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
         }
         if (output.investment_thesis) {
           output.investment_thesis.valuation_accepted_first = false;
-          const linkage = String(output.investment_thesis.expected_return_linkage || "").replace(/^Conclusion withheld - valuation withheld\.\s*/, "");
-          output.investment_thesis.expected_return_linkage = `Conclusion withheld - valuation withheld. ${linkage || valuationWithheld}`.trim();
+          const raw = String(output.investment_thesis.expected_return_linkage || "");
+          const linkage = (raw.startsWith(WITHHELD_VALUATION_LINKAGE) ? raw.slice(WITHHELD_VALUATION_LINKAGE.length) : raw).trim();
+          output.investment_thesis.expected_return_linkage = `${WITHHELD_VALUATION_LINKAGE} ${linkage || valuationWithheld}`.trim();
         }
         if (output.decision_record) output.decision_record.decision = "pending";
       }
@@ -212,10 +215,18 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           }
         }
       }
-      const citationValidation = validateArtifactCitationIds(
-        output,
-        evidenceClaims.map((claim: any) => String(claim.id))
-      );
+      // A citation outside the accepted packet (usually an invented ID) is dropped and disclosed in the
+      // decision rationale rather than failing the stage; the remaining citations are then re-checked.
+      const acceptedClaimIds = evidenceClaims.map((claim: any) => String(claim.id));
+      const droppedCitationIds = dropInvalidCitationIds(output, acceptedClaimIds);
+      if (droppedCitationIds.length) {
+        console.warn(`decision synthesis dropped citations outside the accepted packet: ${droppedCitationIds.join(", ")}`);
+        if (output.decision_record) {
+          output.decision_record.rationale = `${String(output.decision_record.rationale || "").trim()} ` +
+            `Dropped ${droppedCitationIds.length} citation(s) to evidence outside the accepted packet: ${droppedCitationIds.join(", ")}.`;
+        }
+      }
+      const citationValidation = validateArtifactCitationIds(output, acceptedClaimIds);
       if (!citationValidation.valid) {
         throw new Error(
           `Decision synthesis cited evidence IDs outside the accepted packet: ${citationValidation.invalidIds.join(", ")}`

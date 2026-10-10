@@ -25,6 +25,7 @@ import {
   parseSearchPayload,
 } from "@/lib/research/sources/role-discovery";
 import {
+  dropInvalidCitationIds,
   missingRequiredSourceRoles,
   validateArtifactCitationIds,
 } from "@/lib/research/sources/artifact-evidence";
@@ -442,5 +443,18 @@ describe("source intelligence v3", () => {
       citedIds: [allowedId],
       invalidIds: [],
     });
+  });
+  it("drops citations outside the accepted packet and reports them", () => {
+    const allowed = "11111111-1111-4111-8111-111111111111";
+    const invented = "89383f80-7fa3-4e8a-bade-efa46ca2338a";
+    const output = {
+      investment_thesis: { evidence_claim_ids: [allowed, invented] },
+      risk_register: { risks: [{ name: "Capex", supporting_claim_ids: [invented], contradicting_claim_ids: [] }] },
+    };
+    assert.deepEqual(dropInvalidCitationIds(output, [allowed]), [invented]);
+    assert.deepEqual(output.investment_thesis.evidence_claim_ids, [allowed]);
+    assert.deepEqual(output.risk_register.risks[0].supporting_claim_ids, []);
+    assert.equal(validateArtifactCitationIds(output, [allowed]).valid, true);
+    assert.deepEqual(dropInvalidCitationIds(output, [allowed]), []);
   });
 });
