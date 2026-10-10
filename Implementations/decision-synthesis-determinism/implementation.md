@@ -192,16 +192,16 @@ Fixture check on main: the verification fixture passes `DECISION_SYNTHESIS_CONTR
 
 ## Completion evidence
 
-The worker reported all results below on branch `feat/deterministic-decision-synthesis` (2026-10-11). None has been checked independently yet. The worker did not see or run `verification/`.
+The worker reported all results below on branch `feat/deterministic-decision-synthesis` (2026-10-11). The worker did not see or run `verification/`. The coordinator's review reported the independent verification set at 12 of 12 passing on the first round. The worker then fixed the two open items from that round (see the end of this section) and re-ran the checks. The table shows the second-round results.
 
 | Command | Result |
 | --- | --- |
 | `npx tsx --test Implementations/decision-synthesis-determinism/acceptance/*.test.ts` | 14 pass, 0 fail |
 | `npx tsc --noEmit` | clean |
-| `npm run test:unit` | 324 pass, 0 fail, 10 skipped (baseline 318 + 6 new tests in `tests/decision-finalize.test.ts`) |
+| `npm run test:unit` | 325 pass, 0 fail, 10 skipped (baseline 318 + 7 new tests in `tests/decision-finalize.test.ts`) |
 | `npm run build` | succeeds |
 | `RUN_DB_INTEGRATION=1 RESEARCH_MODEL_PROVIDER=mock RESEARCH_ACCEPTANCE_PROVIDER=mock npx tsx --test tests/sofi-research-e2e.test.ts` (test database `rr_test_f2`, standing in for `npm run test:sofi-v3`, whose script hardcodes port 5433) | 6 pass, 0 fail |
-| `npm run test:db -- 'tests/*.test.ts' 'Implementations/decision-synthesis-determinism/acceptance/*.test.ts'` (`rr_test_f2`) | 365 pass, 0 fail |
+| `npm run test:db -- 'tests/*.test.ts' 'Implementations/decision-synthesis-determinism/acceptance/*.test.ts'` (`rr_test_f2`) | 366 pass, 0 fail |
 
 Per criterion:
 - **AC-1 to AC-9:** covered by the acceptance set (all pass). The new unit tests also cover idempotency for both complete and withheld inputs, `unavailable` returns when dilution isn't covered (the model's linkage is kept), the linkage without weights, a source-gap risk with an invented ID moved once, unique gap keys for duplicate names, an older matrix without `status`, and "Withheld" in the export.
@@ -213,4 +213,6 @@ Deviations and notes:
 - The `ExpectedReturnMatrix` TypeScript type is now `z.input`, so `tests/decision-artifacts.test.ts` compiles unchanged without `status`. No existing test was edited.
 - The handler keeps the monitoring KPI current-level fill (deposits, diluted shares) that sat inside :158-234. It runs on the finalized output, before one combined check of finalize errors and the contract, and that check runs before the first write.
 - The prompt adds one rule saying code sets the valuation-owned fields and that the model judges `no_rerating_return`, `weak_stock_outcome` and `permanent_loss_limit`.
-- Open: `decision_record.adjustments` and `monitoring_dashboard.drivers` are optional fields in the model-facing schema, so a model could pre-fill them and finalize would keep those entries. Gaps from a previous decision-synthesis attempt aren't resolved when a re-run no longer moves that risk.
+- Fixed after review:
+  - **Pre-filled code-owned fields.** `stripCodeOwnedFields` (`decision/finalize.ts`) returns a copy without `decision_record.adjustments` and `monitoring_dashboard.drivers`. The handler's finalize call and `decisionOutputFormat().validate` both use it, so only code writes those fields. `finalizeDecisionOutput` stays idempotent on its own output. A unit test covers this.
+  - **Stale gaps.** The handler now calls `reconcileSourceGaps` with owner `system:decision-synthesis` in place of `openSourceGap` per gap. It opens this attempt's gaps and resolves the owner's open gaps that the attempt no longer produces. The gap keys are already in the `[a-z0-9_]` form that `normalizeSourceGap` produces, so they pass through unchanged. No test covers the stale-gap path: the mock e2e never moves a risk.
