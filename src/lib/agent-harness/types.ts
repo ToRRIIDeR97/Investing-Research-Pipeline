@@ -30,6 +30,8 @@ export interface ModelRequest {
   agentName?: string;
   /** Opaque key that keeps requests sharing a prompt prefix on the same provider cache. */
   cacheAffinityId?: string;
+  /** JSON schema of the task output. Only anthropic-direct uses it; other providers ignore it. */
+  outputSchema?: Record<string, unknown>;
 }
 
 export type ModelEvent =
@@ -120,6 +122,8 @@ export interface AgentPassTelemetry {
   validationErrors?: Array<{ path: string; message: string }>;
   localCoercionApplied?: boolean;
   completionRecoveredAtTimeout?: boolean;
+  /** Whether a request of this pass carried output_config, and whether a schema rejection resent it without. */
+  structuredOutput: { sent: boolean; fallback: boolean };
 }
 
 export interface AgentLifecycleHooks {
