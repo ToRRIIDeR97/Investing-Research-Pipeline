@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="560" viewBox="0 0 680 560" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif">
+<title id="t">Proposed: schema-constrained output on anthropic-direct only</title>
+<desc id="d">The runner passes the task's existing JSON schema to every provider as a new optional ModelRequest field, outputSchema. Only AnthropicCompatibleProvider instances built by anthropic-direct have the structuredOutput option; for Claude models with an expressible schema they add output_config.format with a transformed wire schema, and fall back once without it on a schema rejection. OpenCode Go, the OpenAI-compatible provider and the mock ignore the field. Zod validation and the repair loop are unchanged.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f5e5a" stroke-width="1.5"/></marker></defs>
+<rect width="680" height="560" fill="#ffffff"/>
+<text x="20" y="28" font-size="14" font-weight="600" fill="#2c2c2a">Proposed: the schema reaches anthropic-direct, nothing else changes</text>
+<g font-size="12" fill="#2c2c2a" stroke-width="1.2">
+<rect x="20" y="48" width="300" height="70" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="34" y="68" font-size="13" font-weight="600">Stage handler → callResearchAgent</text>
+<text x="34" y="86">unchanged: same contract, same task key</text>
+<text x="34" y="102">AgentOutputFormat gets no new field (AC-7)</text>
+<rect x="360" y="48" width="300" height="70" rx="6" fill="#faeeda" stroke="#854f0b"/>
+<text x="374" y="68" font-size="13" font-weight="600" fill="#633806">runResearchAgent — modified</text>
+<text x="374" y="86" fill="#633806">generation and repair send outputSchema =</text>
+<text x="374" y="102" fill="#633806">outputFormat.schema, unchanged (AC-7)</text>
+<line x1="320" y1="83" x2="356" y2="83" stroke="#5f5e5a" marker-end="url(#a)"/>
+<path d="M510 118 V150 M120 150 H560" fill="none" stroke="#5f5e5a"/>
+<line x1="120" y1="150" x2="120" y2="166" stroke="#5f5e5a" marker-end="url(#a)"/>
+<line x1="340" y1="150" x2="340" y2="166" stroke="#5f5e5a" marker-end="url(#a)"/>
+<line x1="560" y1="150" x2="560" y2="166" stroke="#5f5e5a" marker-end="url(#a)"/>
+<text x="130" y="143" fill="#633806">ModelRequest.outputSchema? (new, optional)</text>
+<rect x="20" y="170" width="200" height="70" rx="6" fill="#faeeda" stroke="#854f0b"/>
+<text x="32" y="190" font-size="13" font-weight="600" fill="#633806">anthropic-direct</text>
+<text x="32" y="207" fill="#633806">structuredOutput on unless</text>
+<text x="32" y="222" fill="#633806">the env switch is 0 (AC-6)</text>
+<rect x="240" y="170" width="200" height="70" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="252" y="190" font-size="13" font-weight="600">opencode-go-direct</text>
+<text x="252" y="207">Anthropic class without the</text>
+<text x="252" y="222">option: no output_config (AC-3)</text>
+<rect x="460" y="170" width="200" height="70" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="472" y="190" font-size="13" font-weight="600">openai-compatible, mock</text>
+<text x="472" y="207">ignore outputSchema;</text>
+<text x="472" y="222">bytes unchanged (AC-3)</text>
+<line x1="120" y1="240" x2="120" y2="258" stroke="#5f5e5a" marker-end="url(#a)"/>
+<line x1="340" y1="240" x2="340" y2="258" stroke="#5f5e5a" marker-end="url(#a)"/>
+<rect x="20" y="262" width="420" height="104" rx="6" fill="#faeeda" stroke="#854f0b"/>
+<text x="34" y="282" font-size="13" font-weight="600" fill="#633806">AnthropicCompatibleProvider.stream — modified</text>
+<text x="34" y="300" fill="#633806">option + Claude model + expressible schema →</text>
+<text x="34" y="316" fill="#633806">output_config.format = json_schema + wire (AC-1, AC-2)</text>
+<text x="34" y="332" fill="#633806">wire from anthropicWireSchema (new anthropic-schema.ts)</text>
+<text x="34" y="348" fill="#633806">schema 400 → resend once without; remember (AC-4)</text>
+<line x1="440" y1="314" x2="456" y2="314" stroke="#5f5e5a" marker-end="url(#a)"/>
+<rect x="460" y="262" width="200" height="104" rx="6" fill="#e6f2e3" stroke="#3f7a34"/>
+<text x="472" y="282" font-size="13" font-weight="600" fill="#24521c">Messages API</text>
+<text x="472" y="300" fill="#24521c">decodes against the wire</text>
+<text x="472" y="316" fill="#24521c">schema: types, enums,</text>
+<text x="472" y="332" fill="#24521c">required keys, nullability</text>
+<text x="472" y="348" fill="#24521c">(expected: fewer repairs)</text>
+<path d="M560 366 V423 H444" fill="none" stroke="#5f5e5a" marker-end="url(#a)"/>
+<text x="566" y="398">JSON text</text>
+<rect x="20" y="388" width="420" height="70" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="34" y="408" font-size="13" font-weight="600">parseStructuredOutput + zod validate — unchanged</text>
+<text x="34" y="426">stripped limits (minLength, min/max, minItems &gt; 1)</text>
+<text x="34" y="442">are still enforced here (AC-5)</text>
+<line x1="230" y1="458" x2="230" y2="474" stroke="#5f5e5a" marker-end="url(#a)"/>
+<text x="238" y="470">errors</text>
+<rect x="20" y="478" width="640" height="62" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="34" y="496" font-size="13" font-weight="600">Repair pass — unchanged</text>
+<text x="34" y="512">prompt still quotes the full zod schema; the request carries the same output_config</text>
+<text x="34" y="528">as the generation pass (AC-7). Prompt text and cache breakpoints are unchanged.</text>
+</g>
+</svg>

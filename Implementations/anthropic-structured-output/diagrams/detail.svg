@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="610" viewBox="0 0 680 610" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif">
+<title id="t">Detail: structured output inside AnthropicCompatibleProvider.stream</title>
+<desc id="d">The provider decides the format once per request: the structuredOutput option, a Claude model and an outputSchema are required; anthropicWireSchema must return a schema and its hash must not be in the process-wide rejected set. The body is today's body plus output_config.format. A 400 whose body mentions schema, output_config or too complex, on a request that carried output_config, records the hash and resends the same request once without it; any other error keeps today's mapping. The SSE parser, zod validation and repair loop are unchanged. The right panel lists the wire-schema rules.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f5e5a" stroke-width="1.5"/></marker></defs>
+<rect width="680" height="610" fill="#ffffff"/>
+<text x="20" y="28" font-size="14" font-weight="600" fill="#2c2c2a">Detail (proposed): one request through anthropic-direct</text>
+<g font-size="12" fill="#2c2c2a" stroke-width="1.2">
+<rect x="20" y="46" width="360" height="56" rx="6" fill="#faeeda" stroke="#854f0b"/>
+<text x="32" y="66" font-size="13" font-weight="600" fill="#633806">1. Eligible? (AC-1, AC-3, AC-6)</text>
+<text x="32" y="84" fill="#633806">options.structuredOutput &amp;&amp; isClaudeModel(model)</text>
+<text x="32" y="98" fill="#633806">&amp;&amp; request.outputSchema (anthropic-cache.ts:37)</text>
+<line x1="200" y1="102" x2="200" y2="118" stroke="#5f5e5a" marker-end="url(#a)"/>
+<rect x="20" y="122" width="360" height="56" rx="6" fill="#e6f2e3" stroke="#3f7a34"/>
+<text x="32" y="142" font-size="13" font-weight="600" fill="#24521c">2. anthropicWireSchema — new (AC-2)</text>
+<text x="32" y="160" fill="#24521c">{ unsupported } or hash already rejected (AC-4)</text>
+<text x="32" y="174" fill="#24521c">→ no output_config; else json_schema + wire</text>
+<line x1="200" y1="178" x2="200" y2="194" stroke="#5f5e5a" marker-end="url(#a)"/>
+<rect x="20" y="198" width="360" height="56" rx="6" fill="#faeeda" stroke="#854f0b"/>
+<text x="32" y="218" font-size="13" font-weight="600" fill="#633806">3. Build body (anthropic-compatible.ts:68-77)</text>
+<text x="32" y="236" fill="#633806">today's fields + output_config only if format set;</text>
+<text x="32" y="250" fill="#633806">ineligible bodies stay byte-identical</text>
+<line x1="200" y1="254" x2="200" y2="270" stroke="#5f5e5a" marker-end="url(#a)"/>
+<rect x="20" y="274" width="360" height="40" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="32" y="298">4. yield request.sent(body); POST /messages</text>
+<line x1="200" y1="314" x2="200" y2="330" stroke="#5f5e5a" marker-end="url(#a)"/>
+<path d="M200 334 L370 372 L200 410 L30 372 Z" fill="#faeeda" stroke="#854f0b"/>
+<text x="200" y="368" text-anchor="middle" fill="#633806">400 + format set + body mentions</text>
+<text x="200" y="384" text-anchor="middle" fill="#633806">schema, output_config, too complex?</text>
+<path d="M370 372 H396 V226 H384" fill="none" stroke="#3f7a34" marker-end="url(#a)"/>
+<text x="402" y="276" fill="#24521c">yes, once:</text>
+<text x="402" y="292" fill="#24521c">remember</text>
+<text x="402" y="308" fill="#24521c">the hash,</text>
+<text x="402" y="324" fill="#24521c">drop format,</text>
+<text x="402" y="340" fill="#24521c">back to 3</text>
+<text x="402" y="356" fill="#24521c">(AC-4)</text>
+<line x1="200" y1="410" x2="200" y2="428" stroke="#5f5e5a" marker-end="url(#a)"/>
+<text x="208" y="424">no</text>
+<rect x="20" y="432" width="360" height="56" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="32" y="452" font-size="13" font-weight="600">5. Other errors: today's mapping (:100-114)</text>
+<text x="32" y="470">a context-length 400 stays context_limit, not</text>
+<text x="32" y="484">remembered; a second rejection fails the pass</text>
+<line x1="200" y1="488" x2="200" y2="504" stroke="#5f5e5a" marker-end="url(#a)"/>
+<rect x="20" y="508" width="360" height="84" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="32" y="528" font-size="13" font-weight="600">6. Unchanged downstream</text>
+<text x="32" y="546">SSE parse (:129-219) → runner parse + zod (AC-5)</text>
+<text x="32" y="562">→ the repair pass resends the same outputSchema,</text>
+<text x="32" y="578">so it carries the same output_config (AC-7)</text>
+<rect x="480" y="46" width="180" height="546" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="490" y="66" font-size="13" font-weight="600">Wire-schema rules</text>
+<text x="490" y="88" font-weight="600">Not expressible (AC-2)</text>
+<text x="490" y="106">additionalProperties</text>
+<text x="490" y="122">true or a schema</text>
+<text x="490" y="140">propertyNames (z.record)</text>
+<text x="490" y="158">recursive $ref</text>
+<text x="490" y="176">&gt; 24 optional properties</text>
+<text x="490" y="194">&gt; 16 unions (anyOf or</text>
+<text x="490" y="210">type arrays)</text>
+<text x="490" y="236" font-weight="600">Transform (AC-1)</text>
+<text x="490" y="254">every object gets</text>
+<text x="490" y="270">additionalProperties: false</text>
+<text x="490" y="288">drop $schema, minLength,</text>
+<text x="490" y="304">maxLength, minimum,</text>
+<text x="490" y="320">maximum, multipleOf,</text>
+<text x="490" y="336">exclusiveMinimum,</text>
+<text x="490" y="352">exclusiveMaximum,</text>
+<text x="490" y="368">maxItems, pattern</text>
+<text x="490" y="386">minItems &gt; 1 dropped;</text>
+<text x="490" y="402">0 and 1 kept</text>
+<text x="490" y="420">format kept only if</text>
+<text x="490" y="436">date-time, time, date,</text>
+<text x="490" y="452">duration, email,</text>
+<text x="490" y="468">hostname, uri, ipv4,</text>
+<text x="490" y="484">ipv6, uuid</text>
+<text x="490" y="502">all else unchanged:</text>
+<text x="490" y="518">required, enum, const,</text>
+<text x="490" y="534">anyOf, default, description</text>
+<text x="490" y="556">keywords only in schema</text>
+<text x="490" y="572">positions; input never</text>
+<text x="490" y="588">mutated</text>
+</g>
+</svg>
