@@ -8,7 +8,7 @@ import { enumerateQuarters, findObservation } from "./normalizer";
 export const STOCK_METRICS = new Set([
   "deposits", "deposit_base", "loan_loss_reserve", "loan_portfolio",
   "loans_held_for_investment_net", "loans_held_for_sale", "total_assets",
-  "total_liabilities", "stockholders_equity",
+  "total_liabilities", "stockholders_equity", "employees",
 ]);
 
 export function buildTTMSeries(
