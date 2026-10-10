@@ -91,6 +91,8 @@ historyRatios(fi: ValuationFinancialInputs): {
 equityBridge(fi): { amount: number; period_end: string; components: Record<string, number>; missing: string[] } | null
   // latest row (annual or quarterly) with any balance item: cash + securities − long-term debt − current debt − leases
 buildScenarioStatements({ baseRevenue, baseYear, ratios, drivers, firstYear? }): StatementYear[]
+  // StatementYear: { fiscal_year, revenue, operating_income, depreciation_amortization, capital_expenditures,
+  //   nopat, change_in_net_working_capital, fcff } (named like the schedule build fields)
   // revenue_t = revenue_{t-1}(1+g); OI = revenue × margin; D&A, capex = revenue × (override ?? ratio);
   // NOPAT = OI(1 − tax); ΔNWC = nwc_to_revenue_change × Δrevenue; FCFF = NOPAT + D&A − capex − ΔNWC.
   // Years must be baseYear+1… contiguous, otherwise it throws naming the missing year.
