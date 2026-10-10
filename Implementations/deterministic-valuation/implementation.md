@@ -185,4 +185,45 @@ Satisfiability check: a throwaway reference `engine.ts`, plus the two `financial
 
 ## Completion evidence
 
-To be filled after implementation. For each criterion, list the commands run, their results and any remaining limits. Mark which results the worker reported and which were checked independently.
+All results below are **worker-reported** (branch `feat/deterministic-valuation-engine`, 2026-10-11). None has been checked independently yet. The worker did not read or run `verification/`.
+
+Commands, run from the worktree root. Database suites used a private migrated test database (`rr_test_f1`) and the mock provider.
+
+| Command | Result |
+| --- | --- |
+| `npx tsx --test Implementations/deterministic-valuation/acceptance/*.test.ts` | 11 pass, 0 fail |
+| `npx tsc --noEmit` | pass |
+| `npm run test:unit` | 322 pass, 0 fail, 10 skipped (main: 318, 0, 10; the 4 new tests are in `tests/valuation-engine.test.ts`) |
+| `npm run build` | pass |
+| `RUN_DB_INTEGRATION=1 RESEARCH_MODEL_PROVIDER=mock RESEARCH_ACCEPTANCE_PROVIDER=mock npx tsx --test tests/sofi-research-e2e.test.ts` (the `test:sofi-v3` script's port-5433 database wasn't running) | 6 pass, 0 fail, with no change to the test |
+| `npm run test:db -- 'tests/*.test.ts' 'Implementations/deterministic-valuation/acceptance/*.test.ts'` | 360 pass, 0 fail |
+| Manual handler check: a scratch script, not committed. It runs the mock bank pipeline, switches the run to `operating_company`, then calls `assetValuationHandler` twice: first with no statements, then with added filings, a price snapshot and a FRED document | pass (details below) |
+
+By criterion:
+
+| ID | Evidence |
+| --- | --- |
+| AC-1 | Acceptance AC-1. Unit: rows marked `.`, CRLF lines and a full ISO cutoff. Manual: with DGS10 rows 2025-12-29 4.10, 2025-12-30 4.05, 2025-12-31 `.` and 2026-01-02 9.99 and a 2026-01-01 cutoff, `risk_free_rate` was `{rate: 0.0405, observation_date: "2025-12-30", series_id: "DGS10", source_document_id}`. The model packet carried the same value |
+| AC-2 | Acceptance AC-2. Manual: without statements, shares or price, the stage saved withheld artifacts with "Valuation inputs are missing: diluted shares; market price; base-year revenue." No new `asset_valuation` task was created |
+| AC-3 | Acceptance AC-3. Unit: the 21% `statutory_default` fallback, and a bridge from the latest balance row that names its missing items |
+| AC-4 to AC-6 | Acceptance |
+| AC-7 | Acceptance. Manual: each anchor equals its terminal-year path price and (terminal value + bridge) / shares |
+| AC-8 | Acceptance. Unit: null when no margin in range reaches the price |
+| AC-9 | Acceptance. Unit: duplicate scenarios are rejected. Manual: the stored request's output format has no price, projection or anchor field. The mock's discount rates are the risk-free rate plus a premium |
+| AC-10 | Acceptance. The handler adds `validateScenarioDriverCoverage` to the contract check, so a gap goes through repair. SOFI e2e: scenarios carry drivers for 2026–2028 |
+| AC-11 | Unit: bank FCFE schedules are assembled by code, and mismatched years are rejected. SOFI e2e: the mock returns only FCFE schedules, and the 2026–2030 path is assembled by code. The verification set wasn't run by the worker |
+| AC-12 | SOFI e2e and `test:db` pass. Decision synthesis's `shares_outstanding_millions` resolves (2500 in the manual check). The paid META run on Haiku wasn't run; it needs approval |
+
+Decisions not fixed by the plan:
+- **Bank path.** A run takes the bank path when its archetypes include `bank` or its profile is `financials`. The model-facing format there is `valuation_scenario_set` (`valuation_status`, `method_inputs`, `omitted_methods`, `withheld_reason`) plus `reverse_valuation`. The path comes from the first method in schema order (fcff, fcfe, dividend, earnings_exit, book_exit, tangible_book_exit) that has all three scenarios. Any share count below the reported diluted count is raised to it. The bank reverse valuation stays model-written.
+- **Withheld triggers.** A non-positive code-built anchor is recorded as withheld instead of failing the stage.
+- **Shares.** Diluted shares are the SEC reported count, otherwise the latest captured `diluted_shares`.
+- **Reverse valuation.** `implied_growth` and `implied_margin` are nullable: null when no value in range reaches the price. The export prints that case.
+- **Operating-model pin.** The pin converts the operating model's unit (1, 1e3 or 1e6) when revenue then falls within 0.5–2× base revenue. Otherwise there is no pin, and a source gap is recorded.
+- **Report reader.** `valuation-summary.ts` now checks each anchor against the schedule's end-of-horizon value instead of today's value per share. `tests/report-ui.test.ts` changed: its fixture already agrees, and the disagreement case now moves the base anchor to 600.
+- **Extra engine exports.** `forecastHorizon`, `operatingModelFirstYear` and the types.
+
+Remaining limits:
+- The paid META run on Haiku for AC-12 is still open.
+- The mock pipeline for an operating company stops at `historical_record` ("Primary financial statements are incomplete"), before any stage this change touches; this wasn't rechecked on main. The FCFF handler path is therefore covered by the manual check, not by a committed DB test.
+- Persisted amounts and prices aren't rounded.
