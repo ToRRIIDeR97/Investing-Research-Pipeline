@@ -2,7 +2,8 @@
 import {useState} from 'react';
 import {LineChart,Line,ResponsiveContainer,Tooltip,XAxis} from 'recharts';
 import {artifactContent,kpiMetricKey,researchObservations} from '@/lib/research/reporting/data-views';
-import {financialSeries,financialPeriod,label,number,safeUrl} from '@/lib/research/reporting/presentation.mjs';
+import {forecastTableRows,kpiSeries} from '@/lib/research/reporting/dashboard-series';
+import {label,number,safeUrl} from '@/lib/research/reporting/presentation.mjs';
 import styles from './financial-statements.module.css';
 type Row=Record<string,any>;
 const fmt=(value:unknown)=>number(value,3);
@@ -17,15 +18,13 @@ export function KPIDashboard({artifacts,compact=false,onRefresh,refreshing=false
    <p className={styles.note}>Updates reflect captured company disclosures. Thresholds are analyst assumptions.</p>
    {!items.length&&<p className={styles.empty}>No monitoring KPIs have been defined for this run.</p>}
    {items.filter(item=>String(item.kpi).toLowerCase().includes(query.toLowerCase())).map((item,i)=>{
-     const metric=kpiMetricKey(item,observations);const rows=observations.filter(r=>r.metric_key===metric&&r.periodicity==='quarterly'&&(r.segment??'')===(item.segment??'')&&(r.geography??'')===(item.geography??'')&&(!item.reporting_basis||r.reporting_basis===item.reporting_basis)&&(!item.unit||r.unit===item.unit));
-     const periods=[...new Set(rows.map(financialPeriod).filter(Boolean))].sort();
-     const series=financialSeries(rows.map(r=>({...r,segment:null,geography:null})),metric??'',periods.slice(-8));const latest=series.points.at(-1);const prior=series.points.at(-2);
+     const series=kpiSeries(item,observations,kpiMetricKey(item,observations));const latest=series.points.at(-1);const prior=series.points.at(-2);
      const ordinal=(p:string)=>Number(p.slice(0,4))*4+Number(p.at(-1));
      const consecutive=latest&&prior&&ordinal(latest.period)-ordinal(prior.period)===1;
      const delta=consecutive&&latest?.value!=null&&prior?.value!=null?latest.value-prior.value:null;
      const percentUnit=['%','percent','percentage points'].includes(String(series.unit).toLowerCase());
      const change=!percentUnit&&delta!==null&&prior?.value?delta/Math.abs(prior.value)*100:null;
-     const latestRow=rows.find(r=>financialPeriod(r)===periods.at(-1));const url=safeUrl(latestRow?.metadata_json?.source_url);
+     const latestRow=series.rows.at(-1);const url=safeUrl(latestRow?.metadata_json?.source_url);
      return <section className={styles.kpi} key={`${item.kpi}-${i}`}><div><h3>{item.kpi}</h3>{item.definition&&<p className={styles.note}>{item.definition}</p>}<p className={styles.kpiValue}>{!series.reason&&latest?.value!=null?fmt(latest.value):fmt(item.current_level)} <small>{!series.reason?series.unit:item.unit??''}</small></p><p className={styles.note}>{latest?.period??item.period_end??'Latest saved observation'}{delta!==null?` · ${delta>0?'+':''}${fmt(delta)} ${percentUnit?'percentage points':series.unit} QoQ${change!==null?` (${fmt(change)}%)`:''}`:' · Comparable prior quarter unavailable'}</p>{url&&<a className={styles.textLink} href={url} target="_blank" rel="noreferrer">Source filing</a>}</div>
      <div>{series.reason?<p className={styles.note}>Quarterly series unavailable. {series.reason}</p>:<><div className={styles.kpiChart} role="img" aria-label={`${item.kpi} quarterly history, ${series.unit}`}><ResponsiveContainer width="100%" height="100%"><LineChart data={series.points} margin={{top:12,right:8,bottom:4,left:8}}><XAxis dataKey="period" tick={{fontSize:11}}/><Line dataKey="value" stroke="#596b88" dot={{r:3}} connectNulls={false} isAnimationActive={false}/><Tooltip/></LineChart></ResponsiveContainer></div><details className={styles.chartData}><summary>Quarterly values</summary><ul>{series.points.map(p=><li key={p.period}>{p.period}: {fmt(p.value)} {series.unit}</li>)}</ul></details></>}</div>
      <dl className={styles.thresholds}><div><dt>Bear</dt><dd>{fmt(item.bear_threshold)} {item.unit??latestRow?.unit??'Unit not specified'}</dd></div><div><dt>Base</dt><dd>{item.base_range}</dd></div><div><dt>Bull</dt><dd>{fmt(item.bull_threshold)} {item.unit??latestRow?.unit??'Unit not specified'}</dd></div><div><dt>Affects</dt><dd>{label(item.model_input_affected)}</dd></div></dl></section>;
@@ -41,7 +40,7 @@ export function ValuationDashboard({artifacts}:{artifacts:Row[]}) {
  const projections:Row[]=path.annual_projections??[], targets:Row[]=path.price_target_path??[];
  const cases=['bear','base','bull'];const years=[...new Set(targets.map(t=>t.fiscal_year))].sort();
  const assumptions:Row[]=(scenarios.scenarios??[]).flatMap((s:Row)=>(s.numeric_assumptions??[]).map((a:Row)=>({...a,scenario:s.scenario_type})));
- const forecastRows=(group:string)=>[...new Set(projections.flatMap(p=>Object.keys(p[group]??{})))].filter(k=>!k.endsWith('_millions')||!projections.some(p=>Object.hasOwn(p[group]??{},k.replace(/_millions$/,'')))).map(k=>{const ratio=/margin|ratio|rate/.test(k),perShare=group==='per_share_values';const divisor=ratio?0.01:perShare||k.endsWith('_millions')?1:1e6;return [label(k)+` (${ratio?'%':perShare?`${path.currency}/share`:/shares/.test(k)?'million shares':`${path.currency} millions`})`,...projections.map(p=>typeof p[group]?.[k]==='number'?p[group][k]/divisor:null)];});
+ const forecastRows=(group:string)=>forecastTableRows(projections,group,path.currency);
  const valuation=artifactContent(artifacts,'valuation_scenario_set');const models:Row[]=valuation.method_schedules??[];
  return <div className={styles.embedded}>
  <NumericTable title="Scenario assumptions" columns={['Case','Year','Assumption','Value','Unit','Rationale']} rows={assumptions.length?assumptions.map(a=>[label(a.scenario),String(a.fiscal_year),label(a.driver_key),a.value,a.unit,a.rationale]):targets.map(t=>[label(t.scenario_type),String(t.fiscal_year),label(t.valuation_parameter_key),rateParameter(t.valuation_parameter_key)?t.valuation_parameter_value*100:t.valuation_parameter_value,rateParameter(t.valuation_parameter_key)?'%':'×',label(t.valuation_method)])}/>
