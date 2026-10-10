@@ -130,7 +130,7 @@ function ReviewQueue() {
         <footer className={ui.actions}><button type="button" className={ui.textLink} disabled={submitting} onClick={() => selectItem(null)}>Cancel</button><button className={ui.primary} type="submit" disabled={submitting || !reportReady}>{submitting ? "Saving…" : "Submit decision"}</button></footer>
       </form>
     </> : <>
-      <header className={ui.heading}><h1>Reviews</h1><span className={ui.muted}>{loading ? "" : `${items.length} pending`}</span></header>
+      <header className={ui.heading}><h1 className="sr-only">Reviews</h1><span className={ui.muted}>{loading ? "" : `${items.length} pending`}</span></header>
       {saved && <p className={ui.notice} role="status">Decision saved.</p>}
       <div className={ui.search}><Search size={19} aria-hidden="true" /><input type="search" aria-label="Search reviews" placeholder="Search reviews" value={query} onChange={(event) => setQuery(event.target.value)} /></div>
       {loading ? <p className={ui.empty} role="status">Loading reviews…</p> : error ? <p className={ui.error} role="alert">{error}<button onClick={() => fetchQueue(true)}>Try again</button></p> : <>
