@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="420" viewBox="0 0 680 420" role="img" font-family="Helvetica, Arial, sans-serif">
+<title>finalizeDecisionOutput steps</title>
+<desc>Six ordered steps inside the new pure function, each tied to its acceptance criterion: drop invented citations, move flagged or unsupported items, check registers, set thesis fields, set returns, merge adjustments.</desc>
+<rect width="680" height="420" fill="#ffffff"/>
+<text x="20" y="28" font-size="14" font-weight="600" fill="#2c2c2a">Detail: finalizeDecisionOutput(raw, inputs), new in decision/finalize.ts</text>
+<g font-size="12" fill="#2c2c2a">
+<g><rect x="20" y="46" width="640" height="48" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="66" font-weight="600" fill="#085041">1. Deep-copy, then drop citation IDs not in acceptedClaimIds</text>
+<text x="34" y="84" fill="#0f6e56">reuses dropInvalidCitationIds (artifact-evidence.ts); unique IDs into adjustments — AC-3</text></g>
+<g><rect x="20" y="102" width="640" height="48" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="122" font-weight="600" fill="#085041">2. Move flagged and unsupported items</text>
+<text x="34" y="140" fill="#0f6e56">driver catalysts → monitoring drivers; gap or uncited risks → open gaps — AC-1, AC-2</text></g>
+<g><rect x="20" y="158" width="640" height="48" rx="6" fill="#fcebeb" stroke="#a32d2d"/>
+<text x="34" y="178" font-weight="600" fill="#791f1f">3. Empty risk or catalyst register → error {path} (the only new failure)</text>
+<text x="34" y="196" fill="#a32d2d">returned by decisionOutputFormat().validate; the existing repair pass handles it — AC-4, AC-8</text></g>
+<g><rect x="20" y="214" width="640" height="48" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="234" font-weight="600" fill="#085041">4. Thesis fields from inputs.valuation.status</text>
+<text x="34" y="252" fill="#0f6e56">complete → true + code linkage; withheld → false + marker + reason, pending — AC-5</text></g>
+<g><rect x="20" y="270" width="640" height="48" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="290" font-weight="600" fill="#085041">5. expected_return_matrix from inputs, status estimated | withheld | unavailable</text>
+<text x="34" y="308" fill="#0f6e56">returns from terminalReturns; withheld → all 7 null; dilution flag code-owned — AC-6</text></g>
+<g><rect x="20" y="326" width="640" height="48" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="346" font-weight="600" fill="#085041">6. Merge adjustments into decision_record.adjustments; return {output, adjustments, gaps, errors}</text>
+<text x="34" y="364" fill="#0f6e56">idempotent: re-finalizing its own output changes nothing and opens no new gaps — AC-7</text></g>
+</g>
+<text x="20" y="400" font-size="11" fill="#5f5e5a">Schema (decision/contracts.ts): nullable returns + status, monitoring drivers, adjustments — AC-7.</text>
+</svg>
