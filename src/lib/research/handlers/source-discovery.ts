@@ -5,7 +5,6 @@ import { fetchProfileResearchContext, storeSourceCorpus } from "../sources/corpu
 import { runSearches, type SearchResult } from "../sources/collector";
 import { planMissingRoles, type SourcePlan } from "../sources/planner";
 import { SOURCE_ROLES, type SourceRole } from "../sources/roles";
-import { discoverRoleSources } from "../sources/role-discovery";
 import { recordSourceCoverage, reconcileRoleGaps, sourcePlanFor, v2RunContext, withLinkedRunSources,
   type CoverageSource } from "../sources/role-coverage";
 import { SourceSearch } from "../sources/source-requests";
@@ -65,25 +64,8 @@ export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
       // Fetch public/SEC context
       const secContext = await fetchProfileResearchContext(v2Ctx);
 
-      // Follow the report's concrete questions through the same cutoff/role checks
-      // as normal discovery. Search snippets never count as fetched evidence.
-      const { getTeamRequests } = await import("../team");
-      const batch = await getTeamRequests(sql, ctx.runId);
-      const requests = batch?.requests.filter(r => !r.response && (r.needs_sources || r.role === "data")) || [];
-      if (requests.length) {
-        const roleQueries: Partial<Record<SourceRole, string[]>> = {};
-        for (const request of requests) (roleQueries[request.source_role] ||= []).push(`"${ctx.assetName}" ${ctx.symbol} ${request.question}`);
-        const extra = await discoverRoleSources({ assetName: ctx.assetName, symbol: ctx.symbol,
-          cutoffAt: ctx.cutoffAt.toISOString(), roleQueries }, requests.map(r => r.source_role));
-        const context = secContext as Record<string, any>;
-        context.supplementalSources = [...(context.supplementalSources || []), ...extra];
-        for (const request of requests) await sql`INSERT INTO source_retrieval_attempts
-          (research_run_id, source_role, attempt_status, failure_reason, attempt_metadata_json)
-          VALUES (${ctx.runId}, ${request.source_role}, 'attempted', NULL,
-            ${sql.json({ request_id: request.id, question: request.question, fetched_documents: extra.filter(s => s.metadata.source_role === request.source_role).length })})`;
-      }
-
-      // Store source corpus in database (creates source_documents, parses, chunks, etc.)
+      // Store source corpus in database (creates source_documents, parses, chunks, etc.).
+      // Team requests never reopen discovery; processResearchRequests asks the collector instead.
       const sourceCorpus = await storeSourceCorpus(sql, v2Ctx, secContext);
       const sourcePlan = sourcePlanFor(ctx);
 

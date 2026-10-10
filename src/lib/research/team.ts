@@ -5,6 +5,9 @@ import { loadReportInputs, saveReportArtifact } from "./reporting/store";
 import { TEAM_ROLES, BRIEF_ROLES, GAP_OWNER_STAGES, dependentStages } from "./team-plan";
 import { SOURCE_ROLES } from "./sources/roles";
 import { getStageOutputContract } from "./stage-contracts";
+import { getEmbeddingProvider, retrievePassages, runDocuments } from "./memory";
+import { runSearches } from "./sources/collector";
+import { extractEvidenceForSources } from "./handlers/evidence-extraction";
 
 const Role = z.enum(["data", "financials", "business", "valuation"]);
 export const ResearchRequest = z.object({
@@ -12,12 +15,30 @@ export const ResearchRequest = z.object({
   needs_sources: z.boolean(), source_role: z.enum(SOURCE_ROLES),
 });
 type Request = z.infer<typeof ResearchRequest>;
-type Answer = { status: "answered" | "unavailable" | "needs_sources"; answer: string; evidence_ids: string[]; artifact_ids: string[] };
-export type TeamRequest = Request & { id: string; response?: Answer };
-export interface RequestBatch { round: number; state: "queued" | "processing" | "answered"; source_escalated?: boolean; requests: TeamRequest[] }
+export type TeamAnswer = {
+  status: "answered" | "unavailable" | "needs_sources";
+  answer: string;
+  evidence_ids: string[];
+  artifact_ids: string[];
+  /** Documents linked to the run. */
+  source_ids?: string[];
+  /** "system:market-history" | "system:fred" for answers made from stored data. */
+  resolved_by?: string;
+  /** The owner asks for its stage and dependents to rerun. */
+  requires_rerun?: boolean;
+};
+/** `source_searched`: the collector already searched for this request, so it is never searched again. */
+export type TeamRequest = Request & { id: string; response?: TeamAnswer; source_searched?: boolean };
+/** `rerun_stages`: analysis stages a re-run reopened; the batch waits for them before asking again. */
+export interface RequestBatch { round: number; state: "queued" | "processing" | "answered"; source_escalated?: boolean;
+  rerun_stages?: string[]; requests: TeamRequest[] }
 const REQUEST_CONTRACT = outputContract({ requests: z.array(ResearchRequest).max(5) });
 const BRIEF_CONTRACT = outputContract({ approach: z.string().min(1), checks: z.array(z.string().min(1)).min(1), information_needed: z.array(z.string().min(1)) });
-const ANSWER_CONTRACT = outputContract({ status: z.enum(["answered", "unavailable", "needs_sources"]), answer: z.string().min(1), evidence_ids: z.array(z.string()), artifact_ids: z.array(z.string()) });
+const ANSWER_CONTRACT = { ...outputContract({ status: z.enum(["answered", "unavailable", "needs_sources"]), answer: z.string().min(1),
+  evidence_ids: z.array(z.string()), artifact_ids: z.array(z.string()), source_ids: z.array(z.string()).optional(), requires_rerun: z.boolean().optional() }),
+  requiredKeys: ["status", "answer", "evidence_ids", "artifact_ids"] };
+/** Stages after the analysis: a re-run reopens them but does not wait for them. */
+export const REQUEST_TAIL_STAGES = ["ai_reviewer", "human_review", "export", "refresh_schedule"];
 export class ResearchRequestsPending extends Error {
   constructor() { super("Specialists are investigating report requests"); }
 }
@@ -62,6 +83,22 @@ export async function prepareResearchTeam(sql: Sql, ctx: ResearchRunContext) {
   if (failed?.status === "rejected") throw failed.reason;
 }
 
+/** The next round: at most two, repeated questions dropped, per-run flags carried. Null when there is nothing new. */
+export function nextRequestBatch(previous: RequestBatch | null, proposed: Request[]): RequestBatch | null {
+  if ((previous?.round || 0) >= 2) return null;
+  const asked = new Set(previous?.requests.map(r => r.question.trim().toLowerCase()));
+  const fresh = proposed.filter(r => {
+    const key = r.question.trim().toLowerCase();
+    if (asked.has(key)) return false;
+    asked.add(key);
+    return true;
+  });
+  if (!fresh.length) return null;
+  const round = (previous?.round || 0) + 1;
+  return { round, state: "queued", ...(previous?.source_escalated !== undefined ? { source_escalated: previous.source_escalated } : {}),
+    requests: [...(previous?.requests || []), ...fresh.map((r, i) => ({ ...r, id: `request-${round}-${i + 1}` }))] };
+}
+
 /** The report owner decides what is missing, using the complete current input snapshot. */
 export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, findings: Record<string, any>[] = []) {
   const previous = await getTeamRequests(sql, ctx.runId);
@@ -76,19 +113,11 @@ export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, 
     packet, outputFormat: REQUEST_CONTRACT, promptFactory: p => exactJsonPrompt({ agentName: "export-writer",
       requiredKeys: ["requests"], packet: p, extraRules: [TEAM_ROLES.report.purpose,
         "Request only specific unanswered investment questions or material inconsistencies. Return an empty requests array when the supplied research is adequate. Do not request information already present or repeat answered/unavailable requests.",
-        "Route financial extraction/reconciliation to financials, management/operations/scenarios to business, valuation calculations to valuation, and missing documents to data. Set needs_sources when new external evidence is required; source_role tells the collector where to search. The collector can obtain new documents and the dependent analyses will rerun.",
+        "Route financial extraction/reconciliation to financials, management/operations/scenarios to business, valuation calculations to valuation, and missing documents to data. Set needs_sources when new external evidence is required; source_role tells the collector where to search. Stored price history and the FRED 10-year Treasury series are answered directly from the run's data. Owners answer from the run's documents without rerunning their analysis; the collector searches once for a missing document, and a stage reruns only when its owner says its own output must be recomputed.",
         "role names the specialist and must be exactly one of: data, financials, business, valuation. Document types such as regulatory_filing or market_data belong in source_role, never in role."] }) });
-  const oldQuestions = new Set(previous?.requests.map(r => r.question.trim().toLowerCase()));
-  const fresh = result.requests.filter(r => {
-    const key = r.question.trim().toLowerCase();
-    if (oldQuestions.has(key)) return false;
-    oldQuestions.add(key);
-    return true;
-  });
-  if (!fresh.length) return;
-  const round = (previous?.round || 0) + 1;
-  await saveReportArtifact(sql, ctx, "team_requests", "requests", { round, state: "queued",
-    requests: [...(previous?.requests || []), ...fresh.map((r, i) => ({ ...r, id: `request-${round}-${i + 1}` }))] });
+  const batch = nextRequestBatch(previous, result.requests);
+  if (!batch) return;
+  await saveReportArtifact(sql, ctx, "team_requests", "requests", batch);
   throw new ResearchRequestsPending();
 }
 
@@ -96,84 +125,279 @@ export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, 
  * Citations outside the current inputs are dropped rather than failing the answer: a model can copy an
  * ID from an upstream artifact whose source is not report-eligible. An answer left without support is invalid.
  */
-export function keepCurrentReferences(answer: Answer, inputs: { evidence: { id: string }[]; artifacts: { id: string }[] }): Answer {
+export function keepCurrentReferences(answer: TeamAnswer,
+  inputs: { evidence: { id: string }[]; artifacts: { id: string }[]; sources?: { id: string }[] }): TeamAnswer {
   const evidence = new Set(inputs.evidence.map(e => e.id));
   const artifacts = new Set(inputs.artifacts.map(a => a.id));
+  const sources = new Set((inputs.sources || []).map(s => s.id));
   return { ...answer, evidence_ids: answer.evidence_ids.filter(id => evidence.has(id)),
-    artifact_ids: answer.artifact_ids.filter(id => artifacts.has(id)) };
+    artifact_ids: answer.artifact_ids.filter(id => artifacts.has(id)),
+    ...(answer.source_ids ? { source_ids: answer.source_ids.filter(id => sources.has(id)) } : {}) };
 }
 
+/** Facts the run already stores, answered without a model call. */
+export interface SystemFacts {
+  marketHistory?: { id: string; content: Record<string, any> } | null;
+  fred?: { sourceId: string; csv: string } | null;
+}
+const MARKET_TERMS = /price|market cap/i;
+const RATE_TERMS = /dgs10|(?:10|ten)[- ]year treasury|treasury yields?|risk[- ]free rates?|discount rates?/i;
+const withThousands = (value: number) => String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+/** The latest non-blank DGS10 observation; holidays are stored as blank rows. */
+function latestFredObservation(csv: string) {
+  const rows = csv.split(/\r?\n/).map(line => line.split(",").map(cell => cell.trim())).filter(([day]) => /^\d{4}-\d{2}-\d{2}$/.test(day || ""));
+  for (const [day, value] of rows.reverse()) if (value && value !== ".") return { day, value };
+  return null;
+}
+
+/** Market history is checked before FRED, so a price request that also names DGS10 cites the stored bars. */
+export function systemAnswer(request: TeamRequest, facts: SystemFacts): TeamAnswer | null {
+  const history = facts.marketHistory?.content;
+  const bars = Number(history?.bars_available || 0);
+  if (facts.marketHistory && bars > 0 && (request.source_role === "market_data" || (request.role === "data" && MARKET_TERMS.test(request.question)))) {
+    const check = history!.cross_check || {};
+    const verified = Number(check.verified_periods || 0), unverified = Number(check.unverified_periods || 0);
+    const checker = String(check.provider || "stooq").replace(/^./, letter => letter.toUpperCase());
+    const price = history!.valuation_price;
+    const answer = [`Stored daily prices for ${history!.provider_symbol}: ${withThousands(bars)} bars from ${history!.first_trading_day} to ${history!.last_trading_day} (${history!.provider}).`,
+      `${checker} cross-check: ${verified} of ${verified + unverified} period-end closes verified, ${unverified ? `${unverified} unverified` : "0 not verified"}.`,
+      ...(price?.price != null ? [`Valuation price ${[price.price, price.currency].filter(Boolean).join(" ")} on ${price.trading_date} (${price.verified ? "verified" : "unverified"}).`] : [])].join(" ");
+    return { status: "answered", answer, evidence_ids: [], artifact_ids: [facts.marketHistory.id], resolved_by: "system:market-history" };
+  }
+  const latest = facts.fred ? latestFredObservation(facts.fred.csv) : null;
+  if (latest && RATE_TERMS.test(request.question)) {
+    return { status: "answered", evidence_ids: [], artifact_ids: [], source_ids: [facts.fred!.sourceId], resolved_by: "system:fred",
+      answer: `The run's stored FRED DGS10 series (10-year Treasury constant-maturity yield) was ${latest.value}% on ${latest.day}, its latest non-blank observation.` };
+  }
+  return null;
+}
+
+async function loadSystemFacts(sql: Sql, runId: string): Promise<SystemFacts> {
+  const [history] = await sql`SELECT id, content_json FROM research_artifacts WHERE research_run_id = ${runId}
+    AND artifact_type = 'market_price_history' AND status IN ('validated', 'accepted') ORDER BY artifact_version DESC, created_at DESC LIMIT 1`;
+  const [fred] = await sql`SELECT sd.id, (SELECT string_agg(dc.text, '' ORDER BY dc.chunk_index) FROM document_chunks dc
+      WHERE dc.document_parse_id = (SELECT dp.id FROM document_parses dp WHERE dp.source_document_id = sd.id
+        AND dp.parser_name = 'system-source-payload' AND dp.status = 'completed' ORDER BY dp.completed_at DESC NULLS LAST LIMIT 1)) AS csv
+    FROM source_documents sd
+    WHERE (sd.research_run_id = ${runId} OR sd.id IN (SELECT source_document_id FROM research_run_sources WHERE research_run_id = ${runId}))
+      AND sd.source_type = 'macro_context' AND sd.metadata_json->>'source' = 'fred' AND sd.metadata_json->>'series_id' = 'DGS10'
+    ORDER BY sd.retrieved_at DESC, sd.created_at DESC LIMIT 1`;
+  return { marketHistory: history ? { id: String(history.id), content: history.content_json } : null,
+    fred: fred?.csv ? { sourceId: String(fred.id), csv: String(fred.csv) } : null };
+}
+
+/** Only an owner's requires_rerun names a root; data requests never reopen source discovery. */
 export function requestStageRoots(requests: TeamRequest[]): string[] {
-  return [...new Set(requests.filter(r => !r.response).map(r =>
-    r.needs_sources || r.role === "data" ? "source_discovery" : TEAM_ROLES[r.role].stage))];
+  return [...new Set(rerunRequests(requests).map(r => TEAM_ROLES[r.role].stage))];
+}
+const rerunRequests = (requests: TeamRequest[]) => requests.filter(r => r.response?.requires_rerun === true && r.role !== "data");
+
+export interface RequestResetPlan { mode: "none" | "auto" | "approval"; stages: string[]; analysis_stages: string[]; request_ids: string[] }
+function autoResetLimit() {
+  const raw = process.env.RESEARCH_MAX_AUTO_RESET_STAGES?.trim();
+  const value = Number(raw);
+  return raw && Number.isInteger(value) && value >= 0 ? value : 6;
 }
 
-/** Reopen affected branches atomically with the request state, then let normal stage validation run. */
+/** One automatic re-run of at most maxAutoStages analysis stages per run; anything else waits for a reviewer. */
+export function requestResetPlan(requests: TeamRequest[], stages: { stage_key: string; status: string }[],
+  opts: { autoResetUsed: boolean; maxAutoStages?: number }): RequestResetPlan {
+  const roots = requestStageRoots(requests);
+  if (!roots.length) return { mode: "none", stages: [], analysis_stages: [], request_ids: [] };
+  const skipped = new Set(stages.filter(s => s.status === "skipped").map(s => s.stage_key));
+  const reset = dependentStages(roots).filter(key => !skipped.has(key));
+  const analysis = reset.filter(key => !REQUEST_TAIL_STAGES.includes(key));
+  const auto = !opts.autoResetUsed && analysis.length <= (opts.maxAutoStages ?? autoResetLimit());
+  return { mode: auto ? "auto" : "approval", stages: reset, analysis_stages: analysis, request_ids: rerunRequests(requests).map(r => r.id) };
+}
+
+async function writeTeamRequests(tx: Sql, runId: string, batch: RequestBatch) {
+  await tx`UPDATE research_artifacts SET content_json = ${JSON.stringify(batch)}::text::jsonb, updated_at = NOW()
+    WHERE research_run_id = ${runId} AND artifact_type = 'team_requests' AND status = 'validated'`;
+}
+
+/**
+ * The reset an automatic or approved re-run shares: reopen the stages, invalidate their outputs and stale
+ * report approval, supersede gaps their owners will re-evaluate, and wait for the analysis stages before the
+ * re-run requests are answered again. Runs inside the caller's transaction.
+ */
+export async function rerunRequestStages(tx: Sql, runId: string, batch: RequestBatch,
+  reset: { stages: string[]; request_ids: string[] }, note: string) {
+  const affected = reset.stages;
+  const types = [...new Set(affected.flatMap(key => getStageOutputContract(key)?.requiredKeys || [])),
+    "report_outline", "report_section", "report_document", "report_review", "question_register"];
+  if (affected.includes("historical_record")) types.push("historical_record", "financial_statement_set", "market_price_history");
+  await tx`UPDATE research_stages SET status = 'pending', started_at = NULL, completed_at = NULL,
+    validation_result_json = NULL, failure_reason = NULL, updated_at = NOW()
+    WHERE research_run_id = ${runId} AND stage_key = ANY(${affected}::text[]) AND status != 'skipped'`;
+  await tx`UPDATE research_tasks SET validation_status = 'invalid', updated_at = NOW()
+    WHERE research_run_id = ${runId} AND stage_id IN
+      (SELECT id FROM research_stages WHERE research_run_id = ${runId} AND stage_key = ANY(${affected}::text[]))
+      AND task_type != 'team_brief'`;
+  await tx`UPDATE research_artifacts SET status = 'needs_more_work', updated_at = NOW()
+    WHERE research_run_id = ${runId} AND artifact_type = ANY(${types}::text[]) AND status IN ('validated', 'accepted')`;
+  await tx`UPDATE research_runs SET metadata_json = metadata_json - 'report_approval', updated_at = NOW() WHERE id = ${runId}`;
+  // Gaps written by reopened stages describe inputs that are about to be rebuilt. Their reruns
+  // record any gap that still applies; stale ones must not block the earlier stages meanwhile.
+  const owners = Object.entries(GAP_OWNER_STAGES).filter(([, stage]) => affected.includes(stage)).map(([owner]) => owner);
+  if (owners.length) await tx`UPDATE source_gaps SET status = 'resolved', resolved_at = NOW(), resolution_note = ${note}
+    WHERE research_run_id = ${runId} AND status = 'open' AND owner = ANY(${owners}::text[])`;
+  const ids = new Set(reset.request_ids);
+  await writeTeamRequests(tx, runId, { ...batch, state: "processing", rerun_stages: affected.filter(key => !REQUEST_TAIL_STAGES.includes(key)),
+    requests: batch.requests.map(request => {
+      if (!ids.has(request.id)) return request;
+      const { response: _, ...asked } = request;
+      return asked;
+    }) });
+}
+
+/** A reviewer declined the re-run: its requests become open questions and the report continues. */
+export async function skipRequestRerun(tx: Sql, runId: string, batch: RequestBatch, requestIds: string[]) {
+  const ids = new Set(requestIds);
+  const { rerun_stages: _, ...rest } = batch;
+  await writeTeamRequests(tx, runId, { ...rest, state: "answered", requests: batch.requests.map(r => !ids.has(r.id) ? r : { ...r, response: {
+    status: "unavailable", evidence_ids: r.response?.evidence_ids || [], artifact_ids: r.response?.artifact_ids || [],
+    answer: `Skipped by reviewer: re-run not approved.${r.response?.answer ? ` The owner's answer was: ${r.response.answer}` : ""}` } }) });
+}
+
+type RequestPassage = { passage_id: string; source_id: string; title: string; section_path: string[]; page: number | null; text: string };
+/** Research-memory passages of the request's source role from this run's documents (keyword ranking unless embeddings are on). */
+async function requestPassages(sql: Sql, runId: string, request: TeamRequest): Promise<RequestPassage[]> {
+  const result = await retrievePassages(sql, { runId, need: { key: request.id, query: request.question, sourceRoles: [request.source_role] },
+    embeddings: getEmbeddingProvider() });
+  return result.passages.map(p => ({ passage_id: p.passage_id, source_id: p.source_id, title: p.title,
+    section_path: p.section_path, page: p.page, text: p.text }));
+}
+
+/** One collector search for a request; evidence is read only from documents new to the run. */
+async function searchForRequest(sql: Sql, ctx: ResearchRunContext, request: TeamRequest) {
+  const known = new Set((await runDocuments(sql, ctx.runId)).map(doc => doc.id));
+  const query = `"${ctx.assetName}" ${ctx.symbol} ${request.question}`.replace(/\s+/g, " ").slice(0, 300).trim();
+  const [result] = await runSearches(sql, ctx, [{ source_role: request.source_role, query, reason: `Report request ${request.id}` }],
+    `team:${request.role}`, { request_id: request.id });
+  await extractEvidenceForSources(sql, ctx, result.documents.map(doc => doc.source_id).filter(id => !known.has(id)));
+}
+
+async function ownerAnswer(sql: Sql, ctx: ResearchRunContext, request: TeamRequest, searched: boolean): Promise<TeamAnswer> {
+  const owner = TEAM_ROLES[request.role];
+  const inputs = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
+  const references = { ...inputs, sources: await runDocuments(sql, ctx.runId) };
+  const { id, role, question, material, needs_sources, source_role } = request;
+  const packet = { asset: { name: ctx.assetName, symbol: ctx.symbol }, ...inputs, request: { id, role, question, material, needs_sources, source_role },
+    role: request.role, output_contract: "team_answer", source_search_attempted: searched, passages: await requestPassages(sql, ctx.runId, request) };
+  const response = await callResearchAgent<TeamAnswer>({ sql, ctx, stageKey: owner.stage,
+    taskKey: `team:answer:${request.id}`, taskType: "team_answer", agentName: owner.agent, modelTier: "mid", packet,
+    outputFormat: { ...ANSWER_CONTRACT, validate(value) {
+      const errors = ANSWER_CONTRACT.validate?.(value) || [];
+      if (errors.length) return errors;
+      const answer = keepCurrentReferences(value as TeamAnswer, references);
+      if (answer.status === "answered" && !answer.evidence_ids.length && !answer.artifact_ids.length && !answer.source_ids?.length) errors.push({ path: "references", message: "An answer requires supporting evidence, artifacts or passage sources from the supplied current references" });
+      return errors;
+    } }, promptFactory: p => exactJsonPrompt({ agentName: owner.agent, requiredKeys: ANSWER_CONTRACT.requiredKeys, packet: p,
+      extraRules: [owner.purpose,
+        "Answer the report agent's exact question from the refreshed artifacts, quoted evidence and passages. passages are excerpts of this run's stored documents for the request's source role; cite a passage by adding its source_id to the optional source_ids array. Use only supplied IDs.",
+        "If the question cannot be answered from these inputs and source_search_attempted is false, return needs_sources to send it to the collector once. If source_search_attempted is true, return unavailable and explain the remaining gap. Never treat a search attempt or a finished stage as proof of an answer.",
+        "Set the optional requires_rerun to true only when your own stage's output is wrong and must be recomputed; your stage and its dependents then rerun before you answer again. Omit it when the answer stands on its own."] }) });
+  const kept = keepCurrentReferences(response, references);
+  return { status: kept.status, answer: kept.answer, evidence_ids: kept.evidence_ids, artifact_ids: kept.artifact_ids,
+    ...(kept.source_ids ? { source_ids: kept.source_ids } : {}), ...(kept.requires_rerun === true ? { requires_rerun: true } : {}) };
+}
+
+/**
+ * Answer the batch without resetting stages: stored market history and FRED first, then each owner from
+ * research-memory passages, with one collector search per request at most. Stages reopen only when an
+ * owner sets requires_rerun: automatically once per run within the limit, otherwise after a reviewer approves.
+ */
 export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext) {
   let batch = await getTeamRequests(sql, ctx.runId);
   if (!batch || batch.state === "answered") return false;
-  const roots = requestStageRoots(batch.requests);
-  const affected = dependentStages(roots);
   if (batch.state === "queued") {
-    await sql.begin(async tx => {
-      const [run] = await tx`SELECT status FROM research_runs WHERE id = ${ctx.runId} FOR UPDATE`;
-      if (run?.status !== "running") throw new Error("Research requests cannot bypass a human gate");
-      const types = [...new Set(affected.flatMap(key => getStageOutputContract(key)?.requiredKeys || [])),
-        "report_outline", "report_section", "report_document", "report_review", "question_register"];
-      if (affected.includes("historical_record")) types.push("historical_record", "financial_statement_set", "market_price_history");
-      await tx`UPDATE research_stages SET status = 'pending', started_at = NULL, completed_at = NULL,
-        validation_result_json = NULL, failure_reason = NULL, updated_at = NOW()
-        WHERE research_run_id = ${ctx.runId} AND stage_key = ANY(${affected}::text[]) AND status != 'skipped'`;
-      await tx`UPDATE research_tasks SET validation_status = 'invalid', updated_at = NOW()
-        WHERE research_run_id = ${ctx.runId} AND stage_id IN
-          (SELECT id FROM research_stages WHERE research_run_id = ${ctx.runId} AND stage_key = ANY(${affected}::text[]))
-          AND task_type != 'team_brief'`;
-      await tx`UPDATE research_artifacts SET status = 'needs_more_work', updated_at = NOW()
-        WHERE research_run_id = ${ctx.runId} AND artifact_type = ANY(${types}::text[]) AND status IN ('validated', 'accepted')`;
-      await tx`UPDATE research_runs SET metadata_json = metadata_json - 'report_approval', updated_at = NOW() WHERE id = ${ctx.runId}`;
-      // Gaps written by reopened stages describe inputs that are about to be rebuilt. Their reruns
-      // record any gap that still applies; stale ones must not block the earlier stages meanwhile.
-      const owners = Object.entries(GAP_OWNER_STAGES).filter(([, stage]) => affected.includes(stage)).map(([owner]) => owner);
-      if (owners.length) await tx`UPDATE source_gaps SET status = 'resolved', resolved_at = NOW(),
-        resolution_note = ${`Superseded: its owning stage was reopened by team request round ${batch!.round}.`}
-        WHERE research_run_id = ${ctx.runId} AND status = 'open' AND owner = ANY(${owners}::text[])`;
-      await tx`UPDATE research_artifacts SET content_json = jsonb_set(content_json, '{state}', '"processing"'::jsonb), updated_at = NOW()
-        WHERE research_run_id = ${ctx.runId} AND artifact_type = 'team_requests' AND status = 'validated'`;
-    });
-    return true;
+    batch = { ...batch, state: "processing" };
+    await saveReportArtifact(sql, ctx, "team_requests", "requests", batch);
   }
-  const unfinished = await sql`SELECT stage_key FROM research_stages WHERE research_run_id = ${ctx.runId}
-    AND stage_key = ANY(${affected.filter(k => !["ai_reviewer", "human_review", "export", "refresh_schedule"].includes(k))}::text[])
-    AND status NOT IN ('completed', 'skipped')`;
-  if (unfinished.length) return false;
-  const inputs = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
-  const results = await Promise.allSettled(batch.requests.map(async request => {
-    if (request.response) return request;
-    const owner = TEAM_ROLES[request.role];
-    const packet = { asset: { name: ctx.assetName, symbol: ctx.symbol }, ...inputs, request, role: request.role,
-      output_contract: "team_answer", source_search_attempted: request.needs_sources || batch!.source_escalated };
-    const response = await callResearchAgent<Answer>({ sql, ctx, stageKey: owner.stage,
-      taskKey: `team:answer:${request.id}`, taskType: "team_answer", agentName: owner.agent, modelTier: "mid", packet,
-      outputFormat: { ...ANSWER_CONTRACT, validate(value) {
-        const errors = ANSWER_CONTRACT.validate?.(value) || [];
-        if (errors.length) return errors;
-        const answer = keepCurrentReferences(value as Answer, inputs);
-        if (answer.status === "answered" && !answer.evidence_ids.length && !answer.artifact_ids.length) errors.push({ path: "references", message: "An answer requires supporting evidence or artifacts from the supplied current references" });
-        return errors;
-      } }, promptFactory: p => exactJsonPrompt({ agentName: owner.agent, requiredKeys: ANSWER_CONTRACT.requiredKeys!, packet: p,
-        extraRules: [owner.purpose, "Answer the report agent's exact question using the refreshed artifacts and quoted evidence. Use supplied IDs. If it cannot be answered from this corpus, return needs_sources to send it to the collector. If a search has already been attempted without sufficient disclosure, return unavailable and explain the remaining gap. Never treat a search attempt or a finished stage as proof of an answer."] }) });
-    return { ...request, response: keepCurrentReferences(response, inputs) };
-  }));
-  const failure = results.find(r => r.status === "rejected");
-  if (failure?.status === "rejected") throw failure.reason;
-  const answered = results.map(r => (r as PromiseFulfilledResult<TeamRequest>).value);
-  const escalate = !batch.source_escalated && answered.some(r => r.response?.status === "needs_sources" && !r.needs_sources);
-  batch = { ...batch, state: escalate ? "queued" : "answered", source_escalated: batch.source_escalated || escalate,
-    requests: answered.map(r => r.response?.status !== "needs_sources" ? r :
-      escalate && !r.needs_sources ? { ...r, needs_sources: true, response: undefined } :
-        { ...r, response: { ...r.response, status: "unavailable" } }) };
-  await saveReportArtifact(sql, ctx, "team_requests", "requests", batch);
-  return batch.state === "queued";
+  if (batch.rerun_stages?.length && (await sql`SELECT 1 FROM research_stages WHERE research_run_id = ${ctx.runId}
+    AND stage_key = ANY(${batch.rerun_stages}::text[]) AND status NOT IN ('completed', 'skipped') LIMIT 1`).length) return false;
+  const escalated = Boolean(batch.source_escalated);
+  const set = (request: TeamRequest) => { batch = { ...batch!, requests: batch!.requests.map(r => r.id === request.id ? request : r) }; };
+  const save = () => saveReportArtifact(sql, ctx, "team_requests", "requests", batch!);
+  const settle = async (requests: TeamRequest[], searched: (r: TeamRequest) => boolean) => {
+    const results = await Promise.allSettled(requests.map(r => ownerAnswer(sql, ctx, r, searched(r))));
+    return { answers: results.map(r => r.status === "fulfilled" ? r.value : null), failure: results.find(r => r.status === "rejected") };
+  };
+
+  const facts = await loadSystemFacts(sql, ctx.runId);
+  const open: TeamRequest[] = [];
+  let changed = false;
+  for (const request of batch.requests.filter(r => !r.response)) {
+    const system = systemAnswer(request, facts);
+    if (system) { set({ ...request, response: system }); changed = true; continue; }
+    if (request.needs_sources && !request.source_searched && !(await requestPassages(sql, ctx.runId, request)).length) {
+      await searchForRequest(sql, ctx, request);
+      set({ ...request, source_searched: true }); changed = true;
+    }
+    open.push(batch.requests.find(r => r.id === request.id)!);
+  }
+  if (changed) await save();
+
+  const first = await settle(open, r => Boolean(r.source_searched) || escalated);
+  const retry: TeamRequest[] = [];
+  open.forEach((request, i) => {
+    const response = first.answers[i];
+    if (!response) return;
+    if (response.status !== "needs_sources") set({ ...request, response });
+    else if (request.source_searched || escalated) set({ ...request, response: { ...response, status: "unavailable" } });
+    else retry.push(request);
+  });
+  if (first.failure?.status === "rejected") { await save(); throw first.failure.reason; }
+  if (retry.length) {
+    // An owner's needs_sources escalates once per run; the next answer is final.
+    for (const request of retry) { await searchForRequest(sql, ctx, request); set({ ...request, source_searched: true }); }
+    batch = { ...batch, source_escalated: true };
+    await save();
+    const retried = retry.map(r => ({ ...r, source_searched: true }));
+    const second = await settle(retried, () => true);
+    retried.forEach((request, i) => {
+      const response = second.answers[i];
+      if (response) set({ ...request, response: response.status === "needs_sources" ? { ...response, status: "unavailable" } : response });
+    });
+    if (second.failure?.status === "rejected") { await save(); throw second.failure.reason; }
+  }
+
+  const stages = await sql`SELECT stage_key, status FROM research_stages WHERE research_run_id = ${ctx.runId}`;
+  const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}`;
+  const plan = requestResetPlan(batch.requests, stages.map(s => ({ stage_key: String(s.stage_key), status: String(s.status) })),
+    { autoResetUsed: Boolean(run?.metadata_json?.request_auto_reset) });
+  if (plan.mode === "none") {
+    const { rerun_stages: _, ...rest } = batch;
+    batch = { ...rest, state: "answered" };
+    await save();
+    return false;
+  }
+  const final = batch;
+  await sql.begin(async tx => {
+    const [locked] = await tx`SELECT status FROM research_runs WHERE id = ${ctx.runId} FOR UPDATE`;
+    if (locked?.status !== "running") throw new Error("Research requests cannot bypass a human gate");
+    const record = { stages: plan.stages, request_ids: plan.request_ids };
+    if (plan.mode === "auto") {
+      await rerunRequestStages(tx as unknown as Sql, ctx.runId, final, record,
+        `Superseded: its owning stage was reopened by team request round ${final.round}.`);
+      // Only automatic resets use up the run's one automatic re-run.
+      await tx`UPDATE research_runs SET metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
+        || ${tx.json({ request_auto_reset: { ...record, round: final.round, at: new Date().toISOString() } })}, updated_at = NOW() WHERE id = ${ctx.runId}`;
+      return;
+    }
+    const [{ cost }] = await tx`SELECT COALESCE(SUM(m.cost_usd), 0) AS cost FROM model_call_logs m
+      JOIN research_stages s ON s.id = m.stage_id WHERE m.research_run_id = ${ctx.runId} AND s.stage_key = ANY(${plan.stages}::text[])`;
+    const { rerun_stages: _, ...rest } = final;
+    await writeTeamRequests(tx as unknown as Sql, ctx.runId, { ...rest, state: "processing" });
+    await tx`UPDATE research_stages SET status = 'waiting_for_human', updated_at = NOW()
+      WHERE research_run_id = ${ctx.runId} AND stage_key = 'ai_reviewer'`;
+    await tx`UPDATE research_runs SET status = 'waiting_for_human',
+      metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
+        || ${tx.json({ request_reset: { ...record, estimated_cost_usd: Number(cost) } })}, updated_at = NOW() WHERE id = ${ctx.runId}`;
+  });
+  return true;
 }
 
 export function includeUnansweredQuestions(outline: ReportOutline, batch: RequestBatch | null): ReportOutline {
