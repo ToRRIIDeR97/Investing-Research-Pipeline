@@ -124,7 +124,7 @@ The asset's Financials view (`src/components/financial-statements.tsx`, `src/com
 - **Cash-flow build.** When D&A was captured, every fcff and fcfe year must include a `build` (`starting_profit`, `depreciation_amortization`, `capital_expenditures`, `change_in_net_working_capital`, `other_adjustments`). That build must reconcile to `cash_flow` and add back positive D&A (`cashFlowBuildErrors` in `src/lib/research/valuation/schedules.ts`). Violations go through the normal schema repair.
 - **Withheld valuation.** The analyst can withhold a valuation when no method can be built from the packet. It sets `valuation_status: "withheld"`, all three anchors to exactly 0 and a `withheld_reason` (`withheldValuationReason` in `src/lib/research/valuation/contracts.ts`). The stage then saves its artifacts marked withheld, writes the required lens signals as `not_applicable` with the reason, and stores no scenario anchors.
   - The stage's `valuation_depth_validation` accepts it as a warning, so the run continues.
-  - Decision synthesis keeps the decision pending, sets `valuation_accepted_first` to false and stores return markers flagged `valuation_withheld`. The export prints the reason in place of the valuation tables.
+  - Decision synthesis keeps the decision pending, sets `valuation_accepted_first` to false, prefixes the return linkage with the withheld marker and stores every return as null with `status: "withheld"`. The export prints the reason in place of the valuation tables.
   - At completion, the quality gate still reports the missing anchors under the key `valuation_withheld`, so the run ends `needs_more_work` rather than `completed`.
   - Mixed or partly zero anchors are not a withheld outcome and still fail the stage.
 
@@ -133,6 +133,21 @@ Historical v1 and v2 rows remain in the database. The current runner accepts ver
 New plans enable [adaptive reports](adaptive-research.md). The review stage composes
 company-specific sections before reviewing the complete document. Human approval
 binds the report and its input snapshot; export reproduces that approved version.
+
+## Decision synthesis
+
+The model writes the judgment calls: thesis, risks, catalysts, breakers, monitoring KPIs, confidence and the no-rerating, weak-stock and permanent-loss returns. Code sets everything the valuation stage already decided. `finalizeDecisionOutput` (`src/lib/research/decision/finalize.ts`) is a pure step that runs in this order:
+
+1. It drops citation IDs outside the accepted evidence packet.
+2. It moves a catalyst flagged `is_business_driver_only` to `monitoring_dashboard.drivers`. A risk flagged `is_source_gap_only`, or left with no citations, becomes a medium source gap owned by `system:decision-synthesis`.
+3. It reports an error only when the risk or catalyst register ends up empty.
+4. It sets `valuation_accepted_first` and, when returns exist, the horizon and return linkage. A withheld valuation gets the withheld marker and a pending decision.
+5. It sets `expected_return_matrix`. The status is `estimated` (bear, base and bull terminal returns plus the probability-weighted return), `withheld` (all seven returns null) or `unavailable` (no market price or terminal targets, or the terminal projection does not cover the reported diluted shares). `dilution_omitted` is always false.
+6. It records what changed in `decision_record.adjustments` (`dropped_citation_ids`, `moved_catalysts`, `moved_risks`).
+
+The model call uses `decisionOutputFormat`, which finalizes a copy before running `DECISION_SYNTHESIS_CONTRACT`. Flagged items, invented citations and code-owned fields therefore never trigger a repair. The raw answer is not mutated. The handler then finalizes once, checks the result, and saves the rows, the artifacts and the gaps. Finalizing its own output changes nothing. The save-time validators (C12-T1 to C12-T6) still reject flagged items or omitted dilution if they ever reach a save. The export prints "Withheld" or "Not available" for null returns.
+
+Company genesis follows the same rule for citations: IDs still unknown after its citation-repair call are dropped and listed in `company_genesis.citation_adjustments.dropped_citation_ids`.
 
 ## Invariants
 
