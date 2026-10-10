@@ -192,4 +192,25 @@ Fixture check on main: the verification fixture passes `DECISION_SYNTHESIS_CONTR
 
 ## Completion evidence
 
-To be filled after implementation. For each criterion, list the commands actually run, their results and any remaining limits. Mark which results the worker reported and which were checked independently.
+The worker reported all results below on branch `feat/deterministic-decision-synthesis` (2026-10-11). None has been checked independently yet. The worker did not see or run `verification/`.
+
+| Command | Result |
+| --- | --- |
+| `npx tsx --test Implementations/decision-synthesis-determinism/acceptance/*.test.ts` | 14 pass, 0 fail |
+| `npx tsc --noEmit` | clean |
+| `npm run test:unit` | 324 pass, 0 fail, 10 skipped (baseline 318 + 6 new tests in `tests/decision-finalize.test.ts`) |
+| `npm run build` | succeeds |
+| `RUN_DB_INTEGRATION=1 RESEARCH_MODEL_PROVIDER=mock RESEARCH_ACCEPTANCE_PROVIDER=mock npx tsx --test tests/sofi-research-e2e.test.ts` (test database `rr_test_f2`, standing in for `npm run test:sofi-v3`, whose script hardcodes port 5433) | 6 pass, 0 fail |
+| `npm run test:db -- 'tests/*.test.ts' 'Implementations/decision-synthesis-determinism/acceptance/*.test.ts'` (`rr_test_f2`) | 365 pass, 0 fail |
+
+Per criterion:
+- **AC-1 to AC-9:** covered by the acceptance set (all pass). The new unit tests also cover idempotency for both complete and withheld inputs, `unavailable` returns when dilution isn't covered (the model's linkage is kept), the linkage without weights, a source-gap risk with an invented ID moved once, unique gap keys for duplicate names, an older matrix without `status`, and "Withheld" in the export.
+- **AC-10:** checked by diff review. The mock e2e suite passes, but the mock never cites unknown IDs, so it doesn't reach this path. Limit: a genesis entry whose citations were all unknown still fails the save-time contract (`evidence_claim_ids.min(1)`), so the stage throws there instead of saving an uncited claim.
+- **AC-11:** checked by diff review. The prompt no longer asks for `valuation_accepted_first`, the withheld marker, the returns or `dilution_omitted`. The paid live check (step 6) has not been run; it needs your approval.
+
+Deviations and notes:
+- `stage-contracts.ts` needed no edit. `DECISION_SYNTHESIS_CONTRACT` extends `MonitoringDashboard`, so `drivers` carries over; AC-7 and AC-8 confirm this.
+- The `ExpectedReturnMatrix` TypeScript type is now `z.input`, so `tests/decision-artifacts.test.ts` compiles unchanged without `status`. No existing test was edited.
+- The handler keeps the monitoring KPI current-level fill (deposits, diluted shares) that sat inside :158-234. It runs on the finalized output, before one combined check of finalize errors and the contract, and that check runs before the first write.
+- The prompt adds one rule saying code sets the valuation-owned fields and that the model judges `no_rerating_return`, `weak_stock_outcome` and `permanent_loss_limit`.
+- Open: `decision_record.adjustments` and `monitoring_dashboard.drivers` are optional fields in the model-facing schema, so a model could pre-fill them and finalize would keep those entries. Gaps from a previous decision-synthesis attempt aren't resolved when a re-run no longer moves that risk.
