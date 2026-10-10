@@ -5,6 +5,7 @@ import type { Sql } from "@/lib/research/run-context";
 import { CURRENT_PIPELINE_VERSION } from "@/lib/research/version";
 import { readyStages, dependentStages } from "@/lib/research/team-plan";
 import { getStageOutputContract } from "@/lib/research/stage-contracts";
+import { getTeamRequests, rerunRequestStages, skipRequestRerun } from "@/lib/research/team";
 import { STAGE_CONFIGS, STAGE_CONFIG_MAP, getAllStagesForRun, getApplicableStages, getStageConfig } from "./stages";
 import { evaluateResearchQuality } from "./quality-gates";
 import {
@@ -513,6 +514,55 @@ export async function approveHumanReview(
 
   const nextStage = await startNextStage(runId);
   return { success: true, nextStage };
+}
+
+/** The run is not paused on a request reset, or the decision is unknown. Nothing was changed. */
+export class RequestResetError extends Error {}
+
+/**
+ * A reviewer's decision on a team-request re-run above the automatic limit. `rerun` reopens the recorded
+ * stages; `skip` leaves them and turns the requests into open report questions. Neither touches the
+ * research-plan or final-review gate, and an approved re-run does not use up the run's automatic one.
+ */
+export async function approveRequestReset(
+  runId: string,
+  input: { decision: "rerun" | "skip"; actor: string }
+): Promise<{ decision: "rerun" | "skip"; stages: string[]; request_ids: string[] }> {
+  if (input.decision !== "rerun" && input.decision !== "skip") throw new RequestResetError(`Unknown request-reset decision: ${String(input.decision)}`);
+  const sql = postgres(process.env.DATABASE_URL!);
+  try {
+    return await sql.begin(async (tx) => {
+      const [run] = await tx`SELECT status, metadata_json FROM research_runs WHERE id = ${runId} FOR UPDATE`;
+      const reset = run?.metadata_json?.request_reset as { stages: string[]; request_ids: string[] } | undefined;
+      if (run?.status !== "waiting_for_human" || !reset) throw new RequestResetError("The run is not paused on a request reset");
+      const gates = await tx`SELECT stage_key FROM research_stages WHERE research_run_id = ${runId}
+        AND stage_key IN ('research_plan', 'human_review') AND status = 'waiting_for_human'`;
+      if (gates.length) throw new RequestResetError(`The run is waiting at the ${gates[0].stage_key} gate`);
+      const batch = await getTeamRequests(tx as unknown as Sql, runId);
+      if (!batch) throw new RequestResetError("The run has no team requests");
+      if (input.decision === "rerun") {
+        await rerunRequestStages(tx as unknown as Sql, runId, batch, reset,
+          `Superseded: its owning stage was reopened by a re-run approved for team request round ${batch.round}.`);
+      } else {
+        await skipRequestRerun(tx as unknown as Sql, runId, batch, reset.request_ids);
+        await tx`UPDATE research_stages SET status = 'running', updated_at = NOW()
+          WHERE research_run_id = ${runId} AND stage_key = 'ai_reviewer' AND status = 'waiting_for_human'`;
+      }
+      await tx`
+        UPDATE research_runs
+        SET status = 'running',
+            metadata_json = ((CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) - 'request_reset') || ${tx.json({
+              request_reset_decision: { decision: input.decision, actor: input.actor, stages: reset.stages, request_ids: reset.request_ids,
+                decided_at: new Date().toISOString() },
+            })},
+            updated_at = NOW()
+        WHERE id = ${runId}
+      `;
+      return { decision: input.decision, stages: reset.stages, request_ids: reset.request_ids };
+    });
+  } finally {
+    await sql.end();
+  }
 }
 
 /** Keep the plan gate actionable while persisting the requested changes. */

@@ -55,6 +55,7 @@ interface RunProgress {
   totalCost: number;
   createdAt?: string;
   marketDataCutoffAt?: string | null;
+  requestReset: { stages: string[]; request_ids: string[]; estimated_cost_usd: number } | null;
 }
 
 interface SourceDocument {
@@ -507,6 +508,26 @@ export default function RunResearchPage() {
     }
   }
 
+  async function handleRequestReset(decision: "rerun" | "skip") {
+    if (!runId) return;
+    setIsProcessing(true);
+    try {
+      const res = await fetch(`/api/research-runs/${runId}/request-reset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, actor: "user" }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Unable to record the decision");
+      setMessages((prev) => [...prev, { role: "system", content: `${decision === "rerun" ? "Re-run approved" : "Re-run skipped"}. Resume job queued: ${body.jobId}` }]);
+      fetchProgress(runId);
+    } catch (error) {
+      setMessages((prev) => [...prev, { role: "system", content: `Re-run decision error: ${error instanceof Error ? error.message : String(error)}` }]);
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
   async function fetchProgress(id: string) {
     try {
       const [runRes, qualityRes, sourcesRes, tracesRes, modelCallsRes, backtestsRes, jobsRes, artifactsRes] =
@@ -575,6 +596,7 @@ export default function RunResearchPage() {
         totalCost: parseFloat(data.actual_cost_usd || "0"),
         createdAt: data.created_at,
         marketDataCutoffAt: data.market_data_cutoff_at,
+        requestReset: data.metadata_json?.request_reset || null,
       });
 
       setTheater({
@@ -747,6 +769,15 @@ export default function RunResearchPage() {
       </div></div>
     </> : progress ? <>
       {finalReviewWaiting && <div className={`${ui.actions} mb-8 mt-0 border-t-0 pt-0`}><p className={ui.muted}>Ready for your review.</p><Link className={ui.primary} href={`/review?run=${runId}`}>Review research</Link></div>}
+      {progress.requestReset && <section className="mb-8" aria-label="Re-run approval">
+        <h2 className="mb-3 text-[22px]">Approve a re-run?</h2>
+        <p className={ui.muted}>A specialist asked to recompute its analysis for {progress.requestReset.request_ids.join(", ")}. Re-running reopens {progress.requestReset.stages.length} stages; their earlier model calls cost {formatMoney(progress.requestReset.estimated_cost_usd)}. Skipping keeps the current analysis and lists the requests as open questions.</p>
+        <ul className="mt-4">{progress.requestReset.stages.map((stage) => <li key={stage}>{humanize(stage)}</li>)}</ul>
+        <div className={ui.actions}>
+          <button className={ui.secondary} onClick={() => handleRequestReset("skip")} disabled={isProcessing}>Skip re-run</button>
+          <button className={ui.primary} onClick={() => handleRequestReset("rerun")} disabled={isProcessing}>{isProcessing ? "Saving…" : "Re-run stages"}</button>
+        </div>
+      </section>}
       <RunDetails progress={progress} theater={theater} quality={quality} messages={messages} />
     </> : null}
     {runId && progress && <>
