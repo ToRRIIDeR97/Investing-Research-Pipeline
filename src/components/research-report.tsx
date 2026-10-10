@@ -79,6 +79,8 @@ export function ResearchReport({document,onBack,financialsHref,liveArtifacts}:{d
     read();window.addEventListener('hashchange',read);window.addEventListener('popstate',read);return()=>{window.removeEventListener('hashchange',read);window.removeEventListener('popstate',read);};
   },[document,sections]);
   const section=sections.find(s=>s.id===active); const index=sections.findIndex(s=>s.id===active);
+  // KPI and valuation chapters open on their own summary; the left rail names the chapter.
+  const dashboard=!!section&&(section.coverage.includes('valuation')||section.coverage.includes('monitoring'));
   const visuals=useMemo(()=>sectionVisuals(document,active),[document,active]);
   const evidence=document.evidence.find(e=>e.id===source);
   function showSource(id:string){setSource(id);dialog.current?.showModal();}
@@ -97,13 +99,13 @@ export function ResearchReport({document,onBack,financialsHref,liveArtifacts}:{d
       <div className={styles.railFoot}><a href="#report-research-questions" aria-current={active==='research-questions'?'page':undefined} onClick={e=>{e.preventDefault();navigate('research-questions');}}>Research questions</a><a href="#report-sources" aria-current={active==='sources'?'page':undefined} onClick={e=>{e.preventDefault();navigate('sources');}}>Sources</a><p>Research as of<br/>{date(document.cutoff)}</p></div>
     </aside><div className={styles.chapter} id="report-content">
       {document.is_test&&<p className={styles.notice}>Synthetic test report. Not for investment decisions.</p>}
-      <div className={styles.chapterMeta}><span>{section?`Chapter ${index+1} of ${sections.length}`:'Research reference'}</span><span className={styles.status}>{document.conclusion_status==='withheld'?'Conclusion withheld':document.conclusion_status==='qualified'?'Qualified research':'Ready for review'}</span></div>
-      <h2 className={styles.chapterTitle} ref={heading} tabIndex={-1}>{section?chapterName(section):active==='sources'?'Sources & supporting passages':'What remains to be resolved'}</h2>
+      {!dashboard&&<div className={styles.chapterMeta}><span className={styles.status}>{document.conclusion_status==='withheld'?'Conclusion withheld':document.conclusion_status==='qualified'?'Qualified research':'Ready for review'}</span></div>}
+      <h2 className={dashboard?styles.srOnly:styles.chapterTitle} ref={heading} tabIndex={-1}>{section?chapterName(section):active==='sources'?'Sources & supporting passages':'What remains to be resolved'}</h2>
       {section?<>
         {financialsHref&&section.tables.some(t=>t.path==='observations')&&<p className={styles.caption}><a href={financialsHref}>Open Financials for income statement, balance sheet and cash flow.</a></p>}
-        {visuals.map((visual,i)=><ReportVisual key={`${active}-${i}`} visual={visual} document={document} onSource={showSource}/>)}
-        {section.coverage.includes('valuation')&&<ValuationDashboard artifacts={document.artifacts}/>}
+        {section.coverage.includes('valuation')&&<ValuationDashboard artifacts={document.artifacts} conclusionStatus={document.conclusion_status}/>}
         {section.coverage.includes('monitoring')&&<KPIDashboard artifacts={liveArtifacts??document.artifacts} compact/>}
+        {visuals.map((visual,i)=><ReportVisual key={`${active}-${i}`} visual={visual} document={document} onSource={showSource}/>)}
         <div className={styles.body}>
           <div className={styles.narrative} id="chapter-analysis"><h3>Analysis</h3>{section.paragraphs.map((p,i)=><p key={i}>{['assumption','speculation'].includes(p.kind)&&<span className={styles.assumption}>{p.kind==='assumption'?'Analyst assumption':'Speculative possibility'}</span>}{clean(p.text)}{citations(p.evidence_ids)}</p>)}
             <h3>Counterarguments & alternatives</h3><p>{clean(section.counterevidence)}</p><h3>Investment implication</h3><p>{clean(section.implication)}</p>
