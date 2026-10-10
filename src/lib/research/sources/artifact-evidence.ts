@@ -26,6 +26,34 @@ export function validateArtifactCitationIds(
   };
 }
 
+/**
+ * Remove citation IDs that are not in the accepted packet, in place, and return the removed IDs.
+ * Used where an invented or stale citation should be dropped and reported rather than fail a stage.
+ */
+export function dropInvalidCitationIds(artifact: unknown, allowedIds: Iterable<string>): string[] {
+  const allowed = new Set(allowedIds);
+  const dropped = new Set<string>();
+  const visit = (value: unknown): void => {
+    if (Array.isArray(value)) { value.forEach(visit); return; }
+    if (!value || typeof value !== "object") return;
+    const record = value as Record<string, unknown>;
+    for (const [key, child] of Object.entries(record)) {
+      if (CITATION_KEYS.has(key) && Array.isArray(child)) {
+        record[key] = child.filter((item) => {
+          if (typeof item !== "string" || !item.trim()) return true;
+          const keep = allowed.has(item.trim());
+          if (!keep) dropped.add(item.trim());
+          return keep;
+        });
+      } else {
+        visit(child);
+      }
+    }
+  };
+  visit(artifact);
+  return [...dropped];
+}
+
 export function missingRequiredSourceRoles(
   required: SourceRole[],
   assigned: Iterable<string>

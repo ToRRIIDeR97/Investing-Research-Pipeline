@@ -6,7 +6,7 @@ import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { loadAcceptedEvidencePacket } from "../sources/corpus";
-import { validateArtifactCitationIds } from "../sources/artifact-evidence";
+import { dropInvalidCitationIds, validateArtifactCitationIds } from "../sources/artifact-evidence";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 import { withheldValuationReason } from "../valuation/contracts";
 import { WITHHELD_VALUATION_LINKAGE } from "../decision/validation";
@@ -215,10 +215,18 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           }
         }
       }
-      const citationValidation = validateArtifactCitationIds(
-        output,
-        evidenceClaims.map((claim: any) => String(claim.id))
-      );
+      // A citation outside the accepted packet (usually an invented ID) is dropped and disclosed in the
+      // decision rationale rather than failing the stage; the remaining citations are then re-checked.
+      const acceptedClaimIds = evidenceClaims.map((claim: any) => String(claim.id));
+      const droppedCitationIds = dropInvalidCitationIds(output, acceptedClaimIds);
+      if (droppedCitationIds.length) {
+        console.warn(`decision synthesis dropped citations outside the accepted packet: ${droppedCitationIds.join(", ")}`);
+        if (output.decision_record) {
+          output.decision_record.rationale = `${String(output.decision_record.rationale || "").trim()} ` +
+            `Dropped ${droppedCitationIds.length} citation(s) to evidence outside the accepted packet: ${droppedCitationIds.join(", ")}.`;
+        }
+      }
+      const citationValidation = validateArtifactCitationIds(output, acceptedClaimIds);
       if (!citationValidation.valid) {
         throw new Error(
           `Decision synthesis cited evidence IDs outside the accepted packet: ${citationValidation.invalidIds.join(", ")}`
