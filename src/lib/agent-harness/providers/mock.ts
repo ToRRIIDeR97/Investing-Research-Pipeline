@@ -618,7 +618,7 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
       terminal_anchor_bull: 20,
       uses_adjusted_fcf: true,
       segments_reconciled: true,
-      method_inputs:["bear","base","bull"].map((scenario_type,i)=>({method:"fcfe",method_name:"Discounted equity cash flow",scenario_type,rationale:"Synthetic verification fixture",currency:"USD",cash_flow_label:"FCFE",discount_rate:0.1,years:[2026,2027,2028,2029,2030].map(fiscal_year=>({fiscal_year,cash_flow:100*(i+1)})),terminal:{type:"perpetuity",growth_rate:0.02},equity_bridge:0,equity_bridge_explanation:"Cash flow is already attributable to equity",diluted_shares:100,source_notes:["Synthetic fixture; not investment analysis"]})),
+      method_inputs:["bear","base","bull"].map((scenario_type,i)=>({method:"fcfe",method_name:"Discounted equity cash flow",scenario_type,rationale:"Synthetic verification fixture",currency:"USD",cash_flow_label:"FCFE",discount_rate:0.1,years:[2026,2027,2028,2029,2030].map(fiscal_year=>({fiscal_year,cash_flow:100*(i+1),build:{starting_profit:100*(i+1),depreciation_amortization:10,capital_expenditures:10,change_in_net_working_capital:0,other_adjustments:0}})),terminal:{type:"perpetuity",growth_rate:0.02},equity_bridge:0,equity_bridge_explanation:"Cash flow is already attributable to equity",diluted_shares:100,source_notes:["Synthetic fixture; not investment analysis"]})),
       omitted_methods:[{method:"book_exit",reason:"Synthetic fixture has no terminal book forecast"}]
     },
     reverse_valuation: {

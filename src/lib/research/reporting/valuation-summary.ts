@@ -2,6 +2,7 @@ import {artifactContent,researchObservations} from './data-views';
 import {kpiCandidateKeys,parseUnit} from './dashboard-series';
 import {readerText} from './presentation.mjs';
 import {moneyMillions,percent,plainLabel,price} from './plain-english';
+import {withheldValuationReason} from '../valuation/contracts';
 type Row=Record<string,any>;
 
 export const scenarioTypes=['bear','base','bull'] as const;
@@ -53,6 +54,8 @@ function latestActual(artifacts:Row[]):{year:number;revenue:number;profit:number
 
 export function valuationSummary(artifacts:Row[],options:{conclusionStatus?:string}={}):ValuationSummary|null {
   const valuation=artifactContent(artifacts,'valuation_scenario_set');
+  // A withheld valuation has zero placeholder anchors, never price targets.
+  if(withheldValuationReason(valuation))return null;
   const operating=artifactContent(artifacts,'operating_scenario_set');
   const returns=artifactContent(artifacts,'expected_return_matrix');
   const decision=artifactContent(artifacts,'decision_record');

@@ -74,6 +74,7 @@ export interface ResearchReportData {
   };
   valuation?: {
     terminal_year: number;
+    withheld_reason?: string;
     scenarios?: Array<{
       scenario_type: "bear" | "base" | "bull";
       terminal_anchor: number;
@@ -356,8 +357,15 @@ export function generateMarkdownReport(data: ResearchReportData): string {
   }
 
   // 16. Valuation scenario matrix
+  const valuationWithheld = data.valuation?.withheld_reason;
+  const addWithheldSection = () => {
+    sections.push(`> **Valuation withheld**: ${valuationWithheld}`);
+    sections.push("");
+  };
   addHeading(16, "Valuation scenario matrix");
-  if (data.valuation?.scenarios && data.valuation.scenarios.length > 0) {
+  if (valuationWithheld) {
+    addWithheldSection();
+  } else if (data.valuation?.scenarios && data.valuation.scenarios.length > 0) {
     sections.push("| Scenario Type | Terminal Anchor Value |");
     sections.push("|---|---|");
     for (const row of data.valuation.scenarios) {
@@ -370,7 +378,9 @@ export function generateMarkdownReport(data: ResearchReportData): string {
 
   // 17. Annual bear/base/bull price-target table
   addHeading(17, "Annual bear/base/bull price-target table");
-  if (data.valuation?.price_target_paths && data.valuation.price_target_paths.length > 0) {
+  if (valuationWithheld) {
+    addWithheldSection();
+  } else if (data.valuation?.price_target_paths && data.valuation.price_target_paths.length > 0) {
     sections.push("| Fiscal year | Bear | Base | Bull |");
     sections.push("|---|---:|---:|---:|");
     const years = new Map<number, { bear?: number; base?: number; bull?: number }>();
@@ -399,7 +409,9 @@ export function generateMarkdownReport(data: ResearchReportData): string {
 
   // 18. Reverse valuation
   addHeading(18, "Reverse valuation");
-  if (data.valuation?.reverse_valuations && data.valuation.reverse_valuations.length > 0) {
+  if (valuationWithheld) {
+    addWithheldSection();
+  } else if (data.valuation?.reverse_valuations && data.valuation.reverse_valuations.length > 0) {
     sections.push("| Valuation Method | Implied Growth Rate |");
     sections.push("|---|---|");
     for (const row of data.valuation.reverse_valuations) {
@@ -412,7 +424,9 @@ export function generateMarkdownReport(data: ResearchReportData): string {
 
   // 19. Expected-return matrix
   addHeading(19, "Expected-return matrix");
-  if (data.decision?.expected_return_matrix) {
+  if (valuationWithheld) {
+    addWithheldSection();
+  } else if (data.decision?.expected_return_matrix) {
     const mat = data.decision.expected_return_matrix;
     sections.push(`- **Bear Case Return**: ${mat.bear_return * 100}%`);
     sections.push(`- **Base Case Return**: ${mat.base_return * 100}%`);

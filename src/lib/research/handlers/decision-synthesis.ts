@@ -8,6 +8,7 @@ import postgres from "postgres";
 import { loadAcceptedEvidencePacket } from "../sources/corpus";
 import { validateArtifactCitationIds } from "../sources/artifact-evidence";
 import { CURRENT_PIPELINE_VERSION } from "../version";
+import { withheldValuationReason } from "../valuation/contracts";
 
 export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "decision_synthesis",
@@ -69,6 +70,7 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
       const acceptedValuation = Object.fromEntries(
         valuationRows.map((row) => [String(row.artifact_type), row.content_json])
       ) as Record<string, any>;
+      const valuationWithheld = withheldValuationReason(acceptedValuation.valuation_scenario_set);
       const terminalYear = Number(acceptedValuation.valuation_scenario_set?.terminal_year);
       const marketPrice = Number(acceptedValuation.valuation_scenario_set?.current_market_price);
       const terminalProjection = acceptedValuation.annual_price_target_path?.annual_projections?.find(
@@ -132,7 +134,11 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           "Follow output_schema exactly. Cover each material, evidence-supported risk, catalyst, thesis breaker, and monitoring indicator; do not limit these registers to a single item.",
           "Copy risk supporting_claim_ids exactly from evidence_claims; never invent UUIDs.",
           "Derive material risks from this asset's business, applicable archetypes, overlays and accepted evidence. Include regulatory capital only when relevant to the business. Explain capital allocation, ownership and dilution where material; do not import another company's metrics. Map confidence to specific evidence gaps.",
-          "Set investment_thesis.valuation_accepted_first to true because accepted_valuation is supplied by the completed valuation stage.",
+          ...(valuationWithheld ? [
+            "accepted_valuation is withheld: no price target exists. Begin investment_thesis.expected_return_linkage with exactly: Conclusion withheld - valuation withheld. Set investment_thesis.valuation_accepted_first to false. Set every expected_return_matrix return to 0 and add valuation_withheld: true; those zeros are markers, not estimates. Name the missing valuation inputs in confidence_assessment.",
+          ] : [
+            "Set investment_thesis.valuation_accepted_first to true because accepted_valuation is supplied by the completed valuation stage.",
+          ]),
           "Use operating_scenario_probabilities for bear, base, and bull weights in every expected-return calculation and narrative. Compute probability_weighted_return from those weights and expected_return_matrix bear_return, base_return, and bull_return.",
           "Use terminal_return_inputs for expected_return_matrix and investment_thesis.expected_return_linkage. The return horizon is terminal_year, not an earlier annual price target. Set dilution_omitted to false only when the accepted terminal projection uses at least the reported diluted share count.",
           "Risk probability and confidence must be between 0 and 1; risk severity must be between 1 and 5.",
@@ -172,6 +178,19 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           `${(Number(probabilities.probability_bear) * 100).toFixed(0)}/${(Number(probabilities.probability_base) * 100).toFixed(0)}/${(Number(probabilities.probability_bull) * 100).toFixed(0)} ` +
           `produce ${(returns.probability_weighted_return * 100).toFixed(1)}%. ` +
           `Future share issuance beyond the reported diluted count remains a source gap.`;
+      }
+      // Without a valuation there are no returns or price-based conclusion; keep the decision pending.
+      if (valuationWithheld) {
+        if (returns) {
+          for (const key of ["bear_return", "base_return", "bull_return", "probability_weighted_return", "no_rerating_return", "weak_stock_outcome", "permanent_loss_limit"]) returns[key] = 0;
+          Object.assign(returns, { valuation_withheld: true, withheld_reason: valuationWithheld });
+        }
+        if (output.investment_thesis) {
+          output.investment_thesis.valuation_accepted_first = false;
+          const linkage = String(output.investment_thesis.expected_return_linkage || "").replace(/^Conclusion withheld - valuation withheld\.\s*/, "");
+          output.investment_thesis.expected_return_linkage = `Conclusion withheld - valuation withheld. ${linkage || valuationWithheld}`.trim();
+        }
+        if (output.decision_record) output.decision_record.decision = "pending";
       }
       const monitoringItems = output.monitoring_dashboard?.items;
       if (Array.isArray(monitoringItems)) {

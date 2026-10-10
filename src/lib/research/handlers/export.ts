@@ -6,6 +6,7 @@ import postgres from "postgres";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 import { getReportState, loadReportInputs } from "../reporting/store";
 import { assertReportApproval } from "../reporting/report";
+import { withheldValuationReason } from "../valuation/contracts";
 
 export const exportHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "export",
@@ -244,6 +245,12 @@ export const exportHandler: StageHandler<Record<string, unknown>> = {
                 : JSON.stringify(item)) : [];
             break;
         }
+      }
+      // A withheld valuation has no anchors, paths or returns to print; the report states the reason.
+      const withheldReason = withheldValuationReason(artifacts.find((art) => art.artifact_type === "valuation_scenario_set")?.content_json);
+      if (withheldReason) {
+        reportData.valuation = { terminal_year: reportData.valuation?.terminal_year || 2030, withheld_reason: withheldReason };
+        if (reportData.decision) delete reportData.decision.expected_return_matrix;
       }
       if (reviewDecision) {
         reportData.decision = {
