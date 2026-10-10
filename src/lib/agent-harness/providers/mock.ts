@@ -539,6 +539,9 @@ function v3OperatingModelResponse(packet: Record<string, unknown>) {
 }
 
 function v3OperatingScenariosResponse(packet: Record<string, unknown>) {
+  const horizon = (packet.forecast_horizon as { years?: number[] } | undefined)?.years ?? [2026, 2027, 2028];
+  const drivers = (revenue_growth: number, operating_margin: number) =>
+    horizon.map((fiscal_year) => ({ fiscal_year, revenue_growth, operating_margin }));
   return {
     operating_scenario_set: {
       artifact_type: "operating_scenario_set",
@@ -563,7 +566,8 @@ function v3OperatingScenariosResponse(packet: Record<string, unknown>) {
           maintenance_spend: 5000000,
           revenue_cagr: 0.05,
           operating_margin: 0.12,
-          numeric_assumptions:[{driver_key:"revenue_cagr",fiscal_year:2030,value:0.05,unit:"ratio",rationale:"Synthetic downside assumption",source_ids:[]}]
+          numeric_assumptions:[{driver_key:"revenue_cagr",fiscal_year:2030,value:0.05,unit:"ratio",rationale:"Synthetic downside assumption",source_ids:[]}],
+          yearly_drivers: drivers(0.05, 0.12)
         },
         {
           scenario_type: "base",
@@ -582,7 +586,8 @@ function v3OperatingScenariosResponse(packet: Record<string, unknown>) {
           maintenance_spend: 10000000,
           revenue_cagr: 0.15,
           operating_margin: 0.22,
-          numeric_assumptions:[{driver_key:"revenue_cagr",fiscal_year:2030,value:0.15,unit:"ratio",rationale:"Synthetic base assumption",source_ids:[]}]
+          numeric_assumptions:[{driver_key:"revenue_cagr",fiscal_year:2030,value:0.15,unit:"ratio",rationale:"Synthetic base assumption",source_ids:[]}],
+          yearly_drivers: drivers(0.15, 0.22)
         },
         {
           scenario_type: "bull",
@@ -601,7 +606,8 @@ function v3OperatingScenariosResponse(packet: Record<string, unknown>) {
           maintenance_spend: 15000000,
           revenue_cagr: 0.25,
           operating_margin: 0.32,
-          numeric_assumptions:[{driver_key:"revenue_cagr",fiscal_year:2030,value:0.25,unit:"ratio",rationale:"Synthetic upside assumption",source_ids:[]}]
+          numeric_assumptions:[{driver_key:"revenue_cagr",fiscal_year:2030,value:0.25,unit:"ratio",rationale:"Synthetic upside assumption",source_ids:[]}],
+          yearly_drivers: drivers(0.25, 0.32)
         }
       ]
     }

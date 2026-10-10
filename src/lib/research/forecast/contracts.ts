@@ -25,8 +25,20 @@ export type DriverTree = z.infer<typeof DriverTree>;
 
 export const NumericAssumption=z.object({driver_key:z.string().min(1),fiscal_year:z.number().int(),value:z.number(),unit:z.string().min(1),rationale:z.string().min(1),source_ids:z.array(z.string())});
 
+/** One forecast year's drivers as decimals. Code builds the statements from them; overrides replace the history ratios. */
+export const YearlyDriver = z.object({
+  fiscal_year: z.number().int(),
+  revenue_growth: z.number().gt(-1),
+  operating_margin: z.number().lt(1),
+  capex_to_revenue: z.number().min(0).nullable().optional(),
+  da_to_revenue: z.number().min(0).nullable().optional(),
+  tax_rate: z.number().min(0).lt(1).nullable().optional(),
+  nwc_to_revenue_change: z.number().nullable().optional(),
+});
+
 export const OperatingScenarioEntry = z.object({
   numeric_assumptions:z.array(NumericAssumption).optional(),
+  yearly_drivers: z.array(YearlyDriver).optional(),
   scenario_type: z.enum(["bear", "base", "bull"]),
   end_market: z.string().min(1),
   customer_economics: z.string().min(1),

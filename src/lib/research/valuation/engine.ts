@@ -341,6 +341,17 @@ export function valuationAssumptionsFormat(riskFreeRate: number | null): AgentOu
   };
 }
 
+/**
+ * The accepted operating model's revenue and operating income in millions, for pinning the base case's first year.
+ * The model may state whole currency units; the unit is taken as the one that puts revenue within 0.5–2× base revenue.
+ */
+export function operatingModelFirstYear(model: { consolidated_revenue?: unknown; consolidated_operating_income?: unknown } | null | undefined, baseRevenue: number | null | undefined) {
+  const revenue = Number(model?.consolidated_revenue), income = Number(model?.consolidated_operating_income), base = Number(baseRevenue);
+  if (!(revenue > 0) || !Number.isFinite(income) || !(base > 0)) return null;
+  const unit = [1, 1e3, 1e6].find((u) => revenue / u / base > 0.5 && revenue / u / base < 2);
+  return unit === undefined ? null : { revenue: revenue / unit, operating_income: income / unit };
+}
+
 /** Forecast years after the base fiscal year (RESEARCH_FORECAST_YEARS, default 3). */
 export function forecastHorizon(baseFiscalYear: number, years = Number(process.env.RESEARCH_FORECAST_YEARS) || 3): number[] {
   return Array.from({ length: Math.max(1, Math.min(10, Math.round(years))) }, (_, i) => baseFiscalYear + 1 + i);
