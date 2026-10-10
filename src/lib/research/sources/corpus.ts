@@ -625,6 +625,52 @@ export function selectResearchFilings(filings: SecFiling[], earliestDate: string
   return [...annual, ...selectedSixKs];
 }
 
+const SEC_USER_AGENT = "ResearchOS/0.1 research-pipeline-test@example.com";
+const SUBMISSIONS_PAGE_NAME = /^CIK\d{10}-submissions-\d{3}\.json$/;
+
+/** Turn one columnar submissions block (`filings.recent` or an older page) into rows. */
+function submissionRows(block: Record<string, any> | undefined): SecFiling[] {
+  return (block?.form || []).map((form: string, index: number) => ({
+    form,
+    filingDate: block!.filingDate?.[index],
+    accessionNumber: block!.accessionNumber?.[index],
+    reportDate: block!.reportDate?.[index],
+    primaryDocument: block!.primaryDocument?.[index],
+    primaryDocDescription: block!.primaryDocDescription?.[index],
+    items: block!.items?.[index],
+  }));
+}
+
+/**
+ * `filings.recent` holds only the latest ~1,000 filings, which for issuers with heavy Form 4
+ * traffic can be under two years. Older filings sit in pages listed in `filings.files`. Fetch the
+ * pages that overlap the research window, newest first and one at a time, until the rows reach
+ * back to `earliestDate`. Rows are returned newest first without duplicate accessions.
+ */
+export async function loadSubmissionFilings(
+  submissions: Record<string, any>, earliestDate: string, cutoffDate: string, fetchImpl: typeof fetch = fetch,
+): Promise<SecFiling[]> {
+  const rows = submissionRows(submissions.filings?.recent);
+  const oldest = () => rows.reduce((min, row) => {
+    const filed = String(row.filingDate || "").slice(0, 10);
+    return filed && filed < min ? filed : min;
+  }, "9999-12-31");
+  const pages = (Array.isArray(submissions.filings?.files) ? submissions.filings.files : [])
+    .filter((page: Record<string, unknown>) => SUBMISSIONS_PAGE_NAME.test(String(page?.name || ""))
+      && String(page.filingTo || "9999-12-31") >= earliestDate && String(page.filingFrom || "0000-01-01") <= cutoffDate)
+    .sort((a: Record<string, unknown>, b: Record<string, unknown>) => String(b.filingTo || "").localeCompare(String(a.filingTo || "")));
+  for (const page of pages) {
+    if (oldest() <= earliestDate) break;
+    const response = await fetchImpl(`https://data.sec.gov/submissions/${page.name}`, { headers: { "User-Agent": SEC_USER_AGENT } });
+    if (!response.ok) throw new Error(`SEC submissions page ${page.name} failed: ${response.status}`);
+    rows.push(...submissionRows(await response.json()));
+  }
+  const seen = new Set<string>();
+  return rows
+    .filter((row) => !row.accessionNumber || (!seen.has(row.accessionNumber) && !!seen.add(row.accessionNumber)))
+    .sort((a, b) => String(b.filingDate || "").localeCompare(String(a.filingDate || "")));
+}
+
 async function fetchSecContext(ctx: RunContext) {
   if (process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock" || process.env.RESEARCH_TEST_MODE === "1") {
     return {
@@ -713,12 +759,8 @@ async function fetchSecContext(ctx: RunContext) {
   if (!cik) return fetchExorIssuerContext(ctx);
 
   const [companyFactsRes, submissionsRes] = await Promise.all([
-    fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, {
-      headers: { "User-Agent": "ResearchOS/0.1 research-pipeline-test@example.com" },
-    }),
-    fetch(`https://data.sec.gov/submissions/CIK${cik}.json`, {
-      headers: { "User-Agent": "ResearchOS/0.1 research-pipeline-test@example.com" },
-    }),
+    fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, { headers: { "User-Agent": SEC_USER_AGENT } }),
+    fetch(`https://data.sec.gov/submissions/CIK${cik}.json`, { headers: { "User-Agent": SEC_USER_AGENT } }),
   ]);
   if (!companyFactsRes.ok) throw new Error(`SEC companyfacts failed: ${companyFactsRes.status}`);
   if (!submissionsRes.ok) throw new Error(`SEC submissions failed: ${submissionsRes.status}`);
@@ -741,16 +783,7 @@ async function fetchSecContext(ctx: RunContext) {
   const operatingCashFlow = (usGaap.NetCashProvidedByUsedInOperatingActivities?.units?.USD || [])
     .filter(factBeforeCutoff)
     .slice(-8);
-  const filingRows = (submissions.filings?.recent?.form || [])
-    .map((form: string, index: number) => ({
-      form,
-      filingDate: submissions.filings.recent.filingDate?.[index],
-      accessionNumber: submissions.filings.recent.accessionNumber?.[index],
-      reportDate: submissions.filings.recent.reportDate?.[index],
-      primaryDocument: submissions.filings.recent.primaryDocument?.[index],
-      primaryDocDescription: submissions.filings.recent.primaryDocDescription?.[index],
-      items: submissions.filings.recent.items?.[index],
-    })) as SecFiling[];
+  const filingRows = await loadSubmissionFilings(submissions, earliestDateText, cutoffDate);
   const recentFilings = selectResearchFilings(filingRows, earliestDateText, cutoffDate)
     .filter((filing) => withinFiveYears(filing.filingDate));
 

@@ -148,7 +148,7 @@ export function reconcileFiledBalances(tables:FilingTable[]) {
 
 /** Keep reported values separate; derive additive standalone quarters only from compatible YTD facts. */
 export function statementObservations(tables:FilingTable[]) {
-  const observations:Record<string,any>[]=[];
+  const observations:Record<string,any>[]=[];const openingBalances=new Set<Record<string,any>>();
   const candidates=tables.flatMap(table=>table.rows.flatMap((row,order)=>row.cells.flatMap(cell=>cell.facts.map(fact=>({fact,table,order:table.table_index*1000+order,label:row.cells.find(c=>c.text&&!c.facts.length)?.text||fact.concept})))));
   const selected=new Map<string,typeof candidates[number]&{revision:number}>();
   for(const c of [...candidates].sort((a,b)=>a.table.filed.localeCompare(b.table.filed))) {
@@ -167,8 +167,9 @@ export function statementObservations(tables:FilingTable[]) {
     const base={metric_key:metric,value_numeric:f.value,unit:f.unit,currency:/^[A-Z]{3}$/.test(f.unit)?f.unit:null,segment:f.dimensions||null,fiscal_year:f.fiscal_year,fiscal_quarter:f.fiscal_quarter,period_start:f.start,period_end:f.end,reporting_basis:'gaap',metric_type:'reported',source_document_id:table.source_document_id,available_at:table.filed,confidence:1,restatement_version:revision,comparability_status:'comparable',metadata_json:{metric_category:f.periodicity==='instant'?'balance_sheet':{income:'income_statement',segment:'income_statement',balance:'balance_sheet',cashflow:'cash_flow'}[table.statement as 'income'],dimensions:f.dimensions||null,statement_label:label,statement_order:order,concept:f.concept,source_url:table.source_url,source_locator:f.locator,statement:table.statement}};
     if(f.periodicity==='quarterly'||f.periodicity==='annual')observations.push({...base,periodicity:f.periodicity,fiscal_quarter:f.periodicity==='annual'?null:f.fiscal_quarter});
     if(f.periodicity==='instant'){
-      observations.push({...base,periodicity:'quarterly'});
-      if(f.fiscal_quarter===4)observations.push({...base,periodicity:'annual',fiscal_quarter:null});
+      const instants=[{...base,periodicity:'quarterly'},...(f.fiscal_quarter===4?[{...base,periodicity:'annual',fiscal_quarter:null}]:[])];
+      observations.push(...instants);
+      if(isOpeningBalance(f,table))instants.forEach(o=>openingBalances.add(o));
     }
     if((f.periodicity==='ytd'||f.periodicity==='annual')&&f.value!==null&&f.fiscal_quarter!>1&&/^[A-Z]{3}$/.test(f.unit)) {
       const prior=[...selected.values()].filter(c=>c.fact.concept===f.concept&&c.fact.unit===f.unit&&c.fact.dimensions===f.dimensions&&c.fact.start===f.start&&c.fact.fiscal_year===f.fiscal_year&&c.fact.fiscal_quarter===f.fiscal_quarter!-1&&c.fact.value!==null&&c.table.filed<=table.filed).sort((a,b)=>b.table.filed.localeCompare(a.table.filed))[0];
@@ -176,7 +177,19 @@ export function statementObservations(tables:FilingTable[]) {
       if(prior&&!direct)observations.push({...base,periodicity:'quarterly',period_start:new Date(Date.parse(prior.fact.end)+86400000).toISOString().slice(0,10),value_numeric:f.value-prior.fact.value!,metric_type:'calculated',formula_or_adjustment:`Standalone quarter = ${f.value} − ${prior.fact.value}; reported cumulative periods ending ${f.end} and ${prior.fact.end}.`,metadata_json:{...base.metadata_json,prior_source_document_id:prior.table.source_document_id,prior_source_url:prior.table.source_url,prior_source_locator:prior.fact.locator}});
     }
   }
-  return latestFiledObservations(observations);
+  // An opening balance (the instant before a cash-flow statement's earliest period) is kept only
+  // for a period other observations already populate; on its own it would add an empty column.
+  const periodKey=(o:Record<string,any>)=>JSON.stringify([o.periodicity,o.fiscal_year,o.fiscal_quarter]);
+  const covered=new Set(observations.filter(o=>!openingBalances.has(o)).map(periodKey));
+  return latestFiledObservations(observations.filter(o=>!openingBalances.has(o)||covered.has(periodKey(o))));
+}
+
+/** A cash-flow instant that ends no period in its table and falls the day before one starts. */
+function isOpeningBalance(f:FilingFact, table:FilingTable) {
+  if(table.statement!=='cashflow')return false;
+  const durations=table.rows.flatMap(r=>r.cells.flatMap(c=>c.facts)).filter(x=>x.start);
+  const next=Date.parse(f.end)+86400000;
+  return Number.isFinite(next)&&!durations.some(x=>x.end===f.end)&&durations.some(x=>x.start===new Date(next).toISOString().slice(0,10));
 }
 
 /**
