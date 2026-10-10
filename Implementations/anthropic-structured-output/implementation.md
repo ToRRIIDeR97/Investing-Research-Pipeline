@@ -417,8 +417,43 @@ it is not independently authored. Both sets are in this folder. If a separate wo
 implements the plan, move `verification/` out of the worker's checkout first and run it
 afterwards against the worker's exact revision.
 
-- Criteria met:
-- Commands run and results:
-- Paid live check (approved by, date, cost, result):
+Implemented by a separate worker agent (Claude, 2026-10-11) on branch
+`feat/anthropic-structured-output` from `main` 594024e3, without access to `verification/`.
+
+- Criteria met: AC-1 to AC-8, by the acceptance set and `tests/anthropic-structured-output.test.ts`
+  (6 added tests: keyword-like property names and data values, inclusive 24/16 limits, non-recursive
+  `definitions`, context-length 400 not remembered and not resent, a `maxLength` rejection resent,
+  a double rejection stopping after one resend, no `output_config` without the option, for a
+  non-Claude model or for OpenCode Go minimax, telemetry on a failed pass).
+- Commands run and results (worktree root, final commit of the implementation):
+  - `npx tsx --test Implementations/anthropic-structured-output/acceptance/*.test.ts`: 16 pass, 0 fail.
+  - `npx tsc --noEmit`: no errors.
+  - `npm run test:unit`: 324 pass, 0 fail, 10 skipped (baseline 318/0/10 plus the 6 added tests).
+  - `npm run build`: succeeded.
+  - `npm run test:db -- 'tests/*.test.ts' 'Implementations/anthropic-structured-output/acceptance/*.test.ts'`
+    against a private database `rr_test_f4`: 367 pass, 0 fail, 0 skipped. `npm run db:migrate`
+    applied cleanly; `npm run db:seed` failed on re-run with an `asset_profile_assignments` foreign
+    key error because that database was already seeded (the seed's random asset IDs are not
+    idempotent; unrelated to this change).
+  - Read-only expressibility recheck with a throwaway script (not committed): the result matches
+    the table above, including `COMPANY_GENESIS_CONTRACT` 6,888 to 6,112 bytes and a `z.lazy`
+    tree reported as `recursive $ref #/definitions/__schema0`.
+- Paid live check (approved by, date, cost, result): not run by the worker. Needs the user's
+  approval; `RUN_PROVIDER_SMOKE=1 npm run test:provider-smoke` now sends a small `outputSchema`
+  and prints `outputConfigSent` (one boolean per request sent).
 - Deviations from the plan and the diagrams:
-- Remaining limitations:
+  - The exclusion "per-pass telemetry of structured output" is superseded by AC-8, as requested.
+    `structuredOutput` is a required field of `AgentPassTelemetry`, recorded on failed passes too.
+  - `anthropic-schema.ts` also exports `rememberRejectedSchema` and `isRejectedSchema` for the
+    provider. The memory keys on a SHA-256 of a key-sorted serialization, so deep-equal schemas
+    match regardless of key order.
+  - An unresolvable `$ref` (not a local pointer, or a missing target) is reported as unsupported.
+    AC-2 does not list it; no contract uses `$ref`.
+  - Schema positions also cover `oneOf`, `allOf`, `not`, `definitions`/`$defs`, tuple `items`,
+    `additionalItems` and `if`/`then`/`else`. Only `anyOf` and array `type` count as unions, as AC-2 says.
+  - The provider reads the 400 body once and reuses it for the existing mapping, instead of
+    cloning the response.
+  - `docs/local-agent-harness.md` also explains the smoke's `outputConfigSent` output.
+- Remaining limitations: the paid live check (API compilation of the 14 schemas, a real rejection
+  body, cache reads on a repair pass) and the independent `verification/` set are still to run.
+  Coverage is limited to the expressible contracts listed above.
