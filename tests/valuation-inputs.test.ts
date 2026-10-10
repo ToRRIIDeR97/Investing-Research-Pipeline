@@ -5,6 +5,7 @@ import { cashFlowBuildErrors } from "@/lib/research/valuation/schedules";
 import { withheldValuationReason } from "@/lib/research/valuation/contracts";
 import { evaluateQualityGates, VALUATION_WITHHELD_KEY } from "@/lib/workflow/quality-gates";
 import { generateMarkdownReport } from "@/lib/export/report-generator";
+import { valuationSummary } from "@/lib/research/reporting/valuation-summary";
 
 const obs = (metric_key: string, period_end: string, value: number, extra: Record<string, unknown> = {}) => ({
   metric_key, period_end, value_numeric: value, periodicity: "quarterly", fiscal_year: Number(period_end.slice(0, 4)),
@@ -129,6 +130,10 @@ describe("withheld valuation", () => {
     assert.notStrictEqual(quality.status, "pass");
     const plain = evaluateQualityGates({ run: { run_type: "deep_dive" } });
     assert.ok(!plain.missingCoverage.some((item) => item.key === VALUATION_WITHHELD_KEY));
+  });
+
+  it("gives the report valuation view no zero price targets", () => {
+    assert.strictEqual(valuationSummary([{ artifact_type: "valuation_scenario_set", content_json: withheld }]), null);
   });
 
   it("prints the reason in the report instead of zero anchors", () => {
