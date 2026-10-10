@@ -13,6 +13,7 @@ import * as backtestingSchema from "./schema/backtesting";
 import * as researchV2Schema from "./schema/research-v2";
 import * as researchArtifactsSchema from "./schema/research-artifacts";
 import * as researchRunJobsSchema from "./schema/research-run-jobs";
+import * as savedChartsSchema from "./schema/saved-charts";
 
 export const schema = {
   ...coreSchema,
@@ -28,6 +29,7 @@ export const schema = {
   ...researchV2Schema,
   ...researchArtifactsSchema,
   ...researchRunJobsSchema,
+  ...savedChartsSchema,
 };
 
 const connectionString = process.env.DATABASE_URL!;
