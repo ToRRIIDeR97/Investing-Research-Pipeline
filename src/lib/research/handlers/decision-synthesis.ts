@@ -5,10 +5,13 @@ import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { loadAcceptedEvidencePacket, openSourceGap } from "../sources/corpus";
+import { loadAcceptedEvidencePacket, reconcileSourceGaps } from "../sources/corpus";
+import { v2RunContext } from "../sources/role-coverage";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 import { withheldValuationReason } from "../valuation/contracts";
-import { decisionOutputFormat, finalizeDecisionOutput, type DecisionFinalizeInputs } from "../decision/finalize";
+import {
+  DECISION_GAP_OWNER, decisionOutputFormat, finalizeDecisionOutput, stripCodeOwnedFields, type DecisionFinalizeInputs,
+} from "../decision/finalize";
 
 export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "decision_synthesis",
@@ -169,7 +172,7 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
         outputFormat: decisionOutputFormat(finalizeInputs),
       });
       // The model-facing format already judged a finalized copy; finalizing again yields the same output.
-      const { output, adjustments, gaps, errors } = finalizeDecisionOutput(raw, finalizeInputs);
+      const { output, adjustments, gaps, errors } = finalizeDecisionOutput(stripCodeOwnedFields(raw), finalizeInputs);
       if (adjustments.dropped_citation_ids.length) {
         console.warn(`decision synthesis dropped citations outside the accepted packet: ${adjustments.dropped_citation_ids.join(", ")}`);
       }
@@ -280,13 +283,9 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           });
         }
       }
-      // Source-gap and uncited risks are evidence gaps, not operating risks.
-      for (const gap of gaps) {
-        await openSourceGap(sql, {
-          assetId: ctx.assetId, runId: ctx.runId, gapKey: gap.gap_key,
-          description: gap.description, severity: gap.severity, owner: gap.owner,
-        });
-      }
+      // Source-gap and uncited risks are evidence gaps, not operating risks. Gaps an earlier attempt
+      // opened and this one no longer produces are resolved, so a re-run converges.
+      await reconcileSourceGaps(sql, v2RunContext(ctx), { source_gaps: gaps }, DECISION_GAP_OWNER);
 
       return output;
     } finally {

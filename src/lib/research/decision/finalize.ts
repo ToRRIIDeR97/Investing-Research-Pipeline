@@ -23,7 +23,8 @@ export interface DecisionAdjustments {
   moved_risks: { risk_name: string; reason: "source_gap_only" | "no_supporting_evidence" }[];
 }
 
-export type DecisionGap = { gap_key: string; description: string; severity: "medium"; owner: "system:decision-synthesis" };
+export const DECISION_GAP_OWNER = "system:decision-synthesis";
+export type DecisionGap = { gap_key: string; description: string; severity: "medium"; owner: typeof DECISION_GAP_OWNER };
 
 const JUDGMENT_KEYS = ["no_rerating_return", "weak_stock_outcome", "permanent_loss_limit"] as const;
 
@@ -31,6 +32,15 @@ const isRecord = (value: unknown): value is Record<string, any> =>
   !!value && typeof value === "object" && !Array.isArray(value);
 const list = (value: unknown): any[] => Array.isArray(value) ? value : [];
 const pct = (value: number) => `${(value * 100).toFixed(1)}%`;
+
+/** A copy of the model's answer without the fields only finalize writes (adjustments, moved drivers). */
+export function stripCodeOwnedFields(raw: unknown): unknown {
+  if (!isRecord(raw)) return raw;
+  const copy = structuredClone(raw);
+  if (isRecord(copy.decision_record)) delete copy.decision_record.adjustments;
+  if (isRecord(copy.monitoring_dashboard)) delete copy.monitoring_dashboard.drivers;
+  return copy;
+}
 
 export function finalizeDecisionOutput(raw: unknown, inputs: DecisionFinalizeInputs): {
   output: Record<string, any>;
@@ -73,7 +83,7 @@ export function finalizeDecisionOutput(raw: unknown, inputs: DecisionFinalizeInp
       keys.add(gapKey);
       movedRisks.push({ risk_name: name, reason });
       gaps.push({
-        gap_key: gapKey, severity: "medium", owner: "system:decision-synthesis",
+        gap_key: gapKey, severity: "medium", owner: DECISION_GAP_OWNER,
         description: reason === "source_gap_only"
           ? `Source gap flagged by decision synthesis: ${name}. ${r.causal_mechanism || ""}`.trim()
           : `Risk without accepted supporting evidence: ${name}. ${r.causal_mechanism || ""}`.trim(),
@@ -148,7 +158,7 @@ export function decisionOutputFormat(inputs: DecisionFinalizeInputs): AgentOutpu
     requiredKeys: DECISION_SYNTHESIS_CONTRACT.requiredKeys,
     schema: DECISION_SYNTHESIS_CONTRACT.schema,
     validate(value) {
-      const { output, errors } = finalizeDecisionOutput(value, inputs);
+      const { output, errors } = finalizeDecisionOutput(stripCodeOwnedFields(value), inputs);
       return [...(DECISION_SYNTHESIS_CONTRACT.validate?.(output) || []), ...errors];
     },
   };

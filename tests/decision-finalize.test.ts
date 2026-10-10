@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { finalizeDecisionOutput, type DecisionFinalizeInputs } from "@/lib/research/decision/finalize";
+import { decisionOutputFormat, finalizeDecisionOutput, stripCodeOwnedFields, type DecisionFinalizeInputs } from "@/lib/research/decision/finalize";
 import { validateArtifactContent } from "@/lib/research/stage-contracts";
 import { generateMarkdownReport } from "@/lib/export/report-generator";
 
@@ -58,6 +58,29 @@ describe("decision finalize step", () => {
       assert.deepEqual(second.errors, []);
       assert.deepEqual(second.output.decision_record.adjustments, first.adjustments);
     }
+  });
+
+  it("ignores adjustments and drivers the model pre-fills; only finalize writes them", () => {
+    const raw = answer({
+      catalyst_register: { artifact_type: "catalyst_register", catalysts: [catalyst("Investor day"), catalyst("Ad demand", { is_business_driver_only: true })] },
+      monitoring_dashboard: { ...answer().monitoring_dashboard, drivers: [{ name: "Invented driver", mechanism: "m", model_input_affected: "i", evidence: "e" }] },
+      decision_record: { artifact_type: "decision_record", decision: "pending", rationale: "Awaiting review.",
+        adjustments: { dropped_citation_ids: [INVENTED], moved_catalysts: [], moved_risks: [{ risk_name: "Invented", reason: "source_gap_only" }] } },
+    });
+    const before = structuredClone(raw);
+    const stripped = stripCodeOwnedFields(raw) as Record<string, any>;
+    assert.deepEqual(raw, before, "the model answer is not mutated");
+    assert.equal("adjustments" in stripped.decision_record, false);
+    assert.equal("drivers" in stripped.monitoring_dashboard, false);
+
+    const { output, adjustments } = finalizeDecisionOutput(stripped, inputs());
+    assert.deepEqual(output.monitoring_dashboard.drivers.map((d: any) => d.name), ["Ad demand"]);
+    assert.deepEqual(adjustments, { dropped_citation_ids: [], moved_catalysts: [{ catalyst_name: "Ad demand", reason: "business_driver_only" }], moved_risks: [] });
+    assert.deepEqual(output.decision_record.adjustments, adjustments);
+
+    // A malformed pre-filled field is not the model's to get right, so it never fails validation.
+    const malformed = { ...raw, decision_record: { ...raw.decision_record, adjustments: "none" } };
+    assert.deepEqual(decisionOutputFormat(inputs()).validate!(malformed), []);
   });
 
   it("does not report returns whose inputs omit reported dilution, and keeps the model linkage", () => {
