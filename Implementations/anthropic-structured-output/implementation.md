@@ -457,3 +457,22 @@ Implemented by a separate worker agent (Claude, 2026-10-11) on branch
 - Remaining limitations: the paid live check (API compilation of the 14 schemas, a real rejection
   body, cache reads on a repair pass) and the independent `verification/` set are still to run.
   Coverage is limited to the expressible contracts listed above.
+
+### Reviewer evidence: paid live check (2026-10-11, approved by the user)
+
+Run by the plan author against the exact branch commit `5da9e928`, with `RESEARCH_MODEL_PROVIDER=anthropic-direct`
+and `claude-haiku-5-5`. The verification set ran first on the same commit: 22 of 22 pass. Type check clean, unit suite 324 pass, 0 fail.
+
+- `RUN_PROVIDER_SMOKE=1 npx tsx scripts/provider-smoke.ts`: HTTP 200, `outputConfigSent: [true]`, valid JSON, 9 output tokens, 2.1 s.
+- Each expressible stage and report contract sent once with `maxTokens: 400`:
+
+| Contract | Result |
+| --- | --- |
+| HISTORICAL_DIAGNOSIS, MOAT, OPERATING_MODEL, OUTLINE, SECTION | accepted (`[true]`); first-use compile latency 3.6 to 26 s |
+| COMPANY_GENESIS, BUSINESS_PROCESS, DECISION_SYNTHESIS | rejected with 400 "The compiled grammar is too large, which would cause performance issues. Simplify your tool schemas or reduce the number of strict tools." The AC-4 fallback fired (`[true, false]`) and the pass completed. |
+
+The rejection is about overall size: making every property required, or removing `format: uuid` and `minItems`, still
+fails. The three rejected contracts are the ones that return 4 to 8 artifacts in one answer. The pattern `/schema/i`
+matches the message ("tool schemas"), so AC-4 handles it. The cost is one unbilled 400 per schema per worker process,
+plus first-use compile latency on the accepted schemas. Splitting multi-artifact contracts would be needed to bring
+those three under the limit; that is out of scope here.
