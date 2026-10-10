@@ -1,6 +1,7 @@
 import postgres from "postgres";
 import { STAGE_OUTPUT_CONTRACTS } from "@/lib/research/stage-contracts";
 import { canonicalResearchKey, contractForProfile, sourceFamiliesPresent } from "@/lib/research/v2-contracts";
+import { withheldValuationReason } from "@/lib/research/valuation/contracts";
 
 type Row = Record<string, any>;
 
@@ -129,6 +130,18 @@ export async function evaluateResearchQuality(
   }
 }
 
+/**
+ * Coverage key for anchor gaps caused by a deliberately withheld valuation. The valuation stage
+ * accepts it (the run continues to synthesis, review and export); completion still fails on it.
+ */
+export const VALUATION_WITHHELD_KEY = "valuation_withheld";
+
+export function valuationWithheld(artifacts: Row[] = []): string | null {
+  const set = artifacts.find((artifact) => artifact.artifact_type === "valuation_scenario_set"
+    && ["validated", "accepted"].includes(String(artifact.status)));
+  return set ? withheldValuationReason(set.content_json) : null;
+}
+
 export function inferMissingSourceCoverage(input: {
   runType?: string;
   sources: Row[];
@@ -136,6 +149,7 @@ export function inferMissingSourceCoverage(input: {
   scenarios: Row[];
   backtestArtifacts?: Row[];
   backtests?: Row[];
+  valuationWithheldReason?: string | null;
 }): MissingCoverageItem[] {
   const runType = input.runType || "deep_dive";
   const threshold = thresholdFor(runType);
@@ -202,11 +216,12 @@ export function inferMissingSourceCoverage(input: {
 
   if (threshold.requireValueAnchors && !input.scenarios.some((scenario) => numericLike(scenario.value_anchor))) {
     gaps.push({
-      key: "valuation_anchors",
+      key: input.valuationWithheldReason ? VALUATION_WITHHELD_KEY : "valuation_anchors",
       severity: "high",
       area: "valuation anchors",
-      description:
-        "No numeric scenario value anchors are populated, so upside/downside cannot be assessed.",
+      description: input.valuationWithheldReason
+        ? `Valuation withheld by the valuation analyst, so upside/downside cannot be assessed: ${input.valuationWithheldReason}`
+        : "No numeric scenario value anchors are populated, so upside/downside cannot be assessed.",
       requiredForCompletion: true,
     });
   }
@@ -234,7 +249,9 @@ export function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQua
   const scenariosWithValueAnchors = data.scenarios.filter((scenario) =>
     numericLike(scenario.value_anchor)
   );
+  const valuationWithheldReason = valuationWithheld(data.artifacts);
   const inferredGaps = inferMissingSourceCoverage({
+    valuationWithheldReason,
     runType: data.run.run_type,
     sources: data.sources,
     evidence: data.evidence,
@@ -587,6 +604,7 @@ function addValuationCoverage(
 ) {
   const requiredLenses = jsonArray(data.profile?.required_valuation_lenses_json);
   const coveredLenses = new Set(data.signals.map((signal) => signal.lens_family));
+  const valuationWithheldReason = valuationWithheld(data.artifacts);
 
   for (const lens of requiredLenses) {
     if (!coveredLenses.has(lens)) {
@@ -619,10 +637,12 @@ function addValuationCoverage(
       (gap) => isOpenGap(gap) && ["high", "critical"].includes(String(gap.severity))
     );
     const item: MissingCoverageItem = {
-      key: "scenario_value_anchors",
+      key: valuationWithheldReason ? VALUATION_WITHHELD_KEY : "scenario_value_anchors",
       severity: "high",
       area: "valuation depth",
-      description: hasBlockingSourceGap
+      description: valuationWithheldReason
+        ? `Valuation withheld; no scenario value anchors exist and the run is not action-ready: ${valuationWithheldReason}`
+        : hasBlockingSourceGap
         ? "No numeric scenario value anchors are present; high-severity source gaps explain the blocker but the run is not action-ready."
         : "No numeric scenario value anchors are present.",
       requiredForCompletion: true,

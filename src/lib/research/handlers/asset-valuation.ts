@@ -13,6 +13,9 @@ import { resolve, sep } from "node:path";
 import { projectionSharesInMillions, projectionShareUnitErrors } from "../valuation/share-denominator";
 import {calculateValuationSchedule} from '../valuation/schedules';
 import { valuationDatePrice } from "@/lib/market-data/price-history";
+import { hasDepreciationInputs, valuationFinancialInputs } from "../valuation/financial-inputs";
+import { cashFlowBuildErrors } from "../valuation/schedules";
+import { withheldValuationReason } from "../valuation/contracts";
 
 export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "asset_valuation",
@@ -66,6 +69,23 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         ORDER BY mo.period_end DESC NULLS LAST, md.metric_key
         LIMIT 80
       `;
+      // Captured statements and period-end prices, reduced to a compact table for the model.
+      const capturedRows = await sql`
+        SELECT artifact_type, content_json->'observations' AS observations, content_json->'cross_check' AS cross_check
+        FROM research_artifacts
+        WHERE research_run_id = ${ctx.runId}
+          AND artifact_type IN ('financial_statement_set', 'market_price_history')
+          AND status IN ('validated', 'accepted')
+        ORDER BY artifact_type, created_at DESC
+      `;
+      const captured = (type: string) => capturedRows.find((row) => row.artifact_type === type);
+      const financialInputs = valuationFinancialInputs({
+        statementObservations: Array.isArray(captured("financial_statement_set")?.observations) ? captured("financial_statement_set")!.observations : [],
+        marketObservations: Array.isArray(captured("market_price_history")?.observations) ? captured("market_price_history")!.observations : [],
+        marketCrossCheck: captured("market_price_history")?.cross_check ?? null,
+        cutoff: ctx.marketDataCutoffAt || ctx.cutoffAt,
+      });
+      const requireDepreciationAddBack = hasDepreciationInputs(financialInputs);
       const [marketRow] = await sql`
         SELECT dc.text
         FROM research_run_sources rrs
@@ -217,6 +237,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         required_lenses: requiredLenses,
         current_market_snapshot: marketSnapshot,
         accepted_historical_metrics: metricRows,
+        financial_inputs: financialInputs,
         nav_inputs: navInputs,
         reported_diluted_shares: reportedDilutedShares,
         operating_model: upstream.operating_model || null,
@@ -241,10 +262,13 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
           "Follow output_schema exactly, including every nested required field and primitive type.",
           "Supply method_inputs for multiple economically appropriate valuation methods, each with Bear, Base and Bull annual schedules. Use cash amounts and diluted shares in millions. Cash_flow must be FCFF for fcff, FCFE for fcfe, and dividends for dividend or equity exit methods. Choose FCFE, earnings exit, book or tangible-book exit for financial firms as appropriate; do not treat bank operating cash flow as FCFF. Terminal multiples use total earnings/equity, never per-share inputs. Rates are decimals. Explain source calibration, dilution, capital needs and the equity bridge. The application computes discount factors, terminal value and present value. Explain unsupported methods and missing inputs in omitted_methods; never fabricate data to fill a schedule.",
           "annual_price_target_path must include bear, base, and bull price targets for every fiscal year through terminal_year.",
-          "Use the supplied operating-scenario financial statements, accepted historical metrics, cash, dilution, and current market price. Do not claim these inputs are absent when they are in the packet.",
+          "Use financial_inputs (captured quarterly and annual revenue, costs, D&A, SBC, operating cash flow, capex, cash, marketable securities, debt, leases, diluted shares, headcount, period-end closes and market caps), the operating-scenario financial statements, accepted historical metrics and the current market price. Check financial_inputs.columns and not_captured before listing a gap; never call a supplied input absent.",
+          "For fcff and fcfe, give every year a build: starting_profit (after-tax operating income for fcff, net income for fcfe), depreciation_amortization added back, capital_expenditures as a positive amount that is subtracted, change_in_net_working_capital, and other_adjustments (net borrowing for fcfe; stock-based compensation when treated as a cash cost). cash_flow must equal the build. Calibrate D&A and capex to their history in financial_inputs. Bridge enterprise value to equity with the latest cash, marketable securities, debt and lease liabilities from financial_inputs.",
+          "Discount rates, terminal growth and multiples are analyst assumptions: state each one and its rationale in source_notes rather than treating it as a missing input. An unverified period-end close is still the stored exchange close; use it and state its verification status.",
+          "Withhold only when no method can be built from the packet: then set valuation_status to \"withheld\", all three terminal anchors to 0, method_inputs to [], and withheld_reason naming the missing packet inputs. Otherwise set valuation_status to \"complete\".",
           "Keep annual operating values, net margins, reinvestment, and terminal-year assumptions consistent with the supplied operating scenarios; explain any changed assumption in the relevant output object.",
           "For a pre-profit company, use scenario-appropriate revenue, cash/NAV, reverse-valuation, and dilution-aware methods when earnings or FCF multiples are not meaningful.",
-          "All three terminal anchors and annual price targets must be positive finite per-share values. Preserve uncertainty through a wide bear/base/bull range rather than zero placeholders.",
+          "Unless the valuation is withheld, all three terminal anchors and annual price targets must be positive finite per-share values. Preserve uncertainty through a wide bear/base/bull range rather than zero placeholders.",
           "When nav_inputs is supplied, include a separate tangible-book NAV cross-check in valuation_scenario_set and distinguish it from the forecast price targets.",
           "Use reported_diluted_shares as the minimum denominator for all forecast per-share values and price targets. State that future share issuance beyond the reported diluted count remains an uncertainty.",
           "Every annual projection balance_sheet_values must include diluted_shares_millions. If it also includes diluted_shares or shares_outstanding, those raw fields must be actual share counts, equal to the millions field times 1,000,000. Per-share dollar values are never in millions.",
@@ -257,13 +281,24 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         packet, promptFactory,
         outputFormat: { ...VALUATION_CONTRACT, validate(value) {
           const errors = VALUATION_CONTRACT.validate?.(value) || [];
-          if (errors.length || !reportedDilutedShares) return errors;
+          if (errors.length) return errors;
+          const buildErrors = requireDepreciationAddBack
+            ? cashFlowBuildErrors((value as any).valuation_scenario_set?.method_inputs || [])
+            : [];
+          if (buildErrors.length || !reportedDilutedShares) return buildErrors;
           return projectionShareUnitErrors((value as any).annual_price_target_path?.annual_projections || []);
         } },
       });
 
       const scenarioSet = output.valuation_scenario_set || {};
       const targetPath = output.annual_price_target_path || {};
+      // A deliberate withheld valuation is recorded as such; no anchor is derived or invented for it.
+      const withheldReason = withheldValuationReason(scenarioSet);
+      if (withheldReason) {
+        for (const key of VALUATION_CONTRACT.requiredKeys) {
+          if (output[key]) Object.assign(output[key], { valuation_status: "withheld", withheld_reason: withheldReason });
+        }
+      }
       if (navInputs) {
         scenarioSet.nav_cross_check = navInputs;
       }
@@ -303,7 +338,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
           if (scale !== undefined) row.price_target = Number((Number(row.price_target) * scale).toFixed(6));
         }
         const terminalYear = Number(scenarioSet.terminal_year);
-        for (const scenarioType of ["bear", "base", "bull"]) {
+        for (const scenarioType of withheldReason ? [] : ["bear", "base", "bull"]) {
           const terminal = targetPath.price_target_path?.find(
             (row: any) => Number(row.fiscal_year) === terminalYear && row.scenario_type === scenarioType
           );
@@ -339,7 +374,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         Number(scenarioSet.terminal_anchor_base),
         Number(scenarioSet.terminal_anchor_bull),
       ];
-      if (probabilities.every(Number.isFinite) && anchors.every(Number.isFinite)
+      if (!withheldReason && probabilities.every(Number.isFinite) && anchors.every(Number.isFinite)
         && Math.abs(probabilities.reduce((sum, value) => sum + value, 0) - 1) < 0.001) {
         scenarioSet.probability_bear = probabilities[0];
         scenarioSet.probability_base = probabilities[1];
@@ -376,14 +411,26 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         },
         confidence: scenarioType === "base" ? 0.7 : 0.55,
       })).filter((scenario) => Number.isFinite(scenario.value_anchor) && scenario.value_anchor > 0);
-      if (derivedScenarios.length !== 3) {
+      if (derivedScenarios.length !== 3 && !withheldReason) {
         throw new Error("Valuation did not produce positive finite bear, base, and bull terminal anchors.");
       }
       const baseAnchor = derivedScenarios.find((scenario) => scenario.scenario_type === "base")?.value_anchor;
       const comparisonRange = Object.fromEntries(
         derivedScenarios.map((scenario) => [scenario.scenario_type, scenario.value_anchor])
       );
-      const derivedSignals = derivedScenarios.length === 3
+      const withheldText = `Valuation withheld: ${withheldReason}`;
+      const derivedSignals = withheldReason
+        ? ["scenario_valuation", ...requiredLenses].map((lens) => ({
+            signal_key: lens === "scenario_valuation" ? "scenario_price_target_range" : `${lens}_scenario_price_target`,
+            signal_name: lens === "scenario_valuation" ? "Scenario price target range" : `${lens} scenario price target`,
+            lens_family: lens,
+            current_value_text: withheldText,
+            comparison_range_json: {},
+            signal: "not_applicable",
+            cheapness_score: null,
+            confidence: null,
+          }))
+        : derivedScenarios.length === 3
         ? [
             {
               signal_key: "scenario_price_target_range",
@@ -437,8 +484,14 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         `;
       }
 
-      // Persist to scenarios table
-      const scens = Array.isArray(output.scenarios) ? output.scenarios : derivedScenarios;
+      // Persist to scenarios table. A withheld valuation clears anchors left by an earlier attempt.
+      if (withheldReason) {
+        await sql`
+          UPDATE scenarios SET value_anchor = NULL, assumptions_json = ${sql.json({ withheld_reason: withheldReason })}
+          WHERE research_run_id = ${ctx.runId}
+        `;
+      }
+      const scens = withheldReason ? [] : Array.isArray(output.scenarios) ? output.scenarios : derivedScenarios;
       for (const scen of scens) {
         const updated = await sql`
           UPDATE scenarios

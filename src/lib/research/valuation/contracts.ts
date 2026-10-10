@@ -48,8 +48,23 @@ export const ValuationScenarioSet = z.object({
   segments_reconciled: z.boolean().default(true),
   method_inputs:z.array(ValuationMethodInput).optional(),
   omitted_methods:z.array(z.object({method:z.string().min(1),reason:z.string().min(1)})).optional(),
+  valuation_status:z.enum(["complete","withheld"]).optional(),
+  withheld_reason:z.string().optional(),
 });
 export type ValuationScenarioSet = z.infer<typeof ValuationScenarioSet>;
+
+/**
+ * The reason when the valuation analyst deliberately withheld the valuation: status withheld,
+ * every terminal anchor exactly 0 and a stated reason. Anything else (mixed or missing anchors)
+ * is not a withheld outcome and stays a validation failure.
+ */
+export function withheldValuationReason(set: unknown): string | null {
+  const value = (set ?? {}) as Record<string, unknown>;
+  if (value.valuation_status !== "withheld") return null;
+  if (!["bear", "base", "bull"].every((scenario) => value[`terminal_anchor_${scenario}`] === 0)) return null;
+  const reason = [value.withheld_reason, value.terminal_anchor_note].find((text) => typeof text === "string" && text.trim());
+  return reason ? String(reason).trim() : null;
+}
 
 export const ReverseValuation = z.object({
   artifact_type: z.literal("reverse_valuation"),

@@ -1,7 +1,7 @@
 import postgres from "postgres";
 import { getStageOutputContract, validateArtifactContent } from "@/lib/research/stage-contracts";
 import { STAGE_CONFIG_MAP, getStageConfig } from "./stages";
-import { evaluateResearchQuality } from "./quality-gates";
+import { evaluateResearchQuality, VALUATION_WITHHELD_KEY } from "./quality-gates";
 
 // ============================================================
 // Validators — deterministic checks on stage / run completion.
@@ -398,9 +398,10 @@ export async function validateValuationDepth(
   runId: string
 ): Promise<ValidationResult> {
   const quality = await evaluateResearchQuality(runId);
+  // A withheld valuation passes this stage as a warning; the completion gate still reports it.
   const valuationItems = quality.missingCoverage.filter(
     (item) => item.area === "valuation depth" || item.area === "valuation anchors" || item.area === "valuation artifact"
-  );
+  ).map((item) => item.key === VALUATION_WITHHELD_KEY ? { ...item, requiredForCompletion: false } : item);
 
   return {
     valid: valuationItems.filter((item) => item.requiredForCompletion).length === 0,
