@@ -771,7 +771,7 @@ export default function RunResearchPage() {
       {finalReviewWaiting && <div className={`${ui.actions} mb-8 mt-0 border-t-0 pt-0`}><p className={ui.muted}>Ready for your review.</p><Link className={ui.primary} href={`/review?run=${runId}`}>Review research</Link></div>}
       {progress.requestReset && <section className="mb-8" aria-label="Re-run approval">
         <h2 className="mb-3 text-[22px]">Approve a re-run?</h2>
-        <p className={ui.muted}>A specialist asked to recompute its analysis for {progress.requestReset.request_ids.join(", ")}. Re-running reopens {progress.requestReset.stages.length} stages; their earlier model calls cost {formatMoney(progress.requestReset.estimated_cost_usd)}. Skipping keeps the current analysis and lists the requests as open questions.</p>
+        <p className={ui.muted}>A specialist asked to recompute its analysis to answer {progress.requestReset.request_ids.length === 1 ? "one report question" : `${progress.requestReset.request_ids.length} report questions`}. Re-running reopens {progress.requestReset.stages.length} stages; their earlier model calls cost {formatMoney(progress.requestReset.estimated_cost_usd)}. Skipping keeps the current analysis and lists the requests as open questions.</p>
         <ul className="mt-4">{progress.requestReset.stages.map((stage) => <li key={stage}>{humanize(stage)}</li>)}</ul>
         <div className={ui.actions}>
           <button className={ui.secondary} onClick={() => handleRequestReset("skip")} disabled={isProcessing}>Skip re-run</button>
