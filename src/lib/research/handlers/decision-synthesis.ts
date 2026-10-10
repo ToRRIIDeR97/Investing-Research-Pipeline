@@ -170,7 +170,8 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           + Number(probabilities.probability_bull) * Number(returns.bull_return);
         if (Number.isFinite(weighted)) returns.probability_weighted_return = Number(weighted.toFixed(6));
       }
-      if (terminalReturnInputs && output.investment_thesis && probabilities && returns) {
+      // A withheld valuation has zero placeholder targets; describing them as returns would read as -100%.
+      if (!valuationWithheld && terminalReturnInputs && output.investment_thesis && probabilities && returns) {
         output.investment_thesis.horizon = `Through fiscal ${terminalYear}`;
         output.investment_thesis.expected_return_linkage =
           `Fiscal ${terminalYear} diluted-share price targets imply bear ${(returns.bear_return * 100).toFixed(1)}%, ` +
