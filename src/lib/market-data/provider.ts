@@ -23,6 +23,8 @@ export type PriceBar = {
   volume?: number;
   currency: string;
   exchange_timezone?: string;
+  /** When the bar's close became public. Persistence defaults it to trading_date. */
+  available_at?: Date;
 };
 
 export type CorporateActionEvent = {

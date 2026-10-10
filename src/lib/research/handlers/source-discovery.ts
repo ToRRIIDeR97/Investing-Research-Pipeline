@@ -130,6 +130,7 @@ export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
         sourcesFetched: sources.filter(source => !source.sourceId.startsWith("candidate-")).length,
         coveredRoles: Array.from(coveredRoles),
         discoveryRounds: rounds.length,
+        priceHistory: sourceCorpus.priceHistory,
         gaps: gaps.map((g: any) => g.gapKey),
       };
     } finally {

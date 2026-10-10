@@ -8,6 +8,7 @@ import {
 import { buildHistoricalRecord, latestCompletedQuarter } from "../history/normalizer";
 import { secQuarterlyObservations } from "../history/sec-companyfacts";
 import { captureFilingStatements } from '../history/filing-store';
+import { captureMarketHistory } from '../history/market-history';
 import { repairModuleWriter } from '../repair/agent';
 import { HistoricalObservation } from '../history/contracts';
 import { createArtifactRepository } from "../artifacts/repository";
@@ -171,6 +172,9 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       const filings = await captureFilingStatements(sql, ctx, { writeModule: repairModuleWriter(sql, ctx) });
       if(filings.failures.length||filings.coverage.some(c=>c.status==='incomplete')||filings.reconciliation.some(c=>c.status==='mismatch'))throw new Error('Primary financial statements are incomplete or do not reconcile. Inspect financial_statement_set coverage before continuing.'+
         (filings.repair?` Repair specialist: ${filings.repair.status} after ${filings.repair.attempts} attempt(s)${filings.repair.last_errors.length?`; last errors: ${filings.repair.last_errors.slice(0,3).join('; ')}`:''}.`:''));
+      // Period-end closes and market caps; missing prices never block the financial record.
+      const marketHistory = await captureMarketHistory(sql, ctx, filings.observations)
+        .catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
       const latestFiling=[...filings.tables].sort((a,b)=>b.period_end.localeCompare(a.period_end))[0];
       if(latestFiling?.fiscal_year&&latestFiling?.fiscal_quarter)end={year:latestFiling.fiscal_year,quarter:latestFiling.fiscal_quarter};
       const filingObservations = filings.observations.map(row => HistoricalObservation.parse(row));
@@ -208,6 +212,8 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
         ttmSeriesCount: record.ttm_series.length,
         filingTableCount: filings.tables.length,
         filingCoverage: filings.coverage,
+        marketHistory: "error" in marketHistory ? marketHistory
+          : { observations: marketHistory.observations.length, barsAvailable: marketHistory.bars_available, crossCheck: marketHistory.cross_check },
       };
     } finally {
       await sql.end();

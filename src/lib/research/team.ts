@@ -120,7 +120,7 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
       if (run?.status !== "running") throw new Error("Research requests cannot bypass a human gate");
       const types = [...new Set(affected.flatMap(key => getStageOutputContract(key)?.requiredKeys || [])),
         "report_outline", "report_section", "report_document", "report_review", "question_register"];
-      if (affected.includes("historical_record")) types.push("historical_record", "financial_statement_set");
+      if (affected.includes("historical_record")) types.push("historical_record", "financial_statement_set", "market_price_history");
       await tx`UPDATE research_stages SET status = 'pending', started_at = NULL, completed_at = NULL,
         validation_result_json = NULL, failure_reason = NULL, updated_at = NOW()
         WHERE research_run_id = ${ctx.runId} AND stage_key = ANY(${affected}::text[]) AND status != 'skipped'`;

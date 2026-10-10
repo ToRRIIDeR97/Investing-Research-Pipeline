@@ -5,7 +5,8 @@ import { createReport, fingerprint, inputFingerprint, type ReportArtifact, type 
 // Review/export products cannot become their own upstream inputs.
 // Full filing tables live in Financials. The report uses historical_record observations;
 // duplicating every filing's display cells in the writing packet exhausts its context.
-const products = ["agent_brief", "team_requests", "source_requests", "source_review", "research_chat", "financial_statement_set", "report_outline", "report_section", "report_document", "report_review", "question_register", "synthetic_report", "refresh_schedule", "review_summary", "findings", "quality_score", "recommendations", "review_verdict"];
+// Period-end prices and market caps (market_price_history) are likewise read in Financials.
+const products = ["agent_brief", "team_requests", "source_requests", "source_review", "research_chat", "financial_statement_set", "market_price_history", "report_outline", "report_section", "report_document", "report_review", "question_register", "synthetic_report", "refresh_schedule", "review_summary", "findings", "quality_score", "recommendations", "review_verdict"];
 export async function loadReportInputs(sql: Sql, runId: string, cutoff: string) {
   const rows = await sql`
     SELECT DISTINCT ON (artifact_type, scope_key) id, artifact_type, scope_key, artifact_version, content_json
