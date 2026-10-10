@@ -13,7 +13,7 @@ s = Svg(1100, 700, "Research OS — UML component view (current)",
         "a separate worker claims jobs and runs the 24-stage pipeline, which calls the agent harness, "
         "source discovery and ingestion, backtesting (Python), and export; all state lives in Postgres and ./storage.")
 s.box(30, 60, 220, 70, "Analyst browser", ["src/app/** client pages"], "ui", stereo="actor/UI")
-s.box(310, 50, 260, 90, "Next.js API routes", ["src/app/api/** (≈49 handlers)", "no auth middleware"], "api", stereo="component")
+s.box(310, 50, 260, 90, "Next.js API routes", ["src/app/api/** (51 route files)", "no auth middleware"], "api", stereo="component")
 s.box(640, 50, 200, 90, "Run queue", ["src/lib/research/run-queue.ts", "enqueue / claim / lease"], "lib", stereo="component")
 s.box(880, 170, 200, 110, "Research worker", ["src/workers/research-worker.ts", "poll 5s · heartbeat 10s", "lease 5 min · run advisory lock"], "worker", stereo="process")
 s.box(310, 200, 260, 110, "Workflow orchestrator", ["src/lib/workflow/orchestrator.ts", "advanceStage · gates · resume", "stages.ts · team-plan.ts (DAG)"], "lib", stereo="component")

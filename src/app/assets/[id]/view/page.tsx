@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -97,6 +97,13 @@ const emptyResearchData: ResearchData = {
 };
 
 type TabId = "overview" | "evidence" | "metrics" | "valuation" | "thesis" | "financials" | "kpis" | "backtests" | "sources" | "runs";
+type NavDirection = "forward" | "back";
+
+const navViews = ["overview", "thesis", "financials", "kpis"] as const;
+const tabLabels: Partial<Record<TabId, string>> = { thesis: "Report", financials: "Financials", kpis: "KPI Dashboard", runs: "Run history" };
+const tabLabel = (tab: TabId) => tabLabels[tab] ?? tab.charAt(0).toUpperCase() + tab.slice(1);
+// Position in the asset nav. Views opened from the Overview menu sit between Overview and Report.
+const tabOrder = (tab: TabId) => { const index = (navViews as readonly TabId[]).indexOf(tab); return index >= 0 ? index : 0.5; };
 
 const signalColors: Record<string, string> = {
   very_cheap: "#3d7664",
@@ -126,8 +133,13 @@ function ViewResearch() {
   const menu = useRef<HTMLDetailsElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const loadVersion = useRef(0);
+  // Slide direction for the tab content: from the side of the newly selected tab.
+  const [tabMotion, setTabMotion] = useState<{ tab: TabId; direction?: NavDirection }>({ tab: activeTab });
+  if (tabMotion.tab !== activeTab) setTabMotion({ tab: activeTab, direction: tabOrder(activeTab) >= tabOrder(tabMotion.tab) ? "forward" : "back" });
 
   useEffect(() => {
+    // Tab links pin ?run= to the run already on screen. That is navigation, not a new run, so keep the page mounted.
+    if (requestedRunId && data.asset?.id === assetId && data.activeRun?.id === requestedRunId) return;
     void loadResearch();
     return () => { loadVersion.current++; };
   }, [assetId, requestedRunId]);
@@ -243,20 +255,25 @@ function ViewResearch() {
 
   const navigation = <div className={styles.assetNavigation}>
     <Link className={styles.assetName} href={`/assets/${assetId}`}>{data.asset.canonical_name}</Link>
-    <nav aria-label="Asset views">{(['overview','thesis','financials','kpis'] as const).map(view=><Link key={view} href={sectionHref(view)} aria-current={activeTab===view?'page':undefined}>{view==='thesis'?'Report':view==='financials'?'Financials':view==='kpis'?'KPI Dashboard':'Overview'}</Link>)}</nav>
+    <AssetTabs activeTab={activeTab} hrefFor={sectionHref} />
     <Link href={`/assets/${assetId}/run?new=1`} className={styles.newResearch}>New research</Link>
     {data.activeRun&&<ResearchChat key={data.activeRun.id} runId={data.activeRun.id} evidence={data.report?.report_document?.evidence??[]}/>}
   </div>;
   const viewArtifacts = [...data.artifacts, ...(data.report?.report_document?.artifacts ?? []).filter((a:ResearchRecord)=>!data.artifacts.some(b=>b.id===a.id))];
-  if (activeTab === 'kpis') return <>{navigation}<KPIDashboard key={data.activeRun?.id} artifacts={viewArtifacts} onRefresh={()=>void loadResearch()} refreshing={loading}/></>;
-  if (activeTab === 'thesis' && data.report?.report_document) return <>{navigation}<ResearchReport key={data.activeRun?.id} document={data.report.report_document} liveArtifacts={viewArtifacts} onBack={()=>openSection('overview')} financialsHref={sectionHref('financials')}/></>;
+  // The nav bar is the header: each view keeps one visually hidden h1 and no visible title.
+  const view = (body: React.ReactNode) => <>{navigation}<div key={activeTab} data-nav-direction={tabMotion.direction}>
+    <h1 className="sr-only">{activeTab === "overview" ? data.asset!.canonical_name : `${data.asset!.canonical_name}: ${tabLabel(activeTab)}`}</h1>
+    {body}
+  </div></>;
+  if (activeTab === 'kpis') return view(<KPIDashboard key={data.activeRun?.id} artifacts={viewArtifacts} onRefresh={()=>void loadResearch()} refreshing={loading}/>);
+  if (activeTab === 'thesis' && data.report?.report_document) return view(<ResearchReport key={data.activeRun?.id} document={data.report.report_document} liveArtifacts={viewArtifacts} onBack={()=>openSection('overview')} financialsHref={sectionHref('financials')}/>);
   if (activeTab === 'financials') {
     const observations = researchObservations(viewArtifacts);
-    return <>{navigation}<FinancialStatements key={data.activeRun?.id} observations={observations} filingTables={artifactContent(viewArtifacts,'financial_statement_set').tables??[]} sources={data.sources} evidence={[...(data.report?.report_document?.evidence??[]),...data.evidence]} isTest={data.report?.report_document?.is_test}/></>;
+    return view(<FinancialStatements key={data.activeRun?.id} observations={observations} filingTables={artifactContent(viewArtifacts,'financial_statement_set').tables??[]} sources={data.sources} evidence={[...(data.report?.report_document?.evidence??[]),...data.evidence]} isTest={data.report?.report_document?.is_test}/>);
   }
 
-  return (
-    <>{navigation}<div className={activeTab === "overview" ? styles.brief : styles.detailPage}>
+  return view(
+    <div className={activeTab === "overview" ? styles.brief : styles.detailPage}>
       <div className={styles.toolbar}>
         {activeTab === "overview" ? <Link href="/assets"><ArrowLeft size={16} />Research</Link> : (
           <button onClick={() => openSection("overview")}><ArrowLeft size={16} />Back to research</button>
@@ -277,10 +294,9 @@ function ViewResearch() {
       </div>
 
       {activeTab === "overview" ? <>
-        <header className={styles.titleRow}>
-          <h1>{data.asset.canonical_name}</h1>
+        <div className={styles.titleRow}>
           <span className={styles.status} data-tone={action.tone}>{action.label}</span>
-        </header>
+        </div>
         {!data.activeRun ? <div className={styles.empty}>
           <p>No research yet.</p>
           <Link className={styles.primary} href={action.href}>{action.action}</Link>
@@ -330,7 +346,6 @@ function ViewResearch() {
           </footer>
         </>}
       </> : <>
-        <h1 className={styles.detailTitle}>{activeTab === "thesis" ? "Full report" : activeTab === "runs" ? "Run history" : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}</h1>
         {activeTab !== "runs" && !(activeTab === "thesis" && data.report?.report_document) && <input className={styles.filter} type="search" aria-label="Search this section" placeholder="Search this section" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />}
         <div className={styles.supporting}>
           {activeTab === "evidence" && <EvidenceSection evidence={filtered.evidence} />}
@@ -350,8 +365,37 @@ function ViewResearch() {
           </div>}
         </div>
       </>}
-    </div></>
+    </div>
   );
+}
+
+function AssetTabs({ activeTab, hrefFor }: { activeTab: TabId; hrefFor: (view: TabId) => string }) {
+  const nav = useRef<HTMLElement>(null);
+  const indicator = useRef<HTMLSpanElement>(null);
+
+  // One underline for the whole nav. It glides to the active tab (transform only).
+  useLayoutEffect(() => {
+    const place = () => {
+      const bar = indicator.current;
+      if (!bar) return;
+      const link = nav.current?.querySelector<HTMLElement>("a[aria-current]");
+      bar.style.opacity = link ? "1" : "0";
+      if (!link) return;
+      bar.style.transform = `translateX(${link.offsetLeft}px) scaleX(${link.offsetWidth})`;
+      // First placement must not animate from the left edge; enable the transition afterwards.
+      if (bar.dataset.ready === undefined) { void bar.offsetWidth; bar.dataset.ready = ""; }
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    if (nav.current) observer.observe(nav.current);
+    void document.fonts?.ready.then(place);
+    return () => observer.disconnect();
+  }, [activeTab]);
+
+  return <nav ref={nav} aria-label="Asset views">
+    {navViews.map((view) => <Link key={view} href={hrefFor(view)} aria-current={activeTab === view ? "page" : undefined}>{tabLabel(view)}</Link>)}
+    <span ref={indicator} className={styles.tabIndicator} aria-hidden="true" />
+  </nav>;
 }
 
 function RiskQuestion({ risk }: { risk: JsonRecord }) {

@@ -10,7 +10,7 @@
 <rect x="310" y="50" width="260" height="90" rx="6" fill="#eef6ec" stroke="#4a8a3f" stroke-width="1.4"/>
 <text x="440.0" y="68" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«component»</text>
 <text x="440.0" y="84" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Next.js API routes</text>
-<text x="440.0" y="101" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/app/api/** (≈49 handlers)</text>
+<text x="440.0" y="101" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/app/api/** (51 route files)</text>
 <text x="440.0" y="116" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">no auth middleware</text>
 <rect x="640" y="50" width="200" height="90" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
 <text x="740.0" y="68" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«component»</text>

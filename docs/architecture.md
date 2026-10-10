@@ -92,8 +92,9 @@ Schema modules (`src/db/schema/`) and their key tables:
 | ai | staging, model calls, budgets, traces |
 | backtesting | backtest_runs, backtest_artifacts |
 | market-data | market_price_bars (with Stooq cross-check status), corporate_actions, market_data_fetches, instrument_provider_mappings |
+| saved-charts | saved_charts (My charts board definitions; series keys, never values) |
 
-Migrations are `0000`–`0006`, `0009_research_memory_graph`, which adds provenance and review fields plus a uniqueness constraint to `claim_relationships`, and `0010_price_history_verification`, which adds the cross-check columns to `market_price_bars`.
+Migrations are `0000`–`0006`, `0009_research_memory_graph`, which adds provenance and review fields plus a uniqueness constraint to `claim_relationships`, `0010_price_history_verification`, which adds the cross-check columns to `market_price_bars`, and `0011_saved_charts`, which adds the `saved_charts` table.
 
 Artifact statuses are listed in `src/lib/research/artifacts/contracts.ts`. Pipeline artifacts end at `validated`. Report artifacts are `superseded` by newer versions. `accepted` is never written ([#14](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/14)).
 
@@ -140,6 +141,7 @@ Guards:
 | Backtesting | Component, Deployment, Trust | `src/lib/backtesting/**`, `python/backtesting/**` |
 | Repair specialist sandbox | Component, Deployment, Trust | `src/lib/research/repair/**` |
 | Reporting and export | Component | `src/lib/research/reporting/**`, `src/lib/export/**` |
+| Financials view: metric catalogue, statement charts, My charts | Component, Class | `src/components/financial-statements.tsx`, `src/components/financials/**`, `reporting/metric-catalogue.ts`, `reporting/chart-series.ts`, `reporting/saved-charts.ts`, `src/app/api/saved-charts/**` |
 | Postgres | Component, Deployment, Class | `src/db/schema/**`, `drizzle/`, `docker-compose.yml` |
 | `./storage` | Component, Deployment, Trust | `storage/` (gitignored) |
 | Child processes | Component, Deployment, Trust | `python/**`, `repair/sandbox.ts` |

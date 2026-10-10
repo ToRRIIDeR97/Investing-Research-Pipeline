@@ -30,7 +30,7 @@ export default function AssetsPage() {
   const visible = assets.filter((asset) => (!filter || asset.asset_kind === filter) && [asset.canonical_name, asset.slug, asset.asset_kind, asset.sector || "", asset.status].some((value) => value.toLowerCase().includes(query.trim().toLowerCase())));
 
   return <div className={ui.page}>
-    <header className={ui.heading}><h1>Research</h1><Link href="/research/new" className={ui.primary}>Start research<ArrowUpRight size={16}/></Link></header>
+    <header className={ui.heading}><h1 className="sr-only">Research</h1><Link href="/research/new" className={ui.primary}>Start research<ArrowUpRight size={16}/></Link></header>
     <div className={ui.search}><Search size={19} aria-hidden="true" /><input type="search" aria-label="Search assets" placeholder="Search assets" value={query} onChange={(event) => setQuery(event.target.value)} /></div>
     <div className={ui.filters} aria-label="Asset type">{filters.map(([value, label]) => <button key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}</div>
     {loading ? <p className={ui.empty} role="status">Loading assets…</p> : error ? <p className={ui.error} role="alert">{error}<button onClick={load}>Try again</button></p> : <div className={ui.list}>

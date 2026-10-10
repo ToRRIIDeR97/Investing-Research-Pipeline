@@ -45,7 +45,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
         <button className={styles.iconButton} onClick={openSearch} aria-label="Search research"><Search size={22} strokeWidth={1.6} /></button>
       </header>
-      <main>{children}</main>
+      <main className={styles.main}>{children}</main>
       <dialog ref={dialog} className={styles.searchDialog} aria-label="Search research" onClick={(event) => {
         if (event.target === event.currentTarget) dialog.current?.close();
       }}>

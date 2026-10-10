@@ -28,7 +28,7 @@ export default function HomePage() {
   useEffect(() => { load(); }, []);
 
   return <div className={ui.page}>
-    <header className={ui.heading}><h1>Your research</h1><Link href="/research/new" className={ui.primary}>Start research<ArrowRight size={16}/></Link></header>
+    <header className={ui.heading}><h1 className="sr-only">Your research</h1><Link href="/research/new" className={ui.primary}>Start research<ArrowRight size={16}/></Link></header>
     {loading ? <p className={ui.empty} role="status">Loading research…</p> : error ? <p className={ui.error} role="alert">{error}<button onClick={load}>Try again</button></p> : <>
       <section className={ui.section}>
         <div className={ui.sectionHead}><h2>Awaiting review</h2><span className={ui.muted}>{queue.length}</span></div>
