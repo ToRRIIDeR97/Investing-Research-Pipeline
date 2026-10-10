@@ -14,7 +14,24 @@ export type SourceSearch = z.infer<typeof SourceSearch>;
 export const MAX_SEARCHES_PER_REQUEST = 3;
 
 export type FetchedDocument = { source_id: string; title: string; url: string | null };
-export type StageSourceRequest = SourceSearch & { id: string; status?: "fetched" | "unavailable"; documents?: FetchedDocument[] };
+/** in_corpus: the run already holds a document of the requested role that covers the query, so nothing was fetched. */
+export type StageSourceRequest = SourceSearch & { id: string; status?: "fetched" | "unavailable" | "in_corpus"; documents?: FetchedDocument[] };
+
+const STOP_WORDS = new Set(["the", "and", "for", "from", "with", "into", "onto", "its", "their", "our", "this", "that", "these", "those",
+  "are", "was", "were", "has", "have", "had", "not", "but", "all", "any", "per", "via", "about", "over", "under", "than", "then", "also"]);
+/** Lower-cased runs of letters and digits, keeping inner hyphens ("10-K" is 10-k). */
+const terms = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*/gu) || [];
+
+/**
+ * Share of the query's significant terms (distinct, at least three characters, not stop words) that occur
+ * in the text, by exact token match. 0 when the query has no significant term.
+ */
+export function queryTermCoverage(query: string, text: string): number {
+  const significant = [...new Set(terms(query))].filter(term => term.length >= 3 && !STOP_WORDS.has(term));
+  if (!significant.length) return 0;
+  const words = new Set(terms(text));
+  return significant.filter(term => words.has(term)).length / significant.length;
+}
 export interface SourceRequestRound { round: number; task_key: string; state: "queued" | "fetched"; requests: StageSourceRequest[] }
 /** One ledger per stage, so parallel specialists never rewrite each other's requests. */
 export interface StageSourceRequests { stage_key: string; role: TeamRole; rounds: SourceRequestRound[] }

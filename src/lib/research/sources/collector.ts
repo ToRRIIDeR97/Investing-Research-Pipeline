@@ -1,15 +1,18 @@
 import type { ResearchRunContext, Sql } from "../run-context";
 import { extractEvidenceForSources } from "../handlers/evidence-extraction";
+import { getEmbeddingProvider, retrievePassages } from "../memory";
 import { storeDiscoveredSources } from "./corpus";
 import { discoverRoleSources } from "./role-discovery";
 import { recordSourceCoverage, reconcileRoleGaps, sourcePlanFor, v2RunContext, withLinkedRunSources } from "./role-coverage";
 import type { SourceRole } from "./roles";
-import { getQueuedSourceRequests, saveStageSourceRequests, type FetchedDocument, type SourceSearch } from "./source-requests";
+import { getQueuedSourceRequests, queryTermCoverage, saveStageSourceRequests, type FetchedDocument, type SourceSearch,
+  type StageSourceRequest } from "./source-requests";
 
 export type SearchResult = SourceSearch & { status: "fetched" | "unavailable"; documents: FetchedDocument[] };
 
 /** Run named searches and store what was fetched, attributing each document to the query that found it. */
-export async function runSearches(sql: Sql, ctx: ResearchRunContext, searches: SourceSearch[], requestedBy: string): Promise<SearchResult[]> {
+export async function runSearches(sql: Sql, ctx: ResearchRunContext, searches: SourceSearch[], requestedBy: string,
+  metadata: Record<string, unknown> = {}): Promise<SearchResult[]> {
   const roleQueries: Partial<Record<SourceRole, string[]>> = {};
   for (const search of searches) (roleQueries[search.source_role] ||= []).push(search.query);
   const discovered = await discoverRoleSources({ assetName: ctx.assetName, symbol: ctx.symbol,
@@ -26,7 +29,7 @@ export async function runSearches(sql: Sql, ctx: ResearchRunContext, searches: S
     (research_run_id, source_role, attempt_status, failure_reason, attempt_metadata_json)
     VALUES (${ctx.runId}, ${result.source_role}, ${result.status === "fetched" ? "attempted" : "unavailable"},
       ${result.status === "fetched" ? null : "no_substantive_source_fetched"},
-      ${sql.json({ query: result.query, reason: result.reason, fetched_documents: result.documents.length, requested_by: requestedBy })})`;
+      ${sql.json({ query: result.query, reason: result.reason, fetched_documents: result.documents.length, requested_by: requestedBy, ...metadata } as any)})`;
   return results;
 }
 
@@ -38,20 +41,47 @@ export async function collectorGapNotes(sql: Sql, runId: string): Promise<Partia
   return Object.fromEntries((rounds[rounds.length - 1]?.accepted_gaps || []).map(gap => [gap.source_role, gap.reason]));
 }
 
+/** Minimum share of a query's significant terms a passage must contain for the corpus to answer the search. */
+const IN_CORPUS_COVERAGE = 0.6;
+
 /**
- * Serve every queued specialist request: fetch the named documents, read only those documents into
- * evidence, and refresh role coverage. The requesting stages are still running and rerun afterwards.
+ * Documents the run already holds for a search. Keyword retrieval matches any query term, so a passage
+ * counts only when its document has the requested role and it contains most of the query's terms.
+ */
+async function corpusDocuments(sql: Sql, runId: string, search: StageSourceRequest): Promise<FetchedDocument[]> {
+  const { passages } = await retrievePassages(sql, { runId, need: { key: search.id, query: search.query, sourceRoles: [search.source_role] },
+    embeddings: getEmbeddingProvider() });
+  const ids = [...new Set(passages.filter(p => p.source_role === search.source_role
+    && queryTermCoverage(search.query, p.text) >= IN_CORPUS_COVERAGE).map(p => p.source_id))];
+  if (!ids.length) return [];
+  const rows = await sql`SELECT id, title, url FROM source_documents WHERE id = ANY(${ids}::uuid[])`;
+  const byId = new Map(rows.map(row => [String(row.id), row]));
+  return ids.map(id => ({ source_id: id, title: String(byId.get(id)?.title || ""), url: byId.get(id)?.url ? String(byId.get(id)!.url) : null }));
+}
+
+/**
+ * Serve every queued specialist request: a search the run corpus already answers is recorded in_corpus;
+ * the others fetch the named documents, read only those documents into evidence, and refresh role
+ * coverage. The requesting stages are still running and rerun afterwards.
  */
 export async function processSourceRequests(sql: Sql, ctx: ResearchRunContext): Promise<boolean> {
   const ledgers = await getQueuedSourceRequests(sql, ctx.runId);
   if (!ledgers.length) return false;
   for (const ledger of ledgers) {
     const queued = ledger.rounds.find(round => round.state === "queued")!;
-    const results = await runSearches(sql, ctx, queued.requests, `${ledger.role}:${ledger.stage_key}`);
+    const held: FetchedDocument[][] = [];
+    for (const request of queued.requests) held.push(await corpusDocuments(sql, ctx.runId, request));
+    const searches = queued.requests.filter((_, index) => !held[index].length);
+    const results = searches.length ? await runSearches(sql, ctx, searches, `${ledger.role}:${ledger.stage_key}`) : [];
     await extractEvidenceForSources(sql, ctx, [...new Set(results.flatMap(result => result.documents.map(document => document.source_id)))]);
+    let next = 0;
     await saveStageSourceRequests(sql, ctx, { ...ledger, rounds: ledger.rounds.map(round => round !== queued ? round : {
       ...round, state: "fetched",
-      requests: round.requests.map((request, index) => ({ ...request, status: results[index].status, documents: results[index].documents })),
+      requests: round.requests.map((request, index) => {
+        if (held[index].length) return { ...request, status: "in_corpus" as const, documents: held[index] };
+        const result = results[next++];
+        return { ...request, status: result.status, documents: result.documents };
+      }),
     }) });
   }
   const plan = sourcePlanFor(ctx);
