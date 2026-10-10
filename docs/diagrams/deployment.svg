@@ -56,7 +56,7 @@
 <text x="900.0" y="398" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«external node»</text>
 <text x="900.0" y="414" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Data APIs</text>
 <text x="900.0" y="431" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">SEC EDGAR · FRED · World Bank</text>
-<text x="900.0" y="446" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">Yahoo Finance / yfinance</text>
+<text x="900.0" y="446" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">Yahoo Finance / yfinance · Stooq</text>
 <text x="900.0" y="461" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">EIA · FDIC · Coinbase · blockchain.info</text>
 <path d="M190,195 L190,380" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="220" y="340" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">TCP 5432</text>

@@ -36,6 +36,10 @@ export const market_price_bars = pgTable(
     exchange_timezone: text("exchange_timezone"),
     available_at: timestamp("available_at", { withTimezone: true }).notNull(),
     retrieved_at: timestamp("retrieved_at", { withTimezone: true }).notNull().defaultNow(),
+    // Cross-check against a second free source: unverified, verified (within tolerance) or mismatch.
+    verification_status: text("verification_status").notNull().default("unverified"),
+    verification_json: jsonb("verification_json").notNull().default({}),
+    verified_at: timestamp("verified_at", { withTimezone: true }),
     created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -74,6 +78,7 @@ export const corporate_actions = pgTable(
     index("corporate_actions_instrument_idx").on(table.instrument_id),
     index("corporate_actions_ex_date_idx").on(table.ex_date),
     index("corporate_actions_provider_symbol_idx").on(table.provider, table.provider_symbol),
+    index("corporate_actions_instrument_type_ex_date_idx").on(table.instrument_id, table.action_type, table.ex_date),
   ]
 );
 

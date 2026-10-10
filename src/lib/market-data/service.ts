@@ -17,7 +17,7 @@ import {
   instrument_provider_mappings,
 } from "@/db/schema/market-data";
 import { instruments, listings } from "@/db/schema/core";
-import { eq, and, gte, lte, desc } from "drizzle-orm";
+import { eq, and, gte, lte, desc, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 
 export type MarketDataServiceConfig = {
@@ -153,6 +153,75 @@ export function createMarketDataService(config: MarketDataServiceConfig) {
       return defaultProvider.getInstrumentMetadata(symbol);
     },
 
+    /**
+     * Backfill [start, end] once, then fetch only from shortly before the latest stored bar.
+     * `normalize` maps provider bars to stored bars (trading day, availability) and drops
+     * bars that are not final yet; stored rows are never overwritten.
+     */
+    async syncDailyHistory(
+      instrumentId: string,
+      symbol: string,
+      start: Date,
+      end: Date,
+      normalize: (bars: PriceBar[]) => PriceBar[] = (bars) => bars
+    ): Promise<{ fetchedFrom: Date | null; storedBars: number }> {
+      const [range] = await db
+        .select({
+          first: sql<Date | null>`min(${market_price_bars.trading_date})`,
+          last: sql<Date | null>`max(${market_price_bars.trading_date})`,
+        })
+        .from(market_price_bars)
+        .where(and(
+          eq(market_price_bars.instrument_id, instrumentId),
+          eq(market_price_bars.provider, providerName),
+          eq(market_price_bars.provider_symbol, symbol)
+        ));
+      const day = 24 * 60 * 60 * 1000;
+      const first = range?.first ? new Date(range.first) : null;
+      const last = range?.last ? new Date(range.last) : null;
+      // Allow a week of holidays at the start of the window before treating it as uncovered.
+      const coversStart = first !== null && first.getTime() <= start.getTime() + 7 * day;
+      if (coversStart && last && last.getTime() + day >= end.getTime()) return { fetchedFrom: null, storedBars: 0 };
+      const fetchedFrom = coversStart && last ? new Date(Math.max(start.getTime(), last.getTime() - 5 * day)) : start;
+      const fetchStart = Date.now();
+      let bars: PriceBar[];
+      try {
+        bars = await defaultProvider.getPriceHistory(symbol, fetchedFrom, end, "1d");
+      } catch (err) {
+        await logFetch(instrumentId, symbol, "history", "failed", undefined, err, { start: fetchedFrom, end, interval: "1d" });
+        throw err;
+      }
+      await logFetch(instrumentId, symbol, "history", "success", Date.now() - fetchStart, undefined, { start: fetchedFrom, end, interval: "1d", bars: bars.length });
+      const normalized = normalize(bars);
+      await persistPriceBars(instrumentId, symbol, normalized);
+      return { fetchedFrom, storedBars: normalized.length };
+    },
+
+    /** Fetch splits and dividends for the window and insert the ones not stored yet. */
+    async syncCorporateActions(instrumentId: string, symbol: string, start: Date, end: Date): Promise<CorporateActionEvent[]> {
+      const fetchStart = Date.now();
+      let actions: CorporateActionEvent[];
+      try {
+        actions = await defaultProvider.getCorporateActions(symbol, start, end);
+      } catch (err) {
+        await logFetch(instrumentId, symbol, "corporate_actions", "failed", undefined, err, { start, end });
+        throw err;
+      }
+      await logFetch(instrumentId, symbol, "corporate_actions", "success", Date.now() - fetchStart, undefined, { start, end });
+      const existing = await db
+        .select({ action_type: corporate_actions.action_type, ex_date: corporate_actions.ex_date })
+        .from(corporate_actions)
+        .where(and(
+          eq(corporate_actions.instrument_id, instrumentId),
+          eq(corporate_actions.provider, providerName),
+          eq(corporate_actions.provider_symbol, symbol)
+        ));
+      const seen = new Set(existing.map((row) => `${row.action_type}:${row.ex_date?.getTime()}`));
+      const fresh = actions.filter((action) => !seen.has(`${action.action_type}:${action.ex_date?.getTime()}`));
+      await persistCorporateActions(instrumentId, symbol, fresh);
+      return fresh;
+    },
+
     async getPriceAtCutoff(instrumentId: string, symbol: string, cutoff: Date): Promise<PriceBar | null> {
       const { bars } = await this.getPriceHistory(instrumentId, symbol, new Date(cutoff.getTime() - 30 * 24 * 60 * 60 * 1000), cutoff, "1d");
       const valid = bars.filter((b) => b.trading_date.getTime() <= cutoff.getTime());
@@ -178,22 +247,7 @@ export function createMarketDataService(config: MarketDataServiceConfig) {
 
   async function persistPriceBars(instrumentId: string, symbol: string, bars: PriceBar[]) {
     if (bars.length === 0) return;
-    const values = bars.map((b) => ({
-      instrument_id: instrumentId,
-      provider: providerName,
-      provider_symbol: symbol,
-      trading_date: b.trading_date,
-      open: String(b.open),
-      high: String(b.high),
-      low: String(b.low),
-      close: String(b.close),
-      adjusted_close: b.adjusted_close != null ? String(b.adjusted_close) : null,
-      volume: b.volume != null ? String(b.volume) : null,
-      currency: b.currency,
-      exchange_timezone: b.exchange_timezone ?? null,
-      available_at: b.trading_date,
-      retrieved_at: new Date(),
-    }));
+    const values = priceBarRows(instrumentId, providerName, symbol, bars, new Date());
     await db.insert(market_price_bars).values(values as any).onConflictDoNothing({
       target: [market_price_bars.instrument_id, market_price_bars.provider, market_price_bars.provider_symbol, market_price_bars.trading_date],
     });
@@ -281,3 +335,23 @@ export function createMarketDataService(config: MarketDataServiceConfig) {
 }
 
 export type MarketDataService = ReturnType<typeof createMarketDataService>;
+
+/** Map provider bars to `market_price_bars` rows. A bar without `available_at` is available at its trading date. */
+export function priceBarRows(instrumentId: string, provider: string, symbol: string, bars: PriceBar[], retrievedAt: Date) {
+  return bars.map((b) => ({
+    instrument_id: instrumentId,
+    provider,
+    provider_symbol: symbol,
+    trading_date: b.trading_date,
+    open: String(b.open),
+    high: String(b.high),
+    low: String(b.low),
+    close: String(b.close),
+    adjusted_close: b.adjusted_close != null ? String(b.adjusted_close) : null,
+    volume: b.volume != null ? String(b.volume) : null,
+    currency: b.currency,
+    exchange_timezone: b.exchange_timezone ?? null,
+    available_at: b.available_at ?? b.trading_date,
+    retrieved_at: retrievedAt,
+  }));
+}

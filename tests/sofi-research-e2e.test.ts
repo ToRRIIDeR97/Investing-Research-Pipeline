@@ -144,6 +144,10 @@ async function deleteAssetCascade(sql: ReturnType<typeof postgres>, targetAssetI
   await sql`DELETE FROM listings WHERE instrument_id IN (SELECT id FROM instruments WHERE asset_id = ${targetAssetId})`;
   await sql`DELETE FROM asset_entities WHERE asset_id = ${targetAssetId}`;
   await sql`DELETE FROM asset_classifications WHERE asset_id = ${targetAssetId}`;
+  // Source discovery syncs price history against the asset's instrument.
+  for (const table of ["market_price_bars", "corporate_actions", "market_data_fetches"]) {
+    await sql`DELETE FROM ${sql(table)} WHERE instrument_id IN (SELECT id FROM instruments WHERE asset_id = ${targetAssetId})`;
+  }
   await sql`DELETE FROM instruments WHERE asset_id = ${targetAssetId}`;
   await sql`DELETE FROM assets WHERE id = ${targetAssetId}`;
 }

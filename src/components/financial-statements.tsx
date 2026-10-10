@@ -7,7 +7,7 @@ import { ArrowLeft, ArrowRight, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { financialStatements, financialPeriod, financialWindow, financialSeries, historyMatrix, label, number, safeUrl } from '@/lib/research/reporting/presentation.mjs';
 import styles from './financial-statements.module.css';
-import {financialRatios} from '@/lib/research/reporting/data-views';
+import {financialRatios,marketMetrics} from '@/lib/research/reporting/data-views';
 
 type Row = Record<string, any>;
 const statements = {all:'All statements', income:'Income statement', balance:'Balance sheet', cashflow:'Cash flow',metrics:'Metrics'};
@@ -90,7 +90,7 @@ export function FinancialStatements({observations, sources, evidence, isTest,fil
     </div>
     </div>
     {!selectedRows.length ? <div className={styles.empty}><h2>No {frequency} financial observations</h2><p>{observations.length?'Choose an available frequency above.':'This run has no saved financial history yet.'}</p></div> : <>
-      {statement==='metrics'&&<section className={styles.schedule}><h2>Financial metrics</h2><p className={styles.note}>Select a value for the formula and its inputs. Quarterly returns are annualized. Missing inputs remain unavailable.</p>{table(financialRatios(observations,frequency),'Financial metrics')}</section>}
+      {statement==='metrics'&&<section className={styles.schedule}><h2>Financial metrics</h2><p className={styles.note}>Select a value for the formula and its inputs. Quarterly returns are annualized. Missing inputs remain unavailable.</p>{table([...marketMetrics(observations,frequency),...financialRatios(observations,frequency)],'Financial metrics')}</section>}
       {statement!=='all'&&statement!=='metrics'&&filedRows.length>0&&<nav className={styles.tabs} aria-label="Statement layout"><Link href={href({layout:'filed'})} scroll={false} aria-current={asFiled?'page':undefined}>As filed</Link><Link href={href({layout:'compare'})} scroll={false} aria-current={!asFiled?'page':undefined}>Compare periods</Link></nav>}
       {groups.map(group=>{
         const allRows:Row[] = grouped[group];

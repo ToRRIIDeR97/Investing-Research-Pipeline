@@ -9,6 +9,7 @@ import { ensureDocumentIndexed, evidenceNeeds, FOUNDER_NEED_KEYS, getEmbeddingPr
 import { getAgentConfig } from "@/lib/agent-harness/registry";
 import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
 import { SourceRole } from "@/lib/research/sources/roles";
+import { syncAssetPriceHistory, type PriceHistorySync } from "@/lib/market-data/price-history";
 
 type Sql = ReturnType<typeof postgres>;
 export interface RunContext {
@@ -54,6 +55,7 @@ export interface StoredSource {
 export interface StoredSourceCorpus {
   sources: StoredSource[];
   deterministicMetrics: Record<string, unknown>;
+  priceHistory: PriceHistorySync;
 }
 
 function textValue(value: unknown, fallback = "") {
@@ -1583,8 +1585,10 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
     textValue(context.website),
     ...configuredSeedUrls,
   ].filter(Boolean);
-  const [marketPayload, macroPayload, industryPayload, discoveredRolePayloads] = await Promise.all([
+  const [marketPayload, priceHistory, macroPayload, industryPayload, discoveredRolePayloads] = await Promise.all([
     marketSourcePayload(ctx),
+    syncAssetPriceHistory(sql, { assetId: ctx.assetId, assetName: ctx.assetName, symbol: ctx.symbol,
+      cutoffAt: ctx.marketDataCutoffAt ? new Date(ctx.marketDataCutoffAt) : null }),
     macroSourcePayload(ctx),
     industrySourcePayload(ctx),
     discoverRoleSources({
@@ -1670,6 +1674,7 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
       })),
     ],
     deterministicMetrics: deterministicMetricOutput(ctx, context, marketPayload),
+    priceHistory,
   };
 }
 

@@ -91,9 +91,9 @@ Schema modules (`src/db/schema/`) and their key tables:
 | thesis | theses, risks, catalysts, review decisions, notebooks, exports |
 | ai | staging, model calls, budgets, traces |
 | backtesting | backtest_runs, backtest_artifacts |
-| market-data | market_price_bars, corporate_actions, market_data_fetches, instrument_provider_mappings |
+| market-data | market_price_bars (with Stooq cross-check status), corporate_actions, market_data_fetches, instrument_provider_mappings |
 
-Migrations are `0000`–`0006` and `0009_research_memory_graph`, which adds provenance and review fields plus a uniqueness constraint to `claim_relationships`.
+Migrations are `0000`–`0006`, `0009_research_memory_graph`, which adds provenance and review fields plus a uniqueness constraint to `claim_relationships`, and `0010_price_history_verification`, which adds the cross-check columns to `market_price_bars`.
 
 Artifact statuses are listed in `src/lib/research/artifacts/contracts.ts`. Pipeline artifacts end at `validated`. Report artifacts are `superseded` by newer versions. `accepted` is never written ([#14](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/14)).
 
@@ -144,7 +144,7 @@ Guards:
 | `./storage` | Component, Deployment, Trust | `storage/` (gitignored) |
 | Child processes | Component, Deployment, Trust | `python/**`, `repair/sandbox.ts` |
 | LLM and embedding providers | Component, Deployment, Sequence, Trust | `providers/*.ts`, `memory/embeddings.ts` |
-| Search and data APIs | Component, Deployment, Trust | `sources/role-discovery.ts`, `sources/corpus.ts`, `market-data/providers/yahoo.ts` |
+| Search and data APIs | Component, Deployment, Trust | `sources/role-discovery.ts`, `sources/corpus.ts`, `market-data/providers/yahoo.ts`, `market-data/providers/stooq.ts` |
 | Research run workflow | Activity, State, Sequence | see the rows above |
 | Development workflow | [dev-workflow.svg](diagrams/dev-workflow.svg) | [AGENTS.md](../AGENTS.md) |
 

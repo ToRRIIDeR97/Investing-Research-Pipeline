@@ -12,6 +12,7 @@ import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { projectionSharesInMillions, projectionShareUnitErrors } from "../valuation/share-denominator";
 import {calculateValuationSchedule} from '../valuation/schedules';
+import { valuationDatePrice } from "@/lib/market-data/price-history";
 
 export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "asset_valuation",
@@ -89,6 +90,20 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         };
       } catch {
         marketSnapshot = {};
+      }
+      // Prefer the stored close on the valuation date (cutoff-consistent, cross-checked when possible);
+      // the snapshot's live regular market price remains the fallback.
+      const valuationPrice = await valuationDatePrice(sql, ctx.assetId, ctx.symbol, ctx.marketDataCutoffAt || ctx.cutoffAt)
+        .catch(() => null);
+      if (valuationPrice) {
+        marketSnapshot = {
+          ...marketSnapshot,
+          valuation_date_price: valuationPrice.price,
+          valuation_date: valuationPrice.trading_date,
+          valuation_price_currency: valuationPrice.currency,
+          valuation_price_verified: valuationPrice.verified,
+          valuation_price_verification_status: valuationPrice.verification_status,
+        };
       }
       const [primaryDoc] = await sql`
         SELECT d.id, d.storage_path
@@ -305,8 +320,15 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
           "No sourced future share issuance schedule is available beyond the reported diluted share count.",
         ];
       }
-      const marketPrice = Number(marketSnapshot.regular_market_price);
-      if (marketPrice > 0) scenarioSet.current_market_price = marketPrice;
+      const marketPrice = Number(valuationPrice?.price ?? marketSnapshot.regular_market_price);
+      if (marketPrice > 0) {
+        scenarioSet.current_market_price = marketPrice;
+        scenarioSet.current_market_price_source = valuationPrice
+          ? { provider: valuationPrice.provider, provider_symbol: valuationPrice.provider_symbol, trading_date: valuationPrice.trading_date,
+              verified: valuationPrice.verified, verification_status: valuationPrice.verification_status, cross_check: valuationPrice.cross_check,
+              source_url: valuationPrice.source_url, market_price_bar_id: valuationPrice.market_price_bar_id }
+          : { provider: "yahoo_chart_snapshot", field: "regularMarketPrice", retrieved_at: marketSnapshot.retrieved_at ?? null, verified: false };
+      }
       const probabilities = [
         Number(compactScenarios.probability_bear),
         Number(compactScenarios.probability_base),

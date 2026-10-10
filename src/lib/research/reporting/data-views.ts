@@ -7,8 +7,14 @@ export function artifactContent(artifacts:Row[],type:string):Row {
 export function researchObservations(artifacts:Row[]):Row[] {
   const filed=artifactContent(artifacts,'financial_statement_set').observations??[];
   const historical=artifactContent(artifacts,'historical_record').observations??[];
+  const market=artifactContent(artifacts,'market_price_history').observations??[];
   const signature=(r:Row)=>JSON.stringify([r.metric_key,r.periodicity,r.fiscal_year,r.fiscal_quarter,r.unit,r.currency,r.reporting_basis,r.segment??'',r.geography??'']);
-  const keys=new Set(filed.map(signature));return [...filed,...historical.filter((r:Row)=>!keys.has(signature(r)))];
+  const keys=new Set(filed.map(signature));const rows=[...filed,...historical.filter((r:Row)=>!keys.has(signature(r)))];
+  const all=new Set(rows.map(signature));return [...rows,...market.filter((r:Row)=>!all.has(signature(r)))];
+}
+/** Period-end share price and market cap rows (from market_price_history) for the Metrics view. */
+export function marketMetrics(observations:Row[],frequency:string):Row[] {
+  return observations.filter(r=>r.periodicity===frequency&&r.metadata_json?.metric_category==='market_data'&&['period_end_share_price','market_cap'].includes(r.metric_key));
 }
 const aliases:Record<string,string[]>={revenue:['net_revenue','revenue','us_gaap_Revenues','us_gaap_RevenueFromContractWithCustomerExcludingAssessedTax'],gross_profit:['gross_profit','us_gaap_GrossProfit'],sga:['sga','selling_general_administrative','us_gaap_SellingGeneralAndAdministrativeExpense'],net_income:['net_income'],equity:['stockholders_equity'],assets:['total_assets'],selling:['us_gaap_SellingAndMarketingExpense'],administrative:['us_gaap_GeneralAndAdministrativeExpense'],nopat:['nopat'],invested_capital:['invested_capital']};
 export function financialRatios(observations:Row[],frequency:string):Row[] {
