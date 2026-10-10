@@ -17,6 +17,44 @@ import { hasDepreciationInputs, valuationFinancialInputs } from "../valuation/fi
 import { cashFlowBuildErrors } from "../valuation/schedules";
 import { withheldValuationReason } from "../valuation/contracts";
 
+/** The valuation analyst prompt; rules precede the packet so the packet stays last. */
+export const valuationPrompt = (p: Record<string, unknown>) => exactJsonPrompt({
+  agentName: "valuation-analyst",
+  requiredKeys: VALUATION_CONTRACT.requiredKeys,
+  packet: p,
+  extraRules: [
+    "Execute valuation lenses appropriate to the asset profile.",
+    "Use the valuation specialist's team_context.brief and the business specialist's accepted assumptions. Tailor the DCF to this investment's segments, customer economics, operating constraints, reinvestment and capital structure. Identify the supplied operating scenario and numeric assumption behind each cash-flow driver in source_notes. Do not substitute a generic revenue-growth template or silently change the business assumptions; flag missing inputs for specialist follow-up.",
+    "Provide per-share valuation targets and probabilistic scenarios.",
+    "Follow output_schema exactly, including every nested required field and primitive type.",
+    "Supply method_inputs for multiple economically appropriate valuation methods, each with Bear, Base and Bull annual schedules. Use cash amounts and diluted shares in millions. Cash_flow must be FCFF for fcff, FCFE for fcfe, and dividends for dividend or equity exit methods. Choose FCFE, earnings exit, book or tangible-book exit for financial firms as appropriate; do not treat bank operating cash flow as FCFF. Terminal multiples use total earnings/equity, never per-share inputs. Rates are decimals. Explain source calibration, dilution, capital needs and the equity bridge. The application computes discount factors, terminal value and present value. Explain unsupported methods and missing inputs in omitted_methods; never fabricate data to fill a schedule.",
+    "annual_price_target_path must include bear, base, and bull price targets for every fiscal year through terminal_year.",
+    "Use financial_inputs (captured quarterly and annual revenue, costs, D&A, SBC, operating cash flow, capex, cash, marketable securities, debt, leases, diluted shares, headcount, period-end closes and market caps), the operating-scenario financial statements, accepted historical metrics and the current market price. Check financial_inputs.columns and not_captured before listing a gap; never call a supplied input absent.",
+    "For fcff and fcfe, give every year a build: starting_profit (after-tax operating income for fcff, net income for fcfe), depreciation_amortization added back, capital_expenditures as a positive amount that is subtracted, change_in_net_working_capital, and other_adjustments (net borrowing for fcfe; stock-based compensation when treated as a cash cost). cash_flow must equal the build. Calibrate D&A and capex to their history in financial_inputs. Bridge enterprise value to equity with the latest cash, marketable securities, debt and lease liabilities from financial_inputs.",
+    "Discount rates, terminal growth and multiples are analyst assumptions: state each one and its rationale in source_notes rather than treating it as a missing input. An unverified period-end close is still the stored exchange close; use it and state its verification status.",
+    "Withhold only when no method can be built from the packet: then set valuation_status to \"withheld\", all three terminal anchors to 0, method_inputs to [], and withheld_reason naming the missing packet inputs. Otherwise set valuation_status to \"complete\".",
+    "Keep annual operating values, net margins, reinvestment, and terminal-year assumptions consistent with the supplied operating scenarios; explain any changed assumption in the relevant output object.",
+    "For a pre-profit company, use scenario-appropriate revenue, cash/NAV, reverse-valuation, and dilution-aware methods when earnings or FCF multiples are not meaningful.",
+    "Unless the valuation is withheld, all three terminal anchors and annual price targets must be positive finite per-share values. Preserve uncertainty through a wide bear/base/bull range rather than zero placeholders.",
+    "When nav_inputs is supplied, include a separate tangible-book NAV cross-check in valuation_scenario_set and distinguish it from the forecast price targets.",
+    "Use reported_diluted_shares as the minimum denominator for all forecast per-share values and price targets. State that future share issuance beyond the reported diluted count remains an uncertainty.",
+    "Every annual projection balance_sheet_values must include diluted_shares_millions. If it also includes diluted_shares or shares_outstanding, those raw fields must be actual share counts, equal to the millions field times 1,000,000. Per-share dollar values are never in millions.",
+  ],
+});
+
+/** Contract checks plus the D&A build rule and share-unit checks applied to the valuation output. */
+export function valuationOutputFormat(options: { requireDepreciationAddBack: boolean; checkShareUnits: boolean }) {
+  return { ...VALUATION_CONTRACT, validate(value: unknown) {
+    const errors = VALUATION_CONTRACT.validate?.(value) || [];
+    if (errors.length) return errors;
+    const buildErrors = options.requireDepreciationAddBack
+      ? cashFlowBuildErrors((value as any).valuation_scenario_set?.method_inputs || [])
+      : [];
+    if (buildErrors.length || !options.checkShareUnits) return buildErrors;
+    return projectionShareUnitErrors((value as any).annual_price_target_path?.annual_projections || []);
+  } };
+}
+
 export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "asset_valuation",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
@@ -251,43 +289,13 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       };
       const taskKey = "valuation-analyst:valuation";
 
-      const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
-        agentName: "valuation-analyst",
-        requiredKeys: VALUATION_CONTRACT.requiredKeys,
-        packet: p,
-        extraRules: [
-          "Execute valuation lenses appropriate to the asset profile.",
-          "Use the valuation specialist's team_context.brief and the business specialist's accepted assumptions. Tailor the DCF to this investment's segments, customer economics, operating constraints, reinvestment and capital structure. Identify the supplied operating scenario and numeric assumption behind each cash-flow driver in source_notes. Do not substitute a generic revenue-growth template or silently change the business assumptions; flag missing inputs for specialist follow-up.",
-          "Provide per-share valuation targets and probabilistic scenarios.",
-          "Follow output_schema exactly, including every nested required field and primitive type.",
-          "Supply method_inputs for multiple economically appropriate valuation methods, each with Bear, Base and Bull annual schedules. Use cash amounts and diluted shares in millions. Cash_flow must be FCFF for fcff, FCFE for fcfe, and dividends for dividend or equity exit methods. Choose FCFE, earnings exit, book or tangible-book exit for financial firms as appropriate; do not treat bank operating cash flow as FCFF. Terminal multiples use total earnings/equity, never per-share inputs. Rates are decimals. Explain source calibration, dilution, capital needs and the equity bridge. The application computes discount factors, terminal value and present value. Explain unsupported methods and missing inputs in omitted_methods; never fabricate data to fill a schedule.",
-          "annual_price_target_path must include bear, base, and bull price targets for every fiscal year through terminal_year.",
-          "Use financial_inputs (captured quarterly and annual revenue, costs, D&A, SBC, operating cash flow, capex, cash, marketable securities, debt, leases, diluted shares, headcount, period-end closes and market caps), the operating-scenario financial statements, accepted historical metrics and the current market price. Check financial_inputs.columns and not_captured before listing a gap; never call a supplied input absent.",
-          "For fcff and fcfe, give every year a build: starting_profit (after-tax operating income for fcff, net income for fcfe), depreciation_amortization added back, capital_expenditures as a positive amount that is subtracted, change_in_net_working_capital, and other_adjustments (net borrowing for fcfe; stock-based compensation when treated as a cash cost). cash_flow must equal the build. Calibrate D&A and capex to their history in financial_inputs. Bridge enterprise value to equity with the latest cash, marketable securities, debt and lease liabilities from financial_inputs.",
-          "Discount rates, terminal growth and multiples are analyst assumptions: state each one and its rationale in source_notes rather than treating it as a missing input. An unverified period-end close is still the stored exchange close; use it and state its verification status.",
-          "Withhold only when no method can be built from the packet: then set valuation_status to \"withheld\", all three terminal anchors to 0, method_inputs to [], and withheld_reason naming the missing packet inputs. Otherwise set valuation_status to \"complete\".",
-          "Keep annual operating values, net margins, reinvestment, and terminal-year assumptions consistent with the supplied operating scenarios; explain any changed assumption in the relevant output object.",
-          "For a pre-profit company, use scenario-appropriate revenue, cash/NAV, reverse-valuation, and dilution-aware methods when earnings or FCF multiples are not meaningful.",
-          "Unless the valuation is withheld, all three terminal anchors and annual price targets must be positive finite per-share values. Preserve uncertainty through a wide bear/base/bull range rather than zero placeholders.",
-          "When nav_inputs is supplied, include a separate tangible-book NAV cross-check in valuation_scenario_set and distinguish it from the forecast price targets.",
-          "Use reported_diluted_shares as the minimum denominator for all forecast per-share values and price targets. State that future share issuance beyond the reported diluted count remains an uncertainty.",
-          "Every annual projection balance_sheet_values must include diluted_shares_millions. If it also includes diluted_shares or shares_outstanding, those raw fields must be actual share counts, equal to the millions field times 1,000,000. Per-share dollar values are never in millions.",
-        ],
-      });
+      const promptFactory = valuationPrompt;
 
       const output = await callResearchAgent<Record<string, any>>({
         sql, ctx, stageKey: "asset_valuation", taskKey,
         taskType: "asset_valuation", agentName: "valuation-analyst", modelTier: "mid",
         packet, promptFactory,
-        outputFormat: { ...VALUATION_CONTRACT, validate(value) {
-          const errors = VALUATION_CONTRACT.validate?.(value) || [];
-          if (errors.length) return errors;
-          const buildErrors = requireDepreciationAddBack
-            ? cashFlowBuildErrors((value as any).valuation_scenario_set?.method_inputs || [])
-            : [];
-          if (buildErrors.length || !reportedDilutedShares) return buildErrors;
-          return projectionShareUnitErrors((value as any).annual_price_target_path?.annual_projections || []);
-        } },
+        outputFormat: valuationOutputFormat({ requireDepreciationAddBack, checkShareUnits: Boolean(reportedDilutedShares) }),
       });
 
       const scenarioSet = output.valuation_scenario_set || {};
