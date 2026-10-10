@@ -31,13 +31,17 @@ its limitations in the report. Confidence is not inferred from word count.
 One writing repair round is allowed per input snapshot. The report specialist can
 also send missing-information requests to the data, financials, business or
 valuation specialist before writing, while planning sections, or after review.
-Requests are persisted and reopen the affected stages and their consumers. A
-specialist can escalate missing disclosures to the data collector, which searches
-the question and ingests eligible documents before analysis and valuation rerun.
-The report then uses the refreshed input snapshot. Two request rounds and one
-source escalation per round bound this work across restarts. Existing budget and
-model-attempt limits still apply. Unavailable material answers remain blocked
-questions and withhold the conclusion.
+Requests are persisted and answered without reopening stages: stored price
+history and the FRED 10-year series answer market and rate questions directly,
+and other requests go to their owner with research-memory passages from the run's
+documents. A request that needs sources gets one collector search, which ingests
+eligible documents before the owner answers once more. Stages rerun only when an
+owner says its own output must be recomputed: automatically once per run for up to
+`RESEARCH_MAX_AUTO_RESET_STAGES` analysis stages, otherwise after a reviewer
+approves on the run page (see [system.md](system.md)). Two request rounds and one
+answer-triggered source escalation per run bound this work across restarts.
+Existing budget and model-attempt limits still apply. Unavailable or skipped
+material answers remain blocked questions and withhold the conclusion.
 
 Report outlines, sections, questions, documents and reviews use the existing
 artifact table with immutable content revisions. Run-row locking serializes

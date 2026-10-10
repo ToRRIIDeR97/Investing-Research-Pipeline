@@ -28,8 +28,8 @@
 <path d="M330,398 L344,412 L330,426 L316,412 z" fill="#fff8dc" stroke="#8a6d00" stroke-width="1.3"/>
 <text x="310" y="400" font-size="11" font-weight="normal" text-anchor="end" fill="#5a4700" font-style="italic">source / team requests pending?</text>
 <rect x="470" y="395" width="300" height="46" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
-<text x="620.0" y="413" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Collector fetches + reads requested docs</text>
-<text x="620.0" y="430" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">or owner answers team_requests; reopen stage</text>
+<text x="620.0" y="413" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Collector: in-corpus check, then fetch</text>
+<text x="620.0" y="430" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">team_requests answered; rerun only if asked</text>
 <path d="M344,412 L470,412" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="420" y="406" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">yes</text>
 <path d="M620,395 L620,359 L530,359" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
@@ -87,5 +87,5 @@
 <text x="970.0" y="690" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">run needs_more_work;</text>
 <text x="970.0" y="705" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">lock released</text>
 <path d="M900,640 L900,600 L840,600 L840,574" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#a)"/>
-<text x="16" y="790" font-size="11" font-weight="normal" text-anchor="start" fill="#555">Source: pipeline-runner.ts:20-93, orchestrator.ts:188-944, team-plan.ts:41-75, team.ts, sources/collector.ts, run-queue.ts, stages.ts.</text>
+<text x="16" y="790" font-size="11" font-weight="normal" text-anchor="start" fill="#555">Source: pipeline-runner.ts:20-93, orchestrator.ts:188-994, team-plan.ts:41-75, team.ts, sources/collector.ts, run-queue.ts, stages.ts.</text>
 </svg>
