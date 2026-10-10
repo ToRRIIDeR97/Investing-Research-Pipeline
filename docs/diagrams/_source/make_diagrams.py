@@ -186,6 +186,62 @@ s.line([(900, 640), (900, 600), (840, 600), (840, 574)], None, dashed=True)
 s.text(16, 790, "Source: pipeline-runner.ts:20-93, orchestrator.ts:188-944, team-plan.ts:41-75, team.ts, sources/collector.ts, run-queue.ts, stages.ts.", 11, fill="#555")
 s.save(P("activity-research-run.svg"))
 
+# ---------------------------------------------------------------- activity: valuation
+s = Svg(1100, 730, "Asset valuation — UML activity view",
+        "The valuation stage loads code-built inputs, separates FCFF assets from banks, withholds before any model call when inputs are missing, "
+        "asks the model only for assumptions (FCFF) or equity schedules (banks), and assembles the path, anchors, returns and reverse valuation in code.")
+cx = 300
+s.initial(cx, 50)
+s.line([(cx, 57), (cx, 70)])
+s.box(100, 70, 400, 96, "Load inputs (code)", [
+    "operating_scenario_set yearly_drivers · operating_model",
+    "financial_inputs (+ pretax_income, income_tax_expense)",
+    "historyRatios · equityBridge · diluted shares · price",
+    "latestRiskFreeRate (the run's FRED DGS10 document)"], "lib", title_size=12)
+s.line([(cx, 166), (cx, 186)])
+s.diamond(cx, 200)
+s.text(cx - 20, 188, "bank archetype or financials profile?", 11, fill="#5a4700", italic=True, anchor="end")
+s.line([(cx + 14, 200), (760, 200), (760, 226)], "yes", lx=600, ly=194)
+s.line([(cx, 214), (cx, 236)], "no", lx=cx + 6, ly=230, lanchor="start")
+s.diamond(cx, 250)
+s.text(cx + 20, 246, "ready? drivers for every horizon year,", 11, fill="#5a4700", italic=True)
+s.text(cx + 20, 259, "diluted shares, price, base-year revenue", 11, fill="#5a4700", italic=True)
+s.line([(cx - 14, 250), (40, 250), (40, 610)], "no → withheld, no model call", lx=160, ly=244)
+s.line([(cx, 264), (cx, 286)], "yes", lx=cx + 6, ly=280, lanchor="start")
+s.box(130, 286, 340, 66, "valuation-analyst (model)", ["valuation_assumptions for bear, base, bull",
+    "discount_rate > risk-free · NOPAT multiple or g < r"], "ui", title_size=12)
+s.line([(cx, 352), (cx, 372)])
+s.box(130, 372, 340, 66, "Statements → FCFF schedules (code)", ["FCFF = NOPAT + D&A − capex − ΔNWC",
+    "base case's first year pinned to operating_model"], "lib", title_size=12)
+s.line([(cx, 438), (cx, 458)])
+s.box(130, 458, 790, 66, "assembleValuation (code)", [
+    "value per share at each year end · anchor = terminal-year price · weighted target · returns",
+    "FCFF: impliedOperatingMargin / impliedRevenueGrowth → reverse_valuation (banks keep the model's)"], "lib", title_size=12)
+s.box(600, 226, 320, 66, "valuation-analyst (model)", ["FCFE, dividend or book method_inputs × 3",
+    "reverse_valuation, or withheld with a reason"], "ui", title_size=12)
+s.line([(760, 292), (760, 312)])
+s.diamond(760, 326)
+s.text(780, 314, "withheld by the model?", 11, fill="#5a4700", italic=True)
+s.line([(774, 326), (1070, 326), (1070, 700), (150, 700), (150, 676)], "yes", lx=1000, ly=320)
+s.line([(760, 340), (760, 362)], "no", lx=766, ly=356, lanchor="start")
+s.box(600, 362, 320, 66, "Primary method, shares (code)", ["first of fcff, fcfe, dividend, … with 3 scenarios",
+    "diluted shares raised to the reported count"], "lib", title_size=12)
+s.line([(760, 428), (760, 458)])
+s.line([(525, 524), (525, 544)])
+s.diamond(525, 558)
+s.text(545, 546, "every anchor > 0?", 11, fill="#5a4700", italic=True)
+s.line([(511, 558), (150, 558), (150, 610)], "no", lx=330, ly=552)
+s.line([(539, 558), (710, 558), (710, 590)], "yes", lx=690, ly=552)
+s.box(20, 610, 260, 66, "Withheld artifacts", ["anchors 0 + reason · signals not_applicable",
+    "no scenario anchors; stage completes"], "warn", title_size=12)
+s.box(560, 590, 300, 70, "Persist (handler)", ["valuation_signals · scenarios rows · method_schedules",
+    "3 artifacts, validated"], "store", title_size=12)
+s.line([(280, 640), (560, 640)])
+s.line([(860, 625), (900, 625)])
+s.final(910, 625)
+s.text(16, 722, "Source: handlers/asset-valuation.ts, valuation/engine.ts, handlers/operating-scenarios.ts. Blue: model call; purple: code.", 11, fill="#555")
+s.save(P("activity-valuation.svg"))
+
 # ---------------------------------------------------------------- state machines
 s = Svg(1100, 720, "Run, stage and job lifecycles — UML state machine view",
         "State machines for research_run_jobs, research_runs and research_stages with transition guards from run-queue.ts, orchestrator.ts, pipeline-runner.ts and team.ts.")
