@@ -9,6 +9,7 @@ import { loadAcceptedEvidencePacket } from "../sources/corpus";
 import { validateArtifactCitationIds } from "../sources/artifact-evidence";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 import { withheldValuationReason } from "../valuation/contracts";
+import { WITHHELD_VALUATION_LINKAGE } from "../decision/validation";
 
 export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "decision_synthesis",
@@ -135,7 +136,7 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           "Copy risk supporting_claim_ids exactly from evidence_claims; never invent UUIDs.",
           "Derive material risks from this asset's business, applicable archetypes, overlays and accepted evidence. Include regulatory capital only when relevant to the business. Explain capital allocation, ownership and dilution where material; do not import another company's metrics. Map confidence to specific evidence gaps.",
           ...(valuationWithheld ? [
-            "accepted_valuation is withheld: no price target exists. Begin investment_thesis.expected_return_linkage with exactly: Conclusion withheld - valuation withheld. Set investment_thesis.valuation_accepted_first to false. Set every expected_return_matrix return to 0 and add valuation_withheld: true; those zeros are markers, not estimates. Name the missing valuation inputs in confidence_assessment.",
+            `accepted_valuation is withheld: no price target exists. Begin investment_thesis.expected_return_linkage with exactly: ${WITHHELD_VALUATION_LINKAGE} Set investment_thesis.valuation_accepted_first to false. Set every expected_return_matrix return to 0 and add valuation_withheld: true; those zeros are markers, not estimates. Name the missing valuation inputs in confidence_assessment.`,
           ] : [
             "Set investment_thesis.valuation_accepted_first to true because accepted_valuation is supplied by the completed valuation stage.",
           ]),
@@ -187,8 +188,9 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
         }
         if (output.investment_thesis) {
           output.investment_thesis.valuation_accepted_first = false;
-          const linkage = String(output.investment_thesis.expected_return_linkage || "").replace(/^Conclusion withheld - valuation withheld\.\s*/, "");
-          output.investment_thesis.expected_return_linkage = `Conclusion withheld - valuation withheld. ${linkage || valuationWithheld}`.trim();
+          const raw = String(output.investment_thesis.expected_return_linkage || "");
+          const linkage = (raw.startsWith(WITHHELD_VALUATION_LINKAGE) ? raw.slice(WITHHELD_VALUATION_LINKAGE.length) : raw).trim();
+          output.investment_thesis.expected_return_linkage = `${WITHHELD_VALUATION_LINKAGE} ${linkage || valuationWithheld}`.trim();
         }
         if (output.decision_record) output.decision_record.decision = "pending";
       }

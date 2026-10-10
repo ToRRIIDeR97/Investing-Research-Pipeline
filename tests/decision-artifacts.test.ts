@@ -8,6 +8,7 @@ import {
   validateThesisBreakers,
   validateMonitoringDashboard,
   validateDecisionRecord,
+  WITHHELD_VALUATION_LINKAGE,
 } from "@/lib/research/decision/validation";
 import type {
   InvestmentThesis,
@@ -84,6 +85,23 @@ describe("investment decision artifacts (Component 12)", () => {
     const result = validateInvestmentThesis(thesis);
     assert.equal(result.valid, false);
     assert.ok(result.errors.some((e) => e.includes("cannot be finalized before the valuation is accepted")));
+  });
+
+  it("C12-T3b: Thesis may stand as a withheld conclusion when the valuation was withheld", () => {
+    const thesis: InvestmentThesis = {
+      artifact_type: "investment_thesis",
+      thesis_statement: "META's growth is intact but reinvestment absorbs cash.",
+      causal_chain: "Ad growth funds AI capex.",
+      market_mispricing: "Not established without a valuation.",
+      must_be_true: ["Family of Apps growth stays above 12%"],
+      disproving_evidence: ["Capex above operating cash flow for two years"],
+      horizon: "3 years",
+      expected_return_linkage: `${WITHHELD_VALUATION_LINKAGE} Discount rate and multi-year scenarios are not sourced.`,
+      valuation_accepted_first: false,
+    };
+    assert.equal(validateInvestmentThesis(thesis).valid, true);
+    const notWithheld = { ...thesis, expected_return_linkage: "Valuation withheld but no marker." };
+    assert.equal(validateInvestmentThesis(notWithheld).valid, false);
   });
 
   it("C12-T4: Thesis breaker lacks threshold is rejected", () => {
