@@ -24,11 +24,15 @@ async function main() {
   let requestId: string | undefined;
   let outputTokens = 0;
   let completed = false;
+  // One entry per request sent: whether it carried output_config (anthropic-direct with a Claude model).
+  const outputConfigSent: boolean[] = [];
   for await (const event of provider.stream({
     model,
     prompt: 'Return exactly this JSON object and no Markdown: {"ok":true}',
     temperature: 0,
+    outputSchema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] },
   }, AbortSignal.timeout(60_000))) {
+    if (event.type === "request.sent") outputConfigSent.push("output_config" in JSON.parse(event.body));
     if (event.type === "response.started") requestId = event.requestId;
     if (event.type === "text.delta") rawText += event.text;
     if (event.type === "usage") outputTokens += event.usage.outputTokens || 0;
@@ -36,7 +40,7 @@ async function main() {
   }
   const parsed = parseStructuredOutput(rawText, ["ok"]) as { ok?: unknown };
   if (!completed || parsed.ok !== true) throw new Error("Provider did not complete the structured JSON smoke response");
-  console.log(JSON.stringify({ provider: provider.id, model, requestId, latencyMs: Date.now() - started, outputTokens, valid: true }, null, 2));
+  console.log(JSON.stringify({ provider: provider.id, model, requestId, latencyMs: Date.now() - started, outputTokens, outputConfigSent, valid: true }, null, 2));
 }
 
 main().catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exit(1); });
