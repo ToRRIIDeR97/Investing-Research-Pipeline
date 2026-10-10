@@ -615,15 +615,25 @@ function v3OperatingScenariosResponse(packet: Record<string, unknown>) {
 }
 
 function v3ValuationResponse(packet: Record<string, unknown>) {
+  // Operating companies: only the per-scenario assumptions; code builds the schedules and the path.
+  if (packet.output_contract === "valuation_assumptions") {
+    const riskFree = Number((packet.risk_free_rate as { rate?: number } | null)?.rate) || 0.04;
+    return { valuation_assumptions: {
+      artifact_type: "valuation_assumptions",
+      scenarios: [["bear", 0.05, 12], ["base", 0.04, 15], ["bull", 0.035, 18]].map(([scenario_type, premium, multiple]) => ({
+        scenario_type, discount_rate: Number((riskFree + Number(premium)).toFixed(4)),
+        terminal: { type: "multiple", metric: "nopat", multiple },
+        rationale: "Synthetic fixture: risk-free rate plus an equity premium; exit multiple of final-year NOPAT.",
+      })),
+      omitted_methods: [{ method: "fcfe", reason: "Synthetic operating company: FCFF is the primary method." }],
+      source_notes: ["Synthetic fixture; not investment analysis"],
+    } };
+  }
+  // Banks: model-built equity schedules; code assembles the path, anchors and returns.
   return {
     valuation_scenario_set: {
       artifact_type: "valuation_scenario_set",
-      terminal_year: 2030,
-      terminal_anchor_bear: 10,
-      terminal_anchor_base: 15,
-      terminal_anchor_bull: 20,
-      uses_adjusted_fcf: true,
-      segments_reconciled: true,
+      valuation_status: "complete",
       method_inputs:["bear","base","bull"].map((scenario_type,i)=>({method:"fcfe",method_name:"Discounted equity cash flow",scenario_type,rationale:"Synthetic verification fixture",currency:"USD",cash_flow_label:"FCFE",discount_rate:0.1,years:[2026,2027,2028,2029,2030].map(fiscal_year=>({fiscal_year,cash_flow:100*(i+1),build:{starting_profit:100*(i+1),depreciation_amortization:10,capital_expenditures:10,change_in_net_working_capital:0,other_adjustments:0}})),terminal:{type:"perpetuity",growth_rate:0.02},equity_bridge:0,equity_bridge_explanation:"Cash flow is already attributable to equity",diluted_shares:100,source_notes:["Synthetic fixture; not investment analysis"]})),
       omitted_methods:[{method:"book_exit",reason:"Synthetic fixture has no terminal book forecast"}]
     },
@@ -631,245 +641,6 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
       artifact_type: "reverse_valuation",
       implied_growth: 0.12,
       implied_margin: 0.20
-    },
-    annual_price_target_path: {
-      artifact_type: "annual_price_target_path",
-      currency: "USD",
-      market_price_currency: "USD",
-      annual_projections: [
-        {
-          fiscal_year: 2026,
-          target_date: "2026-12-31",
-          operating_values: { revenue: 2000000000 },
-          balance_sheet_values: { assets: 10000000000 },
-          per_share_values: { eps: 0.10 }
-        },
-        {
-          fiscal_year: 2027,
-          target_date: "2027-12-31",
-          operating_values: { revenue: 2300000000 },
-          balance_sheet_values: { assets: 11500000000 },
-          per_share_values: { eps: 0.12 }
-        },
-        {
-          fiscal_year: 2028,
-          target_date: "2028-12-31",
-          operating_values: { revenue: 2645000000 },
-          balance_sheet_values: { assets: 13225000000 },
-          per_share_values: { eps: 0.14 }
-        },
-        {
-          fiscal_year: 2029,
-          target_date: "2029-12-31",
-          operating_values: { revenue: 3041750000 },
-          balance_sheet_values: { assets: 15208750000 },
-          per_share_values: { eps: 0.17 }
-        },
-        {
-          fiscal_year: 2030,
-          target_date: "2030-12-31",
-          operating_values: { revenue: 3498012500 },
-          balance_sheet_values: { assets: 17490062500 },
-          per_share_values: { eps: 0.20 }
-        }
-      ],
-      price_target_path: [
-        {
-          fiscal_year: 2026,
-          scenario_type: "bear",
-          valuation_method: "reverse_dcf",
-          operating_metric_key: "eps",
-          operating_metric_value: 0.10,
-          valuation_parameter_key: "pe_multiple",
-          valuation_parameter_value: 10,
-          price_target: 1.00,
-          dividend_per_share: 0,
-          total_return_target: 1.00,
-          is_interpolated: false
-        },
-        {
-          fiscal_year: 2026,
-          scenario_type: "base",
-          valuation_method: "reverse_dcf",
-          operating_metric_key: "eps",
-          operating_metric_value: 0.10,
-          valuation_parameter_key: "pe_multiple",
-          valuation_parameter_value: 15,
-          price_target: 1.50,
-          dividend_per_share: 0,
-          total_return_target: 1.50,
-          is_interpolated: false
-        },
-        {
-          fiscal_year: 2026,
-          scenario_type: "bull",
-          valuation_method: "reverse_dcf",
-          operating_metric_key: "eps",
-          operating_metric_value: 0.10,
-          valuation_parameter_key: "pe_multiple",
-          valuation_parameter_value: 20,
-          price_target: 2.00,
-          dividend_per_share: 0,
-          total_return_target: 2.00,
-          is_interpolated: false
-        },
-        {
-          fiscal_year: 2027,
-          scenario_type: "bear",
-          valuation_method: "reverse_dcf",
-          operating_metric_key: "eps",
-          operating_metric_value: 0.12,
-          valuation_parameter_key: "pe_multiple",
-          valuation_parameter_value: 10,
-          price_target: 1.20,
-          dividend_per_share: 0,
-          total_return_target: 1.20,
-          is_interpolated: false
-        },
-        {
-          fiscal_year: 2027,
-          scenario_type: "base",
-          valuation_method: "reverse_dcf",
-          operating_metric_key: "eps",
-          operating_metric_value: 0.12,
-          valuation_parameter_key: "pe_multiple",
-          valuation_parameter_value: 15,
-          price_target: 1.80,
-          dividend_per_share: 0,
-          total_return_target: 1.80,
-          is_interpolated: false
-        },
-        {
-          fiscal_year: 2027,
-          scenario_type: "bull",
-          valuation_method: "reverse_dcf",
-          operating_metric_key: "eps",
-          operating_metric_value: 0.12,
-          valuation_parameter_key: "pe_multiple",
-          valuation_parameter_value: 20,
-          price_target: 2.40,
-          dividend_per_share: 0,
-          total_return_target: 2.40,
-          is_interpolated: false
-        },
-        {
-          fiscal_year: 2028,
-          scenario_type: "bear",
-          valuation_method: "reverse_dcf",
-          operating_metric_key: "eps",
-          operating_metric_value: 0.14,
-          valuation_parameter_key: "pe_multiple",
-          valuation_parameter_value: 10,
-          price_target: 1.40,
-          dividend_per_share: 0,
-          total_return_target: 1.40,
-          is_interpolated: false
-        },
-        {
-          fiscal_year: 2028,
-          scenario_type: "base",
-          valuation_method: "reverse_dcf",
-          operating_metric_key: "eps",
-          operating_metric_value: 0.14,
-          valuation_parameter_key: "pe_multiple",
-          valuation_parameter_value: 15,
-          price_target: 2.10,
-          dividend_per_share: 0,
-          total_return_target: 2.10,
-          is_interpolated: false
-        },
-        {
-          fiscal_year: 2028,
-          scenario_type: "bull",
-          valuation_method: "reverse_dcf",
-          operating_metric_key: "eps",
-          operating_metric_value: 0.14,
-          valuation_parameter_key: "pe_multiple",
-          valuation_parameter_value: 20,
-          price_target: 2.80,
-          dividend_per_share: 0,
-          total_return_target: 2.80,
-          is_interpolated: false
-        },
-        {
-          fiscal_year: 2029,
-          scenario_type: "bear",
-          valuation_method: "reverse_dcf",
-          operating_metric_key: "eps",
-          operating_metric_value: 0.17,
-          valuation_parameter_key: "pe_multiple",
-          valuation_parameter_value: 10,
-          price_target: 1.70,
-          dividend_per_share: 0,
-          total_return_target: 1.70,
-          is_interpolated: false
-        },
-        {
-          fiscal_year: 2029,
-          scenario_type: "base",
-          valuation_method: "reverse_dcf",
-          operating_metric_key: "eps",
-          operating_metric_value: 0.17,
-          valuation_parameter_key: "pe_multiple",
-          valuation_parameter_value: 15,
-          price_target: 2.55,
-          dividend_per_share: 0,
-          total_return_target: 2.55,
-          is_interpolated: false
-        },
-        {
-          fiscal_year: 2029,
-          scenario_type: "bull",
-          valuation_method: "reverse_dcf",
-          operating_metric_key: "eps",
-          operating_metric_value: 0.17,
-          valuation_parameter_key: "pe_multiple",
-          valuation_parameter_value: 20,
-          price_target: 3.40,
-          dividend_per_share: 0,
-          total_return_target: 3.40,
-          is_interpolated: false
-        },
-        {
-          fiscal_year: 2030,
-          scenario_type: "bear",
-          valuation_method: "reverse_dcf",
-          operating_metric_key: "eps",
-          operating_metric_value: 0.20,
-          valuation_parameter_key: "pe_multiple",
-          valuation_parameter_value: 10,
-          price_target: 2.00,
-          dividend_per_share: 0,
-          total_return_target: 2.00,
-          is_interpolated: false
-        },
-        {
-          fiscal_year: 2030,
-          scenario_type: "base",
-          valuation_method: "reverse_dcf",
-          operating_metric_key: "eps",
-          operating_metric_value: 0.20,
-          valuation_parameter_key: "pe_multiple",
-          valuation_parameter_value: 15,
-          price_target: 3.00,
-          dividend_per_share: 0,
-          total_return_target: 3.00,
-          is_interpolated: false
-        },
-        {
-          fiscal_year: 2030,
-          scenario_type: "bull",
-          valuation_method: "reverse_dcf",
-          operating_metric_key: "eps",
-          operating_metric_value: 0.20,
-          valuation_parameter_key: "pe_multiple",
-          valuation_parameter_value: 20,
-          price_target: 4.00,
-          dividend_per_share: 0,
-          total_return_target: 4.00,
-          is_interpolated: false
-        }
-      ]
     }
   };
 }

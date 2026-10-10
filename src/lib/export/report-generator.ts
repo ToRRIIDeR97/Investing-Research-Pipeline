@@ -86,7 +86,7 @@ export interface ResearchReportData {
     }>;
     reverse_valuations?: Array<{
       method: string;
-      implied_growth: number;
+      implied_growth: number | null;
     }>;
   };
   decision?: {
@@ -415,7 +415,7 @@ export function generateMarkdownReport(data: ResearchReportData): string {
     sections.push("| Valuation Method | Implied Growth Rate |");
     sections.push("|---|---|");
     for (const row of data.valuation.reverse_valuations) {
-      sections.push(`| ${row.method} | ${row.implied_growth * 100}% |`);
+      sections.push(`| ${row.method} | ${row.implied_growth == null ? "Not reachable in the solver range" : `${row.implied_growth * 100}%`} |`);
     }
     sections.push("");
   } else {
