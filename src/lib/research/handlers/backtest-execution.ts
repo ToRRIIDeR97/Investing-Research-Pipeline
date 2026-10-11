@@ -49,7 +49,8 @@ export const backtestExecutionHandler: StageHandler<Record<string, unknown>> = {
           `;
         }
       };
-      const repo = createArtifactRepository(drizzle(sql, { schema }));
+      // Drizzle replaces this client's date serializers, so the repository is created only after the raw writes.
+      const repository = () => createArtifactRepository(drizzle(sql, { schema }));
       let execution: Awaited<ReturnType<typeof executeFrameworkBacktest>>;
       try {
         execution = await executeFrameworkBacktest(ctx, combinations, benchmarks);
@@ -65,7 +66,7 @@ export const backtestExecutionHandler: StageHandler<Record<string, unknown>> = {
             WHERE research_run_id = ${ctx.runId} AND stage_key = 'backtest_review' AND status = 'pending'
           `;
         });
-        await repo.upsertArtifact({
+        await repository().upsertArtifact({
           research_run_id: ctx.runId,
           asset_id: ctx.assetId,
           profile_id: ctx.profileId || undefined,
@@ -186,7 +187,7 @@ export const backtestExecutionHandler: StageHandler<Record<string, unknown>> = {
         }
       });
 
-      await repo.upsertArtifact({
+      await repository().upsertArtifact({
         research_run_id: ctx.runId,
         asset_id: ctx.assetId,
         profile_id: ctx.profileId || undefined,

@@ -158,7 +158,7 @@ rejected
   }
   ```
 - **Evidence requirements:** Every material historical claim links to a contemporary or retrospective source, with classification.
-- **Assumption requirements:** Founder motivation is supported or marked `unknown`.
+- **Assumption requirements:** At least one founder motivation is supported by a cited founder or origin claim; further motivations may be marked `unknown`.
 - **Validation rules:** No motivation inferred solely from outcomes; alternative interpretations recorded; original vs. current business distinguished; at least one present-day implication present.
 - **Completion states:** `validated` → `accepted` after reviewer checks.
 - **Export placement:** Company genesis and strategic identity section.
