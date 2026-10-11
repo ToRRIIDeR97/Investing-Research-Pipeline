@@ -31,7 +31,8 @@ function request(body: Record<string, unknown> = {}) {
 const paramsFor = (id: string) => ({ params: Promise.resolve({ id }) });
 
 async function runQueuedJob(runId: string) {
-  assert.equal(await processNextResearchRunJob(), true);
+  // Claim only this run's job: the database may hold queued jobs of other runs.
+  assert.equal(await processNextResearchRunJob({ runId }), true);
   const job = await getLatestResearchRunJob(runId);
   assert.equal(job?.status, "completed", job?.failure_reason || "Worker should finish its job");
   assert.ok(job?.result_json);
@@ -243,9 +244,9 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     assert.equal((await duplicate.json()).jobId, firstJob.jobId, "Queue requests are idempotent");
 
     // Simulate a worker dying after claiming; only the expired lease may be reclaimed.
-    const claimed = await claimNextResearchRun("expired-test-worker");
+    const claimed = await claimNextResearchRun("expired-test-worker", undefined, { runId });
     assert.equal(claimed?.id, firstJob.jobId);
-    assert.equal(await claimNextResearchRun("other-test-worker"), null);
+    assert.equal(await claimNextResearchRun("other-test-worker", undefined, { runId }), null);
     await sql`UPDATE research_run_jobs SET lease_expires_at = NOW() - INTERVAL '1 second' WHERE id = ${firstJob.jobId}`;
     const recovered = await requeueExpiredResearchRunJobs();
     assert.ok(recovered.some((job) => job.id === firstJob.jobId && job.status === "queued"));
