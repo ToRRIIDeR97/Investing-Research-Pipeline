@@ -128,6 +128,49 @@ const pct = (value: number | null) => (value === null ? "not captured" : `${(val
 const rounded = (row: Record<string, number>) => Object.fromEntries(Object.entries(row).map(([key, value]) =>
   [key, key === "fiscal_year" ? value : Number(value.toFixed(/rate|margin|growth/.test(key) ? 4 : 1))]));
 
+type ValuationSignalRow = {
+  signal_key: string; signal_name: string; lens_family: string; current_value_text: string | null;
+  comparison_range_json: Record<string, unknown>; signal: string; cheapness_score: number | null; confidence: number | null;
+};
+
+/**
+ * Write this attempt's valuation_signals (consumed by the workflow gate, exports and the signal chart).
+ * Signals an earlier attempt wrote under keys this attempt no longer produces are deleted.
+ */
+export async function persistValuationSignals(sql: ReturnType<typeof postgres>,
+  ctx: Pick<ResearchRunContext, "runId" | "assetId" | "profileId">, signals: ValuationSignalRow[]) {
+  await sql`
+    DELETE FROM valuation_signals
+    WHERE research_run_id = ${ctx.runId} AND signal_key <> ALL(${signals.map((sig) => sig.signal_key)}::text[])
+  `;
+  for (const sig of signals) {
+    const updated = await sql`
+      UPDATE valuation_signals
+      SET signal_name = ${sig.signal_name}, lens_family = ${sig.lens_family},
+          current_value_text = ${sig.current_value_text || null},
+          comparison_range_json = ${sql.json((sig.comparison_range_json || {}) as any)},
+          signal = ${sig.signal}, cheapness_score = ${sig.cheapness_score || null},
+          confidence = ${sig.confidence || null}, review_status = 'accepted'
+      WHERE research_run_id = ${ctx.runId} AND signal_key = ${sig.signal_key}
+    `;
+    if (updated.count > 0) continue;
+    await sql`
+      INSERT INTO valuation_signals (
+        asset_id, research_run_id, profile_id, signal_key, signal_name, lens_family,
+        current_value_text, comparison_range_json, signal, cheapness_score, confidence, review_status
+      )
+      SELECT
+        ${ctx.assetId}, ${ctx.runId}, ${ctx.profileId}, ${sig.signal_key}, ${sig.signal_name}, ${sig.lens_family},
+        ${sig.current_value_text || null}, ${sql.json((sig.comparison_range_json || {}) as any)},
+        ${sig.signal}, ${sig.cheapness_score || null}, ${sig.confidence || null}, 'accepted'
+      WHERE NOT EXISTS (
+        SELECT 1 FROM valuation_signals
+        WHERE research_run_id = ${ctx.runId} AND signal_key = ${sig.signal_key}
+      )
+    `;
+  }
+}
+
 export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "asset_valuation",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
@@ -571,33 +614,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
             })),
           ];
 
-      // Persist compatibility rows consumed by the workflow gate and exports.
-      for (const sig of signals) {
-        const updated = await sql`
-          UPDATE valuation_signals
-          SET signal_name = ${sig.signal_name}, lens_family = ${sig.lens_family},
-              current_value_text = ${sig.current_value_text || null},
-              comparison_range_json = ${sql.json(sig.comparison_range_json || {})},
-              signal = ${sig.signal}, cheapness_score = ${sig.cheapness_score || null},
-              confidence = ${sig.confidence || null}, review_status = 'accepted'
-          WHERE research_run_id = ${ctx.runId} AND signal_key = ${sig.signal_key}
-        `;
-        if (updated.count > 0) continue;
-        await sql`
-          INSERT INTO valuation_signals (
-            asset_id, research_run_id, profile_id, signal_key, signal_name, lens_family,
-            current_value_text, comparison_range_json, signal, cheapness_score, confidence, review_status
-          )
-          SELECT
-            ${ctx.assetId}, ${ctx.runId}, ${ctx.profileId}, ${sig.signal_key}, ${sig.signal_name}, ${sig.lens_family},
-            ${sig.current_value_text || null}, ${sql.json(sig.comparison_range_json || {})},
-            ${sig.signal}, ${sig.cheapness_score || null}, ${sig.confidence || null}, 'accepted'
-          WHERE NOT EXISTS (
-            SELECT 1 FROM valuation_signals
-            WHERE research_run_id = ${ctx.runId} AND signal_key = ${sig.signal_key}
-          )
-        `;
-      }
+      await persistValuationSignals(sql, ctx, signals);
 
       // Persist to scenarios table. A withheld valuation clears anchors left by an earlier attempt.
       if (withheldReason) {
