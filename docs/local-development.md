@@ -14,6 +14,10 @@ DATABASE_URL=postgresql://research_os:research_os_dev@localhost:5432/research_os
   npm run worker:research
 ```
 
+Compose publishes Postgres on `127.0.0.1:5432` only. Its password comes from `POSTGRES_PASSWORD` in the shell or `.env` and defaults to `research_os_dev`; change `DATABASE_URL` to match. `npm run dev` and `npm run start` bind to `127.0.0.1`.
+
+Install the Python packages once (`python3 -m pip install -r python/requirements.txt`): backtests need pandas, numpy and yfinance, and uploads are parsed with Docling.
+
 The worker claims queued `research_run_jobs` atomically, renews its lease, and records its heartbeat. Use `--once` for a single queued job:
 
 ```bash
@@ -23,6 +27,12 @@ DATABASE_URL=postgresql://research_os:research_os_dev@localhost:5432/research_os
 ```
 
 Create a run from the asset research UI or `POST /api/assets/:assetId/research-runs`; creation returns `201` with the run. Then `POST /api/research-runs/:runId/run-system-pipeline` queues execution and returns `202` with a job ID. The UI performs both steps. Monitor the run through `/api/research-runs/:runId/jobs`, `/api/research-workers/health`, and the UI progress view.
+
+`src/middleware.ts` guards every `/api/*` route. It answers only the Host names `localhost`, `127.0.0.1` and `[::1]`, plus any listed in `RESEARCH_APP_ALLOWED_HOSTS`. A `POST`, `PATCH`, `PUT` or `DELETE` must also carry `Sec-Fetch-Site: same-origin` (browsers add it) or an `Origin` equal to the app's own, so add the header when calling from curl:
+
+```bash
+curl -X POST -H 'Sec-Fetch-Site: same-origin' http://127.0.0.1:3000/api/research-runs/$RUN_ID/run-system-pipeline
+```
 
 Set `RESEARCH_RUN_ID` and run `npm run run:research:resume` to queue continuation through the same path. A running worker is required. Failed runs restart at their first failed stage; waiting human gates still require explicit approval through the UI or approval endpoints.
 

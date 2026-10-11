@@ -2,12 +2,12 @@
 
 Research OS creates evidence-backed investment research for an asset. PostgreSQL stores the workflow, sources, artifacts, decisions, and exported report. The Next.js app provides the UI and API; a separate worker runs queued research jobs.
 
-![UML component view: browser UI → unauthenticated API routes → run queue → worker → pipeline runner and orchestrator → agent harness, sources and memory, backtesting and repair, reporting; Postgres, ./storage, child processes and external services](diagrams/component.svg)
+![UML component view: browser UI → API routes (no accounts; Host and Origin middleware) → run queue → worker → pipeline runner and orchestrator → agent harness, sources and memory, backtesting and repair, reporting; Postgres, ./storage, child processes and external services](diagrams/component.svg)
 
 | Component | Responsibility | Source |
 | --- | --- | --- |
 | UI pages | Client components that call the API: command center, asset catalog and detail, run cockpit, report view, review queue | `src/app/**/page.tsx`, `src/components/**` |
-| API routes | 52 route files. Reads and writes over research tables, run control (create, enqueue, approve plan, request re-run decision, review), upload ingest, chat, export, saved charts. No authentication | `src/app/api/**`, `src/lib/api/*` |
+| API routes | 51 route files. Reads and writes over research tables, run control (create, enqueue, approve plan, request re-run decision, review), upload ingest, chat, export, saved charts. No accounts; `src/middleware.ts` refuses foreign Host names and cross-site writes ([security.md](security.md#authentication-and-authorization)) | `src/app/api/**`, `src/lib/api/*`, `src/middleware.ts` |
 | Run service and queue | Creates a run (`pending`, version 3) and its 24 stage rows. Enforces one active job per run. Claims with `SKIP LOCKED` under a 5-minute lease, with up to 3 attempts and worker heartbeats | `src/lib/research/run-service.ts`, `run-queue.ts` |
 | Research worker | Polls every 5 s. Requeues expired jobs, claims a job, renews the lease and runs the pipeline. When idle, runs backtest tasks | `src/workers/research-worker.ts` |
 | Pipeline runner and team | Per-run advisory lock. Scheduling passes over ready stages, team briefs, source and research requests, handlers run in parallel | `src/lib/research/pipeline-runner.ts`, `handlers/**`, `team.ts`, `team-plan.ts`, `sources/collector.ts` |
@@ -178,8 +178,7 @@ Company genesis follows the same rule for citations: IDs still unknown after its
 
 Verified in source on 2026-10-05 and tracked as GitHub issues:
 
-- No API authentication ([#8](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/8)). `/advance` bypasses the run lock and the handlers ([#16](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/16)).
+- No API accounts ([#8](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/8)). The server binds to loopback and refuses other sites' requests, but any local process can call the API.
 - `accepted` artifacts are never written ([#14](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/14)). No writer sets a run to `cancelled` ([#15](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/15)).
 - `src/db/index.ts` leaves out the `source-intelligence` and `market-data` schemas ([#17](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/17)).
-- Data fetchers in `corpus.ts` and `yahoo.ts` have no timeouts of their own; the price-history sync passes them a fetch with a 20 s timeout ([#23](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/23)). Docling parsing blocks the event loop ([#24](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/24)).
 - Security findings are listed in [security.md](security.md).
