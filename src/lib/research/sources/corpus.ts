@@ -8,6 +8,7 @@ import { ensureDocumentIndexed, evidenceNeeds, FOUNDER_NEED_KEYS, getEmbeddingPr
   retrievePassages, runDocuments, type RetrievedPassage } from "@/lib/research/memory";
 import { getAgentConfig } from "@/lib/agent-harness/registry";
 import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
+import { fetchCapped } from "@/lib/net";
 import { SourceRole } from "@/lib/research/sources/roles";
 import { syncAssetPriceHistory, type PriceHistorySync } from "@/lib/market-data/price-history";
 
@@ -365,7 +366,7 @@ function buildFinancialObservations(ctx: RunContext, secContext: Record<string, 
 async function fetchMarketSnapshot(ctx: RunContext) {
   const yahooSymbol = ctx.symbol.includes(".") ? ctx.symbol : ctx.symbol.toUpperCase();
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=5d&interval=1d`;
-  const response = await fetch(url, { headers: { "User-Agent": "ResearchOS/0.1 market-data@example.com" } });
+  const response = await fetchCapped(url, { headers: { "User-Agent": "ResearchOS/0.1 market-data@example.com" } });
   if (!response.ok) throw new Error(`Yahoo chart request failed: ${response.status}`);
   const payload = await response.json();
   const result = payload?.chart?.result?.[0];
@@ -761,8 +762,8 @@ async function fetchSecContext(ctx: RunContext) {
   if (!cik) return fetchExorIssuerContext(ctx);
 
   const [companyFactsRes, submissionsRes] = await Promise.all([
-    fetch(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, { headers: { "User-Agent": SEC_USER_AGENT } }),
-    fetch(`https://data.sec.gov/submissions/CIK${cik}.json`, { headers: { "User-Agent": SEC_USER_AGENT } }),
+    fetchCapped(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, { headers: { "User-Agent": SEC_USER_AGENT } }),
+    fetchCapped(`https://data.sec.gov/submissions/CIK${cik}.json`, { headers: { "User-Agent": SEC_USER_AGENT } }),
   ]);
   if (!companyFactsRes.ok) throw new Error(`SEC companyfacts failed: ${companyFactsRes.status}`);
   if (!submissionsRes.ok) throw new Error(`SEC submissions failed: ${submissionsRes.status}`);
@@ -853,7 +854,7 @@ export function recentFredObservations(csv: string, cutoffDate: string, rows = M
 async function macroSourcePayload(ctx: RunContext): Promise<SourcePayload | null> {
   const url = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10";
   try {
-    const response = await fetch(url, { headers: { "User-Agent": "ResearchOS/0.1 research-pipeline@example.com" } });
+    const response = await fetchCapped(url, { headers: { "User-Agent": "ResearchOS/0.1 research-pipeline@example.com" } });
     if (!response.ok) return null;
     const raw = await response.text();
     if (!raw.includes("observation_date") || raw.length < 100) return null;
@@ -914,7 +915,7 @@ async function fetchSecFilingPayloads(ctx: RunContext, secContext: Record<string
       if (process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock" || process.env.RESEARCH_TEST_MODE === "1") {
         content = "Mock SEC filing content";
       } else {
-        const response = await fetch(url, {
+        const response = await fetchCapped(url, {
           headers: { "User-Agent": "ResearchOS/0.1 research-pipeline@example.com" },
         });
         if (!response.ok) {
@@ -968,7 +969,7 @@ async function industrySourcePayload(ctx: RunContext): Promise<SourcePayload | n
   if (ctx.profileKey === "financials") {
     const url = "https://www.fdic.gov/quarterly-banking-profile";
     try {
-      const response = await fetch(url, {
+      const response = await fetchCapped(url, {
         headers: { "User-Agent": "ResearchOS/0.2 research-pipeline@example.com" },
       });
       if (!response.ok) return null;
@@ -1008,7 +1009,7 @@ async function industrySourcePayload(ctx: RunContext): Promise<SourcePayload | n
 
   const url = "https://api.worldbank.org/v2/country/ARG;BRA;MEX/indicator/IT.NET.USER.ZS?format=json&per_page=100&date=2020:2025";
   try {
-    const response = await fetch(url, {
+    const response = await fetchCapped(url, {
       headers: { "User-Agent": "ResearchOS/0.2 research-pipeline@example.com" },
     });
     if (!response.ok) return null;
@@ -1081,7 +1082,7 @@ function supplementalSource(
 }
 
 async function fetchJsonSource(url: string) {
-  const response = await fetch(url, {
+  const response = await fetchCapped(url, {
     headers: { "User-Agent": "ResearchOS/0.2 research-pipeline@example.com" },
   });
   if (!response.ok) throw new Error(`Public source failed: ${response.status}`);
@@ -1111,7 +1112,7 @@ async function fetchBitcoinResearchContext(ctx: RunContext) {
         { source_family: "market_data", metric: "spot_price" }
       )))
       .catch(() => undefined),
-    fetch("https://www.sec.gov/crypto", { headers: { "User-Agent": "ResearchOS/0.2 research-pipeline@example.com" } })
+    fetchCapped("https://www.sec.gov/crypto", { headers: { "User-Agent": "ResearchOS/0.2 research-pipeline@example.com" } })
       .then(async (response) => response.ok ? response.text() : "")
       .then((content) => {
         if (!content) return;
@@ -1157,7 +1158,7 @@ async function fetchEnergyResearchContext(ctx: RunContext) {
   ];
   await Promise.all(urls.map(async (item) => {
     try {
-      const response = await fetch(item.url, { headers: { "User-Agent": "ResearchOS/0.2 research-pipeline@example.com" } });
+      const response = await fetchCapped(item.url, { headers: { "User-Agent": "ResearchOS/0.2 research-pipeline@example.com" } });
       if (!response.ok) return;
       const content = await response.text();
       supplementalSources.push(supplementalSource(
@@ -1182,7 +1183,7 @@ async function fetchFundResearchContext(ctx: RunContext) {
   const url = `https://www.sec.gov/cgi-bin/browse-edgar?CIK=${encodeURIComponent(ctx.symbol)}&owner=exclude&action=getcompany`;
   let content = "";
   try {
-    const response = await fetch(url, { headers: { "User-Agent": "ResearchOS/0.2 research-pipeline@example.com" } });
+    const response = await fetchCapped(url, { headers: { "User-Agent": "ResearchOS/0.2 research-pipeline@example.com" } });
     if (response.ok) content = await response.text();
   } catch {
     // The market snapshot and explicit gap are still persisted below.
@@ -1205,7 +1206,7 @@ async function fetchSecEarningsAttachments(cik: string, accessionNumber: string,
   const accessionPath = accessionNumber.replace(/-/g, "");
   const indexUrl = `https://www.sec.gov/Archives/edgar/data/${cikNumber}/${accessionPath}/index.json`;
   try {
-    const response = await fetch(indexUrl, {
+    const response = await fetchCapped(indexUrl, {
       headers: { "User-Agent": "ResearchOS/0.2 research-pipeline@example.com" },
     });
     if (!response.ok) return [];
@@ -1431,7 +1432,7 @@ async function fetchExorIssuerContext(ctx: RunContext) {
 async function resolveSecCik(symbol: string) {
   const upper = symbol.toUpperCase();
   const baseSymbol = upper.includes("_TEST") ? upper.split("_TEST")[0] : upper.split("_")[0];
-  const response = await fetch("https://www.sec.gov/files/company_tickers.json", {
+  const response = await fetchCapped("https://www.sec.gov/files/company_tickers.json", {
     headers: { "User-Agent": "ResearchOS/0.1 research-pipeline@example.com" },
   });
   if (!response.ok) {

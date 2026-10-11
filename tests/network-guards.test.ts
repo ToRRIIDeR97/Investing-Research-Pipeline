@@ -3,7 +3,10 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import test from "node:test";
 import { gzipSync } from "node:zlib";
-import { assertPublicHost, publicFetch, readCapped } from "../src/lib/net";
+import { assertPublicHost, fetchCapped, publicFetch, readCapped } from "../src/lib/net";
+import { MarketDataError } from "../src/lib/market-data/provider";
+import { createYahooMarketDataProvider } from "../src/lib/market-data/providers/yahoo";
+import { fetchStooqCloses } from "../src/lib/market-data/providers/stooq";
 import { discoverRoleSources, isSafePublicUrl } from "../src/lib/research/sources/role-discovery";
 
 async function withEnv<T>(values: Record<string, string | undefined>, run: () => Promise<T>): Promise<T> {
@@ -122,4 +125,36 @@ test("the web-search key goes to the configured HTTPS endpoint only, and its JSO
   const endlessJson = (async () => new Response(endless(), { headers: { "content-type": "application/json" } })) as typeof fetch;
   await assert.rejects(withEnv(discoveryEnv(), () =>
     discoverRoleSources({ assetName: "Acme Company", symbol: "ACME" }, ["founder_and_company_history"], endlessJson)), /exceeds/);
+});
+
+test("structured-data fetches time out and cap their bodies (#23)", async () => {
+  const server = createServer((request, response) => {
+    if (request.url === "/silent") return; // never answers
+    response.writeHead(200, { "content-type": "application/json" });
+    if (request.url === "/stalled") response.write("{"); // headers, then a body that never ends
+    else response.end("x".repeat(2_000_000));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  try {
+    for (const path of ["/silent", "/stalled"]) {
+      const started = performance.now();
+      await assert.rejects(fetchCapped(`${base}${path}`, {}, { timeoutMs: 200 }), (error: Error) => error.name === "TimeoutError", path);
+      assert.ok(performance.now() - started < 2_000, path);
+    }
+    await assert.rejects(fetchCapped(`${base}/large`, {}, { maxBytes: 1_000_000 }), /exceeds/);
+    const response = await fetchCapped(`${base}/large`);
+    assert.equal(response.status, 200);
+    assert.equal((await response.text()).length, 2_000_000);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+
+  const endlessFetch = (async () => new Response(endless(), { headers: { "content-type": "application/json" } })) as typeof fetch;
+  await assert.rejects(createYahooMarketDataProvider(endlessFetch).getQuote("ACME"),
+    (error: Error) => error instanceof MarketDataError && /exceeds/.test(error.message));
+  const stooq = await fetchStooqCloses("ACME", new Date("2024-01-01"), new Date("2024-02-01"), endlessFetch);
+  assert.equal(stooq.status, "unavailable");
 });
