@@ -85,6 +85,31 @@ function isQuarterInstant(row: SecFact, periodEnds: Set<string>): boolean {
   return !!match && Number(match[2]) % 3 === 0 && new Date(Date.UTC(Number(match[1]), Number(match[2]), 0)).toISOString().slice(0, 10) === row.end;
 }
 
+/**
+ * Character span [start, end) of one companyfacts fact object in the stored file text, searched from
+ * the concept's key. Facts are flat objects, so the braces around a matching accession number bound it.
+ */
+export function secFactSpan(
+  text: string, concept: string, fact: { value: number; start: string; end: string; accession_number: string }
+): { start: number; end: number } | null {
+  const from = text.indexOf(`"${concept}":`);
+  if (from < 0) return null;
+  const needle = JSON.stringify(fact.accession_number);
+  for (let at = text.indexOf(needle, from); at >= 0; at = text.indexOf(needle, at + needle.length)) {
+    const open = text.lastIndexOf("{", at), close = text.indexOf("}", at);
+    if (open < from || close < 0) continue;
+    try {
+      const row = JSON.parse(text.slice(open, close + 1)) as SecFact;
+      if (row.accn === fact.accession_number && row.val === fact.value && row.start === fact.start && row.end === fact.end) {
+        return { start: open, end: close + 1 };
+      }
+    } catch {
+      // Not a flat fact object; keep looking.
+    }
+  }
+  return null;
+}
+
 export function latestSecQuarterlyFact(
   companyFacts: unknown, taxonomy: string, concept: string, unit: string, cutoff: Date
 ): { value: number; start: string; end: string; filed: string; accession_number: string } | null {

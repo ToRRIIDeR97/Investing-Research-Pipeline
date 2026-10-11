@@ -9,7 +9,7 @@ import postgres from "postgres";
 import { z } from "zod/v4";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { CURRENT_PIPELINE_VERSION } from "../version";
-import { latestSecInstantFact, latestSecQuarterlyFact } from "../history/sec-companyfacts";
+import { latestSecInstantFact, latestSecQuarterlyFact, secFactSpan } from "../history/sec-companyfacts";
 import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { calculateValuationSchedule, cashFlowBuildErrors, validateMethodInputs, ValuationMethodInput } from "../valuation/schedules";
@@ -101,6 +101,26 @@ export const equityMethodsPrompt = (p: Record<string, unknown>) => exactJsonProm
     "reported_diluted_shares.value is a share count; that count divided by 1,000,000 is the minimum diluted_shares, and the application raises any lower count to it.",
   ],
 });
+
+/**
+ * The run's market snapshot as the valuation may use it. The snapshot is always a live fetch, so when it
+ * was fetched more than a day after the cutoff (a historical run) its live price and 52-week range describe
+ * a later market: they are dropped, and there is no fallback price.
+ */
+export function valuationMarketSnapshot(text: string, cutoff: Date): { snapshot: Record<string, unknown>; historical: boolean; fallbackPrice: number | null } {
+  let parsed: any = {};
+  try { parsed = JSON.parse(text); } catch { parsed = {}; }
+  const meta = parsed?.meta || {};
+  const retrieved = Date.parse(String(parsed?.retrieved_at ?? ""));
+  const historical = Number.isFinite(retrieved) && retrieved > cutoff.getTime() + 86_400_000;
+  if (historical) return { historical, fallbackPrice: null, snapshot: { retrieved_at: parsed.retrieved_at, currency: meta.currency,
+    live_fields_omitted: "Fetched after the market-data cutoff; the live price and 52-week range are not used." } };
+  const price = Number(meta.regularMarketPrice);
+  return { historical, fallbackPrice: price > 0 ? price : null, snapshot: {
+    retrieved_at: parsed?.retrieved_at, currency: meta.currency, regular_market_price: meta.regularMarketPrice,
+    fifty_two_week_high: meta.fiftyTwoWeekHigh, fifty_two_week_low: meta.fiftyTwoWeekLow,
+  } };
+}
 
 /** Withheld artifacts: zero anchors and markers, never price targets. */
 function withheldValuation(reason: string, horizon: number[], currency: string) {
@@ -237,24 +257,14 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         ORDER BY sd.retrieved_at DESC, dc.chunk_index ASC
         LIMIT 1
       `;
-      let marketSnapshot: Record<string, unknown> = {};
-      try {
-        const parsed = JSON.parse(String(marketRow?.text || "{}"));
-        const meta = parsed?.meta || {};
-        marketSnapshot = {
-          retrieved_at: parsed?.retrieved_at,
-          currency: meta.currency,
-          regular_market_price: meta.regularMarketPrice,
-          fifty_two_week_high: meta.fiftyTwoWeekHigh,
-          fifty_two_week_low: meta.fiftyTwoWeekLow,
-        };
-      } catch {
-        marketSnapshot = {};
-      }
-      // Prefer the stored close on the valuation date (cutoff-consistent, cross-checked when possible);
-      // the snapshot's live regular market price remains the fallback.
+      const snapshot = valuationMarketSnapshot(String(marketRow?.text || "{}"), cutoff);
+      let marketSnapshot = snapshot.snapshot;
+      // Prefer the stored close on the valuation date (cutoff-consistent, cross-checked when possible).
+      // Only a run valued as of its fetch date may fall back to the snapshot's live price.
       const valuationPrice = await valuationDatePrice(sql, ctx.assetId, ctx.symbol, cutoff)
         .catch(() => null);
+      const priceWithheld = snapshot.historical && !valuationPrice
+        ? `no stored close on or before the ${cutoff.toISOString().slice(0, 10)} cutoff, and the market snapshot was fetched after it` : null;
       if (valuationPrice) {
         marketSnapshot = {
           ...marketSnapshot,
@@ -292,7 +302,8 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         const sourceRoot = resolve(process.cwd(), "storage", "sources");
         const sourcePath = resolve(process.cwd(), String(primaryDoc.storage_path));
         if (!sourcePath.startsWith(sourceRoot + sep)) throw new Error("Invalid primary source path");
-        const companyFacts = JSON.parse(await readFile(sourcePath, "utf8")).companyFacts;
+        const fileText = await readFile(sourcePath, "utf8");
+        const companyFacts = JSON.parse(fileText).companyFacts;
         const equity = latestSecInstantFact(companyFacts, "us-gaap", "StockholdersEquity", "USD", cutoff);
         const goodwill = latestSecInstantFact(companyFacts, "us-gaap", "Goodwill", "USD", cutoff);
         const intangibles = latestSecInstantFact(companyFacts, "us-gaap", "IntangibleAssetsNetExcludingGoodwill", "USD", cutoff);
@@ -302,24 +313,23 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         );
         if (reportedDilutedShares) {
           const shareFact = reportedDilutedShares;
-          const [chunk] = await sql`
+          // Chunks are fixed slices of this file, so the fact's offset in the file selects the chunk(s)
+          // holding it; a fact that straddles a chunk boundary is located across both.
+          const span = secFactSpan(fileText, "WeightedAverageNumberOfDilutedSharesOutstanding", shareFact);
+          const overlapping = span ? await sql`
             SELECT dc.id, dc.document_parse_id, dc.char_start, dc.char_end, dc.text
             FROM document_chunks dc
             JOIN document_parses dp ON dp.id = dc.document_parse_id AND dp.parser_name <> 'research-memory'
-            WHERE dc.source_document_id = ${primaryDoc.id}
-              AND dc.text LIKE ${`%"val": ${shareFact.value}%`}
-              -- The same value can appear under another concept; require the fact's own period and filing.
-              AND dc.text LIKE ${`%${shareFact.start}%`}
-              AND dc.text LIKE ${`%${shareFact.end}%`}
-              AND dc.text LIKE ${`%${shareFact.accession_number}%`}
-            ORDER BY dc.chunk_index
-            LIMIT 1
-          `;
-          if (!chunk || !String(chunk.text).includes(shareFact.start)
-            || !String(chunk.text).includes(shareFact.end)
-            || !String(chunk.text).includes(shareFact.accession_number)) {
+            WHERE dc.source_document_id = ${primaryDoc.id} AND dc.char_start < ${span.end} AND dc.char_end > ${span.start}
+            ORDER BY dp.created_at DESC, dc.chunk_index
+          ` : [];
+          const chunks = overlapping.filter((row) => row.document_parse_id === overlapping[0]?.document_parse_id);
+          const chunkStart = Number(chunks[0]?.char_start);
+          if (!span || !chunks.length || chunks.map((row) => String(row.text)).join("")
+            .slice(span.start - chunkStart, span.end - chunkStart) !== fileText.slice(span.start, span.end)) {
             throw new Error("SEC diluted-share fact could not be linked to its source chunk");
           }
+          const chunk = { id: chunks[0].id, document_parse_id: chunks[0].document_parse_id, char_start: chunks[0].char_start, char_end: chunks.at(-1)!.char_end };
           const claimText = `${ctx.assetName} reported ${shareFact.value} weighted-average diluted shares outstanding for the quarter ended ${shareFact.end} in its ${shareFact.filed} 10-Q.`;
           await sql.begin(async (tx) => {
             const [existing] = await tx`
@@ -386,7 +396,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
         .map((row) => row[sharesAt]).filter((value): value is number => typeof value === "number" && value > 0).at(-1) ?? null;
       const dilutedMillions = reportedDilutedShares && reportedDilutedShares.value > 0 ? reportedDilutedShares.value / 1e6 : capturedShares;
-      const marketPrice = Number(valuationPrice?.price ?? marketSnapshot.regular_market_price);
+      const marketPrice = Number(valuationPrice?.price ?? snapshot.fallbackPrice);
       const currency = financialInputs?.currency || String(valuationPrice?.currency || marketSnapshot.currency || "USD");
       const ratios = historyRatios(financialInputs);
       const baseYear = ratios.base_year?.fiscal_year ?? cutoff.getUTCFullYear() - 1;
@@ -399,7 +409,10 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       const taskKey = "valuation-analyst:valuation";
       let output: Record<string, any>;
 
-      if (equityMethods) {
+      if (priceWithheld) {
+        // A historical run is never valued against a later market; nothing a model could judge would change that.
+        output = withheldValuation(`Market price unavailable: ${priceWithheld}.`, horizon, currency);
+      } else if (equityMethods) {
         // Banks: the model builds FCFE, dividend or book schedules; code assembles the path from the primary method.
         const metricRows = await sql`
           SELECT md.metric_key, mo.period_end, mo.value_numeric, mo.value_text, mo.unit, mo.currency
