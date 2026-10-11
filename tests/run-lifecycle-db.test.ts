@@ -98,19 +98,43 @@ describe("run lifecycle reliability", { skip: process.env.RUN_DB_INTEGRATION !==
     assert.match(result.failure_reason || "", /529/);
   });
 
-  test("RM3: outputs completed by an attempt whose handler then threw are not replayed on resume", async () => {
+  const fatal = () => new Error("Invalid company_genesis: evidence_claim_ids must contain at least 1 element");
+  const taskStates = async (runId: string) => (await sql`SELECT task_key, validation_status FROM research_tasks
+    WHERE research_run_id = ${runId} ORDER BY task_key`).map((task) => [task.task_key, task.validation_status]);
+
+  test("RM3: outputs that fed an attempt whose handler then threw are not replayed on resume, including replayed ones", async () => {
     const runId = await newRun();
+    // Completed before a resume: the throwing attempt replays it, and it keeps its original completed_at.
     const earlier = await createV3Task(sql, runId, "intake", "intake:earlier", "intake", "intake-planner");
     await completeV3Task(sql, earlier.id, { ok: true });
     const result = await withIntake(async (ctx: ResearchRunContext) => {
+      assert.equal((await createV3Task(sql, ctx.runId, "intake", "intake:earlier", "intake", "intake-planner")).id, earlier.id);
       const task = await createV3Task(sql, ctx.runId, "intake", "intake:this-attempt", "intake", "intake-planner");
       await completeV3Task(sql, task.id, { ok: true });
-      throw new Error("Invalid company_genesis: evidence_claim_ids must contain at least 1 element");
+      throw fatal();
     }, () => runResearchPipeline(runId));
     assert.equal(result.status, "needs_more_work");
-    const tasks = await sql`SELECT task_key, validation_status FROM research_tasks WHERE research_run_id = ${runId} ORDER BY task_key`;
-    assert.deepEqual(tasks.map((task) => [task.task_key, task.validation_status]),
-      [["intake:earlier", null], ["intake:this-attempt", "invalid"]]);
+    assert.deepEqual(await taskStates(runId), [["intake:earlier", "invalid"], ["intake:this-attempt", "invalid"]]);
+  });
+
+  test("RM3: an output completed before a transient retry and reused by the attempt that threw is not replayed", async () => {
+    const runId = await newRun();
+    let calls = 0;
+    const result = await withIntake(async (ctx: ResearchRunContext) => {
+      calls += 1;
+      if (calls === 1) {
+        const a = await createV3Task(sql, ctx.runId, "intake", "intake:part-a", "intake", "intake-planner");
+        await completeV3Task(sql, a.id, { ok: true });
+        throw transient();
+      }
+      await createV3Task(sql, ctx.runId, "intake", "intake:part-a", "intake", "intake-planner");
+      const b = await createV3Task(sql, ctx.runId, "intake", "intake:part-b", "intake", "intake-planner");
+      await completeV3Task(sql, b.id, { ok: true });
+      throw fatal();
+    }, () => runResearchPipeline(runId));
+    assert.equal(calls, 2);
+    assert.equal(result.status, "needs_more_work");
+    assert.deepEqual(await taskStates(runId), [["intake:part-a", "invalid"], ["intake:part-b", "invalid"]]);
   });
 
   test("RO5: failRun and pauseForHumanReview change nothing when one of their writes fails", async () => {

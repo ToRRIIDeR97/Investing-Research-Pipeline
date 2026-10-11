@@ -132,7 +132,6 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
         // Specialists paused on document requests rerun once the collector has served them.
         if (await processSourceRequests(sql, context)) continue;
         if (await processResearchRequests(sql, context)) continue;
-        const [{ started }] = await sql`SELECT NOW()::text AS started`;
         // Drain all in-flight work before any failure, replay, or gate transition.
         const results = await Promise.allSettled(stages.map(async key => {
           const handler = STAGE_HANDLERS[key];
@@ -145,10 +144,11 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
         if (signal?.aborted) throw new ResearchRunInterrupted("Research run interrupted");
         if (failures.length) {
           if (!stop && await retryTransientFailures(sql, runId, failures, notes, signal)) continue;
-          // Outputs completed in this attempt led to the throw; a resume must call the model again, not replay them.
+          // The stage's outputs led to the throw, including ones replayed from an earlier attempt (they keep their
+          // original completed_at), so a resume must call the model again rather than replay any of them.
           const fatal = failures.filter((failure) => !isTransientAgentError(failure.reason));
           if (fatal.length) await sql`UPDATE research_tasks SET validation_status = 'invalid', updated_at = NOW()
-            WHERE research_run_id = ${runId} AND status = 'completed' AND completed_at >= ${started}::timestamptz
+            WHERE research_run_id = ${runId} AND status = 'completed'
               AND stage_id IN (SELECT id FROM research_stages WHERE research_run_id = ${runId}
                 AND stage_key = ANY(${fatal.map((failure) => failure.stageKey)}::text[]))`;
           throw (fatal[0] ?? failures[0]).reason;
