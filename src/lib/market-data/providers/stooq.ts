@@ -2,6 +2,7 @@
  * Stooq daily CSV, used only to cross-check closes from the primary provider.
  * The CSV is untrusted: anything that is not a dated close table is treated as unavailable.
  */
+import { readCapped } from "@/lib/net";
 
 export const STOOQ_BASE_URL = "https://stooq.com/q/d/l/";
 
@@ -43,8 +44,8 @@ export async function fetchStooqCloses(symbol: string, start: Date, end: Date, f
   try {
     const response = await fetchImpl(url, { headers: { "User-Agent": "ResearchOS/0.1 market-data" } });
     if (!response.ok) return { status: "unavailable", url, reason: `Stooq HTTP ${response.status}` };
-    const body = await response.text();
-    const closes = parseStooqCsv(body.slice(0, 2_000_000));
+    const body = new TextDecoder().decode(await readCapped(response, 2_000_000, true));
+    const closes = parseStooqCsv(body);
     if (!closes) return { status: "unavailable", url, reason: "Stooq did not return CSV (no data, rate limit or browser check)" };
     if (!closes.size) return { status: "unavailable", url, reason: "Stooq returned no rows" };
     return { status: "ok", url, closes };

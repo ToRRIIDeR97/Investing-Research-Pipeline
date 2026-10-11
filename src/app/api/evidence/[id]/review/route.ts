@@ -1,31 +1,27 @@
 import { NextRequest } from "next/server";
+import { z } from "zod";
 import { db } from "@/db";
 import { evidence_claims } from "@/db/schema/evidence";
 import { handleApiError, successResponse, ApiError } from "@/lib/api/errors";
 import { eq } from "drizzle-orm";
+
+// The API has no accounts, so the reviewer is recorded as such; a body's reviewed_by is ignored (#13).
+const UNAUTHENTICATED_REVIEWER = "api:unauthenticated";
+const reviewSchema = z.object({ review_status: z.enum(["pending", "accepted", "rejected"]) });
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
-    const body = await request.json();
-
-    const { review_status, reviewed_by } = body as {
-      review_status: string;
-      reviewed_by?: string;
-    };
-
-    if (!review_status) {
-      throw new ApiError("review_status is required", 400, "VALIDATION_ERROR");
-    }
+    const id = z.string().uuid().parse((await params).id);
+    const { review_status } = reviewSchema.parse(await request.json().catch(() => ({})));
 
     const [updated] = await db
       .update(evidence_claims)
       .set({
         review_status,
-        reviewed_by: reviewed_by ?? null,
+        reviewed_by: UNAUTHENTICATED_REVIEWER,
         reviewed_at: new Date(),
       })
       .where(eq(evidence_claims.id, id))

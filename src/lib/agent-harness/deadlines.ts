@@ -24,6 +24,8 @@ export function createDeadlineController(
     controller.abort(reason);
   };
   const onParentAbort = () => abort("caller");
+  // An already-aborted signal never fires its abort event.
+  if (parentSignal?.aborted) abort("caller");
   parentSignal?.addEventListener("abort", onParentAbort, { once: true });
 
   const totalTimer = setTimeout(() => abort("total"), totalTimeoutMs);

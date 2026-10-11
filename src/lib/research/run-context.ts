@@ -61,6 +61,8 @@ export interface ResearchRunContext {
     accepted_at?: string;
     accepted_by?: string;
   } | null;
+  /** Aborts in-flight model calls when the worker stops, loses its lease or the run is cancelled. */
+  signal?: AbortSignal;
 }
 
 export interface StageHandler<TOutput = unknown> {
@@ -457,6 +459,7 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
       promptFactory: params.promptFactory,
       outputFormat: params.outputFormat,
       cacheScope: params.ctx.runId,
+      signal: params.ctx.signal,
       hooks: {
         beforeAttempt: async () => {
           await assertModelBudgetAvailable({
@@ -468,7 +471,6 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
           });
         },
         onAttemptComplete: async (attempt) => {
-          recordedAttempts += 1;
           await recordModelCall({
             researchRunId: params.ctx.runId,
             stageId: task.stage_id,
@@ -510,6 +512,10 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
               completion_recovered_at_timeout: attempt.completionRecoveredAtTimeout,
             },
             escalationReason,
+          }).then(() => { recordedAttempts += 1; }, (error) => {
+            // recordModelCall already retried without metadata. A paid, valid output is kept rather than lost.
+            if (attempt.status !== "success") throw error;
+            console.error(`model call ledger write failed for task ${task.id} ($${attempt.costUsd} unrecorded):`, error);
           });
         },
       },

@@ -140,10 +140,14 @@ export async function enqueueResearchRun(
   }
 }
 
-/** Claim one queued job atomically. Multiple workers are safe to call this concurrently. */
+/**
+ * Claim one queued job atomically. Multiple workers are safe to call this concurrently.
+ * `runId` limits the claim to one run, so a test cannot take another run's job.
+ */
 export async function claimNextResearchRun(
   leaseOwner: string,
-  leaseMs = DEFAULT_RESEARCH_RUN_LEASE_MS
+  leaseMs = DEFAULT_RESEARCH_RUN_LEASE_MS,
+  options: { runId?: string } = {}
 ): Promise<ResearchRunJob | null> {
   const sql = database();
   try {
@@ -153,6 +157,7 @@ export async function claimNextResearchRun(
         WHERE job_type = ${RESEARCH_RUN_JOB_TYPE}
           AND status = 'queued'
           AND (lease_expires_at IS NULL OR lease_expires_at < NOW())
+          AND (${options.runId ?? null}::uuid IS NULL OR research_run_id = ${options.runId ?? null}::uuid)
         ORDER BY queued_at ASC, created_at ASC
         LIMIT 1
         FOR UPDATE SKIP LOCKED
@@ -238,6 +243,59 @@ export async function failResearchRunJob(
     if (rows[0]) return asJob(rows[0] as unknown as Record<string, unknown>);
     const existing = await sql`SELECT * FROM research_run_jobs WHERE id = ${jobId} LIMIT 1`;
     return asJob(existing[0] as unknown as Record<string, unknown> | undefined);
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * Put a claimed job back in the queue without using an attempt: on worker shutdown (no delay), or when another
+ * worker still holds the run's lock (delayed by one lease). A job this worker no longer owns is left alone.
+ */
+export async function releaseResearchRunJob(
+  jobId: string,
+  leaseOwner: string,
+  reason: string,
+  delayMs = 0
+): Promise<ResearchRunJob | null> {
+  const sql = database();
+  try {
+    const rows = await sql`
+      UPDATE research_run_jobs
+      SET status = 'queued', lease_owner = NULL,
+          lease_expires_at = CASE WHEN ${delayMs} > 0 THEN NOW() + ${delayMs} * INTERVAL '1 millisecond' ELSE NULL END,
+          attempt_count = GREATEST(attempt_count - 1, 0), failure_reason = ${reason.slice(0, 4000)}, updated_at = NOW()
+      WHERE id = ${jobId} AND status = 'running' AND lease_owner = ${leaseOwner}
+      RETURNING *
+    `;
+    return asJob(rows[0] as unknown as Record<string, unknown> | undefined);
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * Queue a job for each running v3 run that was queued before but has had no job activity for a minute:
+ * an approval whose enqueue failed, or a job that failed or exhausted its leases outside the pipeline.
+ * The one-active-job index makes this safe beside enqueueResearchRun.
+ */
+export async function reconcileOrphanedResearchRuns(options: { runId?: string } = {}): Promise<string[]> {
+  const sql = database();
+  try {
+    const rows = await sql`
+      INSERT INTO research_run_jobs (research_run_id, job_type, status, requested_by, max_attempts, queued_at, created_at, updated_at)
+      SELECT rr.id, ${RESEARCH_RUN_JOB_TYPE}, 'queued', 'worker:reconcile', 3, NOW(), NOW(), NOW()
+      FROM research_runs rr
+      WHERE rr.status = 'running' AND rr.pipeline_version = ${CURRENT_PIPELINE_VERSION}
+        AND rr.updated_at < NOW() - INTERVAL '60 seconds'
+        AND (${options.runId ?? null}::uuid IS NULL OR rr.id = ${options.runId ?? null}::uuid)
+        AND EXISTS (SELECT 1 FROM research_run_jobs j WHERE j.research_run_id = rr.id AND j.job_type = ${RESEARCH_RUN_JOB_TYPE})
+        AND NOT EXISTS (SELECT 1 FROM research_run_jobs j WHERE j.research_run_id = rr.id AND j.job_type = ${RESEARCH_RUN_JOB_TYPE}
+          AND (j.status IN ('queued', 'running') OR j.updated_at > NOW() - INTERVAL '60 seconds'))
+      ON CONFLICT (research_run_id) WHERE job_type = 'pipeline' AND status IN ('queued', 'running') DO NOTHING
+      RETURNING research_run_id
+    `;
+    return rows.map((row) => String(row.research_run_id));
   } finally {
     await sql.end();
   }

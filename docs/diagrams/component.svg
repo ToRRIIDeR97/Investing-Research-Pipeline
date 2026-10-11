@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 700" width="1100" height="700" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" font-size="13">
-<title id="t">Research OS — UML component view (current)</title><desc id="d">Browser UI calls unauthenticated Next.js API routes; the API writes Postgres and enqueues jobs; a separate worker claims jobs and runs the 24-stage pipeline, which calls the agent harness, source discovery and ingestion, backtesting (Python), and export; all state lives in Postgres and ./storage.</desc>
+<title id="t">Research OS — UML component view (current)</title><desc id="d">Browser UI calls Next.js API routes (no accounts; a middleware refuses foreign hosts and cross-site writes); the API writes Postgres and enqueues jobs; a separate worker claims jobs and runs the 24-stage pipeline, which calls the agent harness, source discovery and ingestion, backtesting (Python), and export; all state lives in Postgres and ./storage.</desc>
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker><marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10" fill="none" stroke="#333"/></marker></defs>
 <rect x="0" y="0" width="1100" height="700" fill="#ffffff"/>
 <text x="16" y="26" font-size="16" font-weight="bold" fill="#111">Research OS — UML component view (current)</text>
@@ -10,8 +10,8 @@
 <rect x="310" y="50" width="260" height="90" rx="6" fill="#eef6ec" stroke="#4a8a3f" stroke-width="1.4"/>
 <text x="440.0" y="68" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«component»</text>
 <text x="440.0" y="84" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Next.js API routes</text>
-<text x="440.0" y="101" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/app/api/** (52 route files)</text>
-<text x="440.0" y="116" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">no auth middleware</text>
+<text x="440.0" y="101" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/app/api/** (51 route files)</text>
+<text x="440.0" y="116" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">no accounts · Host/Origin middleware</text>
 <rect x="640" y="50" width="200" height="90" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
 <text x="740.0" y="68" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«component»</text>
 <text x="740.0" y="84" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Run queue</text>
@@ -22,7 +22,7 @@
 <text x="980.0" y="204" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Research worker</text>
 <text x="980.0" y="221" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/workers/research-worker.ts</text>
 <text x="980.0" y="236" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">poll 5s · heartbeat 10s</text>
-<text x="980.0" y="251" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">lease 5 min · run advisory lock</text>
+<text x="980.0" y="251" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">lease 5 min, renewed 10s · run lock</text>
 <rect x="310" y="200" width="260" height="110" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
 <text x="440.0" y="218" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«component»</text>
 <text x="440.0" y="234" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Workflow orchestrator</text>
@@ -96,8 +96,7 @@
 <text x="590" y="238" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">advance</text>
 <text x="590" y="251" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">Stage</text>
 <path d="M440,140 L440,200" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="500" y="165" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">approve / review</text>
-<text x="500" y="178" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">/ advance</text>
+<text x="500" y="170" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">approve / review</text>
 <path d="M680,310 L145,340 L145,370" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="330" y="322" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">callResearchAgent</text>
 <path d="M700,310 L405,370" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
