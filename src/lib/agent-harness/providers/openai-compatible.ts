@@ -1,5 +1,6 @@
 import type { ModelEvent, ModelProvider, ModelRequest, ProviderHealth, ToolCall } from "../types";
 import { ProviderError, usageLimitBody, type HarnessErrorCategory } from "../errors";
+import { validateEndpointUrl } from "../../net";
 
 type ProviderMode = "direct" | "local";
 
@@ -9,12 +10,6 @@ export interface ProviderOptions {
   apiKey?: string;
   allowedHosts?: string[];
   headers?: Record<string, string>;
-}
-
-function privateOrLoopback(host: string) {
-  return host === "localhost" || host === "127.0.0.1" || host === "::1" ||
-    /^10\./.test(host) || /^192\.168\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host);
 }
 
 function safeErrorBody(value: string) {
@@ -32,42 +27,14 @@ export class OpenAICompatibleProvider implements ModelProvider {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.apiKey = options.apiKey || "";
     this.extraHeaders = options.headers || {};
-    const url = this.validateUrl(options);
+    try {
+      validateEndpointUrl(options.baseUrl, "Provider base URL", { allowedHosts: options.allowedHosts, local: options.mode === "local" });
+    } catch (error) {
+      throw new ProviderError((error as Error).message, "invalid_request");
+    }
     if (options.mode === "direct" && !this.apiKey) {
       throw new ProviderError("Direct provider requires RESEARCH_MODEL_API_KEY", "invalid_request");
     }
-    if (options.mode === "direct" && url.protocol !== "https:") {
-      throw new ProviderError("Direct provider must use HTTPS", "invalid_request");
-    }
-  }
-
-  private validateUrl(options: ProviderOptions) {
-    let url: URL;
-    try {
-      url = new URL(options.baseUrl);
-    } catch {
-      throw new ProviderError("Invalid provider base URL", "invalid_request");
-    }
-    if (!['http:', 'https:'].includes(url.protocol)) {
-      throw new ProviderError("Provider URL must use HTTP or HTTPS", "invalid_request");
-    }
-    if (url.username || url.password) {
-      throw new ProviderError("Provider URL must not contain credentials", "invalid_request");
-    }
-    if (options.mode === "local") {
-      if (!privateOrLoopback(url.hostname)) {
-        throw new ProviderError("Local provider must use a loopback or private host", "invalid_request");
-      }
-    } else {
-      const allowed = (options.allowedHosts || []).map((host) => host.toLowerCase()).filter(Boolean);
-      if (!allowed.length || !allowed.includes(url.hostname.toLowerCase())) {
-        throw new ProviderError(`Direct provider host is not allowlisted: ${url.hostname}`, "invalid_request");
-      }
-      if (privateOrLoopback(url.hostname)) {
-        throw new ProviderError("Direct provider cannot target a private host", "invalid_request");
-      }
-    }
-    return url;
   }
 
   private headers() {

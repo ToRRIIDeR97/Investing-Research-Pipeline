@@ -3,6 +3,7 @@ import type { ModelEvent, ModelProvider, ModelRequest, ModelUsage, ProviderHealt
 import { calculateCost, oneHourCacheWriteSurcharge } from "../telemetry";
 import { anthropicPromptFields, isClaudeModel } from "./anthropic-cache";
 import { anthropicWireSchema, isRejectedSchema, rememberRejectedSchema } from "./anthropic-schema";
+import { validateEndpointUrl } from "../../net";
 
 export interface AnthropicProviderOptions {
   baseUrl: string;
@@ -14,14 +15,11 @@ export interface AnthropicProviderOptions {
 }
 
 function validateBaseUrl(baseUrl: string, allowedHosts: string[]) {
-  let url: URL;
-  try { url = new URL(baseUrl); } catch { throw new ProviderError("Invalid provider base URL", "invalid_request"); }
-  if (url.protocol !== "https:") throw new ProviderError("Direct provider must use HTTPS", "invalid_request");
-  if (url.username || url.password) throw new ProviderError("Provider URL must not contain credentials", "invalid_request");
-  if (!allowedHosts.map((host) => host.toLowerCase()).includes(url.hostname.toLowerCase())) {
-    throw new ProviderError(`Direct provider host is not allowlisted: ${url.hostname}`, "invalid_request");
+  try {
+    return validateEndpointUrl(baseUrl, "Provider base URL", { allowedHosts }).toString().replace(/\/+$/, "");
+  } catch (error) {
+    throw new ProviderError((error as Error).message, "invalid_request");
   }
-  return url.toString().replace(/\/+$/, "");
 }
 
 function safeBody(value: string) {

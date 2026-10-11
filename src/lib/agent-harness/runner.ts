@@ -139,8 +139,12 @@ function retryable(value: HarnessErrorCategory) {
     || value === "output_exhausted";
 }
 
-function redact(value: string) {
-  const secrets = [process.env.RESEARCH_MODEL_API_KEY, process.env.ANTHROPIC_API_KEY, process.env.DATABASE_URL].filter(Boolean) as string[];
+const SECRET_ENV = ["RESEARCH_MODEL_API_KEY", "ANTHROPIC_API_KEY", "OPENCODE_GO_API_KEY", "RESEARCH_WEB_SEARCH_API_KEY",
+  "RESEARCH_EMBEDDING_API_KEY", "DATABASE_URL"];
+
+/** Removes every configured secret, and bearer tokens, from text bound for logs and traces. */
+export function redact(value: string) {
+  const secrets = SECRET_ENV.map((name) => process.env[name]).filter(Boolean) as string[];
   return secrets.reduce((message, secret) => secret.length > 5 ? message.split(secret).join("[REDACTED]") : message, value)
     .replace(/(bearer\s+)[^\s"']+/gi, "$1[REDACTED]");
 }
