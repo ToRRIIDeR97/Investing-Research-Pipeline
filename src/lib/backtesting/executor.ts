@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join, normalize, relative } from "node:path";
+import { dirname, isAbsolute, join, normalize, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import postgres from "postgres";
 import { z } from "zod";
@@ -32,6 +32,24 @@ interface ExecFileError extends Error {
 
 function relativeStoragePath(absolutePath: string) {
   return relative(process.cwd(), absolutePath).replace(/\\/g, "/");
+}
+
+// Model-written strategy code runs in this child, so it gets only what Python, yfinance and a
+// proxy need: no provider keys and no DATABASE_URL (#11). This is not an OS sandbox; the child
+// keeps the developer's file and network access.
+const BACKTEST_ENV = ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "SYSTEMROOT", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+  "http_proxy", "https_proxy", "no_proxy", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"];
+
+export function backtestEnv(env: Record<string, string | undefined> = process.env): NodeJS.ProcessEnv {
+  const kept: Record<string, string | undefined> = { PYTHONPATH: process.cwd() };
+  for (const name of BACKTEST_ENV) if (env[name] !== undefined) kept[name] = env[name];
+  return kept as NodeJS.ProcessEnv;
+}
+
+/** Whether `path` lies inside `directory` (not equal to it). */
+export function isInside(directory: string, path: string) {
+  const rel = relative(resolve(directory), resolve(path));
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
 }
 
 function dateOnly(value: string | Date | null | undefined) {
@@ -280,10 +298,7 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
         {
           cwd: process.cwd(),
           timeout,
-          env: {
-            ...process.env,
-            PYTHONPATH: process.cwd(),
-          },
+          env: backtestEnv(),
           maxBuffer: 1024 * 1024 * 10,
         }
       );
@@ -295,7 +310,8 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
     }
 
     const result = pythonResultSchema.parse(JSON.parse(stdout.toString()));
-    const artifacts = [...writtenArtifacts, ...result.artifacts];
+    // The child's stdout is untrusted: an artifact path outside this backtest's directory is dropped (S6).
+    const artifacts = [...writtenArtifacts, ...result.artifacts.filter((artifact) => isInside(artifactDir, artifact.storage_path))];
 
     await sql.begin(async (tx) => {
       await tx`

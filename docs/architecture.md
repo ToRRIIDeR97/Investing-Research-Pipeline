@@ -63,9 +63,11 @@ Handlers are registered in the `STAGE_HANDLERS` map (`src/lib/research/handlers/
 
 There's no hosted deployment and no CI workflow in the repository, so there are no rollback or on-call procedures, and therefore no `docs/operations.md`.
 
-Local entry points:
-- `npm run dev`;
+Local entry points, all bound to `127.0.0.1`:
+- `npm run dev` and `npm run start`;
 - `.claude/launch.json`, which runs `scripts/dev-with-db.cjs` on :3000 or plain `next dev` on :3002.
+
+`docker-compose.yml` publishes Postgres on `127.0.0.1:5432` only.
 
 The port 5433 database used by `npm run test:sofi-v3` is a Windows PostgreSQL service and isn't defined in `docker-compose.yml` ([#18](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/18)).
 
@@ -140,7 +142,7 @@ Report requests are answered inside the scheduling loop without resetting stages
 | Subsystem / store / integration / workflow | Views | Source paths / symbols |
 | --- | --- | --- |
 | UI pages | Component, Sequence | `src/app/**/page.tsx`, `src/components/**` |
-| API routes | Component, Sequence, Trust | `src/app/api/**/route.ts`, `src/lib/api/*` |
+| API routes | Component, Sequence, Trust | `src/app/api/**/route.ts`, `src/lib/api/*`, `src/middleware.ts` (Host and Origin guard), `next.config.ts` (no framing) |
 | Run service and queue | Component, Activity, State, Sequence | `run-service.ts:createResearchRunWithStages`, `run-queue.ts` |
 | Research worker | Component, Deployment, State, Sequence | `src/workers/research-worker.ts`, `src/workers/poll-loop.ts` |
 | Pipeline runner, team and requests | Component, Activity, State, Sequence | `pipeline-runner.ts:runResearchPipeline`, `settleBatch`, `team.ts:processResearchRequests`, `systemAnswer`, `requestResetPlan`, `nextRequestBatch`, `team-plan.ts`, `sources/source-requests.ts:queryTermCoverage`, `sources/collector.ts` |
@@ -149,7 +151,7 @@ Report requests are answered inside the scheduling loop without resetting stages
 | Request re-run decision | State, Sequence, Trust | `src/app/api/research-runs/[id]/request-reset/route.ts`, run page panel in `src/app/assets/[id]/run/page.tsx` |
 | Agent harness and prompt caching | Component, Sequence, Trust | `src/lib/agent-harness/**` |
 | Research memory and evidence graph | Component, Class | `src/lib/research/memory/**` |
-| Sources, ingestion and market data | Component, Deployment, Trust | `src/lib/research/sources/**`, `src/lib/ingestion/**`, `src/lib/market-data/**` |
+| Sources, ingestion and market data | Component, Deployment, Trust | `src/lib/research/sources/**`, `src/lib/ingestion/**`, `src/lib/market-data/**`, `src/lib/net.ts` (public-host check, capped reads, endpoint URLs), `src/lib/html-scan.ts` |
 | Backtesting | Component, Deployment, Trust | `src/lib/backtesting/**`, `python/backtesting/**` |
 | Repair specialist sandbox | Component, Deployment, Trust | `src/lib/research/repair/**` |
 | Reporting and export | Component | `src/lib/research/reporting/**`, `src/lib/export/**` |
@@ -166,4 +168,3 @@ Report requests are answered inside the scheduling loop without resetting stages
 ## Unresolved boundaries
 
 - Research-request and source-request loops are one activity node; the research-request path and its re-run approval have their own frame in the sequence view. The source-request loop has no sequence view.
-- Network exposure of the dev server (assumed to bind all interfaces) hasn't been observed at runtime.

@@ -1,5 +1,6 @@
 // Embedding providers for passage and query vectors, with budget preflight and call ledger.
 import { assertModelBudgetAvailable, recordModelCall } from "@/lib/agents/model-calls";
+import { validateEndpointUrl } from "@/lib/net";
 
 type Env = Record<string, string | undefined>;
 
@@ -53,20 +54,8 @@ function nonNegative(env: Env, name: string, fallback: number): number {
 }
 
 function openAICompatibleProvider(env: Env): EmbeddingProvider {
-  const rawBase = required(env, "RESEARCH_EMBEDDING_BASE_URL");
-  let base: URL;
-  try {
-    base = new URL(rawBase);
-  } catch {
-    throw new Error("RESEARCH_EMBEDDING_BASE_URL is not a valid URL");
-  }
-  if (base.protocol !== "https:") throw new Error("RESEARCH_EMBEDDING_BASE_URL must use HTTPS");
-  if (base.username || base.password) throw new Error("RESEARCH_EMBEDDING_BASE_URL must not contain credentials");
-  if (base.search || base.hash) throw new Error("RESEARCH_EMBEDDING_BASE_URL must not contain a query or fragment");
-  const allowed = (env.RESEARCH_MODEL_ALLOWED_HOSTS || "").split(",").map(host => host.trim().toLowerCase()).filter(Boolean);
-  if (!allowed.includes(base.hostname.toLowerCase())) {
-    throw new Error(`RESEARCH_EMBEDDING_BASE_URL host ${base.hostname} is not listed in RESEARCH_MODEL_ALLOWED_HOSTS`);
-  }
+  const base = validateEndpointUrl(required(env, "RESEARCH_EMBEDDING_BASE_URL"), "RESEARCH_EMBEDDING_BASE_URL",
+    { allowedHosts: (env.RESEARCH_MODEL_ALLOWED_HOSTS || "").split(",") });
   const model = required(env, "RESEARCH_EMBEDDING_MODEL");
   const apiKey = env.RESEARCH_EMBEDDING_API_KEY?.trim() || env.RESEARCH_MODEL_API_KEY?.trim();
   if (!apiKey) throw new Error("RESEARCH_EMBEDDING_API_KEY (or RESEARCH_MODEL_API_KEY) is required when RESEARCH_EMBEDDING_PROVIDER=openai-compatible");
@@ -88,6 +77,8 @@ function openAICompatibleProvider(env: Env): EmbeddingProvider {
           headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
           body: JSON.stringify({ model, input: texts, ...(dimensions ? { dimensions } : {}) }),
           signal: AbortSignal.timeout(timeoutMs),
+          // The key must never follow a redirect to another host.
+          redirect: "error",
         });
       } catch (error) {
         throw new Error(`Embedding request to ${base.hostname} failed: ${redact(error instanceof Error ? error.message : String(error))}`);

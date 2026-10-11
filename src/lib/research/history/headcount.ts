@@ -8,6 +8,7 @@
  * model extraction. Add it behind `HeadcountFallback` below, keep its output separate
  * (metric_type 'calculated' or lower confidence) and require the evidence sentence.
  */
+import { dropElements } from '@/lib/html-scan';
 
 export type HeadcountFinding = {
   value: number;
@@ -23,15 +24,14 @@ export type HeadcountFinding = {
 export type HeadcountFallback = (text: string) => Promise<HeadcountFinding[]>;
 
 const NAMED: Record<string, string> = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", rsquo: '’', lsquo: '‘', ldquo: '“', rdquo: '”', ndash: '–', mdash: '—', ensp: ' ', emsp: ' ', thinsp: ' ' };
-const BLOCK = /<\/?(?:p|div|br|tr|td|th|li|ul|ol|table|tbody|thead|h[1-6]|section|article|header|footer|title)\b[^>]*>/gi;
+// `[^<>]*` rather than `[^>]*`: a tag can't span another '<', so unclosed tags cost linear time.
+const BLOCK = /<\/?(?:p|div|br|tr|td|th|li|ul|ol|table|tbody|thead|h[1-6]|section|article|header|footer|title)\b[^<>]*>/gi;
 
 /** Filing HTML to text with one block element per line and entities such as &#160; decoded. */
 export function filingPlainText(html: string): string {
-  return html
-    .replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, ' ')
-    .replace(/<ix:header\b[\s\S]*?<\/ix:header\s*>/gi, ' ')
+  return dropElements(html, ['script', 'style', 'ix:header'])
     .replace(BLOCK, '\n')
-    .replace(/<[^>]*>/g, ' ')
+    .replace(/<[^<>]*>/g, ' ')
     .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+);/gi, (entity, code: string) => {
       if (code[0] !== '#') return NAMED[code.toLowerCase()] ?? entity;
       const point = code[1] === 'x' || code[1] === 'X' ? parseInt(code.slice(2), 16) : Number(code.slice(1));

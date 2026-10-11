@@ -5,10 +5,12 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: research_os
-      POSTGRES_PASSWORD: research_os_dev
+      # Override with POSTGRES_PASSWORD in the shell or .env; the default is for local development only.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-research_os_dev}
       POSTGRES_DB: research_os
     ports:
-      - "5432:5432"
+      # Loopback only: the research_os role is a superuser in this image.
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
