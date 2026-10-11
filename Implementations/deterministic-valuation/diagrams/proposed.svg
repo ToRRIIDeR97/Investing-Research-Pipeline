@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="450" viewBox="0 0 680 450" role="img" font-family="Helvetica, Arial, sans-serif">
+<title>Valuation, proposed</title>
+<desc>The model supplies judgments only: yearly growth and margin drivers in operating scenarios, and a discount rate plus terminal assumption per scenario. Code builds the statements, the FCFF schedules, the price path, anchors, weighted target and reverse valuation. A readiness check withholds before any model call when inputs are missing.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f5e5a" stroke-width="1.5"/></marker></defs>
+<rect width="680" height="450" fill="#ffffff"/>
+<text x="20" y="28" font-size="14" font-weight="600" fill="#2c2c2a">Proposed (model judgment in purple, code in teal)</text>
+<g font-size="13" fill="#2c2c2a">
+<rect x="20" y="48" width="300" height="56" rx="6" fill="#eeedfe" stroke="#534ab7"/>
+<text x="34" y="70" fill="#3c3489">Operating scenarios: yearly_drivers</text>
+<text x="34" y="90" font-size="11" fill="#534ab7">growth, margin (+ optional overrides) per year — AC-10</text>
+<rect x="360" y="48" width="300" height="56" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="374" y="70" fill="#085041">Inputs by code</text>
+<text x="374" y="90" font-size="11" fill="#0f6e56">history ratios, tax, equity bridge, FRED rate — AC-1, AC-3</text>
+<rect x="20" y="132" width="640" height="50" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="153" fill="#085041">valuationReadiness — missing drivers, shares, price or revenue → withheld, no model call</text>
+<text x="34" y="171" font-size="11" fill="#0f6e56">AC-2; the reason lists each missing input</text>
+<rect x="20" y="210" width="300" height="56" rx="6" fill="#eeedfe" stroke="#534ab7"/>
+<text x="34" y="232" fill="#3c3489">Model: valuation_assumptions</text>
+<text x="34" y="252" font-size="11" fill="#534ab7">discount rate &gt; risk-free, terminal, rationale — AC-9</text>
+<rect x="360" y="210" width="300" height="56" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="374" y="232" fill="#085041">Statements + FCFF schedules</text>
+<text x="374" y="252" font-size="11" fill="#0f6e56">NOPAT + D&amp;A − capex − ΔNWC — AC-4, AC-5</text>
+<rect x="20" y="294" width="640" height="56" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="316" fill="#085041">assembleValuation: price path, anchors = terminal-year price, weighted target, returns</text>
+<text x="34" y="336" font-size="11" fill="#0f6e56">plus impliedOperatingMargin / impliedRevenueGrowth for reverse_valuation — AC-6, AC-7, AC-8</text>
+<rect x="20" y="378" width="640" height="56" rx="6" fill="#f1efe8" stroke="#888780"/>
+<text x="34" y="400">Same artifacts for readers: valuation_scenario_set, annual_price_target_path, reverse_valuation</text>
+<text x="34" y="420" font-size="11" fill="#5f5e5a">banks and other non-FCFF assets keep model-built schedules, but code still assembles them — AC-11</text>
+</g>
+<g stroke="#5f5e5a" stroke-width="1.2" fill="none">
+<line x1="170" y1="104" x2="170" y2="129" marker-end="url(#a)"/>
+<line x1="510" y1="104" x2="510" y2="129" marker-end="url(#a)"/>
+<line x1="170" y1="182" x2="170" y2="207" marker-end="url(#a)"/>
+<line x1="510" y1="182" x2="510" y2="207" marker-end="url(#a)"/>
+<line x1="320" y1="238" x2="357" y2="238" marker-end="url(#a)"/>
+<line x1="510" y1="266" x2="510" y2="291" marker-end="url(#a)"/>
+<line x1="340" y1="350" x2="340" y2="375" marker-end="url(#a)"/>
+</g>
+</svg>

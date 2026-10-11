@@ -12,6 +12,8 @@ const COLUMNS: { key: string; aliases: string[]; sum?: string[]; scale: "million
   { key: "revenue", aliases: ["revenue", "us_gaap_Revenues", "us_gaap_RevenueFromContractWithCustomerExcludingAssessedTax"], scale: "millions" },
   { key: "cost_of_revenue", aliases: ["us_gaap_CostOfRevenue", "us_gaap_CostOfGoodsAndServicesSold"], scale: "millions" },
   { key: "operating_income", aliases: ["operating_income", "us_gaap_OperatingIncomeLoss"], scale: "millions" },
+  { key: "pretax_income", aliases: ["pretax_income", "us_gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest", "us_gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments"], scale: "millions" },
+  { key: "income_tax_expense", aliases: ["income_tax_expense", "us_gaap_IncomeTaxExpenseBenefit"], scale: "millions" },
   { key: "depreciation_amortization", aliases: ["us_gaap_DepreciationDepletionAndAmortization", "us_gaap_DepreciationAmortizationAndAccretionNet", "us_gaap_DepreciationAndAmortization"], scale: "millions" },
   { key: "share_based_compensation", aliases: ["us_gaap_ShareBasedCompensation", "us_gaap_AllocatedShareBasedCompensationExpense"], scale: "millions" },
   { key: "operating_cash_flow", aliases: ["operating_cash_flow", "us_gaap_NetCashProvidedByUsedInOperatingActivities"], scale: "millions" },

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="440" viewBox="0 0 680 440" role="img" font-family="Helvetica, Arial, sans-serif">
+<title>Valuation today</title>
+<desc>Operating scenarios carry one period of statements. The valuation model writes cash flows, builds, price paths, per-share values and the reverse valuation by hand. Code checks the arithmetic, rescales shares, takes the anchors from the model's price path, and computes the DCF separately, so the two can disagree.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f5e5a" stroke-width="1.5"/></marker></defs>
+<rect width="680" height="440" fill="#ffffff"/>
+<text x="20" y="28" font-size="14" font-weight="600" fill="#2c2c2a">Current: operating-scenarios.ts → asset-valuation.ts (main 594024e3)</text>
+<g font-size="13" fill="#2c2c2a">
+<rect x="20" y="48" width="300" height="62" rx="6" fill="#faeeda" stroke="#854f0b"/>
+<text x="34" y="70" fill="#633806">Operating scenarios</text>
+<text x="34" y="87" font-size="11" fill="#633806">free-form driver keys for 2026-2028, but statements</text>
+<text x="34" y="101" font-size="11" fill="#633806">are one period (copied from operating_model, :66-79)</text>
+<rect x="360" y="48" width="300" height="62" rx="6" fill="#faeeda" stroke="#854f0b"/>
+<text x="374" y="70" fill="#633806">Packet (:111-289)</text>
+<text x="374" y="87" font-size="11" fill="#633806">financial_inputs, price, shares — but no FRED rate</text>
+<text x="374" y="101" font-size="11" fill="#633806">and no tax columns (financial-inputs.ts:11-28)</text>
+<rect x="20" y="140" width="640" height="74" rx="6" fill="#fcebeb" stroke="#a32d2d"/>
+<text x="34" y="162" fill="#791f1f">Valuation model writes the whole valuation (valuationPrompt :21-43)</text>
+<text x="34" y="180" font-size="11" fill="#a32d2d">method_inputs with yearly cash flows + builds, annual_price_target_path for 3 scenarios, per-share values,</text>
+<text x="34" y="195" font-size="11" fill="#a32d2d">anchors, reverse_valuation. Seen: null anchors (02c8d48b), 32,768-token exhaustion and withheld zeros</text>
+<text x="34" y="208" font-size="11" fill="#a32d2d">(1d427f3f, d6236111), DCF $376 vs anchor $564, no D&amp;A add-back, implied margin 53%.</text>
+<rect x="20" y="244" width="300" height="74" rx="6" fill="#faeeda" stroke="#854f0b"/>
+<text x="34" y="266" fill="#633806">Code checks and patches</text>
+<text x="34" y="283" font-size="11" fill="#633806">cash flow = build within 0.5% (repair if not),</text>
+<text x="34" y="297" font-size="11" fill="#633806">share rescale (:313-365), anchors = model path</text>
+<text x="34" y="311" font-size="11" fill="#633806">at terminal year (:348-354)</text>
+<rect x="360" y="244" width="300" height="74" rx="6" fill="#faeeda" stroke="#854f0b"/>
+<text x="374" y="266" fill="#633806">DCF computed separately</text>
+<text x="374" y="283" font-size="11" fill="#633806">method_schedules = calculateValuationSchedule</text>
+<text x="374" y="297" font-size="11" fill="#633806">(:528) — not linked to the anchors</text>
+<rect x="20" y="348" width="640" height="62" rx="6" fill="#f1efe8" stroke="#888780"/>
+<text x="34" y="370">Readers: decision synthesis (terminal returns), valuation summary, report UI, export, quality gates</text>
+<text x="34" y="388" font-size="11" fill="#5f5e5a">read terminal_anchor_*, price_target_path, method_schedules, reverse_valuation.implied_growth</text>
+</g>
+<g stroke="#5f5e5a" stroke-width="1.2" fill="none">
+<line x1="170" y1="110" x2="170" y2="137" marker-end="url(#a)"/>
+<line x1="510" y1="110" x2="510" y2="137" marker-end="url(#a)"/>
+<line x1="170" y1="214" x2="170" y2="241" marker-end="url(#a)"/>
+<line x1="510" y1="214" x2="510" y2="241" marker-end="url(#a)"/>
+<line x1="170" y1="318" x2="170" y2="345" marker-end="url(#a)"/>
+<line x1="510" y1="318" x2="510" y2="345" marker-end="url(#a)"/>
+</g>
+</svg>

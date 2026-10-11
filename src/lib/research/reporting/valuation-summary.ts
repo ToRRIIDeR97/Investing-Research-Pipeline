@@ -12,7 +12,7 @@ export const scenarioNames:Record<ScenarioType,string>={bear:'Bear',base:'Base',
 export type ScenarioValue={type:ScenarioType;value:number;probability:number|null;return:number|null};
 export type CalcRow={label:string;values:(number|null)[];strong?:boolean};
 export type PriceTargets={years:number[];values:(number|null)[];returns:(number|null)[];interpolated:boolean[]};
-export type Calculation={type:ScenarioType;years:number[];rows:CalcRow[];steps:{text:string;value:string}[];valuePerShare:number|null;anchor:number|null;note:string|null;priceTargets:PriceTargets|null};
+export type Calculation={type:ScenarioType;years:number[];rows:CalcRow[];steps:{text:string;value:string}[];valuePerShare:number|null;endValue:number|null;anchor:number|null;note:string|null;priceTargets:PriceTargets|null};
 export type AssumptionRow={label:string;values:(string|null)[]};
 export type NoteGroup={type:ScenarioType;method:string|null;rationale:string|null;sourceNotes:string[];bridge:string|null;assumptions:{year:number;label:string;value:string;note:string}[]};
 export type ValuationSummary={
@@ -121,10 +121,12 @@ export function valuationSummary(artifacts:Row[],options:{conclusionStatus?:stri
       const shares=num(s.diluted_shares),vps=num(s.value_per_share);
       if(shares!=null&&vps!=null)steps.push({text:`Divide by ${Math.round(shares).toLocaleString('en-US')}M shares`,value:`${price(vps,currency)} a share`});
     }
-    const vps=num(s?.value_per_share),anchor=anchors[t];
-    const note=vps!=null&&anchor!=null&&Math.abs(vps-anchor)>0.01*Math.abs(anchor)
-      ?`This gives ${price(vps,currency)}, ${vps<anchor?'lower':'higher'} than the ${price(anchor,currency)} scenario value above. The two haven’t been reconciled yet, which is why the result is marked not final.`:null;
-    return [{type:t,years,rows,steps,valuePerShare:vps,anchor,note,priceTargets:targets}];
+    // The anchor is a terminal-year value, so it is checked against the schedule's value at the end of its last year.
+    const vps=num(s?.value_per_share),anchor=anchors[t],tv=num(s?.terminal_value),shares=num(s?.diluted_shares);
+    const endValue=tv!=null&&shares?(tv+(num(s?.equity_bridge)??0))/shares:null;
+    const note=endValue!=null&&anchor!=null&&Math.abs(endValue-anchor)>0.01*Math.abs(anchor)
+      ?`At the end of ${years.at(-1)} this gives ${price(endValue,currency)}, ${endValue<anchor?'lower':'higher'} than the ${price(anchor,currency)} scenario value above. The two haven’t been reconciled yet, which is why the result is marked not final.`:null;
+    return [{type:t,years,rows,steps,valuePerShare:vps,endValue,anchor,note,priceTargets:targets}];
   });
 
   // Three reasons, computed from the base case (omitted when the data is not there).
@@ -189,7 +191,7 @@ export function valuationSummary(artifacts:Row[],options:{conclusionStatus?:stri
     const list=(f:(c:Calculation)=>number|null)=>calculations.map(c=>price(f(c),currency)).join(' / ');
     const baseCalc=calculations.find(c=>c.type==='base');
     const implied=baseCalc?.valuePerShare!=null&&marketPrice?baseCalc.valuePerShare/marketPrice-1:null;
-    issues.push(`The cash-flow model (${list(c=>c.valuePerShare)}) and the scenario values (${list(c=>c.anchor)}) disagree.${implied!=null?` If the model is right, the base case is about ${pct0(Math.abs(implied))} ${implied<0?'below':'above'} today’s price.`:''}`);
+    issues.push(`The cash-flow model (${list(c=>c.endValue)}) and the scenario values (${list(c=>c.anchor)}) disagree.${implied!=null?` If the model is right, the base case is about ${pct0(Math.abs(implied))} ${implied<0?'below':'above'} today’s price.`:''}`);
   }
   if(marketPrice!=null&&!priceVerified)issues.push(source?.trading_date
     ?`The ${price(marketPrice,currency,true)} close on ${source.trading_date} isn’t verified${source.verification_status?` (${String(source.verification_status).replace(/_/g,' ')})`:''}.`

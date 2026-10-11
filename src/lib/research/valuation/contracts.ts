@@ -66,10 +66,11 @@ export function withheldValuationReason(set: unknown): string | null {
   return reason ? String(reason).trim() : null;
 }
 
+// null when no value in the solver's range reproduces the market price.
 export const ReverseValuation = z.object({
   artifact_type: z.literal("reverse_valuation"),
-  implied_growth: z.number(),
-  implied_margin: z.number(),
+  implied_growth: z.number().nullable(),
+  implied_margin: z.number().nullable(),
 });
 export type ReverseValuation = z.infer<typeof ReverseValuation>;
 

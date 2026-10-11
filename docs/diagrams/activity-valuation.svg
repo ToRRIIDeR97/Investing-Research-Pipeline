@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 730" width="1100" height="730" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" font-size="13">
+<title id="t">Asset valuation — UML activity view</title><desc id="d">The valuation stage loads code-built inputs, separates FCFF assets from banks, withholds before any model call when inputs are missing, asks the model only for assumptions (FCFF) or equity schedules (banks), and assembles the path, anchors, returns and reverse valuation in code.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker><marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10" fill="none" stroke="#333"/></marker></defs>
+<rect x="0" y="0" width="1100" height="730" fill="#ffffff"/>
+<text x="16" y="26" font-size="16" font-weight="bold" fill="#111">Asset valuation — UML activity view</text>
+<circle cx="300" cy="50" r="7" fill="#222"/>
+<path d="M300,57 L300,70" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<rect x="100" y="70" width="400" height="96" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
+<text x="300.0" y="88" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Load inputs (code)</text>
+<text x="300.0" y="105" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">operating_scenario_set yearly_drivers · operating_model</text>
+<text x="300.0" y="120" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">financial_inputs (+ pretax_income, income_tax_expense)</text>
+<text x="300.0" y="135" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">historyRatios · equityBridge · diluted shares · price</text>
+<text x="300.0" y="150" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">latestRiskFreeRate (the run's FRED DGS10 document)</text>
+<path d="M300,166 L300,186" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M300,186 L314,200 L300,214 L286,200 z" fill="#fff8dc" stroke="#8a6d00" stroke-width="1.3"/>
+<text x="280" y="188" font-size="11" font-weight="normal" text-anchor="end" fill="#5a4700" font-style="italic">bank archetype or financials profile?</text>
+<path d="M314,200 L760,200 L760,226" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="600" y="194" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">yes</text>
+<path d="M300,214 L300,236" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="306" y="230" font-size="11" text-anchor="start" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">no</text>
+<path d="M300,236 L314,250 L300,264 L286,250 z" fill="#fff8dc" stroke="#8a6d00" stroke-width="1.3"/>
+<text x="320" y="246" font-size="11" font-weight="normal" text-anchor="start" fill="#5a4700" font-style="italic">ready? drivers for every horizon year,</text>
+<text x="320" y="259" font-size="11" font-weight="normal" text-anchor="start" fill="#5a4700" font-style="italic">diluted shares, price, base-year revenue</text>
+<path d="M286,250 L40,250 L40,610" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="160" y="244" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">no → withheld, no model call</text>
+<path d="M300,264 L300,286" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="306" y="280" font-size="11" text-anchor="start" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">yes</text>
+<rect x="130" y="286" width="340" height="66" rx="6" fill="#e8f1fb" stroke="#3b6ea8" stroke-width="1.4"/>
+<text x="300.0" y="304" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">valuation-analyst (model)</text>
+<text x="300.0" y="321" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">valuation_assumptions for bear, base, bull</text>
+<text x="300.0" y="336" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">discount_rate &gt; risk-free · NOPAT multiple or g &lt; r</text>
+<path d="M300,352 L300,372" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<rect x="130" y="372" width="340" height="66" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
+<text x="300.0" y="390" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Statements → FCFF schedules (code)</text>
+<text x="300.0" y="407" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">FCFF = NOPAT + D&amp;A − capex − ΔNWC</text>
+<text x="300.0" y="422" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">base case's first year pinned to operating_model</text>
+<path d="M300,438 L300,458" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<rect x="130" y="458" width="790" height="66" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
+<text x="525.0" y="476" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">assembleValuation (code)</text>
+<text x="525.0" y="493" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">value per share at each year end · anchor = terminal-year price · weighted target · returns</text>
+<text x="525.0" y="508" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">FCFF: impliedOperatingMargin / impliedRevenueGrowth → reverse_valuation (banks keep the model's)</text>
+<rect x="600" y="226" width="320" height="66" rx="6" fill="#e8f1fb" stroke="#3b6ea8" stroke-width="1.4"/>
+<text x="760.0" y="244" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">valuation-analyst (model)</text>
+<text x="760.0" y="261" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">FCFE, dividend or book method_inputs × 3</text>
+<text x="760.0" y="276" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">reverse_valuation, or withheld with a reason</text>
+<path d="M760,292 L760,312" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M760,312 L774,326 L760,340 L746,326 z" fill="#fff8dc" stroke="#8a6d00" stroke-width="1.3"/>
+<text x="780" y="314" font-size="11" font-weight="normal" text-anchor="start" fill="#5a4700" font-style="italic">withheld by the model?</text>
+<path d="M774,326 L1070,326 L1070,700 L150,700 L150,676" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="1000" y="320" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">yes</text>
+<path d="M760,340 L760,362" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="766" y="356" font-size="11" text-anchor="start" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">no</text>
+<rect x="600" y="362" width="320" height="66" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
+<text x="760.0" y="380" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Primary method, shares (code)</text>
+<text x="760.0" y="397" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">first of fcff, fcfe, dividend, … with 3 scenarios</text>
+<text x="760.0" y="412" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">diluted shares raised to the reported count</text>
+<path d="M760,428 L760,458" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M525,524 L525,544" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M525,544 L539,558 L525,572 L511,558 z" fill="#fff8dc" stroke="#8a6d00" stroke-width="1.3"/>
+<text x="545" y="546" font-size="11" font-weight="normal" text-anchor="start" fill="#5a4700" font-style="italic">every anchor &gt; 0?</text>
+<path d="M511,558 L150,558 L150,610" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="330" y="552" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">no</text>
+<path d="M539,558 L710,558 L710,590" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="690" y="552" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">yes</text>
+<rect x="20" y="610" width="260" height="66" rx="6" fill="#fdecec" stroke="#b23b3b" stroke-width="1.4"/>
+<text x="150.0" y="628" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Withheld artifacts</text>
+<text x="150.0" y="645" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">anchors 0 + reason · signals not_applicable</text>
+<text x="150.0" y="660" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">no scenario anchors; stage completes</text>
+<rect x="560" y="590" width="300" height="70" rx="6" fill="#eaf4f4" stroke="#2f7f7f" stroke-width="1.4"/>
+<text x="710.0" y="608" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Persist (handler)</text>
+<text x="710.0" y="625" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">valuation_signals · scenarios rows · method_schedules</text>
+<text x="710.0" y="640" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">3 artifacts, validated</text>
+<path d="M280,640 L560,640" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M860,625 L900,625" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<circle cx="910" cy="625" r="9" fill="none" stroke="#222" stroke-width="1.5"/><circle cx="910" cy="625" r="5" fill="#222"/>
+<text x="16" y="722" font-size="11" font-weight="normal" text-anchor="start" fill="#555">Source: handlers/asset-valuation.ts, valuation/engine.ts, handlers/operating-scenarios.ts. Blue: model call; purple: code.</text>
+</svg>

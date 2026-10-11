@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="430" viewBox="0 0 680 430" role="img" font-family="Helvetica, Arial, sans-serif">
+<title>Valuation engine functions</title>
+<desc>Execution order inside the new valuation/engine.ts module and the handler, each step linked to its acceptance criterion and the existing function it reuses.</desc>
+<rect width="680" height="430" fill="#ffffff"/>
+<text x="20" y="28" font-size="14" font-weight="600" fill="#2c2c2a">Detail: new src/lib/research/valuation/engine.ts, in call order</text>
+<g font-size="12">
+<rect x="20" y="44" width="640" height="44" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="62" font-weight="600" fill="#085041">1. latestRiskFreeRate(csv, cutoff) · historyRatios(fi) · equityBridge(fi)</text>
+<text x="34" y="79" fill="#0f6e56">FRED macro_context doc; financial_inputs gains pretax_income + income_tax_expense — AC-1, AC-3</text>
+<rect x="20" y="96" width="640" height="44" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="114" font-weight="600" fill="#085041">2. valuationReadiness({drivers, horizon, shares, price, baseRevenue})</text>
+<text x="34" y="131" fill="#0f6e56">not ready → withheld artifacts with the missing list; skip the model call — AC-2</text>
+<rect x="20" y="148" width="640" height="44" rx="6" fill="#eeedfe" stroke="#534ab7"/>
+<text x="34" y="166" font-weight="600" fill="#3c3489">3. Model call with valuationAssumptionsFormat(riskFreeRate)</text>
+<text x="34" y="183" fill="#534ab7">3 scenarios × {discount_rate, terminal, rationale}; no cash flows or prices in the schema — AC-9</text>
+<rect x="20" y="200" width="640" height="44" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="218" font-weight="600" fill="#085041">4. buildScenarioStatements per scenario (base year 1 pinned to operating_model)</text>
+<text x="34" y="235" fill="#0f6e56">revenue, operating income, D&amp;A, capex, NOPAT, ΔNWC, FCFF; a missing year throws — AC-4, AC-10</text>
+<rect x="20" y="252" width="640" height="44" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="270" font-weight="600" fill="#085041">5. buildFcffSchedule → existing calculateValuationSchedule + cashFlowBuildErrors</text>
+<text x="34" y="287" fill="#0f6e56">D&amp;A always added back; cash flow equals its build by construction — AC-5</text>
+<rect x="20" y="304" width="640" height="44" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="322" font-weight="600" fill="#085041">6. valuationPricePath + assembleValuation</text>
+<text x="34" y="339" fill="#0f6e56">value at each year end; anchor = terminal-year price; weights only if they sum to 1 — AC-6, AC-7, AC-11</text>
+<rect x="20" y="356" width="640" height="44" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="374" font-weight="600" fill="#085041">7. impliedOperatingMargin / impliedRevenueGrowth (bisection) → reverse_valuation</text>
+<text x="34" y="391" fill="#0f6e56">null when no value in range reaches the price — AC-8</text>
+</g>
+<text x="20" y="420" font-size="11" fill="#5f5e5a">Handler (asset-valuation.ts) keeps persistence, valuation_signals, scenarios rows and the withheld path — AC-12.</text>
+</svg>
