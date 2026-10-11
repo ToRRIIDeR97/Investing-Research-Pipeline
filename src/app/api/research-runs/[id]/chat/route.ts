@@ -13,7 +13,8 @@ export async function GET(_:NextRequest,{params}:{params:Promise<{id:string}>}){
 }
 export async function POST(request:NextRequest,{params}:{params:Promise<{id:string}>}){
  const sql=postgres(process.env.DATABASE_URL!);try{
-   if(request.headers.get('origin')&&request.headers.get('origin')!==request.nextUrl.origin)throw new ApiError('Cross-origin chat requests are not allowed.',403);
+   // src/middleware.ts refuses cross-site requests. An Origin check against nextUrl here refused the app's own
+   // http://127.0.0.1 origin, because NextURL rewrites loopback hosts to localhost.
    const {id}=await params;z.string().uuid().parse(id);const {message}=z.object({message:z.string().trim().min(1).max(4000)}).parse(await request.json());
    if(!enabled())throw new ApiError('AI chat is not enabled for this workspace. Enable paid research with a configured budget, or use the mock provider for testing.',503);
    const ctx=await loadRunContext(sql,id);const state=await getReportState(sql,id);if(!state.document)throw new ApiError('Research must be available before you can ask about it.',409);
