@@ -77,3 +77,57 @@ test("v3 quality data loads only the latest completed AI review task; earlier pi
     assert.ok(legacy.tasks.every(task => !("input_json" in task) && "output_json" in task && "validation_result_json" in task));
   } finally { await v3.cleanup(); await v2.cleanup(); await sql.end(); }
 });
+
+test("analysis coverage matches artifact names first and serialises bodies only while a module is uncovered", async () => {
+  const { evaluateQualityGates } = await import("../src/lib/workflow/quality-gates");
+  let serialised = 0;
+  const body = (text: string) => ({ toJSON() { serialised += 1; return { text }; } });
+  const result = (modules: string[], artifacts: { artifact_type: string; status: string; text: string }[]) => evaluateQualityGates({
+    run: { run_type: "deep_dive", pipeline_version: 3 },
+    profile: { required_modules_json: modules },
+    artifacts: artifacts.map(({ artifact_type, status, text }) => ({ artifact_type, status, content_json: body(text) })),
+  });
+  const artifacts = [
+    { artifact_type: "moat_assessment", status: "validated", text: "switching costs" },
+    { artifact_type: "operating_model", status: "validated", text: "unit_economics by cohort" },
+    { artifact_type: "decision_record", status: "validated", text: "hold" },
+    { artifact_type: "company_genesis", status: "draft", text: "founder_story" },
+  ];
+  result(["moat_assessment"], artifacts);
+  assert.equal(serialised, 0, "a module named by an artifact type needs no body");
+  const missing = (r: ReturnType<typeof result>) => r.missingCoverage.filter(item => item.area === "analysis coverage").map(item => item.key);
+  serialised = 0;
+  assert.deepEqual(missing(result(["moat_assessment", "unit_economics"], artifacts)), []);
+  assert.equal(serialised, 2, "serialisation stops once every module is covered");
+  assert.deepEqual(missing(result(["founder_story", "unit_economics"], artifacts)), ["analysis_founder_story"],
+    "draft artifacts do not count as coverage");
+});
+
+test("the artifacts route honours ?type= and sends each body once; the report sends report_document once", { skip }, async () => {
+  const { GET } = await import("../src/app/api/research-runs/[id]/artifacts/route");
+  const { getResearchRunReport } = await import("../src/lib/research/artifacts/read-model");
+  const sql = postgres(process.env.DATABASE_URL!);
+  const f = await fixture(sql, 3);
+  try {
+    const artifact = (type: string, content: unknown) => sql`INSERT INTO research_artifacts
+      (research_run_id, asset_id, artifact_type, scope_key, status, content_json, validation_result_json, created_by)
+      VALUES (${f.runId}, ${f.assetId}, ${type}, 'run', 'validated', ${sql.json(content as any)}, ${sql.json({ ok: true })}, 'test')`;
+    await artifact("research_plan", { research_question: "Plan question" });
+    await artifact("financial_statement_set", { tables: ["t".repeat(1000)] });
+    await artifact("report_document", { title: "Report", markdown: "m".repeat(1000) });
+    const response = await GET(new NextRequest("http://localhost/api/test?type=research_plan"), params(f.runId));
+    const { artifacts } = await response.json();
+    assert.deepEqual(artifacts.map((a: any) => a.type), ["research_plan"]);
+    assert.deepEqual(artifacts[0].content_json, { research_question: "Plan question" });
+    assert.equal("content" in artifacts[0], false);
+    assert.equal("validation_result" in artifacts[0], false);
+    const report = await getResearchRunReport(f.runId);
+    assert.ok(report);
+    assert.equal("artifacts_by_type" in report, false);
+    assert.equal(report.report_document?.title, "Report");
+    assert.deepEqual(report.artifacts.find(a => a.type === "report_document")?.content_json, {});
+    const serialised = JSON.stringify(report);
+    assert.equal(serialised.split("m".repeat(1000)).length - 1, 1, "the report markdown is sent once");
+    assert.equal(serialised.split("t".repeat(1000)).length - 1, 1, "an artifact body is sent once");
+  } finally { await f.cleanup(); await sql.end(); }
+});
