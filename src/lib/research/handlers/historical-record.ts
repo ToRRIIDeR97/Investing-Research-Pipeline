@@ -19,6 +19,34 @@ import { CURRENT_PIPELINE_VERSION } from "../version";
 import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 
+/** persistMetrics keeps at most this many model rows. */
+const MAX_NORMALIZED_OBSERVATIONS = 60;
+
+export const NORMALIZER_RULES = [
+  `Return at most ${MAX_NORMALIZED_OBSERVATIONS} normalized_observations, only for metrics absent from covered_metric_keys: filed statements and SEC companyfacts already supply those. Give uncovered_required_metrics first.`,
+  "Normalize their numbers, currencies, units, and dates into canonical observations.",
+  "Separate GAAP and non-GAAP measurements explicitly (use distinct metric_keys, e.g. net_revenue vs gross_revenue).",
+  "Identify the latest restatement version where applicable.",
+  "Each normalized observation must include period_end, source_id, and evidence_claim_id from its supporting evidence. Use ISO dates; reporting periods do not establish publication dates.",
+];
+
+/**
+ * Metric keys the filed statements and companyfacts already supply, and the plan's required metric
+ * families they leave uncovered. A family is covered by its own key, by a statement category
+ * (income_statement, balance_sheet, cash_flow), or, for share_count, by any share-count fact.
+ */
+export function normalizerCoverage(required: string[], observations: Record<string, any>[]) {
+  const covered = new Set<string>(), families = new Set<string>();
+  for (const observation of observations) {
+    if (observation.value_numeric === null || observation.value_numeric === undefined) continue;
+    covered.add(String(observation.metric_key));
+    const category = observation.metadata_json?.metric_category ?? observation.metric_category;
+    if (category) families.add(String(category));
+    if (observation.unit === "shares") families.add("share_count");
+  }
+  return { covered: [...covered].sort(), uncovered: required.filter((key) => !covered.has(key) && !families.has(key)) };
+}
+
 const NORMALIZER_OUTPUT_KEYS = [
   "normalized_observations",
   "definition_mappings",
@@ -53,32 +81,6 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       // 2. Load evidence claims
       const evidenceClaims = await loadAcceptedEvidencePacket(sql, v2Ctx);
 
-      // 3. Call metric-normalizer agent
-      const taskKey = "metric-normalizer:observations";
-
-      const packet = {
-        asset: v2Ctx,
-        evidence_claims: evidenceClaims,
-        required_modules: v2Ctx.requiredModules,
-      };
-      const promptFactory = (packet: Record<string, unknown>) => exactJsonPrompt({
-        agentName: "metric-normalizer",
-        requiredKeys: NORMALIZER_OUTPUT_KEYS,
-        packet,
-        extraRules: [
-          "Normalize and standardize all numbers, currencies, units, and dates into canonical observations.",
-          "Separate GAAP and non-GAAP measurements explicitly (use distinct metric_keys, e.g. net_revenue vs gross_revenue).",
-          "Identify the latest restatement version where applicable.",
-          "Each normalized observation must include period_end, source_id, and evidence_claim_id from its supporting evidence. Use ISO dates; reporting periods do not establish publication dates.",
-        ],
-      });
-
-      const output = await callResearchAgent<Record<string, unknown>>({
-        sql, ctx, stageKey: "historical_record", taskKey,
-        taskType: "metric_normalization", agentName: "metric-normalizer", modelTier: "cheap",
-        packet, promptFactory,
-      });
-
       // Find primary source to link (fallback)
       const primaryDoc = await sql`
         SELECT d.id, d.storage_path
@@ -90,9 +92,6 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       if (!primaryDoc[0]) throw new Error("Primary source context is missing");
       const primarySourceId = String(primaryDoc[0].id);
 
-      // 4. Persist observations in metric_observations table
-      await persistMetrics(sql, v2Ctx, primarySourceId, output);
-
       // The stored SEC file carries a full point-in-time series; model-extracted
       // claims alone usually cover only the latest quarter.
       const sourceRoot = resolve(process.cwd(), "storage", "sources");
@@ -100,6 +99,50 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       if (!sourcePath.startsWith(sourceRoot + sep)) throw new Error("Invalid primary source path");
       const secContext = JSON.parse(await readFile(sourcePath, "utf8"));
       const secFacts = secQuarterlyObservations(secContext.companyFacts, ctx.marketDataCutoffAt || ctx.cutoffAt);
+      const [planRow] = await sql`
+        SELECT content_json->'required_historical_metrics' AS metrics
+        FROM research_artifacts
+        WHERE research_run_id = ${ctx.runId} AND artifact_type = 'research_plan'
+        ORDER BY created_at DESC LIMIT 1
+      `;
+      const plannedMetrics = Array.isArray(planRow?.metrics) ? planRow.metrics : [];
+      const requiredMetricKeys = [...new Set(plannedMetrics
+        .filter((metric: any) => metric.required === true && typeof metric.metric_family === "string")
+        .map((metric: any) => metric.metric_family === "deposit_base" ? "deposits" : metric.metric_family))] as string[];
+      // Filed statements come first: incomplete statements stop the stage before any normalizer call.
+      const filings = await captureFilingStatements(sql, ctx, { writeModule: repairModuleWriter(sql, ctx) });
+      if(filings.failures.length||filings.coverage.some(c=>c.status==='incomplete')||filings.reconciliation.some(c=>c.status==='mismatch'))throw new Error('Primary financial statements are incomplete or do not reconcile. Inspect financial_statement_set coverage before continuing.'+
+        (filings.repair?` Repair specialist: ${filings.repair.status} after ${filings.repair.attempts} attempt(s)${filings.repair.last_errors.length?`; last errors: ${filings.repair.last_errors.slice(0,3).join('; ')}`:''}.`:''));
+      // 3. Call metric-normalizer agent, only for metrics the filings and companyfacts do not cover.
+      const coverage = normalizerCoverage(requiredMetricKeys, [...filings.observations, ...secFacts]);
+      const taskKey = "metric-normalizer:observations";
+
+      const packet = {
+        asset: v2Ctx,
+        evidence_claims: evidenceClaims,
+        required_modules: v2Ctx.requiredModules,
+        covered_metric_keys: coverage.covered,
+        uncovered_required_metrics: coverage.uncovered,
+      };
+      const promptFactory = (packet: Record<string, unknown>) => exactJsonPrompt({
+        agentName: "metric-normalizer",
+        requiredKeys: NORMALIZER_OUTPUT_KEYS,
+        packet,
+        extraRules: NORMALIZER_RULES,
+      });
+
+      // Every required metric already covered: the call would only restate filed numbers.
+      const output: Record<string, unknown> = requiredMetricKeys.length && !coverage.uncovered.length && secFacts.length
+        ? { ...Object.fromEntries(NORMALIZER_OUTPUT_KEYS.map((key) => [key, []])), skipped: "Filed statements and SEC companyfacts cover every required metric." }
+        : await callResearchAgent<Record<string, unknown>>({
+          sql, ctx, stageKey: "historical_record", taskKey,
+          taskType: "metric_normalization", agentName: "metric-normalizer", modelTier: "cheap",
+          packet, promptFactory,
+        });
+
+      // 4. Persist observations in metric_observations table
+      await persistMetrics(sql, v2Ctx, primarySourceId, output, MAX_NORMALIZED_OBSERVATIONS);
+
       if (secFacts.length) {
         const filingRows = await sql`
           SELECT d.id, d.metadata_json->>'accessionNumber' AS accession_number
@@ -159,19 +202,6 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
 
       // Find start/end periods
       let end = latestCompletedQuarter(ctx.marketDataCutoffAt || ctx.cutoffAt);
-      const [planRow] = await sql`
-        SELECT content_json->'required_historical_metrics' AS metrics
-        FROM research_artifacts
-        WHERE research_run_id = ${ctx.runId} AND artifact_type = 'research_plan'
-        ORDER BY created_at DESC LIMIT 1
-      `;
-      const plannedMetrics = Array.isArray(planRow?.metrics) ? planRow.metrics : [];
-      const requiredMetricKeys = [...new Set(plannedMetrics
-        .filter((metric: any) => metric.required === true && typeof metric.metric_family === "string")
-        .map((metric: any) => metric.metric_family === "deposit_base" ? "deposits" : metric.metric_family))] as string[];
-      const filings = await captureFilingStatements(sql, ctx, { writeModule: repairModuleWriter(sql, ctx) });
-      if(filings.failures.length||filings.coverage.some(c=>c.status==='incomplete')||filings.reconciliation.some(c=>c.status==='mismatch'))throw new Error('Primary financial statements are incomplete or do not reconcile. Inspect financial_statement_set coverage before continuing.'+
-        (filings.repair?` Repair specialist: ${filings.repair.status} after ${filings.repair.attempts} attempt(s)${filings.repair.last_errors.length?`; last errors: ${filings.repair.last_errors.slice(0,3).join('; ')}`:''}.`:''));
       // Period-end closes and market caps; missing prices never block the financial record.
       const marketHistory = await captureMarketHistory(sql, ctx, filings.observations)
         .catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));

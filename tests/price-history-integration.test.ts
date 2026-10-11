@@ -80,10 +80,25 @@ test("price history sync backfills, updates incrementally, cross-checks and resp
     const price = await valuationDatePrice(sql, assetId, "TESTPX", new Date("2026-07-02T15:00:00Z"));
     assert.deepEqual([price?.trading_date, price?.price, price?.verified], ["2026-07-01", Number(closeFor("2026-07-01").toFixed(4)), false]);
 
-    // Second run, live: only the new days are fetched, and Stooq verifies what it can.
+    // A gap inside the window (left by runs with other cutoffs) is fetched again, and Stooq,
+    // which failed an hour ago, is not asked again.
+    await sql`DELETE FROM market_price_bars WHERE instrument_id = ${first.instrument_id!} AND trading_date BETWEEN '2025-12-01T00:00:00Z' AND '2025-12-31T00:00:00Z'`;
+    const refill: string[] = [];
+    const repeat = await syncAssetPriceHistory(sql, { ...asset, cutoffAt: new Date("2026-07-02T15:00:00Z") },
+      { fetchImpl: mockFetch(refill, "csv"), now: new Date("2026-10-10T13:00:00Z"), years: 1 });
+    assert.equal(repeat.status, "synced", repeat.error);
+    assert.equal(repeat.fetched_from, "2025-07-02T15:00:00.000Z");
+    const [{ december }] = await sql`SELECT count(*)::int AS december FROM market_price_bars
+      WHERE instrument_id = ${first.instrument_id!} AND trading_date BETWEEN '2025-12-01T00:00:00Z' AND '2025-12-31T00:00:00Z'`;
+    assert.equal(december, 23);
+    assert.equal(refill.some((url) => url.includes("stooq.com")), false);
+    assert.equal(repeat.cross_check?.status, "unavailable");
+    assert.match(repeat.cross_check?.reason || "", /Not retried within a day/);
+
+    // Second run, live and a day later: only the new days are fetched, and Stooq verifies what it can.
     const later: string[] = [];
     const second = await syncAssetPriceHistory(sql, { ...asset, cutoffAt: null },
-      { fetchImpl: mockFetch(later, "csv"), now: new Date("2026-10-10T12:00:00Z"), years: 1 });
+      { fetchImpl: mockFetch(later, "csv"), now: new Date("2026-10-11T13:00:00Z"), years: 1 });
     assert.equal(second.status, "synced", second.error);
     const history = new URL(later.find((url) => url.includes("events=history"))!);
     assert.equal(new Date(Number(history.searchParams.get("period1")) * 1000).toISOString().slice(0, 10), "2026-06-27");

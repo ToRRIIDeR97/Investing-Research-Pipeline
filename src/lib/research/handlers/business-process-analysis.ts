@@ -56,9 +56,9 @@ export const businessProcessAnalysisHandler: StageHandler<Record<string, unknown
           "Cover each applicable required_process_node. For a node without supporting evidence, list it in business_process_map.source_gaps instead of inventing a process or citation.",
           "business_process_map must contain process_nodes, never process_steps.",
           "Each process node must cite only UUIDs copied exactly from evidence_claims in supporting_claim_ids.",
-          "If competitor market share is not disclosed, use 0 rather than inventing a percentage.",
+          "market_share is a disclosed share between 0 and 1; use null when it is not disclosed, never 0 or an invented percentage.",
           "For every competitor with market_share above 0.10, include a response scenario in which the company loses market share to that competitor; say 'loses share' in its threat_description and model the response and financial impact.",
-          "bottleneck_register.capacity_limit must be greater than 0. If no physical capacity is disclosed, use 1 with unit='qualitative constraint index' and explain the constraint in description.",
+          "bottleneck_register.capacity_limit is a disclosed capacity greater than 0 in unit; use null when no capacity is disclosed and explain the constraint in description.",
         ],
       });
 

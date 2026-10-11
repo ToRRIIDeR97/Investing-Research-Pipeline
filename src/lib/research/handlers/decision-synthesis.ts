@@ -13,6 +13,71 @@ import {
   DECISION_GAP_OWNER, decisionOutputFormat, finalizeDecisionOutput, stripCodeOwnedFields, type DecisionFinalizeInputs,
 } from "../decision/finalize";
 
+type Sql = ReturnType<typeof postgres>;
+
+/**
+ * Write the thesis, risks and catalysts tables from this attempt's output in one transaction.
+ * A retry or re-run replaces the earlier attempt's rows: the thesis is updated in place (thesis_drivers
+ * reference it), and risks and catalysts, which nothing references, are deleted and rewritten.
+ */
+export async function persistDecisionRows(sql: Sql, ctx: Pick<ResearchRunContext, "runId" | "assetId">, output: Record<string, any>) {
+  const thesis = output.investment_thesis as any || {};
+  const riskAssessment = output.risk_register as any || output.risk_assessment as any || {};
+  const risks = Array.isArray(riskAssessment.risks) ? riskAssessment.risks : [];
+  const catalystTimeline = output.catalyst_register as any || output.catalyst_timeline as any || {};
+  const catalysts = Array.isArray(catalystTimeline.catalysts) ? catalystTimeline.catalysts : [];
+  await sql.begin(async (tx) => {
+    const statement = thesis.thesis_statement || thesis.one_sentence_thesis || "Thesis statement";
+    const whyNow = thesis.why_now || thesis.causal_chain || null;
+    const marketMissing = thesis.market_missing || thesis.market_mispricing || null;
+    const updated = await tx`
+      UPDATE theses SET one_sentence_thesis = ${statement}, why_now = ${whyNow}, market_missing = ${marketMissing}, updated_at = NOW()
+      WHERE research_run_id = ${ctx.runId}
+    `;
+    if (!updated.count) await tx`
+      INSERT INTO theses (asset_id, research_run_id, one_sentence_thesis, why_now, market_missing, status, created_by)
+      VALUES (${ctx.assetId}, ${ctx.runId}, ${statement}, ${whyNow}, ${marketMissing}, 'draft', 'system-research-os')
+    `;
+    await tx`DELETE FROM risks WHERE research_run_id = ${ctx.runId}`;
+    for (const r of risks) {
+      // A name repeated within one answer is stored once.
+      await tx`
+        INSERT INTO risks (
+          asset_id, research_run_id, risk_name, risk_type, description, severity, probability,
+          evidence_claim_ids, mitigants_json
+        )
+        SELECT
+          ${ctx.assetId}, ${ctx.runId}, ${r.risk_name || "Risk factor"}, ${r.risk_type || "market"},
+          ${r.description || r.causal_mechanism || null}, ${String(r.severity || "medium")},
+          ${String(r.probability ?? "medium")},
+          ${tx.array(Array.isArray(r.supporting_claim_ids) ? r.supporting_claim_ids : [])}::uuid[],
+          ${tx.json(Array.isArray(r.mitigants) ? r.mitigants : [])}
+        WHERE NOT EXISTS (
+          SELECT 1 FROM risks
+          WHERE research_run_id = ${ctx.runId} AND risk_name = ${r.risk_name || "Risk factor"}
+        )
+      `;
+    }
+    await tx`DELETE FROM catalysts WHERE research_run_id = ${ctx.runId}`;
+    for (const cat of catalysts) {
+      await tx`
+        INSERT INTO catalysts (
+          asset_id, research_run_id, catalyst_name, catalyst_type, description, upside_downside, status
+        )
+        SELECT
+          ${ctx.assetId}, ${ctx.runId}, ${cat.catalyst_name || "Catalyst event"}, ${cat.catalyst_type || "earnings"},
+          ${cat.description || cat.event_mechanism || null},
+          ${cat.upside_downside || cat.direction || "neutral"}, 'open'
+        WHERE NOT EXISTS (
+          SELECT 1 FROM catalysts
+          WHERE research_run_id = ${ctx.runId}
+            AND catalyst_name = ${cat.catalyst_name || "Catalyst event"}
+        )
+      `;
+    }
+  });
+}
+
 export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "decision_synthesis",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
@@ -203,63 +268,7 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
         throw new Error(`Decision synthesis output is invalid: ${problems.map((p) => `${p.path}: ${p.message}`).join("; ")}`);
       }
 
-      // Persist to theses table
-      const thesis = output.investment_thesis as any || {};
-      await sql`
-        INSERT INTO theses (
-          asset_id, research_run_id, one_sentence_thesis, why_now, market_missing, status, created_by
-        )
-        SELECT
-          ${ctx.assetId}, ${ctx.runId}, ${thesis.thesis_statement || thesis.one_sentence_thesis || "Thesis statement"},
-          ${thesis.why_now || thesis.causal_chain || null},
-          ${thesis.market_missing || thesis.market_mispricing || null},
-          'draft', 'system-research-os'
-        WHERE NOT EXISTS (
-          SELECT 1 FROM theses WHERE research_run_id = ${ctx.runId}
-        )
-      `;
-
-      // Persist to risks table
-      const riskAssessment = output.risk_register as any || output.risk_assessment as any || {};
-      const risks = Array.isArray(riskAssessment.risks) ? riskAssessment.risks : [];
-      for (const r of risks) {
-        await sql`
-          INSERT INTO risks (
-            asset_id, research_run_id, risk_name, risk_type, description, severity, probability,
-            evidence_claim_ids, mitigants_json
-          )
-          SELECT
-            ${ctx.assetId}, ${ctx.runId}, ${r.risk_name || "Risk factor"}, ${r.risk_type || "market"},
-            ${r.description || r.causal_mechanism || null}, ${String(r.severity || "medium")},
-            ${String(r.probability ?? "medium")},
-            ${sql.array(Array.isArray(r.supporting_claim_ids) ? r.supporting_claim_ids : [])}::uuid[],
-            ${sql.json(Array.isArray(r.mitigants) ? r.mitigants : [])}
-          WHERE NOT EXISTS (
-            SELECT 1 FROM risks
-            WHERE research_run_id = ${ctx.runId} AND risk_name = ${r.risk_name || "Risk factor"}
-          )
-        `;
-      }
-
-      // Persist to catalysts table
-      const catalystTimeline = output.catalyst_register as any || output.catalyst_timeline as any || {};
-      const catalysts = Array.isArray(catalystTimeline.catalysts) ? catalystTimeline.catalysts : [];
-      for (const cat of catalysts) {
-        await sql`
-          INSERT INTO catalysts (
-            asset_id, research_run_id, catalyst_name, catalyst_type, description, upside_downside, status
-          )
-          SELECT
-            ${ctx.assetId}, ${ctx.runId}, ${cat.catalyst_name || "Catalyst event"}, ${cat.catalyst_type || "earnings"},
-            ${cat.description || cat.event_mechanism || null},
-            ${cat.upside_downside || cat.direction || "neutral"}, 'open'
-          WHERE NOT EXISTS (
-            SELECT 1 FROM catalysts
-            WHERE research_run_id = ${ctx.runId}
-              AND catalyst_name = ${cat.catalyst_name || "Catalyst event"}
-          )
-        `;
-      }
+      await persistDecisionRows(sql, ctx, output);
 
       // Persist generated sub-artifacts
       const db = drizzle(sql, { schema });

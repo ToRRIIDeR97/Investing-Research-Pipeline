@@ -333,15 +333,24 @@ async function crossCheckWithStooq(sql: Sql, instrumentId: string, symbol: strin
     return { verified: count("verified"), mismatch: count("mismatch"), unverified: count("unverified") };
   };
   if (!pending.length) return { provider: "stooq", status: "not_needed", ...(await counts()) };
+  // Stooq blocks for long stretches (HTTP 403 or a browser check); after a failure it is not asked again for a day.
+  const [recent] = await sql`
+    SELECT status, error_message FROM market_data_fetches
+    WHERE instrument_id = ${instrumentId} AND provider = 'stooq' AND request_type = 'cross_check'
+      AND created_at > ${new Date(now.getTime() - DAY).toISOString()}
+    ORDER BY created_at DESC LIMIT 1`;
+  if (recent?.status === "failed") {
+    return { provider: "stooq", status: "unavailable", reason: `Not retried within a day of the last failure: ${recent.error_message}`, ...(await counts()) };
+  }
   const first = new Date(pending[0].trading_date);
   const last = new Date(pending[pending.length - 1].trading_date);
   const started = Date.now();
   const stooq = await fetchStooqCloses(symbol, first, last, fetchImpl);
   await sql`
-    INSERT INTO market_data_fetches (instrument_id, provider, provider_symbol, request_type, request_params_json, status, error_message, latency_ms)
+    INSERT INTO market_data_fetches (instrument_id, provider, provider_symbol, request_type, request_params_json, status, error_message, latency_ms, created_at)
     VALUES (${instrumentId}, 'stooq', ${symbol}, 'cross_check',
       ${sql.json({ start: isoDay(first), end: isoDay(last), url: stooq.url, tolerance_pct: CROSS_CHECK_TOLERANCE_PCT })},
-      ${stooq.status === "ok" ? "success" : "failed"}, ${stooq.status === "ok" ? null : stooq.reason}, ${Date.now() - started})`;
+      ${stooq.status === "ok" ? "success" : "failed"}, ${stooq.status === "ok" ? null : stooq.reason}, ${Date.now() - started}, ${now.toISOString()})`;
   if (stooq.status !== "ok") return { provider: "stooq", status: "unavailable", reason: stooq.reason, url: stooq.url, ...(await counts()) };
   const splits = await loadSplits(sql, instrumentId);
   const today = isoDay(now);

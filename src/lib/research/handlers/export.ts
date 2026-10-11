@@ -143,7 +143,7 @@ export const exportHandler: StageHandler<Record<string, unknown>> = {
           case "operating_model":
             reportData.forecast = {
               ...(reportData.forecast || {}),
-              operating_model_summary: `Four-quarter forecast: revenue ${content.consolidated_revenue} and operating income ${content.consolidated_operating_income} ${content.units}. ${content.revenue_anchor || ""}`,
+              operating_model_summary: `Next-fiscal-year forecast: revenue ${content.consolidated_revenue} and operating income ${content.consolidated_operating_income} ${content.units}. ${content.revenue_anchor || ""}`,
             };
             break;
           case "top_down_bottom_up_reconciliation":

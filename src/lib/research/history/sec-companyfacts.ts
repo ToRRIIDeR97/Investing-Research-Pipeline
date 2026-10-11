@@ -7,6 +7,7 @@ type SecFact = {
   filed?: string;
   accn?: string;
   form?: string;
+  frame?: string;
 };
 
 export function latestSecInstantFact(
@@ -61,16 +62,52 @@ export const METRICS = [
   { key: "loans_held_for_sale", name: "Loans Held for Sale", category: "balance_sheet", concepts: ["LoansReceivableHeldForSaleAmount"], instant: true },
 ] as const;
 
-function quarterOf(date: string): { start: string; end: string; year: number; quarter: number } | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const quarter = Math.ceil(month / 3);
-  if (quarter < 1 || quarter > 4) return null;
-  const end = new Date(Date.UTC(year, quarter * 3, 0)).toISOString().slice(0, 10);
-  if (date !== end) return null;
-  return { year, quarter, start: `${year}-${String((quarter - 1) * 3 + 1).padStart(2, "0")}-01`, end };
+const DAY = 86_400_000;
+const days = (start: string, end: string) => (Date.parse(end) - Date.parse(start)) / DAY;
+const nextDay = (date: string) => new Date(Date.parse(date) + DAY).toISOString().slice(0, 10);
+
+/**
+ * A duration fact covers one fiscal quarter when it runs 80-100 days (13- and 14-week quarters
+ * included) or SEC framed it as a quarter. Fiscal quarters need not end on calendar quarter-ends.
+ */
+function isQuarterDuration(row: SecFact): boolean {
+  if (!row.start || !row.end) return false;
+  if (/^CY\d{4}Q[1-4]$/.test(row.frame || "")) return true;
+  const length = days(row.start, row.end);
+  return length >= 80 && length <= 100;
+}
+
+/** A balance at a fiscal period end: a date some duration fact ends on, a calendar quarter-end, or an instant SEC framed. */
+function isQuarterInstant(row: SecFact, periodEnds: Set<string>): boolean {
+  if (row.start || !row.end) return false;
+  if (/^CY\d{4}Q[1-4]I$/.test(row.frame || "") || periodEnds.has(row.end)) return true;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(row.end);
+  return !!match && Number(match[2]) % 3 === 0 && new Date(Date.UTC(Number(match[1]), Number(match[2]), 0)).toISOString().slice(0, 10) === row.end;
+}
+
+/**
+ * Character span [start, end) of one companyfacts fact object in the stored file text, searched from
+ * the concept's key. Facts are flat objects, so the braces around a matching accession number bound it.
+ */
+export function secFactSpan(
+  text: string, concept: string, fact: { value: number; start: string; end: string; accession_number: string }
+): { start: number; end: number } | null {
+  const from = text.indexOf(`"${concept}":`);
+  if (from < 0) return null;
+  const needle = JSON.stringify(fact.accession_number);
+  for (let at = text.indexOf(needle, from); at >= 0; at = text.indexOf(needle, at + needle.length)) {
+    const open = text.lastIndexOf("{", at), close = text.indexOf("}", at);
+    if (open < from || close < 0) continue;
+    try {
+      const row = JSON.parse(text.slice(open, close + 1)) as SecFact;
+      if (row.accn === fact.accession_number && row.val === fact.value && row.start === fact.start && row.end === fact.end) {
+        return { start: open, end: close + 1 };
+      }
+    } catch {
+      // Not a flat fact object; keep looking.
+    }
+  }
+  return null;
 }
 
 export function latestSecQuarterlyFact(
@@ -79,8 +116,7 @@ export function latestSecQuarterlyFact(
   const cutoffDate = cutoff.toISOString().slice(0, 10);
   const rows = ((companyFacts as any)?.facts?.[taxonomy]?.[concept]?.units?.[unit] || []) as SecFact[];
   const fact = rows.filter((row) => {
-    const quarter = row.end && quarterOf(row.end);
-    return !!quarter && row.start === quarter.start &&
+    return isQuarterDuration(row) &&
       (row.form === "10-K" || row.form === "10-Q") &&
       typeof row.val === "number" && Number.isFinite(row.val) &&
       !!row.filed && !!row.accn && row.end! <= cutoffDate && row.filed <= cutoffDate;
@@ -95,39 +131,58 @@ function latest(rows: SecFact[]): SecFact | null {
 export function secQuarterlyObservations(companyFacts: unknown, cutoff: Date): SecQuarterlyObservation[] {
   const facts = (companyFacts as any)?.facts?.["us-gaap"] || {};
   const cutoffDate = cutoff.toISOString().slice(0, 10);
+  const usable = (row: SecFact) =>
+    (row.form === "10-K" || row.form === "10-Q") &&
+    typeof row.val === "number" && Number.isFinite(row.val) &&
+    !!row.end && !!row.filed && !!row.accn &&
+    row.end <= cutoffDate && row.filed <= cutoffDate;
+  // Fiscal period ends are where some metric reports a quarter or a year; balances at those dates are quarter-ends.
+  const periodEnds = new Set<string>();
+  for (const metric of METRICS) {
+    if (metric.instant) continue;
+    for (const concept of metric.concepts) {
+      for (const row of (facts[concept]?.units?.USD || []) as SecFact[]) {
+        if (row.start && row.end && (isQuarterDuration(row) || (days(row.start, row.end) >= 350 && days(row.start, row.end) <= 380))) periodEnds.add(row.end);
+      }
+    }
+  }
   const observations: SecQuarterlyObservation[] = [];
   for (const metric of METRICS) {
     const isBankContractRevenue = metric.key === "revenue" && !!facts.RevenuesNetOfInterestExpense;
     // A fallback concept is used only when the preferred concept is absent.
     const rows: SecFact[] = metric.concepts.map((concept) => facts[concept]?.units?.USD as SecFact[] | undefined)
       .find((items) => Array.isArray(items) && items.length > 0) || [];
-    const valid = rows.filter((row) =>
-      (row.form === "10-K" || row.form === "10-Q") &&
-      typeof row.val === "number" && Number.isFinite(row.val) &&
-      !!row.end && !!row.filed && !!row.accn &&
-      row.end <= cutoffDate && row.filed <= cutoffDate && quarterOf(row.end) !== null
-    );
-    const periods = [...new Set(valid.map((row) => row.end!))].sort().slice(-20);
-    for (const end of periods) {
-      const quarter = quarterOf(end)!;
+    const valid = rows.filter(usable);
+    const quarters = new Map<string, { fact: SecFact; value: number; start: string | null; formula?: string }>();
+    for (const end of new Set(valid.map((row) => row.end!))) {
       const matching = valid.filter((row) => row.end === end);
-      const direct = latest(matching.filter((row) => metric.instant ? !row.start : row.start === quarter.start));
-      let fact = direct;
-      let value = direct?.val;
-      let formula: string | undefined;
-      if (!metric.instant && !fact) {
-        const ytd = latest(matching.filter((row) => row.start === `${quarter.year}-01-01`));
-        const priorEnd = new Date(Date.UTC(quarter.year, (quarter.quarter - 1) * 3, 0)).toISOString().slice(0, 10);
-        const priorYtd = quarter.quarter > 1
-          ? latest(valid.filter((row) => row.start === `${quarter.year}-01-01` && row.end === priorEnd && row.filed! <= (ytd?.filed || "")))
-          : null;
-        if (ytd && priorYtd) {
-          fact = ytd;
-          value = ytd.val! - priorYtd.val!;
-          formula = `Quarter = year-to-date ${ytd.accn} less prior year-to-date ${priorYtd.accn}`;
-        }
+      if (metric.instant) {
+        const fact = latest(matching.filter((row) => isQuarterInstant(row, periodEnds)));
+        if (fact) quarters.set(end, { fact, value: fact.val!, start: null });
+        continue;
       }
-      if (!fact || value === undefined) continue;
+      const direct = latest(matching.filter(isQuarterDuration));
+      if (direct) {
+        quarters.set(end, { fact: direct, value: direct.val!, start: direct.start! });
+        continue;
+      }
+      // A quarter not reported on its own is a year-to-date fact less the year-to-date fact with the
+      // same start that ends one quarter earlier (a fiscal year need not start on 1 January).
+      const ytds = matching.filter((row) => row.start && days(row.start, end) > 100)
+        .sort((a, b) => b.filed!.localeCompare(a.filed!) || b.accn!.localeCompare(a.accn!));
+      for (const ytd of ytds) {
+        const prior = latest(valid.filter((row) => row.start === ytd.start && row.end! < end
+          && days(row.end!, end) >= 80 && days(row.end!, end) <= 100 && row.filed! <= ytd.filed!));
+        if (!prior) continue;
+        quarters.set(end, {
+          fact: ytd, value: ytd.val! - prior.val!, start: nextDay(prior.end!),
+          formula: `Quarter = year-to-date ${ytd.accn} less prior year-to-date ${prior.accn}`,
+        });
+        break;
+      }
+    }
+    for (const end of [...quarters.keys()].sort().slice(-20)) {
+      const { fact, value, start, formula } = quarters.get(end)!;
       observations.push({
         metric_key: isBankContractRevenue ? "contract_revenue" : metric.key,
         display_name: isBankContractRevenue ? "Revenue from Customer Contracts" : metric.name,
@@ -136,7 +191,7 @@ export function secQuarterlyObservations(companyFacts: unknown, cutoff: Date): S
         value_numeric: value,
         unit: "USD",
         currency: "USD",
-        period_start: metric.instant ? null : quarter.start,
+        period_start: start,
         period_end: end,
         as_of_date: end,
         available_at: `${fact.filed}T00:00:00Z`,

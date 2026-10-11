@@ -68,6 +68,12 @@ export function parseStructuredOutput(text: string, requiredKeys: string[] = [])
   if (parsedObjects.length === 1 && requiredKeys.length === 0) {
     return parsedObjects[0];
   }
+  // A single-artifact answer returned without its wrapper key is that artifact; wrap it instead of repairing.
+  const unwrapped = parsedObjects.length === 1 ? parsedObjects[0] as Record<string, unknown> : null;
+  if (requiredKeys.length === 1 && unwrapped && typeof unwrapped === "object" && !Array.isArray(unwrapped)
+    && unwrapped.artifact_type === requiredKeys[0]) {
+    return { [requiredKeys[0]]: unwrapped };
+  }
   if (parsedObjects.length > 1 && requiredKeys.length === 0) {
     throw new Error("Response contains multiple ambiguous JSON objects");
   }

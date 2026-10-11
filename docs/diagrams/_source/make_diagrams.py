@@ -195,9 +195,9 @@ s.initial(cx, 50)
 s.line([(cx, 57), (cx, 70)])
 s.box(100, 70, 400, 96, "Load inputs (code)", [
     "operating_scenario_set yearly_drivers · operating_model",
-    "financial_inputs (+ pretax_income, income_tax_expense)",
-    "historyRatios · equityBridge · diluted shares · price",
-    "latestRiskFreeRate (the run's FRED DGS10 document)"], "lib", title_size=12)
+    "financial_inputs · historyRatios · equityBridge · diluted shares",
+    "latestRiskFreeRate (the run's FRED DGS10 document)",
+    "price: stored close; historical run without one → withheld"], "lib", title_size=12)
 s.line([(cx, 166), (cx, 186)])
 s.diamond(cx, 200)
 s.text(cx - 20, 188, "bank archetype or financials profile?", 11, fill="#5a4700", italic=True, anchor="end")
@@ -308,6 +308,7 @@ s.line([(620, 614), (620, 628), (345, 628), (345, 577)], "resume", lx=480, ly=62
 s.text(760, 625, "cancelRun: open stages → cancelled", 11, fill="#555")
 s.text(760, 640, "resume: failed (or left running) → running; later → pending", 11, fill="#555")
 s.text(290, 700, "resume: an open gate, or human_review, stays waiting_for_human", 11, fill="#555")
+s.text(290, 715, "backtest withheld: backtest_review pending → skipped", 11, fill="#555")
 s.text(760, 655, "skip_and_continue: failed, run continues", 11, fill="#555")
 s.text(760, 670, "max_retries per stage: 0–3 (stages.ts)", 11, fill="#555")
 s.text(760, 685, "owner requires_rerun: stage + dependents → pending", 11, fill="#555")

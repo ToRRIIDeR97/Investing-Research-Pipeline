@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateProductOutline, type ReportOutline } from "../src/lib/research/reporting/contracts";
+import { normalizeOutlineStructure, validateProductOutline, type ReportOutline } from "../src/lib/research/reporting/contracts";
 
 const outline = (sections: Array<{ title: string; coverage: string[] }>) => ({ sections }) as unknown as ReportOutline;
 
@@ -39,4 +39,30 @@ test("web-fetched SEC filings are dated from their EDGAR filing index", async ()
     "https://www.sec.gov/Archives/edgar/data/1326801/000162828026050705/0001628280-26-050705-index.htm");
   assert.equal(secFilingIndexUrl("https://investor.atmeta.com/news"), null);
   assert.equal(parseSecFilingDate('<div class="infoHead">Filing Date</div>\n  <div class="info">2026-07-30</div>'), "2026-07-30T00:00:00.000Z");
+});
+
+test("code repairs the chapter labels that failed the outline in runs 02c8d48b and 81e42ee2", () => {
+  const plan = (sections: Array<{ id: string; coverage: string[] }>, coverage: Array<{ key: string; section_ids: string[] }>) =>
+    ({ sections: sections.map(s => ({ ...s, title: s.id, purpose: s.id, artifact_ids: [] })),
+       coverage: coverage.map(c => ({ ...c, status: "qualified", rationale: "r" })), questions: [] }) as unknown as ReportOutline;
+  const fixed = normalizeOutlineStructure(plan([
+    { id: "summary", coverage: ["conclusion"] },
+    { id: "history", coverage: ["history", "evidence"] },
+    { id: "scenarios", coverage: ["forecasts", "valuation"] },
+    { id: "valuation", coverage: ["valuation", "downside"] },
+  ], [{ key: "business", section_ids: [] }, { key: "valuation", section_ids: ["scenarios", "valuation"] },
+      { key: "forecasts", section_ids: ["scenarios"] }, { key: "downside", section_ids: ["valuation"] }]));
+  assert.doesNotThrow(() => validateProductOutline(fixed));
+  const by = (id: string) => fixed.sections.find(s => s.id === id)!.coverage;
+  assert.deepEqual(by("history"), ["history", "evidence", "business"]);
+  // The section already covering most of forecasts and downside keeps valuation; ties go to the earlier section.
+  assert.deepEqual(by("scenarios"), ["forecasts", "valuation", "downside"]);
+  assert.deepEqual(by("valuation"), ["downside"]);
+  const check = (key: string) => fixed.coverage.find(c => c.key === key)!.section_ids;
+  assert.deepEqual(check("valuation"), ["scenarios"]);
+  assert.deepEqual(check("business"), ["history"]);
+  assert.deepEqual(check("downside"), ["valuation", "scenarios"]);
+  // Valuation only in the opening summary needs real restructuring, so it is left for the model.
+  const summaryOnly = normalizeOutlineStructure(plan([{ id: "summary", coverage: ["conclusion", "valuation"] }], [{ key: "valuation", section_ids: ["summary"] }]));
+  assert.throws(() => validateProductOutline(summaryOnly));
 });

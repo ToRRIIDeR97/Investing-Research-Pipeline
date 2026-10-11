@@ -50,6 +50,30 @@ export type ReportOutline = z.infer<typeof Outline>;
 export type ResearchQuestion = z.infer<typeof Question>;
 export type CoverageCheck = z.infer<typeof CoverageResult>;
 
+/**
+ * Code repairs the two chapter rules where a coverage label is enough (seen failing in runs 02c8d48b and 81e42ee2):
+ * a history/evidence-only section also covers business, and the one valuation section after the opening summary
+ * also covers forecasts and downside. Other sections lose the valuation key, and the coverage map follows.
+ * An outline it can't fix this way, such as valuation only in the summary, is left for validation.
+ */
+export function normalizeOutlineStructure(outline: ReportOutline): ReportOutline {
+  const sections = outline.sections.map(s => ({ ...s, coverage: [...s.coverage] }));
+  const coverage = outline.coverage.map(c => ({ ...c, section_ids: [...c.section_ids] }));
+  const link = (key: string, id: string) => { const check = coverage.find(c => c.key === key); if (check && !check.section_ids.includes(id)) check.section_ids.push(id); };
+  for (const s of sections) if (s.coverage.length && s.coverage.every((k): boolean => k === 'history' || k === 'evidence')) { s.coverage.push('business'); link('business', s.id); }
+  const listed = sections.filter(s => s.coverage.includes('valuation'));
+  const candidates = listed.filter(s => s !== sections[0]);
+  const score = (s: { coverage: string[] }) => ['forecasts', 'downside'].filter(k => s.coverage.includes(k)).length;
+  const keep = candidates.reduce<typeof candidates[number] | undefined>((best, s) => !best || score(s) > score(best) ? s : best, undefined);
+  if (keep && listed.every(s => s === keep || s.coverage.length > 1)) {
+    for (const s of listed) if (s !== keep) s.coverage = s.coverage.filter(k => k !== 'valuation');
+    for (const key of ['forecasts', 'downside']) if (!keep.coverage.includes(key)) { keep.coverage.push(key); link(key, keep.id); }
+    const check = coverage.find(c => c.key === 'valuation');
+    if (check) check.section_ids = [keep.id];
+  }
+  return { ...outline, sections, coverage };
+}
+
 /** Reports every violation at once and names the sections, so one repair pass can fix them all. */
 export function validateProductOutline(outline:ReportOutline) {
   const errors:string[]=[];

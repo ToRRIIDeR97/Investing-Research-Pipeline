@@ -29,12 +29,19 @@ export function validateArtifactCitationIds(
 /**
  * Remove citation IDs that are not in the accepted packet, in place, and return the removed IDs.
  * Used where an invented or stale citation should be dropped and reported rather than fail a stage.
+ * With `pruneUncited`, an array entry whose supporting citations were all dropped is removed too,
+ * since an entry with no evidence would fail its contract.
  */
-export function dropInvalidCitationIds(artifact: unknown, allowedIds: Iterable<string>): string[] {
+export function dropInvalidCitationIds(artifact: unknown, allowedIds: Iterable<string>, options: { pruneUncited?: boolean } = {}): string[] {
   const allowed = new Set(allowedIds);
   const dropped = new Set<string>();
+  const uncited = new WeakSet<object>();
   const visit = (value: unknown): void => {
-    if (Array.isArray(value)) { value.forEach(visit); return; }
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      if (options.pruneUncited) value.splice(0, value.length, ...value.filter((item) => !(item && typeof item === "object" && uncited.has(item))));
+      return;
+    }
     if (!value || typeof value !== "object") return;
     const record = value as Record<string, unknown>;
     for (const [key, child] of Object.entries(record)) {
@@ -45,6 +52,8 @@ export function dropInvalidCitationIds(artifact: unknown, allowedIds: Iterable<s
           if (!keep) dropped.add(item.trim());
           return keep;
         });
+        // Contradicting citations are optional; losing all supporting ones leaves the entry unsupported.
+        if (key !== "contradicting_claim_ids" && child.length && !(record[key] as unknown[]).length) uncited.add(record);
       } else {
         visit(child);
       }

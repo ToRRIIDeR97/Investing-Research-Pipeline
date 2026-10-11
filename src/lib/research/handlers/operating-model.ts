@@ -1,6 +1,8 @@
 import type { ResearchRunContext, StageHandler } from "../run-context";
 import { callResearchAgent, exactJsonPrompt } from "../run-context";
 import { OPERATING_MODEL_CONTRACT } from "../stage-contracts";
+import { forecastHorizon, historyRatios, operatingModelFirstYear } from "../valuation/engine";
+import { valuationFinancialInputs } from "../valuation/financial-inputs";
 import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -20,6 +22,39 @@ export function recentByMetric(observations: Array<Record<string, any>>, limit: 
       period: row.fiscal_quarter == null ? `FY${row.fiscal_year}` : `${row.fiscal_year}Q${row.fiscal_quarter}`,
       value: row.value_numeric, unit: row.unit, source_document_id: row.source_document_id,
     }))]));
+}
+
+/**
+ * Code-owned reconciliation fields: a non-positive TAM or customer budget is a missing bound (null), and
+ * bottom_up_forecast_total is the segment revenue sum whenever every segment has revenue. The TAM check
+ * runs on the result, both on the model's answer and on the stored artifact.
+ */
+export function normalizeReconciliation(output: Record<string, any>): Record<string, any> {
+  const source = output?.top_down_bottom_up_reconciliation;
+  if (!source || typeof source !== "object") return output;
+  const reconciliation = { ...source };
+  if (Number(reconciliation.tam_limit) <= 0 || Number(reconciliation.customer_budget_limit) <= 0) {
+    if (Number(reconciliation.tam_limit) <= 0) reconciliation.tam_limit = null;
+    if (Number(reconciliation.customer_budget_limit) <= 0) reconciliation.customer_budget_limit = null;
+    reconciliation.top_down_forecast_total = null;
+    reconciliation.reconciliation_status = "blocked_source_gap";
+  }
+  const segments = output?.operating_model?.segments;
+  if (Array.isArray(segments) && segments.length && segments.every((segment: any) => typeof segment?.forecast_revenue === "number")) {
+    reconciliation.bottom_up_forecast_total = segments.reduce((sum: number, segment: any) => sum + segment.forecast_revenue, 0);
+  }
+  return { ...output, top_down_bottom_up_reconciliation: reconciliation };
+}
+
+/**
+ * The operating model forecasts the fiscal year after the latest reported one; scenarios and valuation take their
+ * first forecast year from it. A consolidated revenue within 0.5% of the reported base year restates that year.
+ */
+export function forecastPeriodErrors(output: Record<string, any>, period: { fiscal_year: number; base_fiscal_year: number; base_revenue_millions: number | null }) {
+  if (!(Number(period.base_revenue_millions) > 0)) return [];
+  const first = operatingModelFirstYear(output?.operating_model, period.base_revenue_millions);
+  if (!first || Math.abs(first.revenue / period.base_revenue_millions! - 1) >= 0.005) return [];
+  return [{ path: "operating_model.consolidated_revenue", message: `consolidated_revenue repeats reported FY${period.base_fiscal_year} revenue; it must be the FY${period.fiscal_year} forecast.` }];
 }
 
 export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
@@ -42,6 +77,18 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
       const segmentRows = history.filter((observation) => observation.segment && observation.metadata_json?.statement === "segment");
       const reportedSegmentHistory = Object.fromEntries([...new Set(segmentRows.map((row) => String(row.segment)))].map((segment) =>
         [segment, recentByMetric(segmentRows.filter((row) => row.segment === segment), 8)]));
+      // Code fixes the forecast period: the year after the latest captured fiscal year, as operating scenarios use.
+      const [statementSet] = await sql`
+        SELECT content_json->'observations' AS observations FROM research_artifacts
+        WHERE research_run_id = ${ctx.runId} AND artifact_type = 'financial_statement_set' AND status IN ('validated', 'accepted')
+        ORDER BY created_at DESC LIMIT 1
+      `;
+      const cutoff = ctx.marketDataCutoffAt || ctx.cutoffAt;
+      const ratios = historyRatios(valuationFinancialInputs({
+        statementObservations: Array.isArray(statementSet?.observations) ? statementSet.observations : [], cutoff,
+      }));
+      const baseYear = ratios.base_year?.fiscal_year ?? cutoff.getUTCFullYear() - 1;
+      const forecastPeriod = { fiscal_year: forecastHorizon(baseYear)[0], base_fiscal_year: baseYear, base_revenue_millions: ratios.base_year?.revenue ?? null };
       const packet = {
         asset: {
           runId: ctx.runId,
@@ -52,6 +99,7 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
         },
         required_modules: ["operating_model_structure", "driver_tree_specification", "driver_tree", "top_down_bottom_up_reconciliation", "reinvestment_model"],
         required_scenario_drivers: ctx.composedProfile?.required_scenario_drivers || [],
+        forecast_period: forecastPeriod,
         recent_reported_history: recentHistory,
         reported_segment_history: reportedSegmentHistory,
         historical_diagnoses: (upstream.historical_diagnosis?.diagnoses || []).map((item: any) => ({
@@ -73,6 +121,7 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
           "Construct a driver-based forecast tree structure, mapping historical inputs to future drivers.",
           "Follow output_schema exactly, including every nested required field and primitive type.",
           "Cover each reportable segment and reconcile their forecast revenue and operating income to consolidated totals.",
+          "Every forecast figure (consolidated_revenue, consolidated_operating_income and each segment's forecast) is for fiscal year forecast_period.fiscal_year, the year after the latest reported year. Never restate a reported year's figures as the forecast.",
           "Use reported_segment_history (XBRL segment members such as meta:FamilyOfAppsMember) as the anchor for segment revenue and operating income; values are in the reported unit.",
           "Use recent_reported_history as the quantitative anchor. Label units and forecast horizon in optional explanatory fields.",
           "Set bottom_up_forecast_total to the sum of segment forecast revenue. Independently derive top_down_forecast_total from sourced market and customer constraints when available.",
@@ -85,15 +134,13 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
         sql, ctx, stageKey: "operating_model", taskKey,
         taskType: "operating_model", agentName: "asset-analyst", modelTier: "mid",
         packet, promptFactory,
-        outputFormat: OPERATING_MODEL_CONTRACT,
+        outputFormat: { ...OPERATING_MODEL_CONTRACT, validate: (value: unknown) => {
+          const normalized = normalizeReconciliation(value as Record<string, any>);
+          const errors = OPERATING_MODEL_CONTRACT.validate!(normalized);
+          return errors.length ? errors : forecastPeriodErrors(normalized, forecastPeriod);
+        } },
       });
-      const reconciliation = output.top_down_bottom_up_reconciliation;
-      if (reconciliation && (Number(reconciliation.tam_limit) <= 0 || Number(reconciliation.customer_budget_limit) <= 0)) {
-        if (Number(reconciliation.tam_limit) <= 0) reconciliation.tam_limit = null;
-        if (Number(reconciliation.customer_budget_limit) <= 0) reconciliation.customer_budget_limit = null;
-        reconciliation.top_down_forecast_total = null;
-        reconciliation.reconciliation_status = "blocked_source_gap";
-      }
+      output.top_down_bottom_up_reconciliation = normalizeReconciliation(output).top_down_bottom_up_reconciliation;
 
       // Persist generated sub-artifacts
       const db = drizzle(sql, { schema });

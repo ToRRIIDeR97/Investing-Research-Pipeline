@@ -2,9 +2,10 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { schema } from "@/db";
 import {
-  INDICATOR_CATALOG,
   MINIMUM_INDICATOR_COUNT,
+  indicatorCatalog,
 } from "@/lib/backtesting/framework";
+import { frameworkBenchmarks } from "@/lib/backtesting/framework-runner";
 import { createArtifactRepository } from "../artifacts/repository";
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
 import { makeValidationResult } from "../run-context";
@@ -15,7 +16,9 @@ export const indicatorDesignHandler: StageHandler<Record<string, unknown>> = {
     if (!ctx.profileId) throw new Error("Indicator design requires an assigned research profile.");
     const sql = postgres(process.env.DATABASE_URL!);
     try {
-      for (const definition of INDICATOR_CATALOG) {
+      const [asset] = await sql`SELECT sector FROM assets WHERE id = ${ctx.assetId}`;
+      const catalog = indicatorCatalog(frameworkBenchmarks(asset?.sector, ctx.archetypeKeys.includes("bank")).sectorBenchmark);
+      for (const definition of catalog) {
         await sql`
           INSERT INTO indicator_definitions (
             research_run_id, profile_id, indicator_key, name, family, hypothesis,
@@ -55,8 +58,8 @@ export const indicatorDesignHandler: StageHandler<Record<string, unknown>> = {
         status: "validated",
         content_json: {
           minimum_required: MINIMUM_INDICATOR_COUNT,
-          count: INDICATOR_CATALOG.length,
-          indicators: INDICATOR_CATALOG,
+          count: catalog.length,
+          indicators: catalog,
           rule: "Every indicator is tied to a named hypothesis and discloses source, lookahead risk, backtestability, expected use, and failure conditions.",
         },
         schema_version: "1.0.0",
@@ -65,7 +68,7 @@ export const indicatorDesignHandler: StageHandler<Record<string, unknown>> = {
         created_by: "system-research-os",
         idempotency_key: `${ctx.runId}-indicator-catalog`,
       });
-      return { indicator_count: INDICATOR_CATALOG.length };
+      return { indicator_count: catalog.length };
     } finally {
       await sql.end();
     }

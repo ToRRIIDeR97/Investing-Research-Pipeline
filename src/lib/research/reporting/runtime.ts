@@ -1,6 +1,6 @@
 import { callResearchAgent, exactJsonPrompt, type ResearchRunContext, type Sql } from "../run-context";
 import { AI_REVIEWER_CONTRACT } from "../stage-contracts";
-import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, RESEARCH_DOCTRINE, validateProductOutline, type ReportOutline, type ReportSection } from "./contracts";
+import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, RESEARCH_DOCTRINE, normalizeOutlineStructure, validateProductOutline, type ReportOutline, type ReportSection } from "./contracts";
 import { composeReviewedReport, type ReportReview, REQUIRED_COVERAGE } from "./compose";
 import { loadReportInputs, saveReportArtifact } from "./store";
 import { createReport, reviewDocument } from "./report";
@@ -50,6 +50,7 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
   const teamRequests = await getTeamRequests(sql, ctx.runId);
   const { artifacts, evidence } = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
   const usable = <T>(value: T) => keepUsableReferences(value, artifacts, evidence);
+  const usableOutline = (value: { outline: ReportOutline }) => { const kept = usable(value); return { ...kept, outline: normalizeOutlineStructure(kept.outline) }; };
   const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}`;
   const common = { asset: { assetName: ctx.assetName, symbol: ctx.symbol, profile: ctx.profileKey },
     research_question: ctx.researchQuestion, source_cutoff: ctx.cutoffAt.toISOString(),
@@ -60,14 +61,14 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
   return composeReviewedReport(reportInput, {
     async plan(feedback) {
       const packet = { ...common, feedback, output_contract: "report_outline", output_schema: OUTLINE_CONTRACT.schema };
-      const output = usable(await callResearchAgent<{ outline: ReportOutline }>({ sql, ctx, stageKey: "ai_reviewer",
+      const output = usableOutline(await callResearchAgent<{ outline: ReportOutline }>({ sql, ctx, stageKey: "ai_reviewer",
         taskKey: "report:outline", taskType: "report_outline", agentName: "asset-analyst", modelTier: "mid", packet,
         outputFormat: checkedContract(OUTLINE_CONTRACT, ({ outline }: { outline: ReportOutline }) => {
           validateProductOutline(outline);
           createReport({ ...reportInput, ...outline, sections: outline.sections.map(section => ({ ...section,
             paragraphs: [{ kind: "analysis", text: section.purpose, evidence_ids: [], artifact_ids: section.artifact_ids }],
             counterevidence: "Outline validation", implication: "Outline validation", gaps: [], tables: [] })) });
-        }, usable), promptFactory: p => exactJsonPrompt({ agentName: "asset-analyst", requiredKeys: ["outline"], packet: p,
+        }, usableOutline), promptFactory: p => exactJsonPrompt({ agentName: "asset-analyst", requiredKeys: ["outline"], packet: p,
           extraRules: [...RESEARCH_DOCTRINE,
             "Design a report outline around the material investment questions. Use company-specific section titles. Cover every coverage_requirements key exactly once in coverage, mapping it to one or more sections. First section should summarize the eventual judgment, and its coverage is conclusion only.",
             "Section coverage rules: every section whose coverage includes history or evidence must also include at least one other key (for example business, moat, management or constraints); a section covering only history and/or evidence is rejected. Exactly one section may include valuation, and that section must also include forecasts and downside; the opening summary section must not list valuation. Backtest and market-timing evidence belongs in a section that lists monitoring, because it tests timing indicators, not the fundamental thesis.",
