@@ -3,7 +3,7 @@ import { advanceStage, startRun, startReadyStages, failRun, getRunProgress } fro
 import { loadRunContext } from "./run-context";
 import { STAGE_HANDLERS } from "./handlers";
 import { CURRENT_PIPELINE_VERSION } from "./version";
-import { prepareResearchTeam, processResearchRequests, ResearchRequestsPending } from "./team";
+import { prepareResearchTeam, processResearchRequests, ResearchRequestsPending, teamBriefScheduler } from "./team";
 import { processSourceRequests } from "./sources/collector";
 import { SourceRequestsPending } from "./sources/source-requests";
 
@@ -35,6 +35,7 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
     await sql`UPDATE research_tasks SET status = 'failed', failure_reason = 'Interrupted worker attempt',
       input_json = input_json - 'budget_reservation', updated_at = NOW()
       WHERE research_run_id = ${runId} AND status = 'running'`;
+    const briefs = teamBriefScheduler(ctx => prepareResearchTeam(sql, ctx));
     try {
       if (run.status === "pending") await startRun(runId);
       for (let iteration = 0; iteration < 192; iteration += 1) {
@@ -43,7 +44,7 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
         const stages = await startReadyStages(runId);
         if (!stages.length) break;
         const context = await loadRunContext(sql, runId);
-        await prepareResearchTeam(sql, context);
+        await briefs.before(context, stages);
         // Specialists paused on document requests rerun once the collector has served them.
         if (await processSourceRequests(sql, context)) continue;
         if (await processResearchRequests(sql, context)) continue;
@@ -75,6 +76,7 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
       await failRun(runId, reason, "needs_more_work");
       notes.push(reason);
     }
+    await briefs.drain();
     const [result] = await sql`
       SELECT rr.status, rr.failure_reason,
         count(rs.id) FILTER (WHERE rs.status = 'completed') AS completed,

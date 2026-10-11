@@ -91,6 +91,38 @@ export async function prepareResearchTeam(sql: Sql, ctx: ResearchRunContext) {
   if (failed?.status === "rejected") throw failed.reason;
 }
 
+/**
+ * Only briefed roles read the briefs, so ingestion and evidence extraction (data-owned) run while they
+ * are written; the first stage whose owner is briefed waits, and a brief failure surfaces then or at
+ * the next pass. drain() waits for brief calls still in flight, so the run lock outlives them.
+ */
+export function teamBriefScheduler(prepare: (ctx: ResearchRunContext) => Promise<void>) {
+  type Pending = { settled: boolean; failure?: { error: unknown }; done: Promise<void> };
+  let pending: Pending | null = null;
+  const collect = async () => {
+    const entry = pending;
+    pending = null;
+    await entry?.done;
+    if (entry?.failure) throw entry.failure.error;
+  };
+  return {
+    async before(ctx: ResearchRunContext, stages: string[]) {
+      if (pending?.settled) await collect();
+      if (!pending) {
+        const entry: Pending = { settled: false, done: Promise.resolve() };
+        entry.done = prepare(ctx).then(() => undefined, (error: unknown) => { entry.failure = { error }; })
+          .finally(() => { entry.settled = true; });
+        pending = entry;
+      }
+      if (stages.some(key => { const role = STAGE_OWNERS[key]; return role !== undefined && BRIEF_ROLES.includes(role); })) await collect();
+    },
+    async drain() {
+      await pending?.done;
+      pending = null;
+    },
+  };
+}
+
 /** The next round: at most two, repeated questions dropped, per-run flags carried. Null when there is nothing new. */
 export function nextRequestBatch(previous: RequestBatch | null, proposed: Request[]): RequestBatch | null {
   if ((previous?.round || 0) >= 2) return null;

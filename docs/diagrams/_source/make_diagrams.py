@@ -146,7 +146,7 @@ for y, a, b in steps:
 for y in (55, 121, 186, 251):
     s.line([(cx, y + (7 if y == 55 else 0)), (cx, y + 19)])
 s.line([(cx, 316), (cx, 336)])
-s.box(cx - 200, 336, 400, 46, "Scheduling pass (≤192 iterations)", ["startReadyStages (team-plan DAG) · prepareResearchTeam"], "lib", title_size=12)
+s.box(cx - 200, 336, 400, 46, "Scheduling pass (≤192 iterations)", ["startReadyStages (team-plan DAG) · teamBriefScheduler"], "lib", title_size=12)
 s.line([(cx, 382), (cx, 398)])
 s.diamond(cx, 412)
 s.text(cx - 20, 400, "source / team requests pending?", 11, fill="#5a4700", italic=True, anchor="end")
