@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { htmlToStructuredText } from "@/lib/research/memory/blocks";
-import { dropElements, firstElementBody, nestingDepth, scanTags, tagAttribute } from "@/lib/html-scan";
+import { dropElements, firstElementBody, scanTags, tagAttribute } from "@/lib/html-scan";
 import { isPrivateHostname, publicFetch, readCapped } from "@/lib/net";
 
 const execFileAsync = promisify(execFile);
@@ -454,9 +454,8 @@ async function fetchCandidate(
     if (/html/i.test(contentType)) {
       const article = firstElementBody(content, "article");
       const html = article && isSubstantiveFetchedContent(article, title) ? article : content;
-      // Keep headings and paragraphs so stored pages can be split into sections later. The DOM
-      // parser behind that is quadratic in nesting depth, so absurdly nested pages stay flat text.
-      content = nestingDepth(html) > MAX_NESTING_DEPTH ? inlineText(html) : htmlToStructuredText(html);
+      // Keep headings and paragraphs so stored pages can be split into sections later.
+      content = htmlToStructuredText(html);
       storedMimeType = "text/plain";
       extractionMethod = "html_structured_text";
     }
@@ -665,10 +664,6 @@ function isRelevantForRole(
   }
   return ROLE_LINK_TERMS[role].test(searchable);
 }
-
-// Real pages nest a few dozen elements deep; htmlToStructuredText's parser takes seconds per
-// 100 KB once nesting runs into the thousands.
-const MAX_NESTING_DEPTH = 500;
 
 function stripHtml(value: string): string {
   return decodeHtml(dropElements(value, ["script", "style"]).replace(/<[^<>]*>/g, " "));

@@ -1,5 +1,6 @@
 // Turns stored source content into ordered blocks (headings, paragraphs, tables, lists).
 import { load } from "cheerio";
+import { balancedHtml, tagAttribute } from "@/lib/html-scan";
 import { decodeHtmlEntities } from "./entities";
 
 export type BlockType = "heading" | "paragraph" | "table" | "list";
@@ -202,12 +203,65 @@ export function contentBlocks(content: string, mimeType: string): Block[] {
   return textBlocks(content);
 }
 
+// Implied-end elements that keep their tag when an untrusted page is rebuilt; the parser closes them.
+const FLAT_KEPT = new Set(["p", "li", "dt", "dd", "br", "tr", "td", "th", "thead", "tbody", "tfoot", "caption"]);
+// Rebuilt pages nest at most this many kept elements; deeper ones contribute only their text.
+const MAX_REBUILT_DEPTH = 64;
+
 /**
- * Structured plain text for an HTML page: headings as Markdown lines, blocks separated by
- * blank lines. Stored web pages stay readable and keep their sections when parsed again.
+ * Rebuilds an untrusted page from its balanced tag stream with only what htmlBlocks reads: block
+ * tags, headings, tables, bold as a styled span, hidden elements dropped with their content, and
+ * no other attributes. The parser then sees well-nested markup with no formatting elements, so
+ * its adoption agency, formatting reconstruction and deep scope scans never run on hostile input.
+ */
+function rebuildHtml(html: string): string {
+  const out: string[] = [];
+  // Per open element: its end tag, "" when hidden, null when it was not written.
+  const closers: (string | null)[] = [];
+  let hidden = 0;
+  let depth = 0;
+  for (const event of balancedHtml(html)) {
+    if (event.type === "text") {
+      if (!hidden) out.push(event.text.replace(/</g, "&lt;"));
+      continue;
+    }
+    if (event.type === "close") {
+      const closer = closers.pop();
+      if (closer === "") hidden--;
+      else if (closer) {
+        depth--;
+        // An empty span changes no block, so it is dropped rather than parsed.
+        if (closer === "span" && out[out.length - 1]?.startsWith("<span")) out.pop();
+        else out.push(`</${closer}>`);
+      }
+      continue;
+    }
+    const { tag } = event;
+    const style = (tagAttribute(tag, "style") || "").toLowerCase().replace(/\s+/g, "");
+    const kept = style.includes("display:none") ? ' style="display:none"'
+      : tag.name === "b" || tag.name === "strong" || /font-weight:(bold|bolder|[6-9]00)/.test(style) ? ' style="font-weight:bold"' : "";
+    if (event.type === "flat") {
+      if (!hidden && FLAT_KEPT.has(tag.name)) out.push(tag.closing ? `</${tag.name}>` : `<${tag.name}${kept}>`);
+    } else if (hidden || SKIPPED.has(tag.name) || kept.includes("display:none")) {
+      hidden++;
+      closers.push("");
+    } else {
+      const name = CONTAINERS.has(tag.name) || HEADING.test(tag.name) || tag.name === "table" ? tag.name : kept ? "span" : null;
+      if (!name || depth >= MAX_REBUILT_DEPTH) { closers.push(null); continue; }
+      depth++;
+      closers.push(name);
+      out.push(`<${name}${kept}>`);
+    }
+  }
+  return out.join("");
+}
+
+/**
+ * Structured plain text for an untrusted HTML page: headings as Markdown lines, blocks separated
+ * by blank lines. Stored web pages stay readable and keep their sections when parsed again.
  */
 export function htmlToStructuredText(html: string): string {
-  return htmlBlocks(html)
+  return htmlBlocks(rebuildHtml(html))
     .map(block => block.type === "heading" ? `${"#".repeat(block.level || 2)} ${block.text}` : block.text)
     .join("\n\n");
 }

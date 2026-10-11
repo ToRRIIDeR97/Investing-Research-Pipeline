@@ -1,7 +1,8 @@
 // Linear-time scanning of untrusted HTML. A tag is matched with /<[^<>]*>/, which stops at the
 // next '<', and an element's end is found with one forward search, so unclosed or deeply nested
 // markup costs linear time. Backtracking patterns ([\s\S]*?, [^>]*> after another quantifier) were
-// cubic on hostile pages, and DOM parsers (parse5, htmlparser2) are quadratic in nesting depth.
+// cubic on hostile pages. A DOM parser (parse5) given a hostile page is quadratic or worse in its
+// nesting and misnesting, so callers parse only markup rebuilt from balancedHtml.
 
 export type Tag = { name: string; closing: boolean; selfClosing: boolean; start: number; end: number; raw: string };
 
@@ -69,6 +70,20 @@ export function dropElements(html: string, names: string[]): string {
   return kept + html.slice(from);
 }
 
+/** Removes comments; an unclosed one runs to the end, as a browser reads it. */
+export function dropComments(html: string): string {
+  let kept = "";
+  let from = 0;
+  for (let open = html.indexOf("<!--"); open !== -1; open = html.indexOf("<!--", from)) {
+    kept += html.slice(from, open);
+    // From open + 2 so that "<!-->" and "<!--->" close themselves.
+    const close = html.indexOf("-->", open + 2);
+    if (close === -1) return kept;
+    from = close + 3;
+  }
+  return kept + html.slice(from);
+}
+
 // Elements that never nest: void elements and those whose end tag a parser implies.
 const UNNESTED = new Set([
   "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
@@ -76,26 +91,44 @@ const UNNESTED = new Set([
   "rb", "rt", "rp", "html", "head", "body",
 ]);
 
+export type HtmlEvent =
+  | { type: "text"; text: string }
+  | { type: "flat"; tag: Tag }
+  | { type: "open"; tag: Tag }
+  | { type: "close"; name: string };
+
 /**
- * The deepest element nesting, popping to the matching open tag the way a parser does. Each
- * element is pushed and popped once, so this is linear even when the page is not.
+ * The page as a properly nested stream: text, flat tags (void or implied-end elements, open or
+ * closing), and open/close pairs. A close tag pops to its matching open tag and one with no match
+ * is dropped; elements still open at the end are closed. Comments, scripts and styles are removed
+ * first. Each element is pushed and popped once, so this is linear however misnested the page is.
  */
-export function nestingDepth(html: string): number {
+export function* balancedHtml(html: string): Generator<HtmlEvent> {
+  const source = dropElements(dropComments(html), ["script", "style"]);
   const stack: string[] = [];
   const open = new Map<string, number>();
-  let deepest = 0;
-  for (const tag of scanTags(dropElements(html, ["script", "style"]))) {
-    if (tag.selfClosing || UNNESTED.has(tag.name)) continue;
-    if (!tag.closing) {
+  let from = 0;
+  // Doctypes, processing instructions and bogus comments are not text.
+  const text = (end: number) => source.slice(from, end).replace(/<[!?/][^<>]*>/g, "");
+  for (const tag of scanTags(source)) {
+    const before = text(tag.start);
+    if (before) yield { type: "text", text: before };
+    from = tag.end;
+    if (tag.selfClosing || UNNESTED.has(tag.name)) {
+      yield { type: "flat", tag };
+    } else if (!tag.closing) {
       stack.push(tag.name);
       open.set(tag.name, (open.get(tag.name) || 0) + 1);
-      deepest = Math.max(deepest, stack.length);
+      yield { type: "open", tag };
     } else if (open.get(tag.name)) {
       for (let name = stack.pop(); name !== undefined; name = stack.pop()) {
         open.set(name, open.get(name)! - 1);
+        yield { type: "close", name };
         if (name === tag.name) break;
       }
     }
   }
-  return deepest;
+  const rest = text(source.length);
+  if (rest) yield { type: "text", text: rest };
+  for (let name = stack.pop(); name !== undefined; name = stack.pop()) yield { type: "close", name };
 }
