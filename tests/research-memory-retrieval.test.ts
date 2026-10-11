@@ -21,6 +21,7 @@ test("period hints read ISO dates, quarters and years, and a document covers a p
   assert.deepEqual(periodHints("Q3'25 and 4Q24 versus FY2023").map(h => [h.start, h.end]),
     [["2025-07-01", "2025-09-30"], ["2024-10-01", "2024-12-31"], ["2023-01-01", "2023-12-31"]]);
   assert.deepEqual(periodHints("Revenue of 12,019 and 10-K segment notes"), [], "numbers that are not years name no period");
+  assert.deepEqual(periodHints("Take current debt from the Q2 10-Q and the 4Q 10-K"), [], "a form number after a quarter is not a year");
   const [q2] = periodHints("Q2 2026");
   assert.equal(coversPeriod({ periodEnd: "2026-06-30", publishedAt: "2026-07-30" }, q2), true, "the quarter's 10-Q");
   assert.equal(coversPeriod({ periodEnd: "2026-07-29", publishedAt: "2026-07-29" }, q2), true, "an earnings release filed after the quarter");

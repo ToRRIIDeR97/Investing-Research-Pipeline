@@ -110,13 +110,16 @@ const fullYear = (year: string) => year.length === 2 ? `20${year}` : year;
 const quarter = (label: string, q: string, year: string): PeriodHint =>
   ({ label, start: `${fullYear(year)}-${String((Number(q) - 1) * 3 + 1).padStart(2, "0")}-01`, end: `${fullYear(year)}-${QUARTER_END[Number(q) - 1]}` });
 
-/** Periods a query names: ISO dates, quarters ("Q2 2026", "Q2'26", "2Q26") and years ("2025", "FY2025"). */
+/**
+ * Periods a query names: ISO dates, quarters ("Q2 2026", "Q2'26", "2Q26") and years ("2025", "FY2025").
+ * A form number is not a year: "the Q2 10-Q" names no period.
+ */
 export function periodHints(query: string): PeriodHint[] {
   const hints: PeriodHint[] = [];
   const rest = query
     .replace(/\b((?:19|20)\d{2})-(\d{2})-(\d{2})\b/g, (label) => { hints.push({ label, start: label, end: label }); return " "; })
-    .replace(/\bQ([1-4])\s*(?:FY\s*)?'?((?:19|20)\d{2}|\d{2})\b/gi, (label, q, year) => { hints.push(quarter(label, q, year)); return " "; })
-    .replace(/\b([1-4])Q\s*'?((?:19|20)\d{2}|\d{2})\b/gi, (label, q, year) => { hints.push(quarter(label, q, year)); return " "; });
+    .replace(/\bQ([1-4])\s*(?:FY\s*)?'?((?:19|20)\d{2}|\d{2})\b(?!-)/gi, (label, q, year) => { hints.push(quarter(label, q, year)); return " "; })
+    .replace(/\b([1-4])Q\s*'?((?:19|20)\d{2}|\d{2})\b(?!-)/gi, (label, q, year) => { hints.push(quarter(label, q, year)); return " "; });
   for (const [, year] of rest.matchAll(/(?:^|\D)((?:19|20)\d{2})(?!\d)/g)) hints.push({ label: year, start: `${year}-01-01`, end: `${year}-12-31` });
   return hints.filter((hint, index) => hints.findIndex(other => other.start === hint.start && other.end === hint.end) === index);
 }
