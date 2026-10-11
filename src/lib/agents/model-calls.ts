@@ -68,7 +68,7 @@ async function checkBudget(
           OR (${check.scopeType === "stage" ? sql`stage_id = ${check.scopeId}` : sql`false`})
           OR (${check.scopeType === "task" ? sql`task_id = ${check.scopeId}` : sql`false`})
         UNION ALL
-        SELECT COALESCE((input_json->'budget_reservation'->>'usd')::numeric, 0) FROM research_tasks
+        SELECT COALESCE(budget_reservation_usd, 0) FROM research_tasks
         WHERE status = 'running' AND id IS DISTINCT FROM ${input.taskId || null}::uuid AND (
           (${check.scopeType === "research_run" ? sql`research_run_id = ${check.scopeId}` : sql`false`})
           OR (${check.scopeType === "stage" ? sql`stage_id = ${check.scopeId}` : sql`false`})
@@ -89,7 +89,7 @@ async function checkBudget(
   if (input.researchRunId) {
     const runs = await sql`
       SELECT budget_limit_usd, actual_cost_usd,
-        (SELECT COALESCE(SUM((input_json->'budget_reservation'->>'usd')::numeric), 0)
+        (SELECT COALESCE(SUM(budget_reservation_usd), 0)
          FROM research_tasks WHERE research_run_id = ${input.researchRunId} AND status = 'running'
            AND id IS DISTINCT FROM ${input.taskId || null}::uuid) AS reserved
       FROM research_runs WHERE id = ${input.researchRunId}
@@ -119,9 +119,8 @@ export async function assertModelBudgetAvailable(input: BudgetReservationInput):
         modelProvider: "budget-preflight", modelName: "pending", status: "preflight", ...input, costUsd: input.reserveUsd,
       });
       if (result.exceeded) throw new Error(result.reason || "Model budget exhausted");
-      if (input.taskId) await tx`UPDATE research_tasks SET input_json = COALESCE(input_json, '{}'::jsonb) ||
-        ${tx.json({ budget_reservation: { usd: input.reserveUsd, model_tier: input.modelTier } })}
-        WHERE id = ${input.taskId}`;
+      // A narrow column, so reserving never rewrites the task's (often MB-sized) input_json.
+      if (input.taskId) await tx`UPDATE research_tasks SET budget_reservation_usd = ${input.reserveUsd} WHERE id = ${input.taskId}`;
     });
   } finally {
     await sql.end();
@@ -145,7 +144,7 @@ export async function recordModelCall(input: RecordModelCallInput): Promise<stri
     const callId = await sql.begin(async (tx) => {
       // Actual spend must be recorded even if the provider exceeded the estimate.
       if (input.researchRunId) await tx`SELECT id FROM research_runs WHERE id = ${input.researchRunId} FOR UPDATE`;
-      if (input.taskId) await tx`UPDATE research_tasks SET input_json = input_json - 'budget_reservation' WHERE id = ${input.taskId}`;
+      if (input.taskId) await tx`UPDATE research_tasks SET budget_reservation_usd = NULL WHERE id = ${input.taskId}`;
       const rows = await tx`
         INSERT INTO model_call_logs (
           research_run_id, stage_id, task_id, agent_name,

@@ -32,7 +32,6 @@ interface ResearchPackageData {
   backtests: Row[];
   backtestArtifacts: Row[];
   modelCalls: Row[];
-  tasks: Row[];
   quality?: ResearchQualityGateResult;
 }
 
@@ -249,7 +248,6 @@ async function loadPackageData(sql: ReturnType<typeof postgres>, runId: string, 
     backtests,
     backtestArtifacts,
     modelCalls,
-    tasks,
   ] = await Promise.all([
     sql`SELECT * FROM risks WHERE research_run_id = ${runId} ORDER BY severity DESC, created_at DESC`,
     sql`SELECT * FROM catalysts WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
@@ -274,7 +272,6 @@ async function loadPackageData(sql: ReturnType<typeof postgres>, runId: string, 
     sql`SELECT * FROM backtest_runs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM backtest_artifacts WHERE research_run_id = ${runId} ORDER BY artifact_type, created_at DESC`,
     sql`SELECT * FROM model_call_logs WHERE research_run_id = ${runId} ORDER BY created_at ASC`,
-    sql`SELECT * FROM research_tasks WHERE research_run_id = ${runId} ORDER BY created_at ASC`,
   ]);
 
   return {
@@ -298,7 +295,6 @@ async function loadPackageData(sql: ReturnType<typeof postgres>, runId: string, 
     backtests: dedupeBy(backtests, (row) => `${row.name}|${row.strategy_name}|${stringifyBrief(row.metrics_json)}`),
     backtestArtifacts: dedupeBy(backtestArtifacts, (row) => `${row.backtest_run_id}|${row.artifact_type}|${row.storage_path}`),
     modelCalls,
-    tasks,
   };
 }
 

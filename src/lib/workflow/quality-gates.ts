@@ -340,7 +340,7 @@ export function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQua
   };
 }
 
-async function loadRunQualityData(
+export async function loadRunQualityData(
   sql: ReturnType<typeof postgres>,
   runId: string
 ): Promise<RunQualityData> {
@@ -372,7 +372,15 @@ async function loadRunQualityData(
     artifacts,
   ] = await Promise.all([
     sql`SELECT * FROM research_stages WHERE research_run_id = ${runId} ORDER BY stage_order`,
-    sql`SELECT * FROM research_tasks WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    // Never input_json (the stored packets). v3 gates read only the latest completed AI review task;
+    // earlier pipelines also match analysis modules against task outputs.
+    Number(run.pipeline_version || 1) >= 3
+      ? sql`SELECT id, task_key, task_type, status, output_json, created_at FROM research_tasks
+          WHERE research_run_id = ${runId} AND task_type = 'ai_review' AND status = 'completed'
+          ORDER BY created_at DESC LIMIT 1`
+      : sql`SELECT id, stage_id, task_key, task_type, agent_name, status, priority, output_json, validation_status,
+          validation_result_json, retry_count, started_at, completed_at, failure_reason, created_at
+          FROM research_tasks WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`
       SELECT DISTINCT sd.*
       FROM source_documents sd
@@ -407,7 +415,8 @@ async function loadRunQualityData(
         AND ec.review_status != 'rejected'
         AND el.id IS NULL
     `,
-    sql`SELECT artifact_type, status, content_json FROM research_artifacts WHERE research_run_id = ${runId}`,
+    sql`SELECT artifact_type, status, content_json FROM research_artifacts
+      WHERE research_run_id = ${runId} AND status IN ('validated', 'accepted')`,
   ]);
 
   return {
@@ -553,44 +562,40 @@ function addAnalysisCoverage(
     return;
   }
 
-  const taskText = (Number(data.run.pipeline_version || 1) >= 3
+  const outputs = (Number(data.run.pipeline_version || 1) >= 3
     ? (data.artifacts || []).filter((artifact) => ["validated", "accepted"].includes(artifact.status)).map((artifact): Row => ({ task_type: artifact.artifact_type, output_json: artifact.content_json, status: "completed" }))
     : data.tasks)
-    .filter((task) => task.status === "completed")
-    .map((task) =>
-      [
-        task.task_key,
-        task.task_type,
-        stringifyBrief(task.output_json),
-        stringifyBrief(task.validation_result_json),
-      ].join(" ")
-    )
-    .join(" ")
-    .toLowerCase();
+    .filter((task) => task.status === "completed");
   const evidenceText = data.evidence.map((claim) => claim.claim_text).join(" ").toLowerCase();
   const metricsText = data.metrics
     .map((metric) => [metric.metric_key, metric.display_name, metric.value_text].join(" "))
     .join(" ")
     .toLowerCase();
 
-  for (const moduleKey of modules) {
+  // Task and artifact names, evidence and metrics are checked first. Output bodies are then serialised one at a
+  // time, and only while a module is still uncovered, so a run's artifacts are never held as one string.
+  let uncovered = modules.filter((moduleKey) => {
     const normalized = String(moduleKey).toLowerCase();
     const tokens = normalized.split(/[_\s-]+/).filter(Boolean);
-    const covered =
-      taskText.includes(normalized) ||
-      tokens.some((token) => evidenceText.includes(token) || metricsText.includes(token));
+    return !outputs.some((task) => `${task.task_key ?? ""} ${task.task_type ?? ""}`.toLowerCase().includes(normalized))
+      && !tokens.some((token) => evidenceText.includes(token) || metricsText.includes(token));
+  });
+  for (const task of outputs) {
+    if (!uncovered.length) break;
+    const text = `${stringifyBrief(task.output_json)} ${stringifyBrief(task.validation_result_json)}`.toLowerCase();
+    uncovered = uncovered.filter((moduleKey) => !text.includes(String(moduleKey).toLowerCase()));
+  }
 
-    if (!covered) {
-      const item: MissingCoverageItem = {
-        key: `analysis_${moduleKey}`,
-        severity: data.run.run_type === "quick_scan" ? "medium" : "high",
-        area: "analysis coverage",
-        description: `Required analysis module "${moduleKey}" has no substantive task, evidence, metric, or explicit source-gap coverage.`,
-        requiredForCompletion: data.run.run_type !== "quick_scan",
-      };
-      missingCoverage.push(item);
-      errors.push(item.description);
-    }
+  for (const moduleKey of uncovered) {
+    const item: MissingCoverageItem = {
+      key: `analysis_${moduleKey}`,
+      severity: data.run.run_type === "quick_scan" ? "medium" : "high",
+      area: "analysis coverage",
+      description: `Required analysis module "${moduleKey}" has no substantive task, evidence, metric, or explicit source-gap coverage.`,
+      requiredForCompletion: data.run.run_type !== "quick_scan",
+    };
+    missingCoverage.push(item);
+    errors.push(item.description);
   }
 }
 

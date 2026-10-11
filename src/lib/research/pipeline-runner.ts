@@ -33,7 +33,7 @@ export async function runResearchPipeline(runId: string): Promise<SystemPipeline
     }
     // Owning the session lock proves no previous runner can still be calling a model.
     await sql`UPDATE research_tasks SET status = 'failed', failure_reason = 'Interrupted worker attempt',
-      input_json = input_json - 'budget_reservation', updated_at = NOW()
+      budget_reservation_usd = NULL, updated_at = NOW()
       WHERE research_run_id = ${runId} AND status = 'running'`;
     try {
       if (run.status === "pending") await startRun(runId);
