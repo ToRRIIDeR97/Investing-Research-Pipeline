@@ -22,6 +22,28 @@ export function recentByMetric(observations: Array<Record<string, any>>, limit: 
     }))]));
 }
 
+/**
+ * Code-owned reconciliation fields: a non-positive TAM or customer budget is a missing bound (null), and
+ * bottom_up_forecast_total is the segment revenue sum whenever every segment has revenue. The TAM check
+ * runs on the result, both on the model's answer and on the stored artifact.
+ */
+export function normalizeReconciliation(output: Record<string, any>): Record<string, any> {
+  const source = output?.top_down_bottom_up_reconciliation;
+  if (!source || typeof source !== "object") return output;
+  const reconciliation = { ...source };
+  if (Number(reconciliation.tam_limit) <= 0 || Number(reconciliation.customer_budget_limit) <= 0) {
+    if (Number(reconciliation.tam_limit) <= 0) reconciliation.tam_limit = null;
+    if (Number(reconciliation.customer_budget_limit) <= 0) reconciliation.customer_budget_limit = null;
+    reconciliation.top_down_forecast_total = null;
+    reconciliation.reconciliation_status = "blocked_source_gap";
+  }
+  const segments = output?.operating_model?.segments;
+  if (Array.isArray(segments) && segments.length && segments.every((segment: any) => typeof segment?.forecast_revenue === "number")) {
+    reconciliation.bottom_up_forecast_total = segments.reduce((sum: number, segment: any) => sum + segment.forecast_revenue, 0);
+  }
+  return { ...output, top_down_bottom_up_reconciliation: reconciliation };
+}
+
 export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "operating_model",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
@@ -85,15 +107,9 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
         sql, ctx, stageKey: "operating_model", taskKey,
         taskType: "operating_model", agentName: "asset-analyst", modelTier: "mid",
         packet, promptFactory,
-        outputFormat: OPERATING_MODEL_CONTRACT,
+        outputFormat: { ...OPERATING_MODEL_CONTRACT, validate: (value: unknown) => OPERATING_MODEL_CONTRACT.validate!(normalizeReconciliation(value as Record<string, any>)) },
       });
-      const reconciliation = output.top_down_bottom_up_reconciliation;
-      if (reconciliation && (Number(reconciliation.tam_limit) <= 0 || Number(reconciliation.customer_budget_limit) <= 0)) {
-        if (Number(reconciliation.tam_limit) <= 0) reconciliation.tam_limit = null;
-        if (Number(reconciliation.customer_budget_limit) <= 0) reconciliation.customer_budget_limit = null;
-        reconciliation.top_down_forecast_total = null;
-        reconciliation.reconciliation_status = "blocked_source_gap";
-      }
+      output.top_down_bottom_up_reconciliation = normalizeReconciliation(output).top_down_bottom_up_reconciliation;
 
       // Persist generated sub-artifacts
       const db = drizzle(sql, { schema });
