@@ -69,7 +69,7 @@ RESEARCH_ASSET_ANALYST_MODEL=provider-model-id
 RESEARCH_VALUATION_ANALYST_MODEL=provider-model-id
 ```
 
-The base URL must use HTTPS and its exact hostname must appear in `RESEARCH_MODEL_ALLOWED_HOSTS`. Redirects and arbitrary per-request URLs are not supported.
+The base URL must use HTTPS and its exact hostname must appear in `RESEARCH_MODEL_ALLOWED_HOSTS`. It can't carry credentials, a query or a fragment, or name a loopback or private address. Redirects and arbitrary per-request URLs are not supported. `RESEARCH_EMBEDDING_BASE_URL` passes the same check (`validateEndpointUrl` in `src/lib/net.ts`), and the embeddings request refuses redirects.
 
 Run the deliberately gated health and JSON smoke test with:
 
@@ -99,9 +99,34 @@ RESEARCH_MID_MODEL=local-model-id
 
 Ollama's OpenAI-compatible endpoint uses the `/v1` base path. The configured model IDs must already exist on the local server.
 
+## Web source discovery
+
+Stage 5 (`source_discovery`) searches the web for each source role (`src/lib/research/sources/role-discovery.ts`). It's skipped when `RESEARCH_ACCEPTANCE_PROVIDER=mock` or `RESEARCH_TEST_MODE=1`.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `RESEARCH_WEB_DISCOVERY_ENABLED` | on | `0` skips web discovery. |
+| `RESEARCH_WEB_DISCOVERY_MAX_ROLES` | `8` | Source roles searched per run. |
+| `RESEARCH_WEB_DISCOVERY_MAX_PER_ROLE` | `2` | Pages kept per role. |
+| `RESEARCH_WEB_SEARCH_ENDPOINT` | unset | A JSON search API that returns `results[]`, `items[]` or Bing-style `webPages.value[]`. It must use HTTPS. Unset, discovery reads DuckDuckGo's HTML results. |
+| `RESEARCH_WEB_SEARCH_API_KEY` | unset | Sent as `Authorization: Bearer` and `Ocp-Apim-Subscription-Key` to the endpoint only, never to a redirect target. |
+| `RESEARCH_BING_HTML_FALLBACK` | off | `1` reads Bing's HTML results when DuckDuckGo returns none. |
+
+Every fetched URL, including each redirect hop, must resolve only to public addresses. Pages are read up to 1 MB and PDFs up to 10 MB after decompression, with a 15 s timeout per hop.
+
 ## Execution controls
 
 The harness requests plain text, parses JSON locally, and performs at most one bounded repair by default. On `anthropic-direct`, Claude output is constrained to the contract schema where the API can express it ([structured output](#structured-output)); local parsing, validation and repair still apply. Total and inactivity deadlines, response/token limits, and model attempts use the `RESEARCH_*` settings documented in `.env.example`. Model calls cannot execute tools; an unexpected tool request fails the attempt. On the Anthropic protocol, pings and hidden adaptive-thinking events count as stream activity, so the inactivity deadline measures real provider silence rather than time to the first answer text.
+
+Retries:
+
+- Rate limits, timeouts, dropped connections, malformed streams, exhausted output and server errors are retried, and the next attempt may go to the agent's fallback model. Server errors include HTTP 5xx, Anthropic's 529 and its mid-stream `overloaded_error` and `api_error` events, and OpenCode's 400 "Upstream request failed". A mid-stream `rate_limit_error` counts as a rate limit.
+- Server errors and rate limits wait `RESEARCH_OVERLOAD_RETRY_DELAY_MS` (5 s) before the second attempt, doubling after that; other retries wait `RESEARCH_RETRY_BASE_DELAY_MS`, doubling. A `retry-after` header sets the wait instead. Waits are capped at 60 s and end early when the run is aborted.
+- A reply cut off at its output limit (`max_tokens` or `length`) that doesn't parse isn't repaired: the next attempt regenerates with twice the limit. Claude models are capped at 128,000 output tokens (64,000 for Claude Haiku 4.5).
+- Authentication, quota, invalid requests, context limits and schema failures after repair aren't retried.
+- The built-in fallback models (`deepseek-v4-pro`, `qwen3.7-plus`) are OpenCode Go model IDs, so `anthropic-direct` doesn't use them. A `RESEARCH_<AGENT>_FALLBACK_MODEL` you set still applies.
+
+When a stage fails because a model call used up its attempts on one of these transient errors, the pipeline retries the stage itself ([system.md](system.md#run-failures-recovery-and-cancellation)).
 
 Analytical stages derive their prompt schemas and runtime checks from the artifact Zod contracts. Invalid model output enters repair before a task is marked complete. The artifact repository checks those contracts again before saving validated or accepted content.
 
@@ -113,4 +138,4 @@ Source-reader requests cap output at 16,384 tokens by default. Other agents cap 
 
 Anthropic-compatible `/messages` requests (used by Qwen and MiniMax on OpenCode Go) require `max_tokens`; Research OS sends the agent's output ceiling, with `RESEARCH_ANTHROPIC_PROTOCOL_MAX_TOKENS` as a protocol fallback.
 
-Provider credentials, authorization headers, and bounded raw-response excerpts are redacted before errors or attempt traces are persisted.
+Provider credentials, authorization headers, and bounded raw-response excerpts are redacted before errors or attempt traces are persisted. `redact()` removes the values of `RESEARCH_MODEL_API_KEY`, `ANTHROPIC_API_KEY`, `OPENCODE_GO_API_KEY`, `RESEARCH_WEB_SEARCH_API_KEY`, `RESEARCH_EMBEDDING_API_KEY` and `DATABASE_URL`, and any bearer token.

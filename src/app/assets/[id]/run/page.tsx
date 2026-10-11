@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import ui from "@/components/research-ui.module.css";
+import { pollTick, runProgressIsLive } from "@/lib/research/run-polling";
 
 interface Message {
   role: "user" | "assistant" | "system";
@@ -48,7 +49,6 @@ interface RunProgress {
     failure_reason: string | null;
     started_at: string | null;
     completed_at: string | null;
-    output_json: Record<string, unknown> | null;
   }[];
   sourceCount: number;
   exportCount: number;
@@ -322,6 +322,7 @@ export default function RunResearchPage() {
   const [runType, setRunType] = useState("deep_dive");
   const [runId, setRunId] = useState<string | null>(null);
   const activeRunRef = useRef<string | null>(null);
+  const progressRequest = useRef(0);
   const [progress, setProgress] = useState<RunProgress | null>(null);
   const [quality, setQuality] = useState<ResearchQuality | null>(null);
   const [theater, setTheater] = useState<TheaterData>({
@@ -391,11 +392,14 @@ export default function RunResearchPage() {
     loadAssetContext();
   }, [assetId]);
 
+  // Poll only while the run or its job is active, one request at a time and not while the tab is hidden.
+  // Approving the plan, a re-run decision and a run start all refresh progress, which re-arms polling for the queued job.
+  const runLive = runProgressIsLive(progress?.status, progress?.latestJob?.status);
   useEffect(() => {
-    if (!runId || phase !== "pipeline") return;
-    const interval = window.setInterval(() => fetchProgress(runId), 5000);
+    if (!runId || phase !== "pipeline" || !runLive) return;
+    const interval = window.setInterval(pollTick(() => fetchProgress(runId), () => document.visibilityState !== "visible"), 5000);
     return () => window.clearInterval(interval);
-  }, [runId, phase]);
+  }, [runId, phase, runLive]);
 
   async function handleSend() {
     if (phase !== "intake" || !input.trim() || isProcessing) return;
@@ -528,9 +532,32 @@ export default function RunResearchPage() {
     }
   }
 
-  async function fetchProgress(id: string) {
+  async function handleCancelRun() {
+    if (!runId || !window.confirm("Cancel this run? A cancelled run stops its current model call and cannot be resumed.")) return;
+    setIsProcessing(true);
     try {
-      const [runRes, qualityRes, sourcesRes, tracesRes, modelCallsRes, backtestsRes, jobsRes, artifactsRes] =
+      const res = await fetch(`/api/research-runs/${runId}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actor: "user" }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Unable to cancel the run");
+      setMessages((prev) => [...prev, { role: "system", content: "Run cancelled. A model call in progress stops within a few seconds." }]);
+      fetchProgress(runId);
+    } catch (error) {
+      setMessages((prev) => [...prev, { role: "system", content: `Cancel error: ${error instanceof Error ? error.message : String(error)}` }]);
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
+  async function fetchProgress(id: string) {
+    // A slower, older response must not overwrite a newer one (for example a poll that started before an approval).
+    const request = ++progressRequest.current;
+    const current = () => activeRunRef.current === id && progressRequest.current === request;
+    try {
+      const [runRes, qualityRes, sourcesRes, tracesRes, modelCallsRes, backtestsRes, jobsRes] =
         await Promise.all([
           fetch(`/api/research-runs/${id}`),
           fetch(`/api/research-runs/${id}/quality`),
@@ -539,7 +566,6 @@ export default function RunResearchPage() {
           fetch(`/api/research-runs/${id}/model-calls`),
           fetch(`/api/research-runs/${id}/backtests`),
           fetch(`/api/research-runs/${id}/jobs`),
-          fetch(`/api/research-runs/${id}/artifacts`),
         ]);
 
       if (!runRes.ok) throw new Error("Unable to refresh this run.");
@@ -550,11 +576,13 @@ export default function RunResearchPage() {
       const modelCalls = modelCallsRes.ok ? await modelCallsRes.json() : [];
       const backtests = backtestsRes.ok ? await backtestsRes.json() : [];
       const jobsData = jobsRes.ok ? await jobsRes.json() : { latestJob: null, workers: [] };
-      const artifactsData = artifactsRes.ok ? await artifactsRes.json() : { artifacts: [] };
-      if (activeRunRef.current !== id) return;
-      const planArtifact = (artifactsData.artifacts || []).find((artifact: any) => artifact.type === "research_plan");
       const planWaiting = data.stages?.some((stage: any) => stage.stage_key === "research_plan" && stage.status === "waiting_for_human");
-      if (planArtifact) setResearchPlan(planArtifact.content || planArtifact.content_json || null);
+      // The page shows only the research plan, and only while it waits for approval.
+      const planRes = planWaiting ? await fetch(`/api/research-runs/${id}/artifacts?type=research_plan`) : null;
+      const artifactsData = planRes?.ok ? await planRes.json() : { artifacts: [] };
+      if (!current()) return;
+      const planArtifact = (artifactsData.artifacts || []).find((artifact: any) => artifact.type === "research_plan");
+      if (planArtifact) setResearchPlan(planArtifact.content_json || null);
       if (planWaiting) setPhase("plan");
       else if (phase === "plan") setPhase("pipeline");
 
@@ -589,7 +617,6 @@ export default function RunResearchPage() {
           failure_reason: t.failure_reason,
           started_at: t.started_at,
           completed_at: t.completed_at,
-          output_json: t.output_json,
         })),
         sourceCount: Array.isArray(sources) ? sources.length : 0,
         exportCount: data.metadata_json?.export_count || 0,
@@ -608,7 +635,7 @@ export default function RunResearchPage() {
       setQuality(qualityData);
       setLoadError("");
     } catch (error) {
-      if (activeRunRef.current === id) setLoadError("Unable to refresh this run. Displayed progress may be out of date.");
+      if (current()) setLoadError("Unable to refresh this run. Displayed progress may be out of date.");
     }
   }
 
@@ -791,7 +818,7 @@ export default function RunResearchPage() {
         {theater.backtests.map((test) => <div key={test.id} className={ui.row}><div><div className={ui.rowTitle}>{test.strategy_name || `${test.symbol} backtest`}</div><p className={ui.rowMeta}>{test.error_message || test.strategy_prompt}</p></div><StatusBadge status={test.status} /></div>)}
         <form className="mt-6" onSubmit={(event) => { event.preventDefault(); handleBacktestRequest(); }}><label className={ui.field}>Strategy<textarea rows={3} value={backtestPrompt} onChange={(event) => setBacktestPrompt(event.target.value)} disabled={isBacktestSubmitting} placeholder="Describe the strategy to test" required /></label><div className={ui.actions}><span /><button className={ui.primary} disabled={isBacktestSubmitting || !backtestPrompt.trim()}>{isBacktestSubmitting ? "Queueing…" : "Queue backtest"}</button></div></form>
       </div></details>
-      {phase === "pipeline" && <footer className={ui.actions}><Link href={`/assets/${assetId}/view?run=${runId}`} className={ui.textLink}>Read research<ArrowUpRight size={16} /></Link><button className={ui.secondary} onClick={() => { activeRunRef.current = null; window.history.replaceState(null, "", `/assets/${assetId}/run?new=1`); setRunId(null); setProgress(null); setQuality(null); setResearchPlan(null); setPhase("intake"); setMessages([]); setTheater({ sources: [], traces: [], modelCalls: [], backtests: [] }); setLoadError(""); }}>New research</button></footer>}
+      {phase === "pipeline" && <footer className={ui.actions}><Link href={`/assets/${assetId}/view?run=${runId}`} className={ui.textLink}>Read research<ArrowUpRight size={16} /></Link><span className="flex flex-wrap items-center gap-6">{!["completed", "cancelled"].includes(progress.status) && <button className={ui.textLink} onClick={handleCancelRun} disabled={isProcessing}>Cancel run</button>}<button className={ui.secondary} onClick={() => { activeRunRef.current = null; window.history.replaceState(null, "", `/assets/${assetId}/run?new=1`); setRunId(null); setProgress(null); setQuality(null); setResearchPlan(null); setPhase("intake"); setMessages([]); setTheater({ sources: [], traces: [], modelCalls: [], backtests: [] }); setLoadError(""); }}>New research</button></span></footer>}
     </>}
     {lastMessage && !lastMessage.content.startsWith("Loaded research run") && <p className={`${ui.notes} ${ui.notice}`} role="status">{lastMessage.content}</p>}
   </div>;

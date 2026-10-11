@@ -9,20 +9,20 @@ P = lambda n: os.path.join(OUT, n)
 
 # ---------------------------------------------------------------- component
 s = Svg(1100, 700, "Research OS — UML component view (current)",
-        "Browser UI calls unauthenticated Next.js API routes; the API writes Postgres and enqueues jobs; "
+        "Browser UI calls Next.js API routes (no accounts; a middleware refuses foreign hosts and cross-site writes); the API writes Postgres and enqueues jobs; "
         "a separate worker claims jobs and runs the 24-stage pipeline, which calls the agent harness, "
         "source discovery and ingestion, backtesting (Python), and export; all state lives in Postgres and ./storage.")
 s.box(30, 60, 220, 70, "Analyst browser", ["src/app/** client pages"], "ui", stereo="actor/UI")
-s.box(310, 50, 260, 90, "Next.js API routes", ["src/app/api/** (52 route files)", "no auth middleware"], "api", stereo="component")
+s.box(310, 50, 260, 90, "Next.js API routes", ["src/app/api/** (51 route files)", "no accounts · Host/Origin middleware"], "api", stereo="component")
 s.box(640, 50, 200, 90, "Run queue", ["src/lib/research/run-queue.ts", "enqueue / claim / lease"], "lib", stereo="component")
-s.box(880, 170, 200, 110, "Research worker", ["src/workers/research-worker.ts", "poll 5s · heartbeat 10s", "lease 5 min · run advisory lock"], "worker", stereo="process")
+s.box(880, 170, 200, 110, "Research worker", ["src/workers/research-worker.ts", "poll 5s · heartbeat 10s", "lease 5 min, renewed 10s · run lock"], "worker", stereo="process")
 s.box(310, 200, 260, 110, "Workflow orchestrator", ["src/lib/workflow/orchestrator.ts", "advanceStage · gates · resume", "stages.ts · team-plan.ts (DAG)"], "lib", stereo="component")
 s.box(610, 200, 230, 110, "Pipeline runner + team", ["pipeline-runner.ts (parallel)", "handlers/** (STAGE_HANDLERS)", "team.ts · source/research requests"], "lib", stereo="component")
 s.box(30, 370, 230, 100, "Agent harness", ["src/lib/agent-harness/**", "runner · providers · registry", "cache.ts (prompt caching)"], "lib", stereo="component")
 s.box(290, 370, 230, 100, "Sources & memory", ["sources/** (discovery, collector)", "memory/** (passages, embeddings,", "graph) · ingestion/** · market-data/**"], "lib", stereo="component")
 s.box(550, 370, 230, 100, "Backtesting & repair", ["backtesting/** (executor, framework)", "research/repair/** (statement", "repair, node sandbox)"], "lib", stereo="component")
 s.box(810, 370, 260, 100, "Reporting & export", ["research/reporting/** (adaptive)", "src/lib/export/** · valuation/**", "agents/staging.ts (promotion)"], "lib", stereo="component")
-s.box(260, 560, 300, 100, "PostgreSQL 16 + pgvector", ["src/db/schema/** · drizzle 0000–0006, 0009, 0010", "runs, stages, tasks, jobs, artifacts,", "evidence graph, embeddings, price bars"], "store", stereo="datastore")
+s.box(260, 560, 300, 100, "PostgreSQL 16 + pgvector", ["src/db/schema/** · drizzle 0000–0006, 0009–0012", "runs, stages, tasks, jobs, artifacts,", "evidence graph, embeddings, price bars"], "store", stereo="datastore")
 s.box(600, 560, 220, 100, "./storage", ["sources/<sha256>.<ext>", "backtests/<run>/ · exports/"], "store", stereo="filesystem")
 s.box(860, 540, 220, 140, "External services", ["LLM + embedding endpoints", "(OpenAI/Anthropic-compatible)", "search endpoint · DuckDuckGo · Bing", "SEC · FRED · Yahoo · Stooq · World Bank", "EIA · FDIC · Coinbase · …"], "ext", stereo="external")
 s.box(30, 560, 190, 100, "Child processes", ["python3 run_backtest*.py", "python3 docling_parser.py", "node --permission (repair)"], "worker", stereo="process")
@@ -32,7 +32,7 @@ s.line([(570, 95), (640, 95)], "enqueue")
 s.line([(840, 95), (980, 95), (980, 170)], "claim job", lx=920, ly=88)
 s.line([(880, 255), (840, 255)], "run")
 s.line([(610, 255), (570, 255)], "advance\nStage", lx=590, ly=238)
-s.line([(440, 140), (440, 200)], "approve / review\n/ advance", lx=500, ly=165)
+s.line([(440, 140), (440, 200)], "approve / review", lx=500, ly=170)
 s.line([(680, 310), (145, 340), (145, 370)], "callResearchAgent", lx=330, ly=322, dashed=False)
 s.line([(700, 310), (405, 370)], None)
 s.line([(725, 310), (665, 370)], None)
@@ -52,12 +52,12 @@ s = Svg(1060, 520, "Research OS — UML deployment view (local only)",
         "All runtime nodes run on one developer machine: Next.js server, research worker, python3 child processes, "
         "./storage, and a Docker Postgres container. Outbound HTTPS to LLM and data providers. No hosted deployment exists.")
 s.zone(20, 50, 700, 450, "«device» Developer macOS host", "#3b6ea8")
-s.box(40, 85, 300, 110, "Next.js 15 server", ["npm run dev | build && start", "UI + /api/* route handlers", ":3000 (dev-with-db.cjs) · :3002 alt"], "api", stereo="execution environment")
+s.box(40, 85, 300, 110, "Next.js 15 server", ["npm run dev | build && start", "UI + /api/* route handlers", "127.0.0.1 :3000 (dev-with-db.cjs) · :3002"], "api", stereo="execution environment")
 s.box(380, 85, 320, 110, "Research worker", ["npm run worker:research [-- --once]", "tsx src/workers/research-worker.ts", "env: DATABASE_URL, RESEARCH_*"], "worker", stereo="execution environment")
 s.box(380, 230, 320, 90, "Child processes", ["python3 run_backtest*.py · docling_parser.py", "pdftotext · node --permission (repair)"], "worker", stereo="execution environment")
 s.box(40, 230, 300, 90, "Filesystem ./storage", ["sources/ · backtests/ · exports/", "gitignored"], "store", stereo="artifact")
 s.zone(40, 350, 660, 135, "«execution environment» Docker (docker-compose.yml)", "#2f7f7f")
-s.box(70, 380, 300, 90, "research-os-postgres", ["image pgvector/pgvector:pg16", "host port 5432 · volume postgres_data"], "store", stereo="node")
+s.box(70, 380, 300, 90, "research-os-postgres", ["image pgvector/pgvector:pg16", "127.0.0.1:5432 · volume postgres_data"], "store", stereo="node")
 s.box(400, 380, 280, 90, "Postgres on :5433", ["used by npm run test:sofi-v3", "Windows PG service, not in compose"], "warn", stereo="node · assumption", dashed=True)
 s.box(760, 85, 280, 120, "LLM + embedding", ["RESEARCH_MODEL_BASE_URL", "RESEARCH_EMBEDDING_BASE_URL", "HTTPS + host allowlist", "or local OpenAI-compatible"], "ext", stereo="external node")
 s.box(760, 240, 280, 110, "Search & web", ["RESEARCH_WEB_SEARCH_ENDPOINT", "or DuckDuckGo / Bing HTML", "discovered public URLs"], "ext", stereo="external node")
@@ -138,7 +138,7 @@ s.initial(cx, 55)
 steps = [
     (75, "POST /api/assets/:id/research-runs", "run pending (v3) + 24 stages; run-type skips set at creation"),
     (140, "POST …/run-system-pipeline (or approve-plan / review)", "enqueueResearchRun (resumes failed runs) → job queued"),
-    (205, "Worker: requeueExpired → claim (SKIP LOCKED)", "lease 5 min, renewed ~100 s"),
+    (205, "Worker: requeueExpired, reconcile → claim (SKIP LOCKED)", "lease 5 min, renewed every 10 s; lost lease or SIGTERM aborts"),
     (270, "runResearchPipeline: pg_try_advisory_lock(run)", "fail stale running tasks · startRun if pending"),
 ]
 for y, a, b in steps:
@@ -181,9 +181,9 @@ s.text(cx - 20, 666, "retryCount < stage max_retries (0–3)?", 11, fill="#5a470
 s.line([(cx + 14, 674), (445, 674), (445, 567), (cx + 100, 567)], "yes → retry", lx=450, ly=690, lanchor="start")
 s.line([(cx, 688), (cx, 710)], "no", lx=345, ly=702, lanchor="start")
 s.box(cx - 220, 710, 440, 60, "Apply stage failureState", ["fail_run → run failed, pending stages cancelled", "pause_for_human → waiting · skip_and_continue → stage failed, continue"], "warn", title_size=12)
-s.box(860, 640, 220, 90, "Exception anywhere", ["tasks/stages failed,", "run needs_more_work;", "lock released"], "warn", title_size=12)
-s.line([(900, 640), (900, 600), (840, 600), (840, 574)], None, dashed=True)
-s.text(16, 790, "Source: pipeline-runner.ts:20-93, orchestrator.ts:188-994, team-plan.ts:41-75, team.ts, sources/collector.ts, run-queue.ts, stages.ts.", 11, fill="#555")
+s.box(860, 620, 220, 110, "Exception anywhere", ["transient model error: stage", "rerun ≤ max_retries; other throw:", "stage's tasks invalid, unless a", "provider or budget stop; run", "needs_more_work; abort: requeued"], "warn", title_size=12)
+s.line([(900, 620), (900, 600), (840, 600), (840, 574)], None, dashed=True)
+s.text(16, 790, "Source: pipeline-runner.ts:runResearchPipeline, orchestrator.ts:188-1040, team-plan.ts:41-75, team.ts, sources/collector.ts, run-queue.ts, stages.ts.", 11, fill="#555")
 s.save(P("activity-research-run.svg"))
 
 # ---------------------------------------------------------------- activity: valuation
@@ -254,11 +254,13 @@ s.state(640, 80, 130, 34, "completed", "api")
 s.state(640, 145, 130, 34, "failed", "warn")
 s.line([(62, 125), (100, 125)], None)
 s.line([(220, 118), (360, 118)], "claim [lease null/expired]\nattempt_count++", lx=290, ly=96)
-s.line([(360, 136), (220, 136)], "lease expired [attempts < 3]", lx=290, ly=158)
+s.line([(360, 136), (220, 136)], "lease expired [attempts < 3] /\nreleased: shutdown, run locked", lx=290, ly=158)
 s.line([(480, 118), (640, 97)], "pipeline returned\n[owner = me]", lx=560, ly=82)
-s.line([(480, 130), (640, 162)], "error [owner] /\nexpired [attempts ≥ 3]", lx=540, ly=170)
+s.line([(480, 130), (640, 162)], "error [owner] / cancelRun /\nexpired [attempts ≥ 3]", lx=540, ly=170)
 s.text(800, 100, "Note: 'completed' also when the run ends", 11, fill="#555")
 s.text(800, 115, "waiting_for_human or needs_more_work.", 11, fill="#555")
+s.text(800, 140, "Reconcile: a running run with no job", 11, fill="#555")
+s.text(800, 155, "activity for 60 s gets a new queued job.", 11, fill="#555")
 # Run
 s.zone(20, 220, 1060, 235, "research_runs", "#4a8a3f")
 s.initial(55, 317)
@@ -277,8 +279,9 @@ s.line([(395, 334), (540, 395)], "exception / blocked /\nquality gate fails", lx
 s.line([(540, 410), (355, 410), (355, 334)], "resumeResearchRun on enqueue", lx=445, ly=428)
 s.line([(410, 314), (820, 314), (820, 279), (860, 279)], "completeRun", lx=740, ly=308)
 s.line([(410, 324), (840, 324), (840, 347), (860, 347)], "failRun", lx=760, ly=338)
-s.text(40, 445, "failed → running: resumeResearchRun on enqueue", 11, fill="#555")
-s.text(560, 448, "cancelled: checked by enqueue; no writer for runs (#15)", 11, fill="#a33", italic=True)
+s.text(40, 445, "failed → running (waiting_for_human at an open gate): resume on enqueue", 11, fill="#555")
+s.line([(710, 410), (860, 412)], "cancelRun", lx=785, ly=404)
+s.text(560, 448, "cancelRun from any state but completed; enqueue refuses cancelled", 11, fill="#555")
 # Stage
 s.zone(20, 470, 1060, 255, "research_stages", "#6f4fa3")
 s.initial(55, 560)
@@ -299,10 +302,12 @@ s.line([(400, 552), (560, 517)], "valid", lx=480, ly=525)
 s.line([(460, 662), (720, 662), (720, 517), (680, 517)], "approve", lx=590, ly=656)
 s.line([(400, 568), (560, 597)], "retries exhausted", lx=480, ly=598)
 s.raw('<path d="M370,543 C370,505 330,505 330,543" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>')
-s.text(350, 498, "retry [retryCount < max_retries]", 11, anchor="middle")
+s.text(350, 498, "retry [validation or transient model error < max_retries]", 11, anchor="middle")
 s.line([(680, 597), (800, 597)], "failRun: pending →", lx=740, ly=590)
 s.line([(620, 614), (620, 628), (345, 628), (345, 577)], "resume", lx=480, ly=622, dashed=True)
-s.text(760, 640, "resume: failed → running; later stages → pending", 11, fill="#555")
+s.text(760, 625, "cancelRun: open stages → cancelled", 11, fill="#555")
+s.text(760, 640, "resume: failed (or left running) → running; later → pending", 11, fill="#555")
+s.text(290, 700, "resume: an open gate, or human_review, stays waiting_for_human", 11, fill="#555")
 s.text(760, 655, "skip_and_continue: failed, run continues", 11, fill="#555")
 s.text(760, 670, "max_retries per stage: 0–3 (stages.ts)", 11, fill="#555")
 s.text(760, 685, "owner requires_rerun: stage + dependents → pending", 11, fill="#555")
@@ -311,14 +316,14 @@ s.text(760, 715, "ai_reviewer waiting_for_human until the decision", 11, fill="#
 s.save(P("state-machines.svg"))
 
 # ---------------------------------------------------------------- sequence
-s = Svg(1120, 1170, "Research run — UML sequence view",
+s = Svg(1120, 1350, "Research run — UML sequence view",
         "Ordered messages from run creation through enqueue, worker claim, advisory lock, parallel stage execution with model calls, report requests "
-        "answered without stage resets and the re-run approval, plan gate pause, approval and re-enqueue, plus the lease-expiry retry path.")
+        "answered without stage resets and the re-run approval, plan gate pause, approval and re-enqueue, the lease-expiry retry path, and cancel or shutdown.")
 parts = ["Analyst UI", "API route", "Postgres", "Worker", "Pipeline runner", "Stage handler", "Agent harness", "LLM provider"]
 xs = [70 + i * 140 for i in range(len(parts))]
 for x, p in zip(xs, parts):
     s.box(x - 60, 45, 120, 34, p, [], "ext" if p == "LLM provider" else ("store" if p == "Postgres" else "plain"), title_size=12)
-    s.raw(f'<line x1="{x}" y1="79" x2="{x}" y2="1140" stroke="#999" stroke-dasharray="4 4"/>')
+    s.raw(f'<line x1="{x}" y1="79" x2="{x}" y2="1320" stroke="#999" stroke-dasharray="4 4"/>')
 y = [100]
 def msg(a, b, label, ret=False):
     yy = y[0]
@@ -376,30 +381,37 @@ frame("alt [stage 4 research_plan gate]", "#b23b3b", xs[0] - 60, xs[4] + 70, gat
 def crash_body():
     msg(3, 2, "lease expires → requeue if attempts < 3, else failed")
 frame("alt [worker crash]", "#b07a1f", xs[2] - 70, xs[4] + 70, crash_body)
-assert y[0] < 1140, y[0]
-s.text(16, 1160, "Same pattern repeats at stage 22 human_review (POST …/review writes review_decisions; approve → enqueue). Final checks call completeRun or set needs_more_work.", 11, fill="#555")
+def stop_body():
+    msg(0, 1, "POST …/cancel")
+    msg(1, 2, "cancelRun: run, stages, job closed [txn]")
+    msg(3, 2, "renew lease → none (or SIGTERM)")
+    msg(3, 6, "abort signal → in-flight model call cancelled")
+    msg(3, 2, "release job → queued, no attempt used [owner]")
+frame("alt [cancel or worker shutdown]", "#b23b3b", xs[0] - 60, xs[6] + 65, stop_body)
+assert y[0] < 1320, y[0]
+s.text(16, 1340, "Same pattern repeats at stage 22 human_review (POST …/review writes review_decisions; approve → enqueue). Final checks call completeRun or set needs_more_work.", 11, fill="#555")
 s.save(P("sequence-research-run.svg"))
 
 # ---------------------------------------------------------------- trust boundaries
 s = Svg(1100, 640, "Trust boundaries and sensitive-data flow",
-        "Zones: local clients reaching the unauthenticated Next.js API; the app/worker zone holding secrets from .env.local; "
+        "Zones: local clients reaching the Next.js API (no accounts; loopback bind, Host and Origin checks); the app/worker zone holding secrets from .env.local; "
         "Postgres and ./storage; python3 executing model-generated code; external LLM, search, and data hosts returning untrusted content.")
 s.zone(20, 50, 230, 520, "Z0 Any local client", "#b23b3b")
-s.box(40, 90, 190, 80, "Browser / curl", ["anything that can reach", "the Next.js port"], "warn")
+s.box(40, 90, 190, 80, "Browser / curl", ["any local process on the", "port; other sites refused"], "warn")
 s.zone(280, 50, 520, 330, "Z1 App + worker processes (trusted code)", "#4a8a3f")
-s.box(300, 85, 230, 110, "Next.js API routes", ["NO authn/authz", "zod on some bodies", "uploads → ./storage (Z2)"], "api")
-s.box(550, 85, 230, 110, "Worker + agent harness", ["provider host allowlist", "redact() (partial, #10)", "budget + byte/time caps"], "worker")
-s.box(300, 230, 480, 120, "Secrets (.env.local, gitignored)", ["RESEARCH_MODEL_API_KEY · OPENCODE_GO_API_KEY", "RESEARCH_EMBEDDING_API_KEY · RESEARCH_WEB_SEARCH_API_KEY", "DATABASE_URL · redact() covers only MODEL key + DATABASE_URL", "backtest child inherits all of these (#11)"], "warn")
+s.box(300, 85, 230, 110, "Next.js API routes", ["no accounts (#8)", "Host + Origin check, no framing", "uploads ≤ 50 MB → ./storage (Z2)"], "api")
+s.box(550, 85, 230, 110, "Worker + agent harness", ["provider host allowlist", "redact() covers every key", "budget + byte/time caps"], "worker")
+s.box(300, 230, 480, 120, "Secrets (.env.local, gitignored)", ["RESEARCH_MODEL_API_KEY · OPENCODE_GO_API_KEY", "RESEARCH_EMBEDDING_API_KEY · RESEARCH_WEB_SEARCH_API_KEY", "DATABASE_URL · redact() covers all of these", "backtest child gets none of these (#11)"], "warn")
 s.zone(280, 400, 520, 170, "Z2 Local data stores", "#2f7f7f")
 s.box(300, 435, 230, 110, "Postgres", ["research data, model call", "logs, prompts/outputs", "dev password in compose"], "store")
 s.box(550, 435, 230, 110, "./storage", ["uploaded files by sha256", "backtest code + outputs", "exports"], "store")
 s.zone(830, 50, 250, 250, "Z3 External hosts (untrusted output)", "#666666")
 s.box(850, 85, 210, 80, "LLM + embedding", ["receive prompts / passages", "+ API keys"], "ext")
-s.box(850, 185, 210, 100, "Web search / fetch", ["search endpoint · DDG · Bing", "URLs · SEC · FRED · Yahoo · Stooq…", "isSafePublicUrl guard (#9)"], "ext")
+s.box(850, 185, 210, 100, "Web search / fetch", ["search endpoint · DDG · Bing", "URLs · SEC · FRED · Yahoo · Stooq…", "public-address check per hop"], "ext")
 s.zone(830, 330, 250, 240, "Z4 child processes", "#b07a1f")
-s.box(850, 365, 210, 120, "run_backtest.py (Z4a)", ["model-written strategy code", "AST/import limits only —", "not an OS sandbox;", "full env inherited"], "warn")
+s.box(850, 365, 210, 120, "run_backtest.py (Z4a)", ["model-written strategy code", "AST/import limits only —", "not an OS sandbox;", "allowlisted env, no keys"], "warn")
 s.box(850, 495, 210, 60, "repair sandbox (Z4b)", ["node --permission, empty env", "+ docling_parser.py"], "worker")
-s.line([(230, 130), (300, 130)], "HTTP, no auth", lx=265, ly=120)
+s.line([(230, 130), (300, 130)], "HTTP, no accounts", lx=265, ly=120)
 s.line([(415, 195), (415, 230)], None, dashed=True)
 s.line([(665, 195), (665, 230)], "read env", dashed=True, lx=700, ly=215)
 s.line([(300, 175), (290, 175), (290, 490), (300, 490)], "SQL", lx=294, ly=470, lanchor="start")

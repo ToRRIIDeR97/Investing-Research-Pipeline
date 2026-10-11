@@ -67,6 +67,8 @@ export interface ExecutionPolicy {
   maxRepairAttempts: number;
   maxAttempts: number;
   retryBaseDelayMs: number;
+  /** First retry delay after a 5xx, overload or rate limit that sent no retry-after; doubles per attempt. */
+  overloadRetryDelayMs?: number;
 }
 
 export interface AgentAttempt {

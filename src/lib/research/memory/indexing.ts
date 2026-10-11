@@ -44,6 +44,10 @@ async function saveParseText(text: string): Promise<string | null> {
  * advisory lock, so a document is indexed once and later calls report it as current.
  */
 export async function indexDocumentContent(sql: postgres.Sql, input: { sourceId: string; content: string; mimeType: string; title: string }): Promise<IndexResult> {
+  // A document stored again (same hash) is usually indexed already: skip the parse and file write.
+  // The locked check below still settles concurrent first indexing.
+  const indexed = await currentParse(sql, input.sourceId);
+  if (indexed) return { ...indexed, status: "current", warnings: [] };
   const parsed = parseDocument(input.content, input.mimeType);
   const outputPath = parsed.passages.length ? await saveParseText(parsed.text) : null;
   return sql.begin(async tx => {

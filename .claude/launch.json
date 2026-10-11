@@ -10,7 +10,7 @@
     {
       "name": "research-os-local",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "dev", "-p", "3002"],
+      "runtimeArgs": ["next", "dev", "-H", "127.0.0.1", "-p", "3002"],
       "port": 3002
     }
   ]

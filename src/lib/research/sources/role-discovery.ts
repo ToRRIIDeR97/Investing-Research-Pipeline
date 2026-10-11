@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { htmlToStructuredText } from "@/lib/research/memory/blocks";
+import { dropElements, firstElementBody, scanTags, tagAttribute } from "@/lib/html-scan";
+import { isPrivateHostname, publicFetch, readCapped } from "@/lib/net";
 
 const execFileAsync = promisify(execFile);
 
@@ -117,19 +119,8 @@ export function isSafePublicUrl(value: string): boolean {
     const url = new URL(value);
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return false;
     const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
-    if (
-      hostname === "localhost" ||
-      hostname.endsWith(".localhost") ||
-      hostname === "0.0.0.0" ||
-      hostname === "::1" ||
-      /^127\./.test(hostname) ||
-      /^10\./.test(hostname) ||
-      /^192\.168\./.test(hostname) ||
-      /^169\.254\./.test(hostname) ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
-    ) {
-      return false;
-    }
+    // Literal check only; publicFetch resolves DNS before each hop is fetched.
+    if (isPrivateHostname(hostname)) return false;
     return !BLOCKED_HOSTS.some((blocked) => hostname === blocked || hostname.endsWith(`.${blocked}`));
   } catch {
     return false;
@@ -161,15 +152,16 @@ export function isPlausibleSourceRole(urlValue: string, role: SourceRole): boole
   }
 }
 
+// Fetched pages are scanned with the linear helpers in html-scan.ts. Backtracking patterns over a
+// hostile 1 MB page blocked the worker's event loop, and with it the job lease renewal, for hours.
 export function extractPublicLinks(baseUrl: string, html: string): { url: string; text: string }[] {
   const links: { url: string; text: string }[] = [];
-  const pattern = /<a\b[^>]*href\s*=\s*["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  for (const match of html.matchAll(pattern)) {
+  for (const anchor of anchors(html)) {
+    const href = decodeHtml(anchor.href);
+    if (href.includes("#")) continue;
     try {
-      const url = new URL(decodeHtml(match[1]), baseUrl).toString();
-      if (!isSafePublicUrl(url)) continue;
-      const text = stripHtml(match[2]).replace(/\s+/g, " ").trim();
-      links.push({ url, text });
+      const url = new URL(href, baseUrl).toString();
+      if (isSafePublicUrl(url)) links.push({ url, text: anchor.text });
     } catch {
       // Ignore malformed links.
     }
@@ -177,8 +169,25 @@ export function extractPublicLinks(baseUrl: string, html: string): { url: string
   return links;
 }
 
+/** Anchors with an href. Like a browser, an anchor ends at </a> or at the next <a>; one never closed is dropped. */
+function anchors(html: string): { href: string; text: string }[] {
+  const found: { href: string; text: string }[] = [];
+  let open: { href: string; from: number } | null = null;
+  for (const tag of scanTags(html)) {
+    if (tag.name !== "a") continue;
+    if (open) found.push({ href: open.href, text: inlineText(html.slice(open.from, tag.start)) });
+    const href = tag.closing ? undefined : tagAttribute(tag, "href");
+    open = href ? { href, from: tag.end } : null;
+  }
+  return found;
+}
+
 export function isSubstantiveFetchedContent(content: string, title = ""): boolean {
-  const text = stripHtml(content).replace(/\s+/g, " ").trim();
+  return isSubstantiveText(stripHtml(content), title);
+}
+
+function isSubstantiveText(raw: string, title: string): boolean {
+  const text = raw.replace(/\s+/g, " ").trim();
   if (text.length < 500 || text.split(/\s+/).length < 80) return false;
   const combined = `${title} ${text.slice(0, 2000)}`.toLowerCase();
   return !/(access denied|captcha|enable javascript|page not found|404 not found)/i.test(combined);
@@ -187,7 +196,7 @@ export function isSubstantiveFetchedContent(content: string, title = ""): boolea
 export async function discoverRoleSources(
   context: RoleDiscoveryContext,
   roles: SourceRole[],
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = publicFetch
 ): Promise<DiscoveredRoleSource[]> {
   if (process.env.RESEARCH_TEST_MODE === "1" || process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock") {
     return [];
@@ -282,9 +291,9 @@ async function discoverSeedCandidates(
     if (!response?.ok) continue;
     const type = response.headers.get("content-type") || "";
     if (!type.includes("html")) continue;
-    const html = await boundedText(response);
+    const links = extractPublicLinks(response.url || seed, await boundedText(response));
     for (const role of roles) {
-      const matching = extractPublicLinks(response.url || seed, html)
+      const matching = links
         .filter((link) => ROLE_LINK_TERMS[role].test(`${link.text} ${link.url}`))
         .slice(0, 8)
         .map((link) => ({
@@ -323,6 +332,8 @@ async function searchWeb(query: string, fetchImpl: typeof fetch): Promise<Search
   const endpoint = process.env.RESEARCH_WEB_SEARCH_ENDPOINT;
   if (endpoint) {
     const url = new URL(endpoint);
+    // The key travels in headers, so never in cleartext (#22).
+    if (url.protocol !== "https:") throw new Error("RESEARCH_WEB_SEARCH_ENDPOINT must use HTTPS");
     url.searchParams.set("q", query);
     const headers: Record<string, string> = { Accept: "application/json" };
     const apiKey = process.env.RESEARCH_WEB_SEARCH_API_KEY;
@@ -332,7 +343,7 @@ async function searchWeb(query: string, fetchImpl: typeof fetch): Promise<Search
     }
     const response = await safeFetch(url.toString(), fetchImpl, headers);
     if (!response.ok) return [];
-    const payload = await response.json();
+    const payload = JSON.parse(new TextDecoder().decode(await readCapped(response, 1_000_000)));
     return parseSearchPayload(payload, query);
   }
 
@@ -357,17 +368,25 @@ async function searchWeb(query: string, fetchImpl: typeof fetch): Promise<Search
   return parseBingHtml(await boundedText(bingResponse), query);
 }
 
+/** The first linked heading of each `li.b_algo` result. */
 export function parseBingHtml(html: string, query: string): SearchCandidate[] {
   const candidates: SearchCandidate[] = [];
-  const pattern = /<li[^>]+class=["'][^"']*\bb_algo\b[^"']*["'][\s\S]*?<h2[^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  for (const match of html.matchAll(pattern)) {
-    const url = unwrapBingUrl(decodeHtml(match[1]));
-    if (!isAcceptableSourceUrl(url)) continue;
-    candidates.push({
-      url,
-      title: stripHtml(match[2]).replace(/\s+/g, " ").trim(),
-      query,
-    });
+  let state: "outside" | "result" | "heading" = "outside";
+  let link: { href: string; from: number } | null = null;
+  for (const tag of scanTags(html)) {
+    if (link && tag.name === "a") {
+      const url = unwrapBingUrl(decodeHtml(link.href));
+      if (isAcceptableSourceUrl(url)) candidates.push({ url, title: inlineText(html.slice(link.from, tag.start)), query });
+      link = null;
+      state = "outside";
+    }
+    if (tag.closing) continue;
+    if (tag.name === "li") state = /\bb_algo\b/.test(tagAttribute(tag, "class") || "") ? "result" : "outside";
+    else if (tag.name === "h2" && state === "result") state = "heading";
+    else if (tag.name === "a" && state === "heading") {
+      const href = tagAttribute(tag, "href");
+      if (href) link = { href, from: tag.end };
+    }
   }
   return dedupeCandidates(candidates).slice(0, 10);
 }
@@ -415,10 +434,12 @@ async function fetchCandidate(
       content = await boundedText(response);
     }
     const title = extractTitle(content) || candidate.title;
-    if (!isSubstantiveFetchedContent(content, title)) return null;
+    // Strip once; the substance and relevance checks share the text.
+    const text = stripHtml(content);
+    if (!isSubstantiveText(text, title)) return null;
     const explicitRoleSeed = candidate.query.includes(`explicit-role-seed:${role}`);
     if (!isRelevantForRole(
-      content,
+      text,
       title,
       candidate.url,
       role,
@@ -430,10 +451,13 @@ async function fetchCandidate(
     // SEC filing documents carry no date tags; the EDGAR filing index states the filing date.
     const publishedAt = metaPublishedAt ?? await secFilingDate(response.url || candidate.url, fetchImpl);
     if (publishedAt && cutoffAt && new Date(publishedAt) > new Date(cutoffAt)) return null;
-    if (/html/i.test(contentType)) {
-      const article = content.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1];
+    // XML too: research memory parses stored html and xml types with the DOM parser, which only
+    // the rebuild in htmlToStructuredText keeps linear on a hostile page.
+    if (/html|xml/i.test(contentType)) {
+      const article = firstElementBody(content, "article");
+      const html = article && isSubstantiveFetchedContent(article, title) ? article : content;
       // Keep headings and paragraphs so stored pages can be split into sections later.
-      content = htmlToStructuredText(article && isSubstantiveFetchedContent(article, title) ? article : content);
+      content = htmlToStructuredText(html);
       storedMimeType = "text/plain";
       extractionMethod = "html_structured_text";
     }
@@ -466,10 +490,11 @@ async function fetchCandidate(
   }
 }
 
+/** Follows up to 3 redirects, checking each hop. `credentials` go to the first hop only. */
 async function safeFetch(
   value: string,
   fetchImpl: typeof fetch,
-  headers: Record<string, string> = {}
+  credentials: Record<string, string> = {}
 ): Promise<Response> {
   let current = value;
   for (let redirects = 0; redirects <= 3; redirects += 1) {
@@ -478,30 +503,26 @@ async function safeFetch(
       redirect: "manual",
       headers: {
         "User-Agent": "ResearchOS/0.3 role-driven-source-discovery research-pipeline@example.com",
-        ...headers,
+        ...(redirects === 0 ? credentials : {}),
       },
       signal: AbortSignal.timeout(15_000),
     });
     if (![301, 302, 303, 307, 308].includes(response.status)) return response;
     const location = response.headers.get("location");
     if (!location) return response;
+    await response.body?.cancel().catch(() => undefined);
     current = new URL(location, current).toString();
   }
   throw new Error("Too many redirects");
 }
 
+/** The first 1 MB of a decoded body. */
 async function boundedText(response: Response): Promise<string> {
-  const contentLength = Number(response.headers.get("content-length") || 0);
-  if (contentLength > 1_000_000) throw new Error("Source exceeds discovery size limit");
-  return (await response.text()).slice(0, 1_000_000);
+  return new TextDecoder().decode(await readCapped(response, 1_000_000, true));
 }
 
 async function boundedBytes(response: Response): Promise<Uint8Array> {
-  const contentLength = Number(response.headers.get("content-length") || 0);
-  if (contentLength > 10_000_000) throw new Error("PDF exceeds discovery size limit");
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > 10_000_000) throw new Error("PDF exceeds discovery size limit");
-  return bytes;
+  return readCapped(response, 10_000_000);
 }
 
 async function extractPdfText(bytes: Uint8Array): Promise<string> {
@@ -544,26 +565,29 @@ export async function secFilingDate(url: string, fetchImpl: typeof fetch): Promi
   }
 }
 
+/** A date meta tag, then JSON-LD datePublished, then the first <time datetime>. */
 function extractPublishedAt(content: string): string | null {
-  const patterns = [
-    /<meta[^>]+(?:property|name)=["'](?:article:published_time|date|datePublished)["'][^>]+content=["']([^"']+)["']/i,
-    /"datePublished"\s*:\s*"([^"]+)"/i,
-    /<time[^>]+datetime=["']([^"']+)["']/i,
-  ];
-  for (const pattern of patterns) {
-    const match = content.match(pattern);
-    if (!match) continue;
-    const date = new Date(match[1]);
+  const dateMeta = /^(?:article:published_time|date|datePublished)$/i;
+  let meta: string | undefined;
+  let time: string | undefined;
+  for (const tag of scanTags(content)) {
+    if (tag.closing) continue;
+    if (!meta && tag.name === "meta" &&
+      (dateMeta.test(tagAttribute(tag, "property") || "") || dateMeta.test(tagAttribute(tag, "name") || ""))) {
+      meta = tagAttribute(tag, "content");
+    } else if (!time && tag.name === "time") time = tagAttribute(tag, "datetime");
+    if (meta && time) break;
+  }
+  for (const value of [meta, content.match(/"datePublished"\s*:\s*"([^"]+)"/i)?.[1], time]) {
+    if (!value) continue;
+    const date = new Date(decodeHtml(value));
     if (!Number.isNaN(date.getTime())) return date.toISOString();
   }
   return null;
 }
 
 function extractTitle(content: string): string {
-  return stripHtml(content.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 300);
+  return inlineText(firstElementBody(content, "title") || "").slice(0, 300);
 }
 
 function roleSourceType(role: SourceRole): string {
@@ -616,14 +640,15 @@ function unwrapBingUrl(value: string): string {
   }
 }
 
+/** `text` is the page's already-extracted text; only its first 20,000 characters are searched. */
 function isRelevantForRole(
-  content: string,
+  text: string,
   title: string,
   url: string,
   role: SourceRole,
   assetName: string
 ): boolean {
-  const searchable = `${title} ${url} ${stripHtml(content).slice(0, 20_000)}`.toLowerCase();
+  const searchable = `${title} ${url} ${text.slice(0, 20_000)}`.toLowerCase();
   if (["customer_or_channel", "supplier_or_partner"].includes(role) && assetName) {
     const identity = `${title} ${url}`.toLowerCase();
     const tokens = assetName.toLowerCase().split(/[^a-z0-9]+/).filter((token) => token.length >= 4);
@@ -643,7 +668,11 @@ function isRelevantForRole(
 }
 
 function stripHtml(value: string): string {
-  return decodeHtml(value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
+  return decodeHtml(dropElements(value, ["script", "style"]).replace(/<[^<>]*>/g, " "));
+}
+
+function inlineText(value: string): string {
+  return stripHtml(value).replace(/\s+/g, " ").trim();
 }
 
 function decodeHtml(value: string): string {

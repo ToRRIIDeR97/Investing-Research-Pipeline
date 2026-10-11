@@ -1,7 +1,7 @@
 import postgres from "postgres";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { copyFile, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { join, resolve, sep } from "node:path";
 import { evaluateResearchQuality } from "@/lib/workflow/quality-gates";
 import type { ResearchQualityGateResult } from "@/lib/workflow/quality-gates";
 
@@ -32,7 +32,6 @@ interface ResearchPackageData {
   backtests: Row[];
   backtestArtifacts: Row[];
   modelCalls: Row[];
-  tasks: Row[];
   quality?: ResearchQualityGateResult;
 }
 
@@ -249,7 +248,6 @@ async function loadPackageData(sql: ReturnType<typeof postgres>, runId: string, 
     backtests,
     backtestArtifacts,
     modelCalls,
-    tasks,
   ] = await Promise.all([
     sql`SELECT * FROM risks WHERE research_run_id = ${runId} ORDER BY severity DESC, created_at DESC`,
     sql`SELECT * FROM catalysts WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
@@ -274,7 +272,6 @@ async function loadPackageData(sql: ReturnType<typeof postgres>, runId: string, 
     sql`SELECT * FROM backtest_runs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM backtest_artifacts WHERE research_run_id = ${runId} ORDER BY artifact_type, created_at DESC`,
     sql`SELECT * FROM model_call_logs WHERE research_run_id = ${runId} ORDER BY created_at ASC`,
-    sql`SELECT * FROM research_tasks WHERE research_run_id = ${runId} ORDER BY created_at ASC`,
   ]);
 
   return {
@@ -298,7 +295,6 @@ async function loadPackageData(sql: ReturnType<typeof postgres>, runId: string, 
     backtests: dedupeBy(backtests, (row) => `${row.name}|${row.strategy_name}|${stringifyBrief(row.metrics_json)}`),
     backtestArtifacts: dedupeBy(backtestArtifacts, (row) => `${row.backtest_run_id}|${row.artifact_type}|${row.storage_path}`),
     modelCalls,
-    tasks,
   };
 }
 
@@ -1619,7 +1615,9 @@ async function copyBacktestArtifacts(data: ResearchPackageData, absoluteDir: str
   };
 
   for (const artifact of data.backtestArtifacts) {
-    const sourcePath = join(process.cwd(), artifact.storage_path || "");
+    const sourcePath = await storedBacktestFile(artifact.storage_path || "");
+    // Missing or out-of-tree artifact files are still listed in backtest_artifacts.csv.
+    if (!sourcePath) continue;
     const basename = String(artifact.title || "").toLowerCase();
     const artifactType = String(artifact.artifact_type || "").toLowerCase();
     if (artifactType === "equity_curve" || basename === "equity_curve.csv") {
@@ -1652,6 +1650,20 @@ async function copyBacktestArtifacts(data: ResearchPackageData, absoluteDir: str
   return copied;
 }
 
+/**
+ * The real path of a stored backtest file, or null when it is missing or resolves, through
+ * `..` or a symlink, outside storage/backtests. Backtest results name their own paths (S6).
+ */
+export async function storedBacktestFile(storagePath: string): Promise<string | null> {
+  try {
+    const root = await realpath(join(process.cwd(), "storage", "backtests"));
+    const path = await realpath(resolve(process.cwd(), storagePath));
+    return path.startsWith(root + sep) ? path : null;
+  } catch {
+    return null;
+  }
+}
+
 async function readTextIfExists(path: string) {
   try {
     return await readFile(path, "utf8");
@@ -1671,8 +1683,13 @@ function csv(rows: Array<Array<unknown>>) {
   return `${rows.map((row) => row.map((value) => csvEscape(value)).join(",")).join("\n")}\n`;
 }
 
-function csvEscape(value: unknown) {
-  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+// Excel and Sheets evaluate a cell that starts with = + - @ tab or CR as a formula even when it
+// is quoted, and these cells carry model and source text. Such a cell gets a leading ' unless it
+// is a plain number (S7).
+export function csvEscape(value: unknown) {
+  const text = String(value ?? "");
+  const safe = /^[=+\-@\t\r]/.test(text) && !Number.isFinite(Number(text)) ? `'${text}` : text;
+  return `"${safe.replace(/"/g, '""')}"`;
 }
 
 function safeSlug(value: string) {
