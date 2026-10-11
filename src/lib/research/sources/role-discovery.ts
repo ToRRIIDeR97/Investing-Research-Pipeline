@@ -451,7 +451,9 @@ async function fetchCandidate(
     // SEC filing documents carry no date tags; the EDGAR filing index states the filing date.
     const publishedAt = metaPublishedAt ?? await secFilingDate(response.url || candidate.url, fetchImpl);
     if (publishedAt && cutoffAt && new Date(publishedAt) > new Date(cutoffAt)) return null;
-    if (/html/i.test(contentType)) {
+    // XML too: research memory parses stored html and xml types with the DOM parser, which only
+    // the rebuild in htmlToStructuredText keeps linear on a hostile page.
+    if (/html|xml/i.test(contentType)) {
       const article = firstElementBody(content, "article");
       const html = article && isSubstantiveFetchedContent(article, title) ? article : content;
       // Keep headings and paragraphs so stored pages can be split into sections later.

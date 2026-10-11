@@ -81,7 +81,8 @@ function rowsOf(table: DomNode): DomNode[] {
   for (const child of table.children || []) {
     if (!isElement(child) || skipped(child)) continue;
     if (tag(child) === "tr") rows.push(child);
-    else if (["tbody", "thead", "tfoot"].includes(tag(child))) rows.push(...rowsOf(child));
+    // A loop, not a spread: a section can hold more rows than a call takes arguments.
+    else if (["tbody", "thead", "tfoot"].includes(tag(child))) for (const row of rowsOf(child)) rows.push(row);
   }
   return rows;
 }
@@ -205,6 +206,10 @@ export function contentBlocks(content: string, mimeType: string): Block[] {
 
 // Implied-end elements that keep their tag when an untrusted page is rebuilt; the parser closes them.
 const FLAT_KEPT = new Set(["p", "li", "dt", "dd", "br", "tr", "td", "th", "thead", "tbody", "tfoot", "caption"]);
+// Table parts whose closing tags the rebuild drops (a caption's is followed by a cell instead), and
+// the elements it follows with an empty cell, which tableText drops.
+const TABLE_PARTS = new Set(["tr", "td", "th", "thead", "tbody", "tfoot", "caption"]);
+const OPENS_CELL = new Set(["table", "tr", "thead", "tbody", "tfoot"]);
 // Rebuilt pages nest at most this many kept elements; deeper ones contribute only their text.
 const MAX_REBUILT_DEPTH = 64;
 
@@ -213,6 +218,8 @@ const MAX_REBUILT_DEPTH = 64;
  * tags, headings, tables, bold as a styled span, hidden elements dropped with their content, and
  * no other attributes. The parser then sees well-nested markup with no formatting elements, so
  * its adoption agency, formatting reconstruction and deep scope scans never run on hostile input.
+ * Content inside a table always lands in a cell or caption: content between cells is moved in
+ * front of the table one node at a time (foster parenting), which is quadratic in the node count.
  */
 function rebuildHtml(html: string): string {
   const out: string[] = [];
@@ -241,7 +248,14 @@ function rebuildHtml(html: string): string {
     const kept = style.includes("display:none") ? ' style="display:none"'
       : tag.name === "b" || tag.name === "strong" || /font-weight:(bold|bolder|[6-9]00)/.test(style) ? ' style="font-weight:bold"' : "";
     if (event.type === "flat") {
-      if (!hidden && FLAT_KEPT.has(tag.name)) out.push(tag.closing ? `</${tag.name}>` : `<${tag.name}${kept}>`);
+      if (hidden || !FLAT_KEPT.has(tag.name)) continue;
+      // Terms and descriptions read the same as list items. Kept apart, each nests inside the
+      // other without limit ('<li><dt><li>...'), and every insertion scans that depth.
+      const name = tag.name === "dt" || tag.name === "dd" ? "li" : tag.name;
+      if (!tag.closing) out.push(`<${name}${kept}>${OPENS_CELL.has(name) ? "<td>" : ""}`);
+      // The next cell, row or section closes the others, so a closing tag never leaves table context.
+      else if (name === "caption") out.push("</caption><td>");
+      else if (!TABLE_PARTS.has(name)) out.push(`</${name}>`);
     } else if (hidden || SKIPPED.has(tag.name) || kept.includes("display:none")) {
       hidden++;
       closers.push("");
@@ -250,7 +264,7 @@ function rebuildHtml(html: string): string {
       if (!name || depth >= MAX_REBUILT_DEPTH) { closers.push(null); continue; }
       depth++;
       closers.push(name);
-      out.push(`<${name}${kept}>`);
+      out.push(`<${name}${kept}>${OPENS_CELL.has(name) ? "<td>" : ""}`);
     }
   }
   return out.join("");

@@ -3,7 +3,7 @@ import test from "node:test";
 import { discoverRoleSources, extractPublicLinks, parseBingHtml } from "../src/lib/research/sources/role-discovery";
 import { filingPlainText } from "../src/lib/research/history/headcount";
 import { balancedHtml } from "../src/lib/html-scan";
-import { htmlBlocks, htmlToStructuredText } from "../src/lib/research/memory/blocks";
+import { contentBlocks, htmlBlocks, htmlToStructuredText } from "../src/lib/research/memory/blocks";
 
 const MB = 1_000_000;
 const fill = (unit: string, size = MB) => unit.repeat(Math.ceil(size / unit.length)).slice(0, size);
@@ -32,6 +32,17 @@ const hostilePages: Record<string, string> = {
     + "<a><b><big><code><em><font><i><nobr><s><small><strike><strong><tt><u>".repeat(3) + fill("<div>x</div>")).slice(0, MB),
   "relevant page of distinct unclosed formatting": (relevant
     + Array.from({ length: MB / 16 }, (_, index) => `<p><b id=${index}></p>`).join("")).slice(0, MB),
+  // Content in a table outside any cell, which the parser moves in front of the table node by node.
+  "relevant page of <table> then <br>": (relevant + "<table>" + fill("<br>")).slice(0, MB),
+  "relevant page of <table> then </p>": (relevant + "<table>" + fill("</p>")).slice(0, MB),
+  "relevant page of <table> then <p>x": (relevant + "<table>" + fill("<p>x")).slice(0, MB),
+  "relevant page of <table> then <li>": (relevant + "<table>" + fill("<li>")).slice(0, MB),
+  "relevant page of <table> then </td><br>": (relevant + "<table><tr><td>" + fill("</td><br>")).slice(0, MB),
+  // More rows than a spread call takes arguments.
+  "relevant page of <table> then <tr>": (relevant + "<table>" + fill("<tr>")).slice(0, MB),
+  // List items and definition terms each nest inside the other without limit.
+  "relevant page of <li><dt>": (relevant + fill("<li><dt>")).slice(0, MB),
+  "relevant page of <dd><li> served as XML": (relevant + fill("<dd><li>")).slice(0, MB),
 };
 
 async function withDiscoveryEnv<T>(run: () => Promise<T>): Promise<T> {
@@ -54,17 +65,20 @@ test("a 1 MB adversarial page is processed in under 1 s", async () => {
     const fetchMock = (async (input: string | URL | Request) => String(input).startsWith("https://search.example/api")
       ? new Response(JSON.stringify({ results: [{ url: "https://acme.example/history", title: "Acme history" }] }),
         { headers: { "content-type": "application/json" } })
-      : new Response(body, { headers: { "content-type": "text/html" } })) as typeof fetch;
+      : new Response(body, { headers: { "content-type": name.endsWith("XML") ? "application/xml" : "text/html" } })) as typeof fetch;
     const started = performance.now();
     const sources = await withDiscoveryEnv(() => discoverRoleSources({
       assetName: "Acme Company", symbol: "ACME", seedUrls: ["https://acme.example/investors"],
     }, ["founder_and_company_history", "company_investor_relations"], fetchMock));
+    // Research memory later splits what discovery stored into blocks.
+    for (const source of sources) contentBlocks(source.content, source.mimeType);
     const elapsed = performance.now() - started;
     assert.ok(elapsed < 1_000, `${name}: ${Math.round(elapsed)} ms`);
     if (name.startsWith("relevant")) {
       const history = sources.find((source) => source.metadata.source_role === "founder_and_company_history");
       assert.ok(history, name);
       assert.match(history.content, /^documented founder history of Acme/, name);
+      assert.equal(history.mimeType, "text/plain", name);
     }
   }
 
@@ -123,13 +137,23 @@ test("untrusted pages are parsed from a balanced rebuild that keeps the structur
     "<article><h1>Acme history</h1><p><b>Founding</b></p><p>Acme was founded in 1990 &amp; grew.</p>",
     '<div style="font-weight: 700">Leadership</div><div>The founder <strong>still</strong> leads it.</div>',
     "<ul><li>One<li>Two</ul><table><tr><th>Year<th>Staff<tr><td>2020<td>1,200</table>",
+    "<dl><dt>Founded</dt><dd>1990</dd></dl><table><caption>Staff</caption><thead><tr><th>Year</th><th>Staff</th></tr></thead>",
+    "<tbody><tr><td>2021</td> <td>1,400</td></tr></tbody></table>",
     '<div style="display:none">hidden</div><p style="display: none">also hidden</p><script>var x = "<p>";</script>',
     "<span><svg><title>icon</title></svg>Ends <i>here</i>.</span></article></body></html>",
   ].join("\n");
   const expected = "Home\n\n# Acme history\n\n## Founding\n\nAcme was founded in 1990 & grew.\n\n## Leadership\n\n"
-    + "The founder still leads it.\n\nOne\n\nTwo\n\nYear | Staff\n2020 | 1,200\n\nEnds here.";
+    + "The founder still leads it.\n\nOne\n\nTwo\n\nYear | Staff\n2020 | 1,200\n\nFounded\n\n1990\n\nYear | Staff\n2021 | 1,400\n\nEnds here.";
   assert.equal(htmlBlocks(page).map((block) => block.type === "heading" ? `${"#".repeat(block.level!)} ${block.text}` : block.text)
     .join("\n\n"), expected);
   assert.equal(htmlToStructuredText(page), expected);
   assert.equal(htmlToStructuredText("<b><div>Title</b> body</div>"), "Title\n\nbody");
+  // Cells and rows are never closed in the rebuild, so stray text between cells joins a cell.
+  assert.equal(htmlToStructuredText("<table><tr><td>a</td>stray<td>b</td></tr></table>"), "astray | b");
+});
+
+test("a table with more rows than a call takes arguments is read in full", () => {
+  const rows = "<tr><td>1".repeat(200_000);
+  assert.equal(htmlBlocks(`<table>${rows}</table>`)[0].text.split("\n").length, 200_000);
+  assert.equal(htmlToStructuredText(`<table>${rows}`).split("\n").length, 200_000);
 });
