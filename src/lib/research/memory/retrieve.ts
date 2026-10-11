@@ -187,19 +187,15 @@ export async function retrievePassages(sql: postgres.Sql, input: { runId: string
   const query = orQuery(need.query);
   const limit = Math.max(1, Math.floor(need.maxPassages ?? 8));
   const depth = Math.max(limit * 5, 50);
+  // search_tsv holds the section path (weight A) and the text (weight B); an A match is a section match.
   const keywordRows = query && parseIds.length ? await sql`
-    WITH q AS (SELECT websearch_to_tsquery('english', ${query}) AS q),
-    candidates AS (
-      SELECT dc.*, q.q,
-        COALESCE((SELECT string_agg(value, ' ') FROM jsonb_array_elements_text(COALESCE(dc.metadata_json->'section_path', '[]'::jsonb))), '') AS section_text
-      FROM document_chunks dc CROSS JOIN q WHERE dc.document_parse_id = ANY(${parseIds}::uuid[])
-    )
-    SELECT id, source_document_id, document_parse_id, chunk_index, section_title, page_start, char_start, char_end, text, metadata_json,
-      ts_rank_cd(to_tsvector('english', text), q) AS text_rank,
-      to_tsvector('english', section_text) @@ q AS section_match
-    FROM candidates
-    WHERE to_tsvector('english', text) @@ q OR to_tsvector('english', section_text) @@ q
-    ORDER BY section_match DESC, text_rank DESC, source_document_id, chunk_index
+    WITH q AS (SELECT websearch_to_tsquery('english', ${query}) AS q)
+    SELECT dc.id, dc.source_document_id, dc.document_parse_id, dc.chunk_index, dc.section_title, dc.page_start, dc.char_start, dc.char_end, dc.text, dc.metadata_json,
+      ts_rank_cd(dc.search_tsv, q.q) AS text_rank,
+      ts_filter(dc.search_tsv, '{a}') @@ q.q AS section_match
+    FROM document_chunks dc CROSS JOIN q
+    WHERE dc.document_parse_id = ANY(${parseIds}::uuid[]) AND dc.search_tsv @@ q.q
+    ORDER BY section_match DESC, text_rank DESC, dc.source_document_id, dc.chunk_index
     LIMIT ${depth}` : [];
   const vectors = input.embeddings && parseIds.length
     ? await vectorRanking(sql, { runId: input.runId, parseIds, query: need.query, embeddings: input.embeddings, depth })

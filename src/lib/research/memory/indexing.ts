@@ -74,6 +74,9 @@ export async function indexDocumentContent(sql: postgres.Sql, input: { sourceId:
       await tx`INSERT INTO document_chunks ${tx(rows.slice(start, start + 200), "source_document_id", "document_parse_id", "chunk_index",
         "section_title", "page_start", "page_end", "char_start", "char_end", "text", "token_count", "metadata_json")}`;
     }
+    // Stored once so retrieval reads the GIN index instead of parsing every passage per query.
+    await tx`UPDATE document_chunks SET search_tsv = setweight(to_tsvector('english', COALESCE(metadata_json->'section_path', '[]'::jsonb)), 'A')
+      || setweight(to_tsvector('english', text), 'B') WHERE document_parse_id = ${parseId}`;
     await tx`UPDATE document_parses SET status = 'completed', completed_at = NOW() WHERE id = ${parseId}`;
     return { parseId, passages: rows.length, status: "indexed" as const, warnings };
   });
