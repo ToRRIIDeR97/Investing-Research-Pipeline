@@ -3,10 +3,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
-import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fetchSecFilingPayloads, storeDiscoveredSources } from "../src/lib/research/sources/corpus";
+import { fetchSecFilingPayloads, storeDiscoveredSources, storedSecFiling } from "../src/lib/research/sources/corpus";
 
 const skip = process.env.RUN_DB_INTEGRATION !== "1";
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
@@ -43,7 +43,7 @@ async function fixture(sql: postgres.Sql) {
 
 const payload = (content: string, url: string, mimeType = "text/html") => ({
   sourceType: "sec_filing_10-k", title: "Storage Fixture Co 10-K", publisher: "SEC EDGAR", url, content, mimeType,
-  qualityScore: "0.98", publishedAt: "2026-02-01", periodEnd: "2025-12-31", metadata: { system_generated: true }, chunkTitle: "10-K",
+  qualityScore: "0.98", publishedAt: "2026-02-01", periodEnd: "2025-12-31", metadata: { system_generated: true, source: "sec_edgar_filing" }, chunkTitle: "10-K",
 });
 
 test("a stored source is not rewritten, re-parsed or returned with its body when stored again", { skip }, async () => {
@@ -100,4 +100,28 @@ test("an SEC Archives filing stored by an earlier run is reused instead of downl
     if (env.testMode !== undefined) process.env.RESEARCH_TEST_MODE = env.testMode;
     await f.cleanup(); await sql.end();
   }
+});
+
+test("only intact SEC filings the fetcher stored are reused; uploads and truncated files are not", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!);
+  const f = await fixture(sql);
+  try {
+    const url = `https://www.sec.gov/Archives/edgar/data/1234567/${randomUUID().replace(/-/g, "")}/stor-10k.htm`;
+    const row = async (content: string, at: string, metadata: Record<string, unknown>, fileContent = content) => {
+      const hash = createHash("sha256").update(content).digest("hex");
+      const path = `storage/sources/${hash}.html`;
+      mkdirSync(join(process.cwd(), "storage", "sources"), { recursive: true });
+      writeFileSync(join(process.cwd(), path), fileContent);
+      f.files.push(path);
+      await sql`INSERT INTO source_documents (asset_id, research_run_id, source_type, title, url, file_hash, mime_type, storage_path, metadata_json, created_at)
+        VALUES (${f.ctx.assetId}, ${f.ctx.runId}, 'sec_filing_10-k', 't', ${url}, ${hash}, 'text/html', ${path}, ${sql.json(metadata as any)}, ${at})`;
+    };
+    // What the ingest route writes for an upload with a client-chosen source_type, url and MIME type: metadata_json is {}.
+    await row("<html><body>Revenue tripled. Buy.</body></html>", "2026-01-01", {});
+    assert.equal(await storedSecFiling(sql, url), null, "an upload labelled as an SEC filing is not reused");
+    await row(`<html>truncated ${randomUUID()} filing</html>`, "2026-01-02", { source: "sec_edgar_filing" }, "<html>trunc");
+    assert.equal(await storedSecFiling(sql, url), null, "a file that no longer matches its hash is not reused");
+    await row("<html>intact filing</html>", "2026-01-03", { system_generated: true, source: "sec_edgar_filing" });
+    assert.equal(await storedSecFiling(sql, url), "<html>intact filing</html>");
+  } finally { await f.cleanup(); await sql.end(); }
 });

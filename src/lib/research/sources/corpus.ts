@@ -880,18 +880,21 @@ async function macroSourcePayload(ctx: RunContext): Promise<SourcePayload | null
 /**
  * EDGAR Archives documents (accession path and file name) never change, so a filing an earlier run stored is read
  * back instead of downloaded. SEC appends a randomised bot-manager script to each response, so a new download
- * hashes differently and was stored as another full copy on every run.
+ * hashes differently and was stored as another full copy on every run. Only rows this fetcher wrote are reused:
+ * uploads can set source_type, url and MIME type but not metadata_json, so they never stand in for a download.
  */
 export async function storedSecFiling(sql: Sql, url: string): Promise<string | null> {
-  const rows = await sql`SELECT storage_path FROM source_documents
+  const rows = await sql`SELECT storage_path, file_hash FROM source_documents
     WHERE url = ${url} AND source_type LIKE 'sec\\_filing\\_%' AND mime_type = 'text/html'
-      AND storage_path LIKE 'storage/sources/%'
+      AND metadata_json->>'source' = 'sec_edgar_filing' AND storage_path LIKE 'storage/sources/%'
     ORDER BY created_at, id`;
   for (const row of rows) {
     try {
-      return await readFile(join(process.cwd(), String(row.storage_path)), "utf8");
+      const bytes = await readFile(join(process.cwd(), String(row.storage_path)));
+      // A missing or truncated file falls through to the next copy, then to a download.
+      if (createHash("sha256").update(bytes).digest("hex") === row.file_hash) return bytes.toString("utf8");
     } catch {
-      // A missing file falls through to the next copy, then to a download.
+      // As above.
     }
   }
   return null;
