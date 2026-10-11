@@ -231,8 +231,13 @@ test("AC-6, AC-7: an approved re-run does not use up the run's automatic reset",
   const run = await createRun(sql);
   const asked: Record<string, number> = {};
   let version = 0;
-  const saveRecord = () => saveReportArtifact(sql, run, "historical_record", `${run.assetSlug}-historical-record`,
-    { artifact_type: "historical_record", pass: ++version, fixture: run.runId });
+  // Each owner cites one of its own artifacts (an answer packet holds only its role's slice); the re-run rebuilds both.
+  const saveRecord = async () => {
+    await saveReportArtifact(sql, run, "valuation_scenario_set", `${run.assetSlug}-valuation`,
+      { artifact_type: "valuation_scenario_set", pass: version + 1, fixture: run.runId });
+    return saveReportArtifact(sql, run, "historical_record", `${run.assetSlug}-historical-record`,
+      { artifact_type: "historical_record", pass: ++version, fixture: run.runId });
+  };
   const model = scriptModel(packet => {
     if (packet.output_contract === "team_requests") return { requests: packet.previous_requests.length === 1 ? [{ role: "valuation",
       question: "Recompute the terminal value with the corrected diluted share count.", material: true, needs_sources: false, source_role: "regulatory_filing" }] : [] };
