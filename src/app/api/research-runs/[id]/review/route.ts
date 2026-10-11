@@ -39,6 +39,7 @@ export async function POST(
     let decision: Record<string, unknown>;
     let inserted = false;
     let regenerateReport = false;
+    let approvedEarlier = false;
     try {
       const transaction = await sql.begin(async (tx) => {
         const runs = await tx`
@@ -80,7 +81,7 @@ export async function POST(
           priorRevision?.notes === (parsed.open_questions || parsed.watchlist_reason || "Address unresolved review findings") &&
           stages[0].status !== "waiting_for_human";
         if (existing[0] && (!report.required || runs[0].metadata_json?.report_approval?.report_hash === body.reportHash || sameRevisionRequest)) {
-          return { decision: existing[0], inserted: false, stageStatus: String(stages[0].status) };
+          return { decision: existing[0], inserted: false, stageStatus: String(stages[0].status), runStatus: String(runs[0].status) };
         }
         if (stages[0].status !== "waiting_for_human") {
           throw new ApiError(
@@ -140,6 +141,7 @@ export async function POST(
       decision = transaction.decision as Record<string, unknown>;
       inserted = transaction.inserted;
       regenerateReport = "regenerateReport" in transaction && Boolean(transaction.regenerateReport);
+      approvedEarlier = "runStatus" in transaction && transaction.stageStatus === "completed" && transaction.runStatus === "running";
     } finally {
       await sql.end();
     }
@@ -159,7 +161,12 @@ export async function POST(
     const approval = await approveHumanReview(runId, parsed.reviewed_by);
     if (!approval.success) {
       // A second identical request may arrive after the first request already
-      // approved the stage. Treat that settled state as idempotent.
+      // approved the stage. Treat that settled state as idempotent. That request may have
+      // failed to queue the export, so queue it now; enqueue returns any active job.
+      if (approvedEarlier) {
+        const job = await enqueueResearchRun(runId, parsed.reviewed_by);
+        return successResponse({ decision, workflow: approval, jobId: job.id, job });
+      }
       const latestJob = await getLatestResearchRunJob(runId);
       if (latestJob?.status === "queued" || latestJob?.status === "running" || latestJob?.status === "completed") {
         return successResponse({ decision, workflow: approval, job: latestJob });
