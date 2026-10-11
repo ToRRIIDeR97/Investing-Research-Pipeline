@@ -142,7 +142,8 @@ const byRecency = (a: RunDocument | undefined, b: RunDocument | undefined) =>
 
 /**
  * Section and opening words with digits and punctuation removed, so the same note restated in another
- * filing has the same key. Passages with few words (number tables) are never treated as copies.
+ * filing has the same key. A passage left with under 60 letters (a table of numbers) is never treated
+ * as a copy; statement tables whose labels match are.
  */
 const copyKey = (c: { row: Record<string, any> }) => {
   const normal = (text: string) => text.toLowerCase().replace(/[^\p{L}]+/gu, " ").trim();
@@ -237,10 +238,10 @@ interface Candidate {
  * names (a date, quarter or year) come first, and a named period no document covers is reported as
  * a gap. Keyword relevance ranks passages whose section path matches above body-only matches. With
  * an embedding provider and stored vectors for its model, keyword and vector rankings are fused
- * (RRF, k = 60). Ties go to the newest document, and a note restated in several filings keeps only
- * the period's or the newest copy. Seed claims and artifacts add the passages holding them and their
- * one-hop neighbours; a graph link breaks relevance ties, and graph-only passages take up to half of
- * the slots after the relevance matches.
+ * (RRF, k = 60). Ties go to the newest document, and a note restated in several filings keeps one
+ * copy for each period asked for, or else the newest copy. Seed claims and artifacts add the passages
+ * holding them and their one-hop neighbours; a graph link breaks relevance ties, and graph-only
+ * passages take up to half of the slots after the relevance matches.
  */
 export async function retrievePassages(sql: postgres.Sql, input: { runId: string; need: RetrievalNeed; embeddings?: EmbeddingProvider | null }): Promise<RetrievalResult> {
   const { need } = input;
@@ -314,13 +315,18 @@ export async function retrievePassages(sql: postgres.Sql, input: { runId: string
     Number(inPeriod(b)) - Number(inPeriod(a))
     || (hybrid ? fused(b) - fused(a) : Number(b.sectionMatch) - Number(a.sectionMatch) || b.textRank - a.textRank)
     || Number(Boolean(b.graph)) - Number(Boolean(a.graph)) || byPosition(a, b));
-  // The same note restated in several filings takes one slot: the copy from the period asked for, else the newest.
+  // The same note restated in several filings takes one slot per period asked for (the newest copy covering it),
+  // or, when no filing from a period asked for has it, one slot for the newest copy.
+  const periodsOf = (c: Candidate) => { const doc = docOf(c); return doc ? hints.filter(hint => coversPeriod(doc, hint)).map(hint => hint.label).join(",") : ""; };
+  const groupOf = (c: Candidate) => `${copyKey(c)}|${periodsOf(c)}`;
   const copyOwner = new Map<string, Candidate>();
   for (const c of ranked) {
-    const owner = copyOwner.get(copyKey(c));
-    if (!owner || Number(inPeriod(c)) - Number(inPeriod(owner)) > 0 || (inPeriod(c) === inPeriod(owner) && byPosition(c, owner) < 0)) copyOwner.set(copyKey(c), c);
+    const owner = copyOwner.get(groupOf(c));
+    if (!owner || byPosition(c, owner) < 0) copyOwner.set(groupOf(c), c);
   }
-  const relevance = ranked.filter(c => String(copyOwner.get(copyKey(c))!.row.source_document_id) === String(c.row.source_document_id));
+  const periodCopies = new Set([...copyOwner.values()].filter(inPeriod).map(copyKey));
+  const relevance = ranked.filter(c => (inPeriod(c) || !periodCopies.has(copyKey(c)))
+    && String(copyOwner.get(groupOf(c))!.row.source_document_id) === String(c.row.source_document_id));
   const graphOnly = [...candidates.values()].filter(c => !c.keywordRank && !c.vectorRank && c.graph)
     .sort((a, b) => Number(Boolean(b.graph?.seed)) - Number(Boolean(a.graph?.seed)) || byPosition(a, b));
   const head = relevance.slice(0, limit - Math.min(graphOnly.length, Math.ceil(limit / 2)));

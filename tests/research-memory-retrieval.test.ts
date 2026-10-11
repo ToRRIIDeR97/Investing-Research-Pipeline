@@ -126,6 +126,25 @@ test("retrieval reads the period a question names first, gives ties to the newes
   } finally { await removeRuns(sql, [run]); await sql.end(); }
 });
 
+test("a question naming two periods gets each period's copy of a statement, and an older restatement still collapses", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!);
+  const run = await newRun(sql);
+  try {
+    const balanceSheet = (asOf: string, debt: string, lease: string) => ["CONDENSED CONSOLIDATED BALANCE SHEETS", "",
+      `Current portion of long-term debt ${debt}. Finance lease liabilities, current ${lease}. Accrued expenses and other current liabilities. Total current liabilities. As of ${asOf}. ${run.runId}`].join("\n");
+    const filing = (title: string, sourceType: string, periodEnd: string, publishedAt: string, content: string) =>
+      store(sql, run, { title, content, role: "regulatory_filing", sourceType, periodEnd, publishedAt });
+    const annual = await filing("10-K report 2025-12-31", "sec_filing_10-k", "2025-12-31", "2026-02-01", balanceSheet("December 31, 2025", "1,000", "270"));
+    const q1 = await filing("10-Q report 2026-03-31", "sec_filing_10-q", "2026-03-31", "2026-04-30", balanceSheet("March 31, 2026", "1,100", "290"));
+    const q2 = await filing("10-Q report 2026-06-30", "sec_filing_10-q", "2026-06-30", "2026-07-30", balanceSheet("June 30, 2026", "1,250", "308"));
+    const result = await retrievePassages(sql, { runId: run.runId, need: { key: "compare", sourceRoles: ["regulatory_filing"], maxPassages: 4,
+      query: "Compare current debt and finance lease liabilities at 2026-03-31 and 2026-06-30 from the balance sheets" } });
+    assert.deepEqual(result.passages.map(p => p.source_id), [q2, q1], "each period asked for keeps its own balance sheet, newest first");
+    assert.ok(!result.passages.some(p => p.source_id === annual), "the 10-K's copy, from no period asked for, collapses");
+    assert.deepEqual(result.gaps, []);
+  } finally { await removeRuns(sql, [run]); await sql.end(); }
+});
+
 test("research-memory passages store their search vector; raw payload chunks do not", { skip }, async () => {
   const sql = postgres(process.env.DATABASE_URL!);
   const run = await newRun(sql);
