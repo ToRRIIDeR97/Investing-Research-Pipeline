@@ -170,6 +170,18 @@ test("an earnings release filed early in a quarter reports on the quarter before
   } finally { await removeRuns(sql, [run]); await sql.end(); }
 });
 
+test("a year no report can cover yet, such as a maturity year, is not a missing period", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!);
+  const run = await newRun(sql);
+  try {
+    const q2 = await store(sql, run, { title: "10-Q report 2026-06-30", role: "regulatory_filing", sourceType: "sec_filing_10-q", periodEnd: "2026-06-30", publishedAt: "2026-07-30",
+      content: `Debt\n\nThe senior notes due 2062 bear interest at 4.65 percent. ${run.runId}` });
+    const notes = await retrievePassages(sql, { runId: run.runId, need: { key: "notes", sourceRoles: ["regulatory_filing"], query: "coupon on the senior notes due 2062" } });
+    assert.deepEqual(notes.passages.map(p => p.source_id), [q2], "the 10-Q answers it");
+    assert.deepEqual(notes.gaps, [], "no period gap, so a team request does not search first");
+  } finally { await removeRuns(sql, [run]); await sql.end(); }
+});
+
 test("research-memory passages store their search vector; raw payload chunks do not", { skip }, async () => {
   const sql = postgres(process.env.DATABASE_URL!);
   const run = await newRun(sql);

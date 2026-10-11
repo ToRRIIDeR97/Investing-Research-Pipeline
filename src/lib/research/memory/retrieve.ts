@@ -246,12 +246,12 @@ interface Candidate {
 /**
  * Passages for one need from the run's documents in scope. Documents covering a period the query
  * names (a date, quarter or year) come first, and a named period no document covers is reported as
- * a gap. Keyword relevance ranks passages whose section path matches above body-only matches. With
- * an embedding provider and stored vectors for its model, keyword and vector rankings are fused
- * (RRF, k = 60). Ties go to the newest document, and a note restated in several filings keeps one
- * copy for each period asked for, or else the newest copy. Seed claims and artifacts add the passages
- * holding them and their one-hop neighbours; a graph link breaks relevance ties, and graph-only
- * passages take up to half of the slots after the relevance matches.
+ * a gap once reports on it can exist. Keyword relevance ranks passages whose section path matches
+ * above body-only matches. With an embedding provider and stored vectors for its model, keyword and
+ * vector rankings are fused (RRF, k = 60). Ties go to the newest document, and a note restated in
+ * several filings keeps one copy for each period asked for, or else the newest copy. Seed claims and
+ * artifacts add the passages holding them and their one-hop neighbours; a graph link breaks relevance
+ * ties, and graph-only passages take up to half of the slots after the relevance matches.
  */
 export async function retrievePassages(sql: postgres.Sql, input: { runId: string; need: RetrievalNeed; embeddings?: EmbeddingProvider | null }): Promise<RetrievalResult> {
   const { need } = input;
@@ -349,7 +349,9 @@ export async function retrievePassages(sql: postgres.Sql, input: { runId: string
     result.gaps.push({ need_key: need.key, reason: "no_matching_passages", ...(need.sourceRoles?.length ? { source_role: need.sourceRoles.join(",") } : {}),
       detail: `No passage in ${scoped.length} document${scoped.length === 1 ? "" : "s"} matched "${need.query}".` });
   }
-  const missedPeriods = hints.filter(hint => !scoped.some(doc => coversPeriod(doc, hint))).map(hint => hint.label);
+  // A period no document could report on yet (a maturity or target year) is not missing.
+  const today = new Date().toISOString().slice(0, 10);
+  const missedPeriods = hints.filter(hint => periodWindow(hint).from <= today && !scoped.some(doc => coversPeriod(doc, hint))).map(hint => hint.label);
   if (missedPeriods.length) {
     result.gaps.push({ need_key: need.key, reason: "no_documents_for_period", ...(need.sourceRoles?.length ? { source_role: need.sourceRoles.join(",") } : {}),
       detail: `No document in scope covers ${missedPeriods.join(", ")}.` });
