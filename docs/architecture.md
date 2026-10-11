@@ -106,7 +106,7 @@ Other critical workflows are described in text:
 
 - **Team collaboration** (source discovery review, specialist briefs, source requests, report requests). See the specialist flow chart in [system.md](system.md).
 - **Upload ingest:** multipart upload → SHA-256 → `storage/sources` → `source_documents` → Docling subprocess → parses, chunks and passages.
-- **Backtest task:** `POST …/backtests` → `backtest_runs` and a task → worker → `backtest-coder` → `python3 run_backtest.py` → `storage/backtests` and `backtest_artifacts`. Stage 18 uses the TypeScript `executeFrameworkBacktest` path instead.
+- **Backtest task:** `POST …/backtests` → `backtest_runs` and a task → worker → `backtest-coder` → `python3 run_backtest.py` → `storage/backtests` and `backtest_artifacts`. Stage 18 uses the TypeScript `executeFrameworkBacktest` path instead, against the asset's sector benchmarks; with too little aligned history it records a withheld summary and marks stage 19 skipped ([framework backtests](system.md#framework-backtests)).
 - **Statement repair:** the historical-record stage asks the repair agent for a `locateStatements` module, runs it in a Node sandbox, and saves a `statement_repair` artifact (up to 3 attempts).
 
 ### Asset valuation
@@ -147,7 +147,7 @@ Report requests are answered inside the scheduling loop without resetting stages
 | Agent harness and prompt caching | Component, Sequence, Trust | `src/lib/agent-harness/**` |
 | Research memory and evidence graph | Component, Class | `src/lib/research/memory/**` |
 | Sources, ingestion and market data | Component, Deployment, Trust | `src/lib/research/sources/**`, `src/lib/ingestion/**`, `src/lib/market-data/**` |
-| Backtesting | Component, Deployment, Trust | `src/lib/backtesting/**`, `python/backtesting/**` |
+| Backtesting | Component, Deployment, State, Trust | `src/lib/backtesting/**` (`framework-runner.ts:frameworkBenchmarks`), `handlers/backtest-execution.ts`, `python/backtesting/**` |
 | Repair specialist sandbox | Component, Deployment, Trust | `src/lib/research/repair/**` |
 | Reporting and export | Component | `src/lib/research/reporting/**`, `src/lib/export/**` |
 | Valuation engine | Activity | `handlers/asset-valuation.ts`, `valuation/engine.ts`, `handlers/operating-scenarios.ts` |

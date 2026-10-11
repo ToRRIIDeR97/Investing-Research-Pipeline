@@ -102,6 +102,7 @@
 <text x="740" y="590" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">failRun: pending →</text>
 <path d="M620,614 L620,628 L345,628 L345,577" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#a)"/>
 <text x="480" y="622" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">resume</text>
+<text x="760" y="625" font-size="11" font-weight="normal" text-anchor="start" fill="#555">backtest withheld: backtest_review pending → skipped</text>
 <text x="760" y="640" font-size="11" font-weight="normal" text-anchor="start" fill="#555">resume: failed → running; later stages → pending</text>
 <text x="760" y="655" font-size="11" font-weight="normal" text-anchor="start" fill="#555">skip_and_continue: failed, run continues</text>
 <text x="760" y="670" font-size="11" font-weight="normal" text-anchor="start" fill="#555">max_retries per stage: 0–3 (stages.ts)</text>
