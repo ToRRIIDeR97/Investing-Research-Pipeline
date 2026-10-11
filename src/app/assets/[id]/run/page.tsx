@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import ui from "@/components/research-ui.module.css";
+import { pollTick, runProgressIsLive } from "@/lib/research/run-polling";
 
 interface Message {
   role: "user" | "assistant" | "system";
@@ -48,7 +49,6 @@ interface RunProgress {
     failure_reason: string | null;
     started_at: string | null;
     completed_at: string | null;
-    output_json: Record<string, unknown> | null;
   }[];
   sourceCount: number;
   exportCount: number;
@@ -322,6 +322,7 @@ export default function RunResearchPage() {
   const [runType, setRunType] = useState("deep_dive");
   const [runId, setRunId] = useState<string | null>(null);
   const activeRunRef = useRef<string | null>(null);
+  const progressRequest = useRef(0);
   const [progress, setProgress] = useState<RunProgress | null>(null);
   const [quality, setQuality] = useState<ResearchQuality | null>(null);
   const [theater, setTheater] = useState<TheaterData>({
@@ -391,11 +392,14 @@ export default function RunResearchPage() {
     loadAssetContext();
   }, [assetId]);
 
+  // Poll only while the run or its job is active, one request at a time and not while the tab is hidden.
+  // Approving the plan, a re-run decision and a run start all refresh progress, which re-arms polling for the queued job.
+  const runLive = runProgressIsLive(progress?.status, progress?.latestJob?.status);
   useEffect(() => {
-    if (!runId || phase !== "pipeline") return;
-    const interval = window.setInterval(() => fetchProgress(runId), 5000);
+    if (!runId || phase !== "pipeline" || !runLive) return;
+    const interval = window.setInterval(pollTick(() => fetchProgress(runId), () => document.visibilityState !== "visible"), 5000);
     return () => window.clearInterval(interval);
-  }, [runId, phase]);
+  }, [runId, phase, runLive]);
 
   async function handleSend() {
     if (phase !== "intake" || !input.trim() || isProcessing) return;
@@ -549,8 +553,11 @@ export default function RunResearchPage() {
   }
 
   async function fetchProgress(id: string) {
+    // A slower, older response must not overwrite a newer one (for example a poll that started before an approval).
+    const request = ++progressRequest.current;
+    const current = () => activeRunRef.current === id && progressRequest.current === request;
     try {
-      const [runRes, qualityRes, sourcesRes, tracesRes, modelCallsRes, backtestsRes, jobsRes, artifactsRes] =
+      const [runRes, qualityRes, sourcesRes, tracesRes, modelCallsRes, backtestsRes, jobsRes] =
         await Promise.all([
           fetch(`/api/research-runs/${id}`),
           fetch(`/api/research-runs/${id}/quality`),
@@ -559,7 +566,6 @@ export default function RunResearchPage() {
           fetch(`/api/research-runs/${id}/model-calls`),
           fetch(`/api/research-runs/${id}/backtests`),
           fetch(`/api/research-runs/${id}/jobs`),
-          fetch(`/api/research-runs/${id}/artifacts`),
         ]);
 
       if (!runRes.ok) throw new Error("Unable to refresh this run.");
@@ -570,11 +576,13 @@ export default function RunResearchPage() {
       const modelCalls = modelCallsRes.ok ? await modelCallsRes.json() : [];
       const backtests = backtestsRes.ok ? await backtestsRes.json() : [];
       const jobsData = jobsRes.ok ? await jobsRes.json() : { latestJob: null, workers: [] };
-      const artifactsData = artifactsRes.ok ? await artifactsRes.json() : { artifacts: [] };
-      if (activeRunRef.current !== id) return;
-      const planArtifact = (artifactsData.artifacts || []).find((artifact: any) => artifact.type === "research_plan");
       const planWaiting = data.stages?.some((stage: any) => stage.stage_key === "research_plan" && stage.status === "waiting_for_human");
-      if (planArtifact) setResearchPlan(planArtifact.content || planArtifact.content_json || null);
+      // The page shows only the research plan, and only while it waits for approval.
+      const planRes = planWaiting ? await fetch(`/api/research-runs/${id}/artifacts?type=research_plan`) : null;
+      const artifactsData = planRes?.ok ? await planRes.json() : { artifacts: [] };
+      if (!current()) return;
+      const planArtifact = (artifactsData.artifacts || []).find((artifact: any) => artifact.type === "research_plan");
+      if (planArtifact) setResearchPlan(planArtifact.content_json || null);
       if (planWaiting) setPhase("plan");
       else if (phase === "plan") setPhase("pipeline");
 
@@ -609,7 +617,6 @@ export default function RunResearchPage() {
           failure_reason: t.failure_reason,
           started_at: t.started_at,
           completed_at: t.completed_at,
-          output_json: t.output_json,
         })),
         sourceCount: Array.isArray(sources) ? sources.length : 0,
         exportCount: data.metadata_json?.export_count || 0,
@@ -628,7 +635,7 @@ export default function RunResearchPage() {
       setQuality(qualityData);
       setLoadError("");
     } catch (error) {
-      if (activeRunRef.current === id) setLoadError("Unable to refresh this run. Displayed progress may be out of date.");
+      if (current()) setLoadError("Unable to refresh this run. Displayed progress may be out of date.");
     }
   }
 

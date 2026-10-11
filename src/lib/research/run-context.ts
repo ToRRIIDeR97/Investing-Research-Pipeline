@@ -331,6 +331,21 @@ export function exactJsonPrompt(params: {
   ].join("\n");
 }
 
+const PACKET_HEADING = "Task packet:\n";
+
+/**
+ * The task row keeps the packet once. A prompt that ends with exactly that packet (the exactJsonPrompt layout)
+ * is stored as the instructions before it, with the prompt's SHA-256 and byte length; any other prompt is
+ * stored whole. jsonb reorders object keys, so the hash, not a rebuild from the stored packet, names the bytes sent.
+ */
+export function storedTaskRequest<T extends { packet: Record<string, unknown>; prompt: string }>(request: T) {
+  const { prompt, ...rest } = request;
+  const at = prompt.lastIndexOf(PACKET_HEADING);
+  if (at < 0 || prompt.slice(at + PACKET_HEADING.length) !== JSON.stringify(runContextFirst(request.packet))) return request;
+  return { ...rest, prompt_instructions: prompt.slice(0, at), prompt_sha256: createHash("sha256").update(prompt).digest("hex"),
+    prompt_bytes: Buffer.byteLength(prompt) };
+}
+
 /** A completed model task is reusable only for the same request and contract. */
 export function researchTaskKey(taskKey: string, request: Record<string, unknown>): string {
   return `${taskKey}:${createHash("sha256").update(JSON.stringify(request)).digest("hex").slice(0, 24)}`;
@@ -427,7 +442,8 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
     WHERE research_run_id = ${params.ctx.runId} AND task_key = ${taskKey}
       AND status = 'completed'
   `;
-  const task = await createV3Task(params.sql, params.ctx.runId, params.stageKey, taskKey, params.taskType, params.agentName, request);
+  const task = await createV3Task(params.sql, params.ctx.runId, params.stageKey, taskKey, params.taskType, params.agentName,
+    storedTaskRequest(request));
 
   const escalationReason = params.modelTier === "premium" || params.modelTier === "specialist"
     ? "Research OS v3 stage requires specialist reasoning"

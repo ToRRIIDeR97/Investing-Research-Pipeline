@@ -29,8 +29,22 @@ export async function GET(
       .where(eq(research_stages.research_run_id, id))
       .orderBy(asc(research_stages.stage_order));
 
+    // Task metadata only: input and output JSON reach tens of MB per run and the run page polls this route.
     const tasks = await db
-      .select()
+      .select({
+        id: research_tasks.id,
+        stage_id: research_tasks.stage_id,
+        task_key: research_tasks.task_key,
+        task_type: research_tasks.task_type,
+        agent_name: research_tasks.agent_name,
+        status: research_tasks.status,
+        priority: research_tasks.priority,
+        retry_count: research_tasks.retry_count,
+        failure_reason: research_tasks.failure_reason,
+        started_at: research_tasks.started_at,
+        completed_at: research_tasks.completed_at,
+        created_at: research_tasks.created_at,
+      })
       .from(research_tasks)
       .where(eq(research_tasks.research_run_id, id))
       .orderBy(asc(research_tasks.created_at));

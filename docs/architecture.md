@@ -94,7 +94,7 @@ Schema modules (`src/db/schema/`) and their key tables:
 | market-data | market_price_bars (with Stooq cross-check status), corporate_actions, market_data_fetches, instrument_provider_mappings |
 | saved-charts | saved_charts (My charts board definitions; series keys, never values) |
 
-Migrations are `0000`–`0006`, `0009_research_memory_graph`, which adds provenance and review fields plus a uniqueness constraint to `claim_relationships`, `0010_price_history_verification`, which adds the cross-check columns to `market_price_bars`, and `0011_saved_charts`, which adds the `saved_charts` table.
+Migrations are `0000`–`0006`, `0009_research_memory_graph`, which adds provenance and review fields plus a uniqueness constraint to `claim_relationships`, `0010_price_history_verification`, which adds the cross-check columns to `market_price_bars`, `0011_saved_charts`, which adds the `saved_charts` table, and `0012_task_budget_reservation`, which adds `research_tasks.budget_reservation_usd` for in-flight budget reservations.
 
 Artifact statuses are listed in `src/lib/research/artifacts/contracts.ts`. Pipeline artifacts end at `validated`. Report artifacts are `superseded` by newer versions. `accepted` is never written ([#14](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/14)).
 
@@ -155,7 +155,7 @@ Report requests are answered inside the scheduling loop without resetting stages
 | Reporting and export | Component | `src/lib/research/reporting/**`, `src/lib/export/**` |
 | Valuation engine | Activity | `handlers/asset-valuation.ts`, `valuation/engine.ts`, `handlers/operating-scenarios.ts` |
 | Financials view: metric catalogue, statement charts, My charts | Component, Class | `src/components/financial-statements.tsx`, `src/components/financials/**`, `reporting/metric-catalogue.ts`, `reporting/chart-series.ts`, `reporting/saved-charts.ts`, `src/app/api/saved-charts/**` |
-| Postgres | Component, Deployment, Class | `src/db/schema/**`, `drizzle/`, `docker-compose.yml` |
+| Postgres | Component, Deployment, Class | `src/db/schema/**`, `src/db/schemas.ts`, `drizzle/`, `docker-compose.yml` |
 | `./storage` | Component, Deployment, Trust | `storage/` (gitignored) |
 | Child processes | Component, Deployment, Trust | `python/**`, `repair/sandbox.ts` |
 | LLM and embedding providers | Component, Deployment, Sequence, Trust | `providers/*.ts`, `memory/embeddings.ts` |

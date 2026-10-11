@@ -407,7 +407,11 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
       const request = task.input_json;
       assert.deepEqual(request.packet.output_schema, request.output_format.schema,
         `Missing first-attempt schema for ${request.packet.output_contract}`);
-      const sentPacket = JSON.parse(request.prompt.split("Task packet:\n").at(-1));
+      // The prompt ended with this exact packet, so the row stores the packet once plus the prompt's instructions.
+      assert.equal(request.prompt, undefined);
+      assert.match(request.prompt_instructions, /Return exactly one JSON object/);
+      assert.match(request.prompt_sha256, /^[0-9a-f]{64}$/);
+      const sentPacket = request.packet;
       assert.deepEqual(sentPacket.output_schema, request.output_format.schema);
       if (sentPacket.output_contract === "report_review") {
         assert.equal("markdown" in sentPacket.report_document, false, "Review must not duplicate rendered tables and source passages");
@@ -657,8 +661,9 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
         modelProvider: "mock", modelName: "test", modelTier: "cheap", costUsd: 0.2, status: "success" });
       const [run] = await sql`SELECT actual_cost_usd FROM research_runs WHERE id = ${runId}`;
       assert.equal(Number(run.actual_cost_usd), 0.2, "actual cost must never disappear because it exceeded the estimate");
-      const [task] = await sql`SELECT input_json FROM research_tasks WHERE id = ${winner.id}`;
-      assert.equal(task.input_json.budget_reservation, undefined);
+      const [task] = await sql`SELECT input_json, budget_reservation_usd FROM research_tasks WHERE id = ${winner.id}`;
+      assert.equal(task.budget_reservation_usd, null);
+      assert.equal(task.input_json.budget_reservation, undefined, "the reservation never touches input_json");
       await assert.rejects(assertModelBudgetAvailable({ researchRunId: runId, taskId: winner.id, stageId: winner.stage_id,
         modelTier: "cheap", reserveUsd: 0.1 }), /budget exceeded/);
     } finally { await deleteAssetCascade(sql, testAssetId, runId); }

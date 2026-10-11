@@ -8,12 +8,10 @@ export interface ResearchArtifactReadModel {
   scope_key: string;
   artifact_version: number;
   status: string;
-  content: Record<string, unknown>;
   content_json: Record<string, unknown>;
   schema_version: string;
   validator_version: string;
   prompt_version: string;
-  validation_result: Record<string, unknown>;
   validation_result_json: Record<string, unknown>;
   created_by: string;
   supersedes_artifact_id: string | null;
@@ -38,9 +36,8 @@ function objectValue(value: unknown): Record<string, unknown> {
   return {};
 }
 
+// Each body appears once in a response: JSON serialises a shared object every time it is referenced.
 function normalizeArtifact(row: Record<string, unknown>): ResearchArtifactReadModel {
-  const content = objectValue(row.content_json);
-  const validation = objectValue(row.validation_result_json);
   return {
     id: String(row.id),
     type: String(row.artifact_type),
@@ -49,13 +46,11 @@ function normalizeArtifact(row: Record<string, unknown>): ResearchArtifactReadMo
     scope_key: String(row.scope_key),
     artifact_version: Number(row.artifact_version || 1),
     status: String(row.status),
-    content,
-    content_json: content,
+    content_json: objectValue(row.content_json),
     schema_version: String(row.schema_version || "unknown"),
     validator_version: String(row.validator_version || "unknown"),
     prompt_version: String(row.prompt_version || "unknown"),
-    validation_result: validation,
-    validation_result_json: validation,
+    validation_result_json: objectValue(row.validation_result_json),
     created_by: String(row.created_by || "unknown"),
     supersedes_artifact_id: row.supersedes_artifact_id ? String(row.supersedes_artifact_id) : null,
     accepted_at: (row.accepted_at as string | Date | null) || null,
@@ -187,8 +182,8 @@ export async function getResearchRunReport(runId: string) {
         base_currency: run.base_currency,
         home_country: run.home_country,
       },
-      artifacts,
-      artifacts_by_type: byType,
+      // The report document's body is sent once, as report_document, not again in its artifact row.
+      artifacts: artifacts.map((artifact) => artifact.type === "report_document" ? { ...artifact, content_json: {} } : artifact),
       report_document: byType.report_document?.[0]?.content_json || null,
       missing_sections: missingSections,
       incomplete: missingSections.length > 0,

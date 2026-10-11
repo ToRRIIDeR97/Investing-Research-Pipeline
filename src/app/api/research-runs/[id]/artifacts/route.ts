@@ -3,12 +3,13 @@ import { handleApiError, successResponse, ApiError } from "@/lib/api/errors";
 import { getResearchRunArtifacts } from "@/lib/research/artifacts/read-model";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id: runId } = await params;
-    const artifacts = await getResearchRunArtifacts(runId);
+    // ?type= limits the response to one artifact type, so a caller need not download every body.
+    const artifacts = await getResearchRunArtifacts(runId, request.nextUrl.searchParams.get("type") || undefined);
     if (artifacts === null) throw new ApiError("Research run not found", 404, "NOT_FOUND");
     return successResponse({ artifacts });
   } catch (error) {
