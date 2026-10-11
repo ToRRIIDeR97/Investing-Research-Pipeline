@@ -109,6 +109,9 @@ async function checkBudget(
   return { exceeded: false };
 }
 
+/** The run or another budget scope has no room for the next model attempt. */
+export class ModelBudgetExhausted extends Error {}
+
 export async function assertModelBudgetAvailable(input: BudgetReservationInput): Promise<void> {
   const sql = postgres(process.env.DATABASE_URL!);
   try {
@@ -118,7 +121,7 @@ export async function assertModelBudgetAvailable(input: BudgetReservationInput):
       const result = await checkBudget(tx as unknown as ReturnType<typeof postgres>, {
         modelProvider: "budget-preflight", modelName: "pending", status: "preflight", ...input, costUsd: input.reserveUsd,
       });
-      if (result.exceeded) throw new Error(result.reason || "Model budget exhausted");
+      if (result.exceeded) throw new ModelBudgetExhausted(result.reason || "Model budget exhausted");
       if (input.taskId) await tx`UPDATE research_tasks SET input_json = COALESCE(input_json, '{}'::jsonb) ||
         ${tx.json({ budget_reservation: { usd: input.reserveUsd, model_tier: input.modelTier } })}
         WHERE id = ${input.taskId}`;

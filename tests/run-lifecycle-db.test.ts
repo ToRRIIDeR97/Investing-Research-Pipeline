@@ -5,10 +5,10 @@ import test, { after, before, describe } from "node:test";
 import { NextRequest } from "next/server";
 import postgres from "postgres";
 import { ResearchAgentRunError } from "../src/lib/agent-harness/errors";
-import { recordModelCall } from "../src/lib/agents/model-calls";
+import { assertModelBudgetAvailable, recordModelCall } from "../src/lib/agents/model-calls";
 import { STAGE_HANDLERS } from "../src/lib/research/handlers";
 import { runResearchPipeline } from "../src/lib/research/pipeline-runner";
-import { completeV3Task, createV3Task, type ResearchRunContext, type StageHandler } from "../src/lib/research/run-context";
+import { completeV3Task, createV3Task, latestV3TaskOutput, type ResearchRunContext, type StageHandler } from "../src/lib/research/run-context";
 import { claimNextResearchRun, enqueueResearchRun, reconcileOrphanedResearchRuns } from "../src/lib/research/run-queue";
 import { cancelRun, createStagesForRun, failRun, pauseForHumanReview, resumeResearchRun } from "../src/lib/workflow/orchestrator";
 import { processNextResearchRunJob } from "../src/workers/research-worker";
@@ -136,6 +136,30 @@ describe("run lifecycle reliability", { skip: process.env.RUN_DB_INTEGRATION !==
     assert.equal(result.status, "needs_more_work");
     assert.deepEqual(await taskStates(runId), [["intake:part-a", "invalid"], ["intake:part-b", "invalid"]]);
   });
+
+  const stops: Array<[string, (ctx: ResearchRunContext) => Promise<never>]> = [
+    ["a spent provider quota", async () => {
+      throw new ResearchAgentRunError("Agent attempts exhausted: Provider HTTP 429: GoUsageLimitError", {} as any, { error_type: "quota_exceeded" });
+    }],
+    // The real guard: a reservation larger than the run's $10 budget.
+    ["an exhausted run budget", async (ctx) => {
+      await assertModelBudgetAvailable({ researchRunId: ctx.runId, modelTier: "standard", reserveUsd: 1_000 });
+      throw new Error("the budget guard should have stopped this attempt");
+    }],
+  ];
+  for (const [label, stop] of stops) {
+    test(`RM3: a stage stopped by ${label} keeps its earlier paid outputs for the resume`, async () => {
+      const runId = await newRun();
+      const result = await withIntake(async (ctx: ResearchRunContext) => {
+        const task = await createV3Task(sql, ctx.runId, "intake", "intake:batch-1", "intake", "intake-planner");
+        await completeV3Task(sql, task.id, { batch: 1 });
+        return stop(ctx);
+      }, () => runResearchPipeline(runId));
+      assert.equal(result.status, "needs_more_work");
+      assert.doesNotMatch(result.failure_reason || "", /should have stopped/);
+      assert.deepEqual(await latestV3TaskOutput(sql, runId, "intake:batch-1"), { batch: 1 });
+    });
+  }
 
   test("RO5: failRun and pauseForHumanReview change nothing when one of their writes fails", async () => {
     const runId = await newRun("running");

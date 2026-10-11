@@ -181,7 +181,7 @@ s.text(cx - 20, 666, "retryCount < stage max_retries (0–3)?", 11, fill="#5a470
 s.line([(cx + 14, 674), (445, 674), (445, 567), (cx + 100, 567)], "yes → retry", lx=450, ly=690, lanchor="start")
 s.line([(cx, 688), (cx, 710)], "no", lx=345, ly=702, lanchor="start")
 s.box(cx - 220, 710, 440, 60, "Apply stage failureState", ["fail_run → run failed, pending stages cancelled", "pause_for_human → waiting · skip_and_continue → stage failed, continue"], "warn", title_size=12)
-s.box(860, 620, 220, 100, "Exception anywhere", ["transient model error: stage", "rerun ≤ max_retries; else", "attempt's tasks invalid, run", "needs_more_work; abort: job requeued"], "warn", title_size=12)
+s.box(860, 620, 220, 110, "Exception anywhere", ["transient model error: stage", "rerun ≤ max_retries; other throw:", "stage's tasks invalid, unless a", "provider or budget stop; run", "needs_more_work; abort: requeued"], "warn", title_size=12)
 s.line([(900, 620), (900, 600), (840, 600), (840, 574)], None, dashed=True)
 s.text(16, 790, "Source: pipeline-runner.ts:runResearchPipeline, orchestrator.ts:188-1040, team-plan.ts:41-75, team.ts, sources/collector.ts, run-queue.ts, stages.ts.", 11, fill="#555")
 s.save(P("activity-research-run.svg"))

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ResearchAgentRunError } from "../src/lib/agent-harness/errors";
-import { isTransientAgentError, settleBatch } from "../src/lib/research/pipeline-runner";
+import { ModelBudgetExhausted } from "../src/lib/agents/model-calls";
+import { isModelCallStop, isTransientAgentError, settleBatch } from "../src/lib/research/pipeline-runner";
 import { ResearchRequestsPending } from "../src/lib/research/team";
 import { pollUntilStopped, withRetries } from "../src/workers/poll-loop";
 import type { ValidationResult } from "../src/lib/workflow/validators";
@@ -35,6 +36,16 @@ test("only provider and stream failures count as transient agent errors", () => 
   }
   assert.equal(isTransientAgentError(new Error("wrapped", { cause: agentError("server_error") })), true);
   assert.equal(isTransientAgentError(new Error("Invalid company_genesis")), false);
+});
+
+test("provider and run-budget stops are told apart from a handler rejecting its outputs", () => {
+  for (const type of ["quota_exceeded", "authentication", "invalid_request", "context_limit", "unknown", "server_error"]) {
+    assert.equal(isModelCallStop(agentError(type)), true, type);
+  }
+  assert.equal(isModelCallStop(new ModelBudgetExhausted("research_run budget exceeded: $10.1000 > $10.0000")), true);
+  assert.equal(isModelCallStop(new Error("wrapped", { cause: agentError("quota_exceeded") })), true);
+  assert.equal(isModelCallStop(new Error("Invalid company_genesis")), false);
+  assert.equal(isModelCallStop(new Error("Model budget exhausted")), false, "only the guard's own error type counts");
 });
 
 test("the worker poll loop survives failing polls with a growing delay", async () => {

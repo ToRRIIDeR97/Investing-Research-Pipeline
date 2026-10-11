@@ -2,6 +2,7 @@ import postgres from "postgres";
 import { advanceStage, startRun, startReadyStages, failRun, getRunProgress } from "@/lib/workflow/orchestrator";
 import type { ValidationResult } from "@/lib/workflow/validators";
 import { ResearchAgentRunError } from "@/lib/agent-harness/errors";
+import { ModelBudgetExhausted } from "@/lib/agents/model-calls";
 import { loadRunContext, type Sql } from "./run-context";
 import { STAGE_HANDLERS } from "./handlers";
 import { CURRENT_PIPELINE_VERSION } from "./version";
@@ -26,9 +27,21 @@ export class ResearchRunInterrupted extends Error {}
 // Provider and stream failures that a later attempt can clear; quota, authentication and request errors cannot.
 const TRANSIENT_AGENT_ERRORS = new Set(["provider_timeout", "malformed_stream", "connection", "server_error", "rate_limit", "output_exhausted"]);
 
+function* causes(error: unknown) {
+  for (let current = error, depth = 0; current && depth < 5; current = (current as { cause?: unknown }).cause, depth += 1) yield current;
+}
+
 export function isTransientAgentError(error: unknown): boolean {
-  for (let current = error, depth = 0; current && depth < 5; current = (current as { cause?: unknown }).cause, depth += 1) {
+  for (const current of causes(error)) {
     if (current instanceof ResearchAgentRunError) return TRANSIENT_AGENT_ERRORS.has(String(current.responseMetadata.error_type));
+  }
+  return false;
+}
+
+/** A provider or run-budget stop says nothing about the outputs the stage already has. */
+export function isModelCallStop(error: unknown): boolean {
+  for (const current of causes(error)) {
+    if (current instanceof ResearchAgentRunError || current instanceof ModelBudgetExhausted) return true;
   }
   return false;
 }
@@ -149,13 +162,15 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
         if (signal?.aborted) throw new ResearchRunInterrupted("Research run interrupted");
         if (failures.length) {
           if (!stop && await retryTransientFailures(sql, runId, failures, notes, signal)) continue;
-          // The stage's outputs led to the throw, including ones replayed from an earlier attempt (they keep their
-          // original completed_at), so a resume must call the model again rather than replay any of them.
+          // A handler or post-check that threw rejected the stage's outputs, including ones replayed from an earlier
+          // attempt (they keep their original completed_at), so a resume must call the model again. Outputs of a stage
+          // stopped by the provider or the run budget stay replayable.
           const fatal = failures.filter((failure) => !isTransientAgentError(failure.reason));
-          if (fatal.length) await sql`UPDATE research_tasks SET validation_status = 'invalid', updated_at = NOW()
+          const rejected = failures.filter((failure) => !isModelCallStop(failure.reason));
+          if (rejected.length) await sql`UPDATE research_tasks SET validation_status = 'invalid', updated_at = NOW()
             WHERE research_run_id = ${runId} AND status = 'completed'
               AND stage_id IN (SELECT id FROM research_stages WHERE research_run_id = ${runId}
-                AND stage_key = ANY(${fatal.map((failure) => failure.stageKey)}::text[]))`;
+                AND stage_key = ANY(${rejected.map((failure) => failure.stageKey)}::text[]))`;
           throw (fatal[0] ?? failures[0]).reason;
         }
         if (stop) break;
