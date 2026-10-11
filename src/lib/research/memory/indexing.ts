@@ -9,7 +9,8 @@ import { EMBEDDING_BATCH_SIZE, embedTexts, passageEmbeddingText, type EmbeddingP
 type Sql = postgres.Sql | postgres.TransactionSql;
 
 export const MEMORY_PARSER = "research-memory";
-export const MEMORY_PARSER_VERSION = "1";
+/** Version 2 keeps text-table rows and repeats a split table's header; older parses re-index on first use. */
+export const MEMORY_PARSER_VERSION = "2";
 
 export interface IndexResult {
   parseId: string;

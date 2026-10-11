@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { coversPeriod, periodHints, retrievePassages, runDocuments } from "../src/lib/research/memory";
+import { coversPeriod, htmlToStructuredText, parseDocument, periodHints, retrievePassages, runDocuments } from "../src/lib/research/memory";
 import { storeDiscoveredSources } from "../src/lib/research/sources/corpus";
 
 const skip = process.env.RUN_DB_INTEGRATION !== "1";
@@ -28,6 +28,25 @@ test("period hints read ISO dates, quarters and years, and a document covers a p
   assert.equal(coversPeriod({ periodEnd: "2026-09-30", publishedAt: null }, q2), false, "the next quarter");
   assert.equal(coversPeriod({ periodEnd: null, publishedAt: "2026-05-02" }, q2), true, "a dated page without a period end");
   assert.equal(coversPeriod({ periodEnd: null, publishedAt: null }, q2), false);
+});
+
+const priceRows = Array.from({ length: 60 }, (_, i) => `<tr><td>Aug ${i + 1}, 2026</td><td>1,${700 + i}.00</td><td>${709_200 + i}</td></tr>`).join("");
+const priceTable = `<h2>Historical Prices</h2><table><tr><th>Date</th><th>Close</th><th>Volume</th></tr>${priceRows}</table>`;
+
+test("a table stored as structured text keeps its rows, and every split piece starts with the header row", () => {
+  const text = htmlToStructuredText(`<html><body>${priceTable}</body></html>`);
+  for (const [label, parsed] of [["text/plain", parseDocument(text, "text/plain", { maxChars: 400 })],
+    ["text/html", parseDocument(`<html><body>${priceTable}</body></html>`, "text/html", { maxChars: 400 })]] as const) {
+    const pieces = parsed.passages.filter(p => p.sectionPath.at(-1) === "Historical Prices");
+    assert.ok(pieces.length >= 3, `${label}: the table is split`);
+    assert.ok(pieces.every(p => p.blockTypes.includes("table")), `${label}: pieces are typed as a table`);
+    for (const piece of pieces) {
+      assert.ok(piece.text.length <= 400, `${label}: maxChars is kept`);
+      const rows = piece.text.split("\n").filter(line => line !== "Historical Prices");
+      assert.equal(rows[0], "Date | Close | Volume", `${label}: each piece starts with the column headers`);
+      for (const row of rows.slice(1)) assert.match(row, /^Aug \d+, 2026 \| 1,\d{3}\.00 \| \d{6}$/, `${label}: no row is cut or joined to the next`);
+    }
+  }
 });
 
 type Run = { runId: string; assetId: string; ctx: Record<string, unknown> };
