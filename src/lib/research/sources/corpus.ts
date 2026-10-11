@@ -861,7 +861,8 @@ async function macroSourcePayload(ctx: RunContext): Promise<SourcePayload | null
     const retrievedAt = new Date().toISOString();
     return {
       sourceType: "macro_context",
-      title: `${ctx.assetName} macro context: US 10-year Treasury yield`,
+      // Asset-neutral: identical FRED content is one document shared by every asset's runs.
+      title: "US 10-year Treasury yield (FRED DGS10)",
       publisher: "Federal Reserve Bank of St. Louis (FRED)",
       url,
       content,
@@ -1484,7 +1485,7 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
     ) VALUES (
       ${ctx.runId}, ${sourceId},
       ${textValue(payload.metadata.semanticRole || payload.metadata.attachmentType, "supporting_source")},
-      ${sql.json(payload.metadata as any)}
+      ${sql.json({ ...payload.metadata, title: payload.title } as any)}
     )
     ON CONFLICT (research_run_id, source_document_id) DO NOTHING
   `;

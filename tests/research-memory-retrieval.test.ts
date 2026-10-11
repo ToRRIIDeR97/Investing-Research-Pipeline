@@ -144,3 +144,23 @@ test("companyfacts JSON gets no passages and stays out of scope, and only the ne
     assert.equal(lazily, 0, "retrieval does not index it on demand either");
   } finally { await removeRuns(sql, [run]); await sql.end(); }
 });
+
+test("a document shared by two runs carries each run's own title and source role", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!);
+  const alpha = await newRun(sql, "Alpha Fixture Co"), beta = await newRun(sql, "Beta Fixture Co");
+  try {
+    const content = `observation_date,DGS10\n2026-09-01,4.21\n2026-09-02,4.25\n${randomUUID()}`;
+    const first = await store(sql, alpha, { title: "Alpha Fixture Co macro context: US 10-year Treasury yield", content, mimeType: "text/csv",
+      sourceType: "macro_context", metadata: { system_generated: true, source: "fred", source_role: "industry_primary" } });
+    const shared = await store(sql, beta, { title: "US 10-year Treasury yield (FRED DGS10)", content, mimeType: "text/csv",
+      sourceType: "macro_context", metadata: { system_generated: true, source: "fred", source_role: "macro_dataset" } });
+    assert.equal(shared, first, "identical content is one document");
+    const [doc] = await runDocuments(sql, beta.runId);
+    assert.deepEqual([doc.title, doc.role], ["US 10-year Treasury yield (FRED DGS10)", "macro_dataset"]);
+    const [own] = await runDocuments(sql, alpha.runId);
+    assert.deepEqual([own.title, own.role], ["Alpha Fixture Co macro context: US 10-year Treasury yield", "industry_primary"]);
+    const { passages } = await retrievePassages(sql, { runId: beta.runId, need: { key: "rates", query: "DGS10 observation", sourceRoles: ["macro_dataset"] } });
+    assert.ok(passages.length > 0);
+    assert.ok(passages.every(p => !p.title.includes("Alpha")), "another asset's name never reaches the packet");
+  } finally { await removeRuns(sql, [alpha, beta]); await sql.end(); }
+});
