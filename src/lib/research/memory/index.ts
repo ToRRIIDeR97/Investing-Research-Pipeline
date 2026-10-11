@@ -6,7 +6,7 @@ export { ensureDocumentIndexed, embedParse, indexDocumentContent, MEMORY_PARSER,
 export { getEmbeddingProvider, cosineSimilarity, EMBEDDING_BATCH_SIZE, type EmbeddingProvider } from "./embeddings";
 export { citedClaimIds, linkArtifactCitations, recordContradictions, graphPassages, CITATION_KEYS } from "./graph";
 export {
-  retrievePassages, openingPassages, runDocuments,
-  type CoverageGap, type RetrievalNeed, type RetrievalResult, type RetrievedPassage, type RunDocument,
+  retrievePassages, openingPassages, runDocuments, periodHints, coversPeriod,
+  type CoverageGap, type PeriodHint, type RetrievalNeed, type RetrievalResult, type RetrievedPassage, type RunDocument,
 } from "./retrieve";
 export { FOUNDER_ORIGIN_NEED, FOUNDER_FILINGS_NEED, FOUNDER_NEED_KEYS, evidenceNeeds } from "./needs";

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { retrievePassages } from "../src/lib/research/memory";
+import { coversPeriod, periodHints, retrievePassages } from "../src/lib/research/memory";
 import { storeDiscoveredSources } from "../src/lib/research/sources/corpus";
 
 const skip = process.env.RUN_DB_INTEGRATION !== "1";
@@ -14,6 +14,21 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   const line = readFileSync(".env.local", "utf8").split(/\r?\n/).find(l => l.startsWith("DATABASE_URL="));
   if (line) process.env.DATABASE_URL = line.slice("DATABASE_URL=".length).trim().replace(/^['"]|['"]$/g, "");
 }
+
+test("period hints read ISO dates, quarters and years, and a document covers a period it ends in or reports on shortly after", () => {
+  assert.deepEqual(periodHints("Restate the bridge with 2026-06-30 current debt from the Q2 2026 10-Q").map(h => [h.label, h.start, h.end]),
+    [["2026-06-30", "2026-06-30", "2026-06-30"], ["Q2 2026", "2026-04-01", "2026-06-30"]], "a year inside a date or quarter is not read again");
+  assert.deepEqual(periodHints("Q3'25 and 4Q24 versus FY2023").map(h => [h.start, h.end]),
+    [["2025-07-01", "2025-09-30"], ["2024-10-01", "2024-12-31"], ["2023-01-01", "2023-12-31"]]);
+  assert.deepEqual(periodHints("Revenue of 12,019 and 10-K segment notes"), [], "numbers that are not years name no period");
+  const [q2] = periodHints("Q2 2026");
+  assert.equal(coversPeriod({ periodEnd: "2026-06-30", publishedAt: "2026-07-30" }, q2), true, "the quarter's 10-Q");
+  assert.equal(coversPeriod({ periodEnd: "2026-07-29", publishedAt: "2026-07-29" }, q2), true, "an earnings release filed after the quarter");
+  assert.equal(coversPeriod({ periodEnd: "2026-03-31", publishedAt: "2026-04-30" }, q2), false, "the prior quarter's 10-Q");
+  assert.equal(coversPeriod({ periodEnd: "2026-09-30", publishedAt: null }, q2), false, "the next quarter");
+  assert.equal(coversPeriod({ periodEnd: null, publishedAt: "2026-05-02" }, q2), true, "a dated page without a period end");
+  assert.equal(coversPeriod({ periodEnd: null, publishedAt: null }, q2), false);
+});
 
 type Run = { runId: string; assetId: string; ctx: Record<string, unknown> };
 
@@ -49,6 +64,47 @@ async function removeRuns(sql: postgres.Sql, runs: Run[]) {
   await sql`DELETE FROM research_runs WHERE id = ANY(${runIds}::uuid[])`;
   await sql`DELETE FROM assets WHERE id = ANY(${assetIds}::uuid[])`;
 }
+
+const LEASE_NOTE = "We have entered into various non-cancelable operating lease agreements for certain of our offices, data centers, land and colocations. We have also entered into finance lease agreements for certain network infrastructure.";
+const tenQ = (note: number, quarterEnd: string, nonce: string, balance = "") => [
+  `Note ${note}. Leases`, "", LEASE_NOTE, "",
+  "CONDENSED CONSOLIDATED BALANCE SHEETS", "", `Balance sheet as of ${quarterEnd}. Current debt and finance lease liabilities, current ${balance} ${nonce}.`,
+].join("\n");
+
+test("retrieval reads the period a question names first, gives ties to the newest filing and keeps one copy of a restated note", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!);
+  const run = await newRun(sql);
+  try {
+    const filing = (title: string, periodEnd: string, publishedAt: string, content: string) =>
+      store(sql, run, { title, content, role: "regulatory_filing", sourceType: "sec_filing_10-q", periodEnd, publishedAt });
+    const old = await filing("10-Q report 2025-06-30", "2025-06-30", "2025-07-31", tenQ(8, "June 30, 2025", run.runId));
+    const q3 = await filing("10-Q report 2025-09-30", "2025-09-30", "2025-10-30", tenQ(8, "September 30, 2025", run.runId));
+    const latest = await filing("10-Q report 2026-06-30", "2026-06-30", "2026-07-30", tenQ(7, "June 30, 2026", run.runId, "of 308 million"));
+    await store(sql, run, { title: "10-K report 2021-12-31", role: "regulatory_filing", sourceType: "sec_filing_10-k", periodEnd: "2021-12-31",
+      publishedAt: "2022-02-03", content: ["Lease Obligations", "", `Our lease obligations, finance lease liabilities and current debt are described below. ${LEASE_NOTE}`].join("\n") });
+
+    const bridge = await retrievePassages(sql, { runId: run.runId, need: { key: "bridge", sourceRoles: ["regulatory_filing"], maxPassages: 3,
+      query: "Restate the equity bridge with 2026-06-30 current debt and finance lease liabilities from the Q2 2026 10-Q balance sheet" } });
+    assert.equal(bridge.passages[0].source_id, latest, "the Q2 2026 10-Q is read first");
+    assert.ok(bridge.passages.slice(0, 2).every(p => p.source_id === latest), "its passages fill the first slots");
+    assert.ok(bridge.passages.some(p => p.text.includes("308 million")), "the balance-sheet passage is returned");
+    assert.equal(bridge.passages.filter(p => p.text.includes(LEASE_NOTE.slice(0, 60)) && p.section_path.at(-1)?.endsWith("Leases")).length, 1,
+      "the lease note restated in each 10-Q takes one slot");
+    assert.deepEqual(bridge.gaps, []);
+
+    const leases = await retrievePassages(sql, { runId: run.runId, need: { key: "leases", query: "operating lease agreements colocations", sourceRoles: ["regulatory_filing"] } });
+    const notes = leases.passages.filter(p => p.section_path.at(-1)?.endsWith("Leases"));
+    assert.deepEqual(notes.map(p => p.source_id), [latest], "without a period, the newest copy of the note is kept");
+    assert.ok(!leases.passages.some(p => p.source_id === old && p.section_path.at(-1)?.endsWith("Leases")));
+
+    const third = await retrievePassages(sql, { runId: run.runId, need: { key: "q3", query: "Q3 2025 lease agreements", sourceRoles: ["regulatory_filing"] } });
+    assert.equal(third.passages[0].source_id, q3, "the copy from the period asked for wins over the newest");
+
+    const missing = await retrievePassages(sql, { runId: run.runId, need: { key: "missing", query: "Q4 2023 lease agreements", sourceRoles: ["regulatory_filing"] } });
+    assert.ok(missing.passages.length > 0, "other periods still answer");
+    assert.deepEqual(missing.gaps.map(g => [g.reason, g.detail]), [["no_documents_for_period", "No document in scope covers Q4 2023."]]);
+  } finally { await removeRuns(sql, [run]); await sql.end(); }
+});
 
 test("research-memory passages store their search vector; raw payload chunks do not", { skip }, async () => {
   const sql = postgres(process.env.DATABASE_URL!);
