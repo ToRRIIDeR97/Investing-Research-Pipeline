@@ -340,7 +340,7 @@ export function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQua
   };
 }
 
-async function loadRunQualityData(
+export async function loadRunQualityData(
   sql: ReturnType<typeof postgres>,
   runId: string
 ): Promise<RunQualityData> {
@@ -372,7 +372,15 @@ async function loadRunQualityData(
     artifacts,
   ] = await Promise.all([
     sql`SELECT * FROM research_stages WHERE research_run_id = ${runId} ORDER BY stage_order`,
-    sql`SELECT * FROM research_tasks WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    // Never input_json (the stored packets). v3 gates read only the latest completed AI review task;
+    // earlier pipelines also match analysis modules against task outputs.
+    Number(run.pipeline_version || 1) >= 3
+      ? sql`SELECT id, task_key, task_type, status, output_json, created_at FROM research_tasks
+          WHERE research_run_id = ${runId} AND task_type = 'ai_review' AND status = 'completed'
+          ORDER BY created_at DESC LIMIT 1`
+      : sql`SELECT id, stage_id, task_key, task_type, agent_name, status, priority, output_json, validation_status,
+          validation_result_json, retry_count, started_at, completed_at, failure_reason, created_at
+          FROM research_tasks WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`
       SELECT DISTINCT sd.*
       FROM source_documents sd
