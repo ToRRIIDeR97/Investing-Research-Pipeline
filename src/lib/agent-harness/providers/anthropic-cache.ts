@@ -4,9 +4,11 @@
  *
  * Claude models get up to two of the four allowed breakpoints, both stable-first:
  *   1. the system block (agent instructions, shared by every call of that agent);
- *   2. the end of the repeatable task prompt, so a transport retry, fallback or repair pass
- *      that resends the same packet reads it from cache. A repair's appended instructions
- *      follow as a separate, uncached block.
+ *   2. the end of the repeatable part of the task prompt (`cacheablePromptChars`): the context
+ *      sibling calls share when the caller names per-call packet keys, so report sections,
+ *      extraction batches and same-owner answers read it from cache; otherwise the whole task
+ *      prompt, which a transport retry, fallback or repair resends. What follows the breakpoint
+ *      (per-call keys, a repair's appended instructions) is a separate, uncached block.
  * Prompts below the model minimum (512 tokens for Claude 5.5 models) are processed uncached
  * without an error, so no length check is needed here.
  *

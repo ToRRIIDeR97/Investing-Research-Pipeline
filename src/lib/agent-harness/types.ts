@@ -23,7 +23,7 @@ export interface ModelRequest {
   /** Stable instructions, sent ahead of the prompt so providers can reuse them from cache. */
   system?: string;
   prompt: string;
-  /** Length of the prompt's leading part that later passes resend unchanged (a repair appends to it). Defaults to the whole prompt. */
+  /** Length of the prompt's leading part that later requests resend unchanged: the context sibling calls share, or the generation prompt a repair appends to. Defaults to the whole prompt. */
   cacheablePromptChars?: number;
   temperature?: number;
   maxTokens?: number;
@@ -143,6 +143,11 @@ export interface AgentRequest<T = unknown> {
   provider?: ModelProvider;
   /** Local grouping for provider cache affinity, such as a research run ID. Never sent verbatim. */
   cacheScope?: string;
+  /**
+   * Packet keys that differ between sibling calls sharing the rest of the packet (report sections,
+   * extraction batches). They come last in the packet, and the prompt-cache breakpoint ends before them.
+   */
+  perCallKeys?: string[];
   outputFormat?: AgentOutputFormat;
   _outputType?: T;
 }

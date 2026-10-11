@@ -24,7 +24,7 @@ Labels in the views: *unverified* means the relationship wasn't proven from sour
   - `mock`;
   - `direct-openai-compatible` (the default);
   - `opencode-go-direct`, which uses the Anthropic protocol for qwen and minimax models;
-  - `anthropic-direct`, which calls the Anthropic Messages API (`api.anthropic.com`), omits `temperature` for Claude models and caches the instructions and the repeatable task prompt (`anthropic-cache.ts`). For Claude models it also sends the task's output schema as `output_config.format` when `anthropic-schema.ts` can express it, and resends once without it if the API rejects the schema (`RESEARCH_ANTHROPIC_STRUCTURED_OUTPUT=0` turns this off);
+  - `anthropic-direct`, which calls the Anthropic Messages API (`api.anthropic.com`), omits `temperature` for Claude models and caches the instructions and the shared part of the task prompt, which ends before a call's per-call packet keys (`anthropic-cache.ts`). For Claude models it also sends the task's output schema as `output_config.format` when `anthropic-schema.ts` can express it, and resends once without it if the API rejects the schema (`RESEARCH_ANTHROPIC_STRUCTURED_OUTPUT=0` turns this off);
   - `local-openai-compatible`.
 - `registry.ts` picks the model in this order:
   1. an explicit override;

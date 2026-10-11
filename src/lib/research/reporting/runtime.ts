@@ -84,9 +84,10 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
       const packet = { ...common, artifacts: selected.length ? selected : artifacts, section_plan: section, outline,
         feedback, completed_sections: section.coverage.includes("conclusion") ? completed : [],
         visual_guidelines: VISUAL_GUIDELINES, output_contract: "report_section", output_schema: SECTION_CONTRACT.schema };
+      // Sections of one round share everything but these keys, so the shared part is read from cache.
       const output = usable(await callResearchAgent<{ section: ReportSection }>({ sql, ctx, stageKey: "ai_reviewer",
         taskKey: `report:section:${section.id}`, taskType: "report_section", agentName: "export-writer", modelTier: "mid", packet,
-        outputFormat: checkedContract(SECTION_CONTRACT, (result: { section: ReportSection }) => {
+        perCallKeys: ["artifacts", "section_plan", "completed_sections"], outputFormat: checkedContract(SECTION_CONTRACT, (result: { section: ReportSection }) => {
           if (result.section.id !== section.id || JSON.stringify(result.section.coverage) !== JSON.stringify(section.coverage)) throw new Error("Preserve section id and coverage exactly");
           createReport({ ...reportInput, required_coverage: section.coverage, sections: [result.section], questions: [],
             coverage: section.coverage.map(key => ({ key, status: "qualified", rationale: "Section validation", section_ids: [section.id] })) });

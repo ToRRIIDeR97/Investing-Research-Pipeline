@@ -311,7 +311,7 @@ async function ownerAnswer(sql: Sql, ctx: ResearchRunContext, request: TeamReque
     passages: await requestPassages(sql, ctx.runId, request) };
   const response = await callResearchAgent<TeamAnswer>({ sql, ctx, stageKey: owner.stage,
     taskKey: `team:answer:${request.id}`, taskType: "team_answer", agentName: owner.agent, modelTier: "mid", packet,
-    outputFormat: { ...ANSWER_CONTRACT, validate(value) {
+    perCallKeys: ["request", "source_search_attempted", "passages"], outputFormat: { ...ANSWER_CONTRACT, validate(value) {
       const errors = ANSWER_CONTRACT.validate?.(value) || [];
       if (errors.length) return errors;
       const answer = keepCurrentReferences(value as TeamAnswer, references);

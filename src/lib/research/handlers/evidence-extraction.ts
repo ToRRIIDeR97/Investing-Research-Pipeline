@@ -32,6 +32,9 @@ const SOURCE_READER_OUTPUT_KEYS = [
 
 const NO_META_CLAIMS = "Every evidence claim states a fact about the company or its environment. Never write a claim about the supplied chunk or passage itself, or about information it lacks; record missing information in source_gaps instead.";
 
+/** What differs between batches; the asset context before them is shared and cached. */
+const BATCH_KEYS = ["batch", "source_corpus"];
+
 /** Contradictions become `contradicts` edges between the two named claims once both are stored. */
 const CONTRADICTION_SHAPE = "Each contradictions entry is {claim_texts: [two claim_text values copied exactly from your evidence_claims], description, confidence from 0 to 1}. List only conflicts between claims you return.";
 
@@ -88,7 +91,7 @@ export async function extractEvidenceForSources(sql: ReturnType<typeof postgres>
     taskKey: `source-reader:requested:${batch.id}:${sourceReaderBatchFingerprint(batch)}`,
     taskType: "evidence_extraction_batch", agentName: "source-reader", modelTier: "cheap",
     packet: { asset: v2Ctx, batch: { id: batch.id, count: batches.length, claim_target: 5 }, source_corpus: batch.chunks },
-    promptFactory: sourceReaderPrompt(5),
+    promptFactory: sourceReaderPrompt(5), perCallKeys: BATCH_KEYS,
   }));
   return persistEvidence(sql, v2Ctx, sources, mergeSourceReaderOutputs(outputs, batches));
 }
@@ -201,7 +204,7 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
         return callResearchAgent<Record<string, unknown>>({
           sql, ctx, stageKey: "evidence_extraction", taskKey,
           taskType: "evidence_extraction_batch", agentName: "source-reader", modelTier: "cheap",
-          packet, promptFactory: promptFactory(batchTarget),
+          packet, promptFactory: promptFactory(batchTarget), perCallKeys: BATCH_KEYS,
         });
       });
 
