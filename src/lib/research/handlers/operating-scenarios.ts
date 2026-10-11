@@ -18,6 +18,7 @@ export function reinvestmentNotes(reinvestment: { capex_forecast?: unknown; work
   const capex = (Array.isArray(reinvestment.capex_forecast) ? reinvestment.capex_forecast : []).map(Number);
   const hasCapex = capex.some((value) => Number.isFinite(value) && value !== 0);
   const workingCapital = reinvestment.working_capital_forecast;
+  const sensitivity = workingCapital.length ? "funding surplus varies with scenario revenue as a sensitivity" : "";
   return {
     baseWorkingCapital: workingCapital.length
       ? `Base funding-surplus proxy from reinvestment_model: ${workingCapital.join(", ")} ${units}.` : null,
@@ -25,8 +26,8 @@ export function reinvestmentNotes(reinvestment: { capex_forecast?: unknown; work
       ? `Base capex copies the accepted reinvestment_model: ${capex.join(", ")} ${units}${workingCapital.length ? "; so does the funding-surplus proxy" : ""}.`
       : "Base capex and funding-surplus proxy copy the accepted reinvestment_model; zero capex is a disclosed missing-data placeholder.",
     scenarioReinvestment: hasCapex
-      ? `Base capex from reinvestment_model is ${capex.join(", ")} ${units}; this scenario's yearly capex follows its drivers and history_ratios, and funding surplus varies with scenario revenue as a sensitivity.`
-      : "Capex remains an unsourced zero placeholder; funding surplus varies with scenario revenue as a sensitivity.",
+      ? `Base capex from reinvestment_model is ${capex.join(", ")} ${units}; this scenario's yearly capex follows its drivers and history_ratios${sensitivity ? `, and ${sensitivity}` : ""}.`
+      : `Capex remains an unsourced zero placeholder${sensitivity ? `; ${sensitivity}` : ""}.`,
     sourceGaps: workingCapital.length ? [] : ["reinvestment_model has no working_capital_forecast, so no funding-surplus proxy was copied into the scenarios."],
   };
 }
