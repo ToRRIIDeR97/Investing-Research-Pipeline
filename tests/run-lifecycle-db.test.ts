@@ -165,6 +165,48 @@ describe("run lifecycle reliability", { skip: process.env.RUN_DB_INTEGRATION !==
     assert.equal((await stage(runId, "asset_identity")).status, "pending");
   });
 
+  /** A stopped run whose human_review gate was left open: every earlier stage completed, every later one cancelled. */
+  async function runStoppedAtReview(runStatus: string, reviewStatus: string) {
+    const runId = await newRun(runStatus);
+    await sql`UPDATE research_stages SET status = 'completed', completed_at = NOW() WHERE research_run_id = ${runId}
+      AND stage_order < (SELECT stage_order FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'human_review')`;
+    await sql`UPDATE research_stages SET status = ${reviewStatus} WHERE research_run_id = ${runId} AND stage_key = 'human_review'`;
+    if (runStatus !== "running") await sql`UPDATE research_stages SET status = 'cancelled' WHERE research_run_id = ${runId} AND status = 'pending'`;
+    return runId;
+  }
+
+  test("RO5: resuming a stopped run whose human_review gate was left waiting restores the gate", async () => {
+    const runId = await runStoppedAtReview("needs_more_work", "waiting_for_human");
+    await resumeResearchRun(runId);
+    assert.equal((await runRow(runId)).status, "waiting_for_human");
+    assert.equal((await stage(runId, "human_review")).status, "waiting_for_human");
+    assert.equal((await stage(runId, "export")).status, "pending");
+    const result = await runResearchPipeline(runId);
+    assert.equal(result.status, "waiting_for_human", "the gate is not crossed without a reviewer");
+    assert.equal((await stage(runId, "human_review")).status, "waiting_for_human");
+  });
+
+  test("RO5: a research_plan gate left waiting on a failed run waits for its reviewer again", async () => {
+    const runId = await newRun("failed");
+    await sql`UPDATE research_stages SET status = 'completed' WHERE research_run_id = ${runId}
+      AND stage_order < (SELECT stage_order FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'research_plan')`;
+    await sql`UPDATE research_stages SET status = 'waiting_for_human' WHERE research_run_id = ${runId} AND stage_key = 'research_plan'`;
+    await sql`UPDATE research_stages SET status = 'cancelled' WHERE research_run_id = ${runId} AND status = 'pending'`;
+    await resumeResearchRun(runId);
+    assert.equal((await runRow(runId)).status, "waiting_for_human");
+    assert.equal((await stage(runId, "research_plan")).status, "waiting_for_human");
+  });
+
+  test("a running run with no stage the worker can dispatch stops visibly instead of staying running", async () => {
+    const runId = await runStoppedAtReview("running", "running");
+    const result = await runResearchPipeline(runId);
+    assert.equal(result.status, "needs_more_work");
+    assert.match(result.failure_reason || "", /No stage can run/);
+    await resumeResearchRun(runId);
+    assert.equal((await runRow(runId)).status, "waiting_for_human", "the review gate is restored for a reviewer");
+    assert.equal((await stage(runId, "human_review")).status, "waiting_for_human");
+  });
+
   test("RO1: a running run left without a job is queued again by the worker's reconcile step", async () => {
     const orphan = await newRun("running");
     await sql`INSERT INTO research_run_jobs (research_run_id, status, failure_reason, updated_at, created_at, queued_at)

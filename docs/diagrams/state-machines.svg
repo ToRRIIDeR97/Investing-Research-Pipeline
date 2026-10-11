@@ -66,7 +66,7 @@
 <text x="740" y="308" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">completeRun</text>
 <path d="M410,324 L840,324 L840,347 L860,347" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="760" y="338" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">failRun</text>
-<text x="40" y="445" font-size="11" font-weight="normal" text-anchor="start" fill="#555">failed → running: resumeResearchRun on enqueue</text>
+<text x="40" y="445" font-size="11" font-weight="normal" text-anchor="start" fill="#555">failed → running (waiting_for_human at an open gate): resume on enqueue</text>
 <path d="M710,410 L860,412" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="785" y="404" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">cancelRun</text>
 <text x="560" y="448" font-size="11" font-weight="normal" text-anchor="start" fill="#555">cancelRun from any state but completed; enqueue refuses cancelled</text>
@@ -109,6 +109,7 @@
 <text x="480" y="622" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">resume</text>
 <text x="760" y="625" font-size="11" font-weight="normal" text-anchor="start" fill="#555">cancelRun: open stages → cancelled</text>
 <text x="760" y="640" font-size="11" font-weight="normal" text-anchor="start" fill="#555">resume: failed (or left running) → running; later → pending</text>
+<text x="290" y="700" font-size="11" font-weight="normal" text-anchor="start" fill="#555">resume: an open gate, or human_review, stays waiting_for_human</text>
 <text x="760" y="655" font-size="11" font-weight="normal" text-anchor="start" fill="#555">skip_and_continue: failed, run continues</text>
 <text x="760" y="670" font-size="11" font-weight="normal" text-anchor="start" fill="#555">max_retries per stage: 0–3 (stages.ts)</text>
 <text x="760" y="685" font-size="11" font-weight="normal" text-anchor="start" fill="#555">owner requires_rerun: stage + dependents → pending</text>

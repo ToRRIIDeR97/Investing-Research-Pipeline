@@ -1004,19 +1004,27 @@ export async function resumeResearchRun(runId: string) {
       const active = await tx`SELECT id FROM research_run_jobs WHERE research_run_id = ${runId} AND status IN ('queued', 'running') LIMIT 1`;
       if (active.length) return;
       const stages = await tx`
-        SELECT id, stage_order, status FROM research_stages
+        SELECT id, stage_key, stage_order, status FROM research_stages
         WHERE research_run_id = ${runId} AND status IN ('failed', 'running', 'waiting_for_human')
         ORDER BY stage_order
       `;
       if (!stages.length) throw new Error("Cannot resume: expected failed stages and no active stage");
+      // A gate left open waits for its reviewer again; no handler can run human_review, so it is never restarted.
+      const gate = stages[0].status === "waiting_for_human" || stages[0].stage_key === "human_review";
       // A stopped run cannot have active stages; these were left by an interrupted transition.
-      const leftActive = stages.filter((stage) => stage.status !== "failed").map((stage) => String(stage.id));
+      const leftActive = stages.filter((stage, i) => stage.status !== "failed" && !(gate && i === 0)).map((stage) => String(stage.id));
       if (leftActive.length) await tx`
         UPDATE research_stages SET status = 'failed', failure_reason = 'Left active when the run stopped',
           completed_at = NOW(), updated_at = NOW()
         WHERE id = ANY(${leftActive}::uuid[])
       `;
-      await tx`
+      if (gate) await tx`
+        UPDATE research_stages
+        SET status = 'waiting_for_human', failure_reason = NULL, started_at = COALESCE(started_at, NOW()),
+            completed_at = NULL, updated_at = NOW()
+        WHERE id = ${stages[0].id}
+      `;
+      else await tx`
         UPDATE research_stages
         SET status = 'running', failure_reason = NULL, validation_result_json = NULL,
             started_at = NOW(), completed_at = NULL, updated_at = NOW()
@@ -1031,7 +1039,7 @@ export async function resumeResearchRun(runId: string) {
       `;
       await tx`
         UPDATE research_runs
-        SET status = 'running', failure_reason = NULL, completed_at = NULL, updated_at = NOW()
+        SET status = ${gate ? "waiting_for_human" : "running"}, failure_reason = NULL, completed_at = NULL, updated_at = NOW()
         WHERE id = ${runId}
       `;
     });

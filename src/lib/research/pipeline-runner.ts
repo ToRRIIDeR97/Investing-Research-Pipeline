@@ -126,7 +126,12 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
         const [state] = await sql`SELECT status FROM research_runs WHERE id = ${runId}`;
         if (state.status !== "running") break;
         const stages = await startReadyStages(runId);
-        if (!stages.length) break;
+        if (!stages.length) {
+          // A run left running with nothing to dispatch would only be requeued by the reconcile step; stop it visibly.
+          const [after] = await sql`SELECT status FROM research_runs WHERE id = ${runId}`;
+          if (after?.status === "running") throw new Error("No stage can run, but the run is still running");
+          break;
+        }
         const context = { ...(await loadRunContext(sql, runId)), signal };
         await prepareResearchTeam(sql, context);
         // Specialists paused on document requests rerun once the collector has served them.
