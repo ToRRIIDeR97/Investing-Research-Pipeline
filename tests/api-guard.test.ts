@@ -56,18 +56,23 @@ test("state-changing API calls must come from the app's own origin (S1, #8)", ()
 
 test("chat accepts the app's own origin when it is served from 127.0.0.1 (#8)", async () => {
   // npm run dev now prints http://127.0.0.1:3000, and NextURL rewrites loopback hosts to localhost,
-  // so the chat route's own Origin check used to refuse the UI. The middleware does that check now.
+  // so the chat route's own Origin check, which compared with nextUrl.origin, refused the UI.
   const { POST } = await import("../src/app/api/research-runs/[id]/chat/route");
   const runId = crypto.randomUUID();
-  const headers = { host: "127.0.0.1:3000", origin: "http://127.0.0.1:3000", "sec-fetch-site": "same-origin", "content-type": "application/json" };
-  const chat = new NextRequest(`http://127.0.0.1:3000/api/research-runs/${runId}/chat`, { method: "POST", headers, body: JSON.stringify({ message: "hi" }) });
+  const params = { params: Promise.resolve({ id: runId }) };
+  const chatFrom = (origin: string) => new NextRequest(`http://127.0.0.1:3000/api/research-runs/${runId}/chat`, {
+    method: "POST", body: JSON.stringify({ message: "hi" }),
+    headers: { host: "127.0.0.1:3000", origin, "sec-fetch-site": "same-origin", "content-type": "application/json" },
+  });
+  const chat = chatFrom("http://127.0.0.1:3000");
   assert.ok(passes(middleware(chat)));
+  assert.equal((await POST(chatFrom("https://unrelated.example"), params)).status, 403);
   const saved = { RUN_PAID_RESEARCH: process.env.RUN_PAID_RESEARCH, RESEARCH_MODEL_PROVIDER: process.env.RESEARCH_MODEL_PROVIDER };
   delete process.env.RUN_PAID_RESEARCH;
   delete process.env.RESEARCH_MODEL_PROVIDER;
   try {
     // With no provider enabled the route answers 503 before it touches the database.
-    assert.equal((await POST(chat, { params: Promise.resolve({ id: runId }) })).status, 503);
+    assert.equal((await POST(chat, params)).status, 503);
   } finally {
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[key];
