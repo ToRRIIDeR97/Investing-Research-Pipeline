@@ -5,6 +5,27 @@ import postgres from "postgres";
 
 const STORAGE_ROOT = join(process.cwd(), "storage", "sources");
 
+/** The largest upload accepted, checked before the request body is read (#24). */
+export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+
+const STORED_EXTENSIONS = new Set(["pdf", "html", "htm", "txt", "md", "csv", "xlsx", "docx", "json"]);
+
+/** The extension a stored upload gets: the client's, lowercased, if allowlisted; otherwise "bin" (#20). */
+export function storedExtension(fileName: string): string {
+  const ext = fileName.includes(".") ? fileName.split(".").pop()!.toLowerCase() : "";
+  return STORED_EXTENSIONS.has(ext) ? ext : "bin";
+}
+
+/** A source URL field must be an absolute http(s) URL without credentials (#20). */
+export function isSourceUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password && value.length <= 2048;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Compute SHA-256 content hash of a buffer.
  */
@@ -33,8 +54,7 @@ export async function ingestSourceFile(params: {
 
   try {
     const hash = computeHash(params.buffer);
-    const ext = params.fileName.split(".").pop() || "bin";
-    const storagePath = `storage/sources/${hash}.${ext}`;
+    const storagePath = `storage/sources/${hash}.${storedExtension(params.fileName)}`;
 
     // Check for existing document with same hash
     const existing = await sql`

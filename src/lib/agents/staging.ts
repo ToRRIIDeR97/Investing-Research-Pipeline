@@ -177,27 +177,34 @@ export async function validateStagedOutput(stagingId: string): Promise<{
 }
 
 /**
- * Accept a staged output and promote it to the target table.
+ * Accept a staged output and promote it to the target table. Only an output that passed
+ * validation and is not yet accepted or rejected is promoted, and only once: the claim, the
+ * insert and the final status share one transaction. Returns null when no such row exists.
  */
 export async function acceptStagedOutput(
   stagingId: string
-): Promise<{ recordId: string }> {
+): Promise<{ recordId: string } | null> {
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
-    const rows = await sql`
-      SELECT * FROM agent_output_staging WHERE id = ${stagingId}
-    `;
-    if (rows.length === 0) throw new Error("Staging record not found");
+    return await sql.begin(async (tx) => {
+      // The claim locks the row, so a concurrent accept waits and then finds it accepted.
+      const [staging] = await tx`
+        UPDATE agent_output_staging
+        SET review_status = 'accepting'
+        WHERE id = ${stagingId}
+          AND validation_status = 'valid'
+          AND review_status IS DISTINCT FROM 'accepted'
+          AND review_status IS DISTINCT FROM 'rejected'
+        RETURNING *
+      `;
+      if (!staging) return null;
+      const payload = staging.payload_json;
 
-    const staging = rows[0];
-    const payload = staging.payload_json;
+      let recordId: string;
 
-    let recordId: string;
-
-    switch (staging.output_schema_key) {
-      case "evidence_claim": {
-        const result = await sql.begin(async (tx) => {
+      switch (staging.output_schema_key) {
+        case "evidence_claim": {
           const inserted = await tx`
             INSERT INTO evidence_claims (
               asset_id, research_run_id, claim_text, claim_type,
@@ -271,88 +278,86 @@ export async function acceptStagedOutput(
             `;
           }
 
-          return claimId;
-        });
+          recordId = claimId;
+          break;
+        }
+        case "metric_observation": {
+          // Look up metric_definition_id from metric_key
+          const metricDef = await tx`
+            SELECT id FROM metric_definitions WHERE metric_key = ${payload.metric_key}
+          `;
+          if (metricDef.length === 0) throw new Error(`Unknown metric_key: ${payload.metric_key}`);
 
-        recordId = result;
-        break;
+          const inserted = await tx`
+            INSERT INTO metric_observations (
+              asset_id, research_run_id, metric_definition_id,
+              period_start, period_end, as_of_date,
+              value_numeric, value_text, unit, currency,
+              confidence, source_document_id, evidence_claim_id, review_status
+            ) VALUES (
+              (SELECT asset_id FROM research_runs WHERE id = ${staging.research_run_id}),
+              ${staging.research_run_id}, ${metricDef[0].id},
+              ${payload.period_start || null}, ${payload.period_end || null},
+              ${payload.as_of_date || null},
+              ${payload.value_numeric?.toString() || null}, ${payload.value_text || null},
+              ${payload.unit || null}, ${payload.currency || null},
+              ${payload.confidence?.toString() || null},
+              ${payload.source_document_id || null}, ${payload.evidence_claim_id || null},
+              'pending'
+            )
+            RETURNING id
+          `;
+          recordId = inserted[0].id;
+          break;
+        }
+        case "valuation_signal": {
+          const run = await tx`
+            SELECT asset_id, profile_id FROM research_runs WHERE id = ${staging.research_run_id}
+          `;
+          if (run.length === 0) throw new Error("Run not found");
+          if (!run[0].profile_id) throw new Error("Run has no profile_id; valuation signals require a research profile");
+
+          const inserted = await tx`
+            INSERT INTO valuation_signals (
+              asset_id, research_run_id, profile_id,
+              valuation_method_id, metric_definition_id,
+              signal_key, signal_name, lens_family,
+              current_value, current_value_text,
+              percentile, z_score, cheaper_when,
+              signal, cheapness_score, confidence,
+              source_document_id, evidence_claim_id,
+              review_status
+            ) VALUES (
+              ${run[0].asset_id}, ${staging.research_run_id}, ${run[0].profile_id || null},
+              ${payload.valuation_method_id || null}, ${payload.metric_definition_id || null},
+              ${payload.signal_key}, ${payload.signal_name}, ${payload.lens_family},
+              ${payload.current_value?.toString() || null}, ${payload.current_value_text || null},
+              ${payload.percentile?.toString() || null}, ${payload.z_score?.toString() || null}, ${payload.cheaper_when || null},
+              ${payload.signal}, ${payload.cheapness_score?.toString() || null}, ${payload.confidence?.toString() || null},
+              ${payload.source_document_id || null}, ${payload.evidence_claim_id || null},
+              'pending'
+            )
+            RETURNING id
+          `;
+          recordId = inserted[0].id;
+          break;
+        }
+        default:
+          throw new Error(`Unsupported schema key: ${staging.output_schema_key}`);
       }
-      case "metric_observation": {
-        // Look up metric_definition_id from metric_key
-        const metricDef = await sql`
-          SELECT id FROM metric_definitions WHERE metric_key = ${payload.metric_key}
-        `;
-        if (metricDef.length === 0) throw new Error(`Unknown metric_key: ${payload.metric_key}`);
 
-        const inserted = await sql`
-          INSERT INTO metric_observations (
-            asset_id, research_run_id, metric_definition_id,
-            period_start, period_end, as_of_date,
-            value_numeric, value_text, unit, currency,
-            confidence, source_document_id, evidence_claim_id, review_status
-          ) VALUES (
-            (SELECT asset_id FROM research_runs WHERE id = ${staging.research_run_id}),
-            ${staging.research_run_id}, ${metricDef[0].id},
-            ${payload.period_start || null}, ${payload.period_end || null},
-            ${payload.as_of_date || null},
-            ${payload.value_numeric?.toString() || null}, ${payload.value_text || null},
-            ${payload.unit || null}, ${payload.currency || null},
-            ${payload.confidence?.toString() || null},
-            ${payload.source_document_id || null}, ${payload.evidence_claim_id || null},
-            'pending'
-          )
-          RETURNING id
-        `;
-        recordId = inserted[0].id;
-        break;
-      }
-      case "valuation_signal": {
-        const run = await sql`
-          SELECT asset_id, profile_id FROM research_runs WHERE id = ${staging.research_run_id}
-        `;
-        if (run.length === 0) throw new Error("Run not found");
-        if (!run[0].profile_id) throw new Error("Run has no profile_id; valuation signals require a research profile");
+      // Mark staging as accepted
+      await tx`
+        UPDATE agent_output_staging
+        SET validation_status = 'accepted',
+            review_status = 'accepted',
+            target_record_id = ${recordId},
+            accepted_at = NOW()
+        WHERE id = ${stagingId}
+      `;
 
-        const inserted = await sql`
-          INSERT INTO valuation_signals (
-            asset_id, research_run_id, profile_id,
-            valuation_method_id, metric_definition_id,
-            signal_key, signal_name, lens_family,
-            current_value, current_value_text,
-            percentile, z_score, cheaper_when,
-            signal, cheapness_score, confidence,
-            source_document_id, evidence_claim_id,
-            review_status
-          ) VALUES (
-            ${run[0].asset_id}, ${staging.research_run_id}, ${run[0].profile_id || null},
-            ${payload.valuation_method_id || null}, ${payload.metric_definition_id || null},
-            ${payload.signal_key}, ${payload.signal_name}, ${payload.lens_family},
-            ${payload.current_value?.toString() || null}, ${payload.current_value_text || null},
-            ${payload.percentile?.toString() || null}, ${payload.z_score?.toString() || null}, ${payload.cheaper_when || null},
-            ${payload.signal}, ${payload.cheapness_score?.toString() || null}, ${payload.confidence?.toString() || null},
-            ${payload.source_document_id || null}, ${payload.evidence_claim_id || null},
-            'pending'
-          )
-          RETURNING id
-        `;
-        recordId = inserted[0].id;
-        break;
-      }
-      default:
-        throw new Error(`Unsupported schema key: ${staging.output_schema_key}`);
-    }
-
-    // Mark staging as accepted
-    await sql`
-      UPDATE agent_output_staging
-      SET validation_status = 'accepted',
-          review_status = 'accepted',
-          target_record_id = ${recordId},
-          accepted_at = NOW()
-      WHERE id = ${stagingId}
-    `;
-
-    return { recordId };
+      return { recordId };
+    });
   } finally {
     await sql.end();
   }

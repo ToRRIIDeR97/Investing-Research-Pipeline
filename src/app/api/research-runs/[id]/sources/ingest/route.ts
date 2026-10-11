@@ -9,6 +9,7 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { document_parses } from "@/db/schema/corpus";
 import { invokeDoclingParser, storeParseResults } from "@/lib/ingestion/parser";
+import { isSourceUrl, MAX_UPLOAD_BYTES, storedExtension } from "@/lib/ingestion/upload";
 
 export async function POST(
   request: NextRequest,
@@ -28,13 +29,22 @@ export async function POST(
       throw new ApiError("Research run not found", 404, "NOT_FOUND");
     }
 
+    // Refuse an oversized or unsized body before reading it (#24).
+    const declaredBytes = request.headers.get("content-length");
+    if (!declaredBytes || Number(declaredBytes) > MAX_UPLOAD_BYTES) {
+      throw new ApiError(`Uploads need a Content-Length of at most ${MAX_UPLOAD_BYTES / 1024 / 1024} MB`, 413, "UPLOAD_TOO_LARGE");
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
     const sourceType = formData.get("source_type")?.toString() || "upload";
+    const url = formData.get("url")?.toString().trim() || undefined;
+    if (url && !isSourceUrl(url)) {
+      throw new ApiError("url must be an http or https URL without credentials", 400, "INVALID_URL");
+    }
 
     // URL-only source — no file required
     if (sourceType === "url" && (!file || !(file instanceof File))) {
-      const url = formData.get("url")?.toString();
       if (!url) {
         throw new ApiError("No URL provided", 400, "MISSING_URL");
       }
@@ -82,6 +92,9 @@ export async function POST(
     if (!file || !(file instanceof File)) {
       throw new ApiError("No file provided in form data", 400, "MISSING_FILE");
     }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      throw new ApiError(`Uploads are limited to ${MAX_UPLOAD_BYTES / 1024 / 1024} MB`, 413, "UPLOAD_TOO_LARGE");
+    }
 
     // Read file content as buffer
     const arrayBuffer = await file.arrayBuffer();
@@ -90,11 +103,9 @@ export async function POST(
     // Compute SHA-256 hash
     const hash = createHash("sha256").update(buffer).digest("hex");
 
-    // Determine file extension
+    // Lowercased and allowlisted; anything else is stored as .bin
     const originalName = file.name || "unknown";
-    const ext = originalName.includes(".")
-      ? originalName.split(".").pop()
-      : "bin";
+    const ext = storedExtension(originalName);
 
     // Ensure storage directory exists
     const storageDir = join(process.cwd(), "storage", "sources");
@@ -137,7 +148,7 @@ export async function POST(
         storage_path: `storage/sources/${storageFilename}`,
         publisher: formData.get("publisher")?.toString() || null,
         author: formData.get("author")?.toString() || null,
-        url: formData.get("url")?.toString() || null,
+        url: url || null,
         language: formData.get("language")?.toString() || null,
       })
       .returning();

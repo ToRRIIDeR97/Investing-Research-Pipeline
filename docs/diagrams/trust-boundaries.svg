@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 640" width="1100" height="640" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" font-size="13">
-<title id="t">Trust boundaries and sensitive-data flow</title><desc id="d">Zones: local clients reaching the unauthenticated Next.js API; the app/worker zone holding secrets from .env.local; Postgres and ./storage; python3 executing model-generated code; external LLM, search, and data hosts returning untrusted content.</desc>
+<title id="t">Trust boundaries and sensitive-data flow</title><desc id="d">Zones: local clients reaching the Next.js API (no accounts; loopback bind, Host and Origin checks); the app/worker zone holding secrets from .env.local; Postgres and ./storage; python3 executing model-generated code; external LLM, search, and data hosts returning untrusted content.</desc>
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker><marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10" fill="none" stroke="#333"/></marker></defs>
 <rect x="0" y="0" width="1100" height="640" fill="#ffffff"/>
 <text x="16" y="26" font-size="16" font-weight="bold" fill="#111">Trust boundaries and sensitive-data flow</text>
@@ -7,26 +7,26 @@
 <text x="30" y="68" font-size="12" font-weight="bold" text-anchor="start" fill="#b23b3b">Z0 Any local client</text>
 <rect x="40" y="90" width="190" height="80" rx="6" fill="#fdecec" stroke="#b23b3b" stroke-width="1.4"/>
 <text x="135.0" y="108" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Browser / curl</text>
-<text x="135.0" y="125" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">anything that can reach</text>
-<text x="135.0" y="140" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">the Next.js port</text>
+<text x="135.0" y="125" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">any local process on the</text>
+<text x="135.0" y="140" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">port; other sites refused</text>
 <rect x="280" y="50" width="520" height="330" rx="10" fill="none" stroke="#4a8a3f" stroke-width="1.6" stroke-dasharray="8 5"/>
 <text x="290" y="68" font-size="12" font-weight="bold" text-anchor="start" fill="#4a8a3f">Z1 App + worker processes (trusted code)</text>
 <rect x="300" y="85" width="230" height="110" rx="6" fill="#eef6ec" stroke="#4a8a3f" stroke-width="1.4"/>
 <text x="415.0" y="103" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Next.js API routes</text>
-<text x="415.0" y="120" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">NO authn/authz</text>
-<text x="415.0" y="135" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">zod on some bodies</text>
-<text x="415.0" y="150" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">uploads → ./storage (Z2)</text>
+<text x="415.0" y="120" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">no accounts (#8)</text>
+<text x="415.0" y="135" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">Host + Origin check, no framing</text>
+<text x="415.0" y="150" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">uploads ≤ 50 MB → ./storage (Z2)</text>
 <rect x="550" y="85" width="230" height="110" rx="6" fill="#fdf3e3" stroke="#b07a1f" stroke-width="1.4"/>
 <text x="665.0" y="103" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Worker + agent harness</text>
 <text x="665.0" y="120" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">provider host allowlist</text>
-<text x="665.0" y="135" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">redact() (partial, #10)</text>
+<text x="665.0" y="135" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">redact() covers every key</text>
 <text x="665.0" y="150" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">budget + byte/time caps</text>
 <rect x="300" y="230" width="480" height="120" rx="6" fill="#fdecec" stroke="#b23b3b" stroke-width="1.4"/>
 <text x="540.0" y="248" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Secrets (.env.local, gitignored)</text>
 <text x="540.0" y="265" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">RESEARCH_MODEL_API_KEY · OPENCODE_GO_API_KEY</text>
 <text x="540.0" y="280" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">RESEARCH_EMBEDDING_API_KEY · RESEARCH_WEB_SEARCH_API_KEY</text>
-<text x="540.0" y="295" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">DATABASE_URL · redact() covers only MODEL key + DATABASE_URL</text>
-<text x="540.0" y="310" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">backtest child inherits all of these (#11)</text>
+<text x="540.0" y="295" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">DATABASE_URL · redact() covers all of these</text>
+<text x="540.0" y="310" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">backtest child gets none of these (#11)</text>
 <rect x="280" y="400" width="520" height="170" rx="10" fill="none" stroke="#2f7f7f" stroke-width="1.6" stroke-dasharray="8 5"/>
 <text x="290" y="418" font-size="12" font-weight="bold" text-anchor="start" fill="#2f7f7f">Z2 Local data stores</text>
 <rect x="300" y="435" width="230" height="110" rx="6" fill="#eaf4f4" stroke="#2f7f7f" stroke-width="1.4"/>
@@ -49,7 +49,7 @@
 <text x="955.0" y="203" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Web search / fetch</text>
 <text x="955.0" y="220" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">search endpoint · DDG · Bing</text>
 <text x="955.0" y="235" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">URLs · SEC · FRED · Yahoo · Stooq…</text>
-<text x="955.0" y="250" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">isSafePublicUrl guard (#9)</text>
+<text x="955.0" y="250" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">public-address check per hop</text>
 <rect x="830" y="330" width="250" height="240" rx="10" fill="none" stroke="#b07a1f" stroke-width="1.6" stroke-dasharray="8 5"/>
 <text x="840" y="348" font-size="12" font-weight="bold" text-anchor="start" fill="#b07a1f">Z4 child processes</text>
 <rect x="850" y="365" width="210" height="120" rx="6" fill="#fdecec" stroke="#b23b3b" stroke-width="1.4"/>
@@ -57,13 +57,13 @@
 <text x="955.0" y="400" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">model-written strategy code</text>
 <text x="955.0" y="415" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">AST/import limits only —</text>
 <text x="955.0" y="430" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">not an OS sandbox;</text>
-<text x="955.0" y="445" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">full env inherited</text>
+<text x="955.0" y="445" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">allowlisted env, no keys</text>
 <rect x="850" y="495" width="210" height="60" rx="6" fill="#fdf3e3" stroke="#b07a1f" stroke-width="1.4"/>
 <text x="955.0" y="513" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">repair sandbox (Z4b)</text>
 <text x="955.0" y="530" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">node --permission, empty env</text>
 <text x="955.0" y="545" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">+ docling_parser.py</text>
 <path d="M230,130 L300,130" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="265" y="120" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">HTTP, no auth</text>
+<text x="265" y="120" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">HTTP, no accounts</text>
 <path d="M415,195 L415,230" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#a)"/>
 <path d="M665,195 L665,230" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#a)"/>
 <text x="700" y="215" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">read env</text>

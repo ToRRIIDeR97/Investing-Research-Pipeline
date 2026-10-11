@@ -335,10 +335,12 @@ npm run test:db
 | AC-10 | graph.test.ts (DB) | graph.test.ts (DB) |
 | AC-11 | graph.test.ts (DB) | graph.test.ts (DB) |
 | AC-12 | graph.test.ts (DB) | graph.test.ts (DB) |
-| AC-13 | corpus.test.ts (DB) | corpus.test.ts (DB) |
+| AC-13 | pending/acceptance-corpus.test.ts (DB) | pending/verification-corpus.test.ts (DB) |
 | AC-14 | evidence.test.ts (DB) | evidence.test.ts (DB) |
-| AC-15 | pdf-ocr.test.ts | pdf-ocr.test.ts |
-| AC-16 | pdf-ocr.test.ts | pdf-ocr.test.ts |
+| AC-15 | pending/acceptance-pdf-ocr.test.ts | pending/verification-pdf-ocr.test.ts |
+| AC-16 | pending/acceptance-pdf-ocr.test.ts | pending/verification-pdf-ocr.test.ts |
+
+AC-13, AC-15 and AC-16 are not built; their tests sit in `pending/`, outside the `npm run test:db` glob (see `pending/README.md`). AC-14 is built.
 
 Manual checks, not automated:
 

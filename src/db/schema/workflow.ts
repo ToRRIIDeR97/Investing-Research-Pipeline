@@ -91,6 +91,8 @@ export const research_tasks = pgTable(
     validation_result_json: jsonb("validation_result_json"),
     retry_count: integer("retry_count").notNull().default(0),
     cost_usd: numeric("cost_usd").notNull().default("0"),
+    // Estimated cost held by a model attempt in flight; set by budget preflight and cleared when the call is recorded.
+    budget_reservation_usd: numeric("budget_reservation_usd"),
     idempotency_key: text("idempotency_key"),
     started_at: timestamp("started_at", { withTimezone: true }),
     completed_at: timestamp("completed_at", { withTimezone: true }),

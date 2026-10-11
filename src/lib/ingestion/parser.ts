@@ -118,18 +118,20 @@ export async function storeParseResults(params: {
  * This calls a Python subprocess that wraps Docling.
  */
 export async function invokeDoclingParser(filePath: string): Promise<ParseResult> {
-  const { execFileSync } = await import("child_process");
+  const { execFile } = await import("child_process");
   const { join } = await import("path");
+  const { promisify } = await import("util");
 
   const parserScript = join(process.cwd(), "python", "parsers", "docling_parser.py");
 
   try {
-    const output = execFileSync(
+    // Asynchronous, so a 2-minute parse doesn't stall every other request (#24).
+    const { stdout } = await promisify(execFile)(
       "python3",
       [parserScript, filePath],
       { timeout: 120000, encoding: "utf-8", maxBuffer: 50 * 1024 * 1024 }
     );
-    return JSON.parse(output) as ParseResult;
+    return JSON.parse(stdout) as ParseResult;
   } catch (error) {
     // If Docling is not available, fall back to basic text extraction
     console.warn("Docling parser not available, using basic extraction:", error);
