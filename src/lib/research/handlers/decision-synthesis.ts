@@ -5,11 +5,13 @@ import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { loadAcceptedEvidencePacket } from "../sources/corpus";
-import { dropInvalidCitationIds, validateArtifactCitationIds } from "../sources/artifact-evidence";
+import { loadAcceptedEvidencePacket, reconcileSourceGaps } from "../sources/corpus";
+import { v2RunContext } from "../sources/role-coverage";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 import { withheldValuationReason } from "../valuation/contracts";
-import { WITHHELD_VALUATION_LINKAGE } from "../decision/validation";
+import {
+  DECISION_GAP_OWNER, decisionOutputFormat, finalizeDecisionOutput, stripCodeOwnedFields, type DecisionFinalizeInputs,
+} from "../decision/finalize";
 
 export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "decision_synthesis",
@@ -123,6 +125,23 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
         evidence_claims: evidenceClaims,
       };
       const taskKey = "asset-analyst:decision";
+      const weights = operatingScenarios?.content_json || {};
+      const finalizeInputs: DecisionFinalizeInputs = {
+        acceptedClaimIds: evidenceClaims.map((claim: any) => String(claim.id)),
+        valuation: {
+          status: valuationWithheld ? "withheld" : "complete",
+          terminalYear: Number.isFinite(terminalYear) ? terminalYear : undefined,
+          withheldReason: valuationWithheld || undefined,
+        },
+        marketPrice: marketPrice > 0 ? marketPrice : null,
+        terminalReturns: terminalReturnInputs
+          ? { bear: terminalReturns.bear, base: terminalReturns.base, bull: terminalReturns.bull } : null,
+        probabilities: ["bear", "base", "bull"].every((t) => Number.isFinite(weights[`probability_${t}`]))
+          ? { probability_bear: weights.probability_bear, probability_base: weights.probability_base, probability_bull: weights.probability_bull }
+          : null,
+        dilutionCovered: Boolean(terminalReturnInputs && terminalReturnInputs.reported_diluted_shares > 0
+          && terminalReturnInputs.diluted_shares_millions * 1e6 >= terminalReturnInputs.reported_diluted_shares - 1),
+      };
 
       const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
         agentName: "asset-analyst",
@@ -136,12 +155,9 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           "Copy risk supporting_claim_ids exactly from evidence_claims; never invent UUIDs.",
           "Derive material risks from this asset's business, applicable archetypes, overlays and accepted evidence. Include regulatory capital only when relevant to the business. Explain capital allocation, ownership and dilution where material; do not import another company's metrics. Map confidence to specific evidence gaps.",
           ...(valuationWithheld ? [
-            `accepted_valuation is withheld: no price target exists. Begin investment_thesis.expected_return_linkage with exactly: ${WITHHELD_VALUATION_LINKAGE} Set investment_thesis.valuation_accepted_first to false. Set every expected_return_matrix return to 0 and add valuation_withheld: true; those zeros are markers, not estimates. Name the missing valuation inputs in confidence_assessment.`,
-          ] : [
-            "Set investment_thesis.valuation_accepted_first to true because accepted_valuation is supplied by the completed valuation stage.",
-          ]),
-          "Use operating_scenario_probabilities for bear, base, and bull weights in every expected-return calculation and narrative. Compute probability_weighted_return from those weights and expected_return_matrix bear_return, base_return, and bull_return.",
-          "Use terminal_return_inputs for expected_return_matrix and investment_thesis.expected_return_linkage. The return horizon is terminal_year, not an earlier annual price target. Set dilution_omitted to false only when the accepted terminal projection uses at least the reported diluted share count.",
+            "accepted_valuation is withheld: no price target exists. Do not state price targets or returns; use investment_thesis.expected_return_linkage to say what the conclusion depends on, and name the missing valuation inputs in confidence_assessment.",
+          ] : []),
+          "Code sets investment_thesis.valuation_accepted_first and the expected_return_matrix status, bear, base, bull and probability-weighted returns and dilution_omitted from accepted_valuation, terminal_return_inputs and operating_scenario_probabilities; values you give for them are replaced. Judge no_rerating_return, weak_stock_outcome and permanent_loss_limit over the terminal_year horizon.",
           "Risk probability and confidence must be between 0 and 1; risk severity must be between 1 and 5.",
           "The decision must remain pending because human review is the approval gate.",
           "Use latest_reported_metrics for monitoring current levels. When a current level is unavailable or stale, set it to null and explain the gap in source_role; never use zero as a missing-data placeholder.",
@@ -149,52 +165,18 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
         ],
       });
 
-      const output = await callResearchAgent<Record<string, any>>({
+      const raw = await callResearchAgent<Record<string, any>>({
         sql, ctx, stageKey: "decision_synthesis", taskKey,
         taskType: "decision_synthesis", agentName: "asset-analyst", modelTier: "mid",
         packet, promptFactory,
-        outputFormat: DECISION_SYNTHESIS_CONTRACT,
+        outputFormat: decisionOutputFormat(finalizeInputs),
       });
-      const probabilities = packet.operating_scenario_probabilities;
-      const returns = output.expected_return_matrix;
-      if (returns && terminalReturnInputs) {
-        returns.bear_return = terminalReturns.bear;
-        returns.base_return = terminalReturns.base;
-        returns.bull_return = terminalReturns.bull;
-        returns.dilution_omitted = !(terminalReturnInputs.reported_diluted_shares > 0
-          && terminalReturnInputs.diluted_shares_millions * 1e6 >= terminalReturnInputs.reported_diluted_shares - 1);
+      // The model-facing format already judged a finalized copy; finalizing again yields the same output.
+      const { output, adjustments, gaps, errors } = finalizeDecisionOutput(stripCodeOwnedFields(raw), finalizeInputs);
+      if (adjustments.dropped_citation_ids.length) {
+        console.warn(`decision synthesis dropped citations outside the accepted packet: ${adjustments.dropped_citation_ids.join(", ")}`);
       }
-      if (probabilities && returns) {
-        const weighted = Number(probabilities.probability_bear) * Number(returns.bear_return)
-          + Number(probabilities.probability_base) * Number(returns.base_return)
-          + Number(probabilities.probability_bull) * Number(returns.bull_return);
-        if (Number.isFinite(weighted)) returns.probability_weighted_return = Number(weighted.toFixed(6));
-      }
-      // A withheld valuation has zero placeholder targets; describing them as returns would read as -100%.
-      if (!valuationWithheld && terminalReturnInputs && output.investment_thesis && probabilities && returns) {
-        output.investment_thesis.horizon = `Through fiscal ${terminalYear}`;
-        output.investment_thesis.expected_return_linkage =
-          `Fiscal ${terminalYear} diluted-share price targets imply bear ${(returns.bear_return * 100).toFixed(1)}%, ` +
-          `base ${(returns.base_return * 100).toFixed(1)}%, and bull ${(returns.bull_return * 100).toFixed(1)}% ` +
-          `total returns from $${marketPrice.toFixed(2)}; operating scenario weights ` +
-          `${(Number(probabilities.probability_bear) * 100).toFixed(0)}/${(Number(probabilities.probability_base) * 100).toFixed(0)}/${(Number(probabilities.probability_bull) * 100).toFixed(0)} ` +
-          `produce ${(returns.probability_weighted_return * 100).toFixed(1)}%. ` +
-          `Future share issuance beyond the reported diluted count remains a source gap.`;
-      }
-      // Without a valuation there are no returns or price-based conclusion; keep the decision pending.
-      if (valuationWithheld) {
-        if (returns) {
-          for (const key of ["bear_return", "base_return", "bull_return", "probability_weighted_return", "no_rerating_return", "weak_stock_outcome", "permanent_loss_limit"]) returns[key] = 0;
-          Object.assign(returns, { valuation_withheld: true, withheld_reason: valuationWithheld });
-        }
-        if (output.investment_thesis) {
-          output.investment_thesis.valuation_accepted_first = false;
-          const raw = String(output.investment_thesis.expected_return_linkage || "");
-          const linkage = (raw.startsWith(WITHHELD_VALUATION_LINKAGE) ? raw.slice(WITHHELD_VALUATION_LINKAGE.length) : raw).trim();
-          output.investment_thesis.expected_return_linkage = `${WITHHELD_VALUATION_LINKAGE} ${linkage || valuationWithheld}`.trim();
-        }
-        if (output.decision_record) output.decision_record.decision = "pending";
-      }
+      // Captured current levels replace the model's for KPIs the history and valuation report directly.
       const monitoringItems = output.monitoring_dashboard?.items;
       if (Array.isArray(monitoringItems)) {
         const latestDeposits = (latestMetrics as any[]).find((metric) => metric.metric_key === "deposits");
@@ -215,22 +197,10 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           }
         }
       }
-      // A citation outside the accepted packet (usually an invented ID) is dropped and disclosed in the
-      // decision rationale rather than failing the stage; the remaining citations are then re-checked.
-      const acceptedClaimIds = evidenceClaims.map((claim: any) => String(claim.id));
-      const droppedCitationIds = dropInvalidCitationIds(output, acceptedClaimIds);
-      if (droppedCitationIds.length) {
-        console.warn(`decision synthesis dropped citations outside the accepted packet: ${droppedCitationIds.join(", ")}`);
-        if (output.decision_record) {
-          output.decision_record.rationale = `${String(output.decision_record.rationale || "").trim()} ` +
-            `Dropped ${droppedCitationIds.length} citation(s) to evidence outside the accepted packet: ${droppedCitationIds.join(", ")}.`;
-        }
-      }
-      const citationValidation = validateArtifactCitationIds(output, acceptedClaimIds);
-      if (!citationValidation.valid) {
-        throw new Error(
-          `Decision synthesis cited evidence IDs outside the accepted packet: ${citationValidation.invalidIds.join(", ")}`
-        );
+      // Check everything before the first write, so an invalid answer never leaves partial rows.
+      const problems = [...errors, ...(DECISION_SYNTHESIS_CONTRACT.validate?.(output) || [])];
+      if (problems.length) {
+        throw new Error(`Decision synthesis output is invalid: ${problems.map((p) => `${p.path}: ${p.message}`).join("; ")}`);
       }
 
       // Persist to theses table
@@ -313,6 +283,9 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           });
         }
       }
+      // Source-gap and uncited risks are evidence gaps, not operating risks. Gaps an earlier attempt
+      // opened and this one no longer produces are resolved, so a re-run converges.
+      await reconcileSourceGaps(sql, v2RunContext(ctx), { source_gaps: gaps }, DECISION_GAP_OWNER);
 
       return output;
     } finally {

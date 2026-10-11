@@ -58,18 +58,21 @@ export const CatalystRegister = z.object({
 });
 export type CatalystRegister = z.infer<typeof CatalystRegister>;
 
+// Code sets the scenario returns from the valuation stage; null means withheld or unavailable, never 0.
 export const ExpectedReturnMatrix = z.object({
   artifact_type: z.literal("expected_return_matrix"),
-  bear_return: z.number(),
-  base_return: z.number(),
-  bull_return: z.number(),
-  probability_weighted_return: z.number(),
-  no_rerating_return: z.number(),
-  weak_stock_outcome: z.number(),
-  permanent_loss_limit: z.number(),
+  status: z.enum(["estimated", "withheld", "unavailable"]).default("estimated"),
+  bear_return: z.number().nullable(),
+  base_return: z.number().nullable(),
+  bull_return: z.number().nullable(),
+  probability_weighted_return: z.number().nullable(),
+  no_rerating_return: z.number().nullable(),
+  weak_stock_outcome: z.number().nullable(),
+  permanent_loss_limit: z.number().nullable(),
   dilution_omitted: z.boolean().default(false), // For C12-T6 check
 });
-export type ExpectedReturnMatrix = z.infer<typeof ExpectedReturnMatrix>;
+// Input type: artifacts saved before `status` existed omit it and read as estimated.
+export type ExpectedReturnMatrix = z.input<typeof ExpectedReturnMatrix>;
 
 export const ThesisBreaker = z.object({
   name: z.string().min(1),
@@ -103,9 +106,19 @@ export const MonitoringKPI = z.object({
 });
 export type MonitoringKPI = z.infer<typeof MonitoringKPI>;
 
+/** A continuous business driver moved out of the catalyst register. */
+export const MonitoringDriver = z.object({
+  name: z.string().min(1),
+  mechanism: z.string().min(1),
+  model_input_affected: z.string().min(1),
+  evidence: z.string().min(1),
+});
+export type MonitoringDriver = z.infer<typeof MonitoringDriver>;
+
 export const MonitoringDashboard = z.object({
   artifact_type: z.literal("monitoring_dashboard"),
   items: z.array(MonitoringKPI).min(1),
+  drivers: z.array(MonitoringDriver).optional(),
 });
 export type MonitoringDashboard = z.infer<typeof MonitoringDashboard>;
 
@@ -126,6 +139,12 @@ export const DecisionRecord = z.object({
   decision: z.enum(["approve", "reject", "pending"]),
   rationale: z.string().min(1),
   human_approved_by: z.string().optional(), // C12-T8 check: must be present for approve
+  // What decision synthesis changed in the model's answer before saving it.
+  adjustments: z.object({
+    dropped_citation_ids: z.array(z.string()),
+    moved_catalysts: z.array(z.object({ catalyst_name: z.string(), reason: z.literal("business_driver_only") })),
+    moved_risks: z.array(z.object({ risk_name: z.string(), reason: z.enum(["source_gap_only", "no_supporting_evidence"]) })),
+  }).optional(),
 });
 export type DecisionRecord = z.infer<typeof DecisionRecord>;
 

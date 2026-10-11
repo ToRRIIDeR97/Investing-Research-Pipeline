@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="430" viewBox="0 0 680 430" role="img" font-family="Helvetica, Arial, sans-serif">
+<title>Decision synthesis, proposed</title>
+<desc>One pure function finalizes the model answer before validation and before persistence. Validation runs on the finalized answer, so self-flagged items, invented citations and code-owned fields no longer fail the stage. Persistence happens once, after finalizing.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f5e5a" stroke-width="1.5"/></marker></defs>
+<rect width="680" height="430" fill="#ffffff"/>
+<text x="20" y="28" font-size="14" font-weight="600" fill="#2c2c2a">Proposed (changed boxes in teal)</text>
+<g font-size="13" fill="#2c2c2a">
+<rect x="20" y="50" width="300" height="50" rx="6" fill="#f1efe8" stroke="#888780"/>
+<text x="34" y="72">Build packet and DecisionFinalizeInputs</text><text x="34" y="90" font-size="11" fill="#5f5e5a">valuation status, returns, weights, claim IDs</text>
+<rect x="20" y="130" width="300" height="50" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="152" fill="#085041">Model call, decisionOutputFormat(inputs)</text><text x="34" y="170" font-size="11" fill="#0f6e56">prompt no longer asks for code-owned fields</text>
+<rect x="20" y="210" width="300" height="62" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="232" fill="#085041">validate = finalize a copy, then contract</text>
+<text x="34" y="249" font-size="11" fill="#0f6e56">fails only on real schema errors or an empty</text>
+<text x="34" y="264" font-size="11" fill="#0f6e56">register (AC-4, AC-8)</text>
+<rect x="360" y="210" width="300" height="62" rx="6" fill="#f1efe8" stroke="#888780"/>
+<text x="374" y="232">Existing repair pass, unchanged</text><text x="374" y="250" font-size="11" fill="#5f5e5a">sees the raw answer (not mutated)</text>
+<rect x="20" y="302" width="300" height="50" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="324" fill="#085041">finalizeDecisionOutput(output, inputs)</text><text x="34" y="342" font-size="11" fill="#0f6e56">decision/finalize.ts, pure (AC-1..AC-6)</text>
+<rect x="20" y="376" width="300" height="44" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="34" y="396" fill="#085041">Persist once: rows, artifacts, open gaps</text><text x="34" y="412" font-size="11" fill="#0f6e56">decision_record.adjustments (AC-3, AC-7)</text>
+<rect x="360" y="376" width="300" height="44" rx="6" fill="#e1f5ee" stroke="#0f6e56"/>
+<text x="374" y="396" fill="#085041">Readers handle null returns + status</text><text x="374" y="412" font-size="11" fill="#0f6e56">report-generator.ts (AC-9)</text>
+</g>
+<g stroke="#5f5e5a" stroke-width="1.2" fill="none">
+<line x1="170" y1="100" x2="170" y2="127" marker-end="url(#a)"/>
+<line x1="170" y1="180" x2="170" y2="207" marker-end="url(#a)"/>
+<line x1="320" y1="241" x2="357" y2="241" marker-end="url(#a)"/>
+<line x1="170" y1="272" x2="170" y2="299" marker-end="url(#a)"/>
+<line x1="170" y1="352" x2="170" y2="373" marker-end="url(#a)"/>
+<line x1="320" y1="398" x2="357" y2="398" marker-end="url(#a)"/>
+</g>
+<text x="330" y="234" font-size="11" fill="#5f5e5a">errors</text>
+<text x="180" y="290" font-size="11" fill="#5f5e5a">no errors</text>
+</svg>
