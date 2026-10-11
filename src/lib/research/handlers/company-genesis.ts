@@ -13,6 +13,26 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 
+/** Rules for the genesis analyst. The founder rules match validateGenesisArtifact and validateFounderProfile. */
+export const GENESIS_PROMPT_RULES = [
+  "Every factual statement in current_implications must have matching cited historical_evidence. Omit unsupported statements; never add an issuer-specific exception.",
+  "Provide a detailed synthesis of the company genesis, founders, and early corporate structure.",
+  "Return each nested artifact as an object with the exact artifact_type and required_fields supplied in artifact_shape.",
+  "Every narrative field named in required_fields is a non-empty string unless explicitly described below; do not return arrays for narrative strings.",
+  "founder_motivations and motivations entries require motivation, evidence_claim_ids, and numeric confidence.",
+  "motivation must be exactly one of: personal_problem, mission_or_cause, technical_conviction, commercial_opportunity, financial_ambition, competitive_ambition, professional_frustration, status_or_legacy, mixed, unknown.",
+  "alternative_motivation_interpretations and alternative_interpretations are non-empty arrays of strings.",
+  "present_day_implications, persistent_behaviors, decision_patterns, capital_allocation_habits, talent_and_organization_patterns, and current_implications are non-empty arrays of strings.",
+  "material_claims and historical_evidence entries require claim, evidence_weight, evidence_claim_ids, and numeric confidence.",
+  "evidence_weight must be exactly one of: contemporary_direct_founder_statement, later_retrospective_founder_statement, contemporary_third_party_observation, documented_company_action, analyst_inference, disputed_corporate_account.",
+  "founder_profile is one object for the principal founder, never an array.",
+  "Timeline events require date_or_period, event, objective_at_the_time, decision, evidence_claim_ids, immediate_effect, lasting_consequence, strategy_changed, mission_changed, and confidence.",
+  "strategic_history_timeline.major_pivots is a non-empty array of strings, never objects.",
+  "Use only UUID evidence claim IDs present in evidence_claims. Never invent citation IDs.",
+  "company_genesis.founder_motivations and founder_profile.motivations each need at least one entry whose motivation is not unknown and that cites the accepted founder or origin evidence claim supporting it. unknown is allowed only for additional entries.",
+  "Where the evidence says nothing more about the founders, state that limitation in founder_background and background_summary rather than inventing history.",
+];
+
 export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "company_genesis",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
@@ -99,23 +119,7 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
         agentName: "asset-analyst",
         requiredKeys: COMPANY_GENESIS_CONTRACT.requiredKeys,
         packet: p,
-        extraRules: [
-          "Every factual statement in current_implications must have matching cited historical_evidence. Omit unsupported statements; never add an issuer-specific exception.",
-          "Provide a detailed synthesis of the company genesis, founders, and early corporate structure.",
-          "Return each nested artifact as an object with the exact artifact_type and required_fields supplied in artifact_shape.",
-          "Every narrative field named in required_fields is a non-empty string unless explicitly described below; do not return arrays for narrative strings.",
-          "founder_motivations and motivations entries require motivation, evidence_claim_ids, and numeric confidence.",
-          "motivation must be exactly one of: personal_problem, mission_or_cause, technical_conviction, commercial_opportunity, financial_ambition, competitive_ambition, professional_frustration, status_or_legacy, mixed, unknown.",
-          "alternative_motivation_interpretations and alternative_interpretations are non-empty arrays of strings.",
-          "present_day_implications, persistent_behaviors, decision_patterns, capital_allocation_habits, talent_and_organization_patterns, and current_implications are non-empty arrays of strings.",
-          "material_claims and historical_evidence entries require claim, evidence_weight, evidence_claim_ids, and numeric confidence.",
-          "evidence_weight must be exactly one of: contemporary_direct_founder_statement, later_retrospective_founder_statement, contemporary_third_party_observation, documented_company_action, analyst_inference, disputed_corporate_account.",
-          "founder_profile is one object for the principal founder, never an array.",
-          "Timeline events require date_or_period, event, objective_at_the_time, decision, evidence_claim_ids, immediate_effect, lasting_consequence, strategy_changed, mission_changed, and confidence.",
-          "strategic_history_timeline.major_pivots is a non-empty array of strings, never objects.",
-          "Use only UUID evidence claim IDs present in evidence_claims. Never invent citation IDs.",
-          "When founder evidence is unavailable, state the limitation and use motivation=unknown rather than inventing history.",
-        ],
+        extraRules: GENESIS_PROMPT_RULES,
       });
 
       let output = await callResearchAgent<Record<string, any>>({
@@ -139,7 +143,7 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
           invalid_evidence_claim_ids: citationValidation.invalidIds,
           allowed_evidence_claim_ids: allowedClaimRows.map((row) => String(row.id)),
           repair_instruction:
-            "Return the complete four-artifact output again. Replace an invalid citation only when an allowed evidence claim directly supports the statement. Otherwise remove the unsupported statement or mark the relevant narrative as unknown. Never invent a UUID.",
+            "Return the complete four-artifact output again. Replace an invalid citation only when an allowed evidence claim directly supports the statement. Otherwise remove the unsupported statement, keeping at least one supported founder motivation. Never invent a UUID.",
         };
         output = await callResearchAgent<Record<string, any>>({
           sql,
@@ -153,8 +157,9 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
           promptFactory,
           outputFormat: COMPANY_GENESIS_CONTRACT,
         });
-        // IDs still unknown after the repair are dropped and recorded on company_genesis, not thrown.
-        const dropped = dropInvalidCitationIds(output, allowedClaimRows.map((row) => String(row.id)));
+        // IDs still unknown after the repair are dropped and recorded on company_genesis, not thrown;
+        // an entry left with no supporting citation is removed rather than failing the artifact contract.
+        const dropped = dropInvalidCitationIds(output, allowedClaimRows.map((row) => String(row.id)), { pruneUncited: true });
         if (dropped.length) {
           console.warn(`company genesis dropped citations outside the accepted packet: ${dropped.join(", ")}`);
           if (output.company_genesis && typeof output.company_genesis === "object") {
