@@ -22,7 +22,7 @@ s.box(30, 370, 230, 100, "Agent harness", ["src/lib/agent-harness/**", "runner �
 s.box(290, 370, 230, 100, "Sources & memory", ["sources/** (discovery, collector)", "memory/** (passages, embeddings,", "graph) · ingestion/** · market-data/**"], "lib", stereo="component")
 s.box(550, 370, 230, 100, "Backtesting & repair", ["backtesting/** (executor, framework)", "research/repair/** (statement", "repair, node sandbox)"], "lib", stereo="component")
 s.box(810, 370, 260, 100, "Reporting & export", ["research/reporting/** (adaptive)", "src/lib/export/** · valuation/**", "agents/staging.ts (promotion)"], "lib", stereo="component")
-s.box(260, 560, 300, 100, "PostgreSQL 16 + pgvector", ["src/db/schema/** · drizzle 0000–0006, 0009, 0010", "runs, stages, tasks, jobs, artifacts,", "evidence graph, embeddings, price bars"], "store", stereo="datastore")
+s.box(260, 560, 300, 100, "PostgreSQL 16 + pgvector", ["src/db/schema/** · drizzle 0000–0006, 0009–0012", "runs, stages, tasks, jobs, artifacts,", "evidence graph, embeddings, price bars"], "store", stereo="datastore")
 s.box(600, 560, 220, 100, "./storage", ["sources/<sha256>.<ext>", "backtests/<run>/ · exports/"], "store", stereo="filesystem")
 s.box(860, 540, 220, 140, "External services", ["LLM + embedding endpoints", "(OpenAI/Anthropic-compatible)", "search endpoint · DuckDuckGo · Bing", "SEC · FRED · Yahoo · Stooq · World Bank", "EIA · FDIC · Coinbase · …"], "ext", stereo="external")
 s.box(30, 560, 190, 100, "Child processes", ["python3 run_backtest*.py", "python3 docling_parser.py", "node --permission (repair)"], "worker", stereo="process")

@@ -15,7 +15,7 @@ This document was verified against source on 2026-10-05. Each claim says whether
 | Asset | Where | Sensitivity |
 | --- | --- | --- |
 | Provider and search keys | Process environment or ignored `.env.local`: `RESEARCH_MODEL_API_KEY`, `OPENCODE_GO_API_KEY`, `ANTHROPIC_API_KEY`, `RESEARCH_EMBEDDING_API_KEY`, `RESEARCH_WEB_SEARCH_API_KEY`. `.env.example` documents names only | High: direct spend |
-| Model budget | `model_budget_limits`, `model_budget_ledger`, `model_budget_reservations` | High: paid calls |
+| Model budget | `model_budget_limits`, `model_budget_ledger`, `research_tasks.budget_reservation_usd` | High: paid calls |
 | Research state and decisions | Postgres: runs, stages, artifacts, evidence, `claim_relationships`, `document_embeddings`, `review_decisions`, … | Medium: private analysis; integrity matters |
 | Prompts, outputs, call metadata | `model_call_logs`, agent traces. Cache metadata stores hashes and byte counts, never prompt content | Medium |
 | Files | `storage/sources`, `storage/backtests`, `storage/exports` (gitignored) | Medium |
