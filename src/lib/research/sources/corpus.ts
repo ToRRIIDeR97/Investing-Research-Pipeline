@@ -884,7 +884,8 @@ async function macroSourcePayload(ctx: RunContext): Promise<SourcePayload | null
  */
 export async function storedSecFiling(sql: Sql, url: string): Promise<string | null> {
   const rows = await sql`SELECT storage_path FROM source_documents
-    WHERE url = ${url} AND mime_type = 'text/html' AND storage_path LIKE 'storage/sources/%'
+    WHERE url = ${url} AND source_type LIKE 'sec\\_filing\\_%' AND mime_type = 'text/html'
+      AND storage_path LIKE 'storage/sources/%'
     ORDER BY created_at, id`;
   for (const row of rows) {
     try {
