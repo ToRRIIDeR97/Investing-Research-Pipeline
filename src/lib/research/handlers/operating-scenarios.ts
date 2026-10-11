@@ -5,6 +5,8 @@ import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { valuationFinancialInputs } from "../valuation/financial-inputs";
+import { buildScenarioStatements, forecastHorizon, historyRatios, operatingModelFirstYear, validateScenarioDriverCoverage } from "../valuation/engine";
 
 export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "operating_scenarios",
@@ -21,6 +23,19 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
       const forecastArtifacts = Object.fromEntries(
         upstreamRows.map((row) => [String(row.artifact_type), row.content_json])
       ) as Record<string, any>;
+      // The horizon starts after the latest captured fiscal year; code builds each year's statements from the drivers.
+      const [statementSet] = await sql`
+        SELECT content_json->'observations' AS observations FROM research_artifacts
+        WHERE research_run_id = ${ctx.runId} AND artifact_type = 'financial_statement_set' AND status IN ('validated', 'accepted')
+        ORDER BY created_at DESC LIMIT 1
+      `;
+      const cutoff = ctx.marketDataCutoffAt || ctx.cutoffAt;
+      const financialInputs = valuationFinancialInputs({
+        statementObservations: Array.isArray(statementSet?.observations) ? statementSet.observations : [], cutoff,
+      });
+      const ratios = historyRatios(financialInputs);
+      const baseYear = ratios.base_year?.fiscal_year ?? cutoff.getUTCFullYear() - 1;
+      const horizon = forecastHorizon(baseYear);
       const packet = {
         asset: {
           runId: ctx.runId,
@@ -31,6 +46,8 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
         },
         required_modules: ["scenario_specifications", "bear_base_bull_ranges", "operating_scenarios"],
         forecast_artifacts: forecastArtifacts,
+        forecast_horizon: { base_fiscal_year: baseYear, years: horizon },
+        history_ratios: { units: `${financialInputs?.currency ?? "reporting currency"} millions`, ...ratios },
         output_contract: "operating_scenarios",
         output_schema: OPERATING_SCENARIOS_CONTRACT.schema,
       };
@@ -45,6 +62,7 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
           "Follow output_schema exactly and return exactly one bear, one base, and one bull scenario.",
           "Keep the base scenario consistent with forecast_artifacts; explain deviations in bear and bull assumptions.",
           "Copy the operating_model base revenue, operating income, and segment values exactly. Copy reinvestment_model working_capital_forecast exactly for the base case; it is a funding-surplus proxy, not a negative working-capital balance.",
+          "Every scenario needs yearly_drivers with one entry per year in forecast_horizon.years: fiscal_year, revenue_growth and operating_margin as decimals. Add capex_to_revenue, da_to_revenue, tax_rate or nwc_to_revenue_change only where history_ratios should not apply. The application builds each year's revenue, operating income, D&A, capex, NOPAT and FCFF from these drivers and history_ratios; the base case's first year takes revenue and operating income from operating_model.",
         ],
       });
 
@@ -52,7 +70,12 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
         sql, ctx, stageKey: "operating_scenarios", taskKey,
         taskType: "operating_scenarios", agentName: "asset-analyst", modelTier: "mid",
         packet, promptFactory,
-        outputFormat: OPERATING_SCENARIOS_CONTRACT,
+        outputFormat: { ...OPERATING_SCENARIOS_CONTRACT, validate(value: unknown) {
+          const errors = OPERATING_SCENARIOS_CONTRACT.validate?.(value) || [];
+          if (errors.length) return errors;
+          return validateScenarioDriverCoverage((value as any)?.operating_scenario_set, horizon)
+            .map((message) => ({ path: "operating_scenario_set.scenarios", message }));
+        } },
       });
       const scenarioSet = output.operating_scenario_set;
       const model = forecastArtifacts.operating_model;
@@ -101,6 +124,26 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
             "Bull-case operating margin is below base despite assumed NIM and credit improvements; offsetting costs or mix require validation.",
           ];
         }
+      }
+      scenarioSet.forecast_horizon = { base_fiscal_year: baseYear, years: horizon };
+      const baseRevenue = ratios.base_year?.revenue;
+      if (baseRevenue) {
+        const firstYear = operatingModelFirstYear(model, baseRevenue);
+        for (const scenario of scenarioSet.scenarios) {
+          const years = buildScenarioStatements({
+            baseRevenue, baseYear, ratios, firstYear: scenario.scenario_type === "base" ? firstYear : null,
+            drivers: scenario.yearly_drivers.filter((driver: any) => horizon.includes(driver.fiscal_year)),
+          });
+          Object.assign(scenario.resulting_financial_statements_json, {
+            units: `${financialInputs?.currency ?? "USD"} millions`,
+            years: Object.fromEntries(years.map((year) => [year.fiscal_year, year])),
+          });
+        }
+        if (!firstYear) scenarioSet.source_gaps = [...(Array.isArray(scenarioSet.source_gaps) ? scenarioSet.source_gaps : []),
+          `The base case's FY${horizon[0]} statements use its drivers: operating_model revenue could not be matched to FY${baseYear} revenue in millions.`];
+      } else {
+        scenarioSet.source_gaps = [...(Array.isArray(scenarioSet.source_gaps) ? scenarioSet.source_gaps : []),
+          "No annual revenue was captured in financial_inputs, so yearly statements were not built from the drivers."];
       }
       if (fundingSensitivityApplied) {
         scenarioSet.source_gaps = [

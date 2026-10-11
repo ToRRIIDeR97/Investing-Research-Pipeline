@@ -227,7 +227,7 @@ export const exportHandler: StageHandler<Record<string, unknown>> = {
             };
             break;
           case "reverse_valuation":
-            reportData.valuation = { ...(reportData.valuation || { terminal_year: 2030 }), reverse_valuations: [{ method: String(content.method || ""), implied_growth: Number(content.implied_growth) }] };
+            reportData.valuation = { ...(reportData.valuation || { terminal_year: 2030 }), reverse_valuations: [{ method: String(content.method || ""), implied_growth: content.implied_growth == null ? null : Number(content.implied_growth) }] };
             break;
           case "backtest_review":
             reportData.backtest = content as ResearchReportData["backtest"];

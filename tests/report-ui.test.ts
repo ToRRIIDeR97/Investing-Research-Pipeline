@@ -137,12 +137,15 @@ test('Valuation summary is derived from the scenario, schedule and return artifa
   assert.deepEqual(base.rows[2].values, [-120464, -130000, -135000]);
   assert.deepEqual(base.steps.map(x => x.value), ['$1.53T', '$964.8B', '$376 a share']);
   assert.match(base.steps[1].text, /at 9% a year, then subtract \$83\.7B of debt/);
-  assert.match(base.note!, /This gives \$376, lower than the \$564 scenario value/);
+  assert.equal(base.note, null, 'the anchors equal the schedules\' end-of-2028 values');
   assert.deepEqual(s.assumptions[0], { label: 'Family of Apps revenue growth', values: ['8.0%', '12.0%', '15.0%'] });
   assert.deepEqual(s.assumptions.find(a => a.label === 'Capital expenditure')?.values, ['$150.0B', null, null]);
   assert.deepEqual(s.assumptions.find(a => a.label === 'Exit multiple')?.values, ['18×', '18×', '18×']);
   assert.equal(s.method, 'Discounted free cash flow with an exit multiple');
-  assert.match(s.issues[0], /\(\$232 \/ \$376 \/ \$482\) and the scenario values \(\$413 \/ \$564 \/ \$672\) disagree.*about 48% below/);
+  const off = valuationSummary(valuationArtifacts({ terminal_anchor_base: 600 }), { conclusionStatus: 'withheld' })!;
+  assert.match(off.calculations.find(c => c.type === 'base')!.note!, /At the end of 2028 this gives \$563, lower than the \$600 scenario value/);
+  assert.match(off.issues[0], /\(\$413 \/ \$563 \/ \$672\) and the scenario values \(\$413 \/ \$600 \/ \$672\) disagree.*about 48% below/);
+  assert.ok(!s.issues.some(issue => /disagree/.test(issue)));
   assert.ok(s.issues.includes('$719.87 is an unverified price snapshot, not a verified close.'));
   assert.ok(s.issues.includes('No sourced future share issuance schedule.'));
   assert.equal(s.notes[0].rationale, 'Analyst note for [reference].');

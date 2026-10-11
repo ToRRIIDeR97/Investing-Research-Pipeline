@@ -3,6 +3,7 @@ import { callResearchAgent, exactJsonPrompt } from "../run-context";
 import { COMPANY_GENESIS_CONTRACT } from "../stage-contracts";
 import { loadAcceptedEvidencePacket } from "../sources/corpus";
 import {
+  dropInvalidCitationIds,
   missingRequiredSourceRoles,
   validateArtifactCitationIds,
 } from "../sources/artifact-evidence";
@@ -127,7 +128,7 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
         SELECT id FROM evidence_claims
         WHERE research_run_id = ${ctx.runId} AND review_status = 'accepted'
       `;
-      let citationValidation = validateArtifactCitationIds(
+      const citationValidation = validateArtifactCitationIds(
         output,
         allowedClaimRows.map((row) => String(row.id))
       );
@@ -152,14 +153,13 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
           promptFactory,
           outputFormat: COMPANY_GENESIS_CONTRACT,
         });
-        citationValidation = validateArtifactCitationIds(
-          output,
-          allowedClaimRows.map((row) => String(row.id))
-        );
-        if (!citationValidation.valid) {
-          throw new Error(
-            `Company genesis contains unaccepted evidence claim IDs after repair: ${citationValidation.invalidIds.join(", ")}`
-          );
+        // IDs still unknown after the repair are dropped and recorded on company_genesis, not thrown.
+        const dropped = dropInvalidCitationIds(output, allowedClaimRows.map((row) => String(row.id)));
+        if (dropped.length) {
+          console.warn(`company genesis dropped citations outside the accepted packet: ${dropped.join(", ")}`);
+          if (output.company_genesis && typeof output.company_genesis === "object") {
+            output.company_genesis.citation_adjustments = { dropped_citation_ids: dropped };
+          }
         }
       }
 

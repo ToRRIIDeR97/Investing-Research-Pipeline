@@ -109,6 +109,12 @@ Other critical workflows are described in text:
 - **Backtest task:** `POST …/backtests` → `backtest_runs` and a task → worker → `backtest-coder` → `python3 run_backtest.py` → `storage/backtests` and `backtest_artifacts`. Stage 18 uses the TypeScript `executeFrameworkBacktest` path instead.
 - **Statement repair:** the historical-record stage asks the repair agent for a `locateStatements` module, runs it in a Node sandbox, and saves a `statement_repair` artifact (up to 3 attempts).
 
+### Asset valuation
+
+![UML activity view of the asset valuation stage](diagrams/activity-valuation.svg)
+
+The model makes the judgment calls: yearly drivers in operating scenarios and, for FCFF assets, a discount rate and terminal assumption per scenario. Code builds the statements, schedules, price path, anchors and reverse valuation (`valuation/engine.ts`). Banks keep model-built equity schedules, which code assembles the same way. Details are in [system.md](system.md#valuation-inputs-the-valuation-engine-and-withheld-valuations).
+
 ## 5. Behavioral — State machine
 
 ![UML state machines for research_run_jobs, research_runs and research_stages](diagrams/state-machines.svg)
@@ -144,6 +150,7 @@ Report requests are answered inside the scheduling loop without resetting stages
 | Backtesting | Component, Deployment, Trust | `src/lib/backtesting/**`, `python/backtesting/**` |
 | Repair specialist sandbox | Component, Deployment, Trust | `src/lib/research/repair/**` |
 | Reporting and export | Component | `src/lib/research/reporting/**`, `src/lib/export/**` |
+| Valuation engine | Activity | `handlers/asset-valuation.ts`, `valuation/engine.ts`, `handlers/operating-scenarios.ts` |
 | Financials view: metric catalogue, statement charts, My charts | Component, Class | `src/components/financial-statements.tsx`, `src/components/financials/**`, `reporting/metric-catalogue.ts`, `reporting/chart-series.ts`, `reporting/saved-charts.ts`, `src/app/api/saved-charts/**` |
 | Postgres | Component, Deployment, Class | `src/db/schema/**`, `drizzle/`, `docker-compose.yml` |
 | `./storage` | Component, Deployment, Trust | `storage/` (gitignored) |

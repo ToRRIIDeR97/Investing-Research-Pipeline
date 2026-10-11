@@ -86,15 +86,16 @@ export interface ResearchReportData {
     }>;
     reverse_valuations?: Array<{
       method: string;
-      implied_growth: number;
+      implied_growth: number | null;
     }>;
   };
   decision?: {
     thesis_statement?: string;
     expected_return_matrix?: {
-      bear_return: number;
-      base_return: number;
-      bull_return: number;
+      status?: "estimated" | "withheld" | "unavailable";
+      bear_return: number | null;
+      base_return: number | null;
+      bull_return: number | null;
     };
     risks?: Array<{
       risk_name: string;
@@ -415,7 +416,7 @@ export function generateMarkdownReport(data: ResearchReportData): string {
     sections.push("| Valuation Method | Implied Growth Rate |");
     sections.push("|---|---|");
     for (const row of data.valuation.reverse_valuations) {
-      sections.push(`| ${row.method} | ${row.implied_growth * 100}% |`);
+      sections.push(`| ${row.method} | ${row.implied_growth == null ? "Not reachable in the solver range" : `${row.implied_growth * 100}%`} |`);
     }
     sections.push("");
   } else {
@@ -428,9 +429,11 @@ export function generateMarkdownReport(data: ResearchReportData): string {
     addWithheldSection();
   } else if (data.decision?.expected_return_matrix) {
     const mat = data.decision.expected_return_matrix;
-    sections.push(`- **Bear Case Return**: ${mat.bear_return * 100}%`);
-    sections.push(`- **Base Case Return**: ${mat.base_return * 100}%`);
-    sections.push(`- **Bull Case Return**: ${mat.bull_return * 100}%`);
+    const pct = (value: number | null) => typeof value === "number" && Number.isFinite(value) ? `${value * 100}%`
+      : mat.status === "withheld" ? "Withheld" : "Not available";
+    sections.push(`- **Bear Case Return**: ${pct(mat.bear_return)}`);
+    sections.push(`- **Base Case Return**: ${pct(mat.base_return)}`);
+    sections.push(`- **Bull Case Return**: ${pct(mat.bull_return)}`);
     sections.push("");
   } else {
     addMissingSection("Expected Return Matrix");

@@ -4,7 +4,7 @@ import { CompanyGenesis, FounderProfile, StrategicHistoryTimeline, StrategicDNA 
 import { HistoricalDiagnosisArtifact, validateHistoricalDiagnosis } from "./diagnosis/contracts";
 import { SegmentModel, CustomerDecisionMap, BusinessProcessMap, BottleneckRegister, CompetitiveResponseMatrix } from "./business/contracts";
 import { MoatAssessment, MoatAttackMatrix, NoMoatCounterfactual } from "./moat/contracts";
-import { DriverTree, OperatingModel, TopDownBottomUpReconciliation, ReinvestmentModel, OperatingScenarioSet, OperatingScenarioEntry, NumericAssumption } from "./forecast/contracts";
+import { DriverTree, OperatingModel, TopDownBottomUpReconciliation, ReinvestmentModel, OperatingScenarioSet, OperatingScenarioEntry, NumericAssumption, YearlyDriver } from "./forecast/contracts";
 import {ValuationMethodInput} from './valuation/schedules';
 import { ValuationScenarioSet, ReverseValuation, AnnualPriceTargetPath } from "./valuation/contracts";
 import { InvestmentThesis, RiskRegister, CatalystRegister, ExpectedReturnMatrix, ThesisBreakers, MonitoringDashboard, ConfidenceAssessment, DecisionRecord } from "./decision/contracts";
@@ -70,7 +70,7 @@ export const OPERATING_MODEL_CONTRACT = artifactContract({
   driver_tree: DriverTree, operating_model: OperatingModel,
   top_down_bottom_up_reconciliation: TopDownBottomUpReconciliation, reinvestment_model: ReinvestmentModel,
 });
-export const OPERATING_SCENARIOS_CONTRACT = artifactContract({ operating_scenario_set: OperatingScenarioSet.extend({scenarios:z.array(OperatingScenarioEntry.extend({numeric_assumptions:z.array(NumericAssumption).min(1)})).length(3)}) });
+export const OPERATING_SCENARIOS_CONTRACT = artifactContract({ operating_scenario_set: OperatingScenarioSet.extend({scenarios:z.array(OperatingScenarioEntry.extend({numeric_assumptions:z.array(NumericAssumption).min(1),yearly_drivers:z.array(YearlyDriver).min(1)})).length(3)}) });
 export const VALUATION_CONTRACT = artifactContract({
   valuation_scenario_set: ValuationScenarioSet.extend({method_inputs:z.array(ValuationMethodInput),omitted_methods:z.array(z.object({method:z.string().min(1),reason:z.string().min(1)}))}), reverse_valuation: ReverseValuation, annual_price_target_path: AnnualPriceTargetPath,
 });
