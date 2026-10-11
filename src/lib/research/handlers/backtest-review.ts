@@ -111,6 +111,7 @@ export const backtestReviewHandler: StageHandler<Record<string, unknown>> = {
               beat_asset_buy_and_hold: ranked[0].benchmark_relative_return > 0,
               positive_out_of_sample_excess_return: ranked[0].out_of_sample_excess_return > 0,
               beat_cash_after_costs: ranked[0].total_return > 0,
+              basis: "The leader was ranked on in-sample metrics only. beat_asset_buy_and_hold and beat_cash_after_costs cover the full period (in-sample and out-of-sample); positive_out_of_sample_excess_return covers only the held-out period.",
             }
           : null,
         supported_conclusion: gatePassed

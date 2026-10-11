@@ -2,10 +2,11 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { schema } from "@/db";
 import {
+  InsufficientBacktestHistory,
   MINIMUM_COMBINATION_COUNT,
   type StrategyCombination,
 } from "@/lib/backtesting/framework";
-import { executeFrameworkBacktest } from "@/lib/backtesting/framework-runner";
+import { executeFrameworkBacktest, frameworkBenchmarks } from "@/lib/backtesting/framework-runner";
 import { createArtifactRepository } from "../artifacts/repository";
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
 import { makeValidationResult } from "../run-context";
@@ -26,10 +27,9 @@ export const backtestExecutionHandler: StageHandler<Record<string, unknown>> = {
         throw new Error(`Conclusion withheld - only ${combinations.length}/${MINIMUM_COMBINATION_COUNT} combinations are available.`);
       }
 
-      const execution = await executeFrameworkBacktest(ctx, combinations);
-      const { result, dataset, artifacts } = execution;
-
-      await sql.begin(async (tx) => {
+      const [asset] = await sql`SELECT sector FROM assets WHERE id = ${ctx.assetId}`;
+      const benchmarks = frameworkBenchmarks(asset?.sector, ctx.archetypeKeys.includes("bank"));
+      const clearEarlierAttempt = async (tx: postgres.TransactionSql) => {
         const oldRuns = await tx`
           SELECT id FROM backtest_runs WHERE research_run_id = ${ctx.runId}
         `;
@@ -48,6 +48,46 @@ export const backtestExecutionHandler: StageHandler<Record<string, unknown>> = {
             WHERE research_run_id = ${ctx.runId}
           `;
         }
+      };
+      const repo = createArtifactRepository(drizzle(sql, { schema }));
+      let execution: Awaited<ReturnType<typeof executeFrameworkBacktest>>;
+      try {
+        execution = await executeFrameworkBacktest(ctx, combinations, benchmarks);
+      } catch (error) {
+        if (!(error instanceof InsufficientBacktestHistory)) throw error;
+        // Too little aligned history is a data limit, not a failure: record the backtest as withheld
+        // and skip its review, so the run continues without timing evidence.
+        const reason = `Backtest withheld: ${error.message}`;
+        await sql.begin(async (tx) => {
+          await clearEarlierAttempt(tx);
+          await tx`
+            UPDATE research_stages SET status = 'skipped', failure_reason = ${reason}, updated_at = NOW()
+            WHERE research_run_id = ${ctx.runId} AND stage_key = 'backtest_review' AND status = 'pending'
+          `;
+        });
+        await repo.upsertArtifact({
+          research_run_id: ctx.runId,
+          asset_id: ctx.assetId,
+          profile_id: ctx.profileId || undefined,
+          artifact_type: "backtest_execution_summary",
+          scope_key: `${ctx.assetSlug}-backtest-execution`,
+          status: "validated",
+          content_json: {
+            artifact_type: "backtest_execution_summary", status: "withheld", withheld_reason: reason,
+            combinations_executed: 0, benchmarks: benchmarks.symbols, sector_benchmark: benchmarks.sectorBenchmark,
+          },
+          schema_version: "1.0.0",
+          validator_version: "1.0.0",
+          prompt_version: "deterministic-framework-v1",
+          created_by: "system-research-os",
+          idempotency_key: `${ctx.runId}-backtest-execution-summary`,
+        });
+        return { withheld: reason, combinations_executed: 0 };
+      }
+      const { result, dataset, artifacts } = execution;
+
+      await sql.begin(async (tx) => {
+        await clearEarlierAttempt(tx);
 
         const runIds = new Map<string, string>();
         for (const ranked of result.rankings) {
@@ -75,6 +115,7 @@ export const backtestExecutionHandler: StageHandler<Record<string, unknown>> = {
                 { transaction_cost_bps: result.transaction_cost_bps },
                 { split_ratio: result.split_ratio, split_date: result.split_date },
                 { no_lookahead: "Signals calculated at t are applied to returns at t+1." },
+                { benchmarks: { primary: dataset.primaryBenchmark, sector: dataset.sectorBenchmark, broad: dataset.broadBenchmark } },
                 { data_limitations: result.source_alignment },
               ])},
               ${tx.json({
@@ -145,7 +186,6 @@ export const backtestExecutionHandler: StageHandler<Record<string, unknown>> = {
         }
       });
 
-      const repo = createArtifactRepository(drizzle(sql, { schema }));
       await repo.upsertArtifact({
         research_run_id: ctx.runId,
         asset_id: ctx.assetId,
@@ -162,6 +202,7 @@ export const backtestExecutionHandler: StageHandler<Record<string, unknown>> = {
           in_sample_split: result.split_date,
           transaction_cost_bps: result.transaction_cost_bps,
           benchmarks: Object.keys(result.benchmark_metrics),
+          sector_benchmark: dataset.sectorBenchmark,
           no_lookahead_rule: "Signals calculated at t are applied to returns at t+1.",
           artifacts,
           source_alignment: result.source_alignment,
@@ -181,7 +222,9 @@ export const backtestExecutionHandler: StageHandler<Record<string, unknown>> = {
       await sql.end();
     }
   },
-  async validate(ctx: ResearchRunContext): Promise<ValidationResult> {
+  async validate(ctx: ResearchRunContext, output?: Record<string, unknown>): Promise<ValidationResult> {
+    // A withheld backtest wrote its summary and skipped backtest_review; there are no runs to check.
+    if (output?.withheld) return makeValidationResult([], [String(output.withheld)]);
     const sql = postgres(process.env.DATABASE_URL!);
     try {
       const [counts] = await sql`

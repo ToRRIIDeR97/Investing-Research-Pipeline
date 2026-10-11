@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { createYahooMarketDataProvider } from "@/lib/market-data/providers/yahoo";
+import { timedFetch } from "@/lib/market-data/price-history";
 import { deterministicBars } from "@/lib/market-data/providers/mock";
 import type { PriceBar } from "@/lib/market-data/provider";
 import type { ResearchRunContext } from "@/lib/research/run-context";
@@ -17,8 +18,30 @@ const SOFI_BENCHMARKS = ["QQQ", "XLF", "KRE", "SPY"] as const;
 export interface FrameworkBenchmarkConfig {
   symbols: string[];
   primaryBenchmark: string;
-  sectorBenchmark: string;
+  sectorBenchmark: string | null;
   broadBenchmark: string;
+}
+
+/** SPDR sector ETFs by sector name, in GICS and common data-provider spellings. */
+const SECTOR_ETFS: Record<string, string> = {
+  "information technology": "XLK", technology: "XLK", "communication services": "XLC",
+  "consumer discretionary": "XLY", "consumer cyclical": "XLY", "consumer staples": "XLP", "consumer defensive": "XLP",
+  "health care": "XLV", healthcare: "XLV", industrials: "XLI", energy: "XLE", materials: "XLB", "basic materials": "XLB",
+  utilities: "XLU", "real estate": "XLRE", financials: "XLF", "financial services": "XLF",
+};
+
+/**
+ * Benchmarks for one asset: QQQ (growth market), SPY (broad market) and the ETF of the asset's
+ * sector. Banks add the regional-bank ETF. An unknown sector gets no sector benchmark.
+ */
+export function frameworkBenchmarks(sector: string | null | undefined, bank = false): FrameworkBenchmarkConfig {
+  const sectorBenchmark = SECTOR_ETFS[String(sector ?? "").trim().toLowerCase()] ?? (bank ? "XLF" : null);
+  return {
+    symbols: [...new Set(["QQQ", ...(sectorBenchmark ? [sectorBenchmark] : []), ...(bank ? ["KRE"] : []), "SPY"])],
+    primaryBenchmark: "QQQ",
+    sectorBenchmark,
+    broadBenchmark: "SPY",
+  };
 }
 
 export async function loadFrameworkMarketDataset(
@@ -52,11 +75,11 @@ export async function loadFrameworkMarketDataset(
     };
   }
 
-  const yahoo = createYahooMarketDataProvider();
-  const [asset, ...benchmarks] = await Promise.all([
-    yahoo.getPriceHistory(ctx.symbol, start, end, "1d"),
-    ...benchmarkConfig.symbols.map((symbol) => yahoo.getPriceHistory(symbol, start, end, "1d")),
-  ]);
+  // Each series gets a 20 s timeout and one retry: one throttled benchmark should not end the run.
+  const yahoo = createYahooMarketDataProvider(timedFetch);
+  const history = (symbol: string) => yahoo.getPriceHistory(symbol, start, end, "1d")
+    .catch(() => yahoo.getPriceHistory(symbol, start, end, "1d"));
+  const [asset, ...benchmarks] = await Promise.all([history(ctx.symbol), ...benchmarkConfig.symbols.map(history)]);
   return {
     symbol: ctx.symbol,
     asset,
