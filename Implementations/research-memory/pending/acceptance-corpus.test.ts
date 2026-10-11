@@ -4,7 +4,7 @@ import postgres from "postgres";
 import { callResearchAgent, exactJsonPrompt } from "../../../src/lib/research/run-context";
 import { storeDiscoveredSources } from "../../../src/lib/research/sources/corpus";
 import type { AgentOutputFormat, ModelEvent, ModelProvider, ModelRequest } from "../../../src/lib/agent-harness/types";
-import { cleanup, corpusCtx, createRun, loadEnv, payload, skipDb as skip, stageCtx, type Ctx } from "./fixtures";
+import { cleanup, corpusCtx, createRun, loadEnv, payload, skipDb as skip, stageCtx, type Ctx } from "../acceptance/fixtures";
 
 loadEnv();
 // Never fall through to a paid provider if the scripted provider option is ignored.

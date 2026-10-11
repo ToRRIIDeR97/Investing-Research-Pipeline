@@ -4,7 +4,7 @@ import postgres from "postgres";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { storeDiscoveredSources } from "../../../src/lib/research/sources/corpus";
-import { corpusContext, loadEnv, memory, newRun, pdf, pdftotextAvailable, removeRuns, skipDb, source } from "./fixtures";
+import { corpusContext, loadEnv, memory, newRun, pdf, pdftotextAvailable, removeRuns, skipDb, source } from "../verification/fixtures";
 
 loadEnv();
 const noPdf = !pdftotextAvailable();

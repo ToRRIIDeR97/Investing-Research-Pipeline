@@ -863,7 +863,8 @@ async function macroSourcePayload(ctx: RunContext): Promise<SourcePayload | null
     const retrievedAt = new Date().toISOString();
     return {
       sourceType: "macro_context",
-      title: `${ctx.assetName} macro context: US 10-year Treasury yield`,
+      // Asset-neutral: identical FRED content is one document shared by every asset's runs.
+      title: "US 10-year Treasury yield (FRED DGS10)",
       publisher: "Federal Reserve Bank of St. Louis (FRED)",
       url,
       content,
@@ -1517,7 +1518,7 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
     ) VALUES (
       ${ctx.runId}, ${sourceId},
       ${textValue(payload.metadata.semanticRole || payload.metadata.attachmentType, "supporting_source")},
-      ${sql.json(payload.metadata as any)}
+      ${sql.json({ ...payload.metadata, title: payload.title } as any)}
     )
     ON CONFLICT (research_run_id, source_document_id) DO NOTHING
   `;
@@ -1561,8 +1562,9 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
     }
   }
 
-  // Passages for retrieval sit next to the raw chunks, which valuation reads verbatim.
-  try {
+  // Passages for retrieval sit next to the raw chunks, which valuation reads verbatim. The companyfacts
+  // context is read only from its raw payload, so it gets no passages.
+  if (payload.sourceType !== "primary_source_context") try {
     await indexDocumentContent(sql, { sourceId, content, mimeType: payload.mimeType, title: payload.title });
   } catch (error) {
     console.warn(`Research memory indexing deferred for ${sourceId}: ${error instanceof Error ? error.message : String(error)}`);

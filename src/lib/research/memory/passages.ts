@@ -114,11 +114,15 @@ export function parseDocument(content: string, mimeType: string, options: { maxC
     }
     flush();
     const limit = Math.max(100, room(true));
-    const pieces = block.text.length <= limit ? [{ text: block.text, start, end: start + block.text.length }] : splitBlock(block.text, start, block.splitBy, limit);
-    for (const piece of pieces) {
+    // Later pieces of a split table start with its first row (the column headers), so their cells keep a label.
+    const newline = block.text.indexOf("\n");
+    const header = block.type === "table" && newline > 0 && newline < limit / 2 ? block.text.slice(0, newline) : "";
+    const pieces = block.text.length <= limit ? [{ text: block.text, start, end: start + block.text.length }]
+      : splitBlock(block.text, start, block.splitBy, header ? limit - header.length - 1 : limit);
+    for (const [index, piece] of pieces.entries()) {
       if (state.current) flush();
       const draft = open(sectionPath, block.page, piece.start);
-      draft.parts.push(piece.text);
+      draft.parts.push(index > 0 && header ? `${header}\n${piece.text}` : piece.text);
       draft.blockTypes.add(block.type);
       draft.end = piece.end;
     }

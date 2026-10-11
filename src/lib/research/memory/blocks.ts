@@ -172,6 +172,12 @@ export function textBlocks(content: string): Block[] {
     let paragraph: string[] = [];
     const flush = (endedByBlank: boolean) => {
       if (!paragraph.length) return;
+      // Rows written by htmlToStructuredText (cells joined by " | ") stay rows, so splits fall between them.
+      if (paragraph.every(line => line.includes(" | "))) {
+        blocks.push({ type: "table", text: paragraph.map(clean).join("\n"), page, splitBy: "line" });
+        paragraph = [];
+        return;
+      }
       const standalone = paragraph.length === 1 && endedByBlank ? standaloneHeading(paragraph[0]) : null;
       if (standalone) blocks.push({ type: "heading", ...standalone, page, splitBy: "sentence" });
       else blocks.push({ type: "paragraph", text: clean(paragraph.join(" ")), page, splitBy: "sentence" });
