@@ -74,6 +74,9 @@ export function buildTaskPrompt(input: Pick<AgentRequest, "agentName" | "taskPac
   ].join("\n\n");
 }
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
 function requiredKeys(outputFormat: Record<string, unknown> | { requiredKeys?: string[]; schema?: unknown }) {
   if ("requiredKeys" in outputFormat && Array.isArray(outputFormat.requiredKeys)) return outputFormat.requiredKeys;
   const fmt = outputFormat as Record<string, unknown>;
@@ -181,10 +184,12 @@ function combineUsage(left: PassUsage, right?: Partial<PassUsage>): PassUsage {
   };
 }
 
+type StructuredOutputTelemetry = AgentPassTelemetry["structuredOutput"];
+
 async function executePass(params: {
   provider: ModelProvider; model: string; system?: string; prompt: string; cacheablePromptChars?: number; agentName: string; policy: ExecutionPolicy;
-  deadline: ReturnType<typeof createDeadlineController>; maxOutputTokens?: number; cacheAffinityId: string;
-}): Promise<PassResult> {
+  deadline: ReturnType<typeof createDeadlineController>; maxOutputTokens?: number; cacheAffinityId: string; outputSchema?: Record<string, unknown>;
+}, structured: StructuredOutputTelemetry): Promise<PassResult> {
   let rawText = "";
   let inputTokens = 0;
   let outputTokens = 0;
@@ -196,6 +201,7 @@ async function executePass(params: {
   let requestId: string | undefined;
   let finishReason: string | undefined;
   let wire: WireRequestRecord | undefined;
+  let lastSentStructured = false;
   const snapshot = (): PassResult => {
     const started = providerStarted || inputTokens > 0 || outputTokens > 0 || Boolean(rawText);
     const input = started ? inputTokens || Math.ceil(((params.system?.length || 0) + params.prompt.length) / 4) : 0;
@@ -210,7 +216,7 @@ async function executePass(params: {
     model: params.model, ...(params.system ? { system: params.system } : {}), prompt: params.prompt,
     ...(params.cacheablePromptChars === undefined ? {} : { cacheablePromptChars: params.cacheablePromptChars }), temperature: 0.2,
     maxTokens: params.maxOutputTokens ?? params.policy.maxOutputTokens, agentName: params.agentName,
-    cacheAffinityId: params.cacheAffinityId,
+    cacheAffinityId: params.cacheAffinityId, ...(params.outputSchema ? { outputSchema: params.outputSchema } : {}),
   }, params.deadline.signal)[Symbol.asyncIterator]();
   try {
     let completed = false;
@@ -241,6 +247,14 @@ async function executePass(params: {
             wire = wireRequestTracker.record(params.cacheAffinityId, event.body, observation);
           } catch {
             // Cache telemetry never fails a model request.
+          }
+          try {
+            const sentStructured = "output_config" in JSON.parse(event.body);
+            if (sentStructured) structured.sent = true;
+            else if (lastSentStructured) structured.fallback = true;
+            lastSentStructured = sentStructured;
+          } catch {
+            // Neither does structured-output telemetry.
           }
           break;
         case "response.started": providerStarted = true; requestId = event.requestId || requestId; break;
@@ -297,13 +311,15 @@ async function executeTrackedPass(
   passes: AgentPassTelemetry[]
 ) {
   const started = Date.now();
+  const structuredOutput: StructuredOutputTelemetry = { sent: false, fallback: false };
   try {
-    const result = await executePass(params);
+    const result = await executePass(params, structuredOutput);
     passes.push({
       kind, startedAt: new Date(started).toISOString(), completedAt: new Date().toISOString(),
       latencyMs: Date.now() - started, requestId: result.requestId,
       inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens,
       reasoningTokens: result.usage.reasoningTokens, ...cacheFields(result), costUsd: result.usage.costUsd, status: "success",
+      structuredOutput,
     });
     return result;
   } catch (error) {
@@ -314,7 +330,7 @@ async function executeTrackedPass(
       inputTokens: partial?.usage.inputTokens || 0, outputTokens: partial?.usage.outputTokens || 0,
       reasoningTokens: partial?.usage.reasoningTokens || 0, ...cacheFields(partial), costUsd: partial?.usage.costUsd || 0,
       status: "failed", errorCategory: category(error),
-      errorMessage: redact(error instanceof Error ? error.message : String(error)),
+      errorMessage: redact(error instanceof Error ? error.message : String(error)), structuredOutput,
     });
     throw error;
   }
@@ -376,6 +392,8 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
   // Use request-level output format override if provided; otherwise fall back to agent config
   const effectiveOutputFormat: Record<string, unknown> = (input.outputFormat as unknown as Record<string, unknown>) || config.outputFormat;
   const keys = requiredKeys(effectiveOutputFormat);
+  // Sent unchanged on generation and repair; only anthropic-direct turns it into output_config.
+  const outputSchema = isPlainObject(effectiveOutputFormat.schema) ? effectiveOutputFormat.schema : undefined;
   const candidates = modelCandidates(input.agentName as ResearchAgentName, policy.maxAttempts);
   const primaryModel = candidates[0];
   const originalPromptBytes = Buffer.byteLength(buildTaskPrompt(input, config), "utf8");
@@ -408,7 +426,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
       const cacheAffinityId = deriveCacheAffinityId({
         scopeId: cacheScope, providerId: provider.id, modelId: model, stablePrefixHash: stablePrefixHash(messages.system),
       });
-      const passParams = { provider, model, system: messages.system, agentName: input.agentName, policy, deadline, cacheAffinityId, maxOutputTokens: outputLimit };
+      const passParams = { provider, model, system: messages.system, agentName: input.agentName, policy, deadline, cacheAffinityId, maxOutputTokens: outputLimit, outputSchema };
       try {
         pass = await executeTrackedPass("generation", { ...passParams, prompt: messages.prompt }, passes);
       } catch (error) {

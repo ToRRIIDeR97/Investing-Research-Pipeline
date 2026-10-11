@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="520" viewBox="0 0 680 520" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif">
+<title id="t">Current: the output schema never leaves the runner</title>
+<desc id="d">A stage handler passes a zod-derived output contract to runResearchAgent. The runner sends only model, system, prompt and limits to the provider. anthropic-direct and OpenCode Go (for qwen and minimax) both use AnthropicCompatibleProvider, which posts an unconstrained Messages request. Claude Haiku 5.5 writes free text; the runner parses and validates it with zod, and 64 of 255 calls in three META runs failed first-pass validation and needed a repair request that quotes the schema in the prompt.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f5e5a" stroke-width="1.5"/></marker></defs>
+<rect width="680" height="520" fill="#ffffff"/>
+<text x="20" y="28" font-size="14" font-weight="600" fill="#2c2c2a">Current (main 594024e3): the schema never leaves the runner</text>
+<g font-size="12" fill="#2c2c2a" stroke-width="1.2">
+<rect x="20" y="48" width="300" height="70" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="34" y="68" font-size="13" font-weight="600">Stage handler → callResearchAgent</text>
+<text x="34" y="86">outputFormat = zod contract (draft-7 JSON)</text>
+<text x="34" y="102">stage-contracts.ts:40-54; key run-context.ts:393-406</text>
+<rect x="360" y="48" width="300" height="70" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="374" y="68" font-size="13" font-weight="600">runResearchAgent (runner.ts)</text>
+<text x="374" y="86">executePass → provider.stream(model, system,</text>
+<text x="374" y="102">prompt, maxTokens) — runner.ts:209-214</text>
+<line x1="320" y1="83" x2="356" y2="83" stroke="#5f5e5a" marker-end="url(#a)"/>
+<path d="M510 118 V150 M120 150 H560" fill="none" stroke="#5f5e5a"/>
+<line x1="120" y1="150" x2="120" y2="166" stroke="#5f5e5a" marker-end="url(#a)"/>
+<line x1="340" y1="150" x2="340" y2="166" stroke="#5f5e5a" marker-end="url(#a)"/>
+<line x1="560" y1="150" x2="560" y2="166" stroke="#5f5e5a" marker-end="url(#a)"/>
+<text x="130" y="143">ModelRequest has no schema field (types.ts:21-33)</text>
+<rect x="20" y="170" width="200" height="70" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="32" y="190" font-size="13" font-weight="600">anthropic-direct</text>
+<text x="32" y="207">new AnthropicCompatible-</text>
+<text x="32" y="222">Provider (provider.ts:22-25)</text>
+<rect x="240" y="170" width="200" height="70" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="252" y="190" font-size="13" font-weight="600">opencode-go-direct</text>
+<text x="252" y="207">qwen|minimax reuse the</text>
+<text x="252" y="222">Anthropic class (:15, :26)</text>
+<rect x="460" y="170" width="200" height="70" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="472" y="190" font-size="13" font-weight="600">openai-compatible, mock</text>
+<text x="472" y="207">own request formats</text>
+<text x="472" y="222">(DeepSeek, Zen, tests)</text>
+<line x1="120" y1="240" x2="120" y2="258" stroke="#5f5e5a" marker-end="url(#a)"/>
+<line x1="340" y1="240" x2="340" y2="258" stroke="#5f5e5a" marker-end="url(#a)"/>
+<rect x="20" y="262" width="420" height="86" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="34" y="282" font-size="13" font-weight="600">AnthropicCompatibleProvider.stream</text>
+<text x="34" y="300">body: model, system, messages, max_tokens, stream</text>
+<text x="34" y="316">(anthropic-compatible.ts:68-77); request.sent :78</text>
+<text x="34" y="332">400 matching /context|token|length/ → context_limit (:106)</text>
+<line x1="440" y1="305" x2="456" y2="305" stroke="#5f5e5a" marker-end="url(#a)"/>
+<rect x="460" y="262" width="200" height="86" rx="6" fill="#fcebeb" stroke="#a32d2d"/>
+<text x="472" y="282" font-size="13" font-weight="600" fill="#791f1f">Messages API</text>
+<text x="472" y="300" fill="#791f1f">Haiku 5.5 writes</text>
+<text x="472" y="316" fill="#791f1f">unconstrained text</text>
+<text x="472" y="332" fill="#791f1f">POST /v1/messages</text>
+<path d="M560 348 V405 H444" fill="none" stroke="#5f5e5a" marker-end="url(#a)"/>
+<text x="566" y="380">text</text>
+<rect x="20" y="370" width="420" height="70" rx="6" fill="#fcebeb" stroke="#a32d2d"/>
+<text x="34" y="390" font-size="13" font-weight="600" fill="#791f1f">parseStructuredOutput + zod validate (runner.ts:443-465)</text>
+<text x="34" y="408" fill="#791f1f">64 of 255 calls failed first pass in three META runs:</text>
+<text x="34" y="424" fill="#791f1f">object for string, null number, bad enum, no JSON object</text>
+<line x1="230" y1="440" x2="230" y2="456" stroke="#5f5e5a" marker-end="url(#a)"/>
+<text x="238" y="452">errors</text>
+<rect x="20" y="460" width="640" height="44" rx="6" fill="#f4f4f2" stroke="#6b6b66"/>
+<text x="34" y="478" font-size="13" font-weight="600">Repair pass (runner.ts:467-494): a second paid request</text>
+<text x="34" y="494">same prompt + validation errors + JSON.stringify(schema) in the prompt text (:479)</text>
+</g>
+</svg>

@@ -1,13 +1,16 @@
 import { ProviderError, usageLimitBody, type HarnessErrorCategory } from "../errors";
 import type { ModelEvent, ModelProvider, ModelRequest, ModelUsage, ProviderHealth, ToolCall } from "../types";
 import { calculateCost, oneHourCacheWriteSurcharge } from "../telemetry";
-import { anthropicPromptFields } from "./anthropic-cache";
+import { anthropicPromptFields, isClaudeModel } from "./anthropic-cache";
+import { anthropicWireSchema, isRejectedSchema, rememberRejectedSchema } from "./anthropic-schema";
 
 export interface AnthropicProviderOptions {
   baseUrl: string;
   apiKey: string;
   allowedHosts: string[];
   headers?: Record<string, string>;
+  /** Constrain Claude output to the request's outputSchema with output_config. Only anthropic-direct sets it. */
+  structuredOutput?: boolean;
 }
 
 function validateBaseUrl(baseUrl: string, allowedHosts: string[]) {
@@ -63,29 +66,23 @@ export class AnthropicCompatibleProvider implements ModelProvider {
     }
   }
 
-  async *stream(request: ModelRequest, signal: AbortSignal, options: { headers?: Record<string, string> } = {}): AsyncIterable<ModelEvent> {
-    // Cache breakpoints are placed by anthropic-cache.ts.
-    const body = JSON.stringify({
-      model: request.model,
-      ...anthropicPromptFields(request),
-      // Anthropic's messages protocol requires this field even when the
-      // shared harness intentionally leaves generation uncapped.
-      max_tokens: request.maxTokens || Number(process.env.RESEARCH_ANTHROPIC_PROTOCOL_MAX_TOKENS || 65_536),
-      // Current Claude models reject non-default sampling values with a 400.
-      ...(/^claude-/i.test(request.model) ? {} : { temperature: request.temperature ?? 0.2 }),
-      stream: true,
-    });
-    yield { type: "request.sent", body };
-    let response: Response;
+  /** output_config.format when the option is on, the model is Claude and the schema is expressible and not rejected. */
+  private outputFormat(request: ModelRequest) {
+    if (!this.options.structuredOutput || !isClaudeModel(request.model) || !request.outputSchema) return undefined;
+    const wire = anthropicWireSchema(request.outputSchema);
+    return "schema" in wire && !isRejectedSchema(wire.schema) ? { type: "json_schema" as const, schema: wire.schema } : undefined;
+  }
+
+  private async post(body: string, signal: AbortSignal, headers?: Record<string, string>): Promise<Response> {
     try {
-      response = await fetch(`${this.baseUrl}/messages`, {
+      return await fetch(`${this.baseUrl}/messages`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-api-key": this.options.apiKey,
           "anthropic-version": "2023-06-01",
           ...this.options.headers,
-          ...options.headers,
+          ...headers,
         },
         body,
         signal,
@@ -95,10 +92,43 @@ export class AnthropicCompatibleProvider implements ModelProvider {
       if (signal.aborted) throw new ProviderError("Provider request cancelled", "cancellation");
       throw new ProviderError(`Failed to connect to provider: ${error instanceof Error ? error.message : String(error)}`, "connection");
     }
+  }
+
+  async *stream(request: ModelRequest, signal: AbortSignal, options: { headers?: Record<string, string> } = {}): AsyncIterable<ModelEvent> {
+    let format = this.outputFormat(request);
+    // Cache breakpoints are placed by anthropic-cache.ts.
+    const serialize = () => JSON.stringify({
+      model: request.model,
+      ...anthropicPromptFields(request),
+      // Anthropic's messages protocol requires this field even when the
+      // shared harness intentionally leaves generation uncapped.
+      max_tokens: request.maxTokens || Number(process.env.RESEARCH_ANTHROPIC_PROTOCOL_MAX_TOKENS || 65_536),
+      // Current Claude models reject non-default sampling values with a 400.
+      ...(/^claude-/i.test(request.model) ? {} : { temperature: request.temperature ?? 0.2 }),
+      ...(format ? { output_config: { format } } : {}),
+      stream: true,
+    });
+    let body = serialize();
+    yield { type: "request.sent", body };
+    let response = await this.post(body, signal, options.headers);
+    let errorText: string | undefined;
+    // A rejected schema is resent once without output_config and not sent again. Checked before the
+    // status mapping, whose context-limit test would read a rejection that names maxLength as a context limit.
+    if (format && response.status === 400) {
+      errorText = await response.text().catch(() => "");
+      if (/schema|output_config|too complex/i.test(errorText)) {
+        rememberRejectedSchema(format.schema);
+        format = undefined;
+        errorText = undefined;
+        body = serialize();
+        yield { type: "request.sent", body };
+        response = await this.post(body, signal, options.headers);
+      }
+    }
 
     const requestId = response.headers.get("request-id") || response.headers.get("x-request-id") || undefined;
     if (!response.ok) {
-      const body = safeBody(await response.text().catch(() => ""));
+      const body = safeBody(errorText ?? await response.text().catch(() => ""));
       let category: HarnessErrorCategory = "unknown";
       if (response.status === 401 || response.status === 403) category = "authentication";
       else if (response.status === 429) category = usageLimitBody(body) ? "quota_exceeded" : "rate_limit";
