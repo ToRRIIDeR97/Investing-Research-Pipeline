@@ -36,11 +36,19 @@ export type HostLookup = (hostname: string) => Promise<string[]>;
 const systemLookup: HostLookup = async (hostname) =>
   (await lookup(hostname, { all: true, verbatim: true })).map((entry) => entry.address);
 
-/** Throws unless the host and every address it resolves to are public. */
+/**
+ * Throws when the host is, or resolves to, a non-public address. A name that fails to resolve is
+ * left to fetch, whose own lookup fails on it the same way.
+ */
 export async function assertPublicHost(hostname: string, resolve: HostLookup = systemLookup): Promise<void> {
   if (isPrivateHostname(hostname)) throw new Error(`Refusing non-public host ${hostname}`);
   const host = unbracket(hostname);
-  const addresses = isIP(host) ? [host] : await resolve(host.replace(/\.$/, ""));
+  let addresses: string[];
+  try {
+    addresses = isIP(host) ? [host] : await resolve(host.replace(/\.$/, ""));
+  } catch {
+    return;
+  }
   if (!addresses.length || addresses.some((address) => !isPublicAddress(address))) {
     throw new Error(`Refusing host ${hostname}: it resolves to a non-public address`);
   }

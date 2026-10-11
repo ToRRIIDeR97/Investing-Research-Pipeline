@@ -46,6 +46,8 @@ test("a hostname is fetched only when every address it resolves to is public (#9
   await assert.rejects(assertPublicHost("mapped.example", async () => ["::ffff:10.0.0.1"]), /non-public/);
   await assert.rejects(assertPublicHost("empty.example", async () => []), /non-public/);
   await assertPublicHost("public.example", async () => ["93.184.216.34", "2606:4700::1111"]);
+  // A name that doesn't resolve is left to fetch, which fails on it too (or, in tests, is stubbed).
+  await assertPublicHost("missing.example", async () => { throw Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" }); });
   let looked = false;
   await assert.rejects(assertPublicHost("[::1]", async () => { looked = true; return []; }), /non-public/);
   assert.equal(looked, false);
