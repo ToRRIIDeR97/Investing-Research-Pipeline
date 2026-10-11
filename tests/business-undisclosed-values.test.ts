@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { validateArtifactContent } from "@/lib/research/stage-contracts";
-import { normalizeReconciliation } from "@/lib/research/handlers/operating-model";
+import { forecastPeriodErrors, normalizeReconciliation } from "@/lib/research/handlers/operating-model";
 
 const scenario = (threat: string) => ({ scenario_name: "Response", threat_description: threat, response_mechanism: "Price", time_to_response: "1 year", financial_impact: "Lower margin" });
 
@@ -32,4 +32,15 @@ test("the bottom-up total is the segment sum and is checked against the TAM", ()
   assert.equal(output.top_down_bottom_up_reconciliation.bottom_up_forecast_total, 1000);
   assert.match(validateArtifactContent("top_down_bottom_up_reconciliation", normalized).errors.join(" "), /exceeds the TAM limit/);
   assert.equal(validateArtifactContent("top_down_bottom_up_reconciliation", { ...normalized, tam_limit: 1500 }).valid, true);
+});
+
+test("an operating model that restates the reported base year as its forecast is rejected (paid META check e13c7632)", () => {
+  const period = { fiscal_year: 2026, base_fiscal_year: 2025, base_revenue_millions: 200_966 };
+  const model = (revenue: number) => ({ operating_model: { consolidated_revenue: revenue, consolidated_operating_income: revenue * 0.4 } });
+  // Reported FY2025 revenue, given in dollars or in millions, is not a FY2026 forecast.
+  assert.match(forecastPeriodErrors(model(200_966_000_000), period).map((e) => e.message).join(" "), /repeats reported FY2025 revenue; it must be the FY2026 forecast/);
+  assert.equal(forecastPeriodErrors(model(200_966), period).length, 1);
+  // A real forecast passes, and so does any answer when the base year is unknown.
+  assert.deepEqual(forecastPeriodErrors(model(255_800), period), []);
+  assert.deepEqual(forecastPeriodErrors(model(200_966), { ...period, base_revenue_millions: null }), []);
 });
