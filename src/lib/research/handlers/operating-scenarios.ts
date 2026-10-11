@@ -8,6 +8,29 @@ import postgres from "postgres";
 import { valuationFinancialInputs } from "../valuation/financial-inputs";
 import { buildScenarioStatements, forecastHorizon, historyRatios, operatingModelFirstYear, validateScenarioDriverCoverage } from "../valuation/engine";
 
+/**
+ * Post-processing text about the copied reinvestment_model. It states the values actually copied;
+ * the zero-capex placeholder sentence appears only when there is no capex forecast, and an empty
+ * working-capital forecast keeps the model's own text and is recorded as a source gap.
+ */
+export function reinvestmentNotes(reinvestment: { capex_forecast?: unknown; working_capital_forecast: number[]; units?: string }) {
+  const units = reinvestment.units || "USD millions";
+  const capex = (Array.isArray(reinvestment.capex_forecast) ? reinvestment.capex_forecast : []).map(Number);
+  const hasCapex = capex.some((value) => Number.isFinite(value) && value !== 0);
+  const workingCapital = reinvestment.working_capital_forecast;
+  return {
+    baseWorkingCapital: workingCapital.length
+      ? `Base funding-surplus proxy from reinvestment_model: ${workingCapital.join(", ")} ${units}.` : null,
+    baseReinvestment: hasCapex
+      ? `Base capex copies the accepted reinvestment_model: ${capex.join(", ")} ${units}${workingCapital.length ? "; so does the funding-surplus proxy" : ""}.`
+      : "Base capex and funding-surplus proxy copy the accepted reinvestment_model; zero capex is a disclosed missing-data placeholder.",
+    scenarioReinvestment: hasCapex
+      ? `Base capex from reinvestment_model is ${capex.join(", ")} ${units}; this scenario's yearly capex follows its drivers and history_ratios, and funding surplus varies with scenario revenue as a sensitivity.`
+      : "Capex remains an unsourced zero placeholder; funding surplus varies with scenario revenue as a sensitivity.",
+    sourceGaps: workingCapital.length ? [] : ["reinvestment_model has no working_capital_forecast, so no funding-surplus proxy was copied into the scenarios."],
+  };
+}
+
 export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "operating_scenarios",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
@@ -97,8 +120,10 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
       baseStatements.working_capital_forecast = reinvestment.working_capital_forecast;
       baseStatements.capex_forecast = reinvestment.capex_forecast;
       baseStatements.forecast_horizon = model.forecast_horizon;
-      base.working_capital = `Base funding-surplus proxy from reinvestment_model: ${reinvestment.working_capital_forecast.join(", ")} ${reinvestment.units || "USD millions"}.`;
-      base.reinvestment = "Base capex and funding-surplus proxy copy the accepted reinvestment_model; zero capex is a disclosed missing-data placeholder.";
+      const notes = reinvestmentNotes(reinvestment);
+      if (notes.baseWorkingCapital) base.working_capital = notes.baseWorkingCapital;
+      base.reinvestment = notes.baseReinvestment;
+      if (notes.sourceGaps.length) scenarioSet.source_gaps = [...(Array.isArray(scenarioSet.source_gaps) ? scenarioSet.source_gaps : []), ...notes.sourceGaps];
       baseStatements.deviation_from_base = "None; base financial values copy the accepted operating_model and reinvestment_model.";
       let fundingSensitivityApplied = false;
       for (const scenario of scenarioSet.scenarios) {
@@ -106,12 +131,14 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
         const statements = scenario.resulting_financial_statements_json;
         const ratio = Number(statements?.consolidated_revenue) / Number(model.consolidated_revenue);
         if (!(ratio > 0)) continue;
-        fundingSensitivityApplied = true;
-        statements.working_capital_forecast = reinvestment.working_capital_forecast.map(
-          (value: number) => Number((value * ratio).toFixed(3))
-        );
-        scenario.working_capital = `Funding-surplus sensitivity scales the base reinvestment_model proxy by ${ratio.toFixed(3)}x scenario revenue; this is an analyst assumption, not reported guidance.`;
-        scenario.reinvestment = "Capex remains an unsourced zero placeholder; funding surplus varies with scenario revenue as a sensitivity.";
+        if (notes.baseWorkingCapital) {
+          fundingSensitivityApplied = true;
+          statements.working_capital_forecast = reinvestment.working_capital_forecast.map(
+            (value: number) => Number((value * ratio).toFixed(3))
+          );
+          scenario.working_capital = `Funding-surplus sensitivity scales the base reinvestment_model proxy by ${ratio.toFixed(3)}x scenario revenue; this is an analyst assumption, not reported guidance.`;
+        }
+        scenario.reinvestment = notes.scenarioReinvestment;
         const revenueChange = (ratio - 1) * 100;
         const incomeChange = (Number(statements.consolidated_operating_income) / Number(model.consolidated_operating_income) - 1) * 100;
         statements.deviation_from_base = `Revenue ${revenueChange.toFixed(1)}% and operating income ${incomeChange.toFixed(1)}% versus the accepted base forecast; scenario driver assumptions are analyst judgments.`;
