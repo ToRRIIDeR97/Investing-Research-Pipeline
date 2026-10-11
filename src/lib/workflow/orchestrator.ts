@@ -697,19 +697,21 @@ export async function startNextStage(
     }
 
     if (config?.requiresHumanApproval && nextStage.stage_key !== "research_plan") {
-      await sql`
-        UPDATE research_stages
-        SET status = 'waiting_for_human',
-            started_at = NOW(),
-            updated_at = NOW()
-        WHERE id = ${nextStage.id}
-      `;
-      await sql`
-        UPDATE research_runs
-        SET status = 'waiting_for_human',
-            updated_at = NOW()
-        WHERE id = ${runId}
-      `;
+      await sql.begin(async (tx) => {
+        await tx`
+          UPDATE research_stages
+          SET status = 'waiting_for_human',
+              started_at = NOW(),
+              updated_at = NOW()
+          WHERE id = ${nextStage.id}
+        `;
+        await tx`
+          UPDATE research_runs
+          SET status = 'waiting_for_human',
+              updated_at = NOW()
+          WHERE id = ${runId}
+        `;
+      });
     } else {
       await sql`
         UPDATE research_stages
@@ -833,24 +835,26 @@ export async function pauseForHumanReview(
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
-    await sql`
-      UPDATE research_runs
-      SET status = 'waiting_for_human',
-          metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
-            human_review_reason: reason,
-            human_review_requested_at: new Date().toISOString(),
-          })},
-          updated_at = NOW()
-      WHERE id = ${runId}
-    `;
+    await sql.begin(async (tx) => {
+      await tx`
+        UPDATE research_runs
+        SET status = 'waiting_for_human',
+            metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${tx.json({
+              human_review_reason: reason,
+              human_review_requested_at: new Date().toISOString(),
+            })},
+            updated_at = NOW()
+        WHERE id = ${runId}
+      `;
 
-    await sql`
-      UPDATE research_stages
-      SET status = 'waiting_for_human',
-          updated_at = NOW()
-      WHERE research_run_id = ${runId}
-        AND status = 'running'
-    `;
+      await tx`
+        UPDATE research_stages
+        SET status = 'waiting_for_human',
+            updated_at = NOW()
+        WHERE research_run_id = ${runId}
+          AND status = 'running'
+      `;
+    });
   } finally {
     await sql.end();
   }
@@ -867,43 +871,78 @@ export async function failRun(
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
-    await sql`
-      UPDATE research_runs
-      SET status = ${status},
-          failure_reason = ${reason},
-          completed_at = NOW(),
-          updated_at = NOW()
-      WHERE id = ${runId}
-    `;
+    // One transaction: a run marked failed with a stage still running cannot be resumed or re-queued.
+    await sql.begin(async (tx) => {
+      // A handler that ignores the abort signal may fail after its run was cancelled; cancelled stays final.
+      const [updated] = await tx`
+        UPDATE research_runs
+        SET status = ${status},
+            failure_reason = ${reason},
+            completed_at = NOW(),
+            updated_at = NOW()
+        WHERE id = ${runId} AND status <> 'cancelled'
+        RETURNING id
+      `;
+      if (!updated) return;
 
-    await sql`
-      UPDATE research_stages
-      SET status = 'failed',
-          failure_reason = ${reason},
-          completed_at = NOW(),
-          updated_at = NOW()
-      WHERE research_run_id = ${runId}
-        AND status IN ('running', 'waiting_for_human')
-    `;
+      await tx`
+        UPDATE research_stages
+        SET status = 'failed',
+            failure_reason = ${reason},
+            completed_at = NOW(),
+            updated_at = NOW()
+        WHERE research_run_id = ${runId}
+          AND status IN ('running', 'waiting_for_human')
+      `;
 
-    await sql`
-      UPDATE research_tasks
-      SET status = 'failed',
-          failure_reason = ${reason},
-          completed_at = NOW(),
-          updated_at = NOW()
-      WHERE research_run_id = ${runId}
-        AND status = 'running'
-    `;
+      await tx`
+        UPDATE research_tasks
+        SET status = 'failed',
+            failure_reason = ${reason},
+            completed_at = NOW(),
+            updated_at = NOW()
+        WHERE research_run_id = ${runId}
+          AND status = 'running'
+      `;
 
-    await sql`
-      UPDATE research_stages
-      SET status = 'cancelled',
-          failure_reason = ${`Run failed: ${reason}`},
-          updated_at = NOW()
-      WHERE research_run_id = ${runId}
-        AND status = 'pending'
-    `;
+      await tx`
+        UPDATE research_stages
+        SET status = 'cancelled',
+            failure_reason = ${`Run failed: ${reason}`},
+            updated_at = NOW()
+        WHERE research_run_id = ${runId}
+          AND status = 'pending'
+      `;
+    });
+  } finally {
+    await sql.end();
+  }
+}
+
+/**
+ * Cancel a run. Cancelled is terminal: the run cannot be queued again. Its active job is closed, so a worker
+ * executing it loses its lease at the next renewal and aborts the in-flight model call.
+ */
+export async function cancelRun(runId: string, actor = "user"): Promise<{ cancelled: boolean; status: string } | null> {
+  const sql = postgres(process.env.DATABASE_URL!);
+  try {
+    return await sql.begin(async (tx) => {
+      const [run] = await tx`SELECT status FROM research_runs WHERE id = ${runId} FOR UPDATE`;
+      if (!run) return null;
+      if (run.status === "completed" || run.status === "cancelled") return { cancelled: false, status: String(run.status) };
+      const reason = `Cancelled by ${actor}`;
+      await tx`UPDATE research_runs SET status = 'cancelled', failure_reason = ${reason}, completed_at = NOW(), updated_at = NOW()
+        WHERE id = ${runId}`;
+      await tx`UPDATE research_stages SET status = 'cancelled', failure_reason = ${reason}, updated_at = NOW(),
+          completed_at = CASE WHEN status = 'pending' THEN completed_at ELSE NOW() END
+        WHERE research_run_id = ${runId} AND status IN ('pending', 'running', 'waiting_for_human')`;
+      await tx`UPDATE research_tasks SET status = 'failed', failure_reason = ${reason}, completed_at = NOW(), updated_at = NOW()
+        WHERE research_run_id = ${runId} AND status IN ('pending', 'running')`;
+      await tx`UPDATE research_run_jobs SET status = 'failed', failure_reason = ${reason}, lease_owner = NULL,
+          lease_expires_at = NULL, completed_at = NOW(), updated_at = NOW()
+        WHERE research_run_id = ${runId} AND status IN ('queued', 'running')`;
+      return { cancelled: true, status: "cancelled" };
+    });
   } finally {
     await sql.end();
   }
@@ -969,9 +1008,14 @@ export async function resumeResearchRun(runId: string) {
         WHERE research_run_id = ${runId} AND status IN ('failed', 'running', 'waiting_for_human')
         ORDER BY stage_order
       `;
-      if (stages.some((stage) => stage.status !== "failed") || !stages.length) {
-        throw new Error("Cannot resume: expected failed stages and no active stage");
-      }
+      if (!stages.length) throw new Error("Cannot resume: expected failed stages and no active stage");
+      // A stopped run cannot have active stages; these were left by an interrupted transition.
+      const leftActive = stages.filter((stage) => stage.status !== "failed").map((stage) => String(stage.id));
+      if (leftActive.length) await tx`
+        UPDATE research_stages SET status = 'failed', failure_reason = 'Left active when the run stopped',
+          completed_at = NOW(), updated_at = NOW()
+        WHERE id = ANY(${leftActive}::uuid[])
+      `;
       await tx`
         UPDATE research_stages
         SET status = 'running', failure_reason = NULL, validation_result_json = NULL,
