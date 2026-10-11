@@ -154,9 +154,11 @@ export function createMarketDataService(config: MarketDataServiceConfig) {
     },
 
     /**
-     * Backfill [start, end] once, then fetch only from shortly before the latest stored bar.
-     * `normalize` maps provider bars to stored bars (trading day, availability) and drops
-     * bars that are not final yet; stored rows are never overwritten.
+     * Backfill [start, end] once, then fetch only from shortly before the latest stored bar in it.
+     * Coverage is judged inside the window: a window with a gap of more than a week (left by
+     * runs with other cutoffs) is fetched again in full. `normalize` maps provider bars to stored
+     * bars (trading day, availability) and drops bars that are not final yet; stored rows are
+     * never overwritten.
      */
     async syncDailyHistory(
       instrumentId: string,
@@ -165,24 +167,39 @@ export function createMarketDataService(config: MarketDataServiceConfig) {
       end: Date,
       normalize: (bars: PriceBar[]) => PriceBar[] = (bars) => bars
     ): Promise<{ fetchedFrom: Date | null; storedBars: number }> {
-      const [range] = await db
+      const stored = and(
+        eq(market_price_bars.instrument_id, instrumentId),
+        eq(market_price_bars.provider, providerName),
+        eq(market_price_bars.provider_symbol, symbol)
+      );
+      const [{ latest }] = await db
+        .select({ latest: sql<Date | null>`max(${market_price_bars.trading_date})` })
+        .from(market_price_bars)
+        .where(stored);
+      const windowBars = db
         .select({
-          first: sql<Date | null>`min(${market_price_bars.trading_date})`,
-          last: sql<Date | null>`max(${market_price_bars.trading_date})`,
+          trading_date: market_price_bars.trading_date,
+          gap_days: sql<number>`extract(epoch from ${market_price_bars.trading_date} - lag(${market_price_bars.trading_date}) over (order by ${market_price_bars.trading_date})) / 86400`.as("gap_days"),
         })
         .from(market_price_bars)
-        .where(and(
-          eq(market_price_bars.instrument_id, instrumentId),
-          eq(market_price_bars.provider, providerName),
-          eq(market_price_bars.provider_symbol, symbol)
-        ));
+        .where(and(stored, gte(market_price_bars.trading_date, start), lte(market_price_bars.trading_date, end)))
+        .as("window_bars");
+      const [range] = await db
+        .select({
+          first: sql<Date | null>`min(${windowBars.trading_date})`,
+          last: sql<Date | null>`max(${windowBars.trading_date})`,
+          maxGap: sql<number | null>`max(${windowBars.gap_days})`,
+        })
+        .from(windowBars);
       const day = 24 * 60 * 60 * 1000;
       const first = range?.first ? new Date(range.first) : null;
       const last = range?.last ? new Date(range.last) : null;
-      // Allow a week of holidays at the start of the window before treating it as uncovered.
-      const coversStart = first !== null && first.getTime() <= start.getTime() + 7 * day;
-      if (coversStart && last && last.getTime() + day >= end.getTime()) return { fetchedFrom: null, storedBars: 0 };
-      const fetchedFrom = coversStart && last ? new Date(Math.max(start.getTime(), last.getTime() - 5 * day)) : start;
+      const storedAfter = latest !== null && new Date(latest).getTime() > end.getTime();
+      // Allow a week of holidays at the start of the window and between bars before treating it as uncovered.
+      const covered = first !== null && first.getTime() <= start.getTime() + 7 * day && Number(range?.maxGap ?? 0) <= 7;
+      const coversEnd = last !== null && (last.getTime() + day >= end.getTime() || (storedAfter && end.getTime() - last.getTime() <= 7 * day));
+      if (covered && coversEnd) return { fetchedFrom: null, storedBars: 0 };
+      const fetchedFrom = covered && last ? new Date(Math.max(start.getTime(), last.getTime() - 5 * day)) : start;
       const fetchStart = Date.now();
       let bars: PriceBar[];
       try {
