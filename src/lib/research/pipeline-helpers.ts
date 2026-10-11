@@ -268,3 +268,29 @@ export function moduleCompletion(section: Record<string, unknown> | undefined) {
   }
   return { status: "completed", reason: null };
 }
+
+/** Model calls a stage runs at once for independent work (report sections, source-reader batches). 1 runs them one at a time. */
+export function agentConcurrency(env: Record<string, string | undefined> = process.env) {
+  const value = Number(env.RESEARCH_AGENT_CONCURRENCY);
+  return Number.isInteger(value) && value >= 1 ? value : 4;
+}
+
+/**
+ * Runs `fn` over `items` with at most `limit` calls in flight. Results keep the input order. Like
+ * Promise.allSettled, every item finishes (and saves its work) before the first failure is rethrown.
+ */
+export async function mapWithConcurrency<T, R>(items: T[], fn: (item: T, index: number) => Promise<R>, limit = agentConcurrency()) {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next++;
+      try { results[index] = { status: "fulfilled", value: await fn(items[index], index) }; }
+      catch (reason) { results[index] = { status: "rejected", reason }; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, limit), items.length) }, worker));
+  const failed = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  if (failed) throw failed.reason;
+  return results.map(result => (result as PromiseFulfilledResult<R>).value);
+}

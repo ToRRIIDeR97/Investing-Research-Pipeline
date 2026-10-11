@@ -20,6 +20,7 @@ import { isValidSourceRole } from "../sources/roles";
 import { isPlausibleSourceRole } from "../sources/role-discovery";
 import { v2RunContext } from "../sources/role-coverage";
 import { FOUNDER_NEED_KEYS } from "../memory";
+import { mapWithConcurrency } from "../pipeline-helpers";
 
 const SOURCE_READER_OUTPUT_KEYS = [
   "evidence_claims",
@@ -81,16 +82,14 @@ export async function extractEvidenceForSources(sql: ReturnType<typeof postgres>
     maxChunks: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_CHUNKS || 8),
     maxBytes: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_BYTES || 36_000),
   });
-  const outputs: Record<string, unknown>[] = [];
-  for (const batch of batches) {
-    outputs.push(await callResearchAgent<Record<string, unknown>>({
-      sql, ctx, stageKey: "evidence_extraction",
-      taskKey: `source-reader:requested:${batch.id}:${sourceReaderBatchFingerprint(batch)}`,
-      taskType: "evidence_extraction_batch", agentName: "source-reader", modelTier: "cheap",
-      packet: { asset: v2Ctx, batch: { id: batch.id, count: batches.length, claim_target: 5 }, source_corpus: batch.chunks },
-      promptFactory: sourceReaderPrompt(5),
-    }));
-  }
+  // Batches are independent; outputs stay index-aligned with batches for the merge.
+  const outputs = await mapWithConcurrency(batches, batch => callResearchAgent<Record<string, unknown>>({
+    sql, ctx, stageKey: "evidence_extraction",
+    taskKey: `source-reader:requested:${batch.id}:${sourceReaderBatchFingerprint(batch)}`,
+    taskType: "evidence_extraction_batch", agentName: "source-reader", modelTier: "cheap",
+    packet: { asset: v2Ctx, batch: { id: batch.id, count: batches.length, claim_target: 5 }, source_corpus: batch.chunks },
+    promptFactory: sourceReaderPrompt(5),
+  }));
   return persistEvidence(sql, v2Ctx, sources, mergeSourceReaderOutputs(outputs, batches));
 }
 
@@ -187,10 +186,10 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       }
 
       const batchTarget = Math.max(5, Math.ceil(evidenceTarget / batches.length) + 1);
-      const outputs: Record<string, unknown>[] = [];
       const promptFactory = sourceReaderPrompt;
 
-      for (const batch of batches) {
+      // Batches are independent; outputs stay index-aligned with batches for the merge.
+      const outputs = await mapWithConcurrency(batches, batch => {
         const fingerprint = sourceReaderBatchFingerprint(batch);
         const taskKey = `source-reader:batch:${batch.id}:${fingerprint}`;
 
@@ -199,13 +198,12 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
           batch: { id: batch.id, count: batches.length, claim_target: batchTarget },
           source_corpus: batch.chunks,
         };
-        const output = await callResearchAgent<Record<string, unknown>>({
+        return callResearchAgent<Record<string, unknown>>({
           sql, ctx, stageKey: "evidence_extraction", taskKey,
           taskType: "evidence_extraction_batch", agentName: "source-reader", modelTier: "cheap",
           packet, promptFactory: promptFactory(batchTarget),
         });
-        outputs.push(output);
-      }
+      });
 
       let evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
 
