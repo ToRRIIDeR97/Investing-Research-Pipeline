@@ -11,8 +11,8 @@
 <text x="330.0" y="158" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">POST …/run-system-pipeline (or approve-plan / review)</text>
 <text x="330.0" y="175" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">enqueueResearchRun (resumes failed runs) → job queued</text>
 <rect x="130" y="205" width="400" height="46" rx="6" fill="#fdf3e3" stroke="#b07a1f" stroke-width="1.4"/>
-<text x="330.0" y="223" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Worker: requeueExpired → claim (SKIP LOCKED)</text>
-<text x="330.0" y="240" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">lease 5 min, renewed ~100 s</text>
+<text x="330.0" y="223" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Worker: requeueExpired, reconcile → claim (SKIP LOCKED)</text>
+<text x="330.0" y="240" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">lease 5 min, renewed every 10 s; lost lease or SIGTERM aborts</text>
 <rect x="130" y="270" width="400" height="46" rx="6" fill="#fdf3e3" stroke="#b07a1f" stroke-width="1.4"/>
 <text x="330.0" y="288" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">runResearchPipeline: pg_try_advisory_lock(run)</text>
 <text x="330.0" y="305" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">fail stale running tasks · startRun if pending</text>
@@ -81,11 +81,12 @@
 <text x="330.0" y="728" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Apply stage failureState</text>
 <text x="330.0" y="745" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">fail_run → run failed, pending stages cancelled</text>
 <text x="330.0" y="760" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">pause_for_human → waiting · skip_and_continue → stage failed, continue</text>
-<rect x="860" y="640" width="220" height="90" rx="6" fill="#fdecec" stroke="#b23b3b" stroke-width="1.4"/>
-<text x="970.0" y="658" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Exception anywhere</text>
-<text x="970.0" y="675" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">tasks/stages failed,</text>
-<text x="970.0" y="690" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">run needs_more_work;</text>
-<text x="970.0" y="705" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">lock released</text>
-<path d="M900,640 L900,600 L840,600 L840,574" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#a)"/>
-<text x="16" y="790" font-size="11" font-weight="normal" text-anchor="start" fill="#555">Source: pipeline-runner.ts:20-93, orchestrator.ts:188-994, team-plan.ts:41-75, team.ts, sources/collector.ts, run-queue.ts, stages.ts.</text>
+<rect x="860" y="620" width="220" height="100" rx="6" fill="#fdecec" stroke="#b23b3b" stroke-width="1.4"/>
+<text x="970.0" y="638" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Exception anywhere</text>
+<text x="970.0" y="655" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">transient model error: stage</text>
+<text x="970.0" y="670" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">rerun ≤ max_retries; else</text>
+<text x="970.0" y="685" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">attempt's tasks invalid, run</text>
+<text x="970.0" y="700" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">needs_more_work; abort: job requeued</text>
+<path d="M900,620 L900,600 L840,600 L840,574" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="16" y="790" font-size="11" font-weight="normal" text-anchor="start" fill="#555">Source: pipeline-runner.ts:runResearchPipeline, orchestrator.ts:188-1040, team-plan.ts:41-75, team.ts, sources/collector.ts, run-queue.ts, stages.ts.</text>
 </svg>

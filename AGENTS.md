@@ -28,8 +28,9 @@ npm run build
 
 When persistence, the queue, orchestration or the pipeline changes, also run the database-backed suites:
 
-- `npm run test:sofi-v3`: the mock pipeline. It needs PostgreSQL on port 5433 with migrations applied.
+- `npm run test:sofi-v3`: the mock pipeline, against `DATABASE_URL` (or the one in `.env.local`) with migrations applied.
 - `npm run test:db`: every database-backed suite, one file at a time, with the mock provider. It takes only `DATABASE_URL` from `.env.local`. The suites share one database and interfere when run in parallel.
+- Both refuse a database a research worker is polling (a heartbeat in the last 30 s). Use a separate test database.
 
 `npm run lint` isn't a check yet. ESLint isn't configured ([#19](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/19)).
 

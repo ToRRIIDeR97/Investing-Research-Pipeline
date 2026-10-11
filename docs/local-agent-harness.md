@@ -103,6 +103,16 @@ Ollama's OpenAI-compatible endpoint uses the `/v1` base path. The configured mod
 
 The harness requests plain text, parses JSON locally, and performs at most one bounded repair by default. On `anthropic-direct`, Claude output is constrained to the contract schema where the API can express it ([structured output](#structured-output)); local parsing, validation and repair still apply. Total and inactivity deadlines, response/token limits, and model attempts use the `RESEARCH_*` settings documented in `.env.example`. Model calls cannot execute tools; an unexpected tool request fails the attempt. On the Anthropic protocol, pings and hidden adaptive-thinking events count as stream activity, so the inactivity deadline measures real provider silence rather than time to the first answer text.
 
+Retries:
+
+- Rate limits, timeouts, dropped connections, malformed streams, exhausted output and server errors are retried, and the next attempt may go to the agent's fallback model. Server errors include HTTP 5xx, Anthropic's 529 and its mid-stream `overloaded_error` and `api_error` events, and OpenCode's 400 "Upstream request failed". A mid-stream `rate_limit_error` counts as a rate limit.
+- Server errors and rate limits wait `RESEARCH_OVERLOAD_RETRY_DELAY_MS` (5 s) before the second attempt, doubling after that; other retries wait `RESEARCH_RETRY_BASE_DELAY_MS`, doubling. A `retry-after` header sets the wait instead. Waits are capped at 60 s and end early when the run is aborted.
+- A reply cut off at its output limit (`max_tokens` or `length`) that doesn't parse isn't repaired: the next attempt regenerates with twice the limit. Claude models are capped at 128,000 output tokens (64,000 for Claude Haiku 4.5).
+- Authentication, quota, invalid requests, context limits and schema failures after repair aren't retried.
+- The built-in fallback models (`deepseek-v4-pro`, `qwen3.7-plus`) are OpenCode Go model IDs, so `anthropic-direct` doesn't use them. A `RESEARCH_<AGENT>_FALLBACK_MODEL` you set still applies.
+
+When a stage fails because a model call used up its attempts on one of these transient errors, the pipeline retries the stage itself ([system.md](system.md#run-failures-recovery-and-cancellation)).
+
 Analytical stages derive their prompt schemas and runtime checks from the artifact Zod contracts. Invalid model output enters repair before a task is marked complete. The artifact repository checks those contracts again before saving validated or accepted content.
 
 Completed tasks are reused only when the request fingerprint matches: packet, prompt, output contract, agent, model, provider endpoint, and version fields. Reuse revalidates the stored output. Failed stage validation invalidates that stage's cached tasks so a retry generates new output.

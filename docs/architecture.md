@@ -32,7 +32,7 @@ Labels in the views: *unverified* means the relationship wasn't proven from sour
   3. `RESEARCH_<AGENT>_MODEL`;
   4. the tier variable (`RESEARCH_CHEAP_MODEL`, `RESEARCH_MID_MODEL`, `RESEARCH_VISION_MODEL`);
   5. the agent's default model.
-- `runner.ts` makes up to 4 model attempts with one schema repair, compaction fallback and output-limit doubling.
+- `runner.ts` makes up to 4 model attempts with one schema repair, compaction fallback and output-limit doubling. 5xx and overload errors are retried with a 5 s floor, and a reply cut off at its output limit is regenerated with twice the limit rather than repaired.
 - `cache.ts` handles prompt-cache layout and the affinity key.
 - `output-parser.ts` and `validation.ts` parse and check structured output.
 
@@ -121,10 +121,12 @@ The model makes the judgment calls: yearly drivers in operating scenarios and, f
 
 Guards:
 
-- Every job update requires `status = 'running' AND lease_owner = <worker>` (`run-queue.ts`).
+- Every job update requires `status = 'running' AND lease_owner = <worker>` (`run-queue.ts`). A worker that stops, or finds the run locked by another worker, puts its job back to `queued` without using an attempt (`releaseResearchRunJob`). A renewal that finds the lease gone aborts the run.
+- `cancelRun` moves a run, its open stages and its active job to a terminal state from any status but `completed`; `failRun` doesn't overwrite it.
+- Each worker poll queues a job for a `running` run that had a job before and has had no job activity for 60 s (`reconcileOrphanedResearchRuns`).
 - Gate approvals and the re-run decision take `FOR UPDATE` locks (`orchestrator.ts:409`, `466`, `535`, `580`).
-- `retryCount` lives in `validation_result_json`.
-- `resumeResearchRun` (`orchestrator.ts:959`) restarts at the first failed stage when a run is enqueued.
+- `retryCount` and `transient_failures` (stage reruns after transient model failures) live in `validation_result_json`; both are bounded by the stage's `max_retries`.
+- `resumeResearchRun` restarts at the first failed stage when a run is enqueued. Stages left `running` or `waiting_for_human` on a stopped run are failed first. `failRun`, `pauseForHumanReview` and the gate branch of `startNextStage` are single transactions.
 - An arriving team request reopens nothing (`team.ts:processResearchRequests`). Only an owner's `requires_rerun` answer reopens its stage and dependents (`requestResetPlan`): automatically once per run when at most `RESEARCH_MAX_AUTO_RESET_STAGES` (default 6) analysis stages reopen; otherwise the run and the `ai_reviewer` stage become `waiting_for_human` with `metadata_json.request_reset` until `approveRequestReset` records `rerun` or `skip`. That decision is refused unless the run is paused on the re-run and while the plan or final-review gate waits.
 
 ## 6. Interaction — Sequence
@@ -140,9 +142,10 @@ Report requests are answered inside the scheduling loop without resetting stages
 | UI pages | Component, Sequence | `src/app/**/page.tsx`, `src/components/**` |
 | API routes | Component, Sequence, Trust | `src/app/api/**/route.ts`, `src/lib/api/*` |
 | Run service and queue | Component, Activity, State, Sequence | `run-service.ts:createResearchRunWithStages`, `run-queue.ts` |
-| Research worker | Component, Deployment, Sequence | `src/workers/research-worker.ts` |
-| Pipeline runner, team and requests | Component, Activity, State, Sequence | `pipeline-runner.ts:runResearchPipeline`, `team.ts:processResearchRequests`, `systemAnswer`, `requestResetPlan`, `nextRequestBatch`, `team-plan.ts`, `sources/source-requests.ts:queryTermCoverage`, `sources/collector.ts` |
-| Workflow orchestrator | Component, Activity, State, Sequence | `orchestrator.ts:advanceStage`, `startReadyStages`, `approveRequestReset`, `completeRun`, `failRun`, `resumeResearchRun` |
+| Research worker | Component, Deployment, State, Sequence | `src/workers/research-worker.ts`, `src/workers/poll-loop.ts` |
+| Pipeline runner, team and requests | Component, Activity, State, Sequence | `pipeline-runner.ts:runResearchPipeline`, `settleBatch`, `team.ts:processResearchRequests`, `systemAnswer`, `requestResetPlan`, `nextRequestBatch`, `team-plan.ts`, `sources/source-requests.ts:queryTermCoverage`, `sources/collector.ts` |
+| Workflow orchestrator | Component, Activity, State, Sequence | `orchestrator.ts:advanceStage`, `startReadyStages`, `approveRequestReset`, `completeRun`, `failRun`, `cancelRun`, `resumeResearchRun` |
+| Run cancellation | State, Sequence | `src/app/api/research-runs/[id]/cancel/route.ts`, Cancel run action in `src/app/assets/[id]/run/page.tsx` |
 | Request re-run decision | State, Sequence, Trust | `src/app/api/research-runs/[id]/request-reset/route.ts`, run page panel in `src/app/assets/[id]/run/page.tsx` |
 | Agent harness and prompt caching | Component, Sequence, Trust | `src/lib/agent-harness/**` |
 | Research memory and evidence graph | Component, Class | `src/lib/research/memory/**` |

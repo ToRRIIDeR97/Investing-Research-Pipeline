@@ -14,7 +14,7 @@ DATABASE_URL=postgresql://research_os:research_os_dev@localhost:5432/research_os
   npm run worker:research
 ```
 
-The worker claims queued `research_run_jobs` atomically, renews its lease, and records its heartbeat. Use `--once` for a single queued job:
+The worker claims queued `research_run_jobs` atomically, renews its lease every 10 s, and records its heartbeat. It keeps polling when the database is briefly unreachable. Ctrl+C (SIGINT) or SIGTERM aborts the current model call and puts the job back in the queue without using an attempt; the next worker reruns the interrupted stage. A second Ctrl+C exits at once, and the job then waits for its 5-minute lease to expire. Use `--once` for a single queued job:
 
 ```bash
 DATABASE_URL=postgresql://research_os:research_os_dev@localhost:5432/research_os \
@@ -26,15 +26,22 @@ Create a run from the asset research UI or `POST /api/assets/:assetId/research-r
 
 Set `RESEARCH_RUN_ID` and run `npm run run:research:resume` to queue continuation through the same path. A running worker is required. Failed runs restart at their first failed stage; waiting human gates still require explicit approval through the UI or approval endpoints.
 
-For a deterministic database-backed acceptance run with no live network calls:
+To stop a run for good, use **Cancel run** on the run page or `POST /api/research-runs/:runId/cancel`. A cancelled run can't be resumed or queued again; a worker running it stops its model call within about 10 s.
+
+For a deterministic database-backed acceptance run with no live network calls, migrate a separate test database and point `DATABASE_URL` at it:
 
 ```bash
-npm run test:sofi-v3
+createdb -h 127.0.0.1 -O research_os research_os_test
+DATABASE_URL=postgresql://research_os:research_os_dev@localhost:5432/research_os_test npm run db:migrate
+DATABASE_URL=postgresql://research_os:research_os_dev@localhost:5432/research_os_test npm run db:seed
+DATABASE_URL=postgresql://research_os:research_os_dev@localhost:5432/research_os_test npm run test:sofi-v3
 ```
 
-On this Windows checkout, PostgreSQL 18 is available as the `postgresql-x64-18` service on port 5433. Docker is not running, and the local `.env` contains entries Docker Compose cannot parse. Use the configured `WINDOWS_DATABASE_ADMIN_URL` to create a separate `research_os` database, then point `DATABASE_URL` at that database before running migrations, seed, or tests. The npm `test:sofi-v3` command hardcodes the Docker credentials, so invoke `npx tsx --test tests/sofi-research-e2e.test.ts` with `RUN_DB_INTEGRATION=1`, `RESEARCH_MODEL_PROVIDER=mock`, and `RESEARCH_ACCEPTANCE_PROVIDER=mock` for the Windows service. The mock acceptance test passes without `SKIP_V3_CONTENT_VALIDATORS`.
+`test:sofi-v3` and `test:db` read `DATABASE_URL`, falling back to the one in `.env.local`. Both refuse to run when a research worker has sent a heartbeat to that database in the last 30 s, because the worker and the tests would claim each other's jobs.
 
-Run all database-backed suites one file at a time with `npm run test:db`. The suites share one database, so parallel runs let their runs, jobs and cleanup interfere. The command forces the mock provider and reads only `DATABASE_URL` from `.env.local`. `tests/research-run-harness.test.ts` inserts an asset with the slug `sofi` and fails its setup on a database that already holds the real SoFi asset.
+On this Windows checkout, PostgreSQL 18 is available as the `postgresql-x64-18` service on port 5433. Docker is not running, and the local `.env` contains entries Docker Compose cannot parse. Use the configured `WINDOWS_DATABASE_ADMIN_URL` to create a separate `research_os` database, then point `DATABASE_URL` at that database before running migrations, seed, or tests, including `npm run test:sofi-v3`. The mock acceptance test passes without `SKIP_V3_CONTENT_VALIDATORS`.
+
+Run all database-backed suites one file at a time with `npm run test:db`. The suites share one database, so parallel runs let their runs, jobs and cleanup interfere. The command forces the mock provider and reads only `DATABASE_URL` from `.env.local`, and refuses a database with a live worker, as above. `tests/research-run-harness.test.ts` inserts an asset with the slug `sofi` and fails its setup on a database that already holds the real SoFi asset.
 
 For a live run, `scripts/new-equity-run.ts` requires `RUN_PAID_RESEARCH=1` and respects `RESEARCH_ACCEPTANCE_BUDGET_USD`. It stops at the research-plan gate. Review and explicitly approve that persisted plan before resuming paid work.
 

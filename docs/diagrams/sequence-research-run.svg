@@ -1,32 +1,32 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1170" width="1120" height="1170" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" font-size="13">
-<title id="t">Research run — UML sequence view</title><desc id="d">Ordered messages from run creation through enqueue, worker claim, advisory lock, parallel stage execution with model calls, report requests answered without stage resets and the re-run approval, plan gate pause, approval and re-enqueue, plus the lease-expiry retry path.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1350" width="1120" height="1350" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" font-size="13">
+<title id="t">Research run — UML sequence view</title><desc id="d">Ordered messages from run creation through enqueue, worker claim, advisory lock, parallel stage execution with model calls, report requests answered without stage resets and the re-run approval, plan gate pause, approval and re-enqueue, the lease-expiry retry path, and cancel or shutdown.</desc>
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker><marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10" fill="none" stroke="#333"/></marker></defs>
-<rect x="0" y="0" width="1120" height="1170" fill="#ffffff"/>
+<rect x="0" y="0" width="1120" height="1350" fill="#ffffff"/>
 <text x="16" y="26" font-size="16" font-weight="bold" fill="#111">Research run — UML sequence view</text>
 <rect x="10" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
 <text x="70.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Analyst UI</text>
-<line x1="70" y1="79" x2="70" y2="1140" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="70" y1="79" x2="70" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
 <rect x="150" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
 <text x="210.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">API route</text>
-<line x1="210" y1="79" x2="210" y2="1140" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="210" y1="79" x2="210" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
 <rect x="290" y="45" width="120" height="34" rx="6" fill="#eaf4f4" stroke="#2f7f7f" stroke-width="1.4"/>
 <text x="350.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Postgres</text>
-<line x1="350" y1="79" x2="350" y2="1140" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="350" y1="79" x2="350" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
 <rect x="430" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
 <text x="490.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Worker</text>
-<line x1="490" y1="79" x2="490" y2="1140" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="490" y1="79" x2="490" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
 <rect x="570" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
 <text x="630.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Pipeline runner</text>
-<line x1="630" y1="79" x2="630" y2="1140" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="630" y1="79" x2="630" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
 <rect x="710" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
 <text x="770.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Stage handler</text>
-<line x1="770" y1="79" x2="770" y2="1140" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="770" y1="79" x2="770" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
 <rect x="850" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
 <text x="910.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Agent harness</text>
-<line x1="910" y1="79" x2="910" y2="1140" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="910" y1="79" x2="910" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
 <rect x="990" y="45" width="120" height="34" rx="6" fill="#f4f4f4" stroke="#666666" stroke-width="1.4"/>
 <text x="1050.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">LLM provider</text>
-<line x1="1050" y1="79" x2="1050" y2="1140" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="1050" y1="79" x2="1050" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
 <path d="M70,100 L210,100" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="140.0" y="95" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">POST /assets/:id/research-runs</text>
 <path d="M210,128 L350,128" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
@@ -97,5 +97,17 @@
 <path d="M490,1086 L350,1086" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="420.0" y="1081" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">lease expires → requeue if attempts &lt; 3, else failed</text>
 <rect x="280" y="1050" width="420" height="54" fill="none" stroke="#b07a1f" stroke-dasharray="6 3"/>
-<text x="16" y="1160" font-size="11" font-weight="normal" text-anchor="start" fill="#555">Same pattern repeats at stage 22 human_review (POST …/review writes review_decisions; approve → enqueue). Final checks call completeRun or set needs_more_work.</text>
+<text x="16" y="1130" font-size="11" font-weight="bold" text-anchor="start" fill="#b23b3b">alt [cancel or worker shutdown]</text>
+<path d="M70,1152 L210,1152" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="140.0" y="1147" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">POST …/cancel</text>
+<path d="M210,1180 L350,1180" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="280.0" y="1175" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">cancelRun: run, stages, job closed [txn]</text>
+<path d="M490,1208 L350,1208" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="420.0" y="1203" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">renew lease → none (or SIGTERM)</text>
+<path d="M490,1236 L910,1236" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="700.0" y="1231" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">abort signal → in-flight model call cancelled</text>
+<path d="M490,1264 L350,1264" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="420.0" y="1259" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">release job → queued, no attempt used [owner]</text>
+<rect x="10" y="1116" width="965" height="166" fill="none" stroke="#b23b3b" stroke-dasharray="6 3"/>
+<text x="16" y="1340" font-size="11" font-weight="normal" text-anchor="start" fill="#555">Same pattern repeats at stage 22 human_review (POST …/review writes review_decisions; approve → enqueue). Final checks call completeRun or set needs_more_work.</text>
 </svg>

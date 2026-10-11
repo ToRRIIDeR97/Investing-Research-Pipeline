@@ -22,7 +22,7 @@
 <text x="980.0" y="204" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Research worker</text>
 <text x="980.0" y="221" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/workers/research-worker.ts</text>
 <text x="980.0" y="236" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">poll 5s · heartbeat 10s</text>
-<text x="980.0" y="251" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">lease 5 min · run advisory lock</text>
+<text x="980.0" y="251" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">lease 5 min, renewed 10s · run lock</text>
 <rect x="310" y="200" width="260" height="110" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
 <text x="440.0" y="218" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«component»</text>
 <text x="440.0" y="234" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Workflow orchestrator</text>

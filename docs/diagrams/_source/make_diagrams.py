@@ -15,7 +15,7 @@ s = Svg(1100, 700, "Research OS — UML component view (current)",
 s.box(30, 60, 220, 70, "Analyst browser", ["src/app/** client pages"], "ui", stereo="actor/UI")
 s.box(310, 50, 260, 90, "Next.js API routes", ["src/app/api/** (52 route files)", "no auth middleware"], "api", stereo="component")
 s.box(640, 50, 200, 90, "Run queue", ["src/lib/research/run-queue.ts", "enqueue / claim / lease"], "lib", stereo="component")
-s.box(880, 170, 200, 110, "Research worker", ["src/workers/research-worker.ts", "poll 5s · heartbeat 10s", "lease 5 min · run advisory lock"], "worker", stereo="process")
+s.box(880, 170, 200, 110, "Research worker", ["src/workers/research-worker.ts", "poll 5s · heartbeat 10s", "lease 5 min, renewed 10s · run lock"], "worker", stereo="process")
 s.box(310, 200, 260, 110, "Workflow orchestrator", ["src/lib/workflow/orchestrator.ts", "advanceStage · gates · resume", "stages.ts · team-plan.ts (DAG)"], "lib", stereo="component")
 s.box(610, 200, 230, 110, "Pipeline runner + team", ["pipeline-runner.ts (parallel)", "handlers/** (STAGE_HANDLERS)", "team.ts · source/research requests"], "lib", stereo="component")
 s.box(30, 370, 230, 100, "Agent harness", ["src/lib/agent-harness/**", "runner · providers · registry", "cache.ts (prompt caching)"], "lib", stereo="component")
@@ -138,7 +138,7 @@ s.initial(cx, 55)
 steps = [
     (75, "POST /api/assets/:id/research-runs", "run pending (v3) + 24 stages; run-type skips set at creation"),
     (140, "POST …/run-system-pipeline (or approve-plan / review)", "enqueueResearchRun (resumes failed runs) → job queued"),
-    (205, "Worker: requeueExpired → claim (SKIP LOCKED)", "lease 5 min, renewed ~100 s"),
+    (205, "Worker: requeueExpired, reconcile → claim (SKIP LOCKED)", "lease 5 min, renewed every 10 s; lost lease or SIGTERM aborts"),
     (270, "runResearchPipeline: pg_try_advisory_lock(run)", "fail stale running tasks · startRun if pending"),
 ]
 for y, a, b in steps:
@@ -181,9 +181,9 @@ s.text(cx - 20, 666, "retryCount < stage max_retries (0–3)?", 11, fill="#5a470
 s.line([(cx + 14, 674), (445, 674), (445, 567), (cx + 100, 567)], "yes → retry", lx=450, ly=690, lanchor="start")
 s.line([(cx, 688), (cx, 710)], "no", lx=345, ly=702, lanchor="start")
 s.box(cx - 220, 710, 440, 60, "Apply stage failureState", ["fail_run → run failed, pending stages cancelled", "pause_for_human → waiting · skip_and_continue → stage failed, continue"], "warn", title_size=12)
-s.box(860, 640, 220, 90, "Exception anywhere", ["tasks/stages failed,", "run needs_more_work;", "lock released"], "warn", title_size=12)
-s.line([(900, 640), (900, 600), (840, 600), (840, 574)], None, dashed=True)
-s.text(16, 790, "Source: pipeline-runner.ts:20-93, orchestrator.ts:188-994, team-plan.ts:41-75, team.ts, sources/collector.ts, run-queue.ts, stages.ts.", 11, fill="#555")
+s.box(860, 620, 220, 100, "Exception anywhere", ["transient model error: stage", "rerun ≤ max_retries; else", "attempt's tasks invalid, run", "needs_more_work; abort: job requeued"], "warn", title_size=12)
+s.line([(900, 620), (900, 600), (840, 600), (840, 574)], None, dashed=True)
+s.text(16, 790, "Source: pipeline-runner.ts:runResearchPipeline, orchestrator.ts:188-1040, team-plan.ts:41-75, team.ts, sources/collector.ts, run-queue.ts, stages.ts.", 11, fill="#555")
 s.save(P("activity-research-run.svg"))
 
 # ---------------------------------------------------------------- activity: valuation
@@ -254,11 +254,13 @@ s.state(640, 80, 130, 34, "completed", "api")
 s.state(640, 145, 130, 34, "failed", "warn")
 s.line([(62, 125), (100, 125)], None)
 s.line([(220, 118), (360, 118)], "claim [lease null/expired]\nattempt_count++", lx=290, ly=96)
-s.line([(360, 136), (220, 136)], "lease expired [attempts < 3]", lx=290, ly=158)
+s.line([(360, 136), (220, 136)], "lease expired [attempts < 3] /\nreleased: shutdown, run locked", lx=290, ly=158)
 s.line([(480, 118), (640, 97)], "pipeline returned\n[owner = me]", lx=560, ly=82)
-s.line([(480, 130), (640, 162)], "error [owner] /\nexpired [attempts ≥ 3]", lx=540, ly=170)
+s.line([(480, 130), (640, 162)], "error [owner] / cancelRun /\nexpired [attempts ≥ 3]", lx=540, ly=170)
 s.text(800, 100, "Note: 'completed' also when the run ends", 11, fill="#555")
 s.text(800, 115, "waiting_for_human or needs_more_work.", 11, fill="#555")
+s.text(800, 140, "Reconcile: a running run with no job", 11, fill="#555")
+s.text(800, 155, "activity for 60 s gets a new queued job.", 11, fill="#555")
 # Run
 s.zone(20, 220, 1060, 235, "research_runs", "#4a8a3f")
 s.initial(55, 317)
@@ -278,7 +280,8 @@ s.line([(540, 410), (355, 410), (355, 334)], "resumeResearchRun on enqueue", lx=
 s.line([(410, 314), (820, 314), (820, 279), (860, 279)], "completeRun", lx=740, ly=308)
 s.line([(410, 324), (840, 324), (840, 347), (860, 347)], "failRun", lx=760, ly=338)
 s.text(40, 445, "failed → running: resumeResearchRun on enqueue", 11, fill="#555")
-s.text(560, 448, "cancelled: checked by enqueue; no writer for runs (#15)", 11, fill="#a33", italic=True)
+s.line([(710, 410), (860, 412)], "cancelRun", lx=785, ly=404)
+s.text(560, 448, "cancelRun from any state but completed; enqueue refuses cancelled", 11, fill="#555")
 # Stage
 s.zone(20, 470, 1060, 255, "research_stages", "#6f4fa3")
 s.initial(55, 560)
@@ -299,10 +302,11 @@ s.line([(400, 552), (560, 517)], "valid", lx=480, ly=525)
 s.line([(460, 662), (720, 662), (720, 517), (680, 517)], "approve", lx=590, ly=656)
 s.line([(400, 568), (560, 597)], "retries exhausted", lx=480, ly=598)
 s.raw('<path d="M370,543 C370,505 330,505 330,543" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>')
-s.text(350, 498, "retry [retryCount < max_retries]", 11, anchor="middle")
+s.text(350, 498, "retry [validation or transient model error < max_retries]", 11, anchor="middle")
 s.line([(680, 597), (800, 597)], "failRun: pending →", lx=740, ly=590)
 s.line([(620, 614), (620, 628), (345, 628), (345, 577)], "resume", lx=480, ly=622, dashed=True)
-s.text(760, 640, "resume: failed → running; later stages → pending", 11, fill="#555")
+s.text(760, 625, "cancelRun: open stages → cancelled", 11, fill="#555")
+s.text(760, 640, "resume: failed (or left running) → running; later → pending", 11, fill="#555")
 s.text(760, 655, "skip_and_continue: failed, run continues", 11, fill="#555")
 s.text(760, 670, "max_retries per stage: 0–3 (stages.ts)", 11, fill="#555")
 s.text(760, 685, "owner requires_rerun: stage + dependents → pending", 11, fill="#555")
@@ -311,14 +315,14 @@ s.text(760, 715, "ai_reviewer waiting_for_human until the decision", 11, fill="#
 s.save(P("state-machines.svg"))
 
 # ---------------------------------------------------------------- sequence
-s = Svg(1120, 1170, "Research run — UML sequence view",
+s = Svg(1120, 1350, "Research run — UML sequence view",
         "Ordered messages from run creation through enqueue, worker claim, advisory lock, parallel stage execution with model calls, report requests "
-        "answered without stage resets and the re-run approval, plan gate pause, approval and re-enqueue, plus the lease-expiry retry path.")
+        "answered without stage resets and the re-run approval, plan gate pause, approval and re-enqueue, the lease-expiry retry path, and cancel or shutdown.")
 parts = ["Analyst UI", "API route", "Postgres", "Worker", "Pipeline runner", "Stage handler", "Agent harness", "LLM provider"]
 xs = [70 + i * 140 for i in range(len(parts))]
 for x, p in zip(xs, parts):
     s.box(x - 60, 45, 120, 34, p, [], "ext" if p == "LLM provider" else ("store" if p == "Postgres" else "plain"), title_size=12)
-    s.raw(f'<line x1="{x}" y1="79" x2="{x}" y2="1140" stroke="#999" stroke-dasharray="4 4"/>')
+    s.raw(f'<line x1="{x}" y1="79" x2="{x}" y2="1320" stroke="#999" stroke-dasharray="4 4"/>')
 y = [100]
 def msg(a, b, label, ret=False):
     yy = y[0]
@@ -376,8 +380,15 @@ frame("alt [stage 4 research_plan gate]", "#b23b3b", xs[0] - 60, xs[4] + 70, gat
 def crash_body():
     msg(3, 2, "lease expires → requeue if attempts < 3, else failed")
 frame("alt [worker crash]", "#b07a1f", xs[2] - 70, xs[4] + 70, crash_body)
-assert y[0] < 1140, y[0]
-s.text(16, 1160, "Same pattern repeats at stage 22 human_review (POST …/review writes review_decisions; approve → enqueue). Final checks call completeRun or set needs_more_work.", 11, fill="#555")
+def stop_body():
+    msg(0, 1, "POST …/cancel")
+    msg(1, 2, "cancelRun: run, stages, job closed [txn]")
+    msg(3, 2, "renew lease → none (or SIGTERM)")
+    msg(3, 6, "abort signal → in-flight model call cancelled")
+    msg(3, 2, "release job → queued, no attempt used [owner]")
+frame("alt [cancel or worker shutdown]", "#b23b3b", xs[0] - 60, xs[6] + 65, stop_body)
+assert y[0] < 1320, y[0]
+s.text(16, 1340, "Same pattern repeats at stage 22 human_review (POST …/review writes review_decisions; approve → enqueue). Final checks call completeRun or set needs_more_work.", 11, fill="#555")
 s.save(P("sequence-research-run.svg"))
 
 # ---------------------------------------------------------------- trust boundaries
