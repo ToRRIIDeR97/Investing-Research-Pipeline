@@ -59,7 +59,8 @@ export interface MarketDataset {
   asset: PriceBar[];
   benchmarks: Record<string, PriceBar[]>;
   primaryBenchmark: string;
-  sectorBenchmark: string;
+  /** null when the asset's sector has no benchmark: the sector-derived indicators are then not usable. */
+  sectorBenchmark: string | null;
   broadBenchmark: string;
   source: "yahoo" | "synthetic_fixture";
 }
@@ -131,6 +132,12 @@ export interface FrameworkBacktestResult {
   }>;
 }
 
+/** Indicators computed from the sector benchmark series. */
+export const SECTOR_INDICATOR_KEYS = ["sector_relative_strength", "commodity_or_input_trend"];
+
+/** Below this many aligned trading days the backtest is withheld rather than run. */
+export class InsufficientBacktestHistory extends Error {}
+
 export const INDICATOR_CATALOG: IndicatorDefinition[] = [
   indicator("asset_return_63d", "63-day asset return", "Momentum confirmation indicators", "Positive medium-term sponsorship should confirm the research thesis.", "adjusted close / adjusted close 63 sessions ago - 1"),
   indicator("asset_return_126d", "126-day asset return", "Momentum confirmation indicators", "A durable thesis should survive a longer confirmation window.", "adjusted close / adjusted close 126 sessions ago - 1"),
@@ -149,6 +156,16 @@ export const INDICATOR_CATALOG: IndicatorDefinition[] = [
   cautiousIndicator("commodity_or_input_trend", "Input-cost regime proxy", "Commodity sensitivity indicators", "Sector and broad-market dispersion can proxy for input/regime pressure.", "sector 63-session return minus primary benchmark return", "Replace with an asset-specific commodity or input-price series where relevant."),
   cautiousIndicator("asset_specific_external_signal", "Asset-specific external proxy", "Asset-specific external source indicators", "Volume-confirmed relative strength can proxy for external sponsorship.", "signed 63-session volume balance plus relative strength", "Replace with a real asset-specific point-in-time external dataset."),
 ];
+
+/** The catalog for one asset: without a sector benchmark the sector-derived indicators are marked not usable. */
+export function indicatorCatalog(sectorBenchmark: string | null): IndicatorDefinition[] {
+  if (sectorBenchmark) return INDICATOR_CATALOG;
+  return INDICATOR_CATALOG.map((item) => SECTOR_INDICATOR_KEYS.includes(item.key) ? {
+    ...item,
+    backtestability: "not_usable" as const,
+    failureCondition: "The asset's sector has no benchmark ETF, so no sector series exists; the indicator is null and no rule using it passes.",
+  } : item);
+}
 
 function indicator(
   key: string,
@@ -288,12 +305,13 @@ export function runFrameworkBacktest(
   validateStrategyCombinations(combinations);
   const normalized = normalizeDataset(dataset);
   if (normalized.dates.length < 260) {
-    throw new Error(`Backtest requires at least 260 aligned observations; received ${normalized.dates.length}.`);
+    throw new InsufficientBacktestHistory(`Backtest requires at least 260 aligned observations; received ${normalized.dates.length}.`);
   }
   const indicators = buildIndicators(normalized);
   const splitIndex = Math.max(1, Math.min(normalized.dates.length - 1, Math.floor(normalized.dates.length * DEFAULT_SPLIT_RATIO)));
   const assetReturns = returns(normalized.asset);
   const buyHold = performanceSummary(assetReturns, assetReturns.map(() => 1), normalized.dates);
+  const buyHoldInSample = performanceSummary(assetReturns.slice(0, splitIndex), assetReturns.slice(0, splitIndex).map(() => 1), normalized.dates.slice(0, splitIndex));
   const benchmarkMetrics: Record<string, PerformanceMetrics> = {
     [`${dataset.symbol}_buy_hold`]: buyHold,
     cash: performanceSummary(assetReturns.map(() => 0), assetReturns.map(() => 0), normalized.dates),
@@ -318,18 +336,20 @@ export function runFrameworkBacktest(
     const benchmarkOos = performanceSummary(assetReturns.slice(splitIndex), assetReturns.slice(splitIndex).map(() => 1), normalized.dates.slice(splitIndex));
     const benchmarkRelative = full.total_return - buyHold.total_return;
     const oosExcess = outOfSample.total_return - benchmarkOos.total_return;
+    // The score, and so the ranking, uses the in-sample period only; the out-of-sample period stays held
+    // out and is checked after selection in the status rules below.
+    const inSampleRelative = inSample.total_return - buyHoldInSample.total_return;
     let penalty = 0;
-    if (full.max_drawdown < -0.4) penalty += 0.15;
-    if (full.number_of_trades < 2 || full.number_of_trades > 120) penalty += 0.1;
-    if (full.turnover > 150) penalty += 0.1;
-    if (full.exposure_time < 0.05) penalty += 0.1;
-    const consistencyScore = full.worst_year > -0.25 ? 1 : 0.5;
+    if (inSample.max_drawdown < -0.4) penalty += 0.15;
+    if (inSample.number_of_trades < 2 || inSample.number_of_trades > 120) penalty += 0.1;
+    if (inSample.turnover > 150) penalty += 0.1;
+    if (inSample.exposure_time < 0.05) penalty += 0.1;
+    const consistencyScore = inSample.worst_year > -0.25 ? 1 : 0.5;
     const finalScore =
-      0.25 * full.cagr +
-      0.2 * (1 + full.max_drawdown) +
-      0.15 * Math.min(3, Math.max(-3, full.sharpe, full.sortino)) +
-      0.15 * benchmarkRelative +
-      0.1 * outOfSample.total_return +
+      0.25 * inSample.cagr +
+      0.2 * (1 + inSample.max_drawdown) +
+      0.15 * Math.min(3, Math.max(-3, inSample.sharpe, inSample.sortino)) +
+      0.15 * inSampleRelative +
       0.1 * consistencyScore +
       0.05 -
       penalty;
@@ -360,7 +380,7 @@ export function runFrameworkBacktest(
         },
         split_date: normalized.dates[splitIndex],
         transaction_cost_bps: transactionCostBps,
-        selection_rule: "Catalog fixed before execution; ranking uses full metrics while out-of-sample performance is shown separately.",
+        selection_rule: "Catalog fixed before execution; ranking uses in-sample metrics only, so out-of-sample results are held out and checked after selection.",
       },
       equity,
       drawdown,
@@ -434,7 +454,7 @@ type NormalizedDataset = {
   volume: number[];
   benchmarks: Record<string, number[]>;
   primaryBenchmark: string;
-  sectorBenchmark: string;
+  sectorBenchmark: string | null;
   broadBenchmark: string;
 };
 
@@ -470,10 +490,11 @@ function buildIndicators(dataset: NormalizedDataset): Record<string, Array<numbe
   const vol126 = rollingVolatility(dataset.asset, 126);
   const volPercentile = rollingPercentile(vol63, 252);
   const primary = dataset.benchmarks[dataset.primaryBenchmark] || dataset.benchmarks[dataset.broadBenchmark];
-  const sector = dataset.benchmarks[dataset.sectorBenchmark] || primary;
+  const sector = dataset.sectorBenchmark ? dataset.benchmarks[dataset.sectorBenchmark] : undefined;
   const broad = dataset.benchmarks[dataset.broadBenchmark] || primary;
   const primary63 = rollingReturn(primary, 63);
-  const sector63 = rollingReturn(sector, 63);
+  const sector63 = sector ? rollingReturn(sector, 63) : null;
+  const notUsable = dataset.asset.map((): number | null => null);
   const broad63 = rollingReturn(broad, 63);
   const broadMa = movingAverage(broad, 200);
   const assetMa = movingAverage(dataset.asset, 200);
@@ -489,19 +510,20 @@ function buildIndicators(dataset: NormalizedDataset): Record<string, Array<numbe
     volatility_percentile_252d: volPercentile,
     volatility_compression: map2(vol21, vol126, (short, long) => long === 0 ? 0 : 1 - short / long),
     relative_strength_vs_primary_benchmark: map2(asset63, primary63, (asset, benchmark) => asset - benchmark),
-    sector_relative_strength: map2(sector63, broad63, (sectorReturn, broadReturn) => sectorReturn - broadReturn),
+    sector_relative_strength: sector63 ? map2(sector63, broad63, (sectorReturn, broadReturn) => sectorReturn - broadReturn) : notUsable,
     benchmark_trend_200d: broad.map((value, i) => broadMa[i] == null ? null : value / broadMa[i]! - 1),
     market_liquidity_regime: map2(primary63, broad63, (primaryReturn, broadReturn) => (primaryReturn + broadReturn) / 2),
     macro_industry_signal: map3(
       broad.map((value, i) => broadMa[i] == null ? null : value / broadMa[i]! - 1),
       primary63,
-      map2(sector63, broad63, (sectorReturn, broadReturn) => sectorReturn - broadReturn),
+      // Without a sector series this falls back to growth-market leadership, as before.
+      map2(sector63 ?? primary63, broad63, (sectorReturn, broadReturn) => sectorReturn - broadReturn),
       (trend, primaryReturn, sectorRelative) => (trend + primaryReturn + sectorRelative) / 3
     ),
     valuation_percentile: rollingPercentile(valuationRaw, 252),
     balance_sheet_or_profitability_quality: map2(asset126, vol63, (momentum, volatility) => momentum - volatility),
     fundamental_growth_trend: map2(asset63, asset126, (short, medium) => 0.4 * short + 0.6 * medium),
-    commodity_or_input_trend: map2(sector63, primary63, (sectorReturn, primaryReturn) => sectorReturn - primaryReturn),
+    commodity_or_input_trend: sector63 ? map2(sector63, primary63, (sectorReturn, primaryReturn) => sectorReturn - primaryReturn) : notUsable,
     asset_specific_external_signal: map2(volumeBalance, map2(asset63, primary63, (asset, benchmark) => asset - benchmark), (volume, relative) => 0.5 * volume + 0.5 * relative),
   };
   return indicators;

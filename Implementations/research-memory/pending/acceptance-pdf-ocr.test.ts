@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import { once } from "node:events";
 import { storeDiscoveredSources } from "../../../src/lib/research/sources/corpus";
-import { cleanup, corpusCtx, createRun, hasPdftotext, loadEnv, loadMemory, payload, pdfWithPages, skipDb } from "./fixtures";
+import { cleanup, corpusCtx, createRun, hasPdftotext, loadEnv, loadMemory, payload, pdfWithPages, skipDb } from "../acceptance/fixtures";
 
 loadEnv();
 const skipPdf = !hasPdftotext();

@@ -11,7 +11,7 @@ import { InvestmentThesis, RiskRegister, CatalystRegister, ExpectedReturnMatrix,
 import { validateGenesisArtifact, validateFounderProfile, validateStrategicHistoryTimeline, validateStrategicDNA } from "./genesis/validation";
 import { validateSegmentModel, validateCustomerDecisionMap, validateBusinessProcessMap, validateBottleneckRegister, validateCompetitiveResponseMatrix } from "./business/validation";
 import { validateMoatAssessment, validateMoatAttackMatrix, validateNoMoatCounterfactual } from "./moat/validation";
-import { validateDriverTree, validateOperatingModel, validateOperatingScenarioSet } from "./forecast/validation";
+import { validateDriverTree, validateOperatingModel, validateOperatingScenarioSet, validateTopDownBottomUpReconciliation } from "./forecast/validation";
 import { validateInvestmentThesis, validateRiskRegister, validateCatalystRegister, validateThesisBreakers, validateMonitoringDashboard, validateExpectedReturnMatrix } from "./decision/validation";
 import { validateValuationScenarioSet, validateReverseValuation } from "./valuation/validation";
 
@@ -27,6 +27,7 @@ const contentValidators: Record<string, (value: unknown) => ContentValidation> =
   moat_assessment: validateMoatAssessment, moat_attack_matrix: validateMoatAttackMatrix,
   no_moat_counterfactual: validateNoMoatCounterfactual,
   driver_tree: validateDriverTree, operating_model: validateOperatingModel,
+  top_down_bottom_up_reconciliation: validateTopDownBottomUpReconciliation,
   operating_scenario_set: validateOperatingScenarioSet,
   valuation_scenario_set: validateValuationScenarioSet, reverse_valuation: validateReverseValuation,
   investment_thesis: validateInvestmentThesis, risk_register: validateRiskRegister,

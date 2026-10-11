@@ -68,7 +68,7 @@ async function checkBudget(
           OR (${check.scopeType === "stage" ? sql`stage_id = ${check.scopeId}` : sql`false`})
           OR (${check.scopeType === "task" ? sql`task_id = ${check.scopeId}` : sql`false`})
         UNION ALL
-        SELECT COALESCE((input_json->'budget_reservation'->>'usd')::numeric, 0) FROM research_tasks
+        SELECT COALESCE(budget_reservation_usd, 0) FROM research_tasks
         WHERE status = 'running' AND id IS DISTINCT FROM ${input.taskId || null}::uuid AND (
           (${check.scopeType === "research_run" ? sql`research_run_id = ${check.scopeId}` : sql`false`})
           OR (${check.scopeType === "stage" ? sql`stage_id = ${check.scopeId}` : sql`false`})
@@ -89,7 +89,7 @@ async function checkBudget(
   if (input.researchRunId) {
     const runs = await sql`
       SELECT budget_limit_usd, actual_cost_usd,
-        (SELECT COALESCE(SUM((input_json->'budget_reservation'->>'usd')::numeric), 0)
+        (SELECT COALESCE(SUM(budget_reservation_usd), 0)
          FROM research_tasks WHERE research_run_id = ${input.researchRunId} AND status = 'running'
            AND id IS DISTINCT FROM ${input.taskId || null}::uuid) AS reserved
       FROM research_runs WHERE id = ${input.researchRunId}
@@ -109,6 +109,9 @@ async function checkBudget(
   return { exceeded: false };
 }
 
+/** The run or another budget scope has no room for the next model attempt. */
+export class ModelBudgetExhausted extends Error {}
+
 export async function assertModelBudgetAvailable(input: BudgetReservationInput): Promise<void> {
   const sql = postgres(process.env.DATABASE_URL!);
   try {
@@ -118,14 +121,19 @@ export async function assertModelBudgetAvailable(input: BudgetReservationInput):
       const result = await checkBudget(tx as unknown as ReturnType<typeof postgres>, {
         modelProvider: "budget-preflight", modelName: "pending", status: "preflight", ...input, costUsd: input.reserveUsd,
       });
-      if (result.exceeded) throw new Error(result.reason || "Model budget exhausted");
-      if (input.taskId) await tx`UPDATE research_tasks SET input_json = COALESCE(input_json, '{}'::jsonb) ||
-        ${tx.json({ budget_reservation: { usd: input.reserveUsd, model_tier: input.modelTier } })}
-        WHERE id = ${input.taskId}`;
+      if (result.exceeded) throw new ModelBudgetExhausted(result.reason || "Model budget exhausted");
+      // A narrow column, so reserving never rewrites the task's (often MB-sized) input_json.
+      if (input.taskId) await tx`UPDATE research_tasks SET budget_reservation_usd = ${input.reserveUsd} WHERE id = ${input.taskId}`;
     });
   } finally {
     await sql.end();
   }
+}
+
+/** PostgreSQL rejects NUL in text and jsonb; provider error bodies and excerpts can carry it. */
+function withoutNul<T>(value: T): T {
+  // Drops each escaped NUL, but not an escaped backslash followed by the text "u0000".
+  return JSON.parse(JSON.stringify(value ?? {}).replace(/(?<!\\)((?:\\\\)*)\\u0000/g, "$1"));
 }
 
 export async function recordModelCall(input: RecordModelCallInput): Promise<string> {
@@ -137,15 +145,16 @@ export async function recordModelCall(input: RecordModelCallInput): Promise<stri
 
   try {
     const cost = input.costUsd ?? 0;
+    const errorMessage = input.errorMessage?.replace(/\u0000/g, "");
     const requestMetadata = {
       ...(input.requestMetadata || {}),
       ...(input.escalationReason ? { escalation_reason: input.escalationReason } : {}),
     };
 
-    const callId = await sql.begin(async (tx) => {
+    const write = (requestJson: Record<string, unknown>, responseJson: Record<string, unknown>, message?: string) => sql.begin(async (tx) => {
       // Actual spend must be recorded even if the provider exceeded the estimate.
       if (input.researchRunId) await tx`SELECT id FROM research_runs WHERE id = ${input.researchRunId} FOR UPDATE`;
-      if (input.taskId) await tx`UPDATE research_tasks SET input_json = input_json - 'budget_reservation' WHERE id = ${input.taskId}`;
+      if (input.taskId) await tx`UPDATE research_tasks SET budget_reservation_usd = NULL WHERE id = ${input.taskId}`;
       const rows = await tx`
         INSERT INTO model_call_logs (
           research_run_id, stage_id, task_id, agent_name,
@@ -166,9 +175,9 @@ export async function recordModelCall(input: RecordModelCallInput): Promise<stri
           ${cost.toString()},
           ${input.latencyMs || null},
           ${input.status},
-          ${input.errorMessage || null},
-          ${sql.json(requestMetadata)},
-          ${sql.json((input.responseMetadata || {}) as any)}
+          ${message || null},
+          ${sql.json(requestJson as any)},
+          ${sql.json(responseJson as any)}
         )
         RETURNING id
       `;
@@ -204,10 +213,16 @@ export async function recordModelCall(input: RecordModelCallInput): Promise<stri
         `;
       }
 
-      return rows[0].id;
+      return rows[0].id as string;
     });
 
-    return callId;
+    try {
+      return await write(withoutNul(requestMetadata), withoutNul(input.responseMetadata || {}), errorMessage);
+    } catch (error) {
+      // The spend must reach the ledger even when the call's metadata cannot be stored.
+      const reason = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+      return await write({ metadata_dropped: true }, { metadata_dropped: reason }, errorMessage?.slice(0, 2_000));
+    }
   } finally {
     await sql.end();
   }

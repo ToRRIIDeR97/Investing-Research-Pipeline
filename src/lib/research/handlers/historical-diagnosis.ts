@@ -34,7 +34,8 @@ export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> =
           AND mo.value_numeric IS NOT NULL
           AND mo.period_end <= ${(ctx.marketDataCutoffAt || ctx.cutoffAt).toISOString().slice(0, 10)}
           AND (mo.available_at IS NULL OR mo.available_at <= ${(ctx.marketDataCutoffAt || ctx.cutoffAt).toISOString()})
-          AND (mo.period_start IS NULL OR mo.period_start >= date_trunc('quarter', mo.period_end::timestamp)::date)
+          -- Quarters by duration: fiscal quarters (52/53-week, June or September years) need not align with calendar quarters.
+          AND (mo.period_start IS NULL OR mo.period_end - mo.period_start BETWEEN 80 AND 100)
         ORDER BY md.metric_key, COALESCE(mo.period_end, mo.as_of_date)
       `;
       const observations = observationRows.map((row) => {

@@ -17,10 +17,19 @@ export { ResearchAgentRunError };
 
 const DEFAULT_OUTPUT_TOKENS = 32_768;
 
-/** Largest output limit an attempt may escalate to after a pass spent its whole limit on reasoning. */
+/** Largest output limit an attempt may escalate to after a pass spent its whole limit or was cut off. */
 function outputTokenCeiling() {
   return numberEnv("RESEARCH_MAX_OUTPUT_TOKENS_CEILING", 131_072);
 }
+
+/** Documented max_tokens caps; a larger request is rejected with a 400. Unknown models are not clamped. */
+export function modelOutputCap(model: string): number | undefined {
+  if (/^claude-haiku-4-5/i.test(model)) return 64_000;
+  if (/^claude-/i.test(model)) return 128_000;
+  return undefined;
+}
+
+const MAX_RETRY_DELAY_MS = 60_000;
 
 const DEFAULT_POLICY: ExecutionPolicy = {
   totalTimeoutMs: 240_000,
@@ -59,6 +68,7 @@ function executionPolicy(input: AgentRequest): ExecutionPolicy {
     maxRepairAttempts: numberEnv("RESEARCH_MAX_REPAIR_ATTEMPTS", DEFAULT_POLICY.maxRepairAttempts, 0),
     maxAttempts: numberEnv("RESEARCH_MAX_MODEL_ATTEMPTS", DEFAULT_POLICY.maxAttempts),
     retryBaseDelayMs: numberEnv("RESEARCH_RETRY_BASE_DELAY_MS", DEFAULT_POLICY.retryBaseDelayMs),
+    overloadRetryDelayMs: numberEnv("RESEARCH_OVERLOAD_RETRY_DELAY_MS", 5_000),
     ...input.policy,
   };
 }
@@ -100,10 +110,11 @@ function requiredKeys(outputFormat: Record<string, unknown> | { requiredKeys?: s
   return Array.isArray(schema?.required) ? schema.required.filter((key): key is string => typeof key === "string") : [];
 }
 
-function modelCandidates(agentName: ResearchAgentName, maxAttempts: number) {
+function modelCandidates(agentName: ResearchAgentName, maxAttempts: number, providerId: string) {
   const primary = resolveAgentModel(agentName);
   const fallbackKey = `RESEARCH_${agentName.toUpperCase().replace(/-/g, "_")}_FALLBACK_MODEL`;
-  const builtIns: Partial<Record<ResearchAgentName, string>> = {
+  // Built-in fallbacks are OpenCode Go model IDs; the Anthropic API answers them with a 404.
+  const builtIns: Partial<Record<ResearchAgentName, string>> = providerId === "direct-anthropic-compatible" ? {} : {
     "source-reader": "deepseek-v4-pro", "asset-analyst": "qwen3.7-plus", "valuation-analyst": "deepseek-v4-pro",
   };
   const fallback = process.env.RESEARCH_ALL_AGENTS_MODEL ? undefined : process.env[fallbackKey] || builtIns[agentName];
@@ -152,11 +163,29 @@ function category(error: unknown): HarnessErrorCategory {
 
 function retryable(value: HarnessErrorCategory) {
   return value === "rate_limit" || value === "provider_timeout" || value === "connection" || value === "malformed_stream"
-    || value === "output_exhausted";
+    || value === "output_exhausted" || value === "server_error";
 }
 
-function redact(value: string) {
-  const secrets = [process.env.RESEARCH_MODEL_API_KEY, process.env.ANTHROPIC_API_KEY, process.env.DATABASE_URL].filter(Boolean) as string[];
+/** The pass stopped because it reached its output limit rather than finishing its answer. */
+function atOutputLimit(finishReason: string | undefined, outputTokens: number, limit: number | undefined) {
+  return /^(length|max_tokens)$/.test(finishReason || "") || (limit !== undefined && outputTokens >= limit);
+}
+
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve) => {
+    if (signal?.aborted) return resolve();
+    const done = () => { clearTimeout(timer); signal?.removeEventListener("abort", done); resolve(); };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+  });
+}
+
+const SECRET_ENV = ["RESEARCH_MODEL_API_KEY", "ANTHROPIC_API_KEY", "OPENCODE_GO_API_KEY", "RESEARCH_WEB_SEARCH_API_KEY",
+  "RESEARCH_EMBEDDING_API_KEY", "DATABASE_URL"];
+
+/** Removes every configured secret, and bearer tokens, from text bound for logs and traces. */
+export function redact(value: string) {
+  const secrets = SECRET_ENV.map((name) => process.env[name]).filter(Boolean) as string[];
   return secrets.reduce((message, secret) => secret.length > 5 ? message.split(secret).join("[REDACTED]") : message, value)
     .replace(/(bearer\s+)[^\s"']+/gi, "$1[REDACTED]");
 }
@@ -175,6 +204,7 @@ interface PassResult {
   usage: PassUsage;
   requestId?: string;
   cache?: PassCacheTelemetry;
+  finishReason?: string;
 }
 
 /** Cache counts stay absent, not zero, when the provider did not report them. */
@@ -207,6 +237,7 @@ async function executePass(params: {
   deadline: ReturnType<typeof createDeadlineController>; maxOutputTokens?: number; cacheAffinityId: string; outputSchema?: Record<string, unknown>;
 }, structured: StructuredOutputTelemetry): Promise<PassResult> {
   let rawText = "";
+  let rawBytes = 0;
   let inputTokens = 0;
   let outputTokens = 0;
   let reasoningTokens = 0;
@@ -223,7 +254,7 @@ async function executePass(params: {
     const input = started ? inputTokens || Math.ceil(((params.system?.length || 0) + params.prompt.length) / 4) : 0;
     const output = started ? outputTokens || Math.ceil(rawText.length / 4) : 0;
     const cache = cacheTokens({ cacheReadTokens, cacheWriteTokens });
-    return { rawText, requestId, usage: {
+    return { rawText, requestId, finishReason, usage: {
       inputTokens: input, outputTokens: output, reasoningTokens, ...cache,
       costUsd: costUsd ?? calculateCost(params.model, input, output, cache),
     }, ...(wire ? { cache: passCacheTelemetry(wire, cacheReadTokens) } : {}) };
@@ -274,12 +305,16 @@ async function executePass(params: {
           }
           break;
         case "response.started": providerStarted = true; requestId = event.requestId || requestId; break;
-        case "text.delta":
-          rawText += event.text.replace(/\u0000/g, "");
-          if (Buffer.byteLength(rawText, "utf8") > params.policy.maxResponseBytes) {
+        case "text.delta": {
+          const text = event.text.replace(/\u0000/g, "");
+          rawText += text;
+          // Count each delta once; measuring the whole response on every delta copies it each time.
+          rawBytes += Buffer.byteLength(text, "utf8");
+          if (rawBytes > params.policy.maxResponseBytes) {
             throw new ProviderError("Model response exceeded maximum size", "response_limit");
           }
           break;
+        }
         case "usage":
           inputTokens = event.usage.inputTokens ?? inputTokens;
           outputTokens = event.usage.outputTokens ?? outputTokens;
@@ -296,8 +331,7 @@ async function executePass(params: {
     if (!completed) throw new ProviderError("Provider did not emit completion", "malformed_stream");
     const outputLimit = params.maxOutputTokens ?? params.policy.maxOutputTokens;
     if (!rawText.trim()) {
-      const atLimit = /^(length|max_tokens)$/.test(finishReason || "") || (outputLimit !== undefined && outputTokens >= outputLimit);
-      if (atLimit) {
+      if (atOutputLimit(finishReason, outputTokens, outputLimit)) {
         throw new ProviderError(`The model used its whole output limit (${outputLimit ?? outputTokens} tokens${reasoningTokens ? `, ${reasoningTokens} of them reasoning` : ""}) before writing an answer`,
           "output_exhausted", { outputLimit });
       }
@@ -410,7 +444,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
   const keys = requiredKeys(effectiveOutputFormat);
   // Sent unchanged on generation and repair; only anthropic-direct turns it into output_config.
   const outputSchema = isPlainObject(effectiveOutputFormat.schema) ? effectiveOutputFormat.schema : undefined;
-  const candidates = modelCandidates(input.agentName as ResearchAgentName, policy.maxAttempts);
+  const candidates = modelCandidates(input.agentName as ResearchAgentName, policy.maxAttempts, provider.id);
   const primaryModel = candidates[0];
   const originalPromptBytes = Buffer.byteLength(buildTaskPrompt(input, config), "utf8");
   const cacheScope = input.cacheScope || `agent:${input.agentName}`;
@@ -422,7 +456,8 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
     const fallback = model !== primaryModel;
     const modelAttempt = candidates.slice(0, index + 1).filter((candidate) => candidate === model).length;
     const compactedFallback = fallback ? compactFallback(input) : { request: input, compacted: false };
-    const attemptOutputLimit = outputLimit;
+    const cap = modelOutputCap(model);
+    const attemptOutputLimit = outputLimit !== undefined && cap !== undefined ? Math.min(outputLimit, cap) : outputLimit;
     const currentInput = compactedFallback.request;
     await input.hooks?.beforeAttempt?.({ attempt: attemptNumber, provider: provider.id, model });
     const started = Date.now();
@@ -435,6 +470,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
     let localCoercionApplied = false;
     let completionRecoveredAtTimeout = false;
     let generationWasMalformed = false;
+    let success: { record: AgentAttempt; parsed: unknown; rawText: string } | undefined;
 
     try {
       // Stable instructions travel as the system message; generation and repair share it and one affinity key.
@@ -442,7 +478,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
       const cacheAffinityId = deriveCacheAffinityId({
         scopeId: cacheScope, providerId: provider.id, modelId: model, stablePrefixHash: stablePrefixHash(messages.system),
       });
-      const passParams = { provider, model, system: messages.system, agentName: input.agentName, policy, deadline, cacheAffinityId, maxOutputTokens: outputLimit, outputSchema };
+      const passParams = { provider, model, system: messages.system, agentName: input.agentName, policy, deadline, cacheAffinityId, maxOutputTokens: attemptOutputLimit, outputSchema };
       // With per-call keys, the cache breakpoint ends where sibling calls stop sharing bytes; otherwise
       // it covers the whole task prompt, which a retry or repair resends.
       const sharedChars = sharedPromptChars(currentInput, config, messages.prompt);
@@ -501,6 +537,11 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         validationErrors = [{ path: "root", message: error instanceof Error ? error.message : String(error) }];
       }
       if (passes[0] && !passes[0].validationErrors) passes[0].validationErrors = [...validationErrors];
+      // A reply cut off at its output limit cannot be repaired within the same limit; regenerate with a larger one.
+      if (generationWasMalformed && atOutputLimit(pass.finishReason, pass.usage.outputTokens, attemptOutputLimit)) {
+        throw new ProviderError(`The response was cut off at the output limit (${attemptOutputLimit ?? pass.usage.outputTokens} tokens)`,
+          "output_exhausted", { outputLimit: attemptOutputLimit, partial: pass });
+      }
 
       if (validationErrors.length && policy.maxRepairAttempts > 0) {
         repairAttempted = true;
@@ -571,6 +612,10 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
           }
         } catch (error) {
           validationErrors = [{ path: "root", message: error instanceof Error ? error.message : String(error) }];
+          if (atOutputLimit(repair.finishReason, repair.usage.outputTokens, attemptOutputLimit)) {
+            throw new ProviderError(`The repair was cut off at the output limit (${attemptOutputLimit ?? repair.usage.outputTokens} tokens)`,
+              "output_exhausted", { outputLimit: attemptOutputLimit, partial: pass });
+          }
         }
         if (passes.at(-1)?.kind === "repair" && !passes.at(-1)!.validationErrors) {
           passes.at(-1)!.validationErrors = [...validationErrors];
@@ -596,10 +641,8 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         completionRecoveredAtTimeout,
       };
       attempts.push(record);
-      await input.hooks?.onAttemptComplete?.(record);
       deadline.cleanup();
-      const usage = aggregateUsage(attempts, { provider: provider.id, model, promptVersion: config.promptVersion });
-      return { structured: parsed as TStructured, rawText: pass.rawText, attempts, usage, config: config as unknown as Record<string, unknown> };
+      success = { record, parsed, rawText: pass.rawText };
     } catch (error) {
       if (error instanceof ProviderError && error.details.partial) {
         pass = error.details.partial as PassResult;
@@ -630,24 +673,30 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
       };
       attempts.push(record);
       await input.hooks?.onAttemptComplete?.(record);
-      // A pass that spent its whole limit on reasoning gets twice the limit next time, up to the ceiling.
-      if (errorCategory === "output_exhausted" && outputLimit !== undefined) {
-        outputLimit = Math.min(outputLimit * 2, Math.max(outputLimit, outputTokenCeiling()));
+      // A pass that spent its whole limit, or was cut off by it, gets twice the limit next time, up to the ceiling.
+      if (errorCategory === "output_exhausted" && attemptOutputLimit !== undefined) {
+        outputLimit = Math.min(attemptOutputLimit * 2, Math.max(attemptOutputLimit, outputTokenCeiling()));
       }
-      if (!retryable(errorCategory) || index === candidates.length - 1) {
-        const usage = aggregateUsage(attempts, { provider: provider.id, model, promptVersion: config.promptVersion });
-        throw new ResearchAgentRunError(
-          `Agent attempts exhausted: ${record.errorMessage}`, usage,
-          { attempts, error_type: errorCategory, raw_response_excerpt: record.rawResponseExcerpt }, attempts
-        );
-      }
+      const exhausted = (kind: HarnessErrorCategory, message: string) => new ResearchAgentRunError(
+        `Agent attempts exhausted: ${message}`, aggregateUsage(attempts, { provider: provider.id, model, promptVersion: config.promptVersion }),
+        { attempts, error_type: kind, raw_response_excerpt: record.rawResponseExcerpt }, attempts
+      );
+      if (!retryable(errorCategory) || index === candidates.length - 1) throw exhausted(errorCategory, record.errorMessage || "");
+      // Overload, 5xx and rate limits wait longer than a dropped connection; a retry-after is honoured as sent.
       const retryAfter = failure instanceof ProviderError ? Number(failure.details.retryAfter) : 0;
+      const overloaded = errorCategory === "server_error" || errorCategory === "rate_limit";
       const baseDelay = Number.isFinite(retryAfter) && retryAfter > 0
-        ? Math.min(retryAfter * 1000, 30_000)
-        : Math.min(policy.retryBaseDelayMs * 2 ** index, 30_000);
-      const delay = Math.min(30_000, Math.max(1, Math.round(baseDelay * (0.9 + Math.random() * 0.2))));
-      await new Promise((resolve) => setTimeout(resolve, delay));
+        ? retryAfter * 1000
+        : Math.max(policy.retryBaseDelayMs, overloaded ? policy.overloadRetryDelayMs ?? 0 : 0) * 2 ** index;
+      const delay = Math.min(MAX_RETRY_DELAY_MS, Math.max(1, Math.round(baseDelay * (0.9 + Math.random() * 0.2))));
+      await sleep(delay, input.signal);
+      if (input.signal?.aborted) throw exhausted("cancellation", "Request cancelled by caller");
+      continue;
     }
+    // A ledger hook failure must not turn a successful paid call into a failed attempt that is paid for again.
+    await input.hooks?.onAttemptComplete?.(success.record);
+    const usage = aggregateUsage(attempts, { provider: provider.id, model, promptVersion: config.promptVersion });
+    return { structured: success.parsed as TStructured, rawText: success.rawText, attempts, usage, config: config as unknown as Record<string, unknown> };
   }
   throw new Error("No model candidates configured");
 }

@@ -19,15 +19,18 @@
 <text x="290" y="96" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">claim [lease null/expired]</text>
 <text x="290" y="109" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">attempt_count++</text>
 <path d="M360,136 L220,136" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="290" y="158" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">lease expired [attempts &lt; 3]</text>
+<text x="290" y="158" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">lease expired [attempts &lt; 3] /</text>
+<text x="290" y="171" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">released: shutdown, run locked</text>
 <path d="M480,118 L640,97" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="560" y="82" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">pipeline returned</text>
 <text x="560" y="95" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">[owner = me]</text>
 <path d="M480,130 L640,162" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="540" y="170" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">error [owner] /</text>
+<text x="540" y="170" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">error [owner] / cancelRun /</text>
 <text x="540" y="183" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">expired [attempts ≥ 3]</text>
 <text x="800" y="100" font-size="11" font-weight="normal" text-anchor="start" fill="#555">Note: 'completed' also when the run ends</text>
 <text x="800" y="115" font-size="11" font-weight="normal" text-anchor="start" fill="#555">waiting_for_human or needs_more_work.</text>
+<text x="800" y="140" font-size="11" font-weight="normal" text-anchor="start" fill="#555">Reconcile: a running run with no job</text>
+<text x="800" y="155" font-size="11" font-weight="normal" text-anchor="start" fill="#555">activity for 60 s gets a new queued job.</text>
 <rect x="20" y="220" width="1060" height="235" rx="10" fill="none" stroke="#4a8a3f" stroke-width="1.6" stroke-dasharray="8 5"/>
 <text x="30" y="238" font-size="12" font-weight="bold" text-anchor="start" fill="#4a8a3f">research_runs</text>
 <circle cx="55" cy="317" r="7" fill="#222"/>
@@ -63,8 +66,10 @@
 <text x="740" y="308" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">completeRun</text>
 <path d="M410,324 L840,324 L840,347 L860,347" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="760" y="338" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">failRun</text>
-<text x="40" y="445" font-size="11" font-weight="normal" text-anchor="start" fill="#555">failed → running: resumeResearchRun on enqueue</text>
-<text x="560" y="448" font-size="11" font-weight="normal" text-anchor="start" fill="#a33" font-style="italic">cancelled: checked by enqueue; no writer for runs (#15)</text>
+<text x="40" y="445" font-size="11" font-weight="normal" text-anchor="start" fill="#555">failed → running (waiting_for_human at an open gate): resume on enqueue</text>
+<path d="M710,410 L860,412" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="785" y="404" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">cancelRun</text>
+<text x="560" y="448" font-size="11" font-weight="normal" text-anchor="start" fill="#555">cancelRun from any state but completed; enqueue refuses cancelled</text>
 <rect x="20" y="470" width="1060" height="255" rx="10" fill="none" stroke="#6f4fa3" stroke-width="1.6" stroke-dasharray="8 5"/>
 <text x="30" y="488" font-size="12" font-weight="bold" text-anchor="start" fill="#6f4fa3">research_stages</text>
 <circle cx="55" cy="560" r="7" fill="#222"/>
@@ -97,12 +102,15 @@
 <path d="M400,568 L560,597" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="480" y="598" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">retries exhausted</text>
 <path d="M370,543 C370,505 330,505 330,543" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="350" y="498" font-size="11" font-weight="normal" text-anchor="middle" fill="#222">retry [retryCount &lt; max_retries]</text>
+<text x="350" y="498" font-size="11" font-weight="normal" text-anchor="middle" fill="#222">retry [validation or transient model error &lt; max_retries]</text>
 <path d="M680,597 L800,597" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="740" y="590" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">failRun: pending →</text>
 <path d="M620,614 L620,628 L345,628 L345,577" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#a)"/>
 <text x="480" y="622" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">resume</text>
-<text x="760" y="640" font-size="11" font-weight="normal" text-anchor="start" fill="#555">resume: failed → running; later stages → pending</text>
+<text x="760" y="625" font-size="11" font-weight="normal" text-anchor="start" fill="#555">cancelRun: open stages → cancelled</text>
+<text x="760" y="640" font-size="11" font-weight="normal" text-anchor="start" fill="#555">resume: failed (or left running) → running; later → pending</text>
+<text x="290" y="700" font-size="11" font-weight="normal" text-anchor="start" fill="#555">resume: an open gate, or human_review, stays waiting_for_human</text>
+<text x="290" y="715" font-size="11" font-weight="normal" text-anchor="start" fill="#555">backtest withheld: backtest_review pending → skipped</text>
 <text x="760" y="655" font-size="11" font-weight="normal" text-anchor="start" fill="#555">skip_and_continue: failed, run continues</text>
 <text x="760" y="670" font-size="11" font-weight="normal" text-anchor="start" fill="#555">max_retries per stage: 0–3 (stages.ts)</text>
 <text x="760" y="685" font-size="11" font-weight="normal" text-anchor="start" fill="#555">owner requires_rerun: stage + dependents → pending</text>

@@ -8,6 +8,7 @@ import {
   jsonb,
   unique,
   index,
+  customType,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { assets } from "./core";
@@ -124,6 +125,8 @@ export const document_parses = pgTable(
 // document_chunks — §27.7
 // Text chunks from parsed documents with FTS index.
 // ============================================================
+const tsvector = customType<{ data: string }>({ dataType: () => "tsvector" });
+
 export const document_chunks = pgTable(
   "document_chunks",
   {
@@ -139,6 +142,8 @@ export const document_chunks = pgTable(
     text: text("text").notNull(),
     token_count: integer("token_count"),
     metadata_json: jsonb("metadata_json").notNull().default({}),
+    // Research-memory passages only: section path weighted A, text weighted B. Raw payload chunks stay null.
+    search_tsv: tsvector("search_tsv"),
     created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -148,6 +153,7 @@ export const document_chunks = pgTable(
     // GIN full-text search index — §27.7
     index("document_chunks_text_fts_idx")
       .using("gin", sql`to_tsvector('english', ${table.text})`),
+    index("document_chunks_search_tsv_idx").using("gin", table.search_tsv).where(sql`${table.search_tsv} IS NOT NULL`),
   ]
 );
 

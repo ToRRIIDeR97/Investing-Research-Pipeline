@@ -10,6 +10,7 @@ import type {
   InstrumentMetadata,
 } from "../provider";
 import { MarketDataError } from "../provider";
+import { readCapped } from "@/lib/net";
 
 export const YAHOO_BASE_URL = "https://query1.finance.yahoo.com/v8/finance/chart";
 
@@ -57,7 +58,11 @@ export type YahooChartResult = {
   };
 };
 
-export function createYahooMarketDataProvider(fetchImpl = fetch): MarketDataProvider {
+/** The default fetch times out; a chart response is read up to 20 MB (#23). */
+const timedFetch: typeof fetch = (input, init) => fetch(input, { ...init, signal: init?.signal ?? AbortSignal.timeout(20_000) });
+const YAHOO_MAX_BYTES = 20_000_000;
+
+export function createYahooMarketDataProvider(fetchImpl: typeof fetch = timedFetch): MarketDataProvider {
   return {
     getName: () => "yahoo",
     async getQuote(symbol: string, asOf?: Date): Promise<MarketQuote> {
@@ -221,7 +226,7 @@ async function fetchYahoo(url: string, fetchImpl: typeof fetch): Promise<YahooCh
   }
   let data: YahooChartResponse;
   try {
-    data = (await response.json()) as YahooChartResponse;
+    data = JSON.parse(new TextDecoder().decode(await readCapped(response, YAHOO_MAX_BYTES))) as YahooChartResponse;
   } catch (err) {
     throw new MarketDataError(`Yahoo parse failed: ${err}`, "yahoo", "parse_error");
   }

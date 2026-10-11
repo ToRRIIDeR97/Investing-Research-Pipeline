@@ -302,12 +302,17 @@ export async function skipRequestRerun(tx: Sql, runId: string, batch: RequestBat
 }
 
 type RequestPassage = { passage_id: string; source_id: string; title: string; section_path: string[]; page: number | null; text: string };
-/** Research-memory passages of the request's source role from this run's documents (keyword ranking unless embeddings are on). */
-async function requestPassages(sql: Sql, runId: string, request: TeamRequest): Promise<RequestPassage[]> {
+/**
+ * Research-memory passages of the request's source role from this run's documents (keyword ranking unless
+ * embeddings are on). A search is worth running first when nothing matched or the question names a period
+ * no document in scope covers; any word of the question matches, so a non-empty result alone proves little.
+ */
+async function requestPassages(sql: Sql, runId: string, request: TeamRequest): Promise<{ passages: RequestPassage[]; searchFirst: boolean }> {
   const result = await retrievePassages(sql, { runId, need: { key: request.id, query: request.question, sourceRoles: [request.source_role] },
     embeddings: getEmbeddingProvider() });
-  return result.passages.map(p => ({ passage_id: p.passage_id, source_id: p.source_id, title: p.title,
-    section_path: p.section_path, page: p.page, text: p.text }));
+  return { passages: result.passages.map(p => ({ passage_id: p.passage_id, source_id: p.source_id, title: p.title,
+    section_path: p.section_path, page: p.page, text: p.text })),
+    searchFirst: !result.passages.length || result.gaps.some(gap => gap.reason === "no_documents_for_period") };
 }
 
 /** One collector search for a request; evidence is read only from documents new to the run. */
@@ -330,17 +335,17 @@ export function ownerArtifactTypes(role: Request["role"]): Set<string> {
   return types;
 }
 
-async function ownerAnswer(sql: Sql, ctx: ResearchRunContext, request: TeamRequest, searched: boolean): Promise<TeamAnswer> {
+async function ownerAnswer(sql: Sql, ctx: ResearchRunContext, request: TeamRequest, searched: boolean, retrieved?: RequestPassage[]): Promise<TeamAnswer> {
   const owner = TEAM_ROLES[request.role];
   const inputs = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
   // The owner reads its own slice of the archive; citations are still checked against all current inputs.
   const references = { ...inputs, sources: await runDocuments(sql, ctx.runId) };
   const types = ownerArtifactTypes(request.role);
   const { id, role, question, material, needs_sources, source_role } = request;
+  const passages = retrieved ?? (await requestPassages(sql, ctx.runId, request)).passages;
   const packet = { asset: { name: ctx.assetName, symbol: ctx.symbol }, artifacts: inputs.artifacts.filter(a => types.has(a.artifact_type)),
     evidence: inputs.evidence, role: request.role, output_contract: "team_answer",
-    request: { id, role, question, material, needs_sources, source_role }, source_search_attempted: searched,
-    passages: await requestPassages(sql, ctx.runId, request) };
+    request: { id, role, question, material, needs_sources, source_role }, source_search_attempted: searched, passages };
   const response = await callResearchAgent<TeamAnswer>({ sql, ctx, stageKey: owner.stage,
     taskKey: `team:answer:${request.id}`, taskType: "team_answer", agentName: owner.agent, modelTier: "mid", packet,
     perCallKeys: ["request", "source_search_attempted", "passages"], outputFormat: { ...ANSWER_CONTRACT, validate(value) {
@@ -376,8 +381,10 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
   const escalated = Boolean(batch.source_escalated);
   const set = (request: TeamRequest) => { batch = { ...batch!, requests: batch!.requests.map(r => r.id === request.id ? request : r) }; };
   const save = () => saveReportArtifact(sql, ctx, "team_requests", "requests", batch!);
+  // Passages retrieved for the early-search test go to the owner, unless a search ran after them.
+  const retrieved = new Map<string, RequestPassage[]>();
   const settle = async (requests: TeamRequest[], searched: (r: TeamRequest) => boolean) => {
-    const results = await Promise.allSettled(requests.map(r => ownerAnswer(sql, ctx, r, searched(r))));
+    const results = await Promise.allSettled(requests.map(r => ownerAnswer(sql, ctx, r, searched(r), retrieved.get(r.id))));
     return { answers: results.map(r => r.status === "fulfilled" ? r.value : null), failure: results.find(r => r.status === "rejected") };
   };
 
@@ -387,9 +394,12 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
   for (const request of batch.requests.filter(r => !r.response)) {
     const system = systemAnswer(request, facts);
     if (system) { set({ ...request, response: system }); changed = true; continue; }
-    if (request.needs_sources && !request.source_searched && !(await requestPassages(sql, ctx.runId, request)).length) {
-      await searchForRequest(sql, ctx, request);
-      set({ ...request, source_searched: true }); changed = true;
+    if (request.needs_sources && !request.source_searched) {
+      const found = await requestPassages(sql, ctx.runId, request);
+      if (found.searchFirst) {
+        await searchForRequest(sql, ctx, request);
+        set({ ...request, source_searched: true }); changed = true;
+      } else retrieved.set(request.id, found.passages);
     }
     open.push(batch.requests.find(r => r.id === request.id)!);
   }
@@ -407,7 +417,11 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
   if (first.failure?.status === "rejected") { await save(); throw first.failure.reason; }
   if (retry.length) {
     // An owner's needs_sources escalates once per run; the next answer is final.
-    for (const request of retry) { await searchForRequest(sql, ctx, request); set({ ...request, source_searched: true }); }
+    for (const request of retry) {
+      await searchForRequest(sql, ctx, request);
+      retrieved.delete(request.id);
+      set({ ...request, source_searched: true });
+    }
     batch = { ...batch, source_escalated: true };
     await save();
     const retried = retry.map(r => ({ ...r, source_searched: true }));

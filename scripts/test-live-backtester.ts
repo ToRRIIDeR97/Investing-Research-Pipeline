@@ -25,7 +25,7 @@ async function main() {
     benchmarkConfig.sectorBenchmark,
     benchmarkConfig.broadBenchmark,
   ]) {
-    if (!benchmarkConfig.symbols.includes(required)) benchmarkConfig.symbols.push(required);
+    if (required && !benchmarkConfig.symbols.includes(required)) benchmarkConfig.symbols.push(required);
   }
   const context: ResearchRunContext = {
     runId: `${symbol.toLowerCase()}-live-validation`,

@@ -16,7 +16,7 @@ test("AC-4: stored sources are indexed as research-memory passages with section 
       payload({ title: "Final Prospectus", content: prospectusHtml(run.runId), mimeType: "text/html", role: "founder_and_company_history" }),
     ]);
     const [parse] = await sql`SELECT id FROM document_parses WHERE source_document_id = ${stored.sourceId}
-      AND parser_name = 'research-memory' AND parser_version = '1' AND status = 'completed'`;
+      AND parser_name = 'research-memory' AND parser_version = ${loadMemory().MEMORY_PARSER_VERSION} AND status = 'completed'`;
     assert.ok(parse, "a research-memory parse exists");
     const chunks = await sql`SELECT section_title, metadata_json, text FROM document_chunks WHERE document_parse_id = ${parse.id} ORDER BY chunk_index`;
     const history = chunks.find(c => String(c.text).includes("co-founder"));

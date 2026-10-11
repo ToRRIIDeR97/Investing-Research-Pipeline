@@ -222,7 +222,7 @@ function ViewResearch() {
   const filtered = useMemo(() => filterResearch(data, searchQuery), [data, searchQuery]);
   const content = (type: string) => {
     const artifact = data.artifacts.find((item) => (item.type ?? item.artifact_type) === type);
-    return asRecord(artifact?.content ?? artifact?.content_json);
+    return asRecord(artifact?.content_json);
   };
   const thesis = content("investment_thesis");
   const conditions = Array.isArray(thesis.must_be_true) ? thesis.must_be_true.filter((value): value is string => typeof value === "string") : [];
@@ -413,7 +413,7 @@ function CanonicalReportSummary({ report, artifacts }: { report: ResearchRecord 
   for (const artifact of artifacts) {
     if (!byType.has(String(artifact.type || artifact.artifact_type))) byType.set(String(artifact.type || artifact.artifact_type), artifact);
   }
-  const content = (type: string) => asRecord(byType.get(type)?.content ?? byType.get(type)?.content_json);
+  const content = (type: string) => asRecord(byType.get(type)?.content_json);
   const genesis = content("company_genesis");
   const founder = content("founder_profile");
   const thesis = content("investment_thesis");

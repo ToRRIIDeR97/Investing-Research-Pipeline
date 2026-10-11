@@ -97,7 +97,8 @@ export type BusinessProcessMap = z.infer<typeof BusinessProcessMap>;
 export const Bottleneck = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
-  capacity_limit: z.number().positive(),
+  /** null when no capacity is disclosed; the constraint is then described in description. */
+  capacity_limit: z.number().positive().nullable(),
   unit: z.string().min(1),
   current_utilization: z.number().min(0).max(1),
   mitigation_strategy: z.string().min(1),
@@ -121,7 +122,8 @@ export type ResponseScenario = z.infer<typeof ResponseScenario>;
 
 export const CompetitorEntry = z.object({
   competitor_name: z.string().min(1),
-  market_share: z.number().min(0).max(1),
+  /** null when the share is not disclosed. */
+  market_share: z.number().min(0).max(1).nullable(),
   main_advantages: z.array(z.string().min(1)).min(1),
   response_scenarios: z.array(ResponseScenario).min(1),
 });

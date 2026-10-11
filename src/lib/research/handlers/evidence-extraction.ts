@@ -19,8 +19,10 @@ import { CURRENT_PIPELINE_VERSION } from "../version";
 import { isValidSourceRole } from "../sources/roles";
 import { isPlausibleSourceRole } from "../sources/role-discovery";
 import { v2RunContext } from "../sources/role-coverage";
-import { FOUNDER_NEED_KEYS } from "../memory";
+import { FOUNDER_NEED_KEYS, FOUNDER_ORIGIN_NEED, retrievePassages } from "../memory";
 import { mapWithConcurrency } from "../pipeline-helpers";
+import { getStageSourceRequests, queueSourceRequests, SourceRequestsPending } from "../sources/source-requests";
+import { MAX_STAGE_SOURCE_REQUEST_ROUNDS } from "../team-plan";
 
 const SOURCE_READER_OUTPUT_KEYS = [
   "evidence_claims",
@@ -62,6 +64,29 @@ const sourceReaderPrompt = (target: number) => (packet: Record<string, unknown>)
     "For source_role=industry_primary or peer_company_primary, prioritize independent industry structure and comparative evidence rather than repeating issuer claims.",
   ],
 });
+
+/**
+ * No passage answers either founder need: ask the collector for founder history before any source-reader
+ * call, one search per round, and wait while a round is queued. Once the rounds are used up, fail with the
+ * founder need's gap instead of spending every batch on a run that cannot pass the founder check.
+ */
+async function requestFounderSources(sql: ReturnType<typeof postgres>, ctx: ResearchRunContext, sourceIds: string[]): Promise<never> {
+  const stageKey = "evidence_extraction";
+  const rounds = (await getStageSourceRequests(sql, ctx.runId, stageKey))?.rounds || [];
+  if (rounds.some(round => round.state === "queued")) throw new SourceRequestsPending(stageKey);
+  if (rounds.length < MAX_STAGE_SOURCE_REQUEST_ROUNDS) {
+    const round = rounds.length + 1;
+    await queueSourceRequests(sql, ctx, stageKey, "data", `founder-origin:round-${round}`, [{
+      source_role: "founder_and_company_history",
+      query: round === 1 ? `${ctx.assetName} founders and founding history` : `${ctx.assetName} (${ctx.symbol}) company origin: who founded it and why`,
+      reason: "No passage in the run's documents states who founded the company or why.",
+    }]);
+    throw new SourceRequestsPending(stageKey);
+  }
+  const { gaps } = await retrievePassages(sql, { runId: ctx.runId, need: { ...FOUNDER_ORIGIN_NEED, sourceIds } });
+  const gap = gaps[0] || { reason: "no_matching_passages", detail: "No founder-history passage matched." };
+  throw new Error(`Evidence extraction has no ${FOUNDER_ORIGIN_NEED.key} passage after ${rounds.length} collector rounds (${gap.reason}): ${gap.detail}`);
+}
 
 /**
  * Read only documents fetched for a specialist's request. The completed extraction stage is not
@@ -177,6 +202,9 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
 
       // 3. Build Source Packet (chunks)
       const sourcePacket = await buildSourcePacket(sql, v2Ctx, sources);
+      if (!(sourcePacket as any[]).some((chunk) => FOUNDER_NEED_KEYS.includes(chunk.need))) {
+        await requestFounderSources(sql, ctx, sources.map((source) => source.sourceId));
+      }
 
       const evidenceTarget = ctx.runType === "deep_dive" ? 25 : 12;
       const batches = createSourceReaderBatches(sourcePacket as any[], {

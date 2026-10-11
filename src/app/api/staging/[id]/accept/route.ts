@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { z } from "zod";
 import { acceptStagedOutput, rejectStagedOutput } from "@/lib/agents/staging";
 import { handleApiError, successResponse, ApiError } from "@/lib/api/errors";
 
@@ -12,7 +13,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id: stagingId } = await params;
+    const stagingId = z.string().uuid().parse((await params).id);
     const body = await request.json().catch(() => ({}));
 
     if (body.action === "reject") {
@@ -24,6 +25,9 @@ export async function POST(
     }
 
     const result = await acceptStagedOutput(stagingId);
+    if (!result) {
+      throw new ApiError("Only a valid staged output that is not yet accepted or rejected can be accepted", 409, "NOT_ACCEPTABLE");
+    }
     return successResponse({ accepted: true, recordId: result.recordId, stagingId });
   } catch (error) {
     return handleApiError(error);

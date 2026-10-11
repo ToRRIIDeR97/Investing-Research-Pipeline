@@ -19,6 +19,11 @@ const FINGERPRINTS:Record<'balance'|'income'|'cashflow',string[][]>={
   cashflow:['Operating','Investing','Financing'].map(k=>[`NetCashProvidedByUsedIn${k}Activities`,`NetCashProvidedByUsedIn${k}ActivitiesContinuingOperations`]),
 };
 
+const ZERO_FORMATS=['zerodash','zero-dash','fixed-zero'];
+// ixt-sec:numwordsen values seen on statement faces: 'no' or 'none' shares, small counts spelled out.
+const NUMBER_WORDS:Record<string,number>=Object.fromEntries([['no',0],['none',0],['nil',0],['zero',0],
+  ...['one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve'].map((word,i)=>[word,i+1])]);
+
 // Segment-note facts kept as segment observations: revenue and operating income per reportable segment.
 const SEGMENT_CONCEPTS=new Set([...METRICS.filter(m=>m.key==='revenue'||m.key==='net_revenue').flatMap(m=>m.concepts),'OperatingIncomeLoss'].map(c=>`us-gaap:${c}`));
 type Contexts=Map<string,{start:string|null;end:string;dimensions:string;segmentMember:string|null}>;
@@ -77,10 +82,12 @@ export function extractFilingStatements(html:string, source:FilingSource, overri
       text:clean($(cell).text()),colspan:Math.max(1,Number($(cell).attr('colspan')||1)),rowspan:Math.max(1,Number($(cell).attr('rowspan')||1)),
       facts:$(cell).find('ix\\:nonfraction').toArray().filter(keep).map(f=>{
         const fact=$(f),context=contexts.get(fact.attr('contextref')||'');const text=clean(fact.text());const format=(fact.attr('format')||'').split(':').pop()?.toLowerCase();
-        const supported=!format||['num-dot-decimal','numdotdecimal','zerodash','zero-dash','numdash','fixed-zero'].includes(format);
-        const raw=/^[—–-]$/.test(text)?0:Number(text.replace(/[,\s()$%−]/g,'').replace(/^\+/,''));
+        const supported=!format||['num-dot-decimal','numdotdecimal','zerodash','zero-dash','numdash','fixed-zero','numwordsen'].includes(format);
+        // Zero formats mean 0 whatever the text ('no', 'none', '—'); numwordsen spells small counts as words.
+        const zero=!!format&&ZERO_FORMATS.includes(format);
+        const raw=zero?0:format==='numwordsen'?NUMBER_WORDS[text.toLowerCase()]??NaN:/^[—–-]$/.test(text)?0:Number(text.replace(/[,\s()$%−]/g,'').replace(/^\+/,''));
         const scale=Number(fact.attr('scale')||0);const sign=fact.attr('sign')==='-'||/^\(/.test(text)||text.startsWith('−')?-1:1;
-        const value=supported&&text!==''&&fact.attr('xsi:nil')!=='true'&&Number.isFinite(raw)&&Number.isFinite(scale)?raw*sign*10**scale:null;
+        const value=supported&&(zero||text!=='')&&fact.attr('xsi:nil')!=='true'&&Number.isFinite(raw)&&Number.isFinite(scale)?raw*sign*10**scale:null;
         if(!context||!supported||(value===null&&fact.attr('xsi:nil')!=='true'))warnings.push(`Unresolved fact ${fact.attr('name')} at ${fact.attr('id')||tableIndex}`);
         const start=context?.start||null,end=context?.end||'';const days=start?(Date.parse(end)-Date.parse(start))/86400000+1:0;
         const periodicity=start?(days>=330&&days<=380?'annual':days>=70&&days<=110?'quarterly':'ytd'):'instant';

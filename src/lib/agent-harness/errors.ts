@@ -42,6 +42,11 @@ export class ResearchAgentRunError extends Error {
   }
 }
 
+/** A 4xx whose body reports an upstream outage, such as OpenCode's 400 "server_error: Upstream request failed". */
+export function upstreamServerErrorBody(body: string): boolean {
+  return /"type"\s*:\s*"server_error"|Upstream request failed/i.test(body);
+}
+
 /** A 429 that reports a spent account limit (OpenCode Go's GoUsageLimitError, quota, billing) rather than throttling. */
 export function usageLimitBody(body: string): boolean {
   return /usage ?limit|UsageLimitError|insufficient_quota|quota exceeded|exceeded your (current )?quota|billing|credit balance/i.test(body);

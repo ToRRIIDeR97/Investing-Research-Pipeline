@@ -75,6 +75,20 @@
     {
       "idx": 10,
       "version": "7",
+      "when": 1791763200000,
+      "tag": "0012_task_budget_reservation",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791849600000,
+      "tag": "0013_research_memory_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
       "when": 1791936000000,
       "tag": "0014_performance_indexes",
       "breakpoints": true

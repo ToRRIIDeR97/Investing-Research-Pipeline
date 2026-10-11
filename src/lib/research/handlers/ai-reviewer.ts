@@ -8,6 +8,29 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { draftAndReviewReport } from "../reporting/runtime";
 
+/** Save each review sub-artifact. A quality_score of 0 or an empty findings list is a real answer, so only absent keys are skipped. */
+export async function persistReviewArtifacts(sql: ReturnType<typeof postgres>,
+  ctx: Pick<ResearchRunContext, "runId" | "assetId" | "assetSlug" | "profileId">, output: Record<string, unknown>) {
+  const repo = createArtifactRepository(drizzle(sql, { schema }));
+  for (const k of AI_REVIEWER_CONTRACT.requiredKeys) {
+    if (output[k] === undefined || output[k] === null) continue;
+    await repo.upsertArtifact({
+      research_run_id: ctx.runId,
+      asset_id: ctx.assetId,
+      profile_id: ctx.profileId || undefined,
+      artifact_type: k,
+      scope_key: `${ctx.assetSlug}-${k.replace(/_/g, "-")}`,
+      status: "validated",
+      content_json: output[k] as Record<string, unknown>,
+      schema_version: "3.0.0",
+      validator_version: "1.0.0",
+      prompt_version: "current",
+      created_by: "system-research-os",
+      idempotency_key: `${ctx.runId}-${k}`,
+    });
+  }
+}
+
 export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "ai_reviewer",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
@@ -54,28 +77,7 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
         outputFormat: AI_REVIEWER_CONTRACT,
       });
 
-      // Persist generated sub-artifacts
-      const db = drizzle(sql, { schema });
-      const repo = createArtifactRepository(db);
-      const subKeys = AI_REVIEWER_CONTRACT.requiredKeys;
-      for (const k of subKeys) {
-        if (output[k]) {
-          await repo.upsertArtifact({
-            research_run_id: ctx.runId,
-            asset_id: ctx.assetId,
-            profile_id: ctx.profileId || undefined,
-            artifact_type: k,
-            scope_key: `${ctx.assetSlug}-${k.replace(/_/g, "-")}`,
-            status: "validated",
-            content_json: output[k] as Record<string, unknown>,
-            schema_version: "3.0.0",
-            validator_version: "1.0.0",
-            prompt_version: "current",
-            created_by: "system-research-os",
-            idempotency_key: `${ctx.runId}-${k}`,
-          });
-        }
-      }
+      await persistReviewArtifacts(sql, ctx, output);
 
       return output;
     } finally {
