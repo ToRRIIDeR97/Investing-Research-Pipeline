@@ -528,6 +528,26 @@ export default function RunResearchPage() {
     }
   }
 
+  async function handleCancelRun() {
+    if (!runId || !window.confirm("Cancel this run? A cancelled run stops its current model call and cannot be resumed.")) return;
+    setIsProcessing(true);
+    try {
+      const res = await fetch(`/api/research-runs/${runId}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actor: "user" }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Unable to cancel the run");
+      setMessages((prev) => [...prev, { role: "system", content: "Run cancelled. A model call in progress stops within a few seconds." }]);
+      fetchProgress(runId);
+    } catch (error) {
+      setMessages((prev) => [...prev, { role: "system", content: `Cancel error: ${error instanceof Error ? error.message : String(error)}` }]);
+    } finally {
+      setIsProcessing(false);
+    }
+  }
+
   async function fetchProgress(id: string) {
     try {
       const [runRes, qualityRes, sourcesRes, tracesRes, modelCallsRes, backtestsRes, jobsRes, artifactsRes] =
@@ -791,7 +811,7 @@ export default function RunResearchPage() {
         {theater.backtests.map((test) => <div key={test.id} className={ui.row}><div><div className={ui.rowTitle}>{test.strategy_name || `${test.symbol} backtest`}</div><p className={ui.rowMeta}>{test.error_message || test.strategy_prompt}</p></div><StatusBadge status={test.status} /></div>)}
         <form className="mt-6" onSubmit={(event) => { event.preventDefault(); handleBacktestRequest(); }}><label className={ui.field}>Strategy<textarea rows={3} value={backtestPrompt} onChange={(event) => setBacktestPrompt(event.target.value)} disabled={isBacktestSubmitting} placeholder="Describe the strategy to test" required /></label><div className={ui.actions}><span /><button className={ui.primary} disabled={isBacktestSubmitting || !backtestPrompt.trim()}>{isBacktestSubmitting ? "Queueing…" : "Queue backtest"}</button></div></form>
       </div></details>
-      {phase === "pipeline" && <footer className={ui.actions}><Link href={`/assets/${assetId}/view?run=${runId}`} className={ui.textLink}>Read research<ArrowUpRight size={16} /></Link><button className={ui.secondary} onClick={() => { activeRunRef.current = null; window.history.replaceState(null, "", `/assets/${assetId}/run?new=1`); setRunId(null); setProgress(null); setQuality(null); setResearchPlan(null); setPhase("intake"); setMessages([]); setTheater({ sources: [], traces: [], modelCalls: [], backtests: [] }); setLoadError(""); }}>New research</button></footer>}
+      {phase === "pipeline" && <footer className={ui.actions}><Link href={`/assets/${assetId}/view?run=${runId}`} className={ui.textLink}>Read research<ArrowUpRight size={16} /></Link><span className="flex flex-wrap items-center gap-6">{!["completed", "cancelled"].includes(progress.status) && <button className={ui.textLink} onClick={handleCancelRun} disabled={isProcessing}>Cancel run</button>}<button className={ui.secondary} onClick={() => { activeRunRef.current = null; window.history.replaceState(null, "", `/assets/${assetId}/run?new=1`); setRunId(null); setProgress(null); setQuality(null); setResearchPlan(null); setPhase("intake"); setMessages([]); setTheater({ sources: [], traces: [], modelCalls: [], backtests: [] }); setLoadError(""); }}>New research</button></span></footer>}
     </>}
     {lastMessage && !lastMessage.content.startsWith("Loaded research run") && <p className={`${ui.notes} ${ui.notice}`} role="status">{lastMessage.content}</p>}
   </div>;
