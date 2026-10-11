@@ -74,6 +74,8 @@ flowchart TD
   Human --> Export[Export and refresh schedule]
 ```
 
+The report outline has two chapter rules: no chapter covers only history or evidence, and exactly one chapter covers valuation, together with forecasts and downside. Where a coverage label is enough, code fixes the outline before it is checked (`normalizeOutlineStructure` in `src/lib/research/reporting/contracts.ts`): a history- or evidence-only chapter also covers business, the valuation chapter after the opening summary gains forecasts and downside, and other chapters drop valuation, with the coverage map updated to match. Valuation listed only in the opening summary is left to the model's repair.
+
 `team.ts` saves report questions as `team_requests` artifacts with an owner, source role, materiality and response. Arriving requests reset no stage, task or artifact (`processResearchRequests`). Each unanswered request is resolved in this order:
 
 1. **System answers.** A `market_data` request, or a `data` request about a price or market cap, is answered from the run's latest validated `market_price_history` artifact when it holds bars: bar count, date range, provider, the Stooq cross-check's verified and unverified period counts and the valuation price (`resolved_by: "system:market-history"`). A question about DGS10, the 10-year Treasury, a Treasury yield, the risk-free rate or the discount rate is answered from the run's FRED DGS10 document with its latest non-blank value and date (`resolved_by: "system:fred"`). Neither makes a model call.
