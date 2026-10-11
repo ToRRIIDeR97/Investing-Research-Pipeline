@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="726" viewBox="0 0 680 726" role="img" font-family="Helvetica, Arial, sans-serif">
+<title>Request batch and run states</title>
+<desc>A queued batch moves to processing without any reset. Each unanswered request is resolved by a system answer, by the owner with retrieved passages, or after one collector search. requestResetPlan then decides: no re-run, so the batch is answered and the report continues; an automatic reset, after which the owner answers again; or a pause for approval. approveRequestReset either performs the reset or marks the requests unavailable, and the run continues in both cases.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M2 1L8 5L2 9" fill="none" stroke="#73726c" stroke-width="1.5"/></marker></defs>
+<rect width="680" height="726" fill="#ffffff"/>
+<text x="20" y="28" font-size="14" font-weight="600" fill="#2c2c2a">Detail (proposed): request batch and run states</text>
+<text x="20" y="46" font-size="12" fill="#5f5e5a">Functions are in team.ts unless another file is named. Green: new. Amber: changed.</text>
+<g font-size="13" fill="#2c2c2a">
+<rect x="20" y="60" width="200" height="48" rx="6" fill="#faeeda" stroke="#854f0b"/>
+<text x="34" y="80" fill="#633806">batch queued</text>
+<text x="34" y="98" font-size="12" fill="#633806">nextRequestBatch (AC-8)</text>
+<rect x="245" y="60" width="200" height="48" rx="6" fill="#faeeda" stroke="#854f0b"/>
+<text x="259" y="80" fill="#633806">batch processing</text>
+<text x="259" y="98" font-size="12" fill="#633806">no reset on entry</text>
+<rect x="470" y="60" width="190" height="48" rx="6" fill="#f1efe8" stroke="#888780"/>
+<text x="484" y="80">2 rounds per run</text>
+<text x="484" y="98" font-size="12" fill="#5f5e5a">unchanged (team.ts:70)</text>
+<rect x="20" y="134" width="640" height="112" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="34" y="155" fill="#27500a">Resolve each request without a response (AC-1 to AC-4)</text>
+<g font-size="12" fill="#27500a">
+<text x="34" y="174">systemAnswer(request, facts): answered by system:market-history or system:fred, no model call</text>
+<text x="34" y="190">retrievePassages, sourceRoles [source_role]: passages go into the owner's team_answer packet</text>
+<text x="34" y="206">no passages and needs_sources, or a needs_sources answer before the run's escalation:</text>
+<text x="34" y="222">one collector search for new documents (request_id recorded), then one answer attempt</text>
+<text x="34" y="238">needs_sources after that becomes unavailable; keepCurrentReferences also filters source_ids</text>
+</g>
+<rect x="20" y="272" width="640" height="52" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="34" y="293" fill="#27500a">requestResetPlan(requests, stages, { autoResetUsed, maxAutoStages }) (AC-5, AC-6)</text>
+<text x="34" y="312" font-size="12" fill="#27500a">owner stages of requires_rerun answers + dependents (not skipped); the count excludes the tail</text>
+<rect x="20" y="350" width="190" height="104" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="34" y="371" fill="#27500a">mode auto</text>
+<g font-size="12" fill="#27500a">
+<text x="34" y="389">existing reset transaction</text>
+<text x="34" y="405">processing waits for the</text>
+<text x="34" y="421">reopened analysis stages,</text>
+<text x="34" y="437">then the owner re-answers</text>
+</g>
+<rect x="225" y="350" width="230" height="104" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="239" y="371" fill="#27500a">mode approval</text>
+<g font-size="12" fill="#27500a">
+<text x="239" y="389">run waiting_for_human</text>
+<text x="239" y="405">ai_reviewer waiting_for_human</text>
+<text x="239" y="421">metadata.request_reset: stages,</text>
+<text x="239" y="437">request_ids, estimated_cost_usd</text>
+</g>
+<rect x="470" y="350" width="190" height="104" rx="6" fill="#f1efe8" stroke="#888780"/>
+<text x="484" y="371">mode none</text>
+<g font-size="12" fill="#5f5e5a">
+<text x="484" y="389">batch answered</text>
+<text x="484" y="405">the report is drafted</text>
+<text x="484" y="421">unanswered requests show</text>
+<text x="484" y="437">as open questions</text>
+</g>
+<rect x="225" y="480" width="435" height="48" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="239" y="500" fill="#27500a">approveRequestReset(runId, { decision, actor })</text>
+<text x="239" y="518" font-size="12" fill="#27500a">orchestrator.ts; throws unless paused on a request reset</text>
+<rect x="225" y="554" width="190" height="80" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="239" y="575" fill="#27500a">rerun</text>
+<g font-size="12" fill="#27500a">
+<text x="239" y="593">reset transaction</text>
+<text x="239" y="609">run running; processing</text>
+<text x="239" y="625">route queues the worker</text>
+</g>
+<rect x="430" y="554" width="230" height="80" rx="6" fill="#eaf3de" stroke="#3b6d11"/>
+<text x="444" y="575" fill="#27500a">skip</text>
+<g font-size="12" fill="#27500a">
+<text x="444" y="593">requests unavailable with</text>
+<text x="444" y="609">"Skipped by reviewer: re-run</text>
+<text x="444" y="625">not approved"; run running</text>
+</g>
+<rect x="20" y="652" width="640" height="62" rx="6" fill="#f1efe8" stroke="#888780"/>
+<g font-size="12" fill="#2c2c2a">
+<text x="34" y="671">Route: api/research-runs/[id]/request-reset/route.ts. Panel: assets/[id]/run/page.tsx.</text>
+<text x="34" y="687">sources/collector.ts records in_corpus (AC-9). providers/mock.ts answers from passages.</text>
+<text x="34" y="703">source-discovery.ts drops its team-request search; memory/retrieve.ts is used read-only.</text>
+</g>
+</g>
+<g fill="none" stroke="#73726c" stroke-width="1.5" marker-end="url(#a)">
+<path d="M220 84H243"/>
+<path d="M340 108V132"/>
+<path d="M340 246V270"/>
+<path d="M115 324V348"/>
+<path d="M340 324V348"/>
+<path d="M565 324V348"/>
+<path d="M340 454V478"/>
+<path d="M320 528V552"/>
+<path d="M545 528V552"/>
+<path d="M225 594H10V118H300V110"/>
+<path d="M660 594H670V402H662"/>
+</g>
+<path d="M20 402H10" fill="none" stroke="#73726c" stroke-width="1.5"/>
+</svg>

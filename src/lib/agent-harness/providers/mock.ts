@@ -769,9 +769,13 @@ export class MockProvider implements ModelProvider {
     } else if (packet.output_contract === "team_requests") {
       response = { requests: [] };
     } else if (packet.output_contract === "team_answer") {
-      response = { status: "answered", answer: "Synthetic specialist answer grounded in the supplied research.",
-        evidence_ids: ((packet.evidence as any[]) || []).slice(0, 1).map(e => e.id),
-        artifact_ids: ((packet.artifacts as any[]) || []).slice(0, 1).map(a => a.id) };
+      // Cite evidence or an artifact; otherwise a retrieved passage's document. Never asks for a re-run.
+      const evidence_ids = ((packet.evidence as any[]) || []).slice(0, 1).map(e => e.id);
+      const artifact_ids = ((packet.artifacts as any[]) || []).slice(0, 1).map(a => a.id);
+      const source_ids = evidence_ids.length || artifact_ids.length ? [] : ((packet.passages as any[]) || []).slice(0, 1).map(p => p.source_id);
+      response = evidence_ids.length || artifact_ids.length || source_ids.length
+        ? { status: "answered", answer: "Synthetic specialist answer grounded in the supplied research.", evidence_ids, artifact_ids, ...(source_ids.length ? { source_ids } : {}) }
+        : { status: "unavailable", answer: "Synthetic specialist answer: nothing in the supplied research can be cited.", evidence_ids: [], artifact_ids: [] };
     } else if (packet.output_contract === "statement_repair_module") {
       response = { rationale: "Locate missing statements by heading words in the candidate's preceding text.", module_source: [
         "function locateStatements(filings) {",

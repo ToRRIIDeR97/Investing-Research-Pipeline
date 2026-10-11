@@ -4,7 +4,8 @@ import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { STAGE_CONFIGS } from "../../../src/lib/workflow/stages";
-import { startNextStage } from "../../../src/lib/workflow/orchestrator";
+import { approveRequestReset, startNextStage } from "../../../src/lib/workflow/orchestrator";
+import { MockProvider } from "../../../src/lib/agent-harness/providers/mock";
 import { processResearchRequests } from "../../../src/lib/research/team";
 import { saveReportArtifact } from "../../../src/lib/research/reporting/store";
 import { withLinkedRunSources } from "../../../src/lib/research/handlers/source-discovery";
@@ -51,24 +52,57 @@ test("AC-4: with nothing newly fetched, earlier linked documents still provide c
   } finally { await clean(sql, ctx, docs); await sql.end(); }
 });
 
-test("AC-5: a request needing sources supersedes collector and downstream gaps, not unrelated ones", { skip }, async () => {
+// Updated for research-request-routing AC-5 to AC-7: source_discovery is never reopened, so a data request
+// needing sources supersedes no gap (its search is served by the collector without a reset). An owner's
+// requires_rerun answer, approved by a reviewer, supersedes the gaps of the stages it reopens only.
+test("AC-5: a data request needing sources supersedes no gap; an approved re-run supersedes downstream gaps, not collector or unrelated ones", { skip }, async () => {
   const sql = postgres(process.env.DATABASE_URL!);
   const ctx = await run(sql, {}, "completed");
+  const prior = { provider: process.env.RESEARCH_MODEL_PROVIDER, web: process.env.RESEARCH_WEB_DISCOVERY_ENABLED };
+  process.env.RESEARCH_MODEL_PROVIDER = "mock";
+  process.env.RESEARCH_WEB_DISCOVERY_ENABLED = "0";
+  let recordId = "";
+  const original = MockProvider.prototype.stream;
+  MockProvider.prototype.stream = async function* (this: any, request: any, signal: AbortSignal) {
+    const packet = JSON.parse(request.prompt.slice(request.prompt.lastIndexOf("Task packet:") + 12).trim());
+    if (packet.output_contract !== "team_answer") { yield* original.call(this, request, signal); return; }
+    const answer = packet.role === "financials"
+      ? { status: "answered", answer: "The margin series must be recomputed.", evidence_ids: [], artifact_ids: [recordId], requires_rerun: true }
+      : { status: "unavailable", answer: "No investor day presentation was found.", evidence_ids: [], artifact_ids: [] };
+    yield { type: "response.started", requestId: "verify-repair-team-answer" };
+    yield { type: "text.delta", text: JSON.stringify(answer) };
+    yield { type: "usage", usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 } };
+    yield { type: "response.completed", finishReason: "stop" };
+  } as any;
   try {
     const gap = (gapKey: string, owner: string) => openSourceGap(sql, { assetId: ctx.assetId, runId: ctx.runId, gapKey, owner, severity: "high", description: `${gapKey} gap` });
     await gap("missing_company_investor_relations", "system:source-reader");
     await gap("metric_lineage_margin", "metric-normalizer");
     await gap("manual_reviewer_note", "research-reviewer");
-    await saveReportArtifact(sql, ctx, "team_requests", "requests", { round: 1, state: "queued", requests: [{ id: "request-1-1", role: "data",
-      question: "Find the investor day presentation with segment KPIs", material: true, needs_sources: true, source_role: "company_investor_relations" }] });
+    recordId = String((await saveReportArtifact(sql, ctx, "historical_record", `${ctx.assetSlug}-historical-record`,
+      { artifact_type: "historical_record", summary: `Margin history. Fixture ${ctx.runId}.` })).id);
+    await saveReportArtifact(sql, ctx, "team_requests", "requests", { round: 1, state: "queued", requests: [
+      { id: "request-1-1", role: "data", question: "Find the investor day presentation with segment KPIs", material: true, needs_sources: true, source_role: "company_investor_relations" },
+      { id: "request-1-2", role: "financials", question: "Reconcile the operating margin series across recast filings", material: true, needs_sources: false, source_role: "regulatory_filing" }] });
     await processResearchRequests(sql, ctx as any);
+    const arrived = await sql`SELECT gap_key, status FROM source_gaps WHERE research_run_id = ${ctx.runId} ORDER BY gap_key`;
+    assert.deepEqual(arrived.map(r => r.status), ["open", "open", "open"], "requests supersede nothing on arrival");
+    await approveRequestReset(ctx.runId, { decision: "rerun", actor: "verify-repair" });
     const rows = await sql`SELECT gap_key, status FROM source_gaps WHERE research_run_id = ${ctx.runId} ORDER BY gap_key`;
     assert.deepEqual(rows.map(r => [r.gap_key, r.status]), [["manual_reviewer_note", "open"], ["metric_lineage_margin", "resolved"],
-      ["missing_company_investor_relations", "resolved"]]);
-    await gap("missing_company_investor_relations", "system:source-reader");
-    const [count] = await sql`SELECT count(*)::int AS n FROM source_gaps WHERE research_run_id = ${ctx.runId} AND gap_key = 'missing_company_investor_relations' AND status = 'open'`;
+      ["missing_company_investor_relations", "open"]]);
+    const [discovery] = await sql`SELECT status FROM research_stages WHERE research_run_id = ${ctx.runId} AND stage_key = 'source_discovery'`;
+    assert.equal(discovery.status, "completed");
+    await gap("metric_lineage_margin", "metric-normalizer");
+    const [count] = await sql`SELECT count(*)::int AS n FROM source_gaps WHERE research_run_id = ${ctx.runId} AND gap_key = 'metric_lineage_margin' AND status = 'open'`;
     assert.equal(count.n, 1);
-  } finally { await clean(sql, ctx); await sql.end(); }
+  } finally {
+    MockProvider.prototype.stream = original;
+    for (const [key, value] of [["RESEARCH_MODEL_PROVIDER", prior.provider], ["RESEARCH_WEB_DISCOVERY_ENABLED", prior.web]] as const) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    await clean(sql, ctx); await sql.end();
+  }
 });
 
 test("AC-6: a failure in the business branch names that stage once no other stage can run", { skip }, async () => {

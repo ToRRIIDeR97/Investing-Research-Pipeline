@@ -4,7 +4,8 @@ import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { STAGE_CONFIGS } from "../../../src/lib/workflow/stages";
-import { startNextStage } from "../../../src/lib/workflow/orchestrator";
+import { approveRequestReset, startNextStage } from "../../../src/lib/workflow/orchestrator";
+import { MockProvider } from "../../../src/lib/agent-harness/providers/mock";
 import { processResearchRequests } from "../../../src/lib/research/team";
 import { saveReportArtifact } from "../../../src/lib/research/reporting/store";
 import { withLinkedRunSources } from "../../../src/lib/research/handlers/source-discovery";
@@ -67,24 +68,54 @@ test("AC-4: documents linked in an earlier discovery pass count with newly fetch
   } finally { await cleanup(sql, [run.runId, other.runId], [run.assetId, other.assetId], documents); await sql.end(); }
 });
 
+/** Script the mock provider's team answers; nothing reaches a paid provider. */
+function scriptTeamAnswers(answer: (packet: any) => Record<string, unknown>) {
+  const provider = process.env.RESEARCH_MODEL_PROVIDER;
+  process.env.RESEARCH_MODEL_PROVIDER = "mock";
+  const original = MockProvider.prototype.stream;
+  MockProvider.prototype.stream = async function* (this: any, request: any, signal: AbortSignal) {
+    const packet = JSON.parse(request.prompt.slice(request.prompt.lastIndexOf("Task packet:") + 12).trim());
+    if (packet.output_contract !== "team_answer") { yield* original.call(this, request, signal); return; }
+    yield { type: "response.started", requestId: "live-repair-team-answer" };
+    yield { type: "text.delta", text: JSON.stringify(answer(packet)) };
+    yield { type: "usage", usage: { inputTokens: 1, outputTokens: 1, costUsd: 0 } };
+    yield { type: "response.completed", finishReason: "stop" };
+  } as any;
+  return () => {
+    MockProvider.prototype.stream = original;
+    if (provider === undefined) delete process.env.RESEARCH_MODEL_PROVIDER; else process.env.RESEARCH_MODEL_PROVIDER = provider;
+  };
+}
+
+// Updated for research-request-routing AC-5 to AC-7: an arriving request no longer reopens stages or
+// supersedes gaps. The reset now comes from the owner's requires_rerun answer; a financials re-run reopens
+// 10 analysis stages, above the automatic limit, so it runs after a reviewer approves it.
 test("AC-5: reopening a stage supersedes its open gaps, and a re-emitted gap opens again", { skip }, async () => {
   const sql = postgres(process.env.DATABASE_URL!);
   const run = await createRun(sql);
+  let recordId = "";
+  const restore = scriptTeamAnswers(() => ({ status: "answered", answer: "FY2023 revenue must be recaptured from the recast filing.",
+    evidence_ids: [], artifact_ids: [recordId], requires_rerun: true }));
   try {
     const gap = { assetId: run.assetId, runId: run.runId, gapKey: "metric_lineage_revenue_growth_yoy", severity: "high",
       description: "Excluded revenue_growth_yoy: its reporting period could not be verified.", owner: "metric-normalizer" };
     await openSourceGap(sql, gap);
     await openSourceGap(sql, { ...gap, gapKey: "missing_peer_company_primary", owner: "system:source-reader", description: "Peer filings missing" });
+    recordId = String((await saveReportArtifact(sql, run, "historical_record", `${run.assetSlug}-historical-record`,
+      { artifact_type: "historical_record", summary: `Revenue history. Fixture ${run.runId}.` })).id);
     await saveReportArtifact(sql, run, "team_requests", "requests", { round: 1, state: "queued", requests: [{ id: "request-1-1", role: "financials",
       question: "Reconcile FY2023 revenue across the recast filings", material: true, needs_sources: false, source_role: "regulatory_filing" }] });
     assert.equal(await processResearchRequests(sql, run as any), true);
+    const paused = await sql`SELECT gap_key, status FROM source_gaps WHERE research_run_id = ${run.runId} ORDER BY gap_key`;
+    assert.deepEqual(paused.map(g => g.status), ["open", "open"], "nothing is superseded before the re-run is approved");
+    await approveRequestReset(run.runId, { decision: "rerun", actor: "live-repair-test" });
     const gaps = await sql`SELECT gap_key, status, resolution_note FROM source_gaps WHERE research_run_id = ${run.runId} ORDER BY gap_key`;
     assert.deepEqual(gaps.map(g => [g.gap_key, g.status]), [["metric_lineage_revenue_growth_yoy", "resolved"], ["missing_peer_company_primary", "open"]]);
     assert.match(String(gaps[0].resolution_note), /superseded/i);
     await openSourceGap(sql, gap);
     const reopened = await sql`SELECT status FROM source_gaps WHERE research_run_id = ${run.runId} AND gap_key = ${gap.gapKey}`;
     assert.deepEqual(reopened.map(r => r.status), ["open"]);
-  } finally { await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
+  } finally { restore(); await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
 });
 
 test("AC-6: a run blocked by a failed stage names that stage and its reason", { skip }, async () => {

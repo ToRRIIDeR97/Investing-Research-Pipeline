@@ -122,14 +122,16 @@ The model makes the judgment calls: yearly drivers in operating scenarios and, f
 Guards:
 
 - Every job update requires `status = 'running' AND lease_owner = <worker>` (`run-queue.ts`).
-- Gate approvals take `FOR UPDATE` locks (`orchestrator.ts:408`, `465`, `530`).
+- Gate approvals and the re-run decision take `FOR UPDATE` locks (`orchestrator.ts:409`, `466`, `535`, `580`).
 - `retryCount` lives in `validation_result_json`.
-- `resumeResearchRun` (`orchestrator.ts:909`) restarts at the first failed stage when a run is enqueued.
-- A team request reopens a stage and its dependents (`team.ts`).
+- `resumeResearchRun` (`orchestrator.ts:959`) restarts at the first failed stage when a run is enqueued.
+- An arriving team request reopens nothing (`team.ts:processResearchRequests`). Only an owner's `requires_rerun` answer reopens its stage and dependents (`requestResetPlan`): automatically once per run when at most `RESEARCH_MAX_AUTO_RESET_STAGES` (default 6) analysis stages reopen; otherwise the run and the `ai_reviewer` stage become `waiting_for_human` with `metadata_json.request_reset` until `approveRequestReset` records `rerun` or `skip`. That decision is refused unless the run is paused on the re-run and while the plan or final-review gate waits.
 
 ## 6. Interaction — Sequence
 
-![UML sequence view of a research run with plan gate and lease-expiry path](diagrams/sequence-research-run.svg)
+![UML sequence view of a research run with report requests, the re-run approval, the plan gate and the lease-expiry path](diagrams/sequence-research-run.svg)
+
+Report requests are answered inside the scheduling loop without resetting stages: system answers from `market_price_history` and the FRED DGS10 document, otherwise the owner's `team_answer` call with research-memory passages, with at most one collector search per request. `requestResetPlan` then leaves the batch answered, reopens stages once automatically, or pauses for `POST …/request-reset`.
 
 ## Coverage index
 
@@ -139,8 +141,9 @@ Guards:
 | API routes | Component, Sequence, Trust | `src/app/api/**/route.ts`, `src/lib/api/*` |
 | Run service and queue | Component, Activity, State, Sequence | `run-service.ts:createResearchRunWithStages`, `run-queue.ts` |
 | Research worker | Component, Deployment, Sequence | `src/workers/research-worker.ts` |
-| Pipeline runner, team and requests | Component, Activity, State, Sequence | `pipeline-runner.ts:runResearchPipeline`, `team.ts`, `team-plan.ts`, `sources/source-requests.ts`, `sources/collector.ts` |
-| Workflow orchestrator | Component, Activity, State | `orchestrator.ts:advanceStage`, `startReadyStages`, `completeRun`, `failRun`, `resumeResearchRun` |
+| Pipeline runner, team and requests | Component, Activity, State, Sequence | `pipeline-runner.ts:runResearchPipeline`, `team.ts:processResearchRequests`, `systemAnswer`, `requestResetPlan`, `nextRequestBatch`, `team-plan.ts`, `sources/source-requests.ts:queryTermCoverage`, `sources/collector.ts` |
+| Workflow orchestrator | Component, Activity, State, Sequence | `orchestrator.ts:advanceStage`, `startReadyStages`, `approveRequestReset`, `completeRun`, `failRun`, `resumeResearchRun` |
+| Request re-run decision | State, Sequence, Trust | `src/app/api/research-runs/[id]/request-reset/route.ts`, run page panel in `src/app/assets/[id]/run/page.tsx` |
 | Agent harness and prompt caching | Component, Sequence, Trust | `src/lib/agent-harness/**` |
 | Research memory and evidence graph | Component, Class | `src/lib/research/memory/**` |
 | Sources, ingestion and market data | Component, Deployment, Trust | `src/lib/research/sources/**`, `src/lib/ingestion/**`, `src/lib/market-data/**` |
@@ -159,5 +162,5 @@ Guards:
 
 ## Unresolved boundaries
 
-- Research-request and source-request loops are shown as one activity node. A dedicated sequence view is a candidate if those loops change.
+- Research-request and source-request loops are one activity node; the research-request path and its re-run approval have their own frame in the sequence view. The source-request loop has no sequence view.
 - Network exposure of the dev server (assumed to bind all interfaces) hasn't been observed at runtime.
