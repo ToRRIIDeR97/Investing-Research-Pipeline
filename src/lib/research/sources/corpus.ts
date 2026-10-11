@@ -1528,8 +1528,9 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
     }
   }
 
-  // Passages for retrieval sit next to the raw chunks, which valuation reads verbatim.
-  try {
+  // Passages for retrieval sit next to the raw chunks, which valuation reads verbatim. The companyfacts
+  // context is read only from its raw payload, so it gets no passages.
+  if (payload.sourceType !== "primary_source_context") try {
     await indexDocumentContent(sql, { sourceId, content, mimeType: payload.mimeType, title: payload.title });
   } catch (error) {
     console.warn(`Research memory indexing deferred for ${sourceId}: ${error instanceof Error ? error.message : String(error)}`);

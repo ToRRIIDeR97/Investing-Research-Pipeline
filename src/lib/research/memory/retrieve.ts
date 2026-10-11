@@ -54,23 +54,31 @@ export interface RunDocument {
   publishedAt: string | null;
 }
 
-/** Documents linked to a run with their source role (metadata, then role assignment, then source type) and dates. */
+/**
+ * Documents linked to a run with their source role (metadata, then role assignment, then source type)
+ * and dates. Only the newest document per URL is kept. The SEC companyfacts context
+ * (primary_source_context) is left out: its data is read from the raw payload, and its pretty-printed
+ * JSON would crowd filing passages out of the regulatory scope.
+ */
 export async function runDocuments(sql: postgres.Sql, runId: string): Promise<RunDocument[]> {
   const rows = await sql`
-    SELECT sd.id, sd.title, sd.source_type,
-      to_char(sd.period_end, 'YYYY-MM-DD') AS period_end,
-      to_char(sd.published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS published_at,
-      COALESCE(NULLIF(sd.metadata_json->>'source_role', ''),
-        CASE WHEN sd.metadata_json->>'semanticRole' IN ('earnings_release', 'earnings_exhibit') THEN 'earnings_release'
-             WHEN sd.source_type = 'peer_industry_context' THEN 'industry_primary' END,
-        (SELECT sra.role FROM source_role_assignments sra WHERE sra.source_document_id = sd.id
-          ORDER BY sra.confidence DESC NULLS LAST, sra.assigned_at ASC LIMIT 1),
-        CASE WHEN sd.source_type LIKE 'web\\_%' THEN substring(sd.source_type FROM 5)
-             WHEN sd.source_type LIKE 'sec\\_filing\\_%' THEN 'regulatory_filing' END) AS role
-    FROM source_documents sd
-    WHERE sd.research_run_id = ${runId}
-       OR sd.id IN (SELECT source_document_id FROM research_run_sources WHERE research_run_id = ${runId})
-    ORDER BY sd.id`;
+    SELECT * FROM (
+      SELECT DISTINCT ON (COALESCE(sd.url, sd.id::text)) sd.id, sd.title, sd.source_type,
+        to_char(sd.period_end, 'YYYY-MM-DD') AS period_end,
+        to_char(sd.published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS published_at,
+        COALESCE(NULLIF(sd.metadata_json->>'source_role', ''),
+          CASE WHEN sd.metadata_json->>'semanticRole' IN ('earnings_release', 'earnings_exhibit') THEN 'earnings_release'
+               WHEN sd.source_type = 'peer_industry_context' THEN 'industry_primary' END,
+          (SELECT sra.role FROM source_role_assignments sra WHERE sra.source_document_id = sd.id
+            ORDER BY sra.confidence DESC NULLS LAST, sra.assigned_at ASC LIMIT 1),
+          CASE WHEN sd.source_type LIKE 'web\\_%' THEN substring(sd.source_type FROM 5)
+               WHEN sd.source_type LIKE 'sec\\_filing\\_%' THEN 'regulatory_filing' END) AS role
+      FROM source_documents sd
+      WHERE (sd.research_run_id = ${runId}
+         OR sd.id IN (SELECT source_document_id FROM research_run_sources WHERE research_run_id = ${runId}))
+        AND sd.source_type <> 'primary_source_context'
+      ORDER BY COALESCE(sd.url, sd.id::text), sd.created_at DESC, sd.id
+    ) docs ORDER BY id`;
   return rows.map(row => ({ id: String(row.id), title: String(row.title || ""), sourceType: String(row.source_type || ""), role: row.role ? String(row.role) : null,
     periodEnd: row.period_end ? String(row.period_end) : null, publishedAt: row.published_at ? String(row.published_at) : null }));
 }

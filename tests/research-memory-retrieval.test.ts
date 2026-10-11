@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { coversPeriod, periodHints, retrievePassages } from "../src/lib/research/memory";
+import { coversPeriod, periodHints, retrievePassages, runDocuments } from "../src/lib/research/memory";
 import { storeDiscoveredSources } from "../src/lib/research/sources/corpus";
 
 const skip = process.env.RUN_DB_INTEGRATION !== "1";
@@ -117,5 +117,30 @@ test("research-memory passages store their search vector; raw payload chunks do 
     assert.match(String(rows[0].section), /'market':\d+A/, "the section path is weighted A");
     const result = await retrievePassages(sql, { runId: run.runId, need: { key: "pricing", query: "merchant pricing", sourceRoles: ["industry_primary"] } });
     assert.equal(result.passages.length, 1);
+  } finally { await removeRuns(sql, [run]); await sql.end(); }
+});
+
+test("companyfacts JSON gets no passages and stays out of scope, and only the newest document per URL is retrieved", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!);
+  const run = await newRun(sql);
+  try {
+    const facts = await store(sql, run, { title: "Primary source context", sourceType: "primary_source_context", mimeType: "application/json",
+      url: `https://data.sec.gov/${randomUUID()}`, metadata: { system_generated: true },
+      content: JSON.stringify({ facts: { "us-gaap": { Revenues: { description: `Amount of revenue recognized from goods sold. ${run.runId}` } } } }) });
+    await sql`INSERT INTO source_role_assignments (source_document_id, role, confidence, rationale) VALUES (${facts}, 'regulatory_filing', 100, 'Mapped from document metadata')`;
+    const [{ parses }] = await sql`SELECT COUNT(*)::int AS parses FROM document_parses WHERE source_document_id = ${facts} AND parser_name = 'research-memory'`;
+    assert.equal(parses, 0, "the companyfacts payload is not indexed");
+
+    const url = `https://retrieval.example/${randomUUID()}`;
+    const first = await store(sql, run, { title: "Annual report", role: "regulatory_filing", url, content: `Revenue Recognition\n\nRevenue is recognized when goods are sold. First copy ${run.runId}` });
+    await sql`UPDATE source_documents SET created_at = created_at - INTERVAL '1 day' WHERE id = ${first}`;
+    const second = await store(sql, run, { title: "Annual report", role: "regulatory_filing", url, content: `Revenue Recognition\n\nRevenue is recognized when goods are sold. Second copy ${run.runId}` });
+
+    const ids = (await runDocuments(sql, run.runId)).map(doc => doc.id);
+    assert.deepEqual(ids, [second], "neither the companyfacts context nor the older copy of the URL is in scope");
+    const result = await retrievePassages(sql, { runId: run.runId, need: { key: "revenue", query: "revenue recognized goods sold", sourceRoles: ["regulatory_filing"] } });
+    assert.deepEqual([...new Set(result.passages.map(p => p.source_id))], [second]);
+    const [{ lazily }] = await sql`SELECT COUNT(*)::int AS lazily FROM document_parses WHERE source_document_id = ${facts} AND parser_name = 'research-memory'`;
+    assert.equal(lazily, 0, "retrieval does not index it on demand either");
   } finally { await removeRuns(sql, [run]); await sql.end(); }
 });
