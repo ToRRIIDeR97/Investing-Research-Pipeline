@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import { createHash } from "node:crypto";
-import { writeFile, mkdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { canonicalResearchKey } from "@/lib/research/v2-contracts";
 import { canonicalMetricPlan, normalizeSourceGap, positiveFiniteNumber, selectLatestFact } from "@/lib/research/pipeline-helpers";
@@ -41,11 +41,12 @@ interface SourcePayload {
   chunkTitle: string;
 }
 
+// No document text: source discovery keeps these for its whole stage, and a slice of a filing body would keep the
+// full body alive. Readers fetch passages or chunks by id.
 export interface StoredSource {
   sourceId: string;
   parseId: string;
   chunkId: string;
-  content: string;
   title: string;
   sourceType: string;
   url?: string;
@@ -876,7 +877,26 @@ async function macroSourcePayload(ctx: RunContext): Promise<SourcePayload | null
   }
 }
 
-async function fetchSecFilingPayloads(ctx: RunContext, secContext: Record<string, unknown>): Promise<SourcePayload[]> {
+/**
+ * EDGAR Archives documents (accession path and file name) never change, so a filing an earlier run stored is read
+ * back instead of downloaded. SEC appends a randomised bot-manager script to each response, so a new download
+ * hashes differently and was stored as another full copy on every run.
+ */
+export async function storedSecFiling(sql: Sql, url: string): Promise<string | null> {
+  const rows = await sql`SELECT storage_path FROM source_documents
+    WHERE url = ${url} AND mime_type = 'text/html' AND storage_path LIKE 'storage/sources/%'
+    ORDER BY created_at, id`;
+  for (const row of rows) {
+    try {
+      return await readFile(join(process.cwd(), String(row.storage_path)), "utf8");
+    } catch {
+      // A missing file falls through to the next copy, then to a download.
+    }
+  }
+  return null;
+}
+
+export async function fetchSecFilingPayloads(sql: Sql, ctx: RunContext, secContext: Record<string, unknown>): Promise<SourcePayload[]> {
   const cik = textValue(secContext.cik);
   if (!cik) return [];
 
@@ -909,6 +929,11 @@ async function fetchSecFilingPayloads(ctx: RunContext, secContext: Record<string
       attachmentType: documentInfo.attachmentType,
     };
     const url = secArchiveUrl(cik, accessionNumber, documentInfo.document);
+    const stored = await storedSecFiling(sql, url);
+    if (stored !== null) {
+      payloads.push(filingSourcePayload(ctx, cik, documentFiling, stored));
+      continue;
+    }
     try {
       let content = "";
       if (process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock" || process.env.RESEARCH_TEST_MODE === "1") {
@@ -1458,7 +1483,10 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
   await mkdir(storageDir, { recursive: true });
   const extension = payload.mimeType.includes("html") ? "html" : payload.mimeType.includes("csv") ? "csv" : "json";
   const storagePath = `storage/sources/${hash}.${extension}`;
-  await writeFile(join(process.cwd(), storagePath), content, "utf8");
+  // The file is named by its content hash, so an existing file already holds these bytes.
+  await writeFile(join(process.cwd(), storagePath), content, { encoding: "utf8", flag: "wx" }).catch((error) => {
+    if (error?.code !== "EEXIST") throw error;
+  });
 
   const rows = await sql`
     INSERT INTO source_documents (
@@ -1539,7 +1567,6 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
     sourceId,
     parseId,
     chunkId: chunkId || "",
-    content: content.slice(0, 60000),
     title: String(rows[0].title),
     sourceType: String(rows[0].source_type),
     url: rows[0].url ? String(rows[0].url) : undefined,
@@ -1611,7 +1638,7 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
     chunkTitle: "SEC API context",
   };
 
-  const filingPayloads = await fetchSecFilingPayloads(ctx, context);
+  const filingPayloads = await fetchSecFilingPayloads(sql, ctx, context);
   const supplementalPayloads: SourcePayload[] = arrayValue(context.supplementalSources).map((source) => ({
     sourceType: textValue(source.sourceType, "profile_context"),
     title: textValue(source.title, `${ctx.assetName} profile source`),
@@ -1668,7 +1695,6 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
         sourceId: `candidate-${index}`,
         parseId: "",
         chunkId: "",
-        content: candidate.content,
         title: candidate.title,
         sourceType: `source_candidate_${candidate.sourceType}`,
       })),
