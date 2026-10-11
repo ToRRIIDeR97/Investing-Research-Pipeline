@@ -1,4 +1,4 @@
-import { ProviderError, usageLimitBody, type HarnessErrorCategory } from "../errors";
+import { ProviderError, upstreamServerErrorBody, usageLimitBody, type HarnessErrorCategory } from "../errors";
 import type { ModelEvent, ModelProvider, ModelRequest, ModelUsage, ProviderHealth, ToolCall } from "../types";
 import { calculateCost, oneHourCacheWriteSurcharge } from "../telemetry";
 import { anthropicPromptFields, isClaudeModel } from "./anthropic-cache";
@@ -133,6 +133,7 @@ export class AnthropicCompatibleProvider implements ModelProvider {
       if (response.status === 401 || response.status === 403) category = "authentication";
       else if (response.status === 429) category = usageLimitBody(body) ? "quota_exceeded" : "rate_limit";
       else if (response.status === 408 || response.status === 504) category = "provider_timeout";
+      else if (upstreamServerErrorBody(body)) category = "server_error";
       else if (response.status === 400 && /context|token|length/i.test(body)) category = "context_limit";
       else if (response.status >= 400 && response.status < 500) category = "invalid_request";
       else if (response.status >= 500) category = "server_error";
@@ -171,7 +172,12 @@ export class AnthropicCompatibleProvider implements ModelProvider {
         throw new ProviderError("Provider emitted malformed SSE JSON", "malformed_stream", { excerpt: data.slice(0, 300) });
       }
       if (payload.type === "error") {
-        throw new ProviderError(`Provider stream error: ${safeBody(payload.error?.message || "unknown")}`, "server_error");
+        const type = String(payload.error?.type || "");
+        // Overloaded and api errors are transient; the rest keep their HTTP meaning.
+        const category: HarnessErrorCategory = type === "rate_limit_error" ? "rate_limit"
+          : type === "authentication_error" || type === "permission_error" ? "authentication"
+          : type === "invalid_request_error" ? "invalid_request" : "server_error";
+        throw new ProviderError(`Provider stream error${type ? ` (${type})` : ""}: ${safeBody(payload.error?.message || "unknown")}`, category);
       }
       const events: ModelEvent[] = [];
       if (payload.type === "message_start" && payload.message?.usage) {

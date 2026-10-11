@@ -1,5 +1,5 @@
 import type { ModelEvent, ModelProvider, ModelRequest, ProviderHealth, ToolCall } from "../types";
-import { ProviderError, usageLimitBody, type HarnessErrorCategory } from "../errors";
+import { ProviderError, upstreamServerErrorBody, usageLimitBody, type HarnessErrorCategory } from "../errors";
 
 type ProviderMode = "direct" | "local";
 
@@ -122,6 +122,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       if (status === 401 || status === 403) category = "authentication";
       else if (status === 429) category = usageLimitBody(raw) ? "quota_exceeded" : "rate_limit";
       else if (status === 408 || status === 504) category = "provider_timeout";
+      else if (upstreamServerErrorBody(raw)) category = "server_error";
       else if (status === 400 && /context|token|length/i.test(raw)) category = "context_limit";
       else if (status >= 400 && status < 500) category = "invalid_request";
       else if (status >= 500) category = "server_error";
