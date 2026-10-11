@@ -126,14 +126,24 @@ export function periodHints(query: string): PeriodHint[] {
 
 /** Days after a period's end in which a document dated by filing or publication (an earnings release) still reports on it. */
 const REPORTING_LAG_DAYS = 45;
+const afterLag = (date: string) => {
+  const day = new Date(`${date}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + REPORTING_LAG_DAYS);
+  return day.toISOString().slice(0, 10);
+};
 
-/** Whether a document's period end (or, without one, its publication date) falls in the period or shortly after it. */
+/**
+ * Dates a document reporting on the period can carry. A date runs to REPORTING_LAG_DAYS after it. A quarter
+ * or year starts REPORTING_LAG_DAYS late too: a release filed in its first weeks reports on the period before.
+ */
+const periodWindow = (hint: PeriodHint) => ({ from: hint.start === hint.end ? hint.start : afterLag(hint.start), until: afterLag(hint.end) });
+
+/** Whether a document's period end (or, without one, its publication date) falls in the period's window. */
 export function coversPeriod(doc: Pick<RunDocument, "periodEnd" | "publishedAt">, hint: PeriodHint): boolean {
   const date = doc.periodEnd || doc.publishedAt;
   if (!date) return false;
-  const until = new Date(`${hint.end}T00:00:00Z`);
-  until.setUTCDate(until.getUTCDate() + REPORTING_LAG_DAYS);
-  return date >= hint.start && date <= until.toISOString().slice(0, 10);
+  const { from, until } = periodWindow(hint);
+  return date >= from && date <= until;
 }
 
 /** Newest first: period end, then publication date; documents without dates last. */

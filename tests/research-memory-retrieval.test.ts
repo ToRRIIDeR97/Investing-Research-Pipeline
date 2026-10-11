@@ -27,8 +27,14 @@ test("period hints read ISO dates, quarters and years, and a document covers a p
   assert.equal(coversPeriod({ periodEnd: "2026-07-29", publishedAt: "2026-07-29" }, q2), true, "an earnings release filed after the quarter");
   assert.equal(coversPeriod({ periodEnd: "2026-03-31", publishedAt: "2026-04-30" }, q2), false, "the prior quarter's 10-Q");
   assert.equal(coversPeriod({ periodEnd: "2026-09-30", publishedAt: null }, q2), false, "the next quarter");
-  assert.equal(coversPeriod({ periodEnd: null, publishedAt: "2026-05-02" }, q2), true, "a dated page without a period end");
+  assert.equal(coversPeriod({ periodEnd: "2026-04-29", publishedAt: "2026-04-29" }, q2), false, "the prior quarter's release, filed early in the quarter");
+  assert.equal(coversPeriod({ periodEnd: null, publishedAt: "2026-06-10" }, q2), true, "a dated page without a period end");
+  assert.equal(coversPeriod({ periodEnd: null, publishedAt: "2026-05-02" }, q2), false, "a page from the quarter's first weeks reports on the one before");
   assert.equal(coversPeriod({ periodEnd: null, publishedAt: null }, q2), false);
+  const [q3] = periodHints("Q3 2026");
+  assert.equal(coversPeriod({ periodEnd: "2026-07-29", publishedAt: "2026-07-29" }, q3), false, "the Q2 release filed in July does not report on Q3");
+  const [day] = periodHints("2026-06-30");
+  assert.equal(coversPeriod({ periodEnd: "2026-06-30", publishedAt: null }, day), true, "a date's window starts on the date");
 });
 
 const priceRows = Array.from({ length: 60 }, (_, i) => `<tr><td>Aug ${i + 1}, 2026</td><td>1,${700 + i}.00</td><td>${709_200 + i}</td></tr>`).join("");
@@ -142,6 +148,25 @@ test("a question naming two periods gets each period's copy of a statement, and 
     assert.deepEqual(result.passages.map(p => p.source_id), [q2, q1], "each period asked for keeps its own balance sheet, newest first");
     assert.ok(!result.passages.some(p => p.source_id === annual), "the 10-K's copy, from no period asked for, collapses");
     assert.deepEqual(result.gaps, []);
+  } finally { await removeRuns(sql, [run]); await sql.end(); }
+});
+
+test("an earnings release filed early in a quarter reports on the quarter before, not on that quarter", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!);
+  const run = await newRun(sql);
+  try {
+    const release = (periodEnd: string, content: string) => store(sql, run, { title: `8-K report ${periodEnd}`, role: "regulatory_filing",
+      sourceType: "sec_filing_8-k", periodEnd, publishedAt: periodEnd, content: `${content} ${run.runId}` });
+    const q1Release = await release("2026-04-29", "First Quarter Results\n\nRevenue and net income for the first quarter. Revenue rose and net income rose; revenue growth and net income growth were strong.");
+    const q2 = await store(sql, run, { title: "10-Q report 2026-06-30", role: "regulatory_filing", sourceType: "sec_filing_10-q", periodEnd: "2026-06-30", publishedAt: "2026-07-30",
+      content: `Results of Operations\n\nRevenue was 4,100 for the three months ended June 30, 2026. ${run.runId}` });
+    const second = await retrievePassages(sql, { runId: run.runId, need: { key: "q2", sourceRoles: ["regulatory_filing"], maxPassages: 4, query: "Q2 2026 revenue and net income" } });
+    assert.deepEqual(second.passages.map(p => p.source_id), [q2, q1Release], "the Q2 10-Q comes before the Q1 release filed in April");
+
+    await release("2026-07-29", "Second Quarter Results\n\nRevenue for the second quarter rose.");
+    const third = await retrievePassages(sql, { runId: run.runId, need: { key: "q3", sourceRoles: ["regulatory_filing"], query: "Q3 2026 revenue" } });
+    assert.deepEqual(third.gaps.map(g => [g.reason, g.detail]), [["no_documents_for_period", "No document in scope covers Q3 2026."]],
+      "the Q2 release filed in July does not cover Q3");
   } finally { await removeRuns(sql, [run]); await sql.end(); }
 });
 
