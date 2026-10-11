@@ -148,6 +148,8 @@ export const document_chunks = pgTable(
   },
   (table) => [
     index("document_chunks_parse_idx").on(table.document_parse_id, table.chunk_index),
+    // Valuation's share-count lookup and the source detail view filter chunks by document.
+    index("document_chunks_source_document_idx").on(table.source_document_id),
     // GIN full-text search index — §27.7
     index("document_chunks_text_fts_idx")
       .using("gin", sql`to_tsvector('english', ${table.text})`),
@@ -213,7 +215,10 @@ export const source_locations = pgTable("source_locations", {
   table_column: integer("table_column"),
   locator_json: jsonb("locator_json").notNull().default({}),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("source_locations_chunk_idx").on(table.document_chunk_id),
+  index("source_locations_source_document_idx").on(table.source_document_id),
+]);
 
 // ============================================================
 // Relations

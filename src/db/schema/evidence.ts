@@ -39,7 +39,9 @@ export const evidence_claims = pgTable("evidence_claims", {
   metadata_json: jsonb("metadata_json").notNull().default({}),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   supersedes_id: uuid("supersedes_id"), // Self-ref FK added via migration (circular dep at schema level)
-});
+}, (table) => [
+  index("evidence_claims_run_review_idx").on(table.research_run_id, table.review_status),
+]);
 
 // ============================================================
 // evidence_links — §27.8
@@ -54,7 +56,9 @@ export const evidence_links = pgTable("evidence_links", {
   quoted_text: text("quoted_text"),
   confidence: numeric("confidence"),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("evidence_links_claim_idx").on(table.evidence_claim_id),
+]);
 
 // ============================================================
 // claim_relationships — §27.8

@@ -2,7 +2,8 @@ import { z } from "zod/v4";
 import { callResearchAgent, exactJsonPrompt, type ResearchRunContext, type Sql } from "./run-context";
 import { outputContract, type ReportOutline } from "./reporting/contracts";
 import { loadReportInputs, saveReportArtifact } from "./reporting/store";
-import { TEAM_ROLES, BRIEF_ROLES, GAP_OWNER_STAGES, dependentStages } from "./team-plan";
+import { TEAM_ROLES, BRIEF_ROLES, GAP_OWNER_STAGES, STAGE_DEPENDENCIES, STAGE_OWNERS, dependentStages } from "./team-plan";
+import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { SOURCE_ROLES } from "./sources/roles";
 import { getStageOutputContract } from "./stage-contracts";
 import { getEmbeddingProvider, retrievePassages, runDocuments } from "./memory";
@@ -32,7 +33,14 @@ export type TeamRequest = Request & { id: string; response?: TeamAnswer; source_
 /** `rerun_stages`: analysis stages a re-run reopened; the batch waits for them before asking again. */
 export interface RequestBatch { round: number; state: "queued" | "processing" | "answered"; source_escalated?: boolean;
   rerun_stages?: string[]; requests: TeamRequest[] }
-const REQUEST_CONTRACT = outputContract({ requests: z.array(ResearchRequest).max(5) });
+const MAX_REQUESTS = 5;
+/** The wire schema cannot carry maxItems, so requests past the fifth are dropped locally instead of costing a full-prompt repair. */
+const firstRequests = <T>(value: T): T => {
+  const requests = (value as { requests?: unknown })?.requests;
+  return Array.isArray(requests) && requests.length > MAX_REQUESTS ? { ...value, requests: requests.slice(0, MAX_REQUESTS) } : value;
+};
+const REQUESTS_SCHEMA = outputContract({ requests: z.array(ResearchRequest).max(MAX_REQUESTS) });
+export const REQUEST_CONTRACT: AgentOutputFormat = { ...REQUESTS_SCHEMA, validate: value => REQUESTS_SCHEMA.validate!(firstRequests(value)) };
 const BRIEF_CONTRACT = outputContract({ approach: z.string().min(1), checks: z.array(z.string().min(1)).min(1), information_needed: z.array(z.string().min(1)) });
 const ANSWER_CONTRACT = { ...outputContract({ status: z.enum(["answered", "unavailable", "needs_sources"]), answer: z.string().min(1),
   evidence_ids: z.array(z.string()), artifact_ids: z.array(z.string()), source_ids: z.array(z.string()).optional(), requires_rerun: z.boolean().optional() }),
@@ -83,6 +91,38 @@ export async function prepareResearchTeam(sql: Sql, ctx: ResearchRunContext) {
   if (failed?.status === "rejected") throw failed.reason;
 }
 
+/**
+ * Only briefed roles read the briefs, so ingestion and evidence extraction (data-owned) run while they
+ * are written; the first stage whose owner is briefed waits, and a brief failure surfaces then or at
+ * the next pass. drain() waits for brief calls still in flight, so the run lock outlives them.
+ */
+export function teamBriefScheduler(prepare: (ctx: ResearchRunContext) => Promise<void>) {
+  type Pending = { settled: boolean; failure?: { error: unknown }; done: Promise<void> };
+  let pending: Pending | null = null;
+  const collect = async () => {
+    const entry = pending;
+    pending = null;
+    await entry?.done;
+    if (entry?.failure) throw entry.failure.error;
+  };
+  return {
+    async before(ctx: ResearchRunContext, stages: string[]) {
+      if (pending?.settled) await collect();
+      if (!pending) {
+        const entry: Pending = { settled: false, done: Promise.resolve() };
+        entry.done = prepare(ctx).then(() => undefined, (error: unknown) => { entry.failure = { error }; })
+          .finally(() => { entry.settled = true; });
+        pending = entry;
+      }
+      if (stages.some(key => { const role = STAGE_OWNERS[key]; return role !== undefined && BRIEF_ROLES.includes(role); })) await collect();
+    },
+    async drain() {
+      await pending?.done;
+      pending = null;
+    },
+  };
+}
+
 /** The next round: at most two, repeated questions dropped, per-run flags carried. Null when there is nothing new. */
 export function nextRequestBatch(previous: RequestBatch | null, proposed: Request[]): RequestBatch | null {
   if ((previous?.round || 0) >= 2) return null;
@@ -112,10 +152,10 @@ export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, 
     taskKey: `team:requests:${previous?.round || 0}`, taskType: "team_requests", agentName: "export-writer", modelTier: "mid",
     packet, outputFormat: REQUEST_CONTRACT, promptFactory: p => exactJsonPrompt({ agentName: "export-writer",
       requiredKeys: ["requests"], packet: p, extraRules: [TEAM_ROLES.report.purpose,
-        "Request only specific unanswered investment questions or material inconsistencies. Return an empty requests array when the supplied research is adequate. Do not request information already present or repeat answered/unavailable requests.",
+        "Request only specific unanswered investment questions or material inconsistencies, at most 5, most material first. Return an empty requests array when the supplied research is adequate. Do not request information already present or repeat answered/unavailable requests.",
         "Route financial extraction/reconciliation to financials, management/operations/scenarios to business, valuation calculations to valuation, and missing documents to data. Set needs_sources when new external evidence is required; source_role tells the collector where to search. Stored price history and the FRED 10-year Treasury series are answered directly from the run's data. Owners answer from the run's documents without rerunning their analysis; the collector searches once for a missing document, and a stage reruns only when its owner says its own output must be recomputed.",
         "role names the specialist and must be exactly one of: data, financials, business, valuation. Document types such as regulatory_filing or market_data belong in source_role, never in role."] }) });
-  const batch = nextRequestBatch(previous, result.requests);
+  const batch = nextRequestBatch(previous, firstRequests(result).requests);
   if (!batch) return;
   await saveReportArtifact(sql, ctx, "team_requests", "requests", batch);
   throw new ResearchRequestsPending();
@@ -284,17 +324,31 @@ async function searchForRequest(sql: Sql, ctx: ResearchRunContext, request: Team
   await extractEvidenceForSources(sql, ctx, result.documents.map(doc => doc.source_id).filter(id => !known.has(id)));
 }
 
+/**
+ * Artifact types an owner answers from: the outputs of every stage its role owns, plus what its home
+ * stage reads (as its stage call receives them), so the valuation owner also sees operating scenarios.
+ */
+export function ownerArtifactTypes(role: Request["role"]): Set<string> {
+  const stages = [...Object.keys(STAGE_OWNERS).filter(key => STAGE_OWNERS[key] === role), ...(STAGE_DEPENDENCIES[TEAM_ROLES[role].stage] || [])];
+  const types = new Set(stages.flatMap(key => getStageOutputContract(key)?.requiredKeys || []));
+  if (stages.includes("historical_record")) types.add("historical_record");
+  return types;
+}
+
 async function ownerAnswer(sql: Sql, ctx: ResearchRunContext, request: TeamRequest, searched: boolean, retrieved?: RequestPassage[]): Promise<TeamAnswer> {
   const owner = TEAM_ROLES[request.role];
   const inputs = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
+  // The owner reads its own slice of the archive; citations are still checked against all current inputs.
   const references = { ...inputs, sources: await runDocuments(sql, ctx.runId) };
+  const types = ownerArtifactTypes(request.role);
   const { id, role, question, material, needs_sources, source_role } = request;
   const passages = retrieved ?? (await requestPassages(sql, ctx.runId, request)).passages;
-  const packet = { asset: { name: ctx.assetName, symbol: ctx.symbol }, ...inputs, request: { id, role, question, material, needs_sources, source_role },
-    role: request.role, output_contract: "team_answer", source_search_attempted: searched, passages };
+  const packet = { asset: { name: ctx.assetName, symbol: ctx.symbol }, artifacts: inputs.artifacts.filter(a => types.has(a.artifact_type)),
+    evidence: inputs.evidence, role: request.role, output_contract: "team_answer",
+    request: { id, role, question, material, needs_sources, source_role }, source_search_attempted: searched, passages };
   const response = await callResearchAgent<TeamAnswer>({ sql, ctx, stageKey: owner.stage,
     taskKey: `team:answer:${request.id}`, taskType: "team_answer", agentName: owner.agent, modelTier: "mid", packet,
-    outputFormat: { ...ANSWER_CONTRACT, validate(value) {
+    perCallKeys: ["request", "source_search_attempted", "passages"], outputFormat: { ...ANSWER_CONTRACT, validate(value) {
       const errors = ANSWER_CONTRACT.validate?.(value) || [];
       if (errors.length) return errors;
       const answer = keepCurrentReferences(value as TeamAnswer, references);

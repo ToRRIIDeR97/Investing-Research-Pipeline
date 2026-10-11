@@ -28,7 +28,7 @@ RESEARCH_ALL_AGENTS_MODEL=claude-haiku-5-5
 `src/lib/agent-harness/providers/anthropic-cache.ts` places every `cache_control` breakpoint ([Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)). Claude models get two of the four allowed breakpoints:
 
 1. the system block, which holds the agent's instructions;
-2. the end of the task prompt. A transport retry, fallback or schema repair resends that prompt as an identical block, so it reads from cache. A repair's own instructions follow in a separate block that isn't cached.
+2. the end of the part of the task prompt that later requests resend. Report sections, source-reader batches and team answers name their per-call packet keys (`perCallKeys`: the section plan, its artifacts and completed sections; the batch and its corpus; the request, its search flag and passages). Those keys go last in the packet, and the breakpoint ends just before them, so sibling calls read the shared context (run context, evidence, outline, team context) from cache and the per-call part is sent uncached. A schema repair repeats the generation request and reads the same shared part. Calls without per-call keys keep the breakpoint at the end of the whole task prompt, which a transport retry, fallback or repair resends. A repair's own instructions always follow in a separate block that isn't cached.
 
 Other models on the Anthropic protocol (Qwen and MiniMax on OpenCode Go) keep only the system breakpoint. Prompts shorter than the model minimum (512 tokens for Claude 5.5 models) are processed uncached without an error.
 
@@ -38,7 +38,9 @@ Other models on the Anthropic protocol (Qwen and MiniMax on OpenCode Go) keep on
 | `RESEARCH_ANTHROPIC_CACHE_PROMPT` | on | `0` keeps only the system breakpoint for Claude models. |
 | `RESEARCH_ANTHROPIC_CACHE_TTL` | `5m` | `1h` keeps entries for an hour, applied to Claude breakpoints only. |
 
-Cost: a 5-minute write costs 1.25x input and a 1-hour write costs 2x; a read costs 0.1x on Haiku 5.5 (0.05x on Opus and Sonnet 5.5). The prompt breakpoint writes the whole packet on every call, so it pays off once more than about 28% of calls resend it. In two Haiku 5.5 runs, 15 of 59 calls needed a repair; retries and fallbacks add to that. Set `RESEARCH_ANTHROPIC_CACHE_PROMPT=0` if repairs become rare. The cost ledger prices 1-hour writes at 2x from the `cache_creation` usage breakdown.
+Cost: a 5-minute write costs 1.25x input and a 1-hour write costs 2x; a read costs 0.1x on Haiku 5.5 (0.05x on Opus and Sonnet 5.5). A breakpoint at the end of a whole packet pays off only once more than about 28% of calls resend it. In two Haiku 5.5 runs, 15 of 59 calls needed a repair; retries and fallbacks add to that. Set `RESEARCH_ANTHROPIC_CACHE_PROMPT=0` if repairs become rare. Before per-call keys, run 7fa1f00a wrote 5.90M cache tokens and read 0.84M: each of its 12 report sections read only the 5,581-token system block and wrote 53K to 260K tokens. Sections run four at a time, so the first four of a round still write the shared part; later sections and later same-owner answers read it. The cost ledger prices 1-hour writes at 2x from the `cache_creation` usage breakdown.
+
+Prompt layout follows the same order on every provider, so DeepSeek and OpenCode Go, whose prefix caching is automatic, also match the shared part. The report packet no longer repeats the team requests under `team_context` when it already carries them as `specialist_requests`.
 
 ### Structured output
 
@@ -52,7 +54,7 @@ OpenCode Go (including Qwen and MiniMax on `/messages`), OpenAI-compatible provi
 | --- | --- | --- |
 | `RESEARCH_ANTHROPIC_STRUCTURED_OUTPUT` | on | `0` sends plain-text requests, as before this feature. Read when the provider is created. |
 
-Changing the schema invalidates the prompt cache, because the API adds a schema-specific system prompt. Generation and repair of one task send the same schema, so the repair still reads the task prompt from cache.
+Changing the schema invalidates the prompt cache, because the API adds a schema-specific system prompt. Generation and repair of one task send the same schema, so the repair still reads the cached part of the task prompt.
 
 ## Direct HTTPS provider
 
@@ -133,6 +135,8 @@ Analytical stages derive their prompt schemas and runtime checks from the artifa
 Completed tasks are reused only when the request fingerprint matches: packet, prompt, output contract, agent, model, provider endpoint, and version fields. Reuse revalidates the stored output. Failed stage validation invalidates that stage's cached tasks so a retry generates new output.
 
 Source-reader extraction is partitioned in retrieval order into stable `source-reader:batch:NN` tasks. Each batch is bounded by both chunk count and serialized bytes, so completed batches can be reused after a later batch fails. The merge rejects invented source/chunk identifiers and invalid character ranges before evidence is persisted. A fallback receives only the failed batch with shortened excerpts; it never receives the complete research corpus.
+
+Independent calls within a stage run in a pool of `RESEARCH_AGENT_CONCURRENCY` (default 4; `1` runs them one at a time): the source-reader batches of evidence extraction and of documents fetched for a request, and the report's body sections. The gap retries, the founder pass and the conclusion sections still run one after another, because they depend on the earlier results. Results keep their input order, so merged evidence, the sections a conclusion reads and task keys don't depend on which call finishes first. When a call fails, the others finish and save their output before the stage fails, so a resume reuses them. In run 7fa1f00a (Haiku 5.5), the eight extraction batches took 186 s back to back, the nine requested-document batches 193 s and the ten body sections 332 s; with a pool of four the same latencies take about 51 s, 62 s and 94 s. Each pass still reserves budget under the run lock, and 429 responses back off as before.
 
 Source-reader requests cap output at 16,384 tokens by default. Other agents cap output at 32,768 tokens. The source-reader deadline is ten minutes, with batches bounded at eight chunks and 36,000 serialized bytes. Set `RESEARCH_ALL_AGENTS_MODEL=deepseek-v4.1-flash` to route every agent to that model during a run.
 

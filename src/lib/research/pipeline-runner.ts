@@ -6,7 +6,7 @@ import { ModelBudgetExhausted } from "@/lib/agents/model-calls";
 import { loadRunContext, type Sql } from "./run-context";
 import { STAGE_HANDLERS } from "./handlers";
 import { CURRENT_PIPELINE_VERSION } from "./version";
-import { prepareResearchTeam, processResearchRequests, ResearchRequestsPending } from "./team";
+import { prepareResearchTeam, processResearchRequests, ResearchRequestsPending, teamBriefScheduler } from "./team";
 import { processSourceRequests } from "./sources/collector";
 import { SourceRequestsPending } from "./sources/source-requests";
 
@@ -132,6 +132,7 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
     await sql`UPDATE research_tasks SET status = 'failed', failure_reason = 'Interrupted worker attempt',
       budget_reservation_usd = NULL, updated_at = NOW()
       WHERE research_run_id = ${runId} AND status = 'running'`;
+    const briefs = teamBriefScheduler(ctx => prepareResearchTeam(sql, ctx));
     try {
       if (run.status === "pending") await startRun(runId);
       for (let iteration = 0; iteration < 192; iteration += 1) {
@@ -146,7 +147,7 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
           break;
         }
         const context = { ...(await loadRunContext(sql, runId)), signal };
-        await prepareResearchTeam(sql, context);
+        await briefs.before(context, stages);
         // Specialists paused on document requests rerun once the collector has served them.
         if (await processSourceRequests(sql, context)) continue;
         if (await processResearchRequests(sql, context)) continue;
@@ -187,6 +188,7 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
         notes.push(reason);
       }
     }
+    await briefs.drain();
     if (interrupted) throw new ResearchRunInterrupted(`Research run ${runId} interrupted`);
     const [result] = await sql`
       SELECT rr.status, rr.failure_reason,

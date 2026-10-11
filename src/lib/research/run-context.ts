@@ -9,7 +9,7 @@
 
 import postgres from "postgres";
 import { createHash } from "node:crypto";
-import { runResearchAgent, buildTaskPrompt } from "@/lib/agent-harness/runner";
+import { runResearchAgent, buildTaskPrompt, UNTRUSTED_DATA_RULE } from "@/lib/agent-harness/runner";
 import { getAgentConfig, resolveAgentModel, type ResearchAgentName } from "@/lib/agent-harness/registry";
 import { validateSchema } from "@/lib/agent-harness/validation";
 import { assertModelBudgetAvailable, recordModelCall } from "@/lib/agents/model-calls";
@@ -32,7 +32,8 @@ export const HANDLER_VERSION = "3.0.0";
 export const SCHEMA_VERSION = "3.0.0";
 export const VALIDATOR_VERSION = "1.0.0";
 // v2: instructions sent as a system message and run-wide packet context first, for provider prompt caching.
-export const PROMPT_VERSION = "v3-runtime-v2";
+// v3: the untrusted-data rule, and per-call packet keys last, after the shared context and its cache breakpoint.
+export const PROMPT_VERSION = "v3-runtime-v3";
 
 export interface ResearchRunContext {
   runId: string;
@@ -310,6 +311,14 @@ export function runContextFirst(packet: Record<string, unknown>): Record<string,
   return { ...Object.fromEntries(leading.map(key => [key, packet[key]])), ...packet };
 }
 
+/** Moves the keys that differ between sibling calls to the end, after everything they share. */
+export function perCallKeysLast(packet: Record<string, unknown>, perCallKeys: string[] = []): Record<string, unknown> {
+  const last = perCallKeys.filter(key => key in packet);
+  if (!last.length) return packet;
+  return { ...Object.fromEntries(Object.entries(packet).filter(([key]) => !last.includes(key))),
+    ...Object.fromEntries(last.map(key => [key, packet[key]])) };
+}
+
 export function exactJsonPrompt(params: {
   agentName: string;
   requiredKeys: string[];
@@ -323,6 +332,7 @@ export function exactJsonPrompt(params: {
     `The top-level object must contain exactly these required keys: ${params.requiredKeys.join(", ")}.`,
     "For every top-level artifact object, artifact_type must exactly equal its enclosing top-level key.",
     "If evidence is insufficient, return empty arrays for the relevant fields and explain gaps in source_gaps or unresolved fields.",
+    UNTRUSTED_DATA_RULE,
     ...(["asset-analyst", "valuation-analyst", "research-reviewer", "metric-normalizer", "table-normalizer", "source-reader", "export-writer"].includes(params.agentName) ? RESEARCH_DOCTRINE : []),
     ...(params.extraRules || []),
     "",
@@ -367,6 +377,8 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
   prompt?: string;
   promptFactory?: (packet: Record<string, unknown>) => string;
   outputFormat?: Parameters<typeof runResearchAgent>[0]["outputFormat"];
+  /** Packet keys that differ between sibling calls; they follow the shared context and its cache breakpoint. */
+  perCallKeys?: string[];
 }): Promise<T> {
   const role = STAGE_OWNERS[params.stageKey];
   // Only the stage owner's own analysis may ask the collector for documents; helpers such as the
@@ -401,11 +413,12 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
       ...(!params.packet.evidence_claims && role !== "data" ? { evidence_claims: inputs.evidence } : {}),
       team_context: { role, purpose: TEAM_ROLES[role].purpose,
         brief: rows.find(r => r.artifact_type === "agent_brief")?.content_json || null,
-        requests, upstream_artifacts: inputs.artifacts.filter(a => types.has(a.artifact_type)),
+        // The report packet already carries the same requests as specialist_requests.
+        ...("specialist_requests" in params.packet ? {} : { requests }), upstream_artifacts: inputs.artifacts.filter(a => types.has(a.artifact_type)),
         ...(sourceRequests ? { source_requests: { ...sourceRequests, instructions: sourceRequestRule(sourceRequests.allowed) } } : {}) },
     } };
   }
-  params = { ...params, packet: researchPacketForModel(params.packet) };
+  params = { ...params, packet: researchPacketForModel(perCallKeysLast(params.packet, params.perCallKeys)) };
   const config = getAgentConfig(params.agentName);
   const outputFormat = params.outputFormat || config.outputFormat;
   const request = {
@@ -459,6 +472,7 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
       promptFactory: params.promptFactory,
       outputFormat: params.outputFormat,
       cacheScope: params.ctx.runId,
+      perCallKeys: params.perCallKeys,
       signal: params.ctx.signal,
       hooks: {
         beforeAttempt: async () => {

@@ -1,5 +1,8 @@
 import { Outline, Section, COVERAGE, type ReportOutline, type ReportSection } from "./contracts";
 import { createReport, type ReportInput, type ReportDocument } from "./report";
+import { mapWithConcurrency } from "../pipeline-helpers";
+
+const isConclusion = (plan: { coverage: string[] }) => plan.coverage.includes("conclusion");
 
 export interface ReportReview extends Record<string, unknown> {
   review_summary: string; findings: Record<string, any>[]; quality_score: number;
@@ -24,10 +27,13 @@ export async function composeReviewedReport(input: Omit<ReportInput, "sections" 
     await actions.save("report_section", section.id, section);
     return section;
   }
-  // The outline may start with the executive conclusion; write it after the body.
-  for (const plan of [...outline.sections].sort((a,b) => Number(a.coverage.includes("conclusion")) - Number(b.coverage.includes("conclusion")))) {
-    sections.push(await write(plan, []));
-  }
+  // The outline may start with the executive conclusion; write it after the body. Body sections never
+  // read each other, so they are written together (results in outline order); each conclusion reads
+  // every section finished before it.
+  const body = (plans: ReportOutline["sections"]) => plans.filter(plan => !isConclusion(plan));
+  const conclusions = (plans: ReportOutline["sections"]) => plans.filter(isConclusion);
+  sections.push(...await mapWithConcurrency(body(outline.sections), plan => write(plan, [], [])));
+  for (const plan of conclusions(outline.sections)) sections.push(await write(plan, []));
   sections.sort((a,b) => outline.sections.findIndex(s => s.id === a.id) - outline.sections.findIndex(s => s.id === b.id));
   for (let round = 0; round <= 1; round++) {
     const document = createReport({ ...input, ...outline, sections });
@@ -42,25 +48,24 @@ export async function composeReviewedReport(input: Omit<ReportInput, "sections" 
       outline = Outline.parse(await actions.plan(researchFindings));
       await actions.save("report_outline", "outline", outline);
       await actions.save("question_register", "questions", { questions: outline.questions });
-      const revised: ReportSection[] = [];
-      for (const plan of [...outline.sections].sort((a,b) => Number(a.coverage.includes("conclusion")) - Number(b.coverage.includes("conclusion")))) {
+      const revised: ReportSection[] = await mapWithConcurrency(body(outline.sections), plan => {
         const prior = sections.find(s => s.id === plan.id);
         const affected = review.findings.some(f => !f.section_id || f.section_id === plan.id);
-        revised.push(prior && !affected && !plan.coverage.includes("conclusion") &&
-          JSON.stringify(prior.coverage) === JSON.stringify(plan.coverage) ? prior : await write(plan, review.findings, revised));
-      }
+        return prior && !affected && JSON.stringify(prior.coverage) === JSON.stringify(plan.coverage)
+          ? Promise.resolve(prior) : write(plan, review.findings, []);
+      });
+      for (const plan of conclusions(outline.sections)) revised.push(await write(plan, review.findings, revised));
       revised.sort((a,b) => outline.sections.findIndex(s => s.id === a.id) - outline.sections.findIndex(s => s.id === b.id));
       sections.splice(0, sections.length, ...revised);
       continue;
     }
     const writingFindings = review.findings;
     const affected = new Set(writingFindings.map(f => f.section_id).filter(Boolean));
-    const repairOrder = sections.map((_, i) => i).sort((a,b) => Number(sections[a].coverage.includes("conclusion")) - Number(sections[b].coverage.includes("conclusion")));
-    for (const i of repairOrder) {
-      if (!affected.size || affected.has(sections[i].id) || sections[i].coverage.includes("conclusion")) {
-        sections[i] = await write(outline.sections.find(s => s.id === sections[i].id)!, writingFindings);
-      }
-    }
+    const planOf = (i: number) => outline.sections.find(s => s.id === sections[i].id)!;
+    const indexes = sections.map((_, i) => i);
+    const repairBody = indexes.filter(i => !isConclusion(sections[i]) && (!affected.size || affected.has(sections[i].id)));
+    (await mapWithConcurrency(repairBody, i => write(planOf(i), writingFindings, []))).forEach((section, k) => { sections[repairBody[k]] = section; });
+    for (const i of indexes.filter(i => isConclusion(sections[i]))) sections[i] = await write(planOf(i), writingFindings);
   }
   throw new Error("Report review did not finish");
 }

@@ -16,7 +16,8 @@ periods and inappropriate metrics must be explained, not synthesized as facts.
 The existing `ai_reviewer` stage now plans the report, records material questions,
 writes individual sections, and reviews the completed document against the full
 analytical artifacts and source passages. The writer selects company-specific
-headings and may add sections. The executive judgment is written after the body.
+headings and may add sections. Body sections are written up to four at a time
+(`RESEARCH_AGENT_CONCURRENCY`); the executive judgment is written after the body.
 Numerical tables reference stored artifact paths; the writer does not author
 their numbers. Evidence citations require an accepted claim, source location,
 quoted passage, URL, and a publication date within the cutoff. These checks prove
