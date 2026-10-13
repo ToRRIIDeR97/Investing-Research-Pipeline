@@ -1,32 +1,32 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1350" width="1120" height="1350" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" font-size="13">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1380" width="1120" height="1380" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" font-size="13">
 <title id="t">Research run — UML sequence view</title><desc id="d">Ordered messages from run creation through enqueue, worker claim, advisory lock, parallel stage execution with model calls, report requests answered without stage resets and the re-run approval, plan gate pause, approval and re-enqueue, the lease-expiry retry path, and cancel or shutdown.</desc>
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker><marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10" fill="none" stroke="#333"/></marker></defs>
-<rect x="0" y="0" width="1120" height="1350" fill="#ffffff"/>
+<rect x="0" y="0" width="1120" height="1380" fill="#ffffff"/>
 <text x="16" y="26" font-size="16" font-weight="bold" fill="#111">Research run — UML sequence view</text>
 <rect x="10" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
 <text x="70.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Analyst UI</text>
-<line x1="70" y1="79" x2="70" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="70" y1="79" x2="70" y2="1350" stroke="#999" stroke-dasharray="4 4"/>
 <rect x="150" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
 <text x="210.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">API route</text>
-<line x1="210" y1="79" x2="210" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="210" y1="79" x2="210" y2="1350" stroke="#999" stroke-dasharray="4 4"/>
 <rect x="290" y="45" width="120" height="34" rx="6" fill="#eaf4f4" stroke="#2f7f7f" stroke-width="1.4"/>
 <text x="350.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Postgres</text>
-<line x1="350" y1="79" x2="350" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="350" y1="79" x2="350" y2="1350" stroke="#999" stroke-dasharray="4 4"/>
 <rect x="430" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
 <text x="490.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Worker</text>
-<line x1="490" y1="79" x2="490" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="490" y1="79" x2="490" y2="1350" stroke="#999" stroke-dasharray="4 4"/>
 <rect x="570" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
 <text x="630.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Pipeline runner</text>
-<line x1="630" y1="79" x2="630" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="630" y1="79" x2="630" y2="1350" stroke="#999" stroke-dasharray="4 4"/>
 <rect x="710" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
 <text x="770.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Stage handler</text>
-<line x1="770" y1="79" x2="770" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="770" y1="79" x2="770" y2="1350" stroke="#999" stroke-dasharray="4 4"/>
 <rect x="850" y="45" width="120" height="34" rx="6" fill="#ffffff" stroke="#444444" stroke-width="1.4"/>
 <text x="910.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Agent harness</text>
-<line x1="910" y1="79" x2="910" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="910" y1="79" x2="910" y2="1350" stroke="#999" stroke-dasharray="4 4"/>
 <rect x="990" y="45" width="120" height="34" rx="6" fill="#f4f4f4" stroke="#666666" stroke-width="1.4"/>
 <text x="1050.0" y="63" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">LLM provider</text>
-<line x1="1050" y1="79" x2="1050" y2="1320" stroke="#999" stroke-dasharray="4 4"/>
+<line x1="1050" y1="79" x2="1050" y2="1350" stroke="#999" stroke-dasharray="4 4"/>
 <path d="M70,100 L210,100" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="140.0" y="95" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">POST /assets/:id/research-runs</text>
 <path d="M210,128 L350,128" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
@@ -50,64 +50,66 @@
 <text x="490.0" y="377" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">startReadyStages (dependency graph)</text>
 <path d="M630,410 L770,410" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="700.0" y="405" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">execute(ctx) × ready stages (parallel)</text>
-<path d="M770,438 L910,438" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="840.0" y="433" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">callResearchAgent(role, packet)</text>
-<path d="M910,466 L1050,466" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="980.0" y="461" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">HTTPS chat/completions | messages (cached prefix)</text>
-<path d="M1050,494 L910,494" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#o)"/>
-<text x="980.0" y="489" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">JSON text + usage</text>
-<path d="M910,522 L770,522" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#o)"/>
-<text x="840.0" y="517" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">schema-validated output (repair/retry)</text>
-<path d="M770,550 L350,550" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="560.0" y="545" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">persist artifacts, evidence, tasks, model_call_logs</text>
-<path d="M630,578 h40 v14 h-40" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="676" y="589" font-size="11" font-weight="normal" text-anchor="start" fill="#222">validate → advanceStage(deferNext)</text>
-<rect x="280" y="346" width="835" height="252" fill="none" stroke="#6f4fa3" stroke-dasharray="6 3"/>
-<text x="16" y="624" font-size="11" font-weight="bold" text-anchor="start" fill="#2f7f7f">alt [report requests in team_requests]</text>
-<path d="M630,646 L350,646" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="490.0" y="641" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">processResearchRequests: queued → processing, no reset</text>
+<path d="M770,438 L350,438" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="560.0" y="433" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">loadFilingPassages: MD&amp;A, segment, results (4 stage types)</text>
+<path d="M770,466 L910,466" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="840.0" y="461" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">callResearchAgent(role, packet + filing_passages)</text>
+<path d="M910,494 L1050,494" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="980.0" y="489" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">HTTPS chat/completions | messages (cached prefix)</text>
+<path d="M1050,522 L910,522" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#o)"/>
+<text x="980.0" y="517" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">JSON text + usage</text>
+<path d="M910,550 L770,550" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#o)"/>
+<text x="840.0" y="545" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">schema-validated output (repair/retry)</text>
+<path d="M770,578 L350,578" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="560.0" y="573" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">persist artifacts, evidence, tasks, model_call_logs</text>
+<path d="M630,606 h40 v14 h-40" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="676" y="617" font-size="11" font-weight="normal" text-anchor="start" fill="#222">validate → advanceStage(deferNext)</text>
+<rect x="280" y="346" width="835" height="280" fill="none" stroke="#6f4fa3" stroke-dasharray="6 3"/>
+<text x="16" y="652" font-size="11" font-weight="bold" text-anchor="start" fill="#2f7f7f">alt [report requests in team_requests]</text>
 <path d="M630,674 L350,674" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="490.0" y="669" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">system answers: market_price_history, FRED DGS10</text>
+<text x="490.0" y="669" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">processResearchRequests: queued → processing, no reset</text>
 <path d="M630,702 L350,702" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="490.0" y="697" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">retrievePassages(request source role)</text>
-<path d="M630,730 L910,730" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="770.0" y="725" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">team_answer(owner, report inputs + passages)</text>
-<path d="M910,758 L1050,758" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="980.0" y="753" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">one call; one more after a collector search</text>
-<path d="M630,786 L350,786" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="490.0" y="781" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">requestResetPlan: none → answered · auto → reset once</text>
+<text x="490.0" y="697" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">system answers: market_price_history, FRED DGS10</text>
+<path d="M630,730 L350,730" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="490.0" y="725" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">retrievePassages(request source role)</text>
+<path d="M630,758 L910,758" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="770.0" y="753" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">team_answer(owner, report inputs + passages)</text>
+<path d="M910,786 L1050,786" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="980.0" y="781" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">one call; one more after a collector search</text>
 <path d="M630,814 L350,814" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="490.0" y="809" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">approval → run, ai_reviewer waiting; request_reset</text>
-<path d="M70,842 L210,842" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="140.0" y="837" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">POST …/request-reset {rerun | skip}</text>
-<path d="M210,870 L350,870" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="280.0" y="865" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">approveRequestReset + enqueue new job</text>
-<rect x="10" y="610" width="1105" height="278" fill="none" stroke="#2f7f7f" stroke-dasharray="6 3"/>
-<text x="16" y="914" font-size="11" font-weight="bold" text-anchor="start" fill="#b23b3b">alt [stage 4 research_plan gate]</text>
-<path d="M630,936 L350,936" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="490.0" y="931" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">run + stage → waiting_for_human; release lock</text>
-<path d="M490,964 L350,964" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="420.0" y="959" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">completeResearchRunJob (owner-guarded)</text>
-<path d="M70,992 L210,992" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="140.0" y="987" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">POST …/approve-plan</text>
-<path d="M210,1020 L350,1020" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="280.0" y="1015" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">approveResearchPlan + enqueue new job</text>
-<rect x="10" y="900" width="690" height="138" fill="none" stroke="#b23b3b" stroke-dasharray="6 3"/>
-<text x="286" y="1064" font-size="11" font-weight="bold" text-anchor="start" fill="#b07a1f">alt [worker crash]</text>
-<path d="M490,1086 L350,1086" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="420.0" y="1081" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">lease expires → requeue if attempts &lt; 3, else failed</text>
-<rect x="280" y="1050" width="420" height="54" fill="none" stroke="#b07a1f" stroke-dasharray="6 3"/>
-<text x="16" y="1130" font-size="11" font-weight="bold" text-anchor="start" fill="#b23b3b">alt [cancel or worker shutdown]</text>
-<path d="M70,1152 L210,1152" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="140.0" y="1147" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">POST …/cancel</text>
-<path d="M210,1180 L350,1180" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="280.0" y="1175" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">cancelRun: run, stages, job closed [txn]</text>
-<path d="M490,1208 L350,1208" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="420.0" y="1203" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">renew lease → none (or SIGTERM)</text>
-<path d="M490,1236 L910,1236" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="700.0" y="1231" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">abort signal → in-flight model call cancelled</text>
-<path d="M490,1264 L350,1264" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="420.0" y="1259" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">release job → queued, no attempt used [owner]</text>
-<rect x="10" y="1116" width="965" height="166" fill="none" stroke="#b23b3b" stroke-dasharray="6 3"/>
-<text x="16" y="1340" font-size="11" font-weight="normal" text-anchor="start" fill="#555">Same pattern repeats at stage 22 human_review (POST …/review writes review_decisions; approve → enqueue). Final checks call completeRun or set needs_more_work.</text>
+<text x="490.0" y="809" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">requestResetPlan: none → answered · auto → reset once</text>
+<path d="M630,842 L350,842" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="490.0" y="837" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">approval → run, ai_reviewer waiting; request_reset</text>
+<path d="M70,870 L210,870" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="140.0" y="865" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">POST …/request-reset {rerun | skip}</text>
+<path d="M210,898 L350,898" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="280.0" y="893" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">approveRequestReset + enqueue new job</text>
+<rect x="10" y="638" width="1105" height="278" fill="none" stroke="#2f7f7f" stroke-dasharray="6 3"/>
+<text x="16" y="942" font-size="11" font-weight="bold" text-anchor="start" fill="#b23b3b">alt [stage 4 research_plan gate]</text>
+<path d="M630,964 L350,964" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="490.0" y="959" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">run + stage → waiting_for_human; release lock</text>
+<path d="M490,992 L350,992" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="420.0" y="987" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">completeResearchRunJob (owner-guarded)</text>
+<path d="M70,1020 L210,1020" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="140.0" y="1015" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">POST …/approve-plan</text>
+<path d="M210,1048 L350,1048" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="280.0" y="1043" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">approveResearchPlan + enqueue new job</text>
+<rect x="10" y="928" width="690" height="138" fill="none" stroke="#b23b3b" stroke-dasharray="6 3"/>
+<text x="286" y="1092" font-size="11" font-weight="bold" text-anchor="start" fill="#b07a1f">alt [worker crash]</text>
+<path d="M490,1114 L350,1114" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="420.0" y="1109" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">lease expires → requeue if attempts &lt; 3, else failed</text>
+<rect x="280" y="1078" width="420" height="54" fill="none" stroke="#b07a1f" stroke-dasharray="6 3"/>
+<text x="16" y="1158" font-size="11" font-weight="bold" text-anchor="start" fill="#b23b3b">alt [cancel or worker shutdown]</text>
+<path d="M70,1180 L210,1180" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="140.0" y="1175" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">POST …/cancel</text>
+<path d="M210,1208 L350,1208" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="280.0" y="1203" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">cancelRun: run, stages, job closed [txn]</text>
+<path d="M490,1236 L350,1236" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="420.0" y="1231" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">renew lease → none (or SIGTERM)</text>
+<path d="M490,1264 L910,1264" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="700.0" y="1259" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">abort signal → in-flight model call cancelled</text>
+<path d="M490,1292 L350,1292" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
+<text x="420.0" y="1287" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">release job → queued, no attempt used [owner]</text>
+<rect x="10" y="1144" width="965" height="166" fill="none" stroke="#b23b3b" stroke-dasharray="6 3"/>
+<text x="16" y="1370" font-size="11" font-weight="normal" text-anchor="start" fill="#555">Same pattern repeats at stage 22 human_review (POST …/review writes review_decisions; approve → enqueue). Final checks call completeRun or set needs_more_work.</text>
 </svg>

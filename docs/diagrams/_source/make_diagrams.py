@@ -317,14 +317,14 @@ s.text(760, 715, "ai_reviewer waiting_for_human until the decision", 11, fill="#
 s.save(P("state-machines.svg"))
 
 # ---------------------------------------------------------------- sequence
-s = Svg(1120, 1350, "Research run — UML sequence view",
+s = Svg(1120, 1380, "Research run — UML sequence view",
         "Ordered messages from run creation through enqueue, worker claim, advisory lock, parallel stage execution with model calls, report requests "
         "answered without stage resets and the re-run approval, plan gate pause, approval and re-enqueue, the lease-expiry retry path, and cancel or shutdown.")
 parts = ["Analyst UI", "API route", "Postgres", "Worker", "Pipeline runner", "Stage handler", "Agent harness", "LLM provider"]
 xs = [70 + i * 140 for i in range(len(parts))]
 for x, p in zip(xs, parts):
     s.box(x - 60, 45, 120, 34, p, [], "ext" if p == "LLM provider" else ("store" if p == "Postgres" else "plain"), title_size=12)
-    s.raw(f'<line x1="{x}" y1="79" x2="{x}" y2="1320" stroke="#999" stroke-dasharray="4 4"/>')
+    s.raw(f'<line x1="{x}" y1="79" x2="{x}" y2="1350" stroke="#999" stroke-dasharray="4 4"/>')
 y = [100]
 def msg(a, b, label, ret=False):
     yy = y[0]
@@ -355,7 +355,8 @@ msg(4, 2, "pg_try_advisory_lock(run); startRun / resume")
 def loop_body():
     msg(4, 2, "startReadyStages (dependency graph)")
     msg(4, 5, "execute(ctx) × ready stages (parallel)")
-    msg(5, 6, "callResearchAgent(role, packet)")
+    msg(5, 2, "loadFilingPassages: MD&A, segment, results (4 stage types)")
+    msg(5, 6, "callResearchAgent(role, packet + filing_passages)")
     msg(6, 7, "HTTPS chat/completions | messages (cached prefix)")
     msg(7, 6, "JSON text + usage", ret=True)
     msg(6, 5, "schema-validated output (repair/retry)", ret=True)
@@ -389,8 +390,8 @@ def stop_body():
     msg(3, 6, "abort signal → in-flight model call cancelled")
     msg(3, 2, "release job → queued, no attempt used [owner]")
 frame("alt [cancel or worker shutdown]", "#b23b3b", xs[0] - 60, xs[6] + 65, stop_body)
-assert y[0] < 1320, y[0]
-s.text(16, 1340, "Same pattern repeats at stage 22 human_review (POST …/review writes review_decisions; approve → enqueue). Final checks call completeRun or set needs_more_work.", 11, fill="#555")
+assert y[0] < 1350, y[0]
+s.text(16, 1370, "Same pattern repeats at stage 22 human_review (POST …/review writes review_decisions; approve → enqueue). Final checks call completeRun or set needs_more_work.", 11, fill="#555")
 s.save(P("sequence-research-run.svg"))
 
 # ---------------------------------------------------------------- trust boundaries

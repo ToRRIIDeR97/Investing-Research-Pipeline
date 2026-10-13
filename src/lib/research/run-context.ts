@@ -24,6 +24,7 @@ import { SourceRequestsPending, getStageSourceRequests, parseSourceRequests, que
 import { loadReportInputs } from "./reporting/store";
 import { getStageOutputContract } from "./stage-contracts";
 import { researchPacketForModel } from "./reporting/packet";
+import { FILING_PASSAGE_RULE, FILING_PASSAGE_TASKS, loadFilingPassages } from "./memory/filing-passages";
 export type { ValidationResult };
 
 export type Sql = ReturnType<typeof postgres>;
@@ -302,7 +303,7 @@ export async function failV3Task(sql: Sql, taskId: string, error: unknown): Prom
 
 // Run-wide context leads the packet, so calls with the same instructions (report sections, extraction
 // batches, retries) also share the packet's leading bytes and the provider can reuse them from cache.
-const RUN_CONTEXT_KEYS = ["asset", "research_question", "source_cutoff", "profile", "coverage_requirements", "evidence_claims"];
+const RUN_CONTEXT_KEYS = ["asset", "research_question", "source_cutoff", "profile", "coverage_requirements", "evidence_claims", "filing_passages"];
 
 export function runContextFirst(packet: Record<string, unknown>): Record<string, unknown> {
   const leading = RUN_CONTEXT_KEYS.filter(key => key in packet);
@@ -387,9 +388,8 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
     && params.agentName === TEAM_ROLES[role].agent);
   const sourceLedger = asksForSources ? await getStageSourceRequests(params.sql, params.ctx.runId, params.stageKey) : null;
   const sourceRequests = asksForSources ? sourceRequestContext(sourceLedger) : null;
-  if (sourceRequests) {
-    const rule = sourceRequestRule(sourceRequests.allowed);
-    // Rules precede the task packet, which stays the last part of the prompt.
+  // Rules precede the task packet, which stays the last part of the prompt.
+  const addRule = (rule: string) => {
     const withRule = (text: string) => {
       const at = text.lastIndexOf("\n\nTask packet:");
       return at >= 0 ? `${text.slice(0, at)}\n${rule}${text.slice(at)}` : `${rule}\n${text}`;
@@ -397,7 +397,8 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
     const factory = params.promptFactory;
     if (factory) params = { ...params, promptFactory: packet => withRule(factory(packet)) };
     else if (params.prompt) params = { ...params, prompt: withRule(params.prompt) };
-  }
+  };
+  if (sourceRequests) addRule(sourceRequestRule(sourceRequests.allowed));
   if (role && !params.taskType.startsWith("team_")) {
     const rows = await params.sql`SELECT artifact_type, scope_key, content_json FROM research_artifacts
       WHERE research_run_id = ${params.ctx.runId} AND status = 'validated'
@@ -417,6 +418,17 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
         ...("specialist_requests" in params.packet ? {} : { requests }), upstream_artifacts: inputs.artifacts.filter(a => types.has(a.artifact_type)),
         ...(sourceRequests ? { source_requests: { ...sourceRequests, instructions: sourceRequestRule(sourceRequests.allowed) } } : {}) },
     } };
+  }
+  // Filing text (MD&A, segment notes, results discussion) for stages that explain drivers. It is the same for
+  // every call of a run, so it sits in the shared, cached part of the packet after evidence_claims.
+  if (FILING_PASSAGE_TASKS.has(params.taskType) && !("filing_passages" in params.packet)) {
+    const evidence = Array.isArray(params.packet.evidence_claims) ? params.packet.evidence_claims as Array<{ id?: unknown }> : [];
+    const passages = await loadFilingPassages(params.sql, params.ctx.runId,
+      { cutoff: params.ctx.cutoffAt, claimIds: evidence.map(claim => String(claim?.id)) });
+    if (passages.length) {
+      params = { ...params, packet: { ...params.packet, filing_passages: passages } };
+      addRule(FILING_PASSAGE_RULE);
+    }
   }
   params = { ...params, packet: researchPacketForModel(perCallKeysLast(params.packet, params.perCallKeys)) };
   const config = getAgentConfig(params.agentName);

@@ -135,7 +135,7 @@ Guards:
 
 ![UML sequence view of a research run with report requests, the re-run approval, the plan gate and the lease-expiry path](diagrams/sequence-research-run.svg)
 
-Report requests are answered inside the scheduling loop without resetting stages: system answers from `market_price_history` and the FRED DGS10 document, otherwise the owner's `team_answer` call with research-memory passages, with at most one collector search per request. `requestResetPlan` then leaves the batch answered, reopens stages once automatically, or pauses for `POST …/request-reset`.
+Report requests are answered inside the scheduling loop without resetting stages: system answers from `market_price_history` and the FRED DGS10 document, otherwise the owner's `team_answer` call with research-memory passages, with at most one collector search per request. Inside the loop, business-process, moat, operating-model and report-section calls first load a byte-bounded set of filing passages (`loadFilingPassages`: MD&A, segment notes, results discussion) into the shared part of their packet. `requestResetPlan` then leaves the batch answered, reopens stages once automatically, or pauses for `POST …/request-reset`.
 
 ## Coverage index
 
@@ -150,7 +150,7 @@ Report requests are answered inside the scheduling loop without resetting stages
 | Run cancellation | State, Sequence | `src/app/api/research-runs/[id]/cancel/route.ts`, Cancel run action in `src/app/assets/[id]/run/page.tsx` |
 | Request re-run decision | State, Sequence, Trust | `src/app/api/research-runs/[id]/request-reset/route.ts`, run page panel in `src/app/assets/[id]/run/page.tsx` |
 | Agent harness and prompt caching | Component, Sequence, Trust | `src/lib/agent-harness/**` |
-| Research memory and evidence graph | Component, Class | `src/lib/research/memory/**` |
+| Research memory and evidence graph | Component, Class, Sequence | `src/lib/research/memory/**` (`filing-passages.ts`: `loadFilingPassages`, `selectFilingPassages`) |
 | Sources, ingestion and market data | Component, Deployment, Trust | `src/lib/research/sources/**`, `src/lib/ingestion/**`, `src/lib/market-data/**`, `src/lib/net.ts` (public-host check, capped reads, endpoint URLs), `src/lib/html-scan.ts` |
 | Backtesting | Component, Deployment, State, Trust | `src/lib/backtesting/**` (`framework-runner.ts:frameworkBenchmarks`), `handlers/backtest-execution.ts`, `python/backtesting/**` |
 | Repair specialist sandbox | Component, Deployment, Trust | `src/lib/research/repair/**` |
