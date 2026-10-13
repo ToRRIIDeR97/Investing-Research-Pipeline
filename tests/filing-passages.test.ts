@@ -27,6 +27,7 @@ test("driver sections rank first, boilerplate last, and the order does not depen
   assert.equal(sectionScore(["Note 15. Segment Information"]), 2);
   assert.equal(sectionScore(["Liquidity and Capital Resources"]), 1);
   assert.equal(sectionScore(["Item 1A. Risk Factors", "Results of operations may fluctuate"]), -2);
+  assert.equal(sectionScore(["PART II—OTHER INFORMATION", "Risks Related to Our Business Operations and Financial Results"]), -2);
   const items = [
     candidate("p1", ["Item 1A. Risk Factors"], 5),
     candidate("p2", ["Note 15. Segment Information"], 1, { source_id: "doc-b" }),

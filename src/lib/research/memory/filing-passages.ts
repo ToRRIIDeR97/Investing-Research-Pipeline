@@ -33,7 +33,8 @@ export type FilingPassageCandidate = Pick<RetrievedPassage, "passage_id" | "sour
 /** Section titles that discuss drivers rank first; boilerplate ranks last. */
 export function sectionScore(sectionPath: string[]): number {
   const section = sectionPath.join(" / ").toLowerCase();
-  if (/risk factors|forward-looking|exhibit|signature|table of contents|cover page/.test(section)) return -2;
+  // 10-Q risk subsections sit under "Part II" without "Risk Factors" in their path ("Risks Related to Our Business Operations and Financial Results").
+  if (/risk factors|risks related to|forward-looking|exhibit|signature|table of contents|cover page/.test(section)) return -2;
   if (/management.s discussion|md&a|results of operations/.test(section)) return 3;
   if (/segment/.test(section)) return 2;
   if (/revenue|net sales|operating expenses|costs and expenses|liquidity|outlook|guidance|highlights|financial results|key metrics/.test(section)) return 1;
