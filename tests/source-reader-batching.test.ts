@@ -81,3 +81,16 @@ test("source-reader merge derives precise locators from exact quotes and caps co
   assert.equal(merged.evidence_claims[0].char_end, 148);
   assert.equal(merged.evidence_claims[0].confidence, 0.9);
 });
+
+test("source-reader merge drops a quote the chunk does not contain and keeps one that differs only in whitespace", () => {
+  const source = chunk(0);
+  source.content_excerpt = "Family daily active people (DAP) was\n3.43 billion on average for September 2025.";
+  const batches = createSourceReaderBatches([source]);
+  const claim = { claim_text: "A sufficiently detailed decision-relevant source claim.", source_id: source.source_id, document_chunk_id: source.document_chunk_id };
+  const merged = mergeSourceReaderOutputs([{ evidence_claims: [
+    { ...claim, quoted_text: "Family daily active people (DAP) was 3.43 billion on average" },
+    { ...claim, claim_text: "Another sufficiently detailed source claim here.", quoted_text: "DAP was 3.6 billion, an invented quotation." },
+  ] }], batches);
+  assert.equal(merged.evidence_claims[0].quoted_text, "Family daily active people (DAP) was 3.43 billion on average");
+  assert.equal(merged.evidence_claims[1].quoted_text, undefined);
+});

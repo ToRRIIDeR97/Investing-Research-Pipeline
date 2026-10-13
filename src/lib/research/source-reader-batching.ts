@@ -123,8 +123,12 @@ function normalizedClaim(claim: Record<string, unknown>, chunks: Map<string, Sou
     const chunkEnd = Number(chunk.char_end ?? chunkStart + chunk.content_excerpt.length);
     if (start < chunkStart || end > chunkEnd || end <= start) return null;
   }
+  // A quote the excerpt does not contain (even with whitespace collapsed) is model text, not a source quote: drop it.
+  const collapse = (text: string) => text.replace(/\s+/g, " ");
+  const { quoted_text: _unverified, ...rest } = claim;
+  const keepQuote = quote.length >= 10 && collapse(chunk.content_excerpt).includes(collapse(quote));
   return {
-    ...claim,
+    ...(keepQuote ? claim : rest),
     confidence: Math.min(0.85, Number.isFinite(Number(claim.confidence)) ? Number(claim.confidence) : 0.75),
   };
 }
