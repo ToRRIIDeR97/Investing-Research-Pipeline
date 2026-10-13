@@ -33,6 +33,7 @@ test("display text that leaks pipeline terms is flagged; ordinary prose is not",
     "The metric_key revenue_growth fell 3%.",
   ];
   for (const text of leaks) assert.equal(checkReportSubstance([section([{ kind: "fact", text, evidence_ids: ["e1"] }])]).length, 1, text);
+  assert.equal(checkReportSubstance([section([{ kind: "fact", text: "The 2023 dip was an accounting artifact of the FX change.", evidence_ids: ["e1"] }])]).length, 0);
   assert.equal(checkReportSubstance([section([{ kind: "fact", text: "TSMC's 3nm process node lifted gross margin to 53% with high confidence from customers.", evidence_ids: ["e1"] }])]).length, 0);
   assert.equal(checkReportSubstance([section([{ kind: "fact", text: "Revenue grew 12%.", evidence_ids: ["e1"] }], { implication: "No corpus evidence supports a higher multiple." })])[0].issue,
     "The implication uses internal pipeline terms (corpus).");
@@ -54,4 +55,23 @@ test("substance findings send a passed review through the writing repair", async
   assert.equal(feedbacks[1][0].source, "substance_check");
   assert.equal(result.document.sections[0].paragraphs[0].text, "Retention held at 95% in FY2024.");
   assert.deepEqual(result.review.findings, [], "the repaired report passes the check");
+});
+
+test("a conditional pass with research gaps repairs only the flagged sections, without re-planning", async () => {
+  const plans = [{ id: "moat", title: "Moat", purpose: "Explain", coverage: ["moat"], artifact_ids: [] },
+    { id: "business", title: "Business", purpose: "Explain", coverage: ["business"], artifact_ids: [] }];
+  let planned = 0; const written: string[] = [];
+  await composeReviewedReport({ asset_name: "Fixture", cutoff: "2026-01-01", is_test: true, artifacts: [], evidence: [], required_coverage: ["moat", "business"] }, {
+    plan: async () => { planned++; return { sections: plans, questions: [], coverage: plans.map(p => ({ key: p.coverage[0], status: "qualified", rationale: "Fixture", section_ids: [p.id] })) }; },
+    write: async (p, _outline, feedback) => {
+      written.push(p.id);
+      const text = p.id === "moat" && !feedback.length ? "The corpus lacks churn data for 2024." : "Revenue grew 12% in FY2024.";
+      return section([{ kind: "analysis", text }], { id: p.id, title: p.title, coverage: p.coverage } as any) as any;
+    },
+    review: async () => ({ review_summary: "ok", quality_score: 0.8, recommendations: [], review_verdict: "conditional_pass",
+      findings: [{ section_id: "business", category: "research_gap", severity: "medium", repair: "Find churn" }] }),
+    save: async () => {},
+  });
+  assert.equal(planned, 1, "no outline re-plan");
+  assert.deepEqual(written, ["moat", "business", "moat"], "only the flagged section is rewritten");
 });

@@ -44,8 +44,10 @@ export async function composeReviewedReport(input: Omit<ReportInput, "sections" 
     const substance = checkReportSubstance(document.sections);
     const review = substance.length ? { ...reviewed, findings: [...reviewed.findings, ...substance] } : reviewed;
     await actions.save("report_review", `review-${document.content_hash}`, { ...review, report_hash: document.content_hash, input_hash: document.input_hash, round });
-    if ((["pass", "conditional_pass"].includes(review.review_verdict) && !substance.length) || round === 1) return { document, review };
-    const researchFindings = review.findings.filter(f => f.category === "research_gap");
+    const passed = ["pass", "conditional_pass"].includes(review.review_verdict);
+    if ((passed && !substance.length) || round === 1) return { document, review };
+    // A passed review repairs only the substance findings: no outline re-plan, only the flagged sections and conclusions.
+    const researchFindings = passed ? [] : review.findings.filter(f => f.category === "research_gap");
     if (researchFindings.length) {
       // Re-investigate the existing corpus once. Missing disclosures must become
       // qualified/blocked questions, not facts invented by the section writer.
@@ -63,7 +65,7 @@ export async function composeReviewedReport(input: Omit<ReportInput, "sections" 
       sections.splice(0, sections.length, ...revised);
       continue;
     }
-    const writingFindings = review.findings;
+    const writingFindings = passed ? substance : review.findings;
     const affected = new Set(writingFindings.map(f => f.section_id).filter(Boolean));
     const planOf = (i: number) => outline.sections.find(s => s.id === sections[i].id)!;
     const indexes = sections.map((_, i) => i);

@@ -1,10 +1,10 @@
 import type { ReportSection } from "./contracts";
 
-/** Pipeline vocabulary that must not reach a reader. "Process node" alone is left alone: it is a semiconductor term. */
+/** Pipeline vocabulary that must not reach a reader. "Process node" and "accounting artifact" are left alone: they are domain terms. */
 const INTERNAL_TERMS: [RegExp, string][] = [
   [/\bcorpus\b/i, "corpus"],
   [/\bnode[ _-](?:confidence|id|key|score)s?\b/i, "node field"],
-  [/\bartifacts?\b/i, "artifact"],
+  [/(?<!\b(?:accounting|statistical|measurement) )\bartifacts?\b/i, "artifact"],
   [/\bpackets?\b/i, "packet"],
   [/\bsupplied (?:passages?|evidence|sources?|data|claims?)\b/i, "supplied inputs"],
   [/\bconfidence(?: score| level)?(?: of| is|:|=)? ?(?:0?\.\d+|1\.0+)\b/i, "confidence score"],
