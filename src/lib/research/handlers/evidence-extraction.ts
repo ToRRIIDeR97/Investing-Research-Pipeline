@@ -87,12 +87,15 @@ const sourceReaderPrompt = (target: number, kpis: string[]) => (packet: Record<s
 export async function runHeadlineKpis(sql: ReturnType<typeof postgres>, ctx: ResearchRunContext): Promise<string[]> {
   const [row] = await sql`
     SELECT a.sector, a.industry, a.asset_kind AS "assetKind",
-      (SELECT sd.metadata_json->>'sic' FROM source_documents sd
-        LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
-        WHERE (sd.research_run_id = ${ctx.runId} OR rrs.research_run_id = ${ctx.runId})
-          AND sd.source_type = 'primary_source_context' AND sd.metadata_json ? 'sic'
-        ORDER BY sd.created_at DESC LIMIT 1) AS sic
-    FROM assets a WHERE a.id = ${ctx.assetId}
+      sec.sic, sec.sic_description AS "sicDescription"
+    FROM assets a
+    LEFT JOIN LATERAL (SELECT sd.metadata_json->>'sic' AS sic, sd.metadata_json->>'sic_description' AS sic_description
+      FROM source_documents sd
+      LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
+      WHERE (sd.research_run_id = ${ctx.runId} OR rrs.research_run_id = ${ctx.runId})
+        AND sd.source_type = 'primary_source_context' AND sd.metadata_json ? 'sic'
+      ORDER BY sd.created_at DESC LIMIT 1) sec ON true
+    WHERE a.id = ${ctx.assetId}
   `;
   return headlineKpis(kpiArchetypes(ctx.archetypeKeys || [], row || {}));
 }

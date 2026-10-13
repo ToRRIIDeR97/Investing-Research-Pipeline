@@ -44,7 +44,7 @@ const ROLE_QUERIES: Record<string, string> = {
  */
 export const HEADLINE_KPIS: Record<string, string[]> = {
   operating_company_core: ["segment revenue | revenue by segment", "paying customers | active customers | number of customers", "units shipped | unit volume", "average selling price | ASP", "employees | headcount"],
-  advertising_platform: ["daily active people | DAP | daily active users | DAU", "monthly active people | MAP | monthly active users | MAU", "average revenue per person | ARPP | average revenue per user | ARPU", "ad impressions", "average price per ad", "active advertisers | number of advertisers"],
+  advertising_platform: ["daily active people | DAP | daily active users | DAU", "monthly active people | monthly active users | MAU", "average revenue per person | ARPP | average revenue per user | ARPU", "ad impressions", "average price per ad", "active advertisers | number of advertisers"],
   marketplace: ["gross merchandise volume | GMV | gross merchandise value", "active buyers", "active sellers", "orders placed | number of orders", "take rate"],
   payments_network: ["total payment volume | TPV", "payment transactions | transactions processed", "active accounts", "take rate", "transaction margin"],
   lender: ["loan originations | originations", "loans receivable", "net interest margin | NIM", "provision for credit losses", "net charge-off rate | net charge-offs", "delinquency rate | delinquencies"],
@@ -70,18 +70,23 @@ export const kpiPhrases = (kpis: string[]) => [...new Set(kpis.flatMap(kpi => kp
 
 /**
  * The asset's own classification, mapped to headline-KPI archetypes. Used for KPI selection only: the v3 archetype
- * composition is unchanged. SIC ranges are inclusive; text matches the stored sector and industry.
+ * composition is unchanged. SIC ranges are inclusive; text matches the stored sector, industry and SIC description.
+ * A rule with `unless` doesn't apply when the text also matches it.
  */
-const KPI_CLASSIFICATION_RULES: { archetype: string; sic?: [number, number][]; text?: RegExp }[] = [
-  { archetype: "advertising_platform", sic: [[7370, 7370], [7311, 7319]], text: /interactive media|internet content|social media|advertising|search engine/i },
+const KPI_CLASSIFICATION_RULES: { archetype: string; sic?: [number, number][]; text?: RegExp; unless?: RegExp }[] = [
+  // SIC 7370 also covers IT services and travel sites, so an ad platform needs ad, social or internet-content wording.
+  { archetype: "advertising_platform", sic: [[7311, 7319]], text: /interactive media|internet content|social media|advertising|search engine/i },
   { archetype: "subscription_software", sic: [[7372, 7372]], text: /software|saas/i },
   { archetype: "bank", sic: [[6020, 6036]], text: /\bbank/i },
-  { archetype: "lender", sic: [[6140, 6163]], text: /consumer finance|credit services|lending|mortgage/i },
-  { archetype: "payments_network", text: /payment|transaction processing/i },
+  { archetype: "lender", sic: [[6140, 6163]], text: /consumer finance|lending|mortgage/i },
+  // "Credit Services" alone covers card networks and card lenders, so it gives both lists; payment wording makes it payments only.
+  { archetype: "lender", text: /credit services/i, unless: /payment|card network|transaction processing|\bvisa\b|mastercard|american express/i },
+  { archetype: "payments_network", text: /payment|transaction processing|card network|credit services/i },
   { archetype: "marketplace", sic: [[5961, 5961]], text: /internet retail|marketplace|e-?commerce/i },
   { archetype: "logistics_network", sic: [[4210, 4231], [4510, 4731]], text: /trucking|freight|logistics|delivery|airlines|railroads|integrated shipping/i },
-  { archetype: "commodity_producer", sic: [[1000, 1499], [2911, 2911]], text: /\boil\b|\bgas\b|mining|metals|gold|copper|coal|uranium/i },
-  { archetype: "industrial_hardware", sic: [[3500, 3599], [3700, 3799]], text: /machinery|aerospace|semiconductor equipment|electrical equipment|industrial/i },
+  { archetype: "commodity_producer", sic: [[1000, 1499], [2911, 2911]], text: /\boil\b|\bgas\b|mining|metals|gold|copper|coal|uranium/i, unless: /utilit|regulated|distribution/i },
+  // SIC 3570-3579 (computers and office equipment) report no backlog or book-to-bill.
+  { archetype: "industrial_hardware", sic: [[3500, 3569], [3580, 3599], [3700, 3799]], text: /machinery|aerospace|semiconductor equipment|electrical equipment|industrial (?:products|equipment|distribution)/i },
   { archetype: "consumer_brand", sic: [[2000, 2399], [5810, 5813]], text: /apparel|footwear|beverages|packaged foods|household|restaurants|consumer electronics|luxury/i },
   { archetype: "holding_company", sic: [[6719, 6719]], text: /holding company|conglomerate/i },
 ];
@@ -89,17 +94,23 @@ const KPI_CLASSIFICATION_RULES: { archetype: string; sic?: [number, number][]; t
 /**
  * Archetypes whose headline KPIs a run searches for: its composed archetypes plus those its classification maps to.
  * The generic operating-company list is used only when nothing more specific applies, so its broad terms never
- * crowd out a specific list.
+ * crowd out a specific list, or when a specific archetype rests on the SIC code alone without confirming text.
  */
-export function kpiArchetypes(archetypeKeys: string[], classification: { sector?: string | null; industry?: string | null; sic?: string | number | null; assetKind?: string | null }): string[] {
+export function kpiArchetypes(archetypeKeys: string[], classification: { sector?: string | null; industry?: string | null; sic?: string | number | null; sicDescription?: string | null; assetKind?: string | null }): string[] {
   const sic = Number(classification.sic);
-  const text = `${classification.sector || ""} ${classification.industry || ""}`;
-  const matched = KPI_CLASSIFICATION_RULES.filter(rule =>
-    (Number.isFinite(sic) && sic > 0 && rule.sic?.some(([low, high]) => sic >= low && sic <= high)) || Boolean(text.trim() && rule.text?.test(text)))
-    .map(rule => rule.archetype);
-  if (classification.assetKind === "fund") matched.push("etf_fund");
-  const specific = [...new Set([...archetypeKeys.filter(key => key !== "operating_company_core" && HEADLINE_KPIS[key]), ...matched])];
-  return specific.length ? specific : ["operating_company_core"];
+  const text = [classification.sector, classification.industry, classification.sicDescription].filter(Boolean).join(" ");
+  const byText = new Set<string>();
+  const bySic = new Set<string>();
+  for (const rule of KPI_CLASSIFICATION_RULES) {
+    if (rule.unless?.test(text)) continue;
+    if (text && rule.text?.test(text)) byText.add(rule.archetype);
+    else if (Number.isFinite(sic) && sic > 0 && rule.sic?.some(([low, high]) => sic >= low && sic <= high)) bySic.add(rule.archetype);
+  }
+  if (classification.assetKind === "fund") byText.add("etf_fund");
+  const composed = archetypeKeys.filter(key => key !== "operating_company_core" && HEADLINE_KPIS[key]);
+  const specific = [...new Set([...composed, ...byText, ...bySic])];
+  const sicOnly = [...bySic].some(key => !byText.has(key) && !composed.includes(key));
+  return specific.length && !sicOnly ? specific : [...specific, "operating_company_core"];
 }
 
 /** Roles whose documents report operating KPIs: filings and earnings material. */

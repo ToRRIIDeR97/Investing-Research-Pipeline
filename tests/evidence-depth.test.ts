@@ -66,11 +66,31 @@ test("the packet quote is bounded and dropped when it only repeats the claim", (
 test("the asset's classification selects headline KPIs without changing the composed archetypes (META 7fa1f00a)", () => {
   // The META run composed only operating_company_core; its stored industry and SEC SIC 7370 both mean an ad platform.
   assert.deepEqual(kpiArchetypes(["operating_company_core"], { sector: "Communication Services", industry: "Internet Content & Information" }), ["advertising_platform"]);
-  assert.deepEqual(kpiArchetypes(["operating_company_core"], { sic: "7370" }), ["advertising_platform"]);
-  assert.deepEqual(kpiArchetypes(["operating_company_core"], { sic: 6022 }), ["bank"]);
+  assert.deepEqual(kpiArchetypes(["operating_company_core"], { sic: "7370", industry: "Internet Content & Information" }), ["advertising_platform"]);
+  assert.deepEqual(kpiArchetypes(["operating_company_core"], { sic: "7370", sicDescription: "Services-Computer Programming, Data Processing, Etc." }), ["operating_company_core"]);
+  assert.deepEqual(kpiArchetypes(["operating_company_core"], { sic: 6022 }), ["bank", "operating_company_core"]);
   assert.deepEqual(kpiArchetypes(["bank", "lender"], { industry: "Fintech, consumer finance, digital banking" }), ["bank", "lender"]);
   assert.deepEqual(kpiArchetypes(["operating_company_core"], { sector: null, industry: null }), ["operating_company_core"]);
   assert.deepEqual(kpiArchetypes([], { assetKind: "fund" }), ["etf_fund"]);
+});
+
+test("the KPI mapping keeps IT services, card networks, gas utilities and computer makers out of the wrong lists", () => {
+  // Airbnb-like: SIC 7370 without ad, social or internet-content wording.
+  assert.deepEqual(kpiArchetypes([], { sector: "Consumer Cyclical", industry: "Travel Services", sic: "7370" }), ["operating_company_core"]);
+  // Visa-like: "Credit Services" alone is ambiguous; payment wording makes it payments only.
+  assert.deepEqual(kpiArchetypes([], { sector: "Financial Services", industry: "Credit Services", sic: "7389" }), ["lender", "payments_network"]);
+  assert.deepEqual(kpiArchetypes([], { industry: "Credit Services", sicDescription: "card network and payment processing" }), ["payments_network"]);
+  assert.deepEqual(kpiArchetypes([], { industry: "Consumer Finance" }), ["lender"]);
+  // A regulated gas utility is not a commodity producer.
+  assert.deepEqual(kpiArchetypes([], { sector: "Utilities", industry: "Utilities - Regulated Gas", sic: "4923" }), ["operating_company_core"]);
+  assert.deepEqual(kpiArchetypes([], { sector: "Energy", industry: "Oil & Gas E&P", sic: "1311" }), ["commodity_producer"]);
+  // Apple: SIC 3571 (computers) is not industrial hardware; its industry makes it a consumer brand.
+  assert.deepEqual(kpiArchetypes([], { sector: "Technology", industry: "Consumer Electronics", sic: "3571" }), ["consumer_brand"]);
+  assert.deepEqual(kpiArchetypes([], { sic: "3571" }), ["operating_company_core"]);
+  // The Industrials sector alone is not industrial hardware; SIC alone keeps the core list alongside.
+  assert.deepEqual(kpiArchetypes([], { sector: "Industrials", industry: "Nuclear energy technology" }), ["operating_company_core"]);
+  assert.deepEqual(kpiArchetypes([], { sector: "Industrials", sic: "3531" }), ["industrial_hardware", "operating_company_core"]);
+  assert.ok(!kpiPhrases(headlineKpis(["advertising_platform"])).includes("MAP"));
 });
 
 test("the KPI need searches whole phrases, so generic words never match on their own", () => {
