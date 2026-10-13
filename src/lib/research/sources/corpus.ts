@@ -798,6 +798,8 @@ async function fetchSecContext(ctx: RunContext) {
     entityName: companyFacts.entityName,
     website: submissions.website || null,
     investorWebsite: submissions.investorWebsite || null,
+    sic: submissions.sic || null,
+    sicDescription: submissions.sicDescription || null,
     companyFacts,
     revenue,
     netIncome,
@@ -1642,7 +1644,8 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
     content: JSON.stringify(secContext, null, 2),
     mimeType: "application/json",
     qualityScore: "0.95",
-    metadata: { system_generated: true, source: publisher },
+    // The SIC code selects the run's headline KPIs (`kpiArchetypes`).
+    metadata: { system_generated: true, source: publisher, ...(context.sic ? { sic: String(context.sic), sic_description: nullableText(context.sicDescription) } : {}) },
     chunkTitle: "SEC API context",
   };
 
@@ -1808,17 +1811,19 @@ const RECENCY_WINDOW_MS = 5 * 365 * 86_400_000;
  * Orders claims for an analysis packet. Each claim scores its confidence plus up to 0.2 for recency (its period, or
  * its source's date, against the newest such date in the set, over five years). Claims are then taken round-robin
  * across claim types, best first, so one topic cannot fill the packet; source-inventory claims come last.
- * `evidence_date` is read for ranking only. Ties break on id, so the same claims give the same order.
+ * `evidence_date` is read for ranking only. The reference date is capped at `asOf` (the run's cutoff), so a far-future
+ * period end can't push every other claim down. Ties break on id, so the same claims give the same order.
  */
-export function rankEvidencePacket<T extends Record<string, any>>(rows: T[], limit: number): T[] {
+export function rankEvidencePacket<T extends Record<string, any>>(rows: T[], limit: number, asOf: number | null = null): T[] {
   const time = (row: T) => {
     const value = row.evidence_date instanceof Date ? row.evidence_date.getTime() : Date.parse(String(row.evidence_date ?? ""));
     return Number.isFinite(value) ? value : null;
   };
-  const newest = Math.max(0, ...rows.map(time).filter((value): value is number => value !== null));
+  const latest = Math.max(0, ...rows.map(time).filter((value): value is number => value !== null));
+  const newest = asOf !== null && Number.isFinite(asOf) ? Math.min(latest, asOf) : latest;
   const score = (row: T) => {
     const at = time(row);
-    return (Number(row.confidence) || 0) + (at === null ? 0 : 0.2 * Math.max(0, 1 - (newest - at) / RECENCY_WINDOW_MS));
+    return (Number(row.confidence) || 0) + (at === null ? 0 : 0.2 * Math.min(1, Math.max(0, 1 - (newest - at) / RECENCY_WINDOW_MS)));
   };
   const sorted = rows.map((row) => ({ row, score: score(row) }))
     .sort((a, b) => b.score - a.score || String(a.row.id).localeCompare(String(b.row.id)))
@@ -1863,7 +1868,8 @@ export async function loadAcceptedEvidencePacket(sql: Sql, ctx: RunContext) {
     WHERE ec.research_run_id = ${ctx.runId} AND ec.review_status != 'rejected'
     ORDER BY ec.id, el.confidence DESC NULLS LAST, el.id
   `;
-  return rankEvidencePacket([...rows], limit).map(({ evidence_date: _date, quoted_text, ...row }) => ({
+  const asOf = ctx.marketDataCutoffAt ? Date.parse(ctx.marketDataCutoffAt) : Date.now();
+  return rankEvidencePacket([...rows], limit, asOf).map(({ evidence_date: _date, quoted_text, ...row }) => ({
     ...row, quote: evidenceQuote(quoted_text, row.claim_text),
   }));
 }

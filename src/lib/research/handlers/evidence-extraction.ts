@@ -19,7 +19,7 @@ import { CURRENT_PIPELINE_VERSION } from "../version";
 import { isValidSourceRole } from "../sources/roles";
 import { isPlausibleSourceRole } from "../sources/role-discovery";
 import { v2RunContext } from "../sources/role-coverage";
-import { FOUNDER_NEED_KEYS, FOUNDER_ORIGIN_NEED, headlineKpis, retrievePassages } from "../memory";
+import { FOUNDER_NEED_KEYS, FOUNDER_ORIGIN_NEED, headlineKpis, kpiArchetypes, retrievePassages } from "../memory";
 import { mapWithConcurrency } from "../pipeline-helpers";
 import { getStageSourceRequests, queueSourceRequests, SourceRequestsPending } from "../sources/source-requests";
 import { MAX_STAGE_SOURCE_REQUEST_ROUNDS } from "../team-plan";
@@ -68,7 +68,7 @@ const sourceReaderPrompt = (target: number, kpis: string[]) => (packet: Record<s
     "Each evidence_claim must include claim_text, claim_type, claim_category, source_id and document_chunk_id copied exactly from source_corpus, plus char_start/char_end within the original document when available, as_of_date or period_end, and confidence.",
     "Give each evidence_claim a quoted_text: the supporting sentence or table row copied exactly from content_excerpt, at most 300 characters.",
     "claim_category must be exactly one of: fact, estimate, assumption, opinion. Put topical labels such as strategy or funding in claim_type, never in claim_category.",
-    `Headline operating KPIs for this asset: ${kpis.join("; ")}. When source_corpus reports one, extract each reported value as its own fact claim with claim_type operating_kpi, stating the figure, unit and period, before other claims from that chunk.`,
+    `Headline operating KPIs for this asset (synonyms separated by /): ${kpis.map((kpi) => kpi.replace(/\s*\|\s*/g, " / ")).join("; ")}. When source_corpus reports one, extract each reported value as its own fact claim with claim_type operating_kpi, stating the figure, unit and period, before other claims from that chunk.`,
     `Return up to ${target} distinct, decision-relevant evidence claims supported by this batch. Never return schema examples or placeholder values.`,
     "Use only source_corpus in this packet. Do not invent or alter source or chunk identifiers.",
     NO_META_CLAIMS,
@@ -79,6 +79,28 @@ const sourceReaderPrompt = (target: number, kpis: string[]) => (packet: Record<s
     "For source_role=industry_primary or peer_company_primary, prioritize independent industry structure and comparative evidence rather than repeating issuer claims.",
   ],
 });
+
+/**
+ * The run's headline KPIs: its composed archetypes plus those the asset's stored sector, industry and SEC SIC code
+ * map to (`kpiArchetypes`). The archetype composition itself is not changed.
+ */
+export async function runHeadlineKpis(sql: ReturnType<typeof postgres>, ctx: ResearchRunContext): Promise<string[]> {
+  const [row] = await sql`
+    SELECT a.sector, a.industry, a.asset_kind AS "assetKind",
+      (SELECT sd.metadata_json->>'sic' FROM source_documents sd
+        LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
+        WHERE (sd.research_run_id = ${ctx.runId} OR rrs.research_run_id = ${ctx.runId})
+          AND sd.source_type = 'primary_source_context' AND sd.metadata_json ? 'sic'
+        ORDER BY sd.created_at DESC LIMIT 1) AS sic
+    FROM assets a WHERE a.id = ${ctx.assetId}
+  `;
+  return headlineKpis(kpiArchetypes(ctx.archetypeKeys || [], row || {}));
+}
+
+/** Gap retries go only to batches that returned under half their claim target. */
+export function gapRetryBatchIndexes(acceptedPerBatch: number[], batchTarget: number): number[] {
+  return acceptedPerBatch.flatMap((accepted, index) => accepted < batchTarget / 2 ? [index] : []);
+}
 
 /**
  * No passage answers either founder need: ask the collector for founder history before any source-reader
@@ -120,7 +142,7 @@ export async function extractEvidenceForSources(sql: ReturnType<typeof postgres>
   `;
   const sources = rows.map(row => ({ sourceId: String(row.sourceId), parseId: String(row.parseId), chunkId: String(row.chunkId),
     content: "", title: String(row.title), sourceType: String(row.sourceType), metadata: (row.metadata as Record<string, any>) || {} }));
-  const kpis = headlineKpis(ctx.archetypeKeys || []);
+  const kpis = await runHeadlineKpis(sql, ctx);
   const sourcePacket = await buildSourcePacket(sql, v2Ctx, sources, { kpis });
   const batches = createSourceReaderBatches(sourcePacket as any[], {
     maxChunks: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_CHUNKS || 8),
@@ -217,7 +239,7 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       }));
 
       // 3. Build Source Packet (chunks)
-      const kpis = headlineKpis(ctx.archetypeKeys || []);
+      const kpis = await runHeadlineKpis(sql, ctx);
       const sourcePacket = await buildSourcePacket(sql, v2Ctx, sources, { kpis });
       if (!(sourcePacket as any[]).some((chunk) => FOUNDER_NEED_KEYS.includes(chunk.need))) {
         await requestFounderSources(sql, ctx, sources.map((source) => source.sourceId));
@@ -263,26 +285,18 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       });
 
       if (usableClaims(evidenceOutput).length < evidenceTarget) {
-        for (let index = 0; index < batches.length && usableClaims(evidenceOutput).length < evidenceTarget; index += 1) {
-          const batch = batches[index];
-          const acceptedInBatch = mergeSourceReaderOutputs([outputs[index]], [batch]).evidence_claims.length;
-          if (acceptedInBatch >= batchTarget) continue;
-          const remaining = evidenceTarget - usableClaims(evidenceOutput).length;
-          const gapTarget = Math.max(5, Math.min(batchTarget, remaining));
-          const gapPacket = {
-            asset: v2Ctx,
-            batch: { id: batch.id, count: batches.length, claim_target: gapTarget, gap_retry: true },
-            source_corpus: batch.chunks,
-          };
-          const gapOutput = await callResearchAgent<Record<string, unknown>>({
-            sql, ctx, stageKey: "evidence_extraction",
-            taskKey: `source-reader:batch:${batch.id}:${sourceReaderBatchFingerprint(batch)}:gap`,
-            taskType: "evidence_extraction_gap", agentName: "source-reader", modelTier: "cheap",
-            packet: gapPacket, promptFactory: promptFactory(gapTarget),
-          });
-          outputs.push(gapOutput);
-          evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
-        }
+        // One retry per batch that came back well short, run with the same concurrency as the batches.
+        const acceptedPerBatch = batches.map((batch, index) => mergeSourceReaderOutputs([outputs[index]], [batch]).evidence_claims.length);
+        const retryBatches = gapRetryBatchIndexes(acceptedPerBatch, batchTarget).map((index) => batches[index]);
+        const gapOutputs = await mapWithConcurrency(retryBatches, (batch) => callResearchAgent<Record<string, unknown>>({
+          sql, ctx, stageKey: "evidence_extraction",
+          taskKey: `source-reader:batch:${batch.id}:${sourceReaderBatchFingerprint(batch)}:gap`,
+          taskType: "evidence_extraction_gap", agentName: "source-reader", modelTier: "cheap",
+          packet: { asset: v2Ctx, batch: { id: batch.id, count: batches.length, claim_target: batchTarget, gap_retry: true }, source_corpus: batch.chunks },
+          promptFactory: promptFactory(batchTarget),
+        }));
+        outputs.push(...gapOutputs);
+        evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
       }
 
       if (!hasFounderOriginClaim(evidenceOutput)) {

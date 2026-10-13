@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { evidenceTargets } from "../src/lib/research/handlers/evidence-extraction";
-import { evidenceNeeds, evidencePassageBudget, headlineKpis, HEADLINE_KPIS } from "../src/lib/research/memory";
+import { evidenceTargets, gapRetryBatchIndexes } from "../src/lib/research/handlers/evidence-extraction";
+import { evidenceNeeds, evidencePassageBudget, headlineKpis, HEADLINE_KPIS, kpiArchetypes, kpiPhrases, phraseQuery } from "../src/lib/research/memory";
 import { evidenceQuote, EVIDENCE_QUOTE_CHARS, rankEvidencePacket } from "../src/lib/research/sources/corpus";
 import { businessArchetypes } from "../src/lib/research/archetypes/registry";
 
@@ -61,4 +61,44 @@ test("the packet quote is bounded and dropped when it only repeats the claim", (
   const long = evidenceQuote("x".repeat(1000), "Claim")!;
   assert.equal(long.length, EVIDENCE_QUOTE_CHARS);
   assert.ok(long.endsWith("…"));
+});
+
+test("the asset's classification selects headline KPIs without changing the composed archetypes (META 7fa1f00a)", () => {
+  // The META run composed only operating_company_core; its stored industry and SEC SIC 7370 both mean an ad platform.
+  assert.deepEqual(kpiArchetypes(["operating_company_core"], { sector: "Communication Services", industry: "Internet Content & Information" }), ["advertising_platform"]);
+  assert.deepEqual(kpiArchetypes(["operating_company_core"], { sic: "7370" }), ["advertising_platform"]);
+  assert.deepEqual(kpiArchetypes(["operating_company_core"], { sic: 6022 }), ["bank"]);
+  assert.deepEqual(kpiArchetypes(["bank", "lender"], { industry: "Fintech, consumer finance, digital banking" }), ["bank", "lender"]);
+  assert.deepEqual(kpiArchetypes(["operating_company_core"], { sector: null, industry: null }), ["operating_company_core"]);
+  assert.deepEqual(kpiArchetypes([], { assetKind: "fund" }), ["etf_fund"]);
+});
+
+test("the KPI need searches whole phrases, so generic words never match on their own", () => {
+  const phrases = kpiPhrases(headlineKpis(["advertising_platform"]));
+  for (const phrase of ["daily active people", "DAP", "average revenue per person", "ARPP", "ad impressions", "average price per ad"]) assert.ok(phrases.includes(phrase), phrase);
+  assert.ok(!phrases.some((phrase) => ["revenue", "price", "per", "users"].includes(phrase)));
+  assert.equal(phraseQuery(["daily active people", "DAP", "average price (per ad)"]), '"daily active people" OR DAP OR "average price per ad"');
+  const [need] = evidenceNeeds(["earnings_release"], { name: "Meta" }, { kpis: headlineKpis(["advertising_platform"]) });
+  assert.equal(need.key, "headline_kpis");
+  assert.deepEqual(need.phrases, phrases);
+});
+
+test("gap retries go only to batches under half their target", () => {
+  assert.deepEqual(gapRetryBatchIndexes([9, 4, 5, 0, 10], 10), [1, 3]);
+  assert.deepEqual(gapRetryBatchIndexes([3, 2], 5), [1]);
+  // Worst case for a 25-filing run: 128 passages + 9 founder passages in batches of 8 = 18 batches,
+  // every one retried once, plus the founder pass: 37 calls, with gaps running concurrently like the batches.
+  assert.equal(gapRetryBatchIndexes(Array(18).fill(0), 10).length, 18);
+});
+
+test("a far-future period end can't move the recency reference past the run's cutoff", () => {
+  const cutoff = Date.parse("2025-12-31");
+  const rows = [
+    { id: "future", claim_type: "a", confidence: "0.5", evidence_date: "2035-12-31" },
+    { id: "recent", claim_type: "b", confidence: "0.8", evidence_date: "2025-09-30" },
+    { id: "old", claim_type: "c", confidence: "0.85", evidence_date: "2021-12-31" },
+  ];
+  // Against the 2035 date both real claims would lose all recency; against the cutoff, the recent claim keeps it.
+  assert.deepEqual(rankEvidencePacket(rows, 10).map((row) => row.id), ["old", "recent", "future"]);
+  assert.deepEqual(rankEvidencePacket(rows, 10, cutoff).map((row) => row.id), ["recent", "old", "future"]);
 });
