@@ -6,10 +6,10 @@ export { ensureDocumentIndexed, embedParse, indexDocumentContent, MEMORY_PARSER,
 export { getEmbeddingProvider, cosineSimilarity, EMBEDDING_BATCH_SIZE, type EmbeddingProvider } from "./embeddings";
 export { citedClaimIds, linkArtifactCitations, recordContradictions, graphPassages, CITATION_KEYS } from "./graph";
 export {
-  retrievePassages, openingPassages, runDocuments, periodHints, coversPeriod,
+  retrievePassages, openingPassages, runDocuments, periodHints, coversPeriod, phraseQuery,
   type CoverageGap, type PeriodHint, type RetrievalNeed, type RetrievalResult, type RetrievedPassage, type RunDocument,
 } from "./retrieve";
-export { FOUNDER_ORIGIN_NEED, FOUNDER_FILINGS_NEED, FOUNDER_NEED_KEYS, evidenceNeeds } from "./needs";
+export { FOUNDER_ORIGIN_NEED, FOUNDER_FILINGS_NEED, FOUNDER_NEED_KEYS, evidenceNeeds, evidencePassageBudget, headlineKpis, HEADLINE_KPIS, kpiArchetypes, kpiPhrases } from "./needs";
 export {
   loadFilingPassages, selectFilingPassages, latestFilings, passageScore, filingPassageBudget, sectionScore, FILING_PASSAGE_TASKS, FILING_PASSAGE_RULE,
   DEFAULT_FILING_PASSAGE_BYTES, type FilingPassage, type FilingPassageCandidate,

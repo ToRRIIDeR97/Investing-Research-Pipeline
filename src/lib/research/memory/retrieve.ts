@@ -13,6 +13,8 @@ export interface RetrievalNeed {
   maxPassages?: number;
   seedClaimIds?: string[];
   seedArtifactIds?: string[];
+  /** Keyword search matches any of these phrases instead of any word of `query` (which still drives vector ranking). */
+  phrases?: string[];
 }
 
 export interface RetrievedPassage {
@@ -102,6 +104,12 @@ async function ensureIndexed(sql: postgres.Sql, ids: string[], runId: string) {
 
 /** Free-text need queries match any of their words. */
 const orQuery = (query: string) => query.split(/[\s,;]+/).map(term => term.replace(/["()]/g, "").trim()).filter(Boolean).join(" OR ");
+/**
+ * websearch_to_tsquery syntax: each phrase must match as consecutive words; any phrase may match. Every phrase is
+ * quoted, so a leading "-" or a word "or" in it is text, not a NOT or OR operator.
+ */
+export const phraseQuery = (phrases: string[]) => phrases.map(phrase => phrase.replace(/["()]/g, " ").replace(/\s+/g, " ").trim())
+  .filter(Boolean).map(phrase => `"${phrase}"`).join(" OR ");
 
 export interface PeriodHint { label: string; start: string; end: string }
 
@@ -266,7 +274,7 @@ export async function retrievePassages(sql: postgres.Sql, input: { runId: string
   const ids = scoped.map(doc => doc.id);
   await ensureIndexed(sql, ids, input.runId);
   const parseIds = await latestParses(sql, ids);
-  const query = orQuery(need.query);
+  const query = need.phrases?.length ? phraseQuery(need.phrases) : orQuery(need.query);
   const limit = Math.max(1, Math.floor(need.maxPassages ?? 8));
   const depth = Math.max(limit * 5, 50);
   // Documents for the periods the query names are searched first; the rest of the scope fills what is left.
