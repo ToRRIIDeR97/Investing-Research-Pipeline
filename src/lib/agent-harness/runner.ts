@@ -131,8 +131,13 @@ function modelCandidates(agentName: ResearchAgentName, maxAttempts: number, prov
   return attempts;
 }
 
+/** Filing passages a compacted fallback request keeps, from the top of the ranking. */
+export const FALLBACK_FILING_PASSAGES = 4;
+
 function compactFallback(input: AgentRequest): { request: AgentRequest; compacted: boolean } {
   const packet = { ...input.taskPacket };
+  // Filing passages are ranked best first; the fallback keeps the top few rather than dropping them.
+  if (Array.isArray(packet.filing_passages)) packet.filing_passages = packet.filing_passages.slice(0, FALLBACK_FILING_PASSAGES);
   if (input.agentName === "asset-analyst") {
     if (Array.isArray(packet.evidence_claims)) packet.evidence_claims = packet.evidence_claims.slice(0, 15);
     if (Array.isArray(packet.normalized_observations)) packet.normalized_observations = packet.normalized_observations.slice(0, 20);
