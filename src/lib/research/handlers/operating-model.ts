@@ -119,6 +119,8 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
         packet: p,
         extraRules: [
           "Construct a driver-based forecast tree structure, mapping historical inputs to future drivers.",
+          "Forecast each segment's revenue as price × volume and bridge operating margin from the base year to the forecast (gross margin, operating cost lines, mix, operating leverage), naming the driver of each step and why it moves.",
+          "Tie reinvestment to growth: compare incremental operating income with incremental invested capital (return on incremental capital) against the historical rate, and explain any gap.",
           "Follow output_schema exactly, including every nested required field and primitive type.",
           "Cover each reportable segment and reconcile their forecast revenue and operating income to consolidated totals.",
           "Every forecast figure (consolidated_revenue, consolidated_operating_income and each segment's forecast) is for fiscal year forecast_period.fiscal_year, the year after the latest reported year. Never restate a reported year's figures as the forecast.",
