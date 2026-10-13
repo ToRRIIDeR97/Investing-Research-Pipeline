@@ -30,7 +30,8 @@ export const moatAnalysisHandler: StageHandler<Record<string, unknown>> = {
         requiredKeys: MOAT_CONTRACT.requiredKeys,
         packet: p,
         extraRules: [
-          "Assess moat sources: network effects, high switching costs, cost advantages, intangible assets.",
+          "Test each claimed moat source (network effects, switching costs, cost advantage, intangibles, efficient scale) against a specific KPI and its trend: retention or churn, pricing versus peers, unit cost versus competitors, share stability, or return on incremental capital above the cost of capital.",
+          "Explain how each advantage shows up in margins or returns, and state the counter-evidence: competitor entry, price cuts, rising acquisition cost, falling take rate or retention. A source without KPI support is unproven; no demonstrated moat is a valid conclusion.",
           "Follow output_schema exactly, including every nested required field and primitive type.",
         ],
       });

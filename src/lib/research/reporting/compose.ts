@@ -1,6 +1,7 @@
 import { Outline, Section, COVERAGE, type ReportOutline, type ReportSection } from "./contracts";
 import { createReport, type ReportInput, type ReportDocument } from "./report";
 import { mapWithConcurrency } from "../pipeline-helpers";
+import { checkReportSubstance } from "./substance";
 
 const isConclusion = (plan: { coverage: string[] }) => plan.coverage.includes("conclusion");
 
@@ -38,9 +39,12 @@ export async function composeReviewedReport(input: Omit<ReportInput, "sections" 
   for (let round = 0; round <= 1; round++) {
     const document = createReport({ ...input, ...outline, sections });
     await actions.save("report_document", "document", document);
-    const review = await actions.review(document);
+    // Substance findings join the reviewer's, so a passed review with thin or leaking sections still gets the one repair.
+    const reviewed = await actions.review(document);
+    const substance = checkReportSubstance(document.sections);
+    const review = substance.length ? { ...reviewed, findings: [...reviewed.findings, ...substance] } : reviewed;
     await actions.save("report_review", `review-${document.content_hash}`, { ...review, report_hash: document.content_hash, input_hash: document.input_hash, round });
-    if (["pass", "conditional_pass"].includes(review.review_verdict) || round === 1) return { document, review };
+    if ((["pass", "conditional_pass"].includes(review.review_verdict) && !substance.length) || round === 1) return { document, review };
     const researchFindings = review.findings.filter(f => f.category === "research_gap");
     if (researchFindings.length) {
       // Re-investigate the existing corpus once. Missing disclosures must become

@@ -49,6 +49,8 @@ export const businessProcessAnalysisHandler: StageHandler<Record<string, unknown
         packet: p,
         extraRules: [
           "Document segment unit-economics and trace buyer/seller/user acquisition and transaction flow diagrams.",
+          "Decompose each segment's revenue as price × volume (for example take rate × GMV, ARPU × users, yield × balances) and give unit economics where disclosed: revenue, variable cost and contribution per unit, acquisition cost and payback. Name the KPI and period of each figure.",
+          "Explain why each figure moved (price, volume, mix, cost, accounting), not only that it moved. List an undisclosed driver as a gap rather than estimating it.",
           "Follow output_schema exactly, including every nested required field and primitive type.",
           "For a Lending or Credit segment, include lender_details with nonempty funding_cost and credit_losses grounded in evidence. For a Marketplace or Commerce segment, include marketplace_details with buyers, transactions, gmv, and take_rate.",
           "The canonical bottleneck key and artifact_type are both bottleneck_register.",
