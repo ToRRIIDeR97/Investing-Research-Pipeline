@@ -40,6 +40,7 @@ test('segment mix stacks segments of one metric from stored observations', () =>
   assert.throws(() => build({ kind: 'series', ...base, ...observed, stacked: true, lines: [line('Total', 'revenue'), line('Apps', 'revenue', 'apps')] }), /without the consolidated total/);
   assert.throws(() => build({ kind: 'series', ...base, ...observed, stacked: true, lines: [line('Labs', 'operating_income', 'labs'), line('Apps', 'revenue', 'apps')] }), /one metric/);
   assert.throws(() => build({ kind: 'series', ...base, ...observed, stacked: false, lines: [line('A', 'revenue'), line('B', 'revenue')] }), /Duplicate/);
+  assert.throws(() => build({ kind: 'series', ...base, ...observed, stacked: true, lines: [line('Apps', 'revenue', 'apps'), { label: 'US', metric_key: 'revenue', segment: null, geography: 'us' }] }), /segments or regions, not both/);
   assert.throws(() => build({ kind: 'series', ...base, ...observed, stacked: false, lines: [line('A', 'revenue'), line('B', 'missing_metric')] }), /no stored observations/);
   assert.throws(() => ReportVisual.parse({ kind: 'series', ...base, ...observed, stacked: false, lines: [line('A', 'revenue'), line('B', 'revenue', 'apps')], values: [1, 2] }));
 });
@@ -55,7 +56,13 @@ test('a margin is divided in code and missing inputs stay missing', () => {
 
 test('scenario charts read bear, base and bull from the stored sets', () => {
   const value = build({ kind: 'scenarios', ...base, artifact_id: 'val', metric: 'value_per_share', unit: '' });
-  assert.deepEqual(value.points.map(p => [p.period, p.values[0]]), [['Bear', 80], ['Base', 100], ['Bull', 130]]);
+  // Today's value per share from the stored method inputs, not the terminal-year anchors (80 / 100 / 130).
+  const today = (cash: number) => (cash / 1.1 + cash / 1.21 + 1000 / 1.21 - 50) / 10;
+  assert.deepEqual(value.points.map(p => p.period), ['Bear', 'Base', 'Bull']);
+  value.points.forEach((p, i) => assert.ok(Math.abs(p.values[0]! - today([50, 60, 70][i])) < 1e-9));
+  // The scenario bars and the bridge give the same base value per share.
+  const bridge = build({ kind: 'valuation_bridge', ...base, artifact_id: 'val', scenario: 'base' });
+  assert.ok(bridge.notes[1].includes(`gives ${value.points[1].values[0]!.toLocaleString('en-US', { maximumFractionDigits: 2 })} USD a share today`));
   assert.deepEqual(value.reference, { label: 'Current price', value: 95 });
   const growth = build({ kind: 'scenarios', ...base, artifact_id: 'ops', metric: 'revenue_growth', unit: '' });
   assert.equal(growth.unit, '%');
@@ -94,5 +101,5 @@ test('a planned chart is drawn or explained, and Markdown exports the data table
   const report = createReport({ asset_name: 'Co', cutoff: '2026-06-30T00:00:00Z', is_test: true, required_coverage: ['valuation'],
     sections: [{ ...section, visuals: [visual] }], coverage: [{ key: 'valuation', status: 'qualified', rationale: 'r', section_ids: ['valuation'] }],
     questions: [], evidence: [], artifacts });
-  assert.match(report.markdown, /\| Scenario \| Value per share \|\n\| --- \| --- \|\n\| Bear \| 80 USD \|/);
+  assert.match(report.markdown, /\| Scenario \| Value per share today \|\n\| --- \| --- \|\n\| Bear \| 86\.32 USD \|/);
 });

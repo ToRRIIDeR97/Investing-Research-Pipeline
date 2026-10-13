@@ -72,7 +72,7 @@ function ChartFigure({visual,chart}:{visual:ChartVisual;chart:BuiltVisual}) {
         {slanted?<XAxis dataKey="period" tick={TICK} angle={-30} textAnchor="end" height={50}/>:<XAxis dataKey="period" tick={{...TICK,fontSize:10}} interval={0}/>}
         <YAxis tick={TICK} width={54} domain={chart.display==='lines'&&!percent?['auto','auto']:zeroDomain} tickFormatter={v=>percent?`${compact(v)}%`:compact(v)}/>
         <ReferenceLine y={0} stroke="#9aa1ab"/>
-        {chart.reference&&<ReferenceLine y={chart.reference.value} stroke="#626b78" strokeDasharray="5 4" label={{value:chart.reference.label,position:'insideTopRight',fontSize:11,fill:'#626b78'}}/>}
+        {chart.reference&&<ReferenceLine y={chart.reference.value} ifOverflow="extendDomain" stroke="#626b78" strokeDasharray="5 4" label={{value:chart.reference.label,position:'insideTopRight',fontSize:11,fill:'#626b78'}}/>}
         <Tooltip isAnimationActive={false} formatter={(v,name,item)=>[waterfall?chart.points.find(p=>p.period===item?.payload?.period)?.exact[0]:format(v),chart.labels[Number(String(name).slice(1))]??String(name)]}/>
         {waterfall&&<Bar dataKey="base" stackId="w" fill="transparent" tooltipType="none" isAnimationActive={false}/>}
         {waterfall?<Bar dataKey="s0" name="s0" stackId="w" maxBarSize={64} isAnimationActive={false}>{chart.points.map(p=><Cell key={p.key} fill={p.total?'#515d70':(p.values[0]??0)<0?'#b5523f':'#3f8f6b'}/>)}</Bar>

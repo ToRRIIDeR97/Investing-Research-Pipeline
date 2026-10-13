@@ -84,15 +84,17 @@ function lineSeries(spec: Extract<VisualSpec,{kind:'series'}>, artifacts: Report
   const ids = spec.lines.map(l => JSON.stringify([l.metric_key, dim(l.segment), dim(l.geography)]));
   if (new Set(ids).size !== ids.length) throw new Error('Duplicate chart series');
   const scale = currencyUnit(spec) ? 1e6 : 1;
+  if (spec.stacked) {
+    if (new Set(spec.lines.map(l => l.metric_key)).size > 1 || spec.lines.some(l => !dim(l.segment) && !dim(l.geography))) throw new Error('A stacked chart shows segments or regions of one metric, without the consolidated total');
+    // Segments stacked on regions would count the same revenue twice.
+    if (new Set(spec.lines.map(l => `${dim(l.segment) ? 's' : ''}${dim(l.geography) ? 'g' : ''}`)).size > 1) throw new Error('A stacked chart stacks either segments or regions, not both');
+  }
   const lines = spec.lines.map(l => {
     const rows = readObservations(spec, l.metric_key, artifacts, cutoff, { segment:dim(l.segment), geography:dim(l.geography) });
     if (!rows.some(r => r.raw != null)) throw new Error(`Chart series ${l.label} has no stored observations`);
     return new Map(rows.map(r => [r.key, r]));
   });
-  if (spec.stacked) {
-    if (new Set(spec.lines.map(l => l.metric_key)).size > 1 || spec.lines.some(l => !dim(l.segment) && !dim(l.geography))) throw new Error('A stacked chart shows segments or regions of one metric, without the consolidated total');
-    if (lines.some(m => [...m.values()].some(r => r.raw != null && r.raw < 0))) throw new Error('A stacked chart cannot show negative values');
-  }
+  if (spec.stacked && lines.some(m => [...m.values()].some(r => r.raw != null && r.raw < 0))) throw new Error('A stacked chart cannot show negative values');
   const keys = [...new Set(lines.flatMap(m => [...m.keys()]))].sort();
   const points = keys.map(key => ({ key, period:lines.find(m => m.has(key))!.get(key)!.period,
     values:lines.map(m => { const raw = m.get(key)?.raw; return raw == null ? null : raw / scale; }),
@@ -127,20 +129,31 @@ function storedArtifact(id: string, artifacts: ReportArtifact[], types: string[]
   return artifact;
 }
 
+/** One scenario's valuation, recalculated from its stored inputs; FCFF first, as on the valuation page. */
+function scenarioValuation(c: Record<string,any>, scenario: typeof scenarioTypes[number]) {
+  const inputs: any[] = (Array.isArray(c.method_inputs) ? c.method_inputs : []).filter(m => m?.scenario_type === scenario);
+  const input = inputs.find(m => m.method === 'fcff') ?? inputs[0];
+  if (!input) throw new Error(`No ${scenario} valuation schedule`);
+  return calculateValuationSchedule(input);
+}
+
 /** Bear, base and bull side by side: value per share from the valuation set, or a yearly driver or statement line from the operating set. */
 function scenarioSeries(spec: Extract<VisualSpec,{kind:'scenarios'}>, artifacts: ReportArtifact[]): BuiltVisual {
   const artifact = storedArtifact(spec.artifact_id, artifacts, ['valuation_scenario_set','operating_scenario_set']);
   const c = artifact.content_json;
   if (artifact.artifact_type === 'valuation_scenario_set') {
     if (spec.metric !== 'value_per_share') throw new Error('Valuation scenario charts show value_per_share');
-    const values = scenarioTypes.map(t => c[`terminal_anchor_${t}`]);
-    if (!values.every(finite)) throw new Error('Valuation needs bear, base and bull values');
-    const currency = String(c.method_inputs?.[0]?.currency ?? c.method_schedules?.[0]?.currency ?? 'USD');
+    // Today's value per share, recalculated from the stored method inputs like the bridge and the report text.
+    // The terminal_anchor fields are end-of-horizon price targets, not today's value, so they are not charted here.
+    const calcs = scenarioTypes.map(t => scenarioValuation(c, t));
+    const currency = calcs[0].currency;
+    if (calcs.some(x => x.currency !== currency)) throw new Error('Valuation scenarios use different currencies');
     const price = c.current_market_price;
-    return { display:'bars', category:'Scenario', labels:['Value per share'], columns:['Value per share'], unit:`${currency} per share`,
-      points:scenarioTypes.map((t,i) => ({ key:t, period:scenarioLabels[i], values:[values[i]], exact:[`${values[i].toLocaleString('en-US',{maximumFractionDigits:2})} ${currency}`] })),
+    const methods = [...new Set(calcs.map(x => x.method_name))];
+    return { display:'bars', category:'Scenario', labels:['Value per share today'], columns:['Value per share today'], unit:`${currency} per share`,
+      points:scenarioTypes.map((t,i) => ({ key:t, period:scenarioLabels[i], values:[calcs[i].value_per_share], exact:[`${calcs[i].value_per_share.toLocaleString('en-US',{maximumFractionDigits:2})} ${currency}`] })),
       ...(finite(price) && price > 0 ? { reference:{ label:'Current price', value:price } } : {}),
-      notes:[`Scenario value per share${finite(c.terminal_year) ? ` at the end of FY${c.terminal_year}` : ''}.${finite(price) && price > 0 ? ` The line marks the stored market price of ${price.toLocaleString('en-US',{maximumFractionDigits:2})} ${currency}.` : ''}`] };
+      notes:[`Value per share today from ${methods.length === 1 ? `the ${methods[0]}` : calcs.map((x,i) => `${scenarioLabels[i]}: ${x.method_name}`).join('; ')}.${finite(price) && price > 0 ? ` The line marks the stored market price of ${price.toLocaleString('en-US',{maximumFractionDigits:2})} ${currency}.` : ''}`] };
   }
   const scenarios: Record<string,any>[] = Array.isArray(c.scenarios) ? c.scenarios : [];
   const ratio = DRIVERS.includes(spec.metric);
@@ -164,11 +177,7 @@ function scenarioSeries(spec: Extract<VisualSpec,{kind:'scenarios'}>, artifacts:
 
 /** Today's value, recalculated here from the stored valuation inputs: discounted cash flows and terminal value, then the equity bridge. */
 function valuationBridge(spec: Extract<VisualSpec,{kind:'valuation_bridge'}>, artifacts: ReportArtifact[]): BuiltVisual {
-  const c = storedArtifact(spec.artifact_id, artifacts, ['valuation_scenario_set']).content_json;
-  const inputs: any[] = (Array.isArray(c.method_inputs) ? c.method_inputs : []).filter(m => m?.scenario_type === spec.scenario);
-  const input = inputs.find(m => m.method === 'fcff') ?? inputs[0];
-  if (!input) throw new Error(`No ${spec.scenario} valuation schedule`);
-  const calc = calculateValuationSchedule(input);
+  const calc = scenarioValuation(storedArtifact(spec.artifact_id, artifacts, ['valuation_scenario_set']).content_json, spec.scenario);
   const cash = calc.years.reduce((n, y) => n + y.present_value, 0);
   const money = (v: number) => `${v.toLocaleString('en-US',{maximumFractionDigits:1})} ${calc.currency} millions`;
   const steps: { label:string; value:number; total?:boolean }[] = [
@@ -221,7 +230,7 @@ export const VISUAL_GUIDELINES = [
   'Use organization for management when sourced names, roles and reporting relationships are available. Supply as_of and people with stable IDs, roles, reports_to and exact evidence_ids. Use reports_to null when the relationship is undisclosed. Do not infer reporting lines or board oversight from seniority. A leadership roster with unknown reporting lines is preferable to an invented hierarchy.',
   'A quantitative chapter (history, business and segments, operating scenarios, valuation) carries the chart named in section_plan.chart_plan when stored data supports it. If it does not, omit the chart and state in gaps which data is missing. Other chapters use a visual only where it explains a material mechanism or pattern better than prose. Maximum two visuals per section. Preserve detailed analysis, counterevidence and sources.',
   'Use series for two to six comparable observation series at one artifact_id/path, unit, currency, reporting_basis and periodicity, each line naming its metric_key, exact segment and geography (null for consolidated) and a short label. Set stacked true only for segments or regions of one metric that add to a whole (a segment mix), never with the consolidated total or negative values. Use ratio for a margin or other ratio: name numerator and denominator series in the same unit and periods; code divides them. Never supply the ratio itself.',
-  'Use scenarios to compare bear, base and bull from a stored scenario artifact: metric value_per_share on valuation_scenario_set, or on operating_scenario_set a yearly driver (revenue_growth, operating_margin, capex_to_revenue) or a resulting statement line key with its unit (for example revenue in USD millions). Use valuation_bridge with a valuation_scenario_set artifact_id and one scenario; code recalculates discounted cash flows, terminal value, equity bridge and value per share from its stored inputs.',
+  'Use scenarios to compare bear, base and bull from a stored scenario artifact: metric value_per_share on valuation_scenario_set (value per share today, from the stored method inputs), or on operating_scenario_set a yearly driver (revenue_growth, operating_margin, capex_to_revenue) or a resulting statement line key with its unit (for example revenue in USD millions). Use valuation_bridge with a valuation_scenario_set artifact_id and one scenario; code recalculates discounted cash flows, terminal value, equity bridge and value per share from its stored inputs.',
   'Use process for a sourced causal or business flow, with 1-3 lanes and 2-4 short nodes per lane. Use only the allowed icon names. Each lane needs supporting evidence_ids or artifact_ids. Text, order and arrows must be entailed by those sources; a valid ID alone is not proof. Mark unproven links as relationship hypothesis, not documented, and explain the uncertainty in note.',
   'Use history for one series of observations at an exact artifact_id/path. Select one metric_key, unit, currency, reporting_basis and periodicity from those observations. Never author numbers, points, totals, percentages or chart coordinates. Do not mix segments, currencies, bases or annual/quarterly periods. If comparable observations are insufficient, omit the visual and explain the gap.',
   'Give each visual a plain-language title and a concise caption stating what it explains and its limits. Do not turn loan-sale proceeds into revenue or deduct credit losses inside net interest income. No invented formulas, feedback loops, positive conclusions, confidence scores, paragraph counts, SQL names or internal identifiers in display text.',
