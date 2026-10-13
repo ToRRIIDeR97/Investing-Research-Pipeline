@@ -9,4 +9,4 @@ export {
   retrievePassages, openingPassages, runDocuments, periodHints, coversPeriod,
   type CoverageGap, type PeriodHint, type RetrievalNeed, type RetrievalResult, type RetrievedPassage, type RunDocument,
 } from "./retrieve";
-export { FOUNDER_ORIGIN_NEED, FOUNDER_FILINGS_NEED, FOUNDER_NEED_KEYS, evidenceNeeds } from "./needs";
+export { FOUNDER_ORIGIN_NEED, FOUNDER_FILINGS_NEED, FOUNDER_NEED_KEYS, evidenceNeeds, evidencePassageBudget, headlineKpis, HEADLINE_KPIS } from "./needs";
