@@ -77,7 +77,9 @@ test("the KPI need searches whole phrases, so generic words never match on their
   const phrases = kpiPhrases(headlineKpis(["advertising_platform"]));
   for (const phrase of ["daily active people", "DAP", "average revenue per person", "ARPP", "ad impressions", "average price per ad"]) assert.ok(phrases.includes(phrase), phrase);
   assert.ok(!phrases.some((phrase) => ["revenue", "price", "per", "users"].includes(phrase)));
-  assert.equal(phraseQuery(["daily active people", "DAP", "average price (per ad)"]), '"daily active people" OR DAP OR "average price per ad"');
+  assert.equal(phraseQuery(["daily active people", "DAP", "average price (per ad)"]), '"daily active people" OR "DAP" OR "average price per ad"');
+  // A leading "-" or a bare OR stays text: unquoted, "-x" would become NOT x and match almost every passage.
+  assert.equal(phraseQuery(["-net flows", "OR"]), '"-net flows" OR "OR"');
   const [need] = evidenceNeeds(["earnings_release"], { name: "Meta" }, { kpis: headlineKpis(["advertising_platform"]) });
   assert.equal(need.key, "headline_kpis");
   assert.deepEqual(need.phrases, phrases);

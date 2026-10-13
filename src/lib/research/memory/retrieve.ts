@@ -104,9 +104,12 @@ async function ensureIndexed(sql: postgres.Sql, ids: string[], runId: string) {
 
 /** Free-text need queries match any of their words. */
 const orQuery = (query: string) => query.split(/[\s,;]+/).map(term => term.replace(/["()]/g, "").trim()).filter(Boolean).join(" OR ");
-/** websearch_to_tsquery syntax: each phrase must match as consecutive words; any phrase may match. */
+/**
+ * websearch_to_tsquery syntax: each phrase must match as consecutive words; any phrase may match. Every phrase is
+ * quoted, so a leading "-" or a word "or" in it is text, not a NOT or OR operator.
+ */
 export const phraseQuery = (phrases: string[]) => phrases.map(phrase => phrase.replace(/["()]/g, " ").replace(/\s+/g, " ").trim())
-  .filter(Boolean).map(phrase => phrase.includes(" ") ? `"${phrase}"` : phrase).join(" OR ");
+  .filter(Boolean).map(phrase => `"${phrase}"`).join(" OR ");
 
 export interface PeriodHint { label: string; start: string; end: string }
 
