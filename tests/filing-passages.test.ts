@@ -66,11 +66,12 @@ test("only the newest document of each form is read, before the cutoff, with sta
     doc("q3", "sec_filing_10-q", "regulatory_filing", "2026-09-30", "2026-10-30"),
     doc("8k", "sec_filing_8-k", "earnings_release", "2026-07-29", "2026-07-29"),
     doc("8k-ex", "sec_filing_8-k", "earnings_release", "2026-07-29", "2026-07-29"),
+    doc("8k-board", "sec_filing_8-k", "regulatory_filing", "2026-09-15", "2026-09-15"),
     doc("web-old", "web_regulatory_filing", "regulatory_filing", null, "2022-02-03"),
     doc("web-release", "web_earnings_release", "earnings_release", null, null),
     doc("peer", "web_peer_company_primary", "peer_company_primary", null, "2026-02-12"),
   ];
-  assert.deepEqual(latestFilings(docs, "2026-10-01").map(d => d.id), ["8k", "8k-ex", "q2", "k25", "web-release"]);
+  assert.deepEqual(latestFilings(docs, "2026-10-01").map(d => d.id), ["8k-board", "8k", "8k-ex", "q2", "k25", "web-release"]);
 });
 
 test("selection stays within the byte budget, cuts long passages and limits each document", () => {

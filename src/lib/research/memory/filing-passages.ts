@@ -29,18 +29,20 @@ export type FilingPassageCandidate = Pick<RetrievedPassage, "passage_id" | "sour
 const docDate = (doc: Pick<RunDocument, "periodEnd" | "publishedAt">) => doc.periodEnd || doc.publishedAt || "";
 
 /**
- * The newest document of each form (source type) among the run's filings and earnings materials,
+ * The newest document of each form (source type and role) among the run's filings and earnings materials,
  * newest first: the latest 10-K, 10-Q and earnings release rather than every year's copy of the same
  * discussion. All documents sharing a form's newest date are kept (an 8-K and its release exhibit).
  * Documents published after the cutoff are left out; undated documents stay in.
  */
 export function latestFilings(documents: RunDocument[], cutoff?: string): RunDocument[] {
   const eligible = documents.filter(doc => doc.role && FILING_ROLES.includes(doc.role) && !(cutoff && doc.publishedAt && doc.publishedAt > cutoff));
+  // A form is its source type and role: the newest 8-K about a board change must not hide the newest earnings 8-K.
+  const form = (doc: RunDocument) => `${doc.sourceType}|${doc.role}`;
   const newest = new Map<string, string>();
-  for (const doc of eligible) if (!newest.has(doc.sourceType) || docDate(doc) > newest.get(doc.sourceType)!) newest.set(doc.sourceType, docDate(doc));
+  for (const doc of eligible) if (!newest.has(form(doc)) || docDate(doc) > newest.get(form(doc))!) newest.set(form(doc), docDate(doc));
   const latest = [...newest.values()].sort().at(-1) || "";
   const staleBefore = latest ? new Date(Date.parse(latest) - STALE_DAYS * 86_400_000).toISOString().slice(0, 10) : "";
-  return eligible.filter(doc => docDate(doc) === newest.get(doc.sourceType) && (!docDate(doc) || docDate(doc) >= staleBefore))
+  return eligible.filter(doc => docDate(doc) === newest.get(form(doc)) && (!docDate(doc) || docDate(doc) >= staleBefore))
     .sort((a, b) => docDate(b).localeCompare(docDate(a)) || a.sourceType.localeCompare(b.sourceType) || a.id.localeCompare(b.id));
 }
 
