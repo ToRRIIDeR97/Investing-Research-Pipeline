@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
-import { ReportVisual } from './visuals';
+import { ReportVisual, QUANTITATIVE_VISUALS } from './visuals';
 
 export const STANDARD_VERSION = "asset-framework-2.1-adaptive-1";
 export const COVERAGE = {
@@ -22,6 +22,8 @@ const id = z.string().min(1);
 export const SectionPlan = z.object({
   id: id.regex(/^[a-z0-9_-]+$/), title: id, purpose: id,
   coverage: z.array(id), artifact_ids: z.array(id),
+  // The chart a quantitative chapter should carry: the question, visual kind and stored data. Empty when none fits.
+  chart_plan: z.string().max(400).optional(),
 });
 export const CoverageResult = z.object({
   key: id, status: z.enum(["satisfied", "qualified", "blocked", "not_applicable"]),
@@ -84,6 +86,12 @@ export function validateProductOutline(outline:ReportOutline) {
   if(errors.length)throw new Error(errors.join(' '));
 }
 
+/** A planned chart is drawn, or a gap says why it is not. */
+export function validateChartPlan(plan: { chart_plan?: string }, section: ReportSection) {
+  if (!plan.chart_plan?.trim() || (section.visuals ?? []).some(v => QUANTITATIVE_VISUALS.includes(v.kind)) || section.gaps.some(g => /\bcharts?\b/i.test(g))) return;
+  throw new Error(`section_plan.chart_plan plans a chart ("${plan.chart_plan.trim()}"). Add it as a history, series, ratio, scenarios or valuation_bridge visual from stored data, or state in gaps why the chart is omitted.`);
+}
+
 export function outputContract(shape: Record<string, z.ZodType>): AgentOutputFormat {
   const schema = z.object(shape);
   return { requiredKeys: Object.keys(shape), schema: z.toJSONSchema(schema, { target: "draft-7", io: "input" }),
@@ -99,7 +107,7 @@ export const RESEARCH_DOCTRINE = [
   "Financials Metrics must expose sourced net income margin, gross margin, SG&A margin, ROE, ROIC and company-relevant ratios. State formulas and period conventions, align units and basis, use average balances when required, and distinguish unavailable inputs from economically inapplicable measures. Never invent missing inputs.",
   "Write company analysis directly in an analyst's voice, with adjacent citations. Do not narrate artifacts, packets, saved records, database fields or the research workflow. Retain material uncertainty beside the affected claim. Do not create standalone Financial history or Evidence and limitations chapters. Financials is a separate tab of filing tables beside the Report, not a report chapter: discuss financial history inside the business, constraints, management or valuation chapter it explains, and citations retain source access.",
   "Combine operating scenarios, valuation, downside and permanent loss in one Valuation chapter. Present numerical driver assumptions and annual schedules with explicit Bear, Base and Bull cases. Select appropriate valuation methods separately from scenarios, rather than forcing three DCF methods. Show actual discounting, terminal value, capital/share bridges or the chosen method's equivalent calculation. Do not describe an exit multiple or interpolated price path as a DCF.",
-  "Select exhibits to explain a material trend, comparison or business mechanism. No mandatory graph slot or Supporting evidence block in every chapter. Use relevant segment numbers where available. Management should include a sourced organization chart with names, roles, effective dates and documented reporting lines; never infer hierarchy from seniority.",
+  "Each quantitative chapter (financial history, business and segments, operating scenarios, valuation) carries one chart built by code from stored data, such as segment mix, a margin trend, bear/base/bull scenarios or the valuation bridge; when the data cannot support it, say why. Other exhibits explain a material trend, comparison or business mechanism; no Supporting evidence block in every chapter. Use relevant segment numbers where available. Management should include a sourced organization chart with names, roles, effective dates and documented reporting lines; never infer hierarchy from seniority.",
   "Use Asset Research Agent Framework v2.1. Explain business processes and historical causes before relying on forecasts; write the executive judgment last.",
   "Separate disclosed facts, third-party data, derived estimates, analyst assumptions and speculative options. A citation ID alone does not prove a claim: verify the source passage supports the statement.",
   "Trace material forecasts through customer decisions, constraints, time lags, competitor responses, reinvestment and per-share value. Explain disagreements and what would disprove the interpretation.",
