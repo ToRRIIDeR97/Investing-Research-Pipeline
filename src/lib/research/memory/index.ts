@@ -11,6 +11,6 @@ export {
 } from "./retrieve";
 export { FOUNDER_ORIGIN_NEED, FOUNDER_FILINGS_NEED, FOUNDER_NEED_KEYS, evidenceNeeds } from "./needs";
 export {
-  loadFilingPassages, selectFilingPassages, filingPassageBudget, sectionScore, FILING_PASSAGE_TASKS, FILING_PASSAGE_NEEDS, FILING_PASSAGE_RULE,
+  loadFilingPassages, selectFilingPassages, latestFilings, passageScore, filingPassageBudget, sectionScore, FILING_PASSAGE_TASKS, FILING_PASSAGE_RULE,
   DEFAULT_FILING_PASSAGE_BYTES, type FilingPassage, type FilingPassageCandidate,
 } from "./filing-passages";

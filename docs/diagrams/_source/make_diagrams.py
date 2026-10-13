@@ -355,7 +355,7 @@ msg(4, 2, "pg_try_advisory_lock(run); startRun / resume")
 def loop_body():
     msg(4, 2, "startReadyStages (dependency graph)")
     msg(4, 5, "execute(ctx) × ready stages (parallel)")
-    msg(5, 2, "loadFilingPassages: MD&A, segment, results (4 stage types)")
+    msg(5, 2, "loadFilingPassages: newest filings, driver passages")
     msg(5, 6, "callResearchAgent(role, packet + filing_passages)")
     msg(6, 7, "HTTPS chat/completions | messages (cached prefix)")
     msg(7, 6, "JSON text + usage", ret=True)
