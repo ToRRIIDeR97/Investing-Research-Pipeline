@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { canonicalResearchKey } from "@/lib/research/v2-contracts";
 import { canonicalMetricPlan, normalizeSourceGap, positiveFiniteNumber, selectLatestFact } from "@/lib/research/pipeline-helpers";
-import { ensureDocumentIndexed, evidenceNeeds, FOUNDER_NEED_KEYS, getEmbeddingProvider, indexDocumentContent, openingPassages, recordContradictions,
+import { ensureDocumentIndexed, evidenceNeeds, evidencePassageBudget, FOUNDER_NEED_KEYS, getEmbeddingProvider, indexDocumentContent, openingPassages, recordContradictions,
   retrievePassages, runDocuments, type RetrievedPassage } from "@/lib/research/memory";
 import { getAgentConfig } from "@/lib/agent-harness/registry";
 import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
@@ -161,14 +161,15 @@ function packetChunk(passage: RetrievedPassage, sourceType: string, need: string
  * need, so long documents contribute the sections that answer it, not their opening pages.
  * A role whose need matches nothing contributes its documents' first passages instead,
  * except founder history, which reports the gap rather than reading a cover page.
+ * The passage budget grows with the number of documents; `kpis` adds a headline-KPI need over filings and earnings material.
  */
-export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: StoredSource[]) {
+export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: StoredSource[], options: { kpis?: string[] } = {}) {
   const sourceIds = [...new Set(sources.filter((source) => !source.sourceId.startsWith("candidate-")).map((source) => source.sourceId))];
   if (!sourceIds.length) return [];
   const documents = (await runDocuments(sql, ctx.runId)).filter((doc) => sourceIds.includes(doc.id));
   const typeOf = new Map(documents.map((doc) => [doc.id, doc.sourceType]));
   const roles = [...new Set(documents.map((doc) => doc.role).filter((role): role is string => Boolean(role)))];
-  const needs = evidenceNeeds(roles, { name: ctx.assetName });
+  const needs = evidenceNeeds(roles, { name: ctx.assetName }, { passageBudget: evidencePassageBudget(documents.length), kpis: options.kpis });
   const roleless = documents.filter((doc) => !doc.role).map((doc) => doc.id);
   if (roleless.length) needs.push({ key: "general", query: `${ctx.assetName} business revenue growth risk strategy`, sourceIds: roleless, maxPassages: 4 });
   // With embeddings configured, every passage the packet can draw on gets a vector first.
@@ -797,6 +798,8 @@ async function fetchSecContext(ctx: RunContext) {
     entityName: companyFacts.entityName,
     website: submissions.website || null,
     investorWebsite: submissions.investorWebsite || null,
+    sic: submissions.sic || null,
+    sicDescription: submissions.sicDescription || null,
     companyFacts,
     revenue,
     netIncome,
@@ -1641,7 +1644,8 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
     content: JSON.stringify(secContext, null, 2),
     mimeType: "application/json",
     qualityScore: "0.95",
-    metadata: { system_generated: true, source: publisher },
+    // The SIC code selects the run's headline KPIs (`kpiArchetypes`).
+    metadata: { system_generated: true, source: publisher, ...(context.sic ? { sic: String(context.sic), sic_description: nullableText(context.sicDescription) } : {}) },
     chunkTitle: "SEC API context",
   };
 
@@ -1715,9 +1719,11 @@ export async function persistEvidence(
   sql: Sql,
   ctx: RunContext,
   sources: StoredSource[],
-  output: Record<string, unknown>
+  output: Record<string, unknown>,
+  /** Raised by evidence extraction to its target, so a large corpus is not cut at the default. */
+  minCap = 0,
 ) {
-  const evidenceCap = Math.max(25, Number(process.env.RESEARCH_PIPELINE_EVIDENCE_CAP || 40));
+  const evidenceCap = Math.max(25, minCap, Number(process.env.RESEARCH_PIPELINE_EVIDENCE_CAP || 40));
   const claims = usableEvidenceClaims(output).slice(0, evidenceCap);
   return sql.begin(async (tx) => {
     let persisted = 0;
@@ -1797,20 +1803,75 @@ export async function persistEvidence(
   });
 }
 
+/** Longest supporting quote an evidence packet carries per claim. */
+export const EVIDENCE_QUOTE_CHARS = 280;
+const RECENCY_WINDOW_MS = 5 * 365 * 86_400_000;
+
+/**
+ * Orders claims for an analysis packet. Each claim scores its confidence plus up to 0.2 for recency (its period, or
+ * its source's date, against the newest such date in the set, over five years). Claims are then taken round-robin
+ * across claim types, best first, so one topic cannot fill the packet; source-inventory claims come last.
+ * `evidence_date` is read for ranking only. The reference date is capped at `asOf` (the run's cutoff), so a far-future
+ * period end can't push every other claim down. Ties break on id, so the same claims give the same order.
+ */
+export function rankEvidencePacket<T extends Record<string, any>>(rows: T[], limit: number, asOf: number | null = null): T[] {
+  const time = (row: T) => {
+    const value = row.evidence_date instanceof Date ? row.evidence_date.getTime() : Date.parse(String(row.evidence_date ?? ""));
+    return Number.isFinite(value) ? value : null;
+  };
+  const latest = Math.max(0, ...rows.map(time).filter((value): value is number => value !== null));
+  const newest = asOf !== null && Number.isFinite(asOf) ? Math.min(latest, asOf) : latest;
+  const score = (row: T) => {
+    const at = time(row);
+    return (Number(row.confidence) || 0) + (at === null ? 0 : 0.2 * Math.min(1, Math.max(0, 1 - (newest - at) / RECENCY_WINDOW_MS)));
+  };
+  const sorted = rows.map((row) => ({ row, score: score(row) }))
+    .sort((a, b) => b.score - a.score || String(a.row.id).localeCompare(String(b.row.id)))
+    .map((item) => item.row);
+  const inventory = sorted.filter((row) => row.claim_type === "source_inventory_fact");
+  const byType = new Map<string, T[]>();
+  for (const row of sorted) {
+    if (row.claim_type === "source_inventory_fact") continue;
+    const type = String(row.claim_type || "").trim().toLowerCase();
+    byType.set(type, [...(byType.get(type) || []), row]);
+  }
+  const ranked: T[] = [];
+  for (let round = 0; ranked.length < limit; round += 1) {
+    const taken = [...byType.values()].map((bucket) => bucket[round]).filter(Boolean);
+    if (!taken.length) break;
+    ranked.push(...taken);
+  }
+  return [...ranked, ...inventory].slice(0, limit);
+}
+
+/** The supporting quote, bounded; none when the stored quote only repeats the claim. */
+export function evidenceQuote(quote: unknown, claimText: unknown): string | null {
+  const text = String(quote ?? "").replace(/\s+/g, " ").trim();
+  if (!text || text === String(claimText ?? "").replace(/\s+/g, " ").trim()) return null;
+  return text.length > EVIDENCE_QUOTE_CHARS ? `${text.slice(0, EVIDENCE_QUOTE_CHARS - 1)}…` : text;
+}
+
+/** Accepted claims for analysis stages, ranked by `rankEvidencePacket`, each with its best-supported location and quote. */
 export async function loadAcceptedEvidencePacket(sql: Sql, ctx: RunContext) {
-  return sql`
+  const limit = Math.max(1, Number(process.env.RESEARCH_EVIDENCE_PACKET_LIMIT || 120));
+  const rows = await sql`
     SELECT DISTINCT ON (ec.id)
       ec.id, ec.claim_text, ec.claim_type, ec.claim_category,
       ec.period_start, ec.period_end, ec.as_of_date, ec.confidence,
       sl.source_document_id AS source_id, sl.document_chunk_id,
-      sl.char_start, sl.char_end
+      sl.char_start, sl.char_end, el.quoted_text,
+      COALESCE(ec.period_end, ec.as_of_date, sd.period_end, sd.published_at) AS evidence_date
     FROM evidence_claims ec
     LEFT JOIN evidence_links el ON el.evidence_claim_id = ec.id
     LEFT JOIN source_locations sl ON sl.id = el.source_location_id
+    LEFT JOIN source_documents sd ON sd.id = sl.source_document_id
     WHERE ec.research_run_id = ${ctx.runId} AND ec.review_status != 'rejected'
-    ORDER BY ec.id, ec.confidence DESC NULLS LAST, ec.created_at ASC
-    LIMIT 120
+    ORDER BY ec.id, el.confidence DESC NULLS LAST, el.id
   `;
+  const asOf = ctx.marketDataCutoffAt ? Date.parse(ctx.marketDataCutoffAt) : Date.now();
+  return rankEvidencePacket([...rows], limit, asOf).map(({ evidence_date: _date, quoted_text, ...row }) => ({
+    ...row, quote: evidenceQuote(quoted_text, row.claim_text),
+  }));
 }
 
 export function deterministicEvidenceFallback(
