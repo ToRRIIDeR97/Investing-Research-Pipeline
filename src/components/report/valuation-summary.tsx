@@ -39,13 +39,14 @@ export function ValuationSummaryView({artifacts,conclusionStatus}:{artifacts:Row
     {s.weighted!=null&&<section aria-label="Valuation summary" className={styles.hero}>
       <p className={styles.heroValue}>{price(s.weighted,c)}</p>
       <p className={styles.heroLine}>
-        {['per share',s.terminalYear?` by ${s.terminalYear}`:''].join('')}
+        {s.terminalYear?`target per share for ${s.terminalYear}`:'per share'}
         {r!=null&&s.price!=null&&<> · <b className={tone(r)}>{Math.abs(r)<0.005?'in line with':`${Math.abs(Math.round(r*100))}% ${r<0?'below':'above'}`}</b> today’s {price(s.price,c)}{!s.priceVerified&&<span className={styles.muted}> (unverified)</span>}</>}
         {s.notFinal&&<> · <span className={styles.pending}>not final</span></>}
       </p>
       {!!s.scenarios.length&&<div className={styles.cases} role="list">{s.scenarios.map(x=><div role="listitem" key={x.type}>
         <div className={styles.caseName} data-case={x.type}><span aria-hidden="true">{glyphs[x.type]}</span> {scenarioNames[x.type]} {x.probability!=null&&<span>· {Math.round(x.probability*100)}%</span>}</div>
         <div className={styles.caseValue}>{price(x.value,c)}{x.return!=null&&<small className={tone(x.return)}>{signed(x.return)}</small>}</div>
+        {(()=>{const today=s.calculations.find(k=>k.type===x.type)?.valuePerShare;return today!=null&&<div className={styles.muted}>{price(today,c)} today</div>;})()}
       </div>)}</div>}
     </section>}
     {!!s.reasons.length&&<ol className={styles.reasons} aria-label="What drives the value">{s.reasons.map((x,i)=><li key={i}><span aria-hidden="true">{i+1}</span><span><b>{x.title}</b> <span>{x.text}</span></span></li>)}</ol>}

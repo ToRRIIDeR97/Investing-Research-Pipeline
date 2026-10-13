@@ -1,5 +1,5 @@
 import { resolveTable } from "./tables";
-import { validateVisual, historySeries } from './visuals';
+import { validateVisual, historySeries, buildVisual } from './visuals';
 export { resolveTable } from "./tables";
 import { createHash } from "node:crypto";
 import { Section, CoverageResult, Question, STANDARD_VERSION, type ReportSection, type CoverageCheck, type ResearchQuestion } from "./contracts";
@@ -129,7 +129,11 @@ export function createReport(input: ReportInput): ReportDocument {
       if (visual.kind === 'process') for (const lane of visual.lanes) {
         lines.push(`${lane.nodes.map(n => plainMarkdown(n.label)).join(' → ')}. ${plainMarkdown(lane.note)} (${lane.relationship}) ${lane.evidence_ids.map(citation).join(' ')}`, '');
       } else if(visual.kind==='organization')lines.push(tableMarkdown(visual.people.map(p=>({Name:p.name,Role:p.role,'Reports to':visual.people.find(parent=>parent.id===p.reports_to)?.name??'Not disclosed',Sources:p.evidence_ids.map(citation).join(' ')}))),'');
-      else lines.push(tableMarkdown(historySeries(visual,input.artifacts).points.map(p=>({Period:p.period,Value:p.exact}))), '');
+      else if(visual.kind==='history')lines.push(tableMarkdown(historySeries(visual,input.artifacts).points.map(p=>({Period:p.period,Value:p.exact}))), '');
+      else { // Charts export as their data table.
+        const chart=buildVisual(visual,input.artifacts);
+        lines.push(tableMarkdown(chart.points.map(p=>({[chart.category]:p.period,...Object.fromEntries(chart.columns.map((c,i)=>[c,p.exact[i]]))}))), '', ...chart.notes.map(plainMarkdown).flatMap(n=>[n,'']));
+      }
     }
     lines.push(`Counterevidence and alternatives. ${plainMarkdown(s.counterevidence)}`, "", `Investment implication. ${plainMarkdown(s.implication)}`, "");
     if (s.gaps.length) lines.push("Evidence gaps:", "", ...s.gaps.map(g => `- ${plainMarkdown(g)}`), "");

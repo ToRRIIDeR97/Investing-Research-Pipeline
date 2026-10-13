@@ -1,6 +1,8 @@
 # Visuals in investment research
 
-Use a visual when it answers a question that matters to understanding the business. Keep the full reasoning and evidence available below it. A report should remain a readable research document, not a dashboard. Most chapters need no visual; use at most two per chapter.
+Use a visual when it answers a question that matters to understanding the business. Keep the full reasoning and evidence available below it. A report should remain a readable research document, not a dashboard. Use at most two visuals per chapter.
+
+Each quantitative chapter (financial history, business and segments, operating scenarios, valuation) gets one planned chart. The outline writes it to the section's `chart_plan`: the question, the visual kind and the stored data. The section writer adds that chart when the stored data supports it. Otherwise it omits the chart and adds a gap that says why. Validation rejects a section whose plan names a chart but which has neither a chart visual nor a gap mentioning the chart. Other chapters use a visual only where it explains more than prose.
 
 ## Decide before drawing
 
@@ -10,10 +12,15 @@ Write the question in one sentence, identify the exact supporting records, and n
 | --- | --- | --- |
 | How do customers, operations and money connect? | `process`, two to four nodes per lane, up to three lanes | Cited process/segment records or source passages for every lane |
 | What changed in a financial measure? | `history`, a bar chart of stored observations | Exact artifact and path, one metric, unit, currency, reporting basis and periodicity |
+| How did the segment mix or several measures move? | `series`, lines, or stacked bars when `stacked` is true | Same as `history`, plus two to six `lines`, each with `metric_key`, exact `segment` and `geography` (null for consolidated) and a label |
+| How did a margin or other ratio move? | `ratio`, a line in percent | `numerator` and `denominator` series in the same unit, basis and periods. Code divides them |
+| How do bear, base and bull differ? | `scenarios`: bars for today's `value_per_share` from `valuation_scenario_set` (recalculated from `method_inputs`, the same figure the bridge and report text use, not the terminal-year `terminal_anchor_*` targets); lines per year for an `operating_scenario_set` driver (`revenue_growth`, `operating_margin`, `capex_to_revenue` …) or statement line with its `unit` | The scenario artifact. All three scenarios must have values |
+| How does today's value build up? | `valuation_bridge`, a waterfall: discounted cash flows, discounted terminal value, enterprise value, net cash or debt, equity value | `valuation_scenario_set` with stored `method_inputs` and one `scenario`. Code recalculates the schedule |
+| What are the people and reporting lines? | `organization` | Sourced names, roles and reporting lines |
 | What must hold for a proposed advantage? | `process` with `relationship: hypothesis` | Evidence for the premise and an explicit note about the unproven link |
 | What are the exact values, assumptions or unresolved details? | Existing evidence table or prose | Preserve the original records |
 
-The current renderer supports these two visual types. Do not request pie charts, Sankey diagrams, arbitrary graphics or new chart kinds through improvised JSON. Add a supported type and validation before using another representation.
+The renderer supports these visual types. Do not request pie charts, Sankey diagrams, arbitrary graphics or new chart kinds through improvised JSON. Add a supported type and validation before using another representation.
 
 ## Ground the content
 
@@ -24,6 +31,8 @@ The current renderer supports these two visual types. Do not request pie charts,
 5. For `history`, select the stored observation series with `artifact_id`, `path`, `metric_key`, `unit`, `currency`, `reporting_basis`, and `periodicity`. Never provide a `values` array, chart points, financial calculations or coordinates. Rendering resolves the numbers directly from that artifact.
 6. Do not mix segments, geography, currencies, annual/quarterly series, or accounting bases. Duplicate periods are ambiguous, not values to sum. Null observations stay missing, actual zeros remain zero, and absent periods are not interpolated. Quantitative bars include zero in the axis domain.
 7. Use only observations available within the research cutoff. Preserve exact values in the underlying data table and show units beside the chart. The visible chart uses currency millions while its data table retains original precision.
+8. `series`, `ratio`, `scenarios` and `valuation_bridge` follow the same rule: the model names an artifact, path and keys, and `buildVisual` in `visuals.ts` computes every number. A stacked `series` must show segments or regions of one metric without the consolidated total and without negative values. A `ratio` stays missing for a period where either input is missing or the denominator is zero or negative. `scenarios` and `valuation_bridge` refuse a withheld valuation. The bridge recalculates the stored `method_inputs` with `calculateValuationSchedule` (the FCFF schedule for that scenario when there is one) and notes the diluted share count and value per share.
+9. The Markdown export writes each chart as its data table, followed by the chart's notes (for example how a ratio was calculated).
 
 ## Presentation
 
@@ -53,7 +62,29 @@ Write an optional `visuals` array on the section. The section writer receives th
 }
 ```
 
-This example is structural guidance, not evidence about any company. Substitute actual supplied IDs and source-entailing labels. An empty `visuals` array is a valid choice.
+A segment mix and a margin trend from the same stored observations:
+
+```json
+[{
+  "kind": "series", "title": "Revenue by segment", "caption": "Annual reported revenue.",
+  "artifact_id": "use-the-historical-record-id", "path": "observations",
+  "unit": "USD", "currency": "USD", "reporting_basis": "gaap", "periodicity": "annual", "stacked": true,
+  "lines": [
+    {"label": "Segment A", "metric_key": "revenue", "segment": "exact-segment-member", "geography": null},
+    {"label": "Segment B", "metric_key": "revenue", "segment": "other-segment-member", "geography": null}
+  ]
+}, {
+  "kind": "ratio", "title": "Operating margin", "caption": "Operating income over revenue each quarter.",
+  "artifact_id": "use-the-historical-record-id", "path": "observations",
+  "unit": "USD", "currency": "USD", "reporting_basis": "gaap", "periodicity": "quarterly",
+  "numerator": {"label": "Operating income", "metric_key": "operating_income", "segment": null, "geography": null},
+  "denominator": {"label": "Revenue", "metric_key": "revenue", "segment": null, "geography": null}
+}]
+```
+
+Scenario and valuation charts name only the artifact: `{"kind":"scenarios","metric":"value_per_share","unit":"","artifact_id":"…"}` or `{"kind":"valuation_bridge","scenario":"base","artifact_id":"…"}`, each with a title and caption.
+
+These examples are structural guidance, not evidence about any company. Substitute actual supplied IDs and source-entailing labels. An empty `visuals` array is valid for a chapter without a chart plan.
 
 ## Trial on the existing SoFi report
 

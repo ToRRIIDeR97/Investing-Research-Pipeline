@@ -1,6 +1,6 @@
 import { callResearchAgent, exactJsonPrompt, type ResearchRunContext, type Sql } from "../run-context";
 import { AI_REVIEWER_CONTRACT } from "../stage-contracts";
-import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, RESEARCH_DOCTRINE, normalizeOutlineStructure, validateProductOutline, type ReportOutline, type ReportSection } from "./contracts";
+import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, RESEARCH_DOCTRINE, normalizeOutlineStructure, validateProductOutline, validateChartPlan, type ReportOutline, type ReportSection } from "./contracts";
 import { composeReviewedReport, type ReportReview, REQUIRED_COVERAGE } from "./compose";
 import { loadReportInputs, saveReportArtifact } from "./store";
 import { createReport, reviewDocument } from "./report";
@@ -75,7 +75,8 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
             "Use full artifacts and evidence to investigate the questions. Record an answer, evidence/artifact IDs, materiality, status, and specific next evidence needed. Add questions discovered from contradictions or missing disclosures. Do not claim you fetched new evidence.",
             "Coverage states: satisfied for evidenced analysis including a no-moat finding; qualified for usable analysis with explained limits; blocked for a decision-critical gap; not_applicable only with asset-specific justification. A missing artifact is not evidence of inapplicability.",
             "Use only supplied artifact and evidence IDs. Keep numerical models unchanged. Request missing analysis in follow_up when artifacts cannot answer a material question. Prefer 8-16 substantial sections, maximum 24. No word-count target.",
-            "Allocate key figures: give each section 2-5 key_figures (metric and period, e.g. \"FY2024 take rate\"). Assign each figure to exactly one section, the one that explains it; other sections refer to it rather than repeat it."] }) }));
+            "Allocate key figures: give each section 2-5 key_figures (metric and period, e.g. \"FY2024 take rate\"). Assign each figure to exactly one section, the one that explains it; other sections refer to it rather than repeat it.",
+            "Chart plan: for each section covering history, business, forecasts or valuation, set chart_plan to the one chart that best answers its quantitative question, naming the visual kind and the stored data, for example segment revenue mix (series, stacked) or operating margin trend (ratio) from historical_record observations, bear/base/bull revenue or margins (scenarios) from operating_scenario_set, value per share (scenarios) or the valuation bridge (valuation_bridge) from valuation_scenario_set. Leave chart_plan empty only when no stored numeric data fits. Other sections leave it empty."] }) }));
       const unanswered = output.outline.questions.filter(q => q.status === "blocked" && q.materiality !== "supporting")
         .map(q => ({ category: "research_gap", question: q.question, follow_up: q.follow_up }));
       if (unanswered.length) await requestMissingResearch(sql, ctx, unanswered);
@@ -91,6 +92,7 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
         taskKey: `report:section:${section.id}`, taskType: "report_section", agentName: "export-writer", modelTier: "mid", packet,
         perCallKeys: ["artifacts", "section_plan", "completed_sections"], outputFormat: checkedContract(SECTION_CONTRACT, (result: { section: ReportSection }) => {
           if (result.section.id !== section.id || JSON.stringify(result.section.coverage) !== JSON.stringify(section.coverage)) throw new Error("Preserve section id and coverage exactly");
+          validateChartPlan(section, result.section);
           createReport({ ...reportInput, required_coverage: section.coverage, sections: [result.section], questions: [],
             coverage: section.coverage.map(key => ({ key, status: "qualified", rationale: "Section validation", section_ids: [section.id] })) });
         }, usable), promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: ["section"], packet: p,
@@ -100,7 +102,7 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
             "Every analysis paragraph carries a figure or a citation. section_plan.key_figures are this section's to present and explain; for figures the outline allocates to other sections, refer to that section by title instead of repeating the number.",
             "Paragraph kinds are fact, analysis, assumption or speculation. Cite exact supporting evidence_ids and artifact_ids for each paragraph. Unknown figures remain unknown. Uncited counterevidence and implication fields may synthesize the cited paragraphs but must not introduce new facts.",
             "Use plain text inside paragraphs; no HTML, embedded links or Markdown tables. Request tables as artifact_id and dot-separated path to the supplied data, with an empty path meaning the artifact root. Do not author or recalculate table values.",
-            "Follow packet.visual_guidelines when choosing optional section.visuals. Omit visuals where they add no explanatory value. Visual claims require the same evidence and accounting discipline as paragraphs.",
+            "Follow packet.visual_guidelines when choosing section.visuals. When section_plan.chart_plan names a chart, add it if the stored data supports it; otherwise omit it and add a gap saying why the chart could not be drawn. Add other visuals only where they explain more than prose. Visual claims require the same evidence and accounting discipline as paragraphs.",
             "If any material question or required coverage is blocked, withhold the investment conclusion. Describe the unresolved issue and what research is needed. Never turn a repair request into invented support."] }) }));
       return output.section;
     },
