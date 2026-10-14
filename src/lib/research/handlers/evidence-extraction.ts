@@ -304,6 +304,7 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
         evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
       }
 
+      let founderPassTaskKey: string | undefined;
       if (!hasFounderOriginClaim(evidenceOutput)) {
         // Only passages that answered a founder need (founder-history documents first, then filings and
         // investor material); never a founder document's opening pages.
@@ -314,11 +315,12 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
             maxBytes: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_BYTES || 36_000),
           });
           const roleBatch = { ...founderBatch, id: "founder-origin" };
+          founderPassTaskKey = `source-reader:role:founder-origin:${sourceReaderBatchFingerprint(roleBatch)}`;
           const founderOutput = await callResearchAgent<Record<string, unknown>>({
             sql,
             ctx,
             stageKey: "evidence_extraction",
-            taskKey: `source-reader:role:founder-origin:${sourceReaderBatchFingerprint(roleBatch)}`,
+            taskKey: founderPassTaskKey,
             taskType: "evidence_extraction_role_gap",
             agentName: "source-reader",
             modelTier: "cheap",
@@ -374,6 +376,7 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       return {
         status: "success",
         extractedClaimsCount: persistedEvidenceCount,
+        founderPassTaskKey,
       };
     } finally {
       await sql.end();
@@ -405,7 +408,10 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       if (Number(founderRows[0]?.cnt || 0) === 0) {
         errors.push(FOUNDER_GAP_ERROR);
       }
-      return makeValidationResult(errors);
+      // The orchestrator narrows a founder-gap retry to this attempt's founder pass only.
+      const result: ValidationResult = makeValidationResult(errors);
+      if (typeof output?.founderPassTaskKey === "string") result.founderPassTaskKey = output.founderPassTaskKey;
+      return result;
     } finally {
       await sql.end();
     }

@@ -13,6 +13,8 @@ export interface ValidationResult {
   errors: string[];
   warnings: string[];
   checkedAt: string;
+  /** evidence_extraction only: the founder-pass task key this attempt ran, if any. */
+  founderPassTaskKey?: string;
 }
 
 /**

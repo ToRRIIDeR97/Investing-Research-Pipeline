@@ -311,12 +311,13 @@ export async function advanceStage(
       const maxRetries = currentStage.max_retries ?? 2;
 
       // Completed requests from an invalid stage must not bypass its next attempt. A founder-gap-only failure
-      // reruns just the founder pass when one ran; the source-reader batches replay.
-      const founderGapOnly = currentStage.stage_key === "evidence_extraction" && validation.errors.length > 0 &&
-        validation.errors.every((error) => error === FOUNDER_GAP_ERROR);
+      // reruns just the founder pass this attempt ran; the source-reader batches replay.
+      const founderPassTaskKey = handlerValidation?.founderPassTaskKey;
+      const founderGapOnly = currentStage.stage_key === "evidence_extraction" && !!founderPassTaskKey &&
+        validation.errors.length > 0 && validation.errors.every((error) => error === FOUNDER_GAP_ERROR);
       const narrowed = founderGapOnly ? await sql`UPDATE research_tasks SET validation_status = 'invalid', updated_at = NOW()
         WHERE stage_id = ${currentStage.id} AND status = 'completed' AND task_type = 'evidence_extraction_role_gap'
-          AND validation_status IS DISTINCT FROM 'invalid' RETURNING id` : [];
+          AND task_key = ${founderPassTaskKey!} AND validation_status IS DISTINCT FROM 'invalid' RETURNING id` : [];
       if (!narrowed.length) await sql`UPDATE research_tasks SET validation_status = 'invalid', updated_at = NOW()
         WHERE stage_id = ${currentStage.id} AND status = 'completed'`;
       const artifactTypes = getStageOutputContract(currentStage.stage_key)?.requiredKeys || [];

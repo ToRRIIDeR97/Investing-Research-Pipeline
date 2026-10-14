@@ -193,7 +193,8 @@ describe("run lifecycle reliability", { skip: process.env.RUN_DB_INTEGRATION !==
     assert.ok(["needs_more_work", "failed"].includes(result.status), result.failure_reason || result.notes.join("\n"));
   });
 
-  test("RM6: a founder-gap-only evidence_extraction retry invalidates only the founder pass", async () => {
+  /** A running evidence_extraction stage with a completed batch and founder pass. */
+  async function evidenceStageWithFounderPass() {
     const runId = await newRun("running");
     await sql`UPDATE research_stages SET status = 'skipped' WHERE research_run_id = ${runId}
       AND stage_key IN ('intake', 'asset_identity', 'archetype_composition', 'research_plan', 'source_discovery', 'source_ingestion')`;
@@ -204,11 +205,25 @@ describe("run lifecycle reliability", { skip: process.env.RUN_DB_INTEGRATION !==
     };
     await complete("source-reader:batch:b1", "evidence_extraction_batch");
     await complete("source-reader:role:founder-origin", "evidence_extraction_role_gap");
-    const founderGap = { valid: false, errors: [FOUNDER_GAP_ERROR], warnings: [], checkedAt: new Date().toISOString() };
+    return runId;
+  }
+
+  test("RM6: a founder-gap-only evidence_extraction retry invalidates only the founder pass", async () => {
+    const runId = await evidenceStageWithFounderPass();
+    const founderGap = { valid: false, errors: [FOUNDER_GAP_ERROR], warnings: [], checkedAt: new Date().toISOString(),
+      founderPassTaskKey: "source-reader:role:founder-origin" };
     assert.equal((await advanceStage(runId, founderGap, { stageKey: "evidence_extraction", deferNext: true })).action, "retry");
     assert.deepEqual(await taskStates(runId), [["source-reader:batch:b1", null], ["source-reader:role:founder-origin", "invalid"]]);
 
     // No founder pass left to rerun, or another error: every completed task is invalidated as before.
+    assert.equal((await advanceStage(runId, founderGap, { stageKey: "evidence_extraction", deferNext: true })).action, "retry");
+    assert.deepEqual(await taskStates(runId), [["source-reader:batch:b1", "invalid"], ["source-reader:role:founder-origin", "invalid"]]);
+  });
+
+  test("RM6: a founder-gap retry whose attempt skipped the founder pass ignores an earlier attempt's pass", async () => {
+    const runId = await evidenceStageWithFounderPass();
+    // This attempt ran no founder pass, so the earlier attempt's valid pass is not what failed.
+    const founderGap = { valid: false, errors: [FOUNDER_GAP_ERROR], warnings: [], checkedAt: new Date().toISOString() };
     assert.equal((await advanceStage(runId, founderGap, { stageKey: "evidence_extraction", deferNext: true })).action, "retry");
     assert.deepEqual(await taskStates(runId), [["source-reader:batch:b1", "invalid"], ["source-reader:role:founder-origin", "invalid"]]);
   });
