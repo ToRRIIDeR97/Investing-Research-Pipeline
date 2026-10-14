@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { NextRequest } from "next/server";
+import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
 import { config, proxy } from "../src/proxy";
+import { loginReturnPath, safeNextPath } from "../src/lib/api/auth";
 import nextConfig from "../next.config";
 
 const request = (path: string, method: string, headers: Record<string, string>) =>
@@ -10,7 +12,6 @@ const request = (path: string, method: string, headers: Record<string, string>) 
 const passes = (response: Response) => response.headers.get("x-middleware-next") === "1";
 
 test("the API answers only local Host names, so a rebound DNS name can't read it (S1, #8)", () => {
-  assert.equal(config.matcher, "/api/:path*");
   for (const host of ["localhost:3000", "127.0.0.1:3002", "[::1]:3000", "LOCALHOST:3000"]) {
     assert.ok(passes(proxy(request("/api/assets", "GET", { host }))), host);
   }
@@ -26,6 +27,18 @@ test("the API answers only local Host names, so a rebound DNS name can't read it
     if (saved === undefined) delete process.env.RESEARCH_APP_ALLOWED_HOSTS;
     else process.env.RESEARCH_APP_ALLOWED_HOSTS = saved;
   }
+});
+
+test("the proxy covers dotted page paths and skips only Next's assets and static files", () => {
+  const matches = (url: string) => unstable_doesMiddlewareMatch({ config, url });
+  for (const url of ["/", "/assets/BRK.B", "/assets/BRK.B/research", "/review", "/login", "/api/assets", "/api/report.json"]) {
+    assert.ok(matches(url), url);
+  }
+  for (const url of ["/_next/static/chunks/app.js", "/_next/image", "/favicon.ico", "/report-layouts/index.html",
+    "/report-layouts/styles.css", "/report-layouts/presentation.mjs", "/report-layouts/report-data.json", "/logo.svg", "/font.woff2"]) {
+    assert.ok(!matches(url), url);
+  }
+  assert.equal(proxy(request("/assets/BRK.B", "GET", { host: "evil.example" })).status, 403);
 });
 
 test("state-changing API calls must come from the app's own origin (S1, #8)", () => {
@@ -92,4 +105,109 @@ test("the dev and start servers bind to loopback (#8)", () => {
   const scripts = JSON.parse(readFileSync("package.json", "utf8")).scripts;
   assert.match(scripts.dev, /-H 127\.0\.0\.1/);
   assert.match(scripts.start, /-H 127\.0\.0\.1/);
+});
+
+const TOKEN = "test-operator-token-0123456789";
+async function withToken<T>(token: string | undefined, fn: () => T | Promise<T>): Promise<T> {
+  const saved = process.env.RESEARCH_OS_API_TOKEN;
+  if (token === undefined) delete process.env.RESEARCH_OS_API_TOKEN;
+  else process.env.RESEARCH_OS_API_TOKEN = token;
+  try {
+    return await fn();
+  } finally {
+    if (saved === undefined) delete process.env.RESEARCH_OS_API_TOKEN;
+    else process.env.RESEARCH_OS_API_TOKEN = saved;
+  }
+}
+
+test("without RESEARCH_OS_API_TOKEN the API and pages stay open on loopback (#8)", async () => {
+  await withToken(undefined, () => {
+    assert.ok(passes(proxy(request("/api/assets", "GET", { host: "localhost:3000" }))));
+    assert.ok(passes(proxy(request("/review", "GET", { host: "localhost:3000" }))));
+  });
+});
+
+test("with RESEARCH_OS_API_TOKEN the API needs the bearer token or the session cookie (#8)", async () => {
+  const host = "127.0.0.1:3000";
+  await withToken(TOKEN, () => {
+    assert.equal(proxy(request("/api/assets", "GET", { host })).status, 401);
+    assert.equal(proxy(request("/api/assets", "GET", { host, authorization: "Bearer wrong" })).status, 401);
+    assert.equal(proxy(request("/api/assets", "GET", { host, cookie: "research_os_session=wrong" })).status, 401);
+    assert.ok(passes(proxy(request("/api/assets", "GET", { host, authorization: `Bearer ${TOKEN}` }))));
+    assert.ok(passes(proxy(request("/api/assets", "GET", { host, cookie: `research_os_session=${TOKEN}` }))));
+    // The token doesn't replace the same-origin check on writes.
+    assert.equal(proxy(request("/api/research-runs/1/approve-plan", "POST", { host, authorization: `Bearer ${TOKEN}` })).status, 403);
+    assert.ok(passes(proxy(request("/api/research-runs/1/approve-plan", "POST", { host, authorization: `Bearer ${TOKEN}`, "sec-fetch-site": "same-origin" }))));
+    // Signing in needs no token, but still refuses foreign hosts and cross-site posts.
+    assert.ok(passes(proxy(request("/api/session", "POST", { host, "sec-fetch-site": "same-origin" }))));
+    assert.equal(proxy(request("/api/session", "POST", { host, origin: "https://evil.example", "sec-fetch-site": "cross-site" })).status, 403);
+    assert.equal(proxy(request("/api/session", "POST", { host: "evil.example", "sec-fetch-site": "same-origin" })).status, 403);
+    // Pages without the cookie render /login at the requested address (no redirect to another host).
+    const page = proxy(request("/review?run=1", "GET", { host }));
+    assert.equal(page.headers.get("location"), null);
+    const rewrite = new URL(page.headers.get("x-middleware-rewrite")!);
+    assert.equal(rewrite.pathname, "/login");
+    assert.equal(rewrite.searchParams.get("next"), "/review?run=1");
+    // A dotted page path gets the token check too; a client-side navigation's _rsc key isn't kept.
+    const dotted = new URL(proxy(request("/assets/BRK.B?_rsc=abc", "GET", { host })).headers.get("x-middleware-rewrite")!);
+    assert.equal(dotted.pathname, "/login");
+    assert.equal(dotted.searchParams.get("next"), "/assets/BRK.B");
+    assert.ok(passes(proxy(request("/login", "GET", { host }))));
+    assert.ok(passes(proxy(request("/review", "GET", { host, cookie: `research_os_session=${TOKEN}` }))));
+  });
+});
+
+test("after sign-in the login page returns only to a same-origin path (#8)", () => {
+  for (const path of ["/", "/assets/BRK.B", "/review?run=1&tab=a", "/runs/1#plan"]) assert.equal(safeNextPath(path), path);
+  for (const path of ["//evil.com", "https://evil.com", "/\\evil.com", "/\\/evil.com", "\\evil.com", "evil.com", "/\tevil", "", null]) {
+    assert.equal(safeNextPath(path), null, String(path));
+  }
+  // The proxy's encoded rewrite, and the decoded form Next's client-side redirect delivers.
+  assert.equal(loginReturnPath("?next=%2Freview%3Frun%3D1%26tab%3Da"), "/review?run=1&tab=a");
+  assert.equal(loginReturnPath("?next=/review?run=1&tab=a&_rsc"), "/review?run=1&tab=a");
+  assert.equal(loginReturnPath("?next=/assets/BRK.B&_rsc"), "/assets/BRK.B");
+  for (const search of ["", "?next=//evil.com", "?next=https://evil.com", "?next=/%5Cevil.com", "?next=//evil.com&x=1"]) {
+    assert.equal(loginReturnPath(search), "/", search);
+  }
+});
+
+test("POST /api/session sets an HttpOnly cookie only for the right token (#8)", async () => {
+  const { POST, DELETE } = await import("../src/app/api/session/route");
+  const signIn = (token: string) => POST(new NextRequest("http://127.0.0.1:3000/api/session", {
+    method: "POST", body: JSON.stringify({ token }), headers: { "content-type": "application/json" },
+  }));
+  await withToken(TOKEN, async () => {
+    const refused = await signIn("wrong");
+    assert.equal(refused.status, 401);
+    assert.equal(refused.headers.get("set-cookie"), null);
+    const accepted = await signIn(TOKEN);
+    assert.equal(accepted.status, 200);
+    const cookie = accepted.headers.get("set-cookie") || "";
+    assert.match(cookie, new RegExp(`^research_os_session=${TOKEN};`));
+    assert.match(cookie, /HttpOnly/i);
+    assert.match(cookie, /SameSite=strict/i);
+    assert.doesNotMatch(cookie, /Secure/i);
+    assert.match((await DELETE()).headers.get("set-cookie") || "", /Max-Age=0/);
+  });
+});
+
+test("the session cookie is Secure behind a TLS proxy only for a configured host (#8)", async () => {
+  const { POST } = await import("../src/app/api/session/route");
+  // `next start` builds nextUrl from X-Forwarded-Proto, so a loopback request with it arrives as https.
+  const signIn = (host: string, proto: string) => POST(new NextRequest(`${proto}://${host}/api/session`, {
+    method: "POST", body: JSON.stringify({ token: TOKEN }),
+    headers: { "content-type": "application/json", host, "x-forwarded-proto": proto },
+  }));
+  const saved = process.env.RESEARCH_APP_ALLOWED_HOSTS;
+  process.env.RESEARCH_APP_ALLOWED_HOSTS = "research.example";
+  try {
+    await withToken(TOKEN, async () => {
+      assert.match((await signIn("research.example", "https")).headers.get("set-cookie") || "", /Secure/i);
+      assert.doesNotMatch((await signIn("research.example", "http")).headers.get("set-cookie") || "", /Secure/i);
+      assert.doesNotMatch((await signIn("127.0.0.1:3000", "https")).headers.get("set-cookie") || "", /Secure/i);
+    });
+  } finally {
+    if (saved === undefined) delete process.env.RESEARCH_APP_ALLOWED_HOSTS;
+    else process.env.RESEARCH_APP_ALLOWED_HOSTS = saved;
+  }
 });

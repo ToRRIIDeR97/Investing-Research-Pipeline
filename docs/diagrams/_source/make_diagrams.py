@@ -9,11 +9,11 @@ P = lambda n: os.path.join(OUT, n)
 
 # ---------------------------------------------------------------- component
 s = Svg(1100, 700, "Research OS — UML component view (current)",
-        "Browser UI calls Next.js API routes (no accounts; a middleware refuses foreign hosts and cross-site writes); the API writes Postgres and enqueues jobs; "
+        "Browser UI calls Next.js API routes (optional operator token; a middleware refuses foreign hosts and cross-site writes); the API writes Postgres and enqueues jobs; "
         "a separate worker claims jobs and runs the 24-stage pipeline, which calls the agent harness, "
         "source discovery and ingestion, backtesting (Python), and export; all state lives in Postgres and ./storage.")
 s.box(30, 60, 220, 70, "Analyst browser", ["src/app/** client pages"], "ui", stereo="actor/UI")
-s.box(310, 50, 260, 90, "Next.js API routes", ["src/app/api/** (51 route files)", "no accounts · Host/Origin middleware"], "api", stereo="component")
+s.box(310, 50, 260, 90, "Next.js API routes", ["src/app/api/** (53 route files)", "optional token · Host/Origin middleware"], "api", stereo="component")
 s.box(640, 50, 200, 90, "Run queue", ["src/lib/research/run-queue.ts", "enqueue / claim / lease"], "lib", stereo="component")
 s.box(880, 170, 200, 110, "Research worker", ["src/workers/research-worker.ts", "poll 5s · heartbeat 10s", "lease 5 min, renewed 10s · run lock"], "worker", stereo="process")
 s.box(310, 200, 260, 110, "Workflow orchestrator", ["src/lib/workflow/orchestrator.ts", "advanceStage · gates · resume", "stages.ts · team-plan.ts (DAG)"], "lib", stereo="component")
@@ -396,12 +396,12 @@ s.save(P("sequence-research-run.svg"))
 
 # ---------------------------------------------------------------- trust boundaries
 s = Svg(1100, 640, "Trust boundaries and sensitive-data flow",
-        "Zones: local clients reaching the Next.js API (no accounts; loopback bind, Host and Origin checks); the app/worker zone holding secrets from .env.local; "
+        "Zones: local clients reaching the Next.js API (optional RESEARCH_OS_API_TOKEN; loopback bind, Host and Origin checks); the app/worker zone holding secrets from .env.local; "
         "Postgres and ./storage; python3 executing model-generated code; external LLM, search, and data hosts returning untrusted content.")
 s.zone(20, 50, 230, 520, "Z0 Any local client", "#b23b3b")
 s.box(40, 90, 190, 80, "Browser / curl", ["any local process on the", "port; other sites refused"], "warn")
 s.zone(280, 50, 520, 330, "Z1 App + worker processes (trusted code)", "#4a8a3f")
-s.box(300, 85, 230, 110, "Next.js API routes", ["no accounts (#8)", "Host + Origin check, no framing", "uploads ≤ 50 MB → ./storage (Z2)"], "api")
+s.box(300, 85, 230, 110, "Next.js API routes", ["optional operator token (#8)", "Host + Origin check, no framing", "uploads ≤ 50 MB → ./storage (Z2)"], "api")
 s.box(550, 85, 230, 110, "Worker + agent harness", ["provider host allowlist", "redact() covers every key", "budget + byte/time caps"], "worker")
 s.box(300, 230, 480, 120, "Secrets (.env.local, gitignored)", ["RESEARCH_MODEL_API_KEY · OPENCODE_GO_API_KEY", "RESEARCH_EMBEDDING_API_KEY · RESEARCH_WEB_SEARCH_API_KEY", "DATABASE_URL · redact() covers all of these", "backtest child gets none of these (#11)"], "warn")
 s.zone(280, 400, 520, 170, "Z2 Local data stores", "#2f7f7f")
@@ -413,7 +413,7 @@ s.box(850, 185, 210, 100, "Web search / fetch", ["search endpoint · DDG · Bing
 s.zone(830, 330, 250, 240, "Z4 child processes", "#b07a1f")
 s.box(850, 365, 210, 120, "run_backtest.py (Z4a)", ["model-written strategy code", "AST/import limits only —", "not an OS sandbox;", "allowlisted env, no keys"], "warn")
 s.box(850, 495, 210, 60, "repair sandbox (Z4b)", ["node --permission, empty env", "+ docling_parser.py"], "worker")
-s.line([(230, 130), (300, 130)], "HTTP, no accounts", lx=265, ly=120)
+s.line([(230, 130), (300, 130)], "HTTP ± token", lx=265, ly=120)
 s.line([(415, 195), (415, 230)], None, dashed=True)
 s.line([(665, 195), (665, 230)], "read env", dashed=True, lx=700, ly=215)
 s.line([(300, 175), (290, 175), (290, 490), (300, 490)], "SQL", lx=294, ly=470, lanchor="start")
