@@ -12,7 +12,7 @@ import { citedClaimIds } from "../memory/graph";
 import { type ArtifactStatus, ASSUMPTION_CLASSIFICATIONS } from "./contracts";
 import type { schema } from "@/db";
 import { ARTIFACT_SCHEMAS, validateArtifactContent } from "../stage-contracts";
-import { fingerprint } from "../reporting/report";
+import { storedFingerprint } from "../reporting/report";
 
 type Db = PostgresJsDatabase<typeof schema>;
 
@@ -86,8 +86,13 @@ export function createArtifactRepository(db: Db) {
       const [prior] = await tx.select().from(research_artifacts).where(key)
         .orderBy(desc(research_artifacts.artifact_version), desc(research_artifacts.created_at)).limit(1);
       const sameStatus = prior?.status === input.status || (prior?.status === "accepted" && input.status === "validated");
-      if (prior && sameStatus && fingerprint(prior.content_json) === fingerprint(input.content_json)) {
-        return linkCitations(prior, tx);
+      if (prior && sameStatus && storedFingerprint(prior.content_json) === storedFingerprint(input.content_json)) {
+        // Same content: refresh the run metadata in place; status, version and content stay as they are.
+        const [current] = await tx.update(research_artifacts)
+          .set({ profile_id: input.profile_id, prompt_version: input.prompt_version,
+            validation_result_json: input.validation_result_json ?? {}, updated_at: new Date() })
+          .where(eq(research_artifacts.id, prior.id)).returning();
+        return linkCitations(current, tx);
       }
       const [inserted] = await tx
         .insert(research_artifacts)

@@ -127,6 +127,37 @@ describe("research-artifact registry", { skip: !process.env.RUN_DB_INTEGRATION }
     assert.equal(await statusOf(a3.id), "accepted");
   });
 
+  it("C1-T4b: Unchanged content with a Date keeps one row", async () => {
+    const at = new Date("2026-01-02T03:04:05.000Z");
+    const a1 = await save("date_fixture", { as_of: at, n: 1 });
+    const a2 = await save("date_fixture", { as_of: new Date(at), n: 1 });
+    assert.equal(a2.id, a1.id);
+    const rows = await sql`SELECT id FROM research_artifacts WHERE research_run_id = ${runId} AND artifact_type = 'date_fixture'`;
+    assert.equal(rows.length, 1);
+  });
+
+  it("C1-T4c: An unchanged re-save refreshes run metadata but keeps version and status", async () => {
+    const resave = (prompt_version: string, validation_result_json: Record<string, unknown>) => repo.upsertArtifact({
+      research_run_id: runId, asset_id: assetId, artifact_type: "meta_fixture", scope_key: "default", status: "validated",
+      content_json: { v: 1 }, schema_version: "3.0.0", validator_version: "1.0.0", prompt_version, validation_result_json, created_by: "test",
+    });
+    const a1 = await resave("1.0.0", { pass: 1 });
+    const a2 = await resave("1.1.0", { pass: 2 });
+    assert.equal(a2.id, a1.id);
+    assert.equal(a2.artifact_version, 1);
+    assert.equal(a2.status, "validated");
+    assert.equal(a2.prompt_version, "1.1.0");
+    assert.deepEqual(a2.validation_result_json, { pass: 2 });
+
+    await acceptCurrentArtifacts(sql as any, runId, ["meta_fixture"]);
+    const a3 = await resave("1.2.0", { pass: 3 });
+    assert.equal(a3.id, a1.id);
+    assert.equal(a3.artifact_version, 1);
+    assert.equal(a3.status, "accepted", "an accepted row stays accepted");
+    assert.equal(a3.prompt_version, "1.2.0");
+    assert.deepEqual(a3.validation_result_json, { pass: 3 });
+  });
+
   it("C1-T5: Two accepted artifacts with the same type and scope are blocked", async () => {
     const a1 = await save("moat_assessment", { version: 1 }, "draft");
     await sql`UPDATE research_artifacts SET status = 'accepted' WHERE id = ${a1.id}`;

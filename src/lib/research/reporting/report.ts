@@ -36,6 +36,10 @@ export function fingerprint(value: unknown): string {
   }
   return createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
 }
+/** Fingerprint content as jsonb will store it (a Date becomes its ISO string), so a re-save compares like with like. */
+export function storedFingerprint(value: unknown): string {
+  return fingerprint(value === undefined ? value : JSON.parse(JSON.stringify(value)));
+}
 export function inputFingerprint(artifacts: ReportArtifact[], evidence: ReportEvidence[]): string {
   return fingerprint({ artifacts: [...artifacts].sort((a,b) => a.id.localeCompare(b.id)), evidence: [...evidence].sort((a,b) => a.id.localeCompare(b.id)) });
 }

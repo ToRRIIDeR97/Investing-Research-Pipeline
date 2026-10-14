@@ -1,6 +1,6 @@
 import type { Sql, ResearchRunContext } from "../run-context";
 import { linkArtifactCitations } from "../memory/graph";
-import { createReport, fingerprint, inputFingerprint, type ReportArtifact, type ReportEvidence, type ReportDocument } from "./report";
+import { createReport, storedFingerprint, inputFingerprint, type ReportArtifact, type ReportEvidence, type ReportDocument } from "./report";
 
 // Review/export products cannot become their own upstream inputs.
 // Full filing tables live in Financials. The report uses historical_record observations;
@@ -41,7 +41,7 @@ export async function saveReportArtifact(sql: Sql, ctx: Pick<ResearchRunContext,
       WHERE research_run_id = ${ctx.runId} AND artifact_type = ${type} AND scope_key = ${scope}
       ORDER BY artifact_version DESC, created_at DESC LIMIT 1`;
     if (expectedVersion !== undefined && Number(prior?.artifact_version ?? 0) !== expectedVersion) throw new Error('Another answer was saved. Reopen the conversation before continuing.');
-    if (prior && ['validated', 'accepted'].includes(prior.status) && fingerprint(prior.content_json) === fingerprint(content)) {
+    if (prior && ['validated', 'accepted'].includes(prior.status) && storedFingerprint(prior.content_json) === storedFingerprint(content)) {
       await linkArtifactCitations(tx, { artifactId: prior.id, runId: ctx.runId, content: prior.content_json });
       return prior;
     }
