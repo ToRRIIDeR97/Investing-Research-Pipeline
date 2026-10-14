@@ -18,9 +18,10 @@
 
 ## Commands
 
-Required local checks. All three must pass before a merge:
+Required local checks. All four must pass before a merge:
 
 ```bash
+npm run lint
 npx tsc --noEmit
 npm run test:unit
 npm run build
@@ -32,7 +33,7 @@ When persistence, the queue, orchestration or the pipeline changes, also run the
 - `npm run test:db`: every database-backed suite, one file at a time, with the mock provider. It takes only `DATABASE_URL` from `.env.local`. The suites share one database and interfere when run in parallel.
 - Both refuse a database a research worker is polling (a heartbeat in the last 30 s). Use a separate test database.
 
-`npm run lint` isn't a check yet. ESLint isn't configured ([#19](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/19)).
+`npm run lint` runs ESLint with the flat config in `eslint.config.mjs` (`next/core-web-vitals` + `next/typescript`). Errors fail it; warnings (unused variables, hook dependencies) don't. `no-explicit-any` is off for now.
 
 Diagrams in `docs/diagrams/` are generated. Edit `docs/diagrams/_source/make_diagrams.py`, then run:
 
@@ -56,7 +57,7 @@ python3 docs/diagrams/_source/make_diagrams.py docs/diagrams
 ## Merging
 
 - Target branch is `main`. Work on a feature branch and merge through a pull request. Never push directly to `main` or force-push it.
-- Required checks run **locally**, not in CI, to avoid GitHub Actions charges. Merge only after `npx tsc --noEmit`, `npm run test:unit` and `npm run build` pass on the branch **and** the user explicitly approves.
+- Required checks run **locally**, not in CI, to avoid GitHub Actions charges. Merge only after `npm run lint`, `npx tsc --noEmit`, `npm run test:unit` and `npm run build` pass on the branch **and** the user explicitly approves.
   - Changes to model requests (prompt layout, providers, usage parsing) also need a small paid live provider test that the user has approved.
   - Don't wait on or re-run GitHub Actions. If branch protection requires CI checks that block the merge, report it to the user and don't bypass it.
 - After the merge is verified in `main`, delete the feature branch:
