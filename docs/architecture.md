@@ -142,7 +142,7 @@ Report requests are answered inside the scheduling loop without resetting stages
 | Subsystem / store / integration / workflow | Views | Source paths / symbols |
 | --- | --- | --- |
 | UI pages | Component, Sequence | `src/app/**/page.tsx`, `src/components/**` |
-| API routes | Component, Sequence, Trust | `src/app/api/**/route.ts`, `src/lib/api/*`, `src/middleware.ts` (Host and Origin guard), `next.config.ts` (no framing) |
+| API routes | Component, Sequence, Trust | `src/app/api/**/route.ts`, `src/lib/api/*`, `src/proxy.ts` (Host and Origin guard), `next.config.ts` (no framing) |
 | Run service and queue | Component, Activity, State, Sequence | `run-service.ts:createResearchRunWithStages`, `run-queue.ts` |
 | Research worker | Component, Deployment, State, Sequence | `src/workers/research-worker.ts`, `src/workers/poll-loop.ts` |
 | Pipeline runner, team and requests | Component, Activity, State, Sequence | `pipeline-runner.ts:runResearchPipeline`, `settleBatch`, `team.ts:processResearchRequests`, `systemAnswer`, `requestResetPlan`, `nextRequestBatch`, `team-plan.ts`, `sources/source-requests.ts:queryTermCoverage`, `sources/collector.ts` |

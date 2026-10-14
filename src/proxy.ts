@@ -18,7 +18,7 @@ function hostAllowed(host: string): boolean {
   return [...LOCAL_HOSTS, ...extra].filter(Boolean).includes(hostname);
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const host = request.headers.get("host") || "";
   if (!hostAllowed(host)) return NextResponse.json({ error: "Host not allowed" }, { status: 403 });
   if (SAFE_METHODS.has(request.method)) return NextResponse.next();
