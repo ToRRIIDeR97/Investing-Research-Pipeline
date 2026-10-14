@@ -202,6 +202,7 @@ export function systemAnswer(request: TeamRequest, facts: SystemFacts): TeamAnsw
     const price = history!.valuation_price;
     const answer = [`Stored daily prices for ${history!.provider_symbol}: ${withThousands(bars)} bars from ${history!.first_trading_day} to ${history!.last_trading_day} (${history!.provider}).`,
       `${checker} cross-check: ${verified} of ${verified + unverified} period-end closes verified, ${unverified ? `${unverified} unverified` : "0 not verified"}.`,
+      ...(check.status === "unavailable" ? [`${checker} did not run in this run's price sync${check.reason ? `: ${check.reason}` : ""}.`] : []),
       ...(price?.price != null ? [`Valuation price ${[price.price, price.currency].filter(Boolean).join(" ")} on ${price.trading_date} (${price.verified ? "verified" : "unverified"}).`] : [])].join(" ");
     return { status: "answered", answer, evidence_ids: [], artifact_ids: [facts.marketHistory.id], resolved_by: "system:market-history" };
   }
