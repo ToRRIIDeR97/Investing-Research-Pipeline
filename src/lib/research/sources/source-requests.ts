@@ -42,14 +42,14 @@ export class SourceRequestsPending extends Error {
 
 export async function getStageSourceRequests(sql: Sql, runId: string, stageKey: string): Promise<StageSourceRequests | null> {
   const [row] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId}
-    AND artifact_type = 'source_requests' AND scope_key = ${stageKey} AND status = 'validated'
+    AND artifact_type = 'source_requests' AND scope_key = ${stageKey} AND status IN ('validated', 'accepted')
     ORDER BY artifact_version DESC LIMIT 1`;
   return row?.content_json || null;
 }
 
 export async function getQueuedSourceRequests(sql: Sql, runId: string): Promise<StageSourceRequests[]> {
   const rows = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId}
-    AND artifact_type = 'source_requests' AND status = 'validated'
+    AND artifact_type = 'source_requests' AND status IN ('validated', 'accepted')
     AND content_json->'rounds' @> '[{"state": "queued"}]'::jsonb ORDER BY scope_key`;
   return rows.map(row => row.content_json as StageSourceRequests);
 }

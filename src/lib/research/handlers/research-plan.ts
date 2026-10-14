@@ -97,7 +97,6 @@ export const researchPlanHandler: StageHandler<unknown> = {
         prompt_version: "deterministic-v1",
         validation_result_json: { valid: true, generated: true },
         created_by: "system-research-os",
-        idempotency_key: `${ctx.runId}-research-plan`,
       });
 
       const completionCriteria = JSON.stringify({

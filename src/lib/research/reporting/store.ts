@@ -56,6 +56,22 @@ export async function saveReportArtifact(sql: Sql, ctx: Pick<ResearchRunContext,
   });
 }
 
+/**
+ * A human gate accepts what it approved: the latest version of each (type, scope) moves from validated to accepted.
+ * `types` limits it to those artifact types (the research-plan gate accepts only the plan).
+ */
+export async function acceptCurrentArtifacts(sql: Sql, runId: string, types: string[] | null = null) {
+  return sql`
+    UPDATE research_artifacts SET status = 'accepted', accepted_at = NOW(), updated_at = NOW()
+    WHERE id IN (
+      SELECT DISTINCT ON (artifact_type, scope_key) id FROM research_artifacts
+      WHERE research_run_id = ${runId} AND status <> 'superseded'
+        AND (${types}::text[] IS NULL OR artifact_type = ANY(${types}::text[]))
+      ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC
+    ) AND status = 'validated'
+    RETURNING id`;
+}
+
 export async function getReportState(sql: Sql, runId: string) {
   const [run] = await sql`SELECT metadata_json, source_cutoff_at FROM research_runs WHERE id = ${runId}`;
   const [plan] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId}

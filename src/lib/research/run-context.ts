@@ -401,7 +401,7 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
   if (sourceRequests) addRule(sourceRequestRule(sourceRequests.allowed));
   if (role && !params.taskType.startsWith("team_")) {
     const rows = await params.sql`SELECT artifact_type, scope_key, content_json FROM research_artifacts
-      WHERE research_run_id = ${params.ctx.runId} AND status = 'validated'
+      WHERE research_run_id = ${params.ctx.runId} AND status IN ('validated', 'accepted')
         AND (artifact_type = 'team_requests' OR (artifact_type = 'agent_brief' AND scope_key = ${role}))`;
     const requests = rows.find(r => r.artifact_type === "team_requests")?.content_json?.requests || [];
     // Handlers supply tailored views of older inputs; do not copy the whole archive into every successor.

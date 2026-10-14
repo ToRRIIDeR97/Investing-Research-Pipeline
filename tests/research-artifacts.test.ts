@@ -9,6 +9,7 @@ import * as evidenceSchema from "@/db/schema/evidence";
 import * as profilesSchema from "@/db/schema/profiles";
 import * as researchArtifactsSchema from "@/db/schema/research-artifacts";
 import { createArtifactRepository } from "@/lib/research/artifacts/repository";
+import { acceptCurrentArtifacts } from "@/lib/research/reporting/store";
 
 const schema = {
   ...coreSchema,
@@ -80,113 +81,57 @@ describe("research-artifact registry", { skip: !process.env.RUN_DB_INTEGRATION }
     assert.equal(artifact.schema_version, "3.0.0");
   });
 
-  it("C1-T2: Accept an artifact without validation metadata", async () => {
-    const artifact = await repo.upsertArtifact({
-      research_run_id: runId,
-      asset_id: assetId,
-      artifact_type: "historical_diagnosis",
-      scope_key: "default",
-      status: "draft",
-      content_json: {},
-      schema_version: "3.0.0",
-      validator_version: "1.0.0",
-      prompt_version: "1.0.0",
-      created_by: "test",
+  const save = (artifact_type: string, content_json: Record<string, unknown>, status: "draft" | "validated" = "draft") =>
+    repo.upsertArtifact({
+      research_run_id: runId, asset_id: assetId, artifact_type, scope_key: "default", status, content_json,
+      schema_version: "3.0.0", validator_version: "1.0.0", prompt_version: "1.0.0", created_by: "test",
     });
-    const check = await repo.acceptArtifact(artifact.id, {});
-    assert.equal(check.canAccept, false);
-    assert.ok(check.errors.some((e) => e.includes("Validation metadata is missing")));
+  const statusOf = async (id: string) => (await sql`SELECT status FROM research_artifacts WHERE id = ${id}`)[0].status;
+
+  it("C1-T2: A retry with unchanged content keeps the current artifact", async () => {
+    const a1 = await save("driver_tree", { a: 1 });
+    const a2 = await save("driver_tree", { a: 1 });
+    assert.equal(a2.id, a1.id);
+    assert.equal(a2.artifact_version, 1);
   });
 
-  it("C1-T3: Accept two current artifacts with the same type and scope", async () => {
-    const a1 = await repo.upsertArtifact({
-      research_run_id: runId,
-      asset_id: assetId,
-      artifact_type: "segment_model",
-      scope_key: "default",
-      status: "draft",
-      content_json: { version: 1 },
-      schema_version: "3.0.0",
-      validator_version: "1.0.0",
-      prompt_version: "1.0.0",
-      created_by: "test",
-    });
-    await repo.acceptArtifact(a1.id, { valid: true, errors: [], warnings: [] });
-
-    let threw = false;
-    try {
-      const a2 = await repo.upsertArtifact({
-        research_run_id: runId,
-        asset_id: assetId,
-        artifact_type: "segment_model",
-        scope_key: "default",
-        status: "draft",
-        content_json: { version: 2 },
-        schema_version: "3.0.0",
-        validator_version: "1.0.0",
-        prompt_version: "1.0.0",
-        created_by: "test",
-      });
-      await repo.acceptArtifact(a2.id, { valid: true, errors: [], warnings: [] });
-    } catch (err) {
-      threw = true;
-    }
-    assert.ok(threw, "Duplicate accepted artifact should be blocked by unique partial index");
+  it("C1-T3: A retry with changed content supersedes the previous version", async () => {
+    const a1 = await save("segment_model", { version: 1 });
+    const a2 = await save("segment_model", { version: 2 });
+    assert.notEqual(a2.id, a1.id);
+    assert.equal(a2.artifact_version, 2);
+    assert.equal(a2.supersedes_artifact_id, a1.id);
+    assert.equal(await statusOf(a1.id), "superseded");
+    const current = await sql`SELECT id FROM research_artifacts WHERE research_run_id = ${runId}
+      AND artifact_type = 'segment_model' AND status <> 'superseded'`;
+    assert.deepEqual(current.map((r) => r.id), [a2.id]);
   });
 
-  it("C1-T4: Supersede an accepted artifact", async () => {
-    const a1 = await repo.upsertArtifact({
-      research_run_id: runId,
-      asset_id: assetId,
-      artifact_type: "moat_assessment",
-      scope_key: "default",
-      status: "draft",
-      content_json: { version: 1 },
-      schema_version: "3.0.0",
-      validator_version: "1.0.0",
-      prompt_version: "1.0.0",
-      created_by: "test",
-    });
-    await repo.acceptArtifact(a1.id, { valid: true, errors: [], warnings: [] });
+  it("C1-T4: A human gate accepts the current version; a later change supersedes the accepted one", async () => {
+    await save("gate_fixture", { version: 1 }, "validated");
+    const a2 = await save("gate_fixture", { version: 2 }, "validated");
+    const accepted = await acceptCurrentArtifacts(sql as any, runId, ["gate_fixture"]);
+    assert.deepEqual(accepted.map((r) => r.id), [a2.id]);
+    assert.equal(await statusOf(a2.id), "accepted");
+    assert.equal((await repo.getCurrentArtifact(runId, "gate_fixture", "default"))?.id, a2.id);
 
-    await repo.supersedeArtifact(a1.id, a1.id); // mark itself as superseded for test simplicity
-    const [updated] = await db
-      .select()
-      .from(researchArtifactsSchema.research_artifacts)
-      .where(eq(researchArtifactsSchema.research_artifacts.id, a1.id))
-      .limit(1);
-    assert.equal(updated.status, "superseded");
+    const unchanged = await save("gate_fixture", { version: 2 }, "validated");
+    assert.equal(unchanged.id, a2.id, "re-saving accepted content keeps the accepted row");
+    assert.equal(unchanged.status, "accepted");
+
+    const a3 = await save("gate_fixture", { version: 3 }, "validated");
+    assert.equal(a3.status, "validated");
+    assert.equal(a3.supersedes_artifact_id, a2.id);
+    assert.equal(await statusOf(a2.id), "superseded");
+    await acceptCurrentArtifacts(sql as any, runId, ["gate_fixture"]);
+    assert.equal(await statusOf(a3.id), "accepted");
   });
 
-  it("C1-T7: Retry the same idempotency key", async () => {
-    const key = "idem-test-1";
-    const a1 = await repo.upsertArtifact({
-      research_run_id: runId,
-      asset_id: assetId,
-      artifact_type: "driver_tree",
-      scope_key: "default",
-      status: "draft",
-      content_json: { a: 1 },
-      schema_version: "3.0.0",
-      validator_version: "1.0.0",
-      prompt_version: "1.0.0",
-      created_by: "test",
-      idempotency_key: key,
-    });
-    const a2 = await repo.upsertArtifact({
-      research_run_id: runId,
-      asset_id: assetId,
-      artifact_type: "driver_tree",
-      scope_key: "default",
-      status: "draft",
-      content_json: { a: 2 },
-      schema_version: "3.0.0",
-      validator_version: "1.0.0",
-      prompt_version: "1.0.0",
-      created_by: "test",
-      idempotency_key: key,
-    });
-    assert.equal(a1.id, a2.id);
+  it("C1-T5: Two accepted artifacts with the same type and scope are blocked", async () => {
+    const a1 = await save("moat_assessment", { version: 1 }, "draft");
+    await sql`UPDATE research_artifacts SET status = 'accepted' WHERE id = ${a1.id}`;
+    await assert.rejects(sql`INSERT INTO research_artifacts (research_run_id, asset_id, artifact_type, scope_key, status, created_by)
+      VALUES (${runId}, ${assetId}, 'moat_assessment', 'default', 'accepted', 'test')`);
   });
 
   it("C1-T8: Query an existing v2 run", async () => {

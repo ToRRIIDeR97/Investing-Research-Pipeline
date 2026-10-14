@@ -122,7 +122,7 @@ test("graph-only passages keep a slot when keyword matches fill the limit", { sk
   } finally { await f.cleanup(); await sql.end(); }
 });
 
-test("an artifact updated in place drops the citations it no longer makes", { skip }, async () => {
+test("a revised artifact links only the citations it makes and supersedes the prior version", { skip }, async () => {
   const sql = postgres(process.env.DATABASE_URL!);
   const f = await fixture(sql);
   try {
@@ -131,11 +131,14 @@ test("an artifact updated in place drops the citations it no longer makes", { sk
     const [c1, c2] = [await f.idOf(a), await f.idOf(b)];
     const repo = createArtifactRepository(drizzle(sql, { schema }));
     const save = (ids: string[]) => repo.upsertArtifact({ research_run_id: f.ctx.runId, asset_id: f.ctx.assetId, artifact_type: "graph_fixture", scope_key: "x",
-      status: "draft", content_json: { claim_ids: ids }, schema_version: "1", validator_version: "1", prompt_version: "test", created_by: "test", idempotency_key: "graph-fixture" });
+      status: "draft", content_json: { claim_ids: ids }, schema_version: "1", validator_version: "1", prompt_version: "test", created_by: "test" });
     const first = await save([c1]);
     const second = await save([c2]);
-    assert.equal(first.id, second.id);
-    const linked = (await sql`SELECT evidence_claim_id FROM research_artifact_claim_links WHERE artifact_id = ${first.id}`).map(r => String(r.evidence_claim_id));
+    assert.notEqual(first.id, second.id);
+    assert.equal(second.supersedes_artifact_id, first.id);
+    const [prior] = await sql`SELECT status FROM research_artifacts WHERE id = ${first.id}`;
+    assert.equal(prior.status, "superseded");
+    const linked = (await sql`SELECT evidence_claim_id FROM research_artifact_claim_links WHERE artifact_id = ${second.id}`).map(r => String(r.evidence_claim_id));
     assert.deepEqual(linked, [c2]);
   } finally { await f.cleanup(); await sql.end(); }
 });

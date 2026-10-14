@@ -53,7 +53,7 @@ export class ResearchRequestsPending extends Error {
 
 export async function getTeamRequests(sql: Sql, runId: string): Promise<RequestBatch | null> {
   const [row] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId}
-    AND artifact_type = 'team_requests' AND status = 'validated' ORDER BY artifact_version DESC LIMIT 1`;
+    AND artifact_type = 'team_requests' AND status IN ('validated', 'accepted') ORDER BY artifact_version DESC LIMIT 1`;
   return row?.content_json || null;
 }
 
@@ -65,11 +65,11 @@ export async function prepareResearchTeam(sql: Sql, ctx: ResearchRunContext) {
   const [discovery] = await sql`SELECT status FROM research_stages WHERE research_run_id = ${ctx.runId} AND stage_key = 'source_discovery'`;
   if (discovery?.status !== "completed") return;
   const existing = await sql`SELECT scope_key FROM research_artifacts WHERE research_run_id = ${ctx.runId}
-    AND artifact_type = 'agent_brief' AND status = 'validated'`;
+    AND artifact_type = 'agent_brief' AND status IN ('validated', 'accepted')`;
   const scopes = new Set(existing.map(r => r.scope_key));
   if (BRIEF_ROLES.every(role => scopes.has(role))) return;
   const [review] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${ctx.runId}
-    AND artifact_type = 'source_review' AND status = 'validated' ORDER BY artifact_version DESC LIMIT 1`;
+    AND artifact_type = 'source_review' AND status IN ('validated', 'accepted') ORDER BY artifact_version DESC LIMIT 1`;
   const documents = await sql`SELECT d.title, d.url, d.source_type FROM source_documents d
     JOIN research_run_sources r ON r.source_document_id = d.id WHERE r.research_run_id = ${ctx.runId}
     ORDER BY r.created_at, d.id LIMIT 80`;
