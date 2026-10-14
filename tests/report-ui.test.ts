@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { kpiHealth, kpiStatus, quarterLabel } from '../src/lib/research/reporting/kpi-health';
 import { formatInUnit, kpiGroup, kpiName, money, plainLabel } from '../src/lib/research/reporting/plain-english';
-import { valuationSummary } from '../src/lib/research/reporting/valuation-summary';
+import { longDate, valuationSummary } from '../src/lib/research/reporting/valuation-summary';
 
 const artifact = (artifact_type: string, content_json: Record<string, any>) => ({ artifact_type, artifact_version: 1, content_json });
 const q = (metric_key: string, fiscal_year: number, fiscal_quarter: number, value_numeric: number) =>
@@ -130,8 +130,8 @@ test('Valuation summary is derived from the scenario, schedule and return artifa
   assert.equal(s.terminalYear, 2028);
   assert.deepEqual(s.reasons.map(r => r.title), ['Growth slows.', 'Spending eats the cash.', 'Margins narrow.']);
   assert.equal(s.reasons[0].text, 'In the base case, revenue growth eases from about 21% in 2026 to 12% by 2028.');
-  assert.match(s.reasons[1].text, /\$135\.0B a year by 2028, more than the \$85\.0B the business earns after tax, so free cash flow stays negative through 2028/);
-  assert.equal(s.reasons[2].text, 'Operating margin settles at 25–34% by 2028, against 41% in FY2025.');
+  assert.match(s.reasons[1].text, /\$135\.0B a year by 2028, more than the \$85\.0B the business earns after tax that year, so free cash flow stays negative through 2028/);
+  assert.equal(s.reasons[2].text, 'In the base case, operating margin settles at 30% by 2028 (25–34% across the three cases), against 41% in FY2025.');
   const base = s.calculations.find(c => c.type === 'base')!;
   assert.deepEqual(base.rows.map(r => r.label), ['Revenue', 'Operating profit', 'Capital expenditure', 'Free cash flow']);
   assert.deepEqual(base.rows[2].values, [-120464, -130000, -135000]);
@@ -144,9 +144,12 @@ test('Valuation summary is derived from the scenario, schedule and return artifa
   assert.equal(s.method, 'Discounted free cash flow with an exit multiple');
   const off = valuationSummary(valuationArtifacts({ terminal_anchor_base: 600 }), { conclusionStatus: 'withheld' })!;
   assert.match(off.calculations.find(c => c.type === 'base')!.note!, /At the end of 2028 this gives \$563, lower than the \$600 scenario value/);
-  assert.match(off.issues[0], /\(\$413 \/ \$563 \/ \$672\) and the scenario values \(\$413 \/ \$600 \/ \$672\) disagree.*about 48% below/);
+  assert.deepEqual(off.disagreements.map(d => [d.type, d.year, Math.round(d.model), d.scenario]), [['base', 2028, 563, 600]]);
+  assert.equal(off.issues[0], 'The cash-flow model and the scenario values disagree in the base case: the base model gives $563 at the end of 2028, against a scenario value of $600. Until they’re reconciled, the scenario values can change.');
+  assert.deepEqual(s.disagreements, []);
   assert.ok(!s.issues.some(issue => /disagree/.test(issue)));
-  assert.ok(s.issues.includes('$719.87 is an unverified price snapshot, not a verified close.'));
+  assert.ok(s.issues.includes('$719.87 is an unchecked price snapshot, not a recorded close.'));
+  assert.equal(s.priceDate, null);
   assert.ok(s.issues.includes('No sourced future share issuance schedule.'));
   assert.equal(s.notes[0].rationale, 'Analyst note for [reference].');
 });
@@ -164,7 +167,73 @@ test('Valuation summary handles verified prices, reconciled schedules and missin
   // Without schedules the reasons that need cash flow are omitted rather than invented.
   assert.deepEqual(verified.reasons.map(r => r.title), ['Growth slows.', 'Spending outpaces profit.', 'Margins narrow.']);
   const unverified = valuationSummary(valuationArtifacts({ current_market_price_source: { trading_date: '2026-06-30', verified: false, verification_status: 'single_source' } }))!;
-  assert.ok(unverified.issues.includes('The $719.87 close on 2026-06-30 isn’t verified (single source).'));
+  assert.equal(unverified.priceDate, '30 June 2026');
+  assert.ok(unverified.issues.includes('The $719.87 close on 30 June 2026 hasn’t been checked against a second price source.'));
+  const mismatch = valuationSummary(valuationArtifacts({ current_market_price_source: { trading_date: '2026-06-30', verified: false, verification_status: 'mismatch' } }))!;
+  assert.ok(mismatch.issues.includes('The $719.87 close on 30 June 2026 doesn’t match the second price source.'));
+});
+
+test('Valuation summary puts code-written gaps, omitted methods and dates in plain English', () => {
+  assert.equal(longDate('2026-10-12'), '12 October 2026');
+  assert.equal(longDate('2026-10-12T00:00:00Z'), '12 October 2026');
+  assert.equal(longDate(null), null);
+  const s = valuationSummary(valuationArtifacts({
+    source_gaps: ['Equity bridge items not captured: current_debt, finance_lease_liabilities.', 'No dividend forecast: dividend_per_share is 0 in every year.'],
+    omitted_methods: [{ method: 'P/E and EV/EBITDA peer multiples', reason: 'No peers.' }, { method: 'fcfe', reason: 'Not a bank.' }],
+  }))!;
+  assert.ok(s.issues.includes('Some balance-sheet items aren’t captured, so the step from business value to share value is incomplete: current debt, finance lease liabilities.'));
+  assert.ok(s.issues.includes('No dividends are forecast, so the value per share includes none.'));
+  assert.deepEqual(s.omitted.map(m => m.method), ['P/E and EV/EBITDA peer multiples', 'Discounted free cash flow to equity']);
+  assert.equal(plainLabel('family_dap_growth'), 'Family daily active people growth');
+  assert.equal(plainLabel('da_to_revenue'), 'Depreciation as a share of revenue');
+  assert.equal(plainLabel('capex_intensity'), 'Capital expenditure as a share of revenue');
+  assert.equal(plainLabel('non_interest_expense'), 'Non-interest expense');
+  assert.equal(plainLabel('pre_tax_income'), 'Pre-tax income');
+});
+
+test('Falling capital expenditure with free cash flow turning positive reads as spending that eases', () => {
+  const spend = (capex: number[], cash: number[]) => {
+    const ops = valuationArtifacts().map(a => a.artifact_type !== 'operating_scenario_set' ? a : artifact('operating_scenario_set', { scenarios: (a.content_json.scenarios as any[]).map(sc =>
+      sc.scenario_type !== 'base' ? sc : { ...sc, resulting_financial_statements_json: { units: 'USD millions', years: years([252600, 288000, 322500], [85600, 103700, 122600], capex) } }) }));
+    return valuationSummary(ops.map(a => a.artifact_type !== 'valuation_scenario_set' ? a : artifact('valuation_scenario_set', { ...a.content_json,
+      method_schedules: [schedule('bear', [-71942, -84367, -86430], 232.33, 63570), schedule('base', cash, 395, 98500), schedule('bull', [-39710, -29701, -19516], 481.88, 100484)],
+      terminal_anchor_base: (98500 * 18 - 83664) / 2566 })))!.reasons[1];
+  };
+  const text = 'In the base case, capital expenditure falls from $137.5B to $103.2B a year by 2028, still more than the $98.5B the business earns after tax that year. Free cash flow turns positive in 2028.';
+  // Falling from the first forecast year is not a peak.
+  assert.deepEqual(spend([137500, 115200, 103200], [-46000, -6000, 24300]), { title: 'Spending eases.', text });
+  // Capex stored as a negative outflow reads the same way.
+  assert.deepEqual(spend([-137500, -115200, -103200], [-46000, -6000, 24300]), { title: 'Spending eases.', text });
+  assert.equal(spend([120000, 137500, 103200], [-46000, -6000, 24300]).title, 'Spending peaks, then eases.');
+  // Free cash flow that starts positive turns positive only after a negative year.
+  assert.match(spend([137500, 115200, 103200], [5000, -3000, 4000]).text, /Free cash flow turns positive in 2028\.$/);
+  assert.doesNotMatch(spend([137500, 115200, 103200], [5000, 3000, -4000]).text, /turns positive/);
+});
+
+test('What the last price implies compares the reverse valuation with the scenarios', () => {
+  const reverse = (content: Record<string, any>) => artifact('reverse_valuation', { artifact_type: 'reverse_valuation', ...content });
+  const engine = valuationSummary([...valuationArtifacts(), reverse({ method: 'fcff', implied_margin: 0.640418, implied_growth: 0.432409 })])!;
+  assert.deepEqual(engine.priceImplies, [
+    'To be worth the $720 last price, the base case would need an operating margin of about 64% a year through 2028 (at base-case growth). Every scenario assumes less: 25–34%.',
+    'Or revenue growth of about 43% a year through 2028 (at base-case margins). Every scenario assumes less: 8–23%.',
+  ]);
+  const analyst = valuationSummary([...valuationArtifacts(), reverse({ implied_margin: 0.3, implied_growth: 0.056 })])!;
+  assert.deepEqual(analyst.priceImplies, [
+    'At the $720 last price, the analyst’s reverse valuation implies an operating margin of about 30%. The scenarios assume 25–34%.',
+    'It also implies revenue growth of about 6%. Every scenario assumes more: 8–23%.',
+    'These figures are the analyst’s own estimate, not solved from the cash-flow model, so treat them as unchecked.',
+  ]);
+  // An analyst-written method is still not the code solver.
+  const named = valuationSummary([...valuationArtifacts(), reverse({ method: 'current_market_price_relative_to_discounted_residual_income', implied_margin: 0.3, implied_growth: null })])!;
+  assert.deepEqual(named.priceImplies, [
+    'At the $720 last price, the analyst’s reverse valuation implies an operating margin of about 30%. The scenarios assume 25–34%.',
+    'These figures are the analyst’s own estimate, not solved from the cash-flow model, so treat them as unchecked.',
+  ]);
+  const analystNone = valuationSummary([...valuationArtifacts(), reverse({ method: 'residual_income', implied_margin: null, implied_growth: null })])!;
+  assert.deepEqual(analystNone.priceImplies, ['The analyst’s reverse valuation gives no implied operating margin or growth rate for the $720 last price.']);
+  const none = valuationSummary([...valuationArtifacts(), reverse({ method: 'fcff', implied_margin: null, implied_growth: null })])!;
+  assert.deepEqual(none.priceImplies, ['No operating margin or growth rate in the range tested makes the base case worth the $720 last price.']);
+  assert.deepEqual(valuationSummary(valuationArtifacts())!.priceImplies, []);
 });
 
 test('Yearly value per share comes from the annual price-target path, per scenario', () => {

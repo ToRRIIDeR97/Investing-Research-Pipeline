@@ -60,7 +60,14 @@
 .down { color:#a23b32; }
 .up { color:#2f6b52; }
 .pending { color:#865d0a; }
+.valuation .pendingLink { border:0;background:transparent;padding:0;color:#865d0a;text-decoration:underline;text-decoration-color:rgba(134,93,10,.4);text-underline-offset:3px; }
+.valuation .pendingLink:hover { text-decoration-color:currentColor; }
+.heroNote { margin:14px 0 0;max-width:620px;font-size:14px;color:#6f4c08;background:#fbf5e6;border-radius:6px;padding:8px 12px; }
 .cases { display:flex;flex-wrap:wrap;gap:20px 56px;margin:32px 0 0;padding:0;list-style:none; }
+.caseToday { font-size:13px;color:#626b78;margin-top:2px; }
+.caseOff { font-size:13px;color:#865d0a; }
+.implies { margin:0 0 8px;max-width:680px; }
+.implies:last-child { margin-bottom:0; }
 
 .caseName { font-size:13px;font-weight:600; }
 .caseName span:last-child { color:#8a919c;font-weight:400; }
@@ -75,6 +82,7 @@
 .reasons b { font-weight:600; }
 .reasons li>span:last-child>span { color:#414c5d; }
 .accordion { margin:44px 0 0;background:#fff;border:1px solid #e1e4e6;border-radius:12px;overflow:hidden; }
+.accordion details { scroll-margin-top:140px; }
 .accordion details+details { border-top:1px solid #edeff0; }
 .accordion summary { display:flex;align-items:center;gap:12px;padding:16px 20px;min-height:56px;cursor:pointer;list-style:none;font-weight:500; }
 .accordion summary::-webkit-details-marker { display:none; }

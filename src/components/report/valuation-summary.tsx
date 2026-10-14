@@ -1,5 +1,5 @@
 "use client";
-import {useMemo,useState,type ReactNode} from 'react';
+import {useMemo,useRef,useState,type ReactNode,type RefObject} from 'react';
 import {scenarioNames,scenarioTypes,valuationSummary,type PriceTargets,type ScenarioType} from '@/lib/research/reporting/valuation-summary';
 import {moneyMillions,percent,price} from '@/lib/research/reporting/plain-english';
 import styles from './report-panels.module.css';
@@ -10,8 +10,8 @@ const currencyNames:Record<string,string>={USD:'US dollars',EUR:'Euros',GBP:'Pou
 const signed=(r:number)=>`${r<0?'−':'+'}${Math.abs(Math.round(r*100))}%`;
 const tone=(r:number|null)=>r==null?undefined:r<0?styles.down:styles.up;
 
-function Item({title,open=false,children}:{title:string;open?:boolean;children:ReactNode}) {
-  return <details open={open}><summary><svg className={styles.chev} width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5L7.5 6 4 9.5" stroke="#515d70" strokeWidth="1.6" fill="none" strokeLinecap="round"/></svg><span>{title}</span></summary>{children}</details>;
+function Item({title,open=false,detailsRef,children}:{title:string;open?:boolean;detailsRef?:RefObject<HTMLDetailsElement|null>;children:ReactNode}) {
+  return <details open={open} ref={detailsRef}><summary><svg className={styles.chev} width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5L7.5 6 4 9.5" stroke="#515d70" strokeWidth="1.6" fill="none" strokeLinecap="round"/></svg><span>{title}</span></summary>{children}</details>;
 }
 
 function PriceTargetTable({targets,currency}:{targets:PriceTargets;currency:string}) {
@@ -22,7 +22,7 @@ function PriceTargetTable({targets,currency}:{targets:PriceTargets;currency:stri
       <thead><tr><th scope="col"><span className={styles.srOnly}>Measure</span></th>{targets.years.map((y,i)=><th scope="col" key={y}>{y}{targets.interpolated[i]?'*':''}</th>)}</tr></thead>
       <tbody>
         <tr><th scope="row">Value per share</th>{targets.values.map((v,i)=><td key={i}>{price(v,currency,true)}</td>)}</tr>
-        <tr><th scope="row">Return vs today’s price</th>{targets.returns.map((r,i)=><td key={i} className={r!=null&&r<0?styles.negative:undefined}>{r!=null&&r>0?'+':''}{percent(r)}</td>)}</tr>
+        <tr><th scope="row">Return vs last price</th>{targets.returns.map((r,i)=><td key={i} className={r!=null&&r<0?styles.negative:undefined}>{r!=null&&r>0?'+':''}{percent(r)}</td>)}</tr>
       </tbody>
     </table>
   </div>;
@@ -31,23 +31,32 @@ function PriceTargetTable({targets,currency}:{targets:PriceTargets;currency:stri
 export function ValuationSummaryView({artifacts,conclusionStatus}:{artifacts:Row[];conclusionStatus?:string}) {
   const s=useMemo(()=>valuationSummary(artifacts,{conclusionStatus}),[artifacts,conclusionStatus]);
   const [pick,setPick]=useState<ScenarioType>('base');
+  const why=useRef<HTMLDetailsElement>(null);
   if(!s)return <p className={styles.muted}>No valuation has been saved for this run yet.</p>;
   const c=s.currency;
   const calc=s.calculations.find(x=>x.type===pick)??s.calculations.find(x=>x.type==='base')??s.calculations[0];
   const r=s.weightedReturn;
+  const showWhy=()=>{const d=why.current;if(!d)return;d.open=true;d.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});d.querySelector('summary')?.focus({preventScroll:true});};
+  const hasWhy=s.notFinal&&!!s.issues.length;
   return <div className={`${styles.embedded} ${styles.valuation}`}>
     {s.weighted!=null&&<section aria-label="Valuation summary" className={styles.hero}>
       <p className={styles.heroValue}>{price(s.weighted,c)}</p>
       <p className={styles.heroLine}>
-        {s.terminalYear?`target per share for ${s.terminalYear}`:'per share'}
-        {r!=null&&s.price!=null&&<> · <b className={tone(r)}>{Math.abs(r)<0.005?'in line with':`${Math.abs(Math.round(r*100))}% ${r<0?'below':'above'}`}</b> today’s {price(s.price,c)}{!s.priceVerified&&<span className={styles.muted}> (unverified)</span>}</>}
-        {s.notFinal&&<> · <span className={styles.pending}>not final</span></>}
+        <span title="Bear, base and bull values weighted by their probabilities">{s.terminalYear?`weighted target per share for ${s.terminalYear}`:'weighted value per share'}</span>
+        {r!=null&&s.price!=null&&<> · <b className={tone(r)}>{Math.abs(r)<0.005?'in line with':`${Math.abs(Math.round(r*100))}% ${r<0?'below':'above'}`}</b> the {price(s.price,c)} last price{!s.priceVerified&&<span className={styles.muted} title={s.priceDate?`Close on ${s.priceDate}, not checked against a second source`:'Price snapshot, not a recorded close'}> (unverified)</span>}</>}
+        {s.notFinal&&<> · {hasWhy?<button type="button" className={styles.pendingLink} onClick={showWhy}>not final</button>:<span className={styles.pending}>not final</span>}</>}
       </p>
-      {!!s.scenarios.length&&<div className={styles.cases} role="list">{s.scenarios.map(x=><div role="listitem" key={x.type}>
-        <div className={styles.caseName} data-case={x.type}><span aria-hidden="true">{glyphs[x.type]}</span> {scenarioNames[x.type]} {x.probability!=null&&<span>· {Math.round(x.probability*100)}%</span>}</div>
-        <div className={styles.caseValue}>{price(x.value,c)}{x.return!=null&&<small className={tone(x.return)}>{signed(x.return)}</small>}</div>
-        {(()=>{const today=s.calculations.find(k=>k.type===x.type)?.valuePerShare;return today!=null&&<div className={styles.muted}>{price(today,c)} today</div>;})()}
-      </div>)}</div>}
+      {!!s.disagreements.length&&<p className={styles.heroNote}>
+        The cash-flow model doesn’t yet give the scenario value in the {s.disagreements.map(d=>scenarioNames[d.type].toLowerCase()).join(' and ')} case{s.disagreements.length>1?'s':''}, so these values can still change.
+      </p>}
+      {!!s.scenarios.length&&<div className={styles.cases} role="list">{s.scenarios.map(x=>{
+        const today=s.calculations.find(k=>k.type===x.type)?.valuePerShare,off=s.disagreements.find(d=>d.type===x.type);
+        return <div role="listitem" key={x.type}>
+          <div className={styles.caseName} data-case={x.type}><span aria-hidden="true">{glyphs[x.type]}</span> {scenarioNames[x.type]} {x.probability!=null&&<span>· {Math.round(x.probability*100)}%</span>}</div>
+          <div className={styles.caseValue}>{price(x.value,c)}{x.return!=null&&<small className={tone(x.return)}>{signed(x.return)}</small>}</div>
+          {today!=null&&<div className={styles.caseToday}>worth {price(today,c)} today</div>}
+          {off&&<div className={styles.caseOff}>model gives {price(off.model,c)}{off.year!=null?` for ${off.year}`:''}</div>}
+        </div>;})}</div>}
     </section>}
     {!!s.reasons.length&&<ol className={styles.reasons} aria-label="What drives the value">{s.reasons.map((x,i)=><li key={i}><span aria-hidden="true">{i+1}</span><span><b>{x.title}</b> <span>{x.text}</span></span></li>)}</ol>}
     <div className={styles.accordion}>
@@ -73,7 +82,10 @@ export function ValuationSummaryView({artifacts,conclusionStatus}:{artifacts:Row
           {s.method&&<p className={styles.muted}>Method: {s.method}.</p>}
         </div>
       </Item>}
-      {s.notFinal&&!!s.issues.length&&<Item title="Why it’s not final"><ul className={styles.issues}>{s.issues.map((x,i)=><li key={i}>{x}</li>)}</ul></Item>}
+      {!!s.priceImplies.length&&<Item title="What the last price implies">
+        <div className={styles.panel}>{s.priceImplies.map((x,i)=><p key={i} className={styles.implies}>{x}</p>)}</div>
+      </Item>}
+      {hasWhy&&<Item title="Why it’s not final" detailsRef={why}><ul className={styles.issues}>{s.issues.map((x,i)=><li key={i}>{x}</li>)}</ul></Item>}
       {(!!s.notes.length||!!s.omitted.length)&&<Item title="Sources and analyst notes">
         <div className={`${styles.panel} ${styles.notes}`}>
           {s.notes.map(n=><div key={n.type}>
