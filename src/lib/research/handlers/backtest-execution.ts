@@ -81,7 +81,6 @@ export const backtestExecutionHandler: StageHandler<Record<string, unknown>> = {
           validator_version: "1.0.0",
           prompt_version: "deterministic-framework-v1",
           created_by: "system-research-os",
-          idempotency_key: `${ctx.runId}-backtest-execution-summary`,
         });
         return { withheld: reason, combinations_executed: 0 };
       }
@@ -212,7 +211,6 @@ export const backtestExecutionHandler: StageHandler<Record<string, unknown>> = {
         validator_version: "1.0.0",
         prompt_version: "deterministic-framework-v1",
         created_by: "system-research-os",
-        idempotency_key: `${ctx.runId}-backtest-execution-summary`,
       });
       return {
         combinations_executed: result.rankings.length,

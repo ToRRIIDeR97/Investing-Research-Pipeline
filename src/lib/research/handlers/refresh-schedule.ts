@@ -1,6 +1,7 @@
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
 import { makeValidationResult } from "../run-context";
 import postgres from "postgres";
+import { saveReportArtifact } from "../reporting/store";
 
 export const refreshScheduleHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "refresh_schedule",
@@ -30,29 +31,8 @@ export const refreshScheduleHandler: StageHandler<Record<string, unknown>> = {
             next_refresh_at: null,
           };
 
-      // Idempotent: only insert if no refresh schedule exists for this run
-      const existing = await sql`
-        SELECT id FROM research_artifacts
-        WHERE research_run_id = ${ctx.runId}
-          AND artifact_type = 'refresh_schedule'
-        LIMIT 1
-      `;
-
-      if (!existing[0]) {
-        await sql`
-          INSERT INTO research_artifacts (
-            research_run_id, asset_id, artifact_type, scope_key,
-            status, content_json, schema_version, validator_version,
-            prompt_version, created_by
-          ) VALUES (
-            ${ctx.runId}, ${ctx.assetId}, 'refresh_schedule',
-            ${`${ctx.assetSlug}-refresh-schedule`},
-            'validated',
-            ${sql.json(decision)},
-            '3.0.0', '1.0.0', 'current', 'system-research-os'
-          )
-        `;
-      }
+      // A retried stage supersedes the previous schedule.
+      await saveReportArtifact(sql, ctx, "refresh_schedule", `${ctx.assetSlug}-refresh-schedule`, decision);
 
       return decision;
     } finally {

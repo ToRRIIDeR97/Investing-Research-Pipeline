@@ -1,4 +1,4 @@
-import { eq, and, inArray, notInArray, sql } from "drizzle-orm";
+import { eq, ne, and, desc, inArray, sql } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import {
   research_artifacts,
@@ -9,14 +9,10 @@ import {
 } from "@/db/schema/research-artifacts";
 import { evidence_claims } from "@/db/schema/evidence";
 import { citedClaimIds } from "../memory/graph";
-import {
-  artifactStatusSchema,
-  type ArtifactAcceptanceCheck,
-  type ArtifactStatus,
-  ASSUMPTION_CLASSIFICATIONS,
-} from "./contracts";
+import { type ArtifactStatus, ASSUMPTION_CLASSIFICATIONS } from "./contracts";
 import type { schema } from "@/db";
 import { ARTIFACT_SCHEMAS, validateArtifactContent } from "../stage-contracts";
+import { storedFingerprint } from "../reporting/report";
 
 type Db = PostgresJsDatabase<typeof schema>;
 
@@ -33,8 +29,6 @@ export interface CreateArtifactInput {
   prompt_version: string;
   validation_result_json?: Record<string, unknown>;
   created_by: string;
-  supersedes_artifact_id?: string;
-  idempotency_key?: string;
 }
 
 export interface CreateAssumptionInput {
@@ -59,159 +53,73 @@ export interface CreateAssumptionInput {
 }
 
 export function createArtifactRepository(db: Db) {
-  /** Link the artifact to the run's claims its content cites; an in-place update drops citations it no longer makes. */
-  async function linkCitations(artifact: typeof research_artifacts.$inferSelect, replace = false) {
+  /** Link the artifact to the run's claims its content cites. */
+  async function linkCitations(artifact: typeof research_artifacts.$inferSelect, executor: Pick<Db, "select" | "insert"> = db) {
     const cited = citedClaimIds(artifact.content_json);
-    const claims = cited.length ? await db.select({ id: evidence_claims.id }).from(evidence_claims)
+    const claims = cited.length ? await executor.select({ id: evidence_claims.id }).from(evidence_claims)
       .where(and(inArray(evidence_claims.id, cited), eq(evidence_claims.research_run_id, artifact.research_run_id))) : [];
-    if (replace) {
-      const keep = claims.map((claim) => claim.id);
-      await db.delete(research_artifact_claim_links).where(and(
-        eq(research_artifact_claim_links.artifact_id, artifact.id),
-        eq(research_artifact_claim_links.support_type, "cites"),
-        ...(keep.length ? [notInArray(research_artifact_claim_links.evidence_claim_id, keep)] : [])
-      ));
-    }
     if (claims.length) {
-      await db.insert(research_artifact_claim_links)
+      await executor.insert(research_artifact_claim_links)
         .values(claims.map((claim) => ({ artifact_id: artifact.id, evidence_claim_id: claim.id, support_type: "cites" })))
         .onConflictDoNothing();
     }
     return artifact;
   }
 
+  /**
+   * Save the run's current artifact for (type, scope). Unchanged content keeps the current row (an accepted row
+   * stays accepted); anything else inserts the next version and supersedes every earlier row, so a stage retry or
+   * re-run never leaves two current artifacts and an accepted artifact is never rewritten.
+   */
   async function upsertArtifact(input: CreateArtifactInput) {
     if (ARTIFACT_SCHEMAS[input.artifact_type] && ["validated", "accepted"].includes(input.status)) {
       const validation = validateArtifactContent(input.artifact_type, input.content_json);
       if (!validation.valid) throw new Error(`Invalid ${input.artifact_type}: ${validation.errors.join("; ")}`);
     }
-    if (input.idempotency_key) {
-      const existing = await db
-        .select()
-        .from(research_artifacts)
-        .where(
-          and(
-            eq(research_artifacts.research_run_id, input.research_run_id),
-            eq(research_artifacts.artifact_type, input.artifact_type),
-            eq(research_artifacts.scope_key, input.scope_key)
-          )
-        )
-        .limit(1);
-      if (existing.length > 0) {
-        const current = existing[0];
-        if (["accepted", "superseded", "rejected"].includes(current.status)) {
-          return current;
-        }
-        const [updated] = await db
-          .update(research_artifacts)
-          .set({
-            profile_id: input.profile_id,
-            status: input.status,
-            content_json: input.content_json,
-            schema_version: input.schema_version,
-            validator_version: input.validator_version,
-            prompt_version: input.prompt_version,
-            validation_result_json: input.validation_result_json ?? {},
-            created_by: input.created_by,
-            supersedes_artifact_id: input.supersedes_artifact_id,
-            updated_at: new Date(),
-          })
-          .where(eq(research_artifacts.id, current.id))
-          .returning();
-        return linkCitations(updated, true);
-      }
-    }
-
-    const [inserted] = await db
-      .insert(research_artifacts)
-      .values({
-        research_run_id: input.research_run_id,
-        asset_id: input.asset_id,
-        profile_id: input.profile_id,
-        artifact_type: input.artifact_type,
-        scope_key: input.scope_key,
-        status: input.status,
-        content_json: input.content_json,
-        schema_version: input.schema_version,
-        validator_version: input.validator_version,
-        prompt_version: input.prompt_version,
-        validation_result_json: input.validation_result_json ?? {},
-        created_by: input.created_by,
-        supersedes_artifact_id: input.supersedes_artifact_id,
-      })
-      .returning();
-    return linkCitations(inserted);
-  }
-
-  async function acceptArtifact(
-    artifactId: string,
-    validatorResult: Record<string, unknown>
-  ): Promise<ArtifactAcceptanceCheck> {
-    const [artifact] = await db
-      .select()
-      .from(research_artifacts)
-      .where(eq(research_artifacts.id, artifactId))
-      .limit(1);
-    if (!artifact) return { canAccept: false, errors: ["Artifact not found"], warnings: [] };
-
-    const status = artifactStatusSchema.safeParse(artifact.status);
-    if (!status.success || status.data === "accepted" || status.data === "superseded" || status.data === "rejected") {
-      return { canAccept: false, errors: ["Artifact is not in an acceptable state"], warnings: [] };
-    }
-
-    const deps = await db
-      .select({ depStatus: research_artifacts.status })
-      .from(research_artifact_dependencies)
-      .innerJoin(research_artifacts, eq(research_artifact_dependencies.depends_on_artifact_id, research_artifacts.id))
-      .where(eq(research_artifact_dependencies.artifact_id, artifactId));
-
-    const badDeps = deps.filter(
-      (d) => d.depStatus === "rejected" || d.depStatus === "superseded" || d.depStatus === "needs_more_work"
+    const key = and(
+      eq(research_artifacts.research_run_id, input.research_run_id),
+      eq(research_artifacts.artifact_type, input.artifact_type),
+      eq(research_artifacts.scope_key, input.scope_key)
     );
-    if (badDeps.length > 0) {
-      return {
-        canAccept: false,
-        errors: ["Artifact depends on rejected, superseded, or incomplete dependencies"],
-        warnings: [],
-      };
-    }
-
-    if (!validatorResult || !("valid" in validatorResult)) {
-      return { canAccept: false, errors: ["Validation metadata is missing"], warnings: [] };
-    }
-
-    const validation = validatorResult as { valid?: boolean; errors?: string[]; warnings?: string[] };
-    if (!validation.valid) {
-      return {
-        canAccept: false,
-        errors: validation.errors || ["Validation failed"],
-        warnings: validation.warnings || [],
-      };
-    }
-
-    await db
-      .update(research_artifacts)
-      .set({
-        status: "accepted",
-        accepted_at: new Date(),
-        validation_result_json: validation,
-      })
-      .where(eq(research_artifacts.id, artifactId));
-
-    return { canAccept: true, errors: [], warnings: validation.warnings || [] };
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`research-artifact:${input.research_run_id}:${input.artifact_type}:${input.scope_key}`}, 0))`);
+      const [prior] = await tx.select().from(research_artifacts).where(key)
+        .orderBy(desc(research_artifacts.artifact_version), desc(research_artifacts.created_at)).limit(1);
+      const sameStatus = prior?.status === input.status || (prior?.status === "accepted" && input.status === "validated");
+      if (prior && sameStatus && storedFingerprint(prior.content_json) === storedFingerprint(input.content_json)) {
+        // Same content: refresh the run metadata in place; status, version and content stay as they are.
+        const [current] = await tx.update(research_artifacts)
+          .set({ profile_id: input.profile_id, prompt_version: input.prompt_version,
+            validation_result_json: input.validation_result_json ?? {}, updated_at: new Date() })
+          .where(eq(research_artifacts.id, prior.id)).returning();
+        return linkCitations(current, tx);
+      }
+      const [inserted] = await tx
+        .insert(research_artifacts)
+        .values({
+          research_run_id: input.research_run_id,
+          asset_id: input.asset_id,
+          profile_id: input.profile_id,
+          artifact_type: input.artifact_type,
+          scope_key: input.scope_key,
+          artifact_version: (prior?.artifact_version ?? 0) + 1,
+          status: input.status,
+          content_json: input.content_json,
+          schema_version: input.schema_version,
+          validator_version: input.validator_version,
+          prompt_version: input.prompt_version,
+          validation_result_json: input.validation_result_json ?? {},
+          created_by: input.created_by,
+          supersedes_artifact_id: prior?.id,
+        })
+        .returning();
+      await tx.update(research_artifacts).set({ status: "superseded", updated_at: new Date() })
+        .where(and(key, ne(research_artifacts.status, "superseded"), ne(research_artifacts.id, inserted.id)));
+      return linkCitations(inserted, tx);
+    });
   }
 
-  async function supersedeArtifact(artifactId: string, successorId: string) {
-    await db
-      .update(research_artifacts)
-      .set({ status: "superseded" })
-      .where(eq(research_artifacts.id, artifactId));
-    await db
-      .update(research_artifacts)
-      .set({ supersedes_artifact_id: artifactId })
-      .where(eq(research_artifacts.id, successorId));
-  }
-
+  /** The latest usable version: accepted after a human gate, validated before it. */
   async function getCurrentArtifact(research_run_id: string, artifact_type: string, scope_key: string) {
     const [artifact] = await db
       .select()
@@ -221,10 +129,10 @@ export function createArtifactRepository(db: Db) {
           eq(research_artifacts.research_run_id, research_run_id),
           eq(research_artifacts.artifact_type, artifact_type),
           eq(research_artifacts.scope_key, scope_key),
-          eq(research_artifacts.status, "accepted")
+          inArray(research_artifacts.status, ["validated", "accepted"])
         )
       )
-      .orderBy(sql`${research_artifacts.created_at} DESC`)
+      .orderBy(desc(research_artifacts.artifact_version), desc(research_artifacts.created_at))
       .limit(1);
     return artifact || null;
   }
@@ -373,8 +281,6 @@ export function createArtifactRepository(db: Db) {
 
   return {
     upsertArtifact,
-    acceptArtifact,
-    supersedeArtifact,
     getCurrentArtifact,
     addDependency,
     addClaimLink,

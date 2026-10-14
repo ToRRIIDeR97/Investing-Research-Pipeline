@@ -66,7 +66,6 @@ export const indicatorDesignHandler: StageHandler<Record<string, unknown>> = {
         validator_version: "1.0.0",
         prompt_version: "deterministic-framework-v1",
         created_by: "system-research-os",
-        idempotency_key: `${ctx.runId}-indicator-catalog`,
       });
       return { indicator_count: catalog.length };
     } finally {

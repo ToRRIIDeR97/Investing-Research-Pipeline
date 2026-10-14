@@ -1,5 +1,5 @@
 import postgres from "postgres";
-import { getReportState, loadReportInputs } from "@/lib/research/reporting/store";
+import { acceptCurrentArtifacts, getReportState, loadReportInputs } from "@/lib/research/reporting/store";
 import { assertReportApproval } from "@/lib/research/reporting/report";
 import type { Sql } from "@/lib/research/run-context";
 import { CURRENT_PIPELINE_VERSION } from "@/lib/research/version";
@@ -426,6 +426,7 @@ export async function approveResearchPlan(
           AND artifact_type = 'research_plan' AND status IN ('validated', 'accepted') LIMIT 1
       `;
       if (!plan) return { success: false as const, error: "A persisted research plan is required before approval" };
+      await acceptCurrentArtifacts(tx as unknown as Sql, runId, ["research_plan"]);
       await tx`
         UPDATE research_stages
         SET status = 'completed', completed_at = NOW(),
@@ -496,6 +497,8 @@ export async function approveHumanReview(
         try { assertReportApproval(report.document, report.approval, inputs.input_hash); }
         catch (error) { return { success: false as const, error: String(error) }; }
       }
+      // The approved report snapshot and every input it was built from become accepted.
+      await acceptCurrentArtifacts(tx as unknown as Sql, runId);
       await tx`
         UPDATE research_stages
         SET status = 'completed', completed_at = NOW(),

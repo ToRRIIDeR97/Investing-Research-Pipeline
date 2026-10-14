@@ -4,7 +4,7 @@ import { generateReport } from "@/lib/export/report-generator";
 import type { ResearchReportData } from "@/lib/export/report-generator";
 import postgres from "postgres";
 import { CURRENT_PIPELINE_VERSION } from "../version";
-import { getReportState, loadReportInputs } from "../reporting/store";
+import { getReportState, loadReportInputs, saveReportArtifact } from "../reporting/store";
 import { assertReportApproval } from "../reporting/report";
 import { withheldValuationReason } from "../valuation/contracts";
 
@@ -289,14 +289,7 @@ export const exportHandler: StageHandler<Record<string, unknown>> = {
         )
       `;
 
-      // Idempotent: only insert if no synthetic report exists for this run
-      const existing = await sql`
-        SELECT id FROM research_artifacts
-        WHERE research_run_id = ${ctx.runId}
-          AND artifact_type = 'synthetic_report'
-        LIMIT 1
-      `;
-
+      // A retried export supersedes the previous synthetic report.
       const reportArtifact = {
         exportId: result.exportId,
         storagePath: result.storagePath,
@@ -306,26 +299,7 @@ export const exportHandler: StageHandler<Record<string, unknown>> = {
         reportHash: reportState.document?.content_hash ?? null,
         humanDecision: reviewDecision?.status ?? null,
       };
-      if (existing[0]) {
-        await sql`
-          UPDATE research_artifacts SET content_json = ${sql.json(reportArtifact)}, updated_at = NOW()
-          WHERE id = ${existing[0].id}
-        `;
-      } else {
-        await sql`
-          INSERT INTO research_artifacts (
-            research_run_id, asset_id, artifact_type, scope_key,
-            status, content_json, schema_version, validator_version,
-            prompt_version, created_by
-          ) VALUES (
-            ${ctx.runId}, ${ctx.assetId}, 'synthetic_report',
-            ${`${ctx.assetSlug}-synthetic-report`},
-            'validated',
-            ${sql.json(reportArtifact)},
-            '3.0.0', '1.0.0', 'current', 'system-research-os'
-          )
-        `;
-      }
+      await saveReportArtifact(sql, ctx, "synthetic_report", `${ctx.assetSlug}-synthetic-report`, reportArtifact);
 
       return {
         exported: true,

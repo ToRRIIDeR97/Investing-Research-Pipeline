@@ -36,7 +36,7 @@ export async function runSearches(sql: Sql, ctx: ResearchRunContext, searches: S
 /** Reasons the collector gave for required roles it could not cover. */
 export async function collectorGapNotes(sql: Sql, runId: string): Promise<Partial<Record<SourceRole, string>>> {
   const [row] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId}
-    AND artifact_type = 'source_review' AND status = 'validated' ORDER BY artifact_version DESC LIMIT 1`;
+    AND artifact_type = 'source_review' AND status IN ('validated', 'accepted') ORDER BY artifact_version DESC LIMIT 1`;
   const rounds = (row?.content_json?.rounds || []) as { accepted_gaps?: { source_role: SourceRole; reason: string }[] }[];
   return Object.fromEntries((rounds[rounds.length - 1]?.accepted_gaps || []).map(gap => [gap.source_role, gap.reason]));
 }

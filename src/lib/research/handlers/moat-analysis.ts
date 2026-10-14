@@ -61,7 +61,6 @@ export const moatAnalysisHandler: StageHandler<Record<string, unknown>> = {
             validator_version: "1.0.0",
             prompt_version: "current",
             created_by: "system-research-os",
-            idempotency_key: `${ctx.runId}-${k}`,
           });
         }
       }

@@ -508,6 +508,18 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     `;
     assert.ok(refreshArtifact, "refresh_schedule artifact must be created by refresh handler");
 
+    // Artifact lifecycle: one current version per type and scope; the human gates accept what they approved.
+    const current = await sql`SELECT artifact_type, scope_key, status FROM research_artifacts
+      WHERE research_run_id = ${runId} AND status <> 'superseded'`;
+    const keys = current.map((r) => `${r.artifact_type}:${r.scope_key}`);
+    assert.equal(new Set(keys).size, keys.length, "each artifact type and scope has one current version");
+    const statuses = (type: string) => current.filter((r) => r.artifact_type === type).map((r) => r.status);
+    assert.deepEqual(statuses("research_plan"), ["accepted"], "the plan gate accepts the research plan");
+    assert.deepEqual(statuses("report_document"), ["accepted"], "the final gate accepts the approved report");
+    assert.deepEqual(statuses("valuation_scenario_set"), ["accepted"], "the final gate accepts the report inputs");
+    assert.deepEqual([...new Set(current.filter((r) => r.status === "validated").map((r) => r.artifact_type))].sort(),
+      ["refresh_schedule", "synthetic_report"], "only products written after the final gate stay validated");
+
     // Clean up run in FK-safe order without deleting the shared test asset.
     await deleteAssetCascade(sql, testAssetId, runId);
   });

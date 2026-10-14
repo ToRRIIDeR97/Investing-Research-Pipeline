@@ -26,7 +26,6 @@ export async function persistReviewArtifacts(sql: ReturnType<typeof postgres>,
       validator_version: "1.0.0",
       prompt_version: "current",
       created_by: "system-research-os",
-      idempotency_key: `${ctx.runId}-${k}`,
     });
   }
 }
