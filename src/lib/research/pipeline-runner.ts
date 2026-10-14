@@ -168,20 +168,26 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
         launch(stages, context);
         let stop = false;
         let hold = false;
-        let launchError: unknown;
+        let loopError: unknown;
         const failures: StageFailure[] = [];
         while (inFlight.size) {
           const { key, result } = await Promise.race(inFlight.values());
           inFlight.delete(key);
           if (stop && result.status === "fulfilled") continue;
           let action: string | undefined;
-          const settled = await settleBatch([key], [result], async (stageKey, value) => {
-            const outcome = await advanceStage(runId, value, { stageKey, deferNext: true });
-            action = outcome.action;
-            return outcome;
-          }, notes);
-          stop ||= settled.stop;
-          failures.push(...settled.failures);
+          try {
+            const settled = await settleBatch([key], [result], async (stageKey, value) => {
+              const outcome = await advanceStage(runId, value, { stageKey, deferNext: true });
+              action = outcome.action;
+              return outcome;
+            }, notes);
+            stop ||= settled.stop;
+            failures.push(...settled.failures);
+          } catch (error) {
+            // Never leave the loop (and release the run lock) while sibling handlers still run.
+            hold = true;
+            loopError ??= error;
+          }
           // A retried stage stays running and is relaunched by the next claim.
           if (action !== "continue" && action !== "retry") hold = true;
           if (hold || stop || signal?.aborted) continue;
@@ -195,12 +201,12 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
             launch(next, nextContext);
           } catch (error) {
             hold = true;
-            launchError = error;
+            loopError ??= error;
           }
         }
         if (signal?.aborted) throw new ResearchRunInterrupted("Research run interrupted");
         if (failures.length) {
-          if (!stop && await retryTransientFailures(sql, runId, failures, notes, signal)) continue;
+          if (!stop && !loopError && await retryTransientFailures(sql, runId, failures, notes, signal)) continue;
           // A handler or post-check that threw rejected the stage's outputs, including ones replayed from an earlier
           // attempt (they keep their original completed_at), so a resume must call the model again. Outputs of a stage
           // stopped by the provider or the run budget stay replayable.
@@ -212,7 +218,7 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
                 AND stage_key = ANY(${rejected.map((failure) => failure.stageKey)}::text[]))`;
           throw (fatal[0] ?? failures[0]).reason;
         }
-        if (launchError) throw launchError;
+        if (loopError) throw loopError;
         if (stop) break;
         if (iteration === 191) throw new Error("Pipeline exceeded 192 stage iterations");
       }
