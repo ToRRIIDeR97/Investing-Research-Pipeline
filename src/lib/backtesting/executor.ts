@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, normalize, relative, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -9,7 +9,7 @@ import { generateBacktestCode } from "./backtest-coder";
 import { recordModelCall } from "@/lib/agents/model-calls";
 import type { ResearchTask } from "@/lib/workflow/task-queue";
 import { completeTask, failTask } from "@/lib/workflow/task-queue";
-import { pythonReadPaths, readDirsWithin, sandboxedCommand } from "./sandbox";
+import { pythonRuntime, readDirsWithin, sandboxedCommand } from "./sandbox";
 import { getBacktestForTask } from "./service";
 
 const execFileAsync = promisify(execFile);
@@ -270,6 +270,9 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
       throw new Error("OpenCode output must include strategy.py");
     }
 
+    // Real paths throughout: the sandbox can't follow a symlink inside a hidden directory (a
+    // symlinked ./storage), and the runner never uses its cwd, which the sandbox can't read.
+    const workDir = await realpath(artifactDir);
     const timeout = Number(process.env.BACKTEST_TIMEOUT_MS || 120000);
     await writeFile(
       runnerInputPath,
@@ -282,8 +285,9 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
           market_data_cutoff_at: dateOnly(backtest.market_data_cutoff_at),
           initial_capital: Number(backtest.initial_capital || 100000),
           params: paramsObject(backtest.params_json),
-          strategy_path: strategyPath,
-          output_dir: artifactDir,
+          strategy_path: join(workDir, relative(artifactDir, strategyPath)),
+          output_dir: workDir,
+          storage_root: await realpath(join(process.cwd(), "storage", "backtests")),
           cpu_seconds: Math.ceil(timeout / 1000),
           memory_mb: Number(process.env.BACKTEST_MEMORY_MB || 4096),
         },
@@ -293,7 +297,7 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
       "utf8"
     );
 
-    const runnerDir = join(process.cwd(), "python", "backtesting");
+    const runnerDir = await realpath(join(process.cwd(), "python", "backtesting"));
     const runner = join(runnerDir, "run_backtest.py");
     let stdout: string | Buffer;
     try {
@@ -301,21 +305,23 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
       await execFileAsync("python3", [runner, "fetch", runnerInputPath],
         { cwd: process.cwd(), timeout, env: backtestEnv(), maxBuffer: 1024 * 1024 });
 
-      // Phase 2: the strategy runs in the OS sandbox (#11): no network, no fork, writes only to this
-      // backtest's directory, no reads of the home or repository directories except the runner and
-      // Python packages. No PYTHONPATH, which would make the repository root readable.
+      // Phase 2: the strategy runs in the OS sandbox (#11): no network (and no fork on macOS), writes
+      // only to this backtest's directory, no reads of the home, repository or temp directories except
+      // the runner and Python packages. No PYTHONPATH, which would make the repository root readable. The cwd is
+      // the backtest's own directory, since the sandbox can't read the repository.
       const { PYTHONPATH: _repoRoot, ...sandboxEnv } = backtestEnv();
-      const scratch = join(artifactDir, "tmp");
+      const scratch = join(workDir, "tmp");
       await mkdir(scratch, { recursive: true });
       Object.assign(sandboxEnv, { TMPDIR: scratch, MPLCONFIGDIR: scratch, PYTHONDONTWRITEBYTECODE: "1" });
       const hiddenDirs = [homedir(), process.cwd()];
-      const command = sandboxedCommand("python3", ["-B", runner, "run", runnerInputPath], {
-        writeDir: artifactDir,
+      const python = await pythonRuntime("python3", sandboxEnv);
+      const command = sandboxedCommand(python.executable, ["-B", runner, "run", join(workDir, "runner-input.json")], {
+        writeDir: workDir,
         hiddenDirs,
-        readDirs: [runnerDir, ...readDirsWithin(hiddenDirs, await pythonReadPaths("python3", sandboxEnv))],
+        readDirs: [runnerDir, ...readDirsWithin(hiddenDirs, python.readPaths)],
       });
       const result = await execFileAsync(command.file, command.args, {
-        cwd: process.cwd(),
+        cwd: workDir,
         timeout,
         env: sandboxEnv,
         maxBuffer: 1024 * 1024 * 10,

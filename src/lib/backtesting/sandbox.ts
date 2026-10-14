@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { accessSync, constants, realpathSync } from "node:fs";
+import { accessSync, constants, existsSync, realpathSync } from "node:fs";
 import { delimiter, isAbsolute, join, relative } from "node:path";
 import { promisify } from "node:util";
 
@@ -47,30 +47,44 @@ function whichOnPath(name: string, env: Record<string, string | undefined> = pro
 
 const sbString = (path: string) => JSON.stringify(real(path));
 
+// Shared temp roots can hold other tools' files. The child gets its own TMPDIR inside `writeDir`.
+const MAC_TEMP_ROOTS = ["/private/tmp", "/private/var/tmp", "/private/var/folders"];
+
 /**
  * macOS Seatbelt profile. Later rules win, so the denies come first and the narrow allows after.
- * No network, no fork, writes only to `writeDir`, and no reads of the home or repository
- * directories except the runner and Python package paths.
+ * No network, no fork, no Mach service lookups (so no pasteboard, Launch Services or
+ * nsurlsessiond), no Apple events, writes only to `writeDir`, and no reads of the home, repository
+ * or shared temp directories except `writeDir`, the runner and Python package paths. Python,
+ * numpy and pandas start with no Mach services; `getpwuid` fails, as it needs opendirectoryd.
  */
 export function macProfile(policy: SandboxPolicy) {
+  const hidden = [...policy.hiddenDirs, ...MAC_TEMP_ROOTS];
   return [
     "(version 1)",
     "(allow default)",
     "(deny network*)",
     "(deny process-fork)",
+    "(deny mach-lookup)",
+    "(deny appleevent-send)",
+    "(deny system-socket)",
     "(deny file-write*)",
     `(allow file-write* (subpath ${sbString(policy.writeDir)}) (literal "/dev/null"))`,
-    ...(policy.hiddenDirs.length ? [`(deny file-read* ${policy.hiddenDirs.map((dir) => `(subpath ${sbString(dir)})`).join(" ")})`] : []),
+    `(deny file-read* ${hidden.map((dir) => `(subpath ${sbString(dir)})`).join(" ")})`,
     `(allow file-read* ${[policy.writeDir, ...policy.readDirs].map((dir) => `(subpath ${sbString(dir)})`).join(" ")})`,
   ].join("\n");
 }
 
-/** Linux bubblewrap arguments: read-only root, hidden home and repository, one writable directory, no namespaces shared. */
+/**
+ * Linux bubblewrap arguments: read-only root, empty /tmp and /var/tmp, hidden home and repository,
+ * one writable directory, no namespaces shared. bwrap has no seccomp filter here, so unlike macOS
+ * the child can fork; the new PID namespace, --new-session and --die-with-parent contain it.
+ * Read paths that don't exist are skipped (--ro-bind-try).
+ */
 export function bwrapArgs(policy: SandboxPolicy) {
   return [
-    "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp",
+    "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/tmp", "--tmpfs", "/var/tmp",
     ...policy.hiddenDirs.flatMap((dir) => ["--tmpfs", real(dir)]),
-    ...policy.readDirs.flatMap((dir) => ["--ro-bind", real(dir), real(dir)]),
+    ...policy.readDirs.flatMap((dir) => ["--ro-bind-try", real(dir), real(dir)]),
     "--bind", real(policy.writeDir), real(policy.writeDir),
     "--unshare-all", "--die-with-parent", "--new-session", "--",
   ];
@@ -98,19 +112,27 @@ export function sandboxedCommand(command: string, args: string[], policy: Sandbo
 }
 
 const execFileAsync = promisify(execFile);
-let pythonPaths: Promise<string[]> | null = null;
+let runtime: Promise<{ executable: string; readPaths: string[] }> | null = null;
 
-/** Directories Python reads at startup and import time (stdlib, site-packages, venv), resolved once per process. */
-export function pythonReadPaths(python: string, env: NodeJS.ProcessEnv) {
-  pythonPaths ??= execFileAsync(python, ["-c",
-    "import json, site, sys; print(json.dumps(sys.path + [sys.prefix, sys.base_prefix, site.getusersitepackages()]))"], { env })
-    .then(({ stdout }) => [...new Set((JSON.parse(stdout) as string[]).filter((path) => path && isAbsolute(path)).map(real))])
-    .catch((error) => { pythonPaths = null; throw error; });
-  return pythonPaths;
+/**
+ * The interpreter's real executable and the directories it reads at startup and import time
+ * (stdlib, site-packages, venv), resolved once per process. Run the executable, not `python3`:
+ * Apple's /usr/bin/python3 is an xcrun shim that needs Mach services and the per-user temp
+ * directory, both denied in the sandbox.
+ */
+export function pythonRuntime(python: string, env: NodeJS.ProcessEnv) {
+  runtime ??= execFileAsync(python, ["-c",
+    "import json, site, sys; print(json.dumps([sys.executable] + sys.path + [sys.prefix, sys.base_prefix, site.getusersitepackages()]))"], { env })
+    .then(({ stdout }) => {
+      const [executable, ...paths] = JSON.parse(stdout) as string[];
+      return { executable: executable || python, readPaths: [...new Set(paths.filter((path) => path && isAbsolute(path)).map(real))] };
+    })
+    .catch((error) => { runtime = null; throw error; });
+  return runtime;
 }
 
-/** The read allowances a policy needs: only paths strictly inside a hidden directory matter. */
-export function readDirsWithin(hiddenDirs: string[], paths: string[]) {
+/** The read allowances a policy needs: only existing paths strictly inside a hidden directory matter. */
+export function readDirsWithin(hiddenDirs: string[], paths: string[], exists: (path: string) => boolean = existsSync) {
   const hidden = hiddenDirs.map(real);
-  return [...new Set(paths.map(real))].filter((path) => hidden.some((dir) => inside(dir, path)));
+  return [...new Set(paths.filter(exists).map(real))].filter((path) => hidden.some((dir) => inside(dir, path)));
 }

@@ -61,8 +61,9 @@ def date_only(value: str | None) -> str | None:
     return parsed.date().isoformat() if parsed else None
 
 
-def rel_path(path: Path) -> str:
-    return os.path.relpath(path, Path.cwd()).replace(os.sep, "/")
+def rel_path(path: Path, storage_root: Path) -> str:
+    """Repository-relative path (storage/backtests/...). Never uses the cwd, which the sandbox can't read."""
+    return os.path.relpath(path, storage_root.parent.parent).replace(os.sep, "/")
 
 
 def normalize_prices(frame: "pd.DataFrame", symbol: str) -> "pd.DataFrame":
@@ -228,11 +229,17 @@ def compute_metrics(
     return metrics
 
 
+def storage_root(config: dict[str, Any]) -> Path:
+    """Absolute storage/backtests path from the config, or the one beside this runner."""
+    default = Path(__file__).resolve().parents[2] / "storage" / "backtests"
+    return Path(config.get("storage_root") or default).resolve()
+
+
 def checked_output_dir(config: dict[str, Any]) -> Path:
     output_dir = Path(config["output_dir"]).resolve()
-    storage_root = (Path.cwd() / "storage" / "backtests").resolve()
-    if storage_root not in output_dir.parents and output_dir != storage_root:
-        raise ValueError(f"output_dir must stay under {storage_root}")
+    storage_root_dir = storage_root(config)
+    if storage_root_dir not in output_dir.parents and output_dir != storage_root_dir:
+        raise ValueError(f"output_dir must stay under {storage_root_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
 
@@ -279,7 +286,9 @@ def run(config: dict[str, Any], fetched: bool = False) -> dict[str, Any]:
     symbol = config["symbol"]
     benchmark_symbol = config.get("benchmark_symbol")
     asset_path, benchmark_path = price_paths(output_dir)
-    # Both series are read before strategy code runs, so it cannot alter them.
+    # Both series are read before strategy code runs, so it can't rewrite the CSVs first. It runs
+    # in this process, though, and can still reach these frames or patch the code below: the
+    # sandbox protects the host, not the integrity of the results.
     prices = read_prices(asset_path)
     benchmark_prices = read_prices(benchmark_path) if benchmark_symbol else None
 
@@ -349,6 +358,7 @@ def run(config: dict[str, Any], fetched: bool = False) -> dict[str, Any]:
         }
     )
 
+    root = storage_root(config)
     metrics_path = output_dir / "metrics.json"
     equity_path = output_dir / "equity_curve.csv"
     trades_path = output_dir / "trades.csv"
@@ -374,28 +384,28 @@ def run(config: dict[str, Any], fetched: bool = False) -> dict[str, Any]:
         {
             "artifact_type": "metrics",
             "title": "metrics.json",
-            "storage_path": rel_path(metrics_path),
+            "storage_path": rel_path(metrics_path, root),
             "mime_type": "application/json",
             "metadata_json": {},
         },
         {
             "artifact_type": "equity_curve",
             "title": "equity_curve.csv",
-            "storage_path": rel_path(equity_path),
+            "storage_path": rel_path(equity_path, root),
             "mime_type": "text/csv",
             "metadata_json": {"rows": len(equity_frame)},
         },
         {
             "artifact_type": "trades",
             "title": "trades.csv",
-            "storage_path": rel_path(trades_path),
+            "storage_path": rel_path(trades_path, root),
             "mime_type": "text/csv",
             "metadata_json": {"rows": len(trades)},
         },
         {
             "artifact_type": "runner_log",
             "title": "runner.log",
-            "storage_path": rel_path(log_path),
+            "storage_path": rel_path(log_path, root),
             "mime_type": "text/plain",
             "metadata_json": {},
         },
