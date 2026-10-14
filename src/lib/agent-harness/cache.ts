@@ -94,8 +94,9 @@ const DYNAMIC_FIELDS = new Set(["messages", "input", "contents", "max_tokens", "
 export function observeWireRequest(
   payload: string,
   input: { providerId: string; modelId: string; affinityId?: string },
+  /** The payload already parsed by the caller, so it is not parsed twice. */
+  body: unknown = JSON.parse(payload),
 ): WireRequestObservation {
-  const body = JSON.parse(payload) as unknown;
   if (!isRecord(body)) throw new Error("Provider payload must be a JSON object");
   const messages = Array.isArray(body.messages) ? body.messages : [];
   let stableCount = 0;
@@ -124,9 +125,9 @@ export function observeWireRequest(
   };
 }
 
-export function commonPrefixBytes(previous: string, next: string): number {
-  const left = Buffer.from(previous, "utf8");
-  const right = Buffer.from(next, "utf8");
+export function commonPrefixBytes(previous: string | Buffer, next: string | Buffer): number {
+  const left = typeof previous === "string" ? Buffer.from(previous, "utf8") : previous;
+  const right = typeof next === "string" ? Buffer.from(next, "utf8") : next;
   const limit = Math.min(left.length, right.length);
   let index = 0;
   while (index < limit && left[index] === right[index]) index += 1;
@@ -148,7 +149,7 @@ export function classifyCacheMiss(
   return previous.inFlight ? "previous-in-flight" : "unexplained-provider-miss";
 }
 
-interface TrackedRequest { payload: string; observation: WireRequestObservation; inFlight: boolean }
+interface TrackedRequest { payload: Buffer | null; observation: WireRequestObservation; inFlight: boolean }
 
 export interface WireRequestRecord {
   observation: WireRequestObservation;
@@ -168,13 +169,14 @@ export class WireRequestTracker {
   record(key: string, payload: string, observation: WireRequestObservation): WireRequestRecord {
     const previous = this.entries.get(key);
     this.entries.delete(key);
-    const keepPayload = observation.wireBytes <= this.maxPayloadBytes;
-    this.entries.set(key, { payload: keepPayload ? payload : "", observation, inFlight: true });
+    // Held as bytes, so the next comparison does not copy the previous body again.
+    const bytes = observation.wireBytes <= this.maxPayloadBytes ? Buffer.from(payload, "utf8") : null;
+    this.entries.set(key, { payload: bytes, observation, inFlight: true });
     while (this.entries.size > this.maxEntries) this.entries.delete(this.entries.keys().next().value!);
     return {
       observation,
       ...(previous ? { previous: { observation: previous.observation, inFlight: previous.inFlight } } : {}),
-      commonPrefixBytes: previous?.payload && keepPayload ? commonPrefixBytes(previous.payload, payload) : 0,
+      commonPrefixBytes: previous?.payload && bytes ? commonPrefixBytes(previous.payload, bytes) : 0,
     };
   }
 

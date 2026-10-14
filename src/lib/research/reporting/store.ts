@@ -7,14 +7,21 @@ import { createReport, storedFingerprint, inputFingerprint, type ReportArtifact,
 // duplicating every filing's display cells in the writing packet exhausts its context.
 // Period-end prices and market caps (market_price_history) are likewise read in Financials.
 const products = ["agent_brief", "team_requests", "source_requests", "source_review", "research_chat", "financial_statement_set", "market_price_history", "report_outline", "report_section", "report_document", "report_review", "question_register", "synthetic_report", "refresh_schedule", "review_summary", "findings", "quality_score", "recommendations", "review_verdict"];
-export async function loadReportInputs(sql: Sql, runId: string, cutoff: string) {
-  const rows = await sql`
+/**
+ * The report's upstream artifacts and accepted evidence. Gates that compare input_hash use the defaults; a
+ * specialist call that needs only some artifact types passes `types`, and `fingerprint: false` / `evidence: false`
+ * skip the hash (a canonical copy of every artifact) and the evidence query when it does not use them.
+ */
+export async function loadReportInputs(sql: Sql, runId: string, cutoff: string,
+  options: { types?: string[]; fingerprint?: boolean; evidence?: boolean } = {}) {
+  const rows = options.types && !options.types.length ? [] : await sql`
     SELECT DISTINCT ON (artifact_type, scope_key) id, artifact_type, scope_key, artifact_version, content_json
     FROM research_artifacts WHERE research_run_id = ${runId} AND status IN ('validated', 'accepted')
       AND artifact_type != ALL(${products}::text[])
+      ${options.types ? sql`AND artifact_type = ANY(${options.types}::text[])` : sql``}
     ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC
   `;
-  const claims = await sql`
+  const claims = options.evidence === false ? [] : await sql`
     SELECT DISTINCT ON (ec.id) ec.id, ec.claim_text, sd.title AS source_title, sd.url,
       sd.published_at, el.quoted_text AS quote,
       concat('Source ', sd.id::text, ', page ', COALESCE(sl.page_start::text, 'n/a'), ', chars ',
@@ -30,7 +37,7 @@ export async function loadReportInputs(sql: Sql, runId: string, cutoff: string) 
   `;
   const artifacts = rows.map(r => ({ ...r, id: String(r.id), artifact_version: Number(r.artifact_version) })) as ReportArtifact[];
   const evidence = claims.map(r => ({ ...r, id: String(r.id), published_at: new Date(r.published_at).toISOString() })) as ReportEvidence[];
-  return { artifacts, evidence, input_hash: inputFingerprint(artifacts, evidence) };
+  return { artifacts, evidence, input_hash: options.fingerprint === false ? "" : inputFingerprint(artifacts, evidence) };
 }
 
 export async function saveReportArtifact(sql: Sql, ctx: Pick<ResearchRunContext, "runId" | "assetId" | "assetSlug">,

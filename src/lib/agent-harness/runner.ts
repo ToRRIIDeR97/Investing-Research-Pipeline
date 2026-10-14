@@ -293,15 +293,18 @@ async function executePass(params: {
       const event = item.value;
       params.deadline.resetInactivity();
       switch (event.type) {
-        case "request.sent":
+        case "request.sent": {
+          // The wire body is parsed once, for both telemetry readers.
+          let body: unknown;
+          try { body = JSON.parse(event.body); } catch { body = undefined; }
           try {
-            const observation = observeWireRequest(event.body, { providerId: params.provider.id, modelId: params.model, affinityId: params.cacheAffinityId });
+            const observation = observeWireRequest(event.body, { providerId: params.provider.id, modelId: params.model, affinityId: params.cacheAffinityId }, body);
             wire = wireRequestTracker.record(params.cacheAffinityId, event.body, observation);
           } catch {
             // Cache telemetry never fails a model request.
           }
           try {
-            const sentStructured = "output_config" in JSON.parse(event.body);
+            const sentStructured = "output_config" in (body as object);
             if (sentStructured) structured.sent = true;
             else if (lastSentStructured) structured.fallback = true;
             lastSentStructured = sentStructured;
@@ -309,6 +312,7 @@ async function executePass(params: {
             // Neither does structured-output telemetry.
           }
           break;
+        }
         case "response.started": providerStarted = true; requestId = event.requestId || requestId; break;
         case "text.delta": {
           const text = event.text.replace(/\u0000/g, "");
@@ -432,7 +436,8 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
   }
 
   // C14-T6: Red-team prompt contains "confirm the thesis" -> Prompt review test fails
-  const promptText = buildTaskPrompt(input, config);
+  // Built once: the original prompt also serves attempts that send the packet uncompacted.
+  const promptText = input.builtPrompt ?? buildTaskPrompt(input, config);
   if (input.agentName.toLowerCase().includes("red-team") || input.agentName.toLowerCase().includes("reviewer")) {
     if (promptText.toLowerCase().includes("confirm the thesis") || promptText.toLowerCase().includes("prove the thesis")) {
       throw new Error("Red-team prompt review failed: prompt must not contain instructions to confirm or prove the thesis.");
@@ -451,7 +456,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
   const outputSchema = isPlainObject(effectiveOutputFormat.schema) ? effectiveOutputFormat.schema : undefined;
   const candidates = modelCandidates(input.agentName as ResearchAgentName, policy.maxAttempts, provider.id);
   const primaryModel = candidates[0];
-  const originalPromptBytes = Buffer.byteLength(buildTaskPrompt(input, config), "utf8");
+  const originalPromptBytes = Buffer.byteLength(promptText, "utf8");
   const cacheScope = input.cacheScope || `agent:${input.agentName}`;
   let outputLimit = policy.maxOutputTokens;
 
@@ -464,6 +469,8 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
     const cap = modelOutputCap(model);
     const attemptOutputLimit = outputLimit !== undefined && cap !== undefined ? Math.min(outputLimit, cap) : outputLimit;
     const currentInput = compactedFallback.request;
+    const attemptPrompt = compactedFallback.compacted ? buildTaskPrompt(currentInput, config) : promptText;
+    const attemptPromptBytes = Buffer.byteLength(attemptPrompt, "utf8");
     await input.hooks?.beforeAttempt?.({ attempt: attemptNumber, provider: provider.id, model });
     const started = Date.now();
     const startedAt = new Date(started).toISOString();
@@ -479,7 +486,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
 
     try {
       // Stable instructions travel as the system message; generation and repair share it and one affinity key.
-      const messages = promptMessages(buildTaskPrompt(currentInput, config));
+      const messages = promptMessages(attemptPrompt);
       const cacheAffinityId = deriveCacheAffinityId({
         scopeId: cacheScope, providerId: provider.id, modelId: model, stablePrefixHash: stablePrefixHash(messages.system),
       });
@@ -639,7 +646,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         ...cacheTokens(pass.usage), maxOutputTokens: passParams.maxOutputTokens,
         costUsd: Number(pass.usage.costUsd.toFixed(6)), status: "success", repairAttempted,
         fallback, compactionOccurred: compactedFallback.compacted,
-        inputBytes: Buffer.byteLength(buildTaskPrompt(currentInput, config), "utf8"), originalInputBytes: originalPromptBytes,
+        inputBytes: attemptPromptBytes, originalInputBytes: originalPromptBytes,
         rawResponseExcerpt: redact(pass.rawText.slice(0, 12_000)), validationErrors,
         passes,
         localCoercionApplied,
@@ -670,7 +677,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         errorCategory, errorMessage: redact(failure instanceof Error ? failure.message : String(failure)),
         timeoutType: reason === "total" || reason === "inactivity" ? reason : undefined,
         repairAttempted, fallback, compactionOccurred: compactedFallback.compacted,
-        inputBytes: Buffer.byteLength(buildTaskPrompt(currentInput, config), "utf8"), originalInputBytes: originalPromptBytes,
+        inputBytes: attemptPromptBytes, originalInputBytes: originalPromptBytes,
         rawResponseExcerpt: redact(pass.rawText.slice(0, 12_000)), validationErrors,
         passes,
         localCoercionApplied,

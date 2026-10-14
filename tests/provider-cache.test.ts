@@ -319,6 +319,23 @@ test("repair repeats the generation request as its prefix and records cache tele
   assert.ok(second.costUsd < calculateCost(result.attempts[0].model, 1_100, 10));
 });
 
+test("a prompt the caller already built is sent as is and not rebuilt per attempt (M9)", async () => {
+  const provider = new RecordingProvider(() => ({ text: '{"answer":"ok"}', usage: { inputTokens: 10, outputTokens: 2 } }));
+  const packet = { output_contract: "answer", asset: { name: "Example" } };
+  let builds = 0;
+  const promptFactory = (p: Record<string, unknown>) => { builds += 1; return exactJsonPrompt({ agentName: "asset-classifier", requiredKeys: ["answer"], packet: p }); };
+  const builtPrompt = promptFactory(packet);
+  builds = 0;
+  const result = await runResearchAgent<{ answer: string }>({
+    agentName: "asset-classifier", title: "built prompt", taskPacket: packet, provider, outputFormat: answerFormat,
+    cacheScope: `run-${Date.now()}`, policy: { maxAttempts: 1 }, promptFactory, builtPrompt,
+  });
+  assert.equal(result.structured.answer, "ok");
+  assert.equal(builds, 0, "the packet is not serialized again");
+  assert.equal(result.attempts[0].inputBytes, Buffer.byteLength(builtPrompt, "utf8"));
+  assert.equal(result.attempts[0].originalInputBytes, Buffer.byteLength(builtPrompt, "utf8"));
+});
+
 test("calls in the same scope with the same instructions share an affinity key", async () => {
   const provider = new RecordingProvider(() => ({ text: '{"answer":"ok"}', usage: { inputTokens: 10, outputTokens: 2 } }));
   const call = (scope: string, rules: string[]) => runResearchAgent({
