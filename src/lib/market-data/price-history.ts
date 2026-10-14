@@ -21,6 +21,8 @@ type Row = Record<string, any>;
 export const PRICE_HISTORY_YEARS = 6;
 export const CROSS_CHECK_TOLERANCE_PCT = 0.5;
 export const PRIMARY_PRICE_PROVIDER = "yahoo";
+/** The index beta is measured against. Its bars are stored under a shared reference asset (status `reference`). */
+export const BETA_BENCHMARK = { symbol: "^GSPC", name: "S&P 500 index", provider: PRIMARY_PRICE_PROVIDER, asset_slug: "benchmark-gspc" } as const;
 const MAX_CLOSE_GAP_DAYS = 7;
 const DAY = 86_400_000;
 const USER_AGENT = "ResearchOS/0.1 market-data@example.com";
@@ -389,6 +391,34 @@ export async function loadStoredPriceHistory(sql: Sql, assetId: string, symbol: 
   const loaded = (await Promise.all(instrumentIds.map((id) => loadSplits(sql, id)))).flat();
   const splits = [...new Map(loaded.map((split) => [`${split.ex_day}:${split.ratio}`, split])).values()];
   return { bars, splits };
+}
+
+/** The shared benchmark asset, created on first use. */
+async function ensureBenchmarkAsset(sql: Sql): Promise<string> {
+  await sql`
+    INSERT INTO assets (canonical_name, slug, asset_kind, base_currency, status, description)
+    VALUES (${BETA_BENCHMARK.name}, ${BETA_BENCHMARK.asset_slug}, 'index', 'USD', 'reference',
+      ${`Benchmark for regression betas (${BETA_BENCHMARK.symbol}); not a research subject.`})
+    ON CONFLICT (slug) DO NOTHING`;
+  const [row] = await sql`SELECT id FROM assets WHERE slug = ${BETA_BENCHMARK.asset_slug}`;
+  return String(row.id);
+}
+
+/** Sync the benchmark's daily bars to the run's market-data cutoff, like the asset's own. Never throws. */
+export async function syncBenchmarkPriceHistory(sql: Sql, cutoffAt: Date | null,
+  options: { fetchImpl?: typeof fetch; now?: Date; years?: number } = {}): Promise<PriceHistorySync> {
+  try {
+    const assetId = await ensureBenchmarkAsset(sql);
+    return await syncAssetPriceHistory(sql, { assetId, assetName: BETA_BENCHMARK.name, symbol: BETA_BENCHMARK.symbol, cutoffAt }, options);
+  } catch (error) {
+    return { status: "failed", provider: PRIMARY_PRICE_PROVIDER, provider_symbol: BETA_BENCHMARK.symbol, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** Benchmark bars available by the cutoff; empty when the benchmark was never synced. */
+export async function loadBenchmarkPriceHistory(sql: Sql, cutoffAt: Date) {
+  const [row] = await sql`SELECT id FROM assets WHERE slug = ${BETA_BENCHMARK.asset_slug}`;
+  return row ? loadStoredPriceHistory(sql, String(row.id), BETA_BENCHMARK.symbol, cutoffAt) : { bars: [] as StoredBar[], splits: [] as SplitEvent[] };
 }
 
 export type ValuationPrice = {

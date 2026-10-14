@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import postgres from "postgres";
-import { syncAssetPriceHistory, valuationDatePrice } from "../src/lib/market-data/price-history";
+import { syncAssetPriceHistory, syncBenchmarkPriceHistory, valuationDatePrice } from "../src/lib/market-data/price-history";
 import { captureMarketHistory } from "../src/lib/research/history/market-history";
 
 function loadLocalEnv() {
@@ -143,6 +143,48 @@ test("price history sync backfills, updates incrementally, cross-checks and resp
     }
     await sql`DELETE FROM instruments WHERE asset_id = ${assetId}`;
     await sql`DELETE FROM assets WHERE id = ${assetId}`;
+    await sql.end();
+  }
+});
+
+test("the S&P 500 benchmark syncs under a reference asset and gives the run a regression beta", { skip: process.env.RUN_DB_INTEGRATION !== "1" }, async (t) => {
+  loadLocalEnv();
+  const sql = postgres(process.env.DATABASE_URL!);
+  const assetId = crypto.randomUUID(), runId = crypto.randomUUID();
+  const cutoffAt = new Date("2026-07-02T15:00:00Z");
+  const options = { now: new Date("2026-10-10T12:00:00Z"), years: 3 };
+  const [existing] = await sql`SELECT id FROM assets WHERE slug = 'benchmark-gspc'`;
+  // Never write mock bars into a database that already holds the real benchmark.
+  if (existing) { await sql.end(); t.skip("benchmark asset already exists in this database"); return; }
+  try {
+    await sql`INSERT INTO assets (id, canonical_name, slug, asset_kind) VALUES (${assetId}, 'Beta Fixture', ${`beta-${assetId.slice(0, 8)}`}, 'equity')`;
+    const calls: string[] = [];
+    const stock = await syncAssetPriceHistory(sql, { assetId, assetName: "Beta Fixture", symbol: "TESTPX", cutoffAt }, { ...options, fetchImpl: mockFetch(calls, "html") });
+    const benchmark = await syncBenchmarkPriceHistory(sql, cutoffAt, { ...options, fetchImpl: mockFetch(calls, "html") });
+    assert.equal(stock.status, "synced", stock.error);
+    assert.equal(benchmark.status, "synced", benchmark.error);
+    assert.ok(calls.some((url) => url.includes("/%5EGSPC?")));
+    assert.ok(calls.some((url) => url.includes("s=%5Espx")));
+    const [asset] = await sql`SELECT asset_kind, status FROM assets WHERE slug = 'benchmark-gspc'`;
+    assert.deepEqual([asset.asset_kind, asset.status], ["index", "reference"]);
+
+    await sql`INSERT INTO research_runs (id, asset_id, run_type, status, pipeline_version, market_data_cutoff_at)
+      VALUES (${runId}, ${assetId}, 'deep_dive', 'running', 3, ${cutoffAt.toISOString()})`;
+    const content = await captureMarketHistory(sql, { runId, assetId, assetSlug: "beta", symbol: "TESTPX", cutoffAt, marketDataCutoffAt: cutoffAt }, []);
+    // The fixture's stock and index closes are the same series, so the regression is exact.
+    assert.equal(content.beta.status, "computed", content.beta.reason);
+    assert.deepEqual([content.beta.raw_beta, content.beta.adjusted_beta, content.beta.r_squared], [1, 1, 1]);
+    assert.equal(content.beta.window_end, "2026-06-29");
+    assert.equal(content.beta.verified, false);
+  } finally {
+    await sql`DELETE FROM research_artifacts WHERE research_run_id = ${runId}`;
+    await sql`DELETE FROM research_runs WHERE id = ${runId}`;
+    const fixtures = sql`SELECT id FROM assets WHERE id = ${assetId} OR slug = 'benchmark-gspc'`;
+    for (const table of ["market_price_bars", "corporate_actions", "market_data_fetches"]) {
+      await sql`DELETE FROM ${sql(table)} WHERE instrument_id IN (SELECT id FROM instruments WHERE asset_id IN (${fixtures}))`;
+    }
+    await sql`DELETE FROM instruments WHERE asset_id IN (${fixtures})`;
+    await sql`DELETE FROM assets WHERE id = ${assetId} OR slug = 'benchmark-gspc'`;
     await sql.end();
   }
 });

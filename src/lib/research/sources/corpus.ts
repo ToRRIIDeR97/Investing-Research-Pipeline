@@ -10,7 +10,7 @@ import { getAgentConfig } from "@/lib/agent-harness/registry";
 import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
 import { fetchCapped } from "@/lib/net";
 import { SourceRole } from "@/lib/research/sources/roles";
-import { syncAssetPriceHistory, type PriceHistorySync } from "@/lib/market-data/price-history";
+import { syncAssetPriceHistory, syncBenchmarkPriceHistory, type PriceHistorySync } from "@/lib/market-data/price-history";
 
 type Sql = ReturnType<typeof postgres>;
 export interface RunContext {
@@ -58,6 +58,8 @@ export interface StoredSourceCorpus {
   sources: StoredSource[];
   deterministicMetrics: Record<string, unknown>;
   priceHistory: PriceHistorySync;
+  /** The S&P 500 bars behind the regression beta; null in test mode, which fetches no benchmark. */
+  benchmarkPriceHistory: PriceHistorySync | null;
 }
 
 function textValue(value: unknown, fallback = "") {
@@ -1625,10 +1627,12 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
     textValue(context.website),
     ...configuredSeedUrls,
   ].filter(Boolean);
-  const [marketPayload, priceHistory, macroPayload, industryPayload, discoveredRolePayloads] = await Promise.all([
+  const marketCutoff = ctx.marketDataCutoffAt ? new Date(ctx.marketDataCutoffAt) : null;
+  const testMode = process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock" || process.env.RESEARCH_TEST_MODE === "1";
+  const [marketPayload, priceHistory, benchmarkPriceHistory, macroPayload, industryPayload, discoveredRolePayloads] = await Promise.all([
     marketSourcePayload(ctx),
-    syncAssetPriceHistory(sql, { assetId: ctx.assetId, assetName: ctx.assetName, symbol: ctx.symbol,
-      cutoffAt: ctx.marketDataCutoffAt ? new Date(ctx.marketDataCutoffAt) : null }),
+    syncAssetPriceHistory(sql, { assetId: ctx.assetId, assetName: ctx.assetName, symbol: ctx.symbol, cutoffAt: marketCutoff }),
+    testMode ? null : syncBenchmarkPriceHistory(sql, marketCutoff),
     macroSourcePayload(ctx),
     industrySourcePayload(ctx),
     discoverRoleSources({
@@ -1715,6 +1719,7 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
     ],
     deterministicMetrics: deterministicMetricOutput(ctx, context, marketPayload),
     priceHistory,
+    benchmarkPriceHistory,
   };
 }
 

@@ -3,24 +3,27 @@ import { saveReportArtifact } from "../reporting/store";
 import {
   CROSS_CHECK_TOLERANCE_PCT,
   PRIMARY_PRICE_PROVIDER,
+  loadBenchmarkPriceHistory,
   loadStoredPriceHistory,
   periodEndMarketObservations,
   valuationPriceFromBars,
   type PriceHistorySync,
 } from "@/lib/market-data/price-history";
+import { regressionBeta } from "../valuation/cost-of-capital";
 
 type Row = Record<string, any>;
 
 /**
  * Save the `market_price_history` artifact: period-end closes and market caps for every filed
- * period up to the market-data cutoff, and the valuation-date price. Reads bars stored by source
- * discovery; it fetches nothing.
+ * period up to the market-data cutoff, the valuation-date price and the regression beta against the
+ * S&P 500. Reads bars stored by source discovery; it fetches nothing.
  */
 export async function captureMarketHistory(sql: Sql,
   ctx: Pick<ResearchRunContext, "runId" | "assetId" | "assetSlug" | "symbol" | "cutoffAt" | "marketDataCutoffAt">,
   statementObservations: Row[], sync?: PriceHistorySync | null) {
   const cutoffAt = ctx.marketDataCutoffAt || ctx.cutoffAt;
   const { bars, splits } = await loadStoredPriceHistory(sql, ctx.assetId, ctx.symbol, cutoffAt);
+  const benchmark = await loadBenchmarkPriceHistory(sql, cutoffAt);
   const observations = bars.length
     ? periodEndMarketObservations({ bars, splits, statementObservations, cutoffAt, symbol: ctx.symbol })
     : [];
@@ -44,6 +47,7 @@ export async function captureMarketHistory(sql: Sql,
       ...(check.reason ? { reason: check.reason } : {}),
     },
     valuation_price: valuationPriceFromBars(bars, splits, cutoffAt),
+    beta: regressionBeta({ symbol: ctx.symbol, stock: { bars, splits }, benchmark, cutoffAt }),
     observations,
     method: [
       "Close is the last trading day's close on or before each period end (at most 7 days earlier), as traded that day.",

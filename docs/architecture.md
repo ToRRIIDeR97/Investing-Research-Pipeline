@@ -93,7 +93,7 @@ Schema modules (`src/db/schema/`) and their key tables:
 | thesis | theses, risks, catalysts, review decisions, notebooks, exports |
 | ai | staging, model calls, budgets, traces |
 | backtesting | backtest_runs, backtest_artifacts |
-| market-data | market_price_bars (with Stooq cross-check status), corporate_actions, market_data_fetches, instrument_provider_mappings |
+| market-data | market_price_bars (with Stooq cross-check status; S&P 500 benchmark bars under the `benchmark-gspc` reference asset), corporate_actions, market_data_fetches, instrument_provider_mappings |
 | saved-charts | saved_charts (My charts board definitions; series keys, never values) |
 
 Migrations are `0000`–`0006`, `0009_research_memory_graph`, which adds provenance and review fields plus a uniqueness constraint to `claim_relationships`, `0010_price_history_verification`, which adds the cross-check columns to `market_price_bars`, `0011_saved_charts`, which adds the `saved_charts` table, `0012_task_budget_reservation`, which adds `research_tasks.budget_reservation_usd` for in-flight budget reservations, `0013_research_memory_search`, which adds `document_chunks.search_tsv` (research-memory passages only, backfilled) with a partial GIN index, and `0014_performance_indexes`, which indexes `document_chunks.source_document_id`, `evidence_claims (research_run_id, review_status)`, `evidence_links.evidence_claim_id` and `source_locations`' chunk and document columns.
@@ -115,7 +115,7 @@ Other critical workflows are described in text:
 
 ![UML activity view of the asset valuation stage](diagrams/activity-valuation.svg)
 
-The model makes the judgment calls: yearly drivers in operating scenarios and, for FCFF assets, a discount rate and terminal assumption per scenario. Code builds the statements, schedules, price path, anchors and reverse valuation (`valuation/engine.ts`). Banks keep model-built equity schedules, which code assembles the same way. Details are in [system.md](system.md#valuation-inputs-the-valuation-engine-and-withheld-valuations).
+The model makes the judgment calls: yearly drivers in operating scenarios and, for FCFF assets, a discount rate and terminal assumption per scenario, anchored on code-supplied cost-of-capital inputs (a regression beta against the S&P 500 and a dated implied equity risk premium, `valuation/cost-of-capital.ts`). Code builds the statements, schedules, price path, anchors and reverse valuation (`valuation/engine.ts`). Banks keep model-built equity schedules, which code assembles the same way. Details are in [system.md](system.md#valuation-inputs-the-valuation-engine-and-withheld-valuations).
 
 ## 5. Behavioral — State machine
 
@@ -137,7 +137,7 @@ Guards:
 
 ![UML sequence view of a research run with report requests, the re-run approval, the plan gate and the lease-expiry path](diagrams/sequence-research-run.svg)
 
-Report requests are answered inside the scheduling loop without resetting stages: system answers from `market_price_history` and the FRED DGS10 document, otherwise the owner's `team_answer` call with research-memory passages, with at most one collector search per request. Inside the loop, business-process, moat, operating-model and report-section calls first load a byte-bounded set of filing passages (`loadFilingPassages`: passages of the newest 10-K, 10-Q and earnings materials that discuss drivers, segments and metric trends) into the shared part of their packet. `requestResetPlan` then leaves the batch answered, reopens stages once automatically, or pauses for `POST …/request-reset`.
+Report requests are answered inside the scheduling loop without resetting stages: system answers from `market_price_history` (bars, valuation price, regression beta) and the FRED DGS10 document, otherwise the owner's `team_answer` call with research-memory passages, with at most one collector search per request. Inside the loop, business-process, moat, operating-model and report-section calls first load a byte-bounded set of filing passages (`loadFilingPassages`: passages of the newest 10-K, 10-Q and earnings materials that discuss drivers, segments and metric trends) into the shared part of their packet. `requestResetPlan` then leaves the batch answered, reopens stages once automatically, or pauses for `POST …/request-reset`.
 
 ## Coverage index
 
@@ -158,7 +158,7 @@ Report requests are answered inside the scheduling loop without resetting stages
 | Repair specialist sandbox | Component, Deployment, Trust | `src/lib/research/repair/**` |
 | Reporting and export | Component | `src/lib/research/reporting/**`, `src/lib/export/**` |
 | Artifact lifecycle | Class, State | `artifacts/repository.ts:upsertArtifact`, `reporting/store.ts:saveReportArtifact`, `acceptCurrentArtifacts`, `orchestrator.ts:approveResearchPlan`, `approveHumanReview` |
-| Valuation engine | Activity | `handlers/asset-valuation.ts`, `valuation/engine.ts`, `handlers/operating-scenarios.ts` |
+| Valuation engine | Activity | `handlers/asset-valuation.ts`, `valuation/engine.ts`, `valuation/cost-of-capital.ts`, `handlers/operating-scenarios.ts` |
 | Financials view: metric catalogue, statement charts, My charts | Component, Class | `src/components/financial-statements.tsx`, `src/components/financials/**`, `reporting/metric-catalogue.ts`, `reporting/chart-series.ts`, `reporting/saved-charts.ts`, `src/app/api/saved-charts/**` |
 | Postgres | Component, Deployment, Class | `src/db/schema/**`, `src/db/schemas.ts`, `drizzle/`, `docker-compose.yml` |
 | `./storage` | Component, Deployment, Trust | `storage/` (gitignored); opt-in cleanup `scripts/storage-gc.ts`, `src/lib/maintenance/storage-gc.ts` ([operations](operations.md#storage-cleanup)) |

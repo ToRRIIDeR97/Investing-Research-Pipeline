@@ -4,7 +4,7 @@ import { assets } from "@/db/schema/core";
 import { handleApiError, successResponse, createdResponse } from "@/lib/api/errors";
 import { createAssetSchema } from "@/lib/api/validation";
 import { ApiError } from "@/lib/api/errors";
-import { eq, asc } from "drizzle-orm";
+import { and, eq, asc, ne } from "drizzle-orm";
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,12 +16,14 @@ export async function GET(request: NextRequest) {
       results = await db
         .select()
         .from(assets)
-        .where(eq(assets.asset_kind, kind))
+        .where(and(eq(assets.asset_kind, kind), ne(assets.status, "reference")))
         .orderBy(asc(assets.canonical_name));
     } else {
+      // Reference assets (the beta benchmark) hold market data only and are not research subjects.
       results = await db
         .select()
         .from(assets)
+        .where(ne(assets.status, "reference"))
         .orderBy(asc(assets.canonical_name));
     }
 

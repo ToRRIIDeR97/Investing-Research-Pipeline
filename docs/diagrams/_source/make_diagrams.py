@@ -197,7 +197,7 @@ s.line([(cx, 57), (cx, 70)])
 s.box(100, 70, 400, 96, "Load inputs (code)", [
     "operating_scenario_set yearly_drivers · operating_model",
     "financial_inputs · historyRatios · equityBridge · diluted shares",
-    "latestRiskFreeRate (the run's FRED DGS10 document)",
+    "risk-free (FRED DGS10) · beta (market_price_history) · implied ERP",
     "price: stored close; historical run without one → withheld"], "lib", title_size=12)
 s.line([(cx, 166), (cx, 186)])
 s.diamond(cx, 200)
@@ -382,7 +382,7 @@ def loop_body():
 frame("loop [scheduling pass while stages are ready]", "#6f4fa3", xs[2] - 70, xs[7] + 65, loop_body)
 def requests_body():
     msg(4, 2, "processResearchRequests: queued → processing, no reset")
-    msg(4, 2, "system answers: market_price_history, FRED DGS10")
+    msg(4, 2, "system answers: market_price_history (incl. beta), FRED DGS10")
     msg(4, 2, "retrievePassages(source role, seeds: owner artifacts)")
     msg(4, 6, "team_answer(owner, report inputs + passages)")
     msg(6, 7, "one call; one more after a collector search")

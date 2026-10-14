@@ -14,6 +14,7 @@ import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { calculateValuationSchedule, cashFlowBuildErrors, validateMethodInputs, ValuationMethodInput } from "../valuation/schedules";
 import { valuationDatePrice } from "@/lib/market-data/price-history";
+import { costOfCapitalInputs } from "../valuation/cost-of-capital";
 import { hasDepreciationInputs, valuationFinancialInputs } from "../valuation/financial-inputs";
 import { ReverseValuation, withheldValuationReason } from "../valuation/contracts";
 import {
@@ -21,6 +22,9 @@ import {
   impliedOperatingMargin, impliedRevenueGrowth, latestRiskFreeRate, operatingModelFirstYear, valuationAssumptionsFormat,
   valuationReadiness, type Scenario, type ValuationAssumptionsOutput, type YearlyDriver,
 } from "../valuation/engine";
+
+/** Shared by both valuation prompts: anchor discount rates on the sourced beta and equity risk premium. */
+const COST_OF_CAPITAL_RULE = "cost_of_capital_inputs holds a regression beta against the S&P 500 (beta), a dated implied equity risk premium (equity_risk_premium) and the CAPM cost of equity they give with risk_free_rate (capm_cost_of_equity). Build each discount rate from them, cite their values and as-of dates in rationale, and explain any departure from the CAPM rate. Flag an input marked unverified or stale; when one is null, say so and state the assumption used instead.";
 
 /** The valuation analyst prompt for FCFF assets: assumptions only. Rules precede the packet so the packet stays last. */
 export const valuationPrompt = (p: Record<string, unknown>) => exactJsonPrompt({
@@ -30,6 +34,7 @@ export const valuationPrompt = (p: Record<string, unknown>) => exactJsonPrompt({
   extraRules: [
     "The application builds each scenario's yearly statements and FCFF schedule from the operating scenarios' yearly_drivers and history_ratios (shown in scenario_statements), then computes the DCF, the yearly value per share, the scenario anchors, the weighted target, the returns and the reverse valuation. Supply only valuation_assumptions.",
     "For each of bear, base and bull give discount_rate, terminal and rationale. discount_rate is a decimal cost of capital for free cash flow to the firm and must exceed risk_free_rate.rate, the 10-year Treasury yield on risk_free_rate.observation_date; state the premium over it in rationale.",
+    COST_OF_CAPITAL_RULE,
     "terminal is {\"type\": \"multiple\", \"metric\": \"nopat\", \"multiple\": x} applied to the final year's NOPAT, or {\"type\": \"perpetuity\", \"growth_rate\": g} with g below the discount rate. Calibrate it to each scenario's growth, margins and reinvestment in scenario_statements.",
     "Use the valuation specialist's team_context.brief. Do not return statements, schedules or per-share values and do not change the scenario drivers; note any disagreement with them in source_notes.",
     "Name the sources and calibration behind each rate in source_notes. List methods you judged inappropriate for this company, with the reason, in omitted_methods.",
@@ -96,6 +101,7 @@ export const equityMethodsPrompt = (p: Record<string, unknown>) => exactJsonProm
     "Use financial_inputs (captured quarterly and annual revenue, costs, tax, D&A, SBC, operating cash flow, capex, cash, marketable securities, debt, leases, diluted shares, headcount, period-end closes and market caps), the operating scenarios, accepted historical metrics and the current market price. Check financial_inputs.columns and not_captured before listing a gap; never call a supplied input absent.",
     "For fcfe, give every year a build: starting_profit (net income), depreciation_amortization added back, capital_expenditures as a positive amount that is subtracted, change_in_net_working_capital, and other_adjustments (net borrowing; stock-based compensation when treated as a cash cost). cash_flow must equal the build.",
     "Discount rates, terminal growth and multiples are analyst assumptions: state each one and its rationale in source_notes rather than treating it as a missing input.",
+    COST_OF_CAPITAL_RULE,
     "reverse_valuation gives the revenue growth and operating margin the current market price implies.",
     "Withhold only when no method can be built from the packet: then set valuation_status to \"withheld\", method_inputs to [] and withheld_reason naming the missing packet inputs. Otherwise set valuation_status to \"complete\".",
     "reported_diluted_shares.value is a share count; that count divided by 1,000,000 is the minimum diluted_shares, and the application raises any lower count to it.",
@@ -231,7 +237,8 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       const cutoff = ctx.marketDataCutoffAt || ctx.cutoffAt;
       // Captured statements and period-end prices, reduced to a compact table.
       const capturedRows = await sql`
-        SELECT artifact_type, content_json->'observations' AS observations, content_json->'cross_check' AS cross_check
+        SELECT artifact_type, content_json->'observations' AS observations, content_json->'cross_check' AS cross_check,
+          content_json->'beta' AS beta
         FROM research_artifacts
         WHERE research_run_id = ${ctx.runId}
           AND artifact_type IN ('financial_statement_set', 'market_price_history')
@@ -289,6 +296,8 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       `;
       const riskFree = fred?.csv ? latestRiskFreeRate(String(fred.csv), cutoff.toISOString()) : null;
       const riskFreeRate = riskFree ? { ...riskFree, series_id: "DGS10", source: "FRED", source_document_id: String(fred.id) } : null;
+      // Beta comes from the captured market_price_history; the ERP from the recorded reference value public by the cutoff.
+      const costOfCapital = costOfCapitalInputs({ beta: captured("market_price_history")?.beta ?? null, riskFreeRate: riskFree, cutoffAt: cutoff });
       const [primaryDoc] = await sql`
         SELECT d.id, d.storage_path
         FROM source_documents d
@@ -429,6 +438,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
           required_lenses: requiredLenses,
           current_market_snapshot: marketSnapshot,
           risk_free_rate: riskFreeRate,
+          cost_of_capital_inputs: costOfCapital,
           accepted_historical_metrics: metricRows,
           financial_inputs: financialInputs,
           nav_inputs: navInputs,
@@ -457,7 +467,8 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
           const primary = primarySchedules(models)!;
           const assembled = assembleValuation({ schedules: primary, probabilities, marketPrice, currency: primary.base.currency, fiscalYearEnd });
           output = {
-            valuation_scenario_set: { ...assembled.valuation_scenario_set, method_inputs: models, omitted_methods: set.omitted_methods, risk_free_rate: riskFreeRate },
+            valuation_scenario_set: { ...assembled.valuation_scenario_set, method_inputs: models, omitted_methods: set.omitted_methods, risk_free_rate: riskFreeRate,
+              cost_of_capital_inputs: costOfCapital },
             annual_price_target_path: assembled.annual_price_target_path,
             reverse_valuation: answer.reverse_valuation,
           };
@@ -485,6 +496,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
             required_lenses: requiredLenses,
             current_market_snapshot: marketSnapshot,
             risk_free_rate: riskFreeRate,
+            cost_of_capital_inputs: costOfCapital,
             financial_inputs: financialInputs,
             history_ratios: ratios,
             equity_bridge: bridge,
@@ -508,6 +520,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
             `Statements built by code from operating_scenario_set yearly_drivers for FY${horizon[0]}-FY${horizon.at(-1)}${firstYear ? `; the base case's FY${horizon[0]} revenue and operating income come from operating_model` : ""}.`,
             `D&A ${pct(ratios.da_to_revenue)} and capex ${pct(ratios.capex_to_revenue)} of revenue (mean of the last ${Math.min(3, financialInputs?.annual.length ?? 0)} fiscal years in financial_inputs) unless a yearly driver overrides them; tax rate ${pct(ratios.tax_rate)} (${ratios.tax_rate_source}).`,
             riskFree ? `Risk-free rate ${riskFree.rate} on ${riskFree.observation_date} (FRED DGS10).` : "No FRED DGS10 observation was available by the cutoff.",
+            ...(costOfCapital.capm_cost_of_equity ? [`CAPM cost of equity ${costOfCapital.capm_cost_of_equity.rate} = ${costOfCapital.capm_cost_of_equity.formula}.`] : []),
             ...(answer.source_notes ?? []),
           ];
           const bridgeExplanation = bridge
@@ -522,11 +535,13 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
           output = {
             valuation_scenario_set: {
               ...assembled.valuation_scenario_set, omitted_methods: answer.omitted_methods ?? [], risk_free_rate: riskFreeRate,
+              cost_of_capital_inputs: costOfCapital,
               valuation_assumptions: answer, history_ratios: ratios,
               source_gaps: [
                 ...(bridge?.missing.length ? [`Equity bridge items not captured: ${bridge.missing.join(", ")}.`] : bridge ? [] : ["No balance-sheet items were captured for the equity bridge."]),
                 ...(ratios.tax_rate_source === "statutory_default" ? ["No captured tax history; NOPAT uses the 21% statutory rate."] : []),
                 ...(riskFree ? [] : ["No FRED DGS10 observation was available by the cutoff; discount rates are unchecked against a risk-free rate."]),
+                ...costOfCapital.gaps,
               ],
             },
             annual_price_target_path: assembled.annual_price_target_path,
