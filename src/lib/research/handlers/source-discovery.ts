@@ -7,7 +7,7 @@ import { planMissingRoles, type SourcePlan } from "../sources/planner";
 import { SOURCE_ROLES, type SourceRole } from "../sources/roles";
 import { recordSourceCoverage, reconcileRoleGaps, sourcePlanFor, v2RunContext, withLinkedRunSources,
   type CoverageSource } from "../sources/role-coverage";
-import { SourceSearch } from "../sources/source-requests";
+import { SEARCH_QUERY_RULE, SourceSearch } from "../sources/source-requests";
 import { outputContract } from "../reporting/contracts";
 import { saveReportArtifact } from "../reporting/store";
 import { MAX_DISCOVERY_ROUNDS, TEAM_ROLES } from "../team-plan";
@@ -49,6 +49,7 @@ async function reviewSources(sql: Sql, ctx: ResearchRunContext, plan: SourcePlan
       extraRules: [TEAM_ROLES.data.purpose,
         "The specialists (financials, business, valuation and report) start only after you set sufficient to true. Judge whether the documents can answer the research question and cover every required source role in source_plan.",
         "If not, return up to 6 searches {source_role, query, reason}. Each query must name a specific document or entity: for peer_company_primary, name a competitor and its filing (for example a named competitor's latest annual report or 20-F); for industry or regulatory roles, name the regulator, dataset or report. Never search generic phrases such as 'peer 10-K' or 'competitor report', and do not repeat a query from previous_rounds.",
+        SEARCH_QUERY_RULE,
         "Set sufficient to true when the required roles are covered, or when further public searches are unlikely to help; list each uncovered required role in accepted_gaps with the reason. Specialists can request more documents later.",
         "Do not claim documents that are not in the documents list."] }),
   });
