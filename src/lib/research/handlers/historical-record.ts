@@ -11,6 +11,7 @@ import { captureFilingStatements } from '../history/filing-store';
 import { captureMarketHistory } from '../history/market-history';
 import { repairModuleWriter } from '../repair/agent';
 import { HistoricalObservation } from '../history/contracts';
+import { fiscalCalendar, fiscalLabel, fiscalPeriodsFromObservations } from '../history/fiscal-calendar';
 import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -173,18 +174,17 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
           AND (mo.available_at IS NULL OR mo.available_at <= ${(ctx.marketDataCutoffAt || ctx.cutoffAt).toISOString()})
       `;
 
-      const observations = obsRows.map(row => {
-        const start = row.period_start ? new Date(row.period_start) : null;
-        const end = new Date(row.period_end);
-        const diffMonth = start ? (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) : 3;
-        const periodicity = diffMonth > 6 ? "annual" : "quarterly";
-        const fiscal_quarter = periodicity === "annual" ? null : Math.floor(end.getMonth() / 3) + 1;
-
-        return {
+      // Companyfacts and model rows carry dates only; label them on the filings' fiscal calendar so they
+      // merge with filing rows of the same fiscal period (a June fiscal year's Jul-Sep quarter is Q1).
+      const fiscalPeriods = fiscalPeriodsFromObservations(filings.observations);
+      const place = fiscalCalendar(fiscalPeriods);
+      const observations = obsRows.flatMap(row => {
+        const label = fiscalLabel(row.period_start ? new Date(row.period_start).toISOString().slice(0, 10) : null,
+          new Date(row.period_end).toISOString().slice(0, 10), fiscalPeriods, place);
+        if (!label) return [];
+        return [{
           metric_key: String(row.metric_key),
-          fiscal_year: end.getFullYear(),
-          fiscal_quarter,
-          periodicity: periodicity as "annual" | "quarterly",
+          ...label,
           reporting_basis: (row.data_provider === "sec_companyfacts" ? "gaap" : (row.metadata_json?.agent_output?.reporting_basis || "as_reported")) as "gaap" | "as_reported",
           metric_type: (row.metadata_json?.agent_output?.formula_or_adjustment ? "calculated" : "reported") as "calculated" | "reported",
           value_numeric: row.value_numeric !== null ? Number(row.value_numeric) : null,
@@ -197,7 +197,7 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
           restatement_version: Number(row.revision_number || 0),
           comparability_status: "comparable" as const,
           metadata_json: { ...(row.metadata_json || {}), metric_category: row.metric_category },
-        };
+        }];
       });
 
       // Find start/end periods
