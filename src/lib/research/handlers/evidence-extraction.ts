@@ -44,6 +44,8 @@ const CONTRADICTION_SHAPE = "Each contradictions entry is {claim_texts: [two cla
  * A founder claim must affirm something: claims that only report the founder as missing, or that
  * describe the supplied excerpt, do not count.
  */
+/** The founder check's error; a retry on it alone reruns only the founder pass (see advanceStage). */
+export const FOUNDER_GAP_ERROR = "No accepted claim affirms the founder or company origin (absence statements and claims about the supplied excerpt do not count)";
 export const FOUNDER_TERMS = /founder|founded|founding|co-?founded|started by|origin|motivat|professor|mission|lab to the market/i;
 export const ABSENCE_STATEMENT = /\b(?:does|do|did)\s+not\b|\bdoesn['’]t\b|\bcannot\b|\bnot\s+(?:name|named|identif\w*|state[ds]?|disclos\w*|mention\w*|provide[ds]?|support\w*|present|available|known)\b|\bno\s+(?:founder|founding|information|evidence|mention|narrative)\b|\b(?:is|are|remains?)\s+(?:unknown|unclear|absent|missing)\b/i;
 
@@ -401,7 +403,7 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
         return FOUNDER_TERMS.test(text) && !ABSENCE_STATEMENT.test(text) && !SOURCE_META_CLAIM.test(text);
       }).length }];
       if (Number(founderRows[0]?.cnt || 0) === 0) {
-        errors.push("No accepted claim affirms the founder or company origin (absence statements and claims about the supplied excerpt do not count)");
+        errors.push(FOUNDER_GAP_ERROR);
       }
       return makeValidationResult(errors);
     } finally {

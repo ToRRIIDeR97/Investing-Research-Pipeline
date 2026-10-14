@@ -5,6 +5,7 @@ import type { Sql } from "@/lib/research/run-context";
 import { CURRENT_PIPELINE_VERSION } from "@/lib/research/version";
 import { readyStages, dependentStages } from "@/lib/research/team-plan";
 import { getStageOutputContract } from "@/lib/research/stage-contracts";
+import { FOUNDER_GAP_ERROR } from "@/lib/research/handlers/evidence-extraction";
 import { getTeamRequests, rerunRequestStages, skipRequestRerun } from "@/lib/research/team";
 import { STAGE_CONFIGS, STAGE_CONFIG_MAP, getAllStagesForRun, getApplicableStages, getStageConfig } from "./stages";
 import { evaluateResearchQuality } from "./quality-gates";
@@ -309,8 +310,14 @@ export async function advanceStage(
       const retryCount = Number(previousValidation?.retryCount ?? 0);
       const maxRetries = currentStage.max_retries ?? 2;
 
-      // Completed requests from an invalid stage must not bypass its next attempt.
-      await sql`UPDATE research_tasks SET validation_status = 'invalid', updated_at = NOW()
+      // Completed requests from an invalid stage must not bypass its next attempt. A founder-gap-only failure
+      // reruns just the founder pass when one ran; the source-reader batches replay.
+      const founderGapOnly = currentStage.stage_key === "evidence_extraction" && validation.errors.length > 0 &&
+        validation.errors.every((error) => error === FOUNDER_GAP_ERROR);
+      const narrowed = founderGapOnly ? await sql`UPDATE research_tasks SET validation_status = 'invalid', updated_at = NOW()
+        WHERE stage_id = ${currentStage.id} AND status = 'completed' AND task_type = 'evidence_extraction_role_gap'
+          AND validation_status IS DISTINCT FROM 'invalid' RETURNING id` : [];
+      if (!narrowed.length) await sql`UPDATE research_tasks SET validation_status = 'invalid', updated_at = NOW()
         WHERE stage_id = ${currentStage.id} AND status = 'completed'`;
       const artifactTypes = getStageOutputContract(currentStage.stage_key)?.requiredKeys || [];
       if (artifactTypes.length) await sql`
