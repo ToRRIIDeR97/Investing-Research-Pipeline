@@ -54,17 +54,19 @@ test("a stored source is not rewritten, re-parsed or returned with its body when
     const [first] = await storeDiscoveredSources(sql, f.ctx as any, [payload(content, `https://example.test/${randomUUID()}.htm`)] as any);
     assert.equal("content" in first, false, "StoredSource must not keep the document body alive");
     const [doc] = await sql`SELECT storage_path FROM source_documents WHERE id = ${first.sourceId}`;
-    const [parse] = await sql`SELECT output_storage_path FROM document_parses
-      WHERE source_document_id = ${first.sourceId} AND parser_name = 'research-memory'`;
+    const parseOf = async () => (await sql`SELECT id, output_storage_path, completed_at FROM document_parses
+      WHERE source_document_id = ${first.sourceId} AND parser_name = 'research-memory'`)[0];
+    const parse = await parseOf();
+    assert.equal(parse.output_storage_path, null, "no normalized-text copy is written: nothing reads it (M5)");
     const sourceFile = join(process.cwd(), String(doc.storage_path));
-    const parseFile = join(process.cwd(), String(parse.output_storage_path));
     const written = statSync(sourceFile).mtimeMs;
-    rmSync(parseFile);
     await new Promise(resolve => setTimeout(resolve, 20));
     const [again] = await storeDiscoveredSources(sql, f.ctx as any, [payload(content, `https://example.test/${randomUUID()}.htm`)] as any);
     assert.equal(again.sourceId, first.sourceId);
     assert.equal(statSync(sourceFile).mtimeMs, written, "the content-hash file is not rewritten");
-    assert.equal(existsSync(parseFile), false, "an indexed document is not parsed and saved again");
+    const reparsed = await parseOf();
+    assert.equal(reparsed.id, parse.id);
+    assert.equal(new Date(reparsed.completed_at).getTime(), new Date(parse.completed_at).getTime(), "an indexed document is not parsed again");
   } finally { await f.cleanup(); await sql.end(); }
 });
 

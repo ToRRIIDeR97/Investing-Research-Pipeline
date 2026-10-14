@@ -1,8 +1,7 @@
 // Stores a document's passages as a `research-memory` parse next to its raw chunks.
 import type postgres from "postgres";
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, resolve, sep } from "node:path";
+import { readFile } from "node:fs/promises";
+import { resolve, sep } from "node:path";
 import { parseDocument } from "./passages";
 import { EMBEDDING_BATCH_SIZE, embedTexts, passageEmbeddingText, type EmbeddingProvider } from "./embeddings";
 
@@ -27,18 +26,6 @@ async function currentParse(sql: Sql, sourceId: string) {
   return row ? { parseId: String(row.id), passages: Number(row.passages) } : null;
 }
 
-/** Normalized text the passage offsets refer to, kept next to the raw sources. */
-async function saveParseText(text: string): Promise<string | null> {
-  try {
-    const path = `storage/parses/${createHash("sha256").update(text).digest("hex")}.txt`;
-    await mkdir(join(process.cwd(), "storage", "parses"), { recursive: true });
-    await writeFile(join(process.cwd(), path), text, "utf8");
-    return path;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Index one document's content. Concurrent callers for the same document serialize on an
  * advisory lock, so a document is indexed once and later calls report it as current.
@@ -48,17 +35,17 @@ export async function indexDocumentContent(sql: postgres.Sql, input: { sourceId:
   // The locked check below still settles concurrent first indexing.
   const indexed = await currentParse(sql, input.sourceId);
   if (indexed) return { ...indexed, status: "current", warnings: [] };
+  // Passages and their offsets live in document_chunks; nothing reads a normalized-text copy, so none is written.
   const parsed = parseDocument(input.content, input.mimeType);
-  const outputPath = parsed.passages.length ? await saveParseText(parsed.text) : null;
   return sql.begin(async tx => {
     await tx`SELECT pg_advisory_xact_lock(hashtext(${`research-memory:${input.sourceId}`}))`;
     const existing = await currentParse(tx, input.sourceId);
     if (existing) return { ...existing, status: "current" as const, warnings: [] };
     const warnings = parsed.passages.length ? [] : ["The document has no readable text."];
-    const [parse] = await tx`INSERT INTO document_parses (source_document_id, parser_name, parser_version, status, warnings_json, output_storage_path)
-      VALUES (${input.sourceId}, ${MEMORY_PARSER}, ${MEMORY_PARSER_VERSION}, 'running', ${tx.json(warnings)}, ${outputPath})
+    const [parse] = await tx`INSERT INTO document_parses (source_document_id, parser_name, parser_version, status, warnings_json)
+      VALUES (${input.sourceId}, ${MEMORY_PARSER}, ${MEMORY_PARSER_VERSION}, 'running', ${tx.json(warnings)})
       ON CONFLICT (source_document_id, parser_name, parser_version, parse_config_json)
-      DO UPDATE SET status = 'running', warnings_json = EXCLUDED.warnings_json, output_storage_path = EXCLUDED.output_storage_path, completed_at = NULL
+      DO UPDATE SET status = 'running', warnings_json = EXCLUDED.warnings_json, output_storage_path = NULL, completed_at = NULL
       RETURNING id`;
     const parseId = String(parse.id);
     await tx`DELETE FROM document_chunks WHERE document_parse_id = ${parseId}`;
