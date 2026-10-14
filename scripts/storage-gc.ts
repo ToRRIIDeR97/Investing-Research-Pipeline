@@ -5,7 +5,7 @@
 import postgres from "postgres";
 import { existsSync, readFileSync } from "fs";
 import { resolve } from "path";
-import { applyStorageGc, planStorageGc, type GcDatabase } from "../src/lib/maintenance/storage-gc";
+import { applyStorageGc, liveWorkers, planStorageGc, type GcDatabase } from "../src/lib/maintenance/storage-gc";
 
 function loadEnvFile(fileName: string) {
   const path = resolve(process.cwd(), fileName);
@@ -55,13 +55,10 @@ async function main() {
   const dbs = await databases(process.env.DATABASE_URL);
   try {
     console.log(`${apply ? "APPLY" : "DRY RUN"}: storage ${storageRoot}; references from ${dbs.map(db => db.name).join(", ")}`);
-    if (apply) {
-      for (const db of dbs) {
-        const live = await db.sql`SELECT worker_id FROM research_worker_heartbeats
-          WHERE status = 'healthy' AND last_seen_at > NOW() - INTERVAL '30 seconds'`.catch(() => []);
-        if (live.length) throw new Error(`Refusing to apply: research worker ${live.map(r => r.worker_id).join(", ")} is polling ${db.name}. Stop it first.`);
-      }
-    }
+    const live = await liveWorkers(dbs);
+    const polling = live.map(l => `research worker ${l.workers.join(", ")} is polling ${l.database}`).join("; ");
+    if (apply && live.length) throw new Error(`Refusing to apply: ${polling}. Stop it first.`);
+    if (live.length) console.log(`WARNING: ${polling}. --apply would refuse until it stops.`);
     const plan = await planStorageGc(dbs, { storageRoot, minAgeMs: minAgeHours * 3_600_000, includeParseTexts: process.argv.includes("--parse-texts") });
 
     const freed = new Set(plan.repoints.map(r => resolve(storageRoot, "..", r.from)));

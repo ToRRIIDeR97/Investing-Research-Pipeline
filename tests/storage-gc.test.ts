@@ -7,7 +7,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applyStorageGc, normalizedSecHtml, planStorageGc } from "../src/lib/maintenance/storage-gc";
+import { applyStorageGc, liveWorkers, normalizedSecHtml, planStorageGc } from "../src/lib/maintenance/storage-gc";
 
 const skip = process.env.RUN_DB_INTEGRATION !== "1";
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
@@ -86,6 +86,37 @@ test("cleanup plans without changing anything, then repoints duplicates and dele
     }
     await sql`DELETE FROM research_runs WHERE id = ${runId}`;
     await sql`DELETE FROM assets WHERE id = ${assetId}`;
+    rmSync(root, { recursive: true, force: true });
+    await sql.end();
+  }
+});
+
+test("a worker that starts after planning stops the delete, and a file touched since planning is kept", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!, { onnotice: () => {} });
+  const root = mkdtempSync(join(tmpdir(), "storage-gc-"));
+  const sources = join(root, "storage", "sources");
+  mkdirSync(sources, { recursive: true });
+  const workerId = `storage-gc-test-${randomUUID()}`;
+  try {
+    const old = (Date.now() - 3 * 86_400_000) / 1000;
+    for (const name of ["a.json", "b.json"]) { writeFileSync(join(sources, name), "{}"); utimesSync(join(sources, name), old, old); }
+    const db = [{ name: "test", sql }];
+    const plan = await planStorageGc(db, { storageRoot: join(root, "storage"), minAgeMs: 86_400_000 });
+    assert.equal(plan.candidates.length, 2);
+
+    const heartbeat = async () => { await sql`INSERT INTO research_worker_heartbeats (worker_id) VALUES (${workerId})`; };
+    assert.deepEqual((await liveWorkers(db)).flatMap(l => l.workers).filter(w => w === workerId), [], "no worker yet");
+    await assert.rejects(applyStorageGc(db, plan, { beforeDelete: heartbeat }), /Refusing to apply: research worker .*polling test/);
+    assert.ok(existsSync(join(sources, "a.json")) && existsSync(join(sources, "b.json")), "nothing is deleted");
+    assert.ok((await liveWorkers(db)).some(l => l.database === "test" && l.workers.includes(workerId)), "the dry run sees the worker");
+    await sql`DELETE FROM research_worker_heartbeats WHERE worker_id = ${workerId}`;
+
+    const result = await applyStorageGc(db, plan, { beforeDelete: async () => { writeFileSync(join(sources, "b.json"), "{\"new\":1}"); } });
+    assert.equal(result.deleted, 1);
+    assert.equal(existsSync(join(sources, "a.json")), false);
+    assert.ok(existsSync(join(sources, "b.json")), "a file written since planning is kept");
+  } finally {
+    await sql`DELETE FROM research_worker_heartbeats WHERE worker_id = ${workerId}`;
     rmSync(root, { recursive: true, force: true });
     await sql.end();
   }

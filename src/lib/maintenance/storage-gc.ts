@@ -151,6 +151,22 @@ async function candidates(storageRoot: string, minAgeMs: number, refs: Awaited<R
   return { found, tooNew };
 }
 
+/** Databases a research worker sent a healthy heartbeat to in the last 30 s, with those worker ids. */
+export async function liveWorkers(dbs: GcDatabase[]) {
+  const found: Array<{ database: string; workers: string[] }> = [];
+  for (const db of dbs) {
+    const live = await db.sql`SELECT worker_id FROM research_worker_heartbeats
+      WHERE status = 'healthy' AND last_seen_at > NOW() - INTERVAL '30 seconds'`.catch(() => []);
+    if (live.length) found.push({ database: db.name, workers: live.map(r => String(r.worker_id)) });
+  }
+  return found;
+}
+
+async function refuseWhileWorkersLive(dbs: GcDatabase[]) {
+  const live = await liveWorkers(dbs);
+  if (live.length) throw new Error(`Refusing to apply: research worker ${live.map(l => `${l.workers.join(", ")} is polling ${l.database}`).join("; ")}. Stop it first.`);
+}
+
 export async function planStorageGc(dbs: GcDatabase[], options: { storageRoot: string; minAgeMs: number; includeParseTexts?: boolean }): Promise<GcPlan> {
   const storageRoot = resolve(options.storageRoot);
   const projectRoot = dirname(storageRoot);
@@ -169,9 +185,11 @@ export async function planStorageGc(dbs: GcDatabase[], options: { storageRoot: s
 
 /**
  * Repoints the planned SEC duplicates, clears parse-text paths when asked, then deletes only the candidates that
- * are still unreferenced after a fresh look at every database.
+ * are still unreferenced after a fresh look at every database. Planning can take a while, so it checks for live
+ * workers again before changing rows and before deleting, and skips any file changed since the age cutoff.
  */
-export async function applyStorageGc(dbs: GcDatabase[], plan: GcPlan) {
+export async function applyStorageGc(dbs: GcDatabase[], plan: GcPlan, hooks: { beforeDelete?: () => Promise<void> } = {}) {
+  await refuseWhileWorkersLive(dbs);
   const byName = new Map(dbs.map(db => [db.name, db]));
   let repointed = 0;
   for (const db of dbs) {
@@ -192,12 +210,16 @@ export async function applyStorageGc(dbs: GcDatabase[], plan: GcPlan) {
     await byName.get(entry.database)!.sql`UPDATE document_parses SET output_storage_path = NULL WHERE output_storage_path LIKE 'storage/parses/%'`;
   }
   const projectRoot = dirname(plan.storageRoot);
+  await hooks.beforeDelete?.();
+  await refuseWhileWorkersLive(dbs);
   const refs = await references(dbs, projectRoot, { repoints: [], includeParseTexts: false });
   const fresh = await candidates(plan.storageRoot, plan.minAgeMs, refs);
   const stillFree = new Set(fresh.found.map(c => c.path));
   let deleted = 0, bytes = 0;
   for (const candidate of plan.candidates) {
     if (!stillFree.has(candidate.path)) continue;
+    const changed = await newestMtime(candidate.path).catch(() => null);
+    if (changed === null || Date.now() - changed < plan.minAgeMs) continue;
     await rm(candidate.path, { recursive: true, force: true });
     deleted += 1;
     bytes += candidate.bytes;
