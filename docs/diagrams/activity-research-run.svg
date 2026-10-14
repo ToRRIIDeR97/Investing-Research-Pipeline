@@ -61,8 +61,8 @@
 <path d="M330,522 L330,544" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="345" y="536" font-size="11" text-anchor="start" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">no</text>
 <rect x="130" y="544" width="300" height="46" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
-<text x="280.0" y="562" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Ready handlers in parallel</text>
-<text x="280.0" y="579" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">Promise.allSettled → advanceStage(deferNext)</text>
+<text x="280.0" y="562" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Ready handlers (dataflow)</text>
+<text x="280.0" y="579" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">race → advanceStage(deferNext) → newly ready</text>
 <path d="M330,590 L330,610" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <path d="M330,610 L344,624 L330,638 L316,624 z" fill="#fff8dc" stroke="#8a6d00" stroke-width="1.3"/>
 <text x="310" y="612" font-size="11" font-weight="normal" text-anchor="end" fill="#5a4700" font-style="italic">output valid &amp; validators pass?</text>
@@ -71,6 +71,7 @@
 <path d="M330,638 L330,660" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="345" y="652" font-size="11" text-anchor="start" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">no</text>
 <text x="470" y="652" font-size="11" font-weight="normal" text-anchor="start" fill="#555">invalid → tasks invalid, artifacts needs_more_work</text>
+<text x="470" y="665" font-size="11" font-weight="normal" text-anchor="start" fill="#555">(founder gap only: just the founder pass)</text>
 <path d="M330,660 L344,674 L330,688 L316,674 z" fill="#fff8dc" stroke="#8a6d00" stroke-width="1.3"/>
 <text x="310" y="666" font-size="11" font-weight="normal" text-anchor="end" fill="#5a4700" font-style="italic">retryCount &lt; stage max_retries (0–3)?</text>
 <path d="M344,674 L445,674 L445,567 L430,567" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
