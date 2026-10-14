@@ -119,7 +119,7 @@ export function isSafePublicUrl(value: string): boolean {
     const url = new URL(value);
     if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return false;
     const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
-    // Literal check only; publicFetch resolves DNS before each hop is fetched.
+    // Literal check only; publicFetch validates the resolved address of every connection it opens.
     if (isPrivateHostname(hostname)) return false;
     return !BLOCKED_HOSTS.some((blocked) => hostname === blocked || hostname.endsWith(`.${blocked}`));
   } catch {
