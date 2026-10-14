@@ -59,6 +59,16 @@ export async function captureMarketHistory(sql: Sql,
   return content;
 }
 
+/** Source discovery's price sync summary from the latest source review, validated or accepted at the second gate. */
+export async function latestPriceHistorySync(sql: Sql, runId: string): Promise<PriceHistorySync | null> {
+  const [review] = await sql`
+    SELECT content_json->'price_history_sync' AS sync FROM research_artifacts
+    WHERE research_run_id = ${runId} AND artifact_type = 'source_review' AND status IN ('validated', 'accepted')
+    ORDER BY artifact_version DESC LIMIT 1
+  `;
+  return review?.sync ?? null;
+}
+
 /** The Stooq cross-check outcome of source discovery's price sync, or unknown when no summary was recorded. */
 export function crossCheckStatus(sync?: PriceHistorySync | null): { status: "checked" | "not_needed" | "unavailable" | "unknown"; reason?: string } {
   if (!sync) return { status: "unknown", reason: "No price sync summary was recorded for this run." };

@@ -8,7 +8,7 @@ import {
 import { buildHistoricalRecord, latestCompletedQuarter } from "../history/normalizer";
 import { secQuarterlyObservations } from "../history/sec-companyfacts";
 import { captureFilingStatements } from '../history/filing-store';
-import { captureMarketHistory } from '../history/market-history';
+import { captureMarketHistory, latestPriceHistorySync } from '../history/market-history';
 import { repairModuleWriter } from '../repair/agent';
 import { HistoricalObservation } from '../history/contracts';
 import { fiscalCalendar, fiscalLabel, fiscalPeriodsFromObservations } from '../history/fiscal-calendar';
@@ -204,12 +204,7 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       let end = latestCompletedQuarter(ctx.marketDataCutoffAt || ctx.cutoffAt);
       // Period-end closes and market caps; missing prices never block the financial record.
       // Source discovery's price sync summary says whether the Stooq cross-check ran.
-      const [review] = await sql`
-        SELECT content_json->'price_history_sync' AS sync FROM research_artifacts
-        WHERE research_run_id = ${ctx.runId} AND artifact_type = 'source_review' AND status = 'validated'
-        ORDER BY artifact_version DESC LIMIT 1
-      `;
-      const marketHistory = await captureMarketHistory(sql, ctx, filings.observations, review?.sync ?? null)
+      const marketHistory = await captureMarketHistory(sql, ctx, filings.observations, await latestPriceHistorySync(sql, ctx.runId))
         .catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
       const latestFiling=[...filings.tables].sort((a,b)=>b.period_end.localeCompare(a.period_end))[0];
       if(latestFiling?.fiscal_year&&latestFiling?.fiscal_quarter)end={year:latestFiling.fiscal_year,quarter:latestFiling.fiscal_quarter};
