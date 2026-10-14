@@ -34,6 +34,15 @@ Create a run from the asset research UI or `POST /api/assets/:assetId/research-r
 curl -X POST -H 'Sec-Fetch-Site: same-origin' http://127.0.0.1:3000/api/research-runs/$RUN_ID/run-system-pipeline
 ```
 
+To require a token, set `RESEARCH_OS_API_TOKEN` in `.env.local` (for example `openssl rand -hex 32`) and restart the dev server. Every page then shows the sign-in form until you enter the token, which sets an HttpOnly `research_os_session` cookie for 30 days (`DELETE /api/session` clears it). Other clients send the token as a bearer header, plus the same-origin header on writes:
+
+```bash
+curl -X POST -H "Authorization: Bearer $RESEARCH_OS_API_TOKEN" -H 'Sec-Fetch-Site: same-origin' \
+  http://127.0.0.1:3000/api/research-runs/$RUN_ID/run-system-pipeline
+```
+
+Left empty, the app stays open to any client that reaches the loopback port. The worker and scripts don't call the API, so they need no token.
+
 Set `RESEARCH_RUN_ID` and run `npm run run:research:resume` to queue continuation through the same path. A running worker is required. Failed runs restart at their first failed stage; waiting human gates still require explicit approval through the UI or approval endpoints.
 
 To stop a run for good, use **Cancel run** on the run page or `POST /api/research-runs/:runId/cancel`. A cancelled run can't be resumed or queued again; a worker running it stops its model call within about 10 s.

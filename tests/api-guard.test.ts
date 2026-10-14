@@ -10,7 +10,7 @@ const request = (path: string, method: string, headers: Record<string, string>) 
 const passes = (response: Response) => response.headers.get("x-middleware-next") === "1";
 
 test("the API answers only local Host names, so a rebound DNS name can't read it (S1, #8)", () => {
-  assert.equal(config.matcher, "/api/:path*");
+  assert.deepEqual(config.matcher, ["/api/:path*", "/((?!_next/|.*\\.).*)"]);
   for (const host of ["localhost:3000", "127.0.0.1:3002", "[::1]:3000", "LOCALHOST:3000"]) {
     assert.ok(passes(proxy(request("/api/assets", "GET", { host }))), host);
   }
@@ -92,4 +92,68 @@ test("the dev and start servers bind to loopback (#8)", () => {
   const scripts = JSON.parse(readFileSync("package.json", "utf8")).scripts;
   assert.match(scripts.dev, /-H 127\.0\.0\.1/);
   assert.match(scripts.start, /-H 127\.0\.0\.1/);
+});
+
+const TOKEN = "test-operator-token-0123456789";
+async function withToken<T>(token: string | undefined, fn: () => T | Promise<T>): Promise<T> {
+  const saved = process.env.RESEARCH_OS_API_TOKEN;
+  if (token === undefined) delete process.env.RESEARCH_OS_API_TOKEN;
+  else process.env.RESEARCH_OS_API_TOKEN = token;
+  try {
+    return await fn();
+  } finally {
+    if (saved === undefined) delete process.env.RESEARCH_OS_API_TOKEN;
+    else process.env.RESEARCH_OS_API_TOKEN = saved;
+  }
+}
+
+test("without RESEARCH_OS_API_TOKEN the API and pages stay open on loopback (#8)", async () => {
+  await withToken(undefined, () => {
+    assert.ok(passes(proxy(request("/api/assets", "GET", { host: "localhost:3000" }))));
+    assert.ok(passes(proxy(request("/review", "GET", { host: "localhost:3000" }))));
+  });
+});
+
+test("with RESEARCH_OS_API_TOKEN the API needs the bearer token or the session cookie (#8)", async () => {
+  const host = "127.0.0.1:3000";
+  await withToken(TOKEN, () => {
+    assert.equal(proxy(request("/api/assets", "GET", { host })).status, 401);
+    assert.equal(proxy(request("/api/assets", "GET", { host, authorization: "Bearer wrong" })).status, 401);
+    assert.equal(proxy(request("/api/assets", "GET", { host, cookie: "research_os_session=wrong" })).status, 401);
+    assert.ok(passes(proxy(request("/api/assets", "GET", { host, authorization: `Bearer ${TOKEN}` }))));
+    assert.ok(passes(proxy(request("/api/assets", "GET", { host, cookie: `research_os_session=${TOKEN}` }))));
+    // The token doesn't replace the same-origin check on writes.
+    assert.equal(proxy(request("/api/research-runs/1/approve-plan", "POST", { host, authorization: `Bearer ${TOKEN}` })).status, 403);
+    assert.ok(passes(proxy(request("/api/research-runs/1/approve-plan", "POST", { host, authorization: `Bearer ${TOKEN}`, "sec-fetch-site": "same-origin" }))));
+    // Signing in needs no token, but still refuses foreign hosts and cross-site posts.
+    assert.ok(passes(proxy(request("/api/session", "POST", { host, "sec-fetch-site": "same-origin" }))));
+    assert.equal(proxy(request("/api/session", "POST", { host, origin: "https://evil.example", "sec-fetch-site": "cross-site" })).status, 403);
+    assert.equal(proxy(request("/api/session", "POST", { host: "evil.example", "sec-fetch-site": "same-origin" })).status, 403);
+    // Pages without the cookie render /login at the requested address (no redirect to another host).
+    const page = proxy(request("/review?run=1", "GET", { host }));
+    assert.equal(page.headers.get("location"), null);
+    assert.equal(new URL(page.headers.get("x-middleware-rewrite")!).pathname, "/login");
+    assert.ok(passes(proxy(request("/login", "GET", { host }))));
+    assert.ok(passes(proxy(request("/review", "GET", { host, cookie: `research_os_session=${TOKEN}` }))));
+  });
+});
+
+test("POST /api/session sets an HttpOnly cookie only for the right token (#8)", async () => {
+  const { POST, DELETE } = await import("../src/app/api/session/route");
+  const signIn = (token: string) => POST(new NextRequest("http://127.0.0.1:3000/api/session", {
+    method: "POST", body: JSON.stringify({ token }), headers: { "content-type": "application/json" },
+  }));
+  await withToken(TOKEN, async () => {
+    const refused = await signIn("wrong");
+    assert.equal(refused.status, 401);
+    assert.equal(refused.headers.get("set-cookie"), null);
+    const accepted = await signIn(TOKEN);
+    assert.equal(accepted.status, 200);
+    const cookie = accepted.headers.get("set-cookie") || "";
+    assert.match(cookie, new RegExp(`^research_os_session=${TOKEN};`));
+    assert.match(cookie, /HttpOnly/i);
+    assert.match(cookie, /SameSite=strict/i);
+    assert.doesNotMatch(cookie, /Secure/i);
+    assert.match((await DELETE()).headers.get("set-cookie") || "", /Max-Age=0/);
+  });
 });

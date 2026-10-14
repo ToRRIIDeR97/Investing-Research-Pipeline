@@ -2,12 +2,12 @@
 
 Research OS creates evidence-backed investment research for an asset. PostgreSQL stores the workflow, sources, artifacts, decisions, and exported report. The Next.js app provides the UI and API; a separate worker runs queued research jobs.
 
-![UML component view: browser UI → API routes (no accounts; Host and Origin middleware) → run queue → worker → pipeline runner and orchestrator → agent harness, sources and memory, backtesting and repair, reporting; Postgres, ./storage, child processes and external services](diagrams/component.svg)
+![UML component view: browser UI → API routes (optional operator token; Host and Origin middleware) → run queue → worker → pipeline runner and orchestrator → agent harness, sources and memory, backtesting and repair, reporting; Postgres, ./storage, child processes and external services](diagrams/component.svg)
 
 | Component | Responsibility | Source |
 | --- | --- | --- |
 | UI pages | Client components that call the API: command center, asset catalog and detail, run cockpit, report view, review queue. The run cockpit polls every 5 s only while the run or its job is active, one request at a time and not while the tab is hidden | `src/app/**/page.tsx`, `src/components/**` |
-| API routes | 52 route files. Reads and writes over research tables, run control (create, enqueue, approve plan, request re-run decision, review, cancel), upload ingest, chat, export, saved charts. No accounts; `src/proxy.ts` refuses foreign Host names and cross-site writes ([security.md](security.md#authentication-and-authorization)) | `src/app/api/**`, `src/lib/api/*`, `src/proxy.ts` |
+| API routes | 53 route files. Reads and writes over research tables, run control (create, enqueue, approve plan, request re-run decision, review, cancel), upload ingest, chat, export, saved charts, operator sign-in (`/api/session`). No accounts; `src/proxy.ts` refuses foreign Host names and cross-site writes and, when `RESEARCH_OS_API_TOKEN` is set, requires that token on every page and route ([security.md](security.md#authentication-and-authorization)) | `src/app/api/**`, `src/lib/api/*`, `src/proxy.ts`, `src/app/login/page.tsx` |
 | Run service and queue | Creates a run (`pending`, version 3) and its 24 stage rows. Enforces one active job per run. Claims with `SKIP LOCKED` under a 5-minute lease, with up to 3 attempts and worker heartbeats. Puts a job back without using an attempt (shutdown, run locked elsewhere) and re-queues running runs left without a job | `src/lib/research/run-service.ts`, `run-queue.ts` |
 | Research worker | Polls every 5 s and survives failing polls (5 s to 60 s backoff). Requeues expired jobs and orphaned runs, claims a job, renews the lease every 10 s and runs the pipeline. A lost lease or a shutdown signal aborts the run. When idle, runs backtest tasks | `src/workers/research-worker.ts`, `poll-loop.ts` |
 | Pipeline runner and team | Per-run advisory lock. Scheduling passes over ready stages, team briefs, source and research requests, handlers run in parallel. Retries a stage whose model call failed transiently | `src/lib/research/pipeline-runner.ts`, `handlers/**`, `team.ts`, `team-plan.ts`, `sources/collector.ts` |
@@ -214,7 +214,7 @@ Company genesis follows the same rule for citations: IDs still unknown after its
 
 Verified in source on 2026-10-05 and tracked as GitHub issues:
 
-- No API accounts ([#8](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/8)). The server binds to loopback and refuses other sites' requests, but any local process can call the API.
+- One shared operator, no per-user accounts ([#8](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/8)). With `RESEARCH_OS_API_TOKEN` unset (the default) any local process can call the API; with it set, every caller needs the token, and anyone holding it has full access, including all saved charts.
 - `accepted` artifacts are never written ([#14](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/14)).
 - Only model calls observe a run's abort signal. A shutdown or cancellation waits for other in-flight work, such as source fetches, to finish.
 - Security findings are listed in [security.md](security.md).
