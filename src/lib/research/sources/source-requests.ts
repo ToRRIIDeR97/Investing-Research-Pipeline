@@ -40,37 +40,68 @@ const EXTERNAL_ROLES = new Set<SourceRole>(["peer_company_primary", "industry_pr
 const DOCUMENT_TERMS = new Set(["annual", "quarterly", "report", "reports", "filing", "filings", "10-k", "10-q", "20-f", "40-f", "6-k",
   "8-k", "prospectus", "statement", "statements", "results", "earnings", "presentation", "transcript", "statistics", "data", "dataset",
   "survey", "census", "bulletin", "publication", "release", "study", "outlook", "review", "index"]);
-/** Tokens a search engine could treat as a URL, address or operator (site:, inurl:, -term, OR); they are dropped. */
-const OPERATOR_TOKEN = /:\/\/|^www\.|@|^[-+]|^[\p{L}_]+:|^OR$/u;
-const DOMAIN_TOKEN = /^[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}(?:\/\S*)?$/u;
+/** Words in a company name that do not identify it: articles and legal suffixes. */
+const NAME_STOP_WORDS = new Set([...STOP_WORDS, "company", "companies", "inc", "incorporated", "corp", "corporation", "holding",
+  "holdings", "group", "plc", "ltd", "limited", "llc", "co", "sa", "ag", "nv", "se", "com"]);
+/** Words that do not name an organisation, so a peer or industry query of only these and document words is generic. */
+const GENERIC_TERMS = new Set([...STOP_WORDS, "latest", "recent", "current", "fiscal", "year", "years", "official", "full", "company",
+  "companies", "peer", "peers", "competitor", "competitors"]);
+/** Tokens a search engine could treat as a URL, address or operator (site:, inurl:, -term, OR, AND, NOT); they are dropped. */
+const OPERATOR_TOKEN = /:\/\/|^www\.|@|^[-+]|^[\p{L}_]+:|^(?:OR|AND|NOT)$/u;
+const DOMAIN_TOKEN = /^[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?:\p{L}{2,}|xn--[\p{L}\p{N}-]+)(?:\/\S*)?$/u;
+/** A word without the quotes, brackets and trailing punctuation around it, so "evil.com", (evil.com) and evil.com" read as evil.com. */
+const unwrap = (word: string) => word.replace(/^["'()[\]{}<>]+|["'()[\]{}<>.,;:!?]+$/gu, "");
+const balanceQuotes = (text: string) => (text.split('"').length - 1) % 2 ? text.replace(/"/g, "") : text;
+type SearchAsset = { name: string; symbol: string };
+/** Terms of a company name that identify it, in order ("The Walt Disney Company" gives walt, disney). */
+const nameTerms = (name: string) => terms(name).filter(term => term.length >= 3 && !NAME_STOP_WORDS.has(term));
 
-/** Plain search words from model text: no URLs, domains, addresses or operators, only letters, digits and name punctuation. */
-function cleanQueryText(text: string): string {
-  const words = text.normalize("NFKC").split(/\s+/)
-    .filter(word => word && !OPERATOR_TOKEN.test(word) && !DOMAIN_TOKEN.test(word.replace(/[.,;)]+$/, "")))
-    .map(word => word.replace(/[^\p{L}\p{N}&.,'"()\/-]/gu, "")).filter(word => /[\p{L}\p{N}]/u.test(word));
-  const joined = words.join(" ");
-  return (joined.split('"').length - 1) % 2 ? joined.replace(/"/g, "") : joined;
+/**
+ * Plain search words from model text: no URLs, domains, addresses or operators, only letters, digits and name punctuation.
+ * The researched company's symbol is kept, and a domain that is its name (Amazon.com) is reduced to the name.
+ */
+function cleanQueryText(text: string, asset: SearchAsset): string {
+  const symbol = asset.symbol.toLowerCase();
+  const names = new Set(nameTerms(asset.name));
+  return balanceQuotes(balanceQuotes(text.normalize("NFKC")).split(/\s+/).flatMap(raw => {
+    const word = raw.replace(/[^\p{L}\p{N}&.,'"()\/-]/gu, "");
+    const core = unwrap(word);
+    if (!/[\p{L}\p{N}]/u.test(core)) return [];
+    if (core.toLowerCase() === symbol) return [word];
+    if (OPERATOR_TOKEN.test(raw) || OPERATOR_TOKEN.test(core)) return [];
+    if (DOMAIN_TOKEN.test(core)) return names.has(core.split(".")[0].toLowerCase()) ? [core.split(".")[0]] : [];
+    return core.split(/[,'"()&\/]+/).some(part => DOMAIN_TOKEN.test(unwrap(part))) ? [] : [word];
+  }).join(" "));
 }
 
-const truncateWords = (text: string, limit: number) =>
-  text.length <= limit ? text : text.slice(0, limit + 1).replace(/\s+\S*$/, "").trim();
+/** At most limit characters, cut at a word boundary when there is one. */
+function truncateWords(text: string, limit: number) {
+  if (text.length <= limit) return text;
+  const cut = text.slice(0, limit + 1);
+  const atWord = cut.replace(/\s+\S*$/, "");
+  return (atWord.length <= limit ? atWord : cut.slice(0, limit)).trim();
+}
 
 /**
  * The query the collector may send for a model-chosen search, or null when none is safe (issue #27). Model text is
  * reduced to plain words and capped at MAX_QUERY_CHARS. A search for the company's own documents is anchored to it:
- * "Name" SYMBOL is put first unless the query already names it. A search for another organisation's documents must
- * name the company or a kind of document. Idempotent, so a stored query passes through unchanged.
+ * "Name" SYMBOL is put first unless the query already names it (its symbol or first distinctive name term). A search
+ * for another organisation's documents must name the company, or name a kind of document and an organisation-like term
+ * beyond document words, years and generic words. Idempotent, so a stored query passes through unchanged.
  */
-export function constrainSearch<T extends SourceSearch>(search: T, asset: { name: string; symbol: string }): T | null {
-  const text = cleanQueryText(search.query);
+export function constrainSearch<T extends SourceSearch>(search: T, asset: SearchAsset): T | null {
+  const text = cleanQueryText(search.query, asset);
   const words = new Set(terms(text));
-  const nameTerm = terms(asset.name).find(term => term.length >= 3);
-  const namesAsset = words.has(asset.symbol.toLowerCase()) || Boolean(nameTerm && words.has(nameTerm));
+  const symbol = asset.symbol.toLowerCase();
+  const nameTerm = nameTerms(asset.name)[0];
+  const namesAsset = words.has(symbol) || text.toLowerCase().split(/\s+/).some(word => unwrap(word) === symbol)
+    || Boolean(nameTerm && words.has(nameTerm));
   if (![...words].some(word => word.length >= 3 && !STOP_WORDS.has(word))) return null;
-  if (!namesAsset && EXTERNAL_ROLES.has(search.source_role) && ![...words].some(word => DOCUMENT_TERMS.has(word))) return null;
-  const prefix = namesAsset || EXTERNAL_ROLES.has(search.source_role) ? "" : `"${asset.name}" ${asset.symbol} `;
-  const query = (prefix + truncateWords(text, MAX_QUERY_CHARS - prefix.length)).trim();
+  const external = EXTERNAL_ROLES.has(search.source_role);
+  if (!namesAsset && external && !([...words].some(word => DOCUMENT_TERMS.has(word))
+    && [...words].some(word => word.length >= 3 && !GENERIC_TERMS.has(word) && !DOCUMENT_TERMS.has(word) && !/^\d+$/.test(word)))) return null;
+  const prefix = namesAsset || external ? "" : `${cleanQueryText(`"${asset.name}" ${asset.symbol}`, asset)} `;
+  const query = cleanQueryText(prefix + truncateWords(text, MAX_QUERY_CHARS - prefix.length), asset).trim();
   return query.length >= 5 ? { ...search, query } : null;
 }
 export interface SourceRequestRound { round: number; task_key: string; state: "queued" | "fetched"; requests: StageSourceRequest[] }

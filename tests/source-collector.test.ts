@@ -32,6 +32,45 @@ test("model-chosen queries are reduced to plain words, anchored to the company a
   for (const query of ['"MercadoLibre" MELI 2025 annual report 10-K', "Sea Limited 20-F"]) assert.equal(search("peer_company_primary", query), query);
 });
 
+test("wrapped domains and operators, generic peer queries and dotted tickers are handled, and the guard is idempotent", () => {
+  const expedia = { name: "Expedia Group", symbol: "EXPE" };
+  const cases: [SourceSearch["source_role"], string, { name: string; symbol: string }, string | null][] = [
+    // Domains and exclusions wrapped in quotes or brackets, connectives and punycode are dropped.
+    ["peer_company_primary", '"evil.com" annual report', expedia, null],
+    ["peer_company_primary", "(evil.com) annual report", expedia, null],
+    ["peer_company_primary", 'evil.com" annual report', expedia, null],
+    ["peer_company_primary", 'Marriott annual report "-Expedia" (-sec)', expedia, "Marriott annual report"],
+    ["peer_company_primary", "Marriott annual report NOT Hilton AND evil", expedia, "Marriott annual report Hilton evil"],
+    ["peer_company_primary", "Marriott annual report xn--e1afmkfd.xn--p1ai", expedia, "Marriott annual report"],
+    // The first distinctive name term anchors the company, never an article.
+    ["company_investor_relations", "the latest pricing announcement", { name: "The Walt Disney Company", symbol: "DIS" },
+      '"The Walt Disney Company" DIS the latest pricing announcement'],
+    ["peer_company_primary", "the attacker phrase here", { name: "The Walt Disney Company", symbol: "DIS" }, null],
+    // A peer named only by a domain leaves a generic query, which is rejected; the company's own domain name is kept.
+    ["peer_company_primary", "Booking.com 20-F 2024", expedia, null],
+    ["peer_company_primary", "Amazon.com annual report 2024", { name: "Walmart Inc.", symbol: "WMT" }, null],
+    ["company_investor_relations", "Amazon.com 2024 10-K", { name: "Amazon.com, Inc.", symbol: "AMZN" }, "Amazon 2024 10-K"],
+    ["peer_company_primary", "Marriott 10-K", expedia, "Marriott 10-K"],
+    // Dotted tickers and names with punctuation or non-Latin script survive.
+    ["company_investor_relations", "SAP.DE Geschäftsbericht 2024", { name: "SAP SE", symbol: "SAP.DE" }, "SAP.DE Geschäftsbericht 2024"],
+    ["company_investor_relations", "BRK.B 2024 annual letter", { name: "Berkshire Hathaway Inc.", symbol: "BRK.B" }, "BRK.B 2024 annual letter"],
+    ["company_investor_relations", "AT&T 2024 annual report", { name: "AT&T Inc.", symbol: "T" }, "AT&T 2024 annual report"],
+    ["company_investor_relations", "Coca-Cola 2024 10-K", { name: "The Coca-Cola Company", symbol: "KO" }, "Coca-Cola 2024 10-K"],
+    ["company_investor_relations", "トヨタ 有価証券報告書 2024", { name: "Toyota Motor Corporation", symbol: "7203.T" },
+      '"Toyota Motor Corporation" 7203.T トヨタ 有価証券報告書 2024'],
+    ["company_investor_relations", "10-K", { name: "SAP SE", symbol: "SAP.DE" }, '"SAP SE" SAP.DE 10-K'],
+  ];
+  for (const [source_role, query, asset, expected] of cases) {
+    const once = constrainSearch({ source_role, query, reason: "Test the query guard" }, asset);
+    assert.equal(once?.query ?? null, expected, query);
+    if (once) assert.equal(constrainSearch(once, asset)?.query, once.query, `idempotent: ${query}`);
+  }
+  // A query with no space is cut to the cap, not one past it.
+  const unbroken = constrainSearch({ source_role: "company_investor_relations", query: "x".repeat(300), reason: "Test the cap" }, expedia)!;
+  assert.equal(unbroken.query.length, MAX_QUERY_CHARS);
+  assert.equal(constrainSearch(unbroken, expedia)?.query, unbroken.query);
+});
+
 test("every specialist stage waits for source discovery before it can start", () => {
   const upstream = (stage: string): Set<string> => new Set((STAGE_DEPENDENCIES[stage] || []).flatMap(dependency => [dependency, ...upstream(dependency)]));
   for (const role of SOURCE_REQUEST_ROLES) assert.ok(upstream(TEAM_ROLES[role].stage).has("source_discovery"), role);
