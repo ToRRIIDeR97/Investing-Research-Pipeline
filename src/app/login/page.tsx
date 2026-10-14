@@ -2,9 +2,11 @@
 
 import { useState, type FormEvent } from "react";
 import ui from "@/components/research-ui.module.css";
+import { loginReturnPath } from "@/lib/api/auth";
 
 // The request proxy renders this page in place of any page requested without the session cookie,
-// so after signing in it reloads the address the browser asked for (or goes home from /login).
+// so after signing in it reloads the address the browser asked for. At /login itself (opened
+// directly, or after a client-side navigation) it goes to a safe `next` path, else home.
 export default function LoginPage() {
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
@@ -17,7 +19,7 @@ export default function LoginPage() {
     try {
       const response = await fetch("/api/session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) });
       if (!response.ok) throw new Error();
-      if (window.location.pathname === "/login") window.location.assign("/");
+      if (window.location.pathname === "/login") window.location.assign(loginReturnPath(window.location.search));
       else window.location.reload();
     } catch {
       setError("That token wasn't accepted.");

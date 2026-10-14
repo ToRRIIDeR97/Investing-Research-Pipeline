@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { apiToken, SESSION_COOKIE, tokenMatches } from "@/lib/api/auth";
+import { apiToken, configuredHosts, SESSION_COOKIE, tokenMatches } from "@/lib/api/auth";
 
 // Every request first passes two browser guards: a foreign Host name is refused (DNS rebinding)
 // and, for methods that change state, so is a request from another origin (CSRF). Non-browser
@@ -20,8 +20,7 @@ function hostAllowed(host: string): boolean {
   } catch {
     return false;
   }
-  const extra = (process.env.RESEARCH_APP_ALLOWED_HOSTS || "").split(",").map((value) => value.trim().toLowerCase());
-  return [...LOCAL_HOSTS, ...extra].filter(Boolean).includes(hostname);
+  return [...LOCAL_HOSTS, ...configuredHosts()].includes(hostname);
 }
 
 function authenticated(request: NextRequest, token: string): boolean {
@@ -45,12 +44,19 @@ export function proxy(request: NextRequest) {
   if (!token || pathname === SESSION_PATH || pathname === "/login" || authenticated(request, token)) return NextResponse.next();
   if (isApi) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   // Rendered in place rather than redirected: Next rewrites a 127.0.0.1 redirect to localhost, a
-  // different cookie host. After signing in, the login page reloads the requested address.
+  // different cookie host. After signing in, the login page reloads the requested address, or goes
+  // to `next` when the browser ended up at /login itself (a client-side navigation).
+  const back = request.nextUrl.clone();
+  back.searchParams.delete("_rsc");
   const login = request.nextUrl.clone();
   login.pathname = "/login";
   login.search = "";
+  login.searchParams.set("next", back.pathname + back.search);
   return NextResponse.rewrite(login);
 }
 
-// The API, and every page except Next's own assets and public files (any path with a dot).
-export const config = { matcher: ["/api/:path*", "/((?!_next/|.*\\.).*)"] };
+// The API and every page, including dotted ones such as /assets/BRK.B. Skipped: Next's own assets
+// and static files by extension (favicon, images, fonts, and the public/report-layouts files).
+export const config = {
+  matcher: ["/api/:path*", "/((?!_next/|.*\\.(?:ico|png|jpe?g|gif|svg|webp|css|m?js|map|json|html|txt|xml|woff2?|ttf)$).*)"],
+};

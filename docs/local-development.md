@@ -34,7 +34,7 @@ Create a run from the asset research UI or `POST /api/assets/:assetId/research-r
 curl -X POST -H 'Sec-Fetch-Site: same-origin' http://127.0.0.1:3000/api/research-runs/$RUN_ID/run-system-pipeline
 ```
 
-To require a token, set `RESEARCH_OS_API_TOKEN` in `.env.local` (for example `openssl rand -hex 32`) and restart the dev server. Every page then shows the sign-in form until you enter the token, which sets an HttpOnly `research_os_session` cookie for 30 days (`DELETE /api/session` clears it). Other clients send the token as a bearer header, plus the same-origin header on writes:
+To require a token, set `RESEARCH_OS_API_TOKEN` in `.env.local` (for example `openssl rand -hex 32`) and restart the dev server. Every page, and every `/api/*` route, then needs the token. Only Next's own `/_next/*` assets and static files such as `favicon.ico` and `public/report-layouts/*` load without it. A page shows the sign-in form until you enter the token, then returns to the page you asked for. Signing in sets an HttpOnly `research_os_session` cookie for 30 days (`DELETE /api/session` clears it). Behind a TLS proxy on a host listed in `RESEARCH_APP_ALLOWED_HOSTS`, `X-Forwarded-Proto: https` makes the cookie `Secure`. Other clients send the token as a bearer header, plus the same-origin header on writes:
 
 ```bash
 curl -X POST -H "Authorization: Bearer $RESEARCH_OS_API_TOKEN" -H 'Sec-Fetch-Site: same-origin' \
