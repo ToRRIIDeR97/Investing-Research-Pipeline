@@ -26,6 +26,8 @@ const metricNames:Record<string,string>={
 const exact:Record<string,string>={
   foa_advertising_revenue_growth:'Family of Apps revenue growth',
   capex_purchases_of_property_and_equipment:'Capital expenditure',
+  capex_intensity:'Capital expenditure as a share of revenue',capex_to_revenue:'Capital expenditure as a share of revenue',
+  da_to_revenue:'Depreciation as a share of revenue',
   eu_dma_regulatory_revenue_haircut:'EU Digital Markets Act revenue impact',
   fcff_dcf_terminal_multiple:'Discounted free cash flow with an exit multiple',
   fcff_dcf_perpetuity:'Discounted free cash flow with perpetual growth',
@@ -38,7 +40,7 @@ const tokens:Record<string,string>={
   foa:'Family of Apps',rl:'Reality Labs',eu:'EU',us:'US',uk:'UK',dma:'Digital Markets Act',capex:'capital expenditure',opex:'operating costs',
   fcf:'free cash flow',fcff:'free cash flow',fcfe:'free cash flow to equity',dcf:'discounted cash flow',nopat:'after-tax operating profit',
   ebit:'operating profit',ebitda:'EBITDA',sbc:'stock-based compensation',yoy:'year over year',qoq:'quarter over quarter',
-  arpu:'ARPU',dau:'daily active users',mau:'monthly active users',gaap:'GAAP',ai:'AI',tam:'addressable market',pp:'percentage points',
+  arpu:'ARPU',arpp:'average revenue per person',dap:'daily active people',da:'depreciation',ev:'EV',nav:'NAV',dau:'daily active users',mau:'monthly active users',gaap:'GAAP',ai:'AI',tam:'addressable market',pp:'percentage points',
 };
 
 const snake=(key:string)=>String(key??'').replace(/^us_gaap_/,'').replace(/([a-z0-9])([A-Z])/g,'$1_$2').toLowerCase();
@@ -57,7 +59,7 @@ export function plainLabel(key:unknown,properNames:string[]=[]):string {
   const names=new Map(properNames.filter(Boolean).map(n=>[slug(n),n]));
   for(const [s] of names)k=`_${k}_`.replace(new RegExp(`_${s}_`,'g'),`_${s.replace(/_/g,'~')}_`).slice(1,-1);
   const words=k.split(/_+/).filter(w=>w&&!/^fy\d{2,4}$/.test(w)).map(w=>w.includes('~')?names.get(w.replace(/~/g,'_'))!:tokens[w]??w);
-  return sentence(words.join(' ').replace(/\s+/g,' ').trim());
+  return sentence(words.join(' ').replace(/\s+/g,' ').replace(/\b(non|pre) (?=[a-z])/g,'$1-').trim());
 }
 
 /** Known metric name for a key, ignoring GAAP/non-GAAP suffixes; null when unknown. */
