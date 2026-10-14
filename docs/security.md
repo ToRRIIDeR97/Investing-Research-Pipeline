@@ -25,7 +25,7 @@ This document was verified against source on 2026-10-05, and the controls change
 
 | Zone | Contents | Trust |
 | --- | --- | --- |
-| Z0 Local clients | Browser, curl, any local process that can reach the Next.js port (bound to `127.0.0.1`) | Untrusted: 59 handlers in 52 `route.ts` files have no authentication. `src/middleware.ts` refuses foreign Host names and cross-site writes |
+| Z0 Local clients | Browser, curl, any local process that can reach the Next.js port (bound to `127.0.0.1`) | Untrusted: 59 handlers in 52 `route.ts` files have no authentication. `src/proxy.ts` refuses foreign Host names and cross-site writes |
 | Z1 App and worker | Next.js server, research worker, agent harness; holds secrets | Trusted code |
 | Z2 Data stores | Postgres (pgvector image), `./storage` | Trusted; reached by Z1 only (by design, not enforced beyond the DB password) |
 | Z3 External hosts | LLM endpoint, embedding endpoint, configured search endpoint or DuckDuckGo/Bing HTML, discovered URLs, SEC, FRED, Yahoo, Stooq, World Bank, EIA, FDIC, Coinbase, blockchain.info | Their output is untrusted data |
@@ -34,7 +34,7 @@ This document was verified against source on 2026-10-05, and the controls change
 
 ## Authentication and authorization
 
-- **Observed:** there are no accounts, sessions or tokens in `src/app/api/**`. `src/middleware.ts` runs on every `/api/*` request and answers 403 to:
+- **Observed:** there are no accounts, sessions or tokens in `src/app/api/**`. `src/proxy.ts` runs on every `/api/*` request and answers 403 to:
   - a Host other than `localhost`, `127.0.0.1`, `[::1]` or a name in `RESEARCH_APP_ALLOWED_HOSTS`, which stops DNS rebinding;
   - a `POST`, `PATCH`, `PUT` or `DELETE` unless `Sec-Fetch-Site` is `same-origin` or `none`, or `Origin` equals the app's own origin, which stops cross-site writes from the user's browser.
 
@@ -83,12 +83,9 @@ This document was verified against source on 2026-10-05, and the controls change
 ## Dependency risk
 
 - Install with `npm ci` from `package-lock.json`.
-- On 2026-10-11 `npm audit fix` (no `--force`) moved `next` to 15.5.27, `sharp` to 0.35.5, `postcss` to 8.5.29, the nested `nanoid` copies to 3.3.20, and `js-yaml`, `brace-expansion` and `source-map-js` to patched versions ([#12](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/12)). What remains needs a breaking upgrade:
-  - `drizzle-orm` < 0.45.2 (high, identifier escaping): `^0.44.2` excludes 0.45;
-  - the `postcss` copy bundled in `next` (high): fixed only in `next` 16;
-  - `esbuild` under `drizzle-kit`'s `@esbuild-kit` loader (moderate, dev server only) and `braces` under `eslint-config-next` (high, dev only): the only offered fixes are downgrades.
-
-  The `postcss` bundled in `next` compiles only the repository's own CSS at build time.
+- [#12](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/12): `npm audit fix` on 2026-10-11 patched `sharp`, `postcss`, `nanoid`, `js-yaml`, `brace-expansion` and `source-map-js`. On 2026-10-14 `next` (and `eslint-config-next`) moved to 16.4.0, which bundles a patched `postcss`, and `drizzle-orm` to 0.45.4 (identifier escaping fix). Next 16 renamed the `/api/*` guard file convention from `middleware` to `proxy` (`src/proxy.ts`), which runs in the Node.js runtime. `npm audit --omit=dev` reports nothing. Dev-only advisories remain, with no non-downgrade fix:
+  - `esbuild` under `drizzle-kit`'s `@esbuild-kit` loader (moderate, dev server only); `drizzle-kit` 0.31.11 is the latest;
+  - `braces` (high, no patched release) under `eslint-config-next`, via `@next/eslint-plugin-next` → `fast-glob` → `micromatch`. ESLint isn't configured yet ([#19](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/19)), so nothing runs this code.
 - `python/requirements.txt` lists pandas, numpy, yfinance and docling (`>=2.0,<3`, the API `docling_parser.py` uses) with ranges and no hashes ([#21](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/21)).
 
 ## Checks

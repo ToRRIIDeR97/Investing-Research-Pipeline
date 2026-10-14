@@ -13,7 +13,7 @@ export async function GET(_:NextRequest,{params}:{params:Promise<{id:string}>}){
 }
 export async function POST(request:NextRequest,{params}:{params:Promise<{id:string}>}){
  const sql=postgres(process.env.DATABASE_URL!);try{
-   // Compared with the Host header, as src/middleware.ts does: NextURL rewrites 127.0.0.1 to localhost,
+   // Compared with the Host header, as src/proxy.ts does: NextURL rewrites 127.0.0.1 to localhost,
    // so nextUrl.origin refused the app's own http://127.0.0.1 origin.
    const origin=request.headers.get('origin');
    if(origin&&origin!==`${request.nextUrl.protocol}//${request.headers.get('host')}`)throw new ApiError('Cross-origin chat requests are not allowed.',403);
