@@ -244,9 +244,9 @@ s.text(16, 722, "Source: handlers/asset-valuation.ts, valuation/engine.ts, handl
 s.save(P("activity-valuation.svg"))
 
 # ---------------------------------------------------------------- state machines
-s = Svg(1100, 740, "Run, stage and job lifecycles — UML state machine view",
-        "State machines for research_run_jobs, research_runs and research_stages with transition guards from run-queue.ts, orchestrator.ts, pipeline-runner.ts and team.ts, "
-        "including the pause for a team-request re-run above the automatic limit.")
+s = Svg(1100, 960, "Run, stage, job and artifact lifecycles — UML state machine view",
+        "State machines for research_run_jobs, research_runs, research_stages and research_artifacts with transition guards from run-queue.ts, orchestrator.ts, pipeline-runner.ts, "
+        "team.ts and the artifact writers, including the pause for a team-request re-run above the automatic limit.")
 s.zone(20, 45, 1060, 160, "research_run_jobs (run-queue.ts)", "#b07a1f")
 s.initial(55, 125)
 s.state(100, 108, 120, 34, "queued", "worker")
@@ -315,6 +315,22 @@ s.text(760, 670, "max_retries per stage: 0–3 (stages.ts)", 11, fill="#555")
 s.text(760, 685, "owner requires_rerun: stage + dependents → pending", 11, fill="#555")
 s.text(760, 700, "(auto once ≤ 6 analysis stages, else approved);", 11, fill="#555")
 s.text(760, 715, "ai_reviewer waiting_for_human until the decision", 11, fill="#555")
+# Artifact
+s.zone(20, 740, 1060, 205, "research_artifacts (artifacts/repository.ts upsertArtifact, reporting/store.ts saveReportArtifact)", "#2f6f9f")
+s.initial(55, 800)
+s.state(250, 783, 130, 34, "validated", "lib")
+s.state(240, 860, 150, 34, "needs_more_work", "warn")
+s.state(580, 783, 120, 34, "accepted", "api")
+s.state(900, 820, 130, 34, "superseded", "plain")
+s.line([(62, 800), (250, 800)], "save [content contract]", lx=155, ly=792)
+s.line([(315, 817), (315, 860)], "stage validators fail", lx=322, ly=843, lanchor="start")
+s.line([(380, 800), (580, 800)], "human gate approves", lx=480, ly=792)
+s.line([(700, 800), (860, 800), (860, 830), (900, 830)], "changed save", lx=780, ly=792)
+s.line([(390, 877), (860, 877), (860, 845), (900, 845)], "retry or re-run: changed save", lx=625, ly=871)
+s.text(445, 832, "plan gate: research_plan only;", 11, fill="#555")
+s.text(445, 847, "stage 22: every current validated artifact", 11, fill="#555")
+s.text(40, 918, "One current version per run, type and scope: a save with changed content or status inserts version n+1 and supersedes the rest;", 11, fill="#555")
+s.text(40, 933, "an unchanged save keeps the row. Artifacts saved after stage 22 (export, refresh schedule, chat) stay validated.", 11, fill="#555")
 s.save(P("state-machines.svg"))
 
 # ---------------------------------------------------------------- sequence

@@ -205,7 +205,8 @@ Company genesis follows the same rule for citations: IDs still unknown after its
 ## Invariants
 
 - PostgreSQL owns all research state. Files under `storage/` are referenced from database rows by path and hash.
-- Agents propose and validators accept. Model calls have no tool execution. Output passes structured-output parsing, then stage contracts and validators, before artifacts are `validated`.
+- Agents propose and validators accept. Model calls have no tool execution. Output passes structured-output parsing, then stage contracts and validators, before artifacts are `validated`. A human gate moves what it approved to `accepted`: plan approval accepts `research_plan`, and stage-22 approval accepts every current artifact (the approved report and its inputs). Artifacts saved after that gate (export, refresh schedule, chat) stay `validated`.
+- A run has one current artifact per type and scope. A save with changed content or status adds the next version and marks the earlier ones `superseded`, including on stage retries and re-runs; an unchanged save keeps the current row. Readers take `validated` or `accepted` and never `superseded`.
 - Execution goes only through `research_run_jobs`, which are owner-guarded by `lease_owner`, and through the per-run advisory lock in `runResearchPipeline`. The API never runs the pipeline in-process.
 - `cancelled` and `completed` runs are terminal: enqueue refuses them and `failRun` never overwrites a cancellation.
 - The 24 stages, their retries (0–3), budgets and `failureState` come from `STAGE_CONFIGS`. Dependencies come from `STAGE_DEPENDENCIES`. Human gates sit at stage 4 (research plan) and stage 22 (human review).
@@ -217,6 +218,5 @@ Company genesis follows the same rule for citations: IDs still unknown after its
 Verified in source on 2026-10-05 and tracked as GitHub issues:
 
 - One shared operator, no per-user accounts ([#8](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/8)). With `RESEARCH_OS_API_TOKEN` unset (the default) any local process can call the API; with it set, every caller needs the token, and anyone holding it has full access, including all saved charts.
-- `accepted` artifacts are never written ([#14](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/14)).
 - Only model calls observe a run's abort signal. A shutdown or cancellation waits for other in-flight work, such as source fetches, to finish.
 - Security findings are listed in [security.md](security.md).
