@@ -162,7 +162,7 @@ describe("research run harness v3 integration (Component WP0)", { skip: process.
     await createStagesForRun(runId);
 
     // 1. Run the pipeline - it should stop at research_plan gate (requiresHumanApproval = true)
-    let state = await runSystemResearchPipeline(runId);
+    const state = await runSystemResearchPipeline(runId);
     assert.equal(state.status, "waiting_for_human");
 
     const [planStage] = await sql`

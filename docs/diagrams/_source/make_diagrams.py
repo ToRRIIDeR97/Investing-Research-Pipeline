@@ -429,8 +429,8 @@ s.save(P("trust-boundaries.svg"))
 
 # ---------------------------------------------------------------- dev workflow
 s = Svg(1100, 200, "Development workflow",
-        "Feature branch, implement, local checks (type-check, unit tests, build), update owning docs when boundaries change, PR, user approval, merge to main, delete branch.")
-steps = [("Feature branch", "off main"), ("Implement", "+ tests"), ("Local checks", "tsc · test:unit · build"),
+        "Feature branch, implement, local checks (lint, type-check, unit tests, build), update owning docs when boundaries change, PR, user approval, merge to main, delete branch.")
+steps = [("Feature branch", "off main"), ("Implement", "+ tests"), ("Local checks", "lint · tsc · unit · build"),
          ("Docs if needed", "boundary/flow change"), ("Pull request", "→ main"), ("User approval", "explicit"),
          ("Merge + clean up", "delete branch, prune")]
 x = 20
