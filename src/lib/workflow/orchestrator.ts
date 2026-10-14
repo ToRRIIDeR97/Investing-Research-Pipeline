@@ -223,7 +223,7 @@ export async function advanceStage(
       const limit = Number(currentStage.budget_limit_usd);
       if (spent > limit) {
         // Budget exceeded — fail based on failure_state
-        let failureState = config?.failureState || "skip_and_continue";
+        const failureState = config?.failureState || "skip_and_continue";
         if (failureState === "fail_run") {
           await failRun(runId, `Stage "${currentStage.stage_key}" exceeded budget: $${spent.toFixed(2)} > $${limit.toFixed(2)}`);
           return { success: false, action: "fail_run", error: "Budget exceeded" };
@@ -339,7 +339,7 @@ export async function advanceStage(
       }
 
       // Retries exhausted — handle based on failure_state
-      let failureState = config?.failureState || "skip_and_continue";
+      const failureState = config?.failureState || "skip_and_continue";
 
       if (failureState === "fail_run") {
         await failRun(runId, `Stage "${currentStage.stage_key}" failed after ${maxRetries} retries: ${validation.errors.join("; ")}`);
