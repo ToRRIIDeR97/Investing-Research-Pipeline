@@ -44,6 +44,8 @@ const CONTRADICTION_SHAPE = "Each contradictions entry is {claim_texts: [two cla
  * A founder claim must affirm something: claims that only report the founder as missing, or that
  * describe the supplied excerpt, do not count.
  */
+/** The founder check's error; a retry on it alone reruns only the founder pass (see advanceStage). */
+export const FOUNDER_GAP_ERROR = "No accepted claim affirms the founder or company origin (absence statements and claims about the supplied excerpt do not count)";
 export const FOUNDER_TERMS = /founder|founded|founding|co-?founded|started by|origin|motivat|professor|mission|lab to the market/i;
 export const ABSENCE_STATEMENT = /\b(?:does|do|did)\s+not\b|\bdoesn['’]t\b|\bcannot\b|\bnot\s+(?:name|named|identif\w*|state[ds]?|disclos\w*|mention\w*|provide[ds]?|support\w*|present|available|known)\b|\bno\s+(?:founder|founding|information|evidence|mention|narrative)\b|\b(?:is|are|remains?)\s+(?:unknown|unclear|absent|missing)\b/i;
 
@@ -302,6 +304,7 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
         evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
       }
 
+      let founderPassTaskKey: string | undefined;
       if (!hasFounderOriginClaim(evidenceOutput)) {
         // Only passages that answered a founder need (founder-history documents first, then filings and
         // investor material); never a founder document's opening pages.
@@ -312,11 +315,12 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
             maxBytes: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_BYTES || 36_000),
           });
           const roleBatch = { ...founderBatch, id: "founder-origin" };
+          founderPassTaskKey = `source-reader:role:founder-origin:${sourceReaderBatchFingerprint(roleBatch)}`;
           const founderOutput = await callResearchAgent<Record<string, unknown>>({
             sql,
             ctx,
             stageKey: "evidence_extraction",
-            taskKey: `source-reader:role:founder-origin:${sourceReaderBatchFingerprint(roleBatch)}`,
+            taskKey: founderPassTaskKey,
             taskType: "evidence_extraction_role_gap",
             agentName: "source-reader",
             modelTier: "cheap",
@@ -372,6 +376,7 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       return {
         status: "success",
         extractedClaimsCount: persistedEvidenceCount,
+        founderPassTaskKey,
       };
     } finally {
       await sql.end();
@@ -401,9 +406,12 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
         return FOUNDER_TERMS.test(text) && !ABSENCE_STATEMENT.test(text) && !SOURCE_META_CLAIM.test(text);
       }).length }];
       if (Number(founderRows[0]?.cnt || 0) === 0) {
-        errors.push("No accepted claim affirms the founder or company origin (absence statements and claims about the supplied excerpt do not count)");
+        errors.push(FOUNDER_GAP_ERROR);
       }
-      return makeValidationResult(errors);
+      // The orchestrator narrows a founder-gap retry to this attempt's founder pass only.
+      const result: ValidationResult = makeValidationResult(errors);
+      if (typeof output?.founderPassTaskKey === "string") result.founderPassTaskKey = output.founderPassTaskKey;
+      return result;
     } finally {
       await sql.end();
     }

@@ -8,9 +8,10 @@ import { ResearchAgentRunError } from "../src/lib/agent-harness/errors";
 import { assertModelBudgetAvailable, recordModelCall } from "../src/lib/agents/model-calls";
 import { STAGE_HANDLERS } from "../src/lib/research/handlers";
 import { runResearchPipeline } from "../src/lib/research/pipeline-runner";
-import { completeV3Task, createV3Task, latestV3TaskOutput, type ResearchRunContext, type StageHandler } from "../src/lib/research/run-context";
+import { completeV3Task, createV3Task, latestV3TaskOutput, type ResearchRunContext, type StageHandler, type ValidationResult } from "../src/lib/research/run-context";
+import { FOUNDER_GAP_ERROR } from "../src/lib/research/handlers/evidence-extraction";
 import { claimNextResearchRun, enqueueResearchRun, reconcileOrphanedResearchRuns } from "../src/lib/research/run-queue";
-import { cancelRun, createStagesForRun, failRun, pauseForHumanReview, resumeResearchRun } from "../src/lib/workflow/orchestrator";
+import { advanceStage, cancelRun, createStagesForRun, failRun, pauseForHumanReview, resumeResearchRun } from "../src/lib/workflow/orchestrator";
 import { processNextResearchRunJob } from "../src/workers/research-worker";
 import { POST as cancelRoute } from "../src/app/api/research-runs/[id]/cancel/route";
 import { POST as reviewRoute } from "../src/app/api/research-runs/[id]/review/route";
@@ -160,6 +161,72 @@ describe("run lifecycle reliability", { skip: process.env.RUN_DB_INTEGRATION !==
       assert.deepEqual(await latestV3TaskOutput(sql, runId, "intake:batch-1"), { batch: 1 });
     });
   }
+
+  /** A running run whose stages before the financial and business branches are done (skipped, so no team briefs run). */
+  async function runAtBranches() {
+    const runId = await newRun("running");
+    await sql`UPDATE research_stages SET status = 'skipped' WHERE research_run_id = ${runId}
+      AND stage_key IN ('intake', 'asset_identity', 'archetype_composition', 'research_plan', 'source_discovery', 'source_ingestion', 'evidence_extraction')`;
+    return runId;
+  }
+  const invalid = async (): Promise<ValidationResult> => ({ valid: false, errors: ["stub output rejected"], warnings: [], checkedAt: new Date().toISOString() });
+  async function withHandlers<T>(stubs: Record<string, StageHandler>, run: () => Promise<T>) {
+    const saved = Object.fromEntries(Object.keys(stubs).map((key) => [key, STAGE_HANDLERS[key]]));
+    Object.assign(STAGE_HANDLERS, stubs);
+    try { return await run(); } finally { Object.assign(STAGE_HANDLERS, saved); }
+  }
+
+  test("P7: a stage that settles is advanced and redispatched while a slow sibling is still in flight", { timeout: 30_000 }, async () => {
+    const runId = await runAtBranches();
+    let genesisCalls = 0;
+    let seenBySlowSibling = 0;
+    const result = await withHandlers({
+      company_genesis: { stageKey: "company_genesis", execute: async () => { genesisCalls += 1; return {}; }, validate: invalid },
+      historical_record: { stageKey: "historical_record", execute: async () => {
+        // A lockstep loop could not call company_genesis again until this stage returns.
+        for (let waited = 0; genesisCalls < 2 && waited < 5_000; waited += 25) await new Promise((r) => setTimeout(r, 25));
+        seenBySlowSibling = genesisCalls;
+        throw fatal();
+      } },
+    }, () => runResearchPipeline(runId));
+    assert.ok(seenBySlowSibling >= 2, `company_genesis ran ${seenBySlowSibling} time(s) while historical_record was in flight`);
+    assert.ok(["needs_more_work", "failed"].includes(result.status), result.failure_reason || result.notes.join("\n"));
+  });
+
+  /** A running evidence_extraction stage with a completed batch and founder pass. */
+  async function evidenceStageWithFounderPass() {
+    const runId = await newRun("running");
+    await sql`UPDATE research_stages SET status = 'skipped' WHERE research_run_id = ${runId}
+      AND stage_key IN ('intake', 'asset_identity', 'archetype_composition', 'research_plan', 'source_discovery', 'source_ingestion')`;
+    await sql`UPDATE research_stages SET status = 'running' WHERE research_run_id = ${runId} AND stage_key = 'evidence_extraction'`;
+    const complete = async (key: string, type: string) => {
+      const task = await createV3Task(sql, runId, "evidence_extraction", key, type, "source-reader");
+      await completeV3Task(sql, task.id, { evidence_claims: [] });
+    };
+    await complete("source-reader:batch:b1", "evidence_extraction_batch");
+    await complete("source-reader:role:founder-origin", "evidence_extraction_role_gap");
+    return runId;
+  }
+
+  test("RM6: a founder-gap-only evidence_extraction retry invalidates only the founder pass", async () => {
+    const runId = await evidenceStageWithFounderPass();
+    const founderGap = { valid: false, errors: [FOUNDER_GAP_ERROR], warnings: [], checkedAt: new Date().toISOString(),
+      founderPassTaskKey: "source-reader:role:founder-origin" };
+    assert.equal((await advanceStage(runId, founderGap, { stageKey: "evidence_extraction", deferNext: true })).action, "retry");
+    assert.deepEqual(await taskStates(runId), [["source-reader:batch:b1", null], ["source-reader:role:founder-origin", "invalid"]]);
+
+    // No founder pass left to rerun, or another error: every completed task is invalidated as before.
+    assert.equal((await advanceStage(runId, founderGap, { stageKey: "evidence_extraction", deferNext: true })).action, "retry");
+    assert.deepEqual(await taskStates(runId), [["source-reader:batch:b1", "invalid"], ["source-reader:role:founder-origin", "invalid"]]);
+  });
+
+  test("RM6: a founder-gap retry whose attempt skipped the founder pass ignores an earlier attempt's pass", async () => {
+    const runId = await evidenceStageWithFounderPass();
+    // This attempt ran no founder pass, so the earlier attempt's valid pass is not what failed.
+    const founderGap = { valid: false, errors: [FOUNDER_GAP_ERROR], warnings: [], checkedAt: new Date().toISOString() };
+    assert.equal((await advanceStage(runId, founderGap, { stageKey: "evidence_extraction", deferNext: true })).action, "retry");
+    assert.deepEqual(await taskStates(runId), [["source-reader:batch:b1", "invalid"], ["source-reader:role:founder-origin", "invalid"]]);
+  });
 
   test("RO5: failRun and pauseForHumanReview change nothing when one of their writes fails", async () => {
     const runId = await newRun("running");

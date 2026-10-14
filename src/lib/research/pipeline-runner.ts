@@ -151,18 +151,62 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
         // Specialists paused on document requests rerun once the collector has served them.
         if (await processSourceRequests(sql, context)) continue;
         if (await processResearchRequests(sql, context)) continue;
-        // Drain all in-flight work before any failure, replay, or gate transition.
-        const results = await Promise.allSettled(stages.map(async key => {
-          const handler = STAGE_HANDLERS[key];
-          if (!handler) throw new Error(`No stage handler for ${key}`);
-          const output = await handler.execute(context);
-          return handler.validate?.(context, output);
-        }));
-        const { stop, failures } = await settleBatch(stages, results, (stageKey, value) =>
-          advanceStage(runId, value, { stageKey, deferNext: true }), notes);
+        // Dataflow: each stage is advanced when it settles, and a clean completion starts its newly ready
+        // dependents at once. Any failure, pause, request or skip stops new launches; in-flight work drains
+        // before any failure, replay, request or gate transition.
+        type Settled = { key: string; result: PromiseSettledResult<ValidationResult | undefined> };
+        const inFlight = new Map<string, Promise<Settled>>();
+        const launch = (keys: string[], ctx: typeof context) => {
+          for (const key of keys) inFlight.set(key, (async () => {
+            const handler = STAGE_HANDLERS[key];
+            if (!handler) throw new Error(`No stage handler for ${key}`);
+            const output = await handler.execute(ctx);
+            return handler.validate?.(ctx, output);
+          })().then((value): Settled => ({ key, result: { status: "fulfilled", value } }),
+            (reason): Settled => ({ key, result: { status: "rejected", reason } })));
+        };
+        launch(stages, context);
+        let stop = false;
+        let hold = false;
+        let loopError: unknown;
+        const failures: StageFailure[] = [];
+        while (inFlight.size) {
+          const { key, result } = await Promise.race(inFlight.values());
+          inFlight.delete(key);
+          if (stop && result.status === "fulfilled") continue;
+          let action: string | undefined;
+          try {
+            const settled = await settleBatch([key], [result], async (stageKey, value) => {
+              const outcome = await advanceStage(runId, value, { stageKey, deferNext: true });
+              action = outcome.action;
+              return outcome;
+            }, notes);
+            stop ||= settled.stop;
+            failures.push(...settled.failures);
+          } catch (error) {
+            // Never leave the loop (and release the run lock) while sibling handlers still run.
+            hold = true;
+            loopError ??= error;
+          }
+          // A retried stage stays running and is relaunched by the next claim.
+          if (action !== "continue" && action !== "retry") hold = true;
+          if (hold || stop || signal?.aborted) continue;
+          try {
+            iteration += 1;
+            if (iteration >= 191) throw new Error("Pipeline exceeded 192 stage iterations");
+            const next = (await startReadyStages(runId)).filter(stageKey => !inFlight.has(stageKey));
+            if (!next.length) continue;
+            const nextContext = { ...(await loadRunContext(sql, runId)), signal };
+            await briefs.before(nextContext, next);
+            launch(next, nextContext);
+          } catch (error) {
+            hold = true;
+            loopError ??= error;
+          }
+        }
         if (signal?.aborted) throw new ResearchRunInterrupted("Research run interrupted");
         if (failures.length) {
-          if (!stop && await retryTransientFailures(sql, runId, failures, notes, signal)) continue;
+          if (!stop && !loopError && await retryTransientFailures(sql, runId, failures, notes, signal)) continue;
           // A handler or post-check that threw rejected the stage's outputs, including ones replayed from an earlier
           // attempt (they keep their original completed_at), so a resume must call the model again. Outputs of a stage
           // stopped by the provider or the run budget stay replayable.
@@ -174,6 +218,7 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
                 AND stage_key = ANY(${rejected.map((failure) => failure.stageKey)}::text[]))`;
           throw (fatal[0] ?? failures[0]).reason;
         }
+        if (loopError) throw loopError;
         if (stop) break;
         if (iteration === 191) throw new Error("Pipeline exceeded 192 stage iterations");
       }
