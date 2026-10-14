@@ -4,6 +4,10 @@
 The generated strategy is intentionally narrow: it can define
 generate_signals(prices, params), import pandas/numpy, and return a signal
 column. Data access, artifact writing, and point-in-time checks stay here.
+
+Two phases (#11): `fetch` downloads prices with network access and runs no
+strategy code; `run` executes the strategy inside the caller's OS sandbox
+(no network, writes only to the backtest directory) on the fetched CSVs.
 """
 
 from __future__ import annotations
@@ -22,7 +26,6 @@ from typing import Any
 try:
     import numpy as np
     import pandas as pd
-    import yfinance as yf
 except ImportError as exc:
     raise SystemExit(
         "Missing Python backtest dependencies. Install with: "
@@ -58,8 +61,9 @@ def date_only(value: str | None) -> str | None:
     return parsed.date().isoformat() if parsed else None
 
 
-def rel_path(path: Path) -> str:
-    return os.path.relpath(path, Path.cwd()).replace(os.sep, "/")
+def rel_path(path: Path, storage_root: Path) -> str:
+    """Repository-relative path (storage/backtests/...). Never uses the cwd, which the sandbox can't read."""
+    return os.path.relpath(path, storage_root.parent.parent).replace(os.sep, "/")
 
 
 def normalize_prices(frame: "pd.DataFrame", symbol: str) -> "pd.DataFrame":
@@ -103,6 +107,8 @@ def download_prices(
     effective_end = end_date or cutoff_date or datetime.utcnow().date().isoformat()
     if cutoff_date and effective_end > cutoff_date:
         effective_end = cutoff_date
+
+    import yfinance as yf  # only the fetch phase, which runs no strategy code, needs the network
 
     exclusive_end = (
         datetime.fromisoformat(effective_end) + timedelta(days=1)
@@ -223,22 +229,70 @@ def compute_metrics(
     return metrics
 
 
-def run(config: dict[str, Any]) -> dict[str, Any]:
+def storage_root(config: dict[str, Any]) -> Path:
+    """Absolute storage/backtests path from the config, or the one beside this runner."""
+    default = Path(__file__).resolve().parents[2] / "storage" / "backtests"
+    return Path(config.get("storage_root") or default).resolve()
+
+
+def checked_output_dir(config: dict[str, Any]) -> Path:
     output_dir = Path(config["output_dir"]).resolve()
-    storage_root = (Path.cwd() / "storage" / "backtests").resolve()
-    if storage_root not in output_dir.parents and output_dir != storage_root:
-        raise ValueError(f"output_dir must stay under {storage_root}")
+    storage_root_dir = storage_root(config)
+    if storage_root_dir not in output_dir.parents and output_dir != storage_root_dir:
+        raise ValueError(f"output_dir must stay under {storage_root_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
+
+
+def price_paths(output_dir: Path) -> tuple[Path, Path]:
+    return output_dir / "input" / "asset_prices.csv", output_dir / "input" / "benchmark_prices.csv"
+
+
+def fetch(config: dict[str, Any]) -> None:
+    """Download asset and benchmark prices to CSV. Runs no model-written code."""
+    asset_path, benchmark_path = price_paths(checked_output_dir(config))
+    asset_path.parent.mkdir(parents=True, exist_ok=True)
+    window = (config["start_date"], config.get("end_date"), config.get("market_data_cutoff_at"))
+    download_prices(config["symbol"], *window).to_csv(asset_path)
+    if config.get("benchmark_symbol"):
+        download_prices(config["benchmark_symbol"], *window).to_csv(benchmark_path)
+
+
+def read_prices(path: Path) -> "pd.DataFrame":
+    return pd.read_csv(path, index_col=0, parse_dates=True)
+
+
+def limit_resources(config: dict[str, Any]) -> None:
+    """CPU-time, memory and file-size limits for the strategy. Memory is enforced on Linux, not on macOS."""
+    import resource
+
+    limits = {
+        "RLIMIT_CPU": int(config.get("cpu_seconds") or 120),
+        "RLIMIT_AS": int(config.get("memory_mb") or 4096) * 1024 * 1024,
+        "RLIMIT_FSIZE": 256 * 1024 * 1024,
+    }
+    for name, value in limits.items():
+        try:
+            resource.setrlimit(getattr(resource, name), (value, value))
+        except (ValueError, OSError, AttributeError):
+            pass
+
+
+def run(config: dict[str, Any], fetched: bool = False) -> dict[str, Any]:
+    output_dir = checked_output_dir(config)
+    if not fetched:
+        fetch(config)
 
     symbol = config["symbol"]
     benchmark_symbol = config.get("benchmark_symbol")
-    prices = download_prices(
-        symbol,
-        config["start_date"],
-        config.get("end_date"),
-        config.get("market_data_cutoff_at"),
-    )
+    asset_path, benchmark_path = price_paths(output_dir)
+    # Both series are read before strategy code runs, so it can't rewrite the CSVs first. It runs
+    # in this process, though, and can still reach these frames or patch the code below: the
+    # sandbox protects the host, not the integrity of the results.
+    prices = read_prices(asset_path)
+    benchmark_prices = read_prices(benchmark_path) if benchmark_symbol else None
 
+    limit_resources(config)
     generate_signals = load_strategy(Path(config["strategy_path"]).resolve())
     signals = generate_signals(prices.copy(), config.get("params") or {})
     if isinstance(signals, pd.Series):
@@ -256,13 +310,7 @@ def run(config: dict[str, Any]) -> dict[str, Any]:
     equity = initial_capital * (1.0 + strategy_returns).cumprod()
 
     benchmark_equity = None
-    if benchmark_symbol:
-        benchmark_prices = download_prices(
-            benchmark_symbol,
-            config["start_date"],
-            config.get("end_date"),
-            config.get("market_data_cutoff_at"),
-        )
+    if benchmark_prices is not None:
         benchmark_close = pd.to_numeric(
             benchmark_prices.get("adj_close", benchmark_prices["close"]),
             errors="coerce",
@@ -310,6 +358,7 @@ def run(config: dict[str, Any]) -> dict[str, Any]:
         }
     )
 
+    root = storage_root(config)
     metrics_path = output_dir / "metrics.json"
     equity_path = output_dir / "equity_curve.csv"
     trades_path = output_dir / "trades.csv"
@@ -335,28 +384,28 @@ def run(config: dict[str, Any]) -> dict[str, Any]:
         {
             "artifact_type": "metrics",
             "title": "metrics.json",
-            "storage_path": rel_path(metrics_path),
+            "storage_path": rel_path(metrics_path, root),
             "mime_type": "application/json",
             "metadata_json": {},
         },
         {
             "artifact_type": "equity_curve",
             "title": "equity_curve.csv",
-            "storage_path": rel_path(equity_path),
+            "storage_path": rel_path(equity_path, root),
             "mime_type": "text/csv",
             "metadata_json": {"rows": len(equity_frame)},
         },
         {
             "artifact_type": "trades",
             "title": "trades.csv",
-            "storage_path": rel_path(trades_path),
+            "storage_path": rel_path(trades_path, root),
             "mime_type": "text/csv",
             "metadata_json": {"rows": len(trades)},
         },
         {
             "artifact_type": "runner_log",
             "title": "runner.log",
-            "storage_path": rel_path(log_path),
+            "storage_path": rel_path(log_path, root),
             "mime_type": "text/plain",
             "metadata_json": {},
         },
@@ -366,15 +415,20 @@ def run(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print("Usage: run_backtest.py <runner-input.json>", file=sys.stderr)
+    args = sys.argv[1:]
+    mode = args.pop(0) if len(args) == 2 and args[0] in ("fetch", "run") else "all"
+    if len(args) != 1:
+        print("Usage: run_backtest.py [fetch|run] <runner-input.json>", file=sys.stderr)
         return 2
 
-    config_path = Path(sys.argv[1])
+    config_path = Path(args[0])
     config = json.loads(config_path.read_text(encoding="utf-8"))
 
     try:
-        print(json.dumps(run(config), separators=(",", ":")))
+        if mode == "fetch":
+            fetch(config)
+        else:
+            print(json.dumps(run(config, fetched=mode == "run"), separators=(",", ":")))
         return 0
     except Exception as exc:
         output_dir = Path(config.get("output_dir", ".")).resolve()

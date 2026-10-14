@@ -16,7 +16,7 @@ DATABASE_URL=postgresql://research_os:research_os_dev@localhost:5432/research_os
 
 Compose publishes Postgres on `127.0.0.1:5432` only. Its password comes from `POSTGRES_PASSWORD` in the shell or `.env` and defaults to `research_os_dev`; change `DATABASE_URL` to match. `npm run dev` and `npm run start` bind to `127.0.0.1`.
 
-Install the Python packages once (`python3 -m pip install -r python/requirements.txt`): backtests need pandas, numpy and yfinance, and uploads are parsed with Docling.
+Install the Python packages once (`python3 -m pip install -r python/requirements.txt`): backtests need pandas, numpy and yfinance, and uploads are parsed with Docling. Model-written backtest code runs under `sandbox-exec` on macOS (built in) or `bwrap` on Linux (install `bubblewrap`); without one the backtest task fails unless `BACKTEST_SANDBOX=off` is set.
 
 The worker claims queued `research_run_jobs` atomically, renews its lease every 10 s, and records its heartbeat. It keeps polling when the database is briefly unreachable. Ctrl+C (SIGINT) or SIGTERM aborts the current model call and puts the job back in the queue without using an attempt; the next worker reruns the interrupted stage. A second Ctrl+C exits at once, and the job then waits for its 5-minute lease to expire. Use `--once` for a single queued job:
 
