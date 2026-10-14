@@ -51,7 +51,7 @@ test("the mock provider places similar wording closer than unrelated wording", a
   assert.equal(cosineSimilarity([1, 0], [1, 0, 0]), 0, "vectors of different length are not compared");
 });
 
-async function fixture(sql: postgres.Sql) {
+async function fixture(sql: postgres.Sql, extraSections: string[] = [], regions = 6) {
   const assetId = randomUUID(), runId = randomUUID();
   const ctx = { runId, runType: "deep_dive", assetId, assetName: "Graph Fixture Co", assetSlug: `graph-${assetId.slice(0, 8)}`, symbol: "GRPH",
     profileId: "", profileKey: "", requiredModules: [], requiredLenses: [], marketDataCutoffAt: null, pipelineVersion: 3 };
@@ -61,16 +61,16 @@ async function fixture(sql: postgres.Sql) {
   for (const [order, stage] of STAGE_CONFIGS.entries()) {
     await sql`INSERT INTO research_stages (research_run_id, stage_key, stage_order, status) VALUES (${runId}, ${stage.key}, ${order}, 'completed')`;
   }
-  const sections = Array.from({ length: 6 }, (_, i) => `Section ${i + 1}\n\nMerchant payments grew in region ${i + 1} for ${runId}.`);
-  sections.push("Archive\n\nA lighthouse keeper logged the weather every night.");
+  const sections = Array.from({ length: regions }, (_, i) => `Section ${i + 1}\n\nMerchant payments grew in region ${i + 1} for ${runId}.`);
+  sections.push("Archive\n\nA lighthouse keeper logged the weather every night.", ...extraSections);
   const [stored] = await storeDiscoveredSources(sql, ctx as any, [{ sourceType: "web_industry_primary", title: "Regional review", publisher: "graph.example",
     url: `https://graph.example/${randomUUID()}`, content: sections.join("\n\n"), mimeType: "text/plain", qualityScore: "0.9", publishedAt: "2026-09-01",
     periodEnd: null, metadata: { source_role: "industry_primary", system_generated: true }, chunkTitle: "Regional review" }] as any);
-  const chunks = await sql`SELECT dc.id, dc.section_title FROM document_chunks dc JOIN document_parses dp ON dp.id = dc.document_parse_id
+  const chunks = await sql`SELECT dc.id, dc.section_title, dc.chunk_index FROM document_chunks dc JOIN document_parses dp ON dp.id = dc.document_parse_id
     WHERE dc.source_document_id = ${stored.sourceId} AND dp.parser_name = 'research-memory'`;
-  const chunk = (title: string) => String(chunks.find(c => c.section_title === title)!.id);
-  const claim = (text: string, title: string) => ({ claim_text: text, claim_type: "industry", claim_category: "fact", confidence: 0.8,
-    source_id: stored.sourceId, document_chunk_id: chunk(title) });
+  const chunk = (title: string, nth = 0) => String(chunks.filter(c => c.section_title === title).sort((a, b) => a.chunk_index - b.chunk_index)[nth].id);
+  const claim = (text: string, title: string, nth = 0) => ({ claim_text: text, claim_type: "industry", claim_category: "fact", confidence: 0.8,
+    source_id: stored.sourceId, document_chunk_id: chunk(title, nth) });
   const idOf = async (text: string) => String((await sql`SELECT id FROM evidence_claims WHERE research_run_id = ${runId} AND claim_text = ${text}`)[0].id);
   const cleanup = async () => {
     for (let pass = 0; pass < 4; pass++) {
@@ -119,6 +119,30 @@ test("graph-only passages keep a slot when keyword matches fill the limit", { sk
     assert.equal(passages.length, 4);
     assert.deepEqual(passages.map(p => p.matched), ["keyword", "keyword", "keyword", "graph"]);
     assert.equal(passages.at(-1)!.section_path.at(-1), "Archive");
+  } finally { await f.cleanup(); await sql.end(); }
+});
+
+test("graph-only passages take a quarter of the slots, most-cited first, one copy per note", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!);
+  // The same note restated with another year: only digits differ, so it is one note.
+  const logbook = (year: number) => `In ${year} the lighthouse keeper wrote down the wind, the tide and every passing ship in the logbook each evening.`;
+  const f = await fixture(sql, [`Logbook\n\n${logbook(2024)}`, "Harbour\n\nThe harbour master counted fishing boats returning before the storm.",
+    "Tides\n\nSpring tides flooded the old quay twice that winter.", `Logbook\n\n${logbook(2025)}`], 10);
+  try {
+    // Citations per passage: Archive 1, Harbour 2, Tides 3, the first Logbook 3 and its restated copy 4.
+    const cites: Array<[string, number, number]> = [["Archive", 0, 1], ["Harbour", 0, 2], ["Tides", 0, 3], ["Logbook", 0, 3], ["Logbook", 1, 4]];
+    const claims = cites.flatMap(([title, nth, count]) => Array.from({ length: count }, (_, i) => f.claim(`${title} copy ${"ab"[nth]} fact ${"abcd"[i]}.`, title, nth)));
+    await persistEvidence(sql, f.ctx as any, [f.stored], { evidence_claims: claims });
+    const seedClaimIds = await Promise.all(claims.map(c => f.idOf(c.claim_text)));
+    const { passages } = await retrievePassages(sql, { runId: f.ctx.runId, need: { key: "payments", query: "merchant payments region", seedClaimIds } });
+    assert.deepEqual(passages.map(p => p.matched), [...Array(6).fill("keyword"), "graph", "graph"], "ten keyword matches keep six of eight slots");
+    const graph = passages.filter(p => p.matched === "graph");
+    assert.deepEqual(graph.map(p => p.section_path.at(-1)), ["Logbook", "Tides"], "the copy holding four citations, then Tides; the other Logbook copy is skipped");
+    assert.equal(graph[0].passage_id, f.claim("", "Logbook", 1).document_chunk_id);
+
+    const short = await retrievePassages(sql, { runId: f.ctx.runId, need: { key: "payments", query: "merchant payments region", seedClaimIds, maxPassages: 14 } });
+    assert.deepEqual(short.passages.filter(p => p.matched === "graph").map(p => p.section_path.at(-1)), ["Logbook", "Tides", "Harbour", "Archive"],
+      "slots keyword matches leave empty go to graph passages");
   } finally { await f.cleanup(); await sql.end(); }
 });
 

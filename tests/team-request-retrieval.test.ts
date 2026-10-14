@@ -1,10 +1,12 @@
 // Team requests retrieve their passages once, and search first when the question names a period the run lacks (RMEM9).
+// The owner's own artifacts seed graph retrieval, so passages holding the claims they cite reach its packet (RMEM11).
 import test from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { processResearchRequests } from "../src/lib/research/team";
-import { storeDiscoveredSources } from "../src/lib/research/sources/corpus";
+import { persistEvidence, storeDiscoveredSources } from "../src/lib/research/sources/corpus";
+import { saveReportArtifact } from "../src/lib/research/reporting/store";
 import { cleanup, createRun, loadEnv, saveBatch, scriptModel, skipDb as skip, stageCtx } from "../Implementations/research-request-routing/acceptance/fixtures";
 
 loadEnv();
@@ -49,5 +51,40 @@ test("a team request retrieves its passages once, and searches first when it nam
     const searched = await sql`SELECT attempt_metadata_json->>'request_id' AS id FROM source_retrieval_attempts WHERE research_run_id = ${run.runId}`;
     assert.deepEqual(searched.map(row => row.id), ["request-1-2"]);
     assert.equal(counted.state.retrievals, 3, "request-1-1 retrieves once; request-1-2 before and after its search");
+  } finally { model.restore(); await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
+});
+
+test("an owner's packet carries the passages its own artifacts cite, which another owner's does not", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!);
+  const run = await createRun(sql);
+  const model = scriptModel(packet => packet.output_contract !== "team_answer" ? undefined : { status: "answered",
+    answer: "Current debt is stated in the balance sheet.", evidence_ids: [], artifact_ids: [],
+    source_ids: (packet.passages || []).slice(0, 1).map((p: any) => p.source_id) });
+  try {
+    const ctx = { runId: run.runId, runType: "deep_dive", assetId: run.assetId, assetName: run.assetName, assetSlug: run.assetSlug,
+      symbol: run.symbol, profileId: "", profileKey: "", requiredModules: [], requiredLenses: [], marketDataCutoffAt: null, pipelineVersion: 3 } as any;
+    const sections = [`Balance Sheet\n\nCurrent debt was 1,200 million and finance lease liabilities were 308 million. ${run.runId}`,
+      "Capital Return\n\nThe board authorized buying back common shares through open market purchases."];
+    const [stored] = await storeDiscoveredSources(sql, ctx, [{ sourceType: "sec_filing_10-k", title: "10-K report 2025-12-31", publisher: "sec.gov",
+      url: `https://fixture.example/${randomUUID()}`, content: sections.join("\n\n"), mimeType: "text/plain", qualityScore: "0.9",
+      publishedAt: "2026-02-20", periodEnd: "2025-12-31", metadata: { source_role: "regulatory_filing", system_generated: true }, chunkTitle: "10-K" }] as any);
+    const [chunk] = await sql`SELECT dc.id FROM document_chunks dc JOIN document_parses dp ON dp.id = dc.document_parse_id
+      WHERE dc.source_document_id = ${stored.sourceId} AND dp.parser_name = 'research-memory' AND dc.section_title = 'Capital Return'`;
+    const claimText = "The board authorized share buybacks.";
+    await persistEvidence(sql, ctx, [stored], { evidence_claims: [{ claim_text: claimText, claim_type: "capital_allocation", claim_category: "fact",
+      confidence: 0.8, source_id: stored.sourceId, document_chunk_id: String(chunk.id) }] });
+    const [claim] = await sql`SELECT id FROM evidence_claims WHERE research_run_id = ${run.runId} AND claim_text = ${claimText}`;
+    await saveReportArtifact(sql, run, "valuation_scenario_set", "base", { scenarios: [], evidence_ids: [String(claim.id)] });
+    const ask = (id: string, role: string) => ({ id, role, material: true, needs_sources: false, source_role: "regulatory_filing",
+      question: "What were current debt and finance lease liabilities in the latest balance sheet?" });
+    await saveBatch(sql, run, [ask("request-1-1", "valuation"), ask("request-1-2", "financials")]);
+
+    await processResearchRequests(sql, stageCtx(run));
+
+    const packets = Object.fromEntries(model.answers().map(call => [call.packet.request.id, call.packet]));
+    const cited = (id: string) => packets[id].passages.some((p: any) => p.passage_id === String(chunk.id));
+    assert.ok(packets["request-1-1"].passages.some((p: any) => p.passage_id !== String(chunk.id)), "the keyword match stays");
+    assert.ok(cited("request-1-1"), "the valuation owner's artifact cites the capital-return claim");
+    assert.ok(!cited("request-1-2"), "the financials owner's artifacts cite nothing, and the passage shares no word with the question");
   } finally { model.restore(); await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
 });

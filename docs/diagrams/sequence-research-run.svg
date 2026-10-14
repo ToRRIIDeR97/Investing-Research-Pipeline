@@ -71,7 +71,7 @@
 <path d="M630,702 L350,702" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="490.0" y="697" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">system answers: market_price_history, FRED DGS10</text>
 <path d="M630,730 L350,730" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="490.0" y="725" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">retrievePassages(request source role)</text>
+<text x="490.0" y="725" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">retrievePassages(source role, seeds: owner artifacts)</text>
 <path d="M630,758 L910,758" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="770.0" y="753" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">team_answer(owner, report inputs + passages)</text>
 <path d="M910,786 L1050,786" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
