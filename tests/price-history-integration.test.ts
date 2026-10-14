@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import postgres from "postgres";
-import { syncAssetPriceHistory, syncBenchmarkPriceHistory, valuationDatePrice } from "../src/lib/market-data/price-history";
+import { ensureInstrument, syncAssetPriceHistory, syncBenchmarkPriceHistory, valuationDatePrice } from "../src/lib/market-data/price-history";
 import { captureMarketHistory } from "../src/lib/research/history/market-history";
 
 function loadLocalEnv() {
@@ -185,6 +185,23 @@ test("the S&P 500 benchmark syncs under a reference asset and gives the run a re
     }
     await sql`DELETE FROM instruments WHERE asset_id IN (${fixtures})`;
     await sql`DELETE FROM assets WHERE id = ${assetId} OR slug = 'benchmark-gspc'`;
+    await sql.end();
+  }
+});
+
+test("concurrent syncs of one asset create a single instrument", { skip: process.env.RUN_DB_INTEGRATION !== "1" }, async () => {
+  loadLocalEnv();
+  const sql = postgres(process.env.DATABASE_URL!, { max: 4 });
+  const assetId = crypto.randomUUID();
+  try {
+    await sql`INSERT INTO assets (id, canonical_name, slug, asset_kind) VALUES (${assetId}, 'Instrument Race Fixture', ${`race-${assetId.slice(0, 8)}`}, 'index')`;
+    const ids = await Promise.all(Array.from({ length: 4 }, () => ensureInstrument(sql, assetId, "Instrument Race Fixture", "TESTPX")));
+    assert.equal(new Set(ids).size, 1);
+    const [{ count }] = await sql`SELECT count(*)::int AS count FROM instruments WHERE asset_id = ${assetId}`;
+    assert.equal(count, 1);
+  } finally {
+    await sql`DELETE FROM instruments WHERE asset_id = ${assetId}`;
+    await sql`DELETE FROM assets WHERE id = ${assetId}`;
     await sql.end();
   }
 });

@@ -124,4 +124,17 @@ describe("beta research requests", () => {
     assert.match(answer.answer, /0\.0423 as of 2025-12-31/);
     assert.match(answer.answer, /CAPM cost of equity 0\.0975/);
   });
+
+  it("answer only cost-of-capital questions to the valuation owner or for market data", () => {
+    const { index, stock } = weeklySeries(150);
+    const cutoffAt = new Date("2026-10-12T12:00:00Z");
+    const beta = regressionBeta({ symbol: "TEST", stock: { bars: stock, splits: [] }, benchmark: { bars: index, splits: [] }, cutoffAt });
+    const facts = { marketHistory: { id: "artifact-1", content: { bars_available: 700, market_data_cutoff: cutoffAt.toISOString(), beta } },
+      fred: { sourceId: "fred-1", csv: "observation_date,DGS10\n2026-10-09,4.10\n" } };
+    const ask = (role: string, question: string, source_role = "regulatory_filing") =>
+      systemAnswer({ id: "request-1-4", role, question, material: true, needs_sources: false, source_role } as TeamRequest, facts);
+    assert.equal(ask("business", "How fast is cloud ERP revenue growing versus on-premise ERP?"), null);
+    assert.equal(ask("business", "When did the product exit beta and how many beta customers converted?"), null);
+    assert.equal(ask("valuation", "What equity beta and cost of equity should we use?")?.resolved_by, "system:cost-of-capital");
+  });
 });

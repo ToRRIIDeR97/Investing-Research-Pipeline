@@ -183,7 +183,10 @@ export interface SystemFacts {
   fred?: { sourceId: string; csv: string } | null;
 }
 const MARKET_TERMS = /price|market cap/i;
-const BETA_TERMS = /\bbeta\b|equity risk premium|\berp\b|cost of equity|capm/i;
+// Cost-of-capital phrasing only: a bare "beta" or "ERP" also names product betas and ERP software.
+const BETA_TERMS = new RegExp([String.raw`\b(?:equity|levered|unlevered|regression|stock|market|adjusted|raw)\s+betas?\b`,
+  String.raw`\bbetas?\s+(?:of|for)\s+(?:the\s+)?(?:stock|shares|company|equity)\b`, "equity risk premium", "cost of equity", String.raw`\bcapm\b`,
+  String.raw`\bbetas?\b[^.?!]*\b(?:discount rates?|wacc|cost of capital)\b`, String.raw`\b(?:discount rates?|wacc|cost of capital)\b[^.?!]*\bbetas?\b`].join("|"), "i");
 const RATE_TERMS = /dgs10|(?:10|ten)[- ]year treasury|treasury yields?|risk[- ]free rates?|discount rates?/i;
 const withThousands = (value: number) => String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
@@ -195,13 +198,14 @@ function latestFredObservation(csv: string) {
 }
 
 /**
- * Beta and ERP requests are checked first (they also cite DGS10), then market history before FRED,
+ * Beta and ERP requests to the valuation owner or for market data are checked first (they also cite DGS10), then market history before FRED,
  * so a price request that also names DGS10 cites the stored bars.
  */
 export function systemAnswer(request: TeamRequest, facts: SystemFacts): TeamAnswer | null {
   const history = facts.marketHistory?.content;
   const beta = history?.beta;
-  if (facts.marketHistory && beta?.status === "computed" && BETA_TERMS.test(request.question)) {
+  if (facts.marketHistory && beta?.status === "computed" && (request.role === "valuation" || request.source_role === "market_data")
+    && BETA_TERMS.test(request.question)) {
     const riskFree = facts.fred ? latestRiskFreeRate(facts.fred.csv, String(history!.market_data_cutoff || new Date().toISOString())) : null;
     const inputs = costOfCapitalInputs({ beta, riskFreeRate: riskFree, cutoffAt: new Date(String(history!.market_data_cutoff)) });
     const erp = inputs.equity_risk_premium;

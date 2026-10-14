@@ -234,16 +234,20 @@ export function periodEndMarketObservations(input: PeriodEndInput): HistoricalOb
 export const timedFetch: typeof fetch = (input, init) =>
   fetch(input, { ...init, headers: { "User-Agent": USER_AGENT, ...(init?.headers as Record<string, string> | undefined) }, signal: AbortSignal.timeout(20_000) });
 
-async function ensureInstrument(sql: Sql, assetId: string, assetName: string, symbol: string): Promise<string> {
-  const [existing] = await sql`
-    SELECT i.id FROM instruments i WHERE i.asset_id = ${assetId}
-    ORDER BY EXISTS (SELECT 1 FROM listings l WHERE l.instrument_id = i.id AND upper(l.symbol) = ${symbol}) DESC, i.created_at
-    LIMIT 1`;
-  if (existing) return String(existing.id);
-  const [created] = await sql`
-    INSERT INTO instruments (asset_id, instrument_type, name) VALUES (${assetId}, 'listed_security', ${`${assetName} (${symbol})`})
-    RETURNING id`;
-  return String(created.id);
+/** The asset's instrument, created once: runs syncing the shared benchmark at the same time wait on the asset's lock. */
+export async function ensureInstrument(sql: Sql, assetId: string, assetName: string, symbol: string): Promise<string> {
+  return sql.begin(async (tx) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`instrument:${assetId}`}))`;
+    const [existing] = await tx`
+      SELECT i.id FROM instruments i WHERE i.asset_id = ${assetId}
+      ORDER BY EXISTS (SELECT 1 FROM listings l WHERE l.instrument_id = i.id AND upper(l.symbol) = ${symbol}) DESC, i.created_at
+      LIMIT 1`;
+    if (existing) return String(existing.id);
+    const [created] = await tx`
+      INSERT INTO instruments (asset_id, instrument_type, name) VALUES (${assetId}, 'listed_security', ${`${assetName} (${symbol})`})
+      RETURNING id`;
+    return String(created.id);
+  }) as Promise<string>;
 }
 
 export type PriceHistorySync = {
