@@ -1,7 +1,9 @@
 // Network guards shared by web discovery, the structured-data fetchers and the model endpoints:
 // which hosts may be reached, how endpoint URLs are validated, and how much of a body is read.
+import type { LookupAddress } from "node:dns";
 import { lookup } from "node:dns/promises";
-import { BlockList, isIP } from "node:net";
+import { BlockList, isIP, type LookupFunction } from "node:net";
+import { Agent, buildConnector, fetch as undiciFetch } from "undici";
 
 // Loopback, private, link-local, CGNAT, documentation, benchmarking, multicast and reserved ranges.
 // BlockList also matches IPv4-mapped IPv6 (::ffff:127.0.0.1) against the IPv4 rules.
@@ -37,33 +39,53 @@ const systemLookup: HostLookup = async (hostname) =>
   (await lookup(hostname, { all: true, verbatim: true })).map((entry) => entry.address);
 
 /**
- * Throws when the host is, or resolves to, a non-public address. A name that fails to resolve is
- * left to fetch, whose own lookup fails on it the same way.
+ * A socket lookup that resolves once and hands the socket only addresses that pass `allowed`. Any
+ * non-public answer fails the whole lookup, so the address checked is the address connected to.
  */
-export async function assertPublicHost(hostname: string, resolve: HostLookup = systemLookup): Promise<void> {
-  if (isPrivateHostname(hostname)) throw new Error(`Refusing non-public host ${hostname}`);
-  const host = unbracket(hostname);
-  let addresses: string[];
-  try {
-    addresses = isIP(host) ? [host] : await resolve(host.replace(/\.$/, ""));
-  } catch {
-    return;
-  }
-  if (!addresses.length || addresses.some((address) => !isPublicAddress(address))) {
-    throw new Error(`Refusing host ${hostname}: it resolves to a non-public address`);
-  }
+export function guardedLookup(resolve: HostLookup = systemLookup, allowed = isPublicAddress): LookupFunction {
+  return (hostname, options, callback) => {
+    resolve(hostname).then((addresses) => {
+      if (!addresses.length || addresses.some((address) => !allowed(address))) {
+        throw new Error(`Refusing host ${hostname}: it resolves to a non-public address`);
+      }
+      const entries: LookupAddress[] = addresses.map((address) => ({ address, family: isIP(address) }))
+        .filter((entry) => !options.family || entry.family === options.family);
+      if (!entries.length) throw Object.assign(new Error(`No IPv${options.family} address for ${hostname}`), { code: "ENOTFOUND" });
+      if (options.all) callback(null, entries);
+      else callback(null, entries[0].address, entries[0].family);
+    }).catch((error: NodeJS.ErrnoException) => callback(error, "", 0));
+  };
 }
 
 /**
- * fetch that resolves the target host first and refuses non-public addresses. Use it with
- * redirect: "manual" and call it once per hop, so every redirect target is checked too.
- * The socket does its own lookup, so a DNS answer that changes between the two is not caught.
+ * Builds a fetch whose sockets connect only to public addresses. The connector refuses non-public
+ * IP literals (which skip DNS) and resolves names through guardedLookup, so the check and the
+ * connection use the same answer. TLS SNI and the Host header still carry the URL's hostname.
+ * Every hop, followed redirects included, connects through the same connector.
  */
-export const publicFetch: typeof fetch = async (input, init) => {
-  const url = new URL(input instanceof Request ? input.url : String(input));
-  await assertPublicHost(url.hostname);
-  return fetch(input, init);
-};
+export function createPublicFetch(
+  options: { resolve?: HostLookup; allowed?: (address: string) => boolean } = {}
+): typeof fetch {
+  const allowed = options.allowed ?? isPublicAddress;
+  const connectPublic = buildConnector({ lookup: guardedLookup(options.resolve, allowed) });
+  const dispatcher = new Agent({
+    connect: (connectOptions, callback) => {
+      const host = unbracket(connectOptions.hostname);
+      const refused = isIP(host) ? !allowed(host) : isPrivateHostname(host);
+      if (refused) callback(new Error(`Refusing non-public host ${connectOptions.hostname}`), null);
+      else connectPublic(connectOptions, callback);
+    },
+  });
+  return async (input: string | URL | Request, init?: RequestInit) => {
+    if (input instanceof Request) throw new Error("publicFetch takes a URL, not a Request");
+    // undici's Response implements the same Fetch API as Node's global one; only the typings differ.
+    const response = await undiciFetch(String(input), { ...init, dispatcher } as Parameters<typeof undiciFetch>[1]);
+    return response as unknown as Response;
+  };
+}
+
+/** The default fetch for untrusted URLs (web discovery). See createPublicFetch. */
+export const publicFetch = createPublicFetch();
 
 /**
  * Reads a body up to maxBytes after content decoding, then cancels the stream. Content-Length is

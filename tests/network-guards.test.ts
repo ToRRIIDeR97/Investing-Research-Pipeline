@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { createServer } from "node:http";
 import test from "node:test";
 import { gzipSync } from "node:zlib";
-import { assertPublicHost, fetchCapped, publicFetch, readCapped } from "../src/lib/net";
+import { createPublicFetch, fetchCapped, guardedLookup, publicFetch, readCapped, type HostLookup } from "../src/lib/net";
 import { MarketDataError } from "../src/lib/market-data/provider";
 import { createYahooMarketDataProvider } from "../src/lib/market-data/providers/yahoo";
 import { fetchStooqCloses } from "../src/lib/market-data/providers/stooq";
@@ -41,19 +41,72 @@ test("discovery refuses IPv6 loopback, IPv4-mapped, CGNAT, ULA, link-local and n
   assert.equal(isSafePublicUrl("https://100.128.0.1/"), true);
 });
 
-test("a hostname is fetched only when every address it resolves to is public (#9)", async () => {
-  await assert.rejects(assertPublicHost("rebind.example", async () => ["93.184.216.34", "127.0.0.1"]), /non-public/);
-  await assert.rejects(assertPublicHost("mapped.example", async () => ["::ffff:10.0.0.1"]), /non-public/);
-  await assert.rejects(assertPublicHost("empty.example", async () => []), /non-public/);
-  await assertPublicHost("public.example", async () => ["93.184.216.34", "2606:4700::1111"]);
-  // A name that doesn't resolve is left to fetch, which fails on it too (or, in tests, is stubbed).
-  await assertPublicHost("missing.example", async () => { throw Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" }); });
-  let looked = false;
-  await assert.rejects(assertPublicHost("[::1]", async () => { looked = true; return []; }), /non-public/);
-  assert.equal(looked, false);
-  // The default discovery fetch checks literals before any connection is attempted.
-  await assert.rejects(publicFetch("http://[::1]:9/"), /non-public/);
-  await assert.rejects(publicFetch("http://localhost:9/"), /non-public/);
+// fetch reports a refused connection as "fetch failed" with the guard's error as the cause.
+const refused = (error: Error & { cause?: Error }) => /non-public/.test(String(error.cause?.message));
+const lookupWith =(resolve: HostLookup, hostname: string, options: { all?: boolean; family?: number } = {}) =>
+  new Promise<unknown>((done, fail) => guardedLookup(resolve)(hostname, options, (error, address, family) =>
+    error ? fail(error) : done(options.all ? address : { address, family })));
+
+test("the socket lookup passes on an answer only when every address is public (#9)", async () => {
+  await assert.rejects(lookupWith(async () => ["93.184.216.34", "127.0.0.1"], "rebind.example"), /non-public/);
+  await assert.rejects(lookupWith(async () => ["::ffff:10.0.0.1"], "mapped.example"), /non-public/);
+  await assert.rejects(lookupWith(async () => ["169.254.169.254"], "metadata.example"), /non-public/);
+  await assert.rejects(lookupWith(async () => ["100.64.0.1"], "cgnat.example"), /non-public/);
+  await assert.rejects(lookupWith(async () => ["fe80::1"], "linklocal.example"), /non-public/);
+  await assert.rejects(lookupWith(async () => [], "empty.example"), /non-public/);
+  const missing = Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" });
+  await assert.rejects(lookupWith(async () => { throw missing; }, "missing.example"), /ENOTFOUND/);
+  const resolve = async () => ["93.184.216.34", "2606:4700::1111"];
+  assert.deepEqual(await lookupWith(resolve, "public.example"), { address: "93.184.216.34", family: 4 });
+  assert.deepEqual(await lookupWith(resolve, "public.example", { family: 6 }), { address: "2606:4700::1111", family: 6 });
+  assert.deepEqual(await lookupWith(resolve, "public.example", { all: true }),
+    [{ address: "93.184.216.34", family: 4 }, { address: "2606:4700::1111", family: 6 }]);
+  // The default discovery fetch refuses literals before any connection is attempted.
+  await assert.rejects(publicFetch("http://[::1]/"), refused);
+  await assert.rejects(publicFetch("http://localhost/"), refused);
+});
+
+test("public fetch connects to the address it validated, once per connection and per redirect hop (#9)", async () => {
+  const hosts: string[] = [];
+  const server = createServer((request, response) => {
+    hosts.push(String(request.headers.host));
+    if (request.url === "/to-name") response.writeHead(302, { location: `http://private.test:${port}/` }).end();
+    else if (request.url === "/to-literal") response.writeHead(302, { location: `http://127.0.0.2:${port}/` }).end();
+    else response.end("ok");
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address() as { port: number };
+  // 127.0.0.1 stands in for a public address; every other address is treated as private.
+  const allowed = (address: string) => address === "127.0.0.1";
+  const answers: Record<string, string[][]> = {
+    "rebind.test": [["127.0.0.1"], ["10.0.0.1"]], "start.test": [["127.0.0.1"]], "private.test": [["10.0.0.1"]], "mixed.test": [["127.0.0.1", "10.0.0.1"]],
+  };
+  const lookups: string[] = [];
+  const resolve: HostLookup = async (hostname) => {
+    lookups.push(hostname);
+    const queue = answers[hostname];
+    return queue.length > 1 ? queue.shift()! : queue[0];
+  };
+  try {
+    const guarded = createPublicFetch({ resolve, allowed });
+    const first = await guarded(`http://rebind.test:${port}/`);
+    assert.equal(await first.text(), "ok");
+    assert.deepEqual(lookups, ["rebind.test"]);
+    assert.equal(hosts[0], `rebind.test:${port}`); // the Host header keeps the name, not the IP
+    // A fresh connection resolves again and refuses the rebound answer instead of connecting to it.
+    await assert.rejects(createPublicFetch({ resolve, allowed })(`http://rebind.test:${port}/`), refused);
+    await assert.rejects(guarded(`http://mixed.test:${port}/`), refused);
+    assert.equal(hosts.length, 1);
+    // Followed redirects connect through the same guard, to a name or to an IP literal.
+    for (const path of ["/to-name", "/to-literal"]) {
+      await assert.rejects(guarded(`http://start.test:${port}${path}`), refused, path);
+    }
+    assert.deepEqual(hosts.slice(1), [`start.test:${port}`, `start.test:${port}`]);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
 });
 
 test("a redirect to a private address is not followed (#9)", async () => {
