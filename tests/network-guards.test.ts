@@ -32,9 +32,11 @@ const discoveryEnv = (extra: Record<string, string | undefined> = {}) => ({
 
 const endless = () => new ReadableStream<Uint8Array>({ pull(controller) { controller.enqueue(new Uint8Array(65_536).fill(97)); } });
 
-test("discovery refuses IPv6 loopback, IPv4-mapped, CGNAT, ULA, link-local and numeric loopback hosts (#9)", () => {
+test("discovery refuses IPv6 loopback, IPv4-mapped, CGNAT, ULA, link-local, NAT64, 6to4, Teredo and numeric loopback hosts (#9)", () => {
   for (const url of ["http://[::1]/", "http://[::ffff:127.0.0.1]/", "http://100.64.0.1/", "http://2130706433/",
-    "http://[fd00::1]/", "http://[fe80::1]/", "http://169.254.169.254/latest", "http://0.0.0.0/", "http://[::]/"]) {
+    "http://[fd00::1]/", "http://[fe80::1]/", "http://169.254.169.254/latest", "http://0.0.0.0/", "http://[::]/",
+    "http://[64:ff9b::7f00:1]/", "http://[64:ff9b::a9fe:a9fe]/", "http://[64:ff9b:1::1]/", "http://[2002:7f00:1::]/",
+    "http://[2001:0:4136:e378::1]/", "http://[::ffff:0:7f00:1]/"]) {
     assert.equal(isSafePublicUrl(url), false, url);
   }
   assert.equal(isSafePublicUrl("https://www.sec.gov/Archives/x.htm"), true);
@@ -53,6 +55,7 @@ test("the socket lookup passes on an answer only when every address is public (#
   await assert.rejects(lookupWith(async () => ["169.254.169.254"], "metadata.example"), /non-public/);
   await assert.rejects(lookupWith(async () => ["100.64.0.1"], "cgnat.example"), /non-public/);
   await assert.rejects(lookupWith(async () => ["fe80::1"], "linklocal.example"), /non-public/);
+  await assert.rejects(lookupWith(async () => ["64:ff9b::a9fe:a9fe"], "nat64.example"), /non-public/);
   await assert.rejects(lookupWith(async () => [], "empty.example"), /non-public/);
   const missing = Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" });
   await assert.rejects(lookupWith(async () => { throw missing; }, "missing.example"), /ENOTFOUND/);

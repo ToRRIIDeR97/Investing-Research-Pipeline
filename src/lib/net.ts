@@ -6,7 +6,8 @@ import { BlockList, isIP, type LookupFunction } from "node:net";
 import { Agent, buildConnector, fetch as undiciFetch } from "undici";
 
 // Loopback, private, link-local, CGNAT, documentation, benchmarking, multicast and reserved ranges.
-// BlockList also matches IPv4-mapped IPv6 (::ffff:127.0.0.1) against the IPv4 rules.
+// BlockList also matches IPv4-mapped IPv6 (::ffff:127.0.0.1) against the IPv4 rules. Prefixes that
+// embed an IPv4 address (SIIT, NAT64, Teredo, 6to4) are blocked whole: they can reach private IPv4.
 const nonPublic = new BlockList();
 for (const [network, prefix] of [
   ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16],
@@ -14,7 +15,8 @@ for (const [network, prefix] of [
   ["198.51.100.0", 24], ["203.0.113.0", 24], ["224.0.0.0", 4], ["240.0.0.0", 4],
 ] as const) nonPublic.addSubnet(network, prefix, "ipv4");
 for (const [network, prefix] of [
-  ["::", 96], ["100::", 64], ["2001:db8::", 32], ["fc00::", 7], ["fe80::", 10], ["fec0::", 10], ["ff00::", 8],
+  ["::", 96], ["::ffff:0:0:0", 96], ["64:ff9b::", 96], ["64:ff9b:1::", 48], ["100::", 64], ["2001::", 32],
+  ["2001:db8::", 32], ["2002::", 16], ["fc00::", 7], ["fe80::", 10], ["fec0::", 10], ["ff00::", 8],
 ] as const) nonPublic.addSubnet(network, prefix, "ipv6");
 
 const unbracket = (host: string) => host.replace(/^\[(.*)\]$/, "$1");
