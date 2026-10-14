@@ -20,8 +20,8 @@
 <rect x="380" y="230" width="320" height="90" rx="6" fill="#fdf3e3" stroke="#b07a1f" stroke-width="1.4"/>
 <text x="540.0" y="248" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«execution environment»</text>
 <text x="540.0" y="264" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Child processes</text>
-<text x="540.0" y="281" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">python3 run_backtest*.py · docling_parser.py</text>
-<text x="540.0" y="296" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">pdftotext · node --permission (repair)</text>
+<text x="540.0" y="281" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">run_backtest.py run: sandbox-exec | bwrap</text>
+<text x="540.0" y="296" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">docling_parser.py · pdftotext · node (repair)</text>
 <rect x="40" y="230" width="300" height="90" rx="6" fill="#eaf4f4" stroke="#2f7f7f" stroke-width="1.4"/>
 <text x="190.0" y="248" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«artifact»</text>
 <text x="190.0" y="264" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Filesystem ./storage</text>

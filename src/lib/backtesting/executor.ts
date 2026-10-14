@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, join, normalize, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import postgres from "postgres";
@@ -8,6 +9,7 @@ import { generateBacktestCode } from "./backtest-coder";
 import { recordModelCall } from "@/lib/agents/model-calls";
 import type { ResearchTask } from "@/lib/workflow/task-queue";
 import { completeTask, failTask } from "@/lib/workflow/task-queue";
+import { pythonReadPaths, readDirsWithin, sandboxedCommand } from "./sandbox";
 import { getBacktestForTask } from "./service";
 
 const execFileAsync = promisify(execFile);
@@ -34,9 +36,8 @@ function relativeStoragePath(absolutePath: string) {
   return relative(process.cwd(), absolutePath).replace(/\\/g, "/");
 }
 
-// Model-written strategy code runs in this child, so it gets only what Python, yfinance and a
-// proxy need: no provider keys and no DATABASE_URL (#11). This is not an OS sandbox; the child
-// keeps the developer's file and network access.
+// The backtest children get only what Python, yfinance and a proxy need: no provider keys and no
+// DATABASE_URL (#11). The child that runs model-written code also runs in an OS sandbox.
 const BACKTEST_ENV = ["PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "SYSTEMROOT", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
   "http_proxy", "https_proxy", "no_proxy", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"];
 
@@ -269,6 +270,7 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
       throw new Error("OpenCode output must include strategy.py");
     }
 
+    const timeout = Number(process.env.BACKTEST_TIMEOUT_MS || 120000);
     await writeFile(
       runnerInputPath,
       JSON.stringify(
@@ -282,6 +284,8 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
           params: paramsObject(backtest.params_json),
           strategy_path: strategyPath,
           output_dir: artifactDir,
+          cpu_seconds: Math.ceil(timeout / 1000),
+          memory_mb: Number(process.env.BACKTEST_MEMORY_MB || 4096),
         },
         null,
         2
@@ -289,19 +293,33 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
       "utf8"
     );
 
-    const timeout = Number(process.env.BACKTEST_TIMEOUT_MS || 120000);
+    const runnerDir = join(process.cwd(), "python", "backtesting");
+    const runner = join(runnerDir, "run_backtest.py");
     let stdout: string | Buffer;
     try {
-      const result = await execFileAsync(
-        "python3",
-        [join(process.cwd(), "python", "backtesting", "run_backtest.py"), runnerInputPath],
-        {
-          cwd: process.cwd(),
-          timeout,
-          env: backtestEnv(),
-          maxBuffer: 1024 * 1024 * 10,
-        }
-      );
+      // Phase 1, trusted: download prices to CSV. No model-written code runs here.
+      await execFileAsync("python3", [runner, "fetch", runnerInputPath],
+        { cwd: process.cwd(), timeout, env: backtestEnv(), maxBuffer: 1024 * 1024 });
+
+      // Phase 2: the strategy runs in the OS sandbox (#11): no network, no fork, writes only to this
+      // backtest's directory, no reads of the home or repository directories except the runner and
+      // Python packages. No PYTHONPATH, which would make the repository root readable.
+      const { PYTHONPATH: _repoRoot, ...sandboxEnv } = backtestEnv();
+      const scratch = join(artifactDir, "tmp");
+      await mkdir(scratch, { recursive: true });
+      Object.assign(sandboxEnv, { TMPDIR: scratch, MPLCONFIGDIR: scratch, PYTHONDONTWRITEBYTECODE: "1" });
+      const hiddenDirs = [homedir(), process.cwd()];
+      const command = sandboxedCommand("python3", ["-B", runner, "run", runnerInputPath], {
+        writeDir: artifactDir,
+        hiddenDirs,
+        readDirs: [runnerDir, ...readDirsWithin(hiddenDirs, await pythonReadPaths("python3", sandboxEnv))],
+      });
+      const result = await execFileAsync(command.file, command.args, {
+        cwd: process.cwd(),
+        timeout,
+        env: sandboxEnv,
+        maxBuffer: 1024 * 1024 * 10,
+      });
       stdout = result.stdout;
     } catch (error) {
       const execError = error as ExecFileError;
