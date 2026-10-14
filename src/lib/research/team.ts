@@ -305,9 +305,9 @@ type RequestPassage = { passage_id: string; source_id: string; title: string; se
 /**
  * Research-memory passages of the request's source role from this run's documents (keyword ranking unless
  * embeddings are on). The owner's own stage artifacts seed the graph, so passages holding the claims they cite
- * can take up to half the slots. A search is worth running first when no passage matched the question or it
- * names a period no document in scope covers; any word of the question matches, so a non-empty result alone
- * proves little, and cited passages say nothing about what is missing.
+ * take a quarter of the slots, more when keyword matches run short. A search is worth running first when no
+ * passage matched the question or it names a period no document in scope covers; any word of the question
+ * matches, so a non-empty result alone proves little, and cited passages say nothing about what is missing.
  */
 async function requestPassages(sql: Sql, runId: string, request: TeamRequest): Promise<{ passages: RequestPassage[]; searchFirst: boolean }> {
   const seedArtifactIds = await ownedArtifactIds(sql, runId, request.role);

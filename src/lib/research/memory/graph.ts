@@ -97,13 +97,14 @@ export async function recordContradictions(sql: Sql, input: {
   return written;
 }
 
-export interface GraphPassage { passageId: string; seed: boolean }
+export interface GraphPassage { passageId: string; seed: boolean; /** Distinct seed claims the passage holds. */ citations: number }
 
 /**
  * Passages of the given parses that hold the seed claims (directly, or through the claims an
- * artifact cites) or the claims one unrejected relationship away from them.
+ * artifact cites) or the claims one unrejected relationship away from them. At most `limit`
+ * (default 50): those holding the most seed claims first, then the newest filing, then document order.
  */
-export async function graphPassages(sql: Sql, input: { parseIds: string[]; seedClaimIds?: string[]; seedArtifactIds?: string[] }): Promise<GraphPassage[]> {
+export async function graphPassages(sql: Sql, input: { parseIds: string[]; seedClaimIds?: string[]; seedArtifactIds?: string[]; limit?: number }): Promise<GraphPassage[]> {
   const claimIds = (input.seedClaimIds || []).filter(isUuid);
   const artifactIds = (input.seedArtifactIds || []).filter(isUuid);
   if (!input.parseIds.length || (!claimIds.length && !artifactIds.length)) return [];
@@ -117,12 +118,15 @@ export async function graphPassages(sql: Sql, input: { parseIds: string[]; seedC
       UNION SELECT cr.from_claim_id FROM claim_relationships cr JOIN seed ON seed.claim_id = cr.to_claim_id WHERE cr.review_status <> 'rejected'
     ),
     claims AS (SELECT claim_id, true AS seed FROM seed UNION ALL SELECT claim_id, false FROM hop)
-    SELECT sl.document_chunk_id AS passage_id, bool_or(claims.seed) AS seed
+    SELECT sl.document_chunk_id AS passage_id, bool_or(claims.seed) AS seed, count(DISTINCT claims.claim_id) FILTER (WHERE claims.seed) AS citations
     FROM claims
     JOIN evidence_links el ON el.evidence_claim_id = claims.claim_id
     JOIN source_locations sl ON sl.id = el.source_location_id
     JOIN document_chunks dc ON dc.id = sl.document_chunk_id
+    JOIN source_documents sd ON sd.id = dc.source_document_id
     WHERE dc.document_parse_id = ANY(${input.parseIds}::uuid[])
-    GROUP BY sl.document_chunk_id`;
-  return rows.map(row => ({ passageId: String(row.passage_id), seed: Boolean(row.seed) }));
+    GROUP BY sl.document_chunk_id, sd.period_end, sd.published_at, dc.source_document_id, dc.chunk_index
+    ORDER BY citations DESC, sd.period_end DESC NULLS LAST, sd.published_at DESC NULLS LAST, dc.source_document_id, dc.chunk_index
+    LIMIT ${Math.max(1, Math.floor(input.limit ?? 50))}`;
+  return rows.map(row => ({ passageId: String(row.passage_id), seed: Boolean(row.seed), citations: Number(row.citations) }));
 }

@@ -248,7 +248,7 @@ interface Candidate {
   vectorRank?: number;
   sectionMatch: boolean;
   textRank: number;
-  graph?: { seed: boolean };
+  graph?: { seed: boolean; citations: number };
 }
 
 /**
@@ -259,7 +259,8 @@ interface Candidate {
  * vector rankings are fused (RRF, k = 60). Ties go to the newest document, and a note restated in
  * several filings keeps one copy for each period asked for, or else the newest copy. Seed claims and
  * artifacts add the passages holding them and their one-hop neighbours; a graph link breaks relevance
- * ties, and graph-only passages take up to half of the slots after the relevance matches.
+ * ties. Graph-only passages, those holding the most seed claims first, take a quarter of the slots
+ * (rounded down) after the relevance matches, and any slots the relevance matches leave empty.
  */
 export async function retrievePassages(sql: postgres.Sql, input: { runId: string; need: RetrievalNeed; embeddings?: EmbeddingProvider | null }): Promise<RetrievalResult> {
   const { need } = input;
@@ -294,7 +295,7 @@ export async function retrievePassages(sql: postgres.Sql, input: { runId: string
   const vectors = input.embeddings && parseIds.length
     ? await vectorRanking(sql, { runId: input.runId, parseIds, query: need.query, embeddings: input.embeddings, depth })
     : null;
-  const graph = await graphPassages(sql, { parseIds, seedClaimIds: need.seedClaimIds, seedArtifactIds: need.seedArtifactIds });
+  const graph = await graphPassages(sql, { parseIds, seedClaimIds: need.seedClaimIds, seedArtifactIds: need.seedArtifactIds, limit: depth });
 
   const candidates = new Map<string, Candidate>();
   const keywordKey = (row: Record<string, any>) => `${row.in_period ? 1 : 0}:${row.section_match ? 1 : 0}:${Number(row.text_rank)}`;
@@ -311,8 +312,11 @@ export async function retrievePassages(sql: postgres.Sql, input: { runId: string
   }
   for (const link of graph) {
     const candidate = candidates.get(link.passageId) || { row: {}, sectionMatch: false, textRank: 0 };
-    candidates.set(link.passageId, { ...candidate, graph: { seed: link.seed } });
+    candidates.set(link.passageId, { ...candidate, graph: { seed: link.seed, citations: link.citations } });
   }
+  // Graph-only passages arrive most-cited first; only those that could fill a slot (twice the limit, for copies) are read.
+  const graphOnlyIds = graph.map(link => link.passageId).filter(id => { const c = candidates.get(id)!; return !c.keywordRank && !c.vectorRank; });
+  for (const id of graphOnlyIds.slice(limit * 2)) candidates.delete(id);
   const missingRows = [...candidates].filter(([, candidate]) => !candidate.row.id).map(([id]) => id);
   if (missingRows.length) {
     for (const row of await sql`SELECT id, source_document_id, document_parse_id, chunk_index, section_title, page_start, char_start, char_end, text, metadata_json
@@ -345,10 +349,15 @@ export async function retrievePassages(sql: postgres.Sql, input: { runId: string
   const periodCopies = new Set([...copyOwner.values()].filter(inPeriod).map(copyKey));
   const relevance = ranked.filter(c => (inPeriod(c) || !periodCopies.has(copyKey(c)))
     && String(copyOwner.get(groupOf(c))!.row.source_document_id) === String(c.row.source_document_id));
+  // Graph-only passages: most seed claims first, then newest filing and document order.
   const graphOnly = [...candidates.values()].filter(c => !c.keywordRank && !c.vectorRank && c.graph)
-    .sort((a, b) => Number(Boolean(b.graph?.seed)) - Number(Boolean(a.graph?.seed)) || byPosition(a, b));
-  const head = relevance.slice(0, limit - Math.min(graphOnly.length, Math.ceil(limit / 2)));
-  const chosen = [...head, ...graphOnly.slice(0, limit - head.length)];
+    .sort((a, b) => (b.graph?.citations ?? 0) - (a.graph?.citations ?? 0) || byPosition(a, b));
+  // One copy of a note: graph passages restating a passage already picked, or each other, are skipped. They take
+  // a quarter of the slots (rounded down) when relevance matches could fill them all, and whatever slots are left.
+  const distinct = (picked: Candidate[]) => { const taken = new Set(picked.map(copyKey));
+    return graphOnly.filter(c => !taken.has(copyKey(c)) && Boolean(taken.add(copyKey(c)))); };
+  const head = relevance.slice(0, limit - Math.min(distinct(relevance.slice(0, limit)).length, Math.floor(limit / 4)));
+  const chosen = [...head, ...distinct(head).slice(0, limit - head.length)];
 
   const matchOf = (c: Candidate): RetrievedPassage["matched"] =>
     c.keywordRank && c.vectorRank ? "both" : c.keywordRank ? "keyword" : c.vectorRank ? "vector" : "graph";
