@@ -84,8 +84,19 @@ export function createPublicFetch(
   };
 }
 
+const guardedFetch = createPublicFetch();
+let testFetch: typeof fetch | undefined;
+
 /** The default fetch for untrusted URLs (web discovery). See createPublicFetch. */
-export const publicFetch = createPublicFetch();
+export const publicFetch: typeof fetch = (input, init) => (testFetch ?? guardedFetch)(input, init);
+
+/**
+ * Test seam: publicFetch ignores a replaced globalThis.fetch (it has its own dispatcher), so web
+ * fixtures route it here instead. Pass undefined to restore the guarded fetch.
+ */
+export function setPublicFetchForTests(fetchImpl: typeof fetch | undefined) {
+  testFetch = fetchImpl;
+}
 
 /**
  * Reads a body up to maxBytes after content decoding, then cancels the stream. Content-Length is

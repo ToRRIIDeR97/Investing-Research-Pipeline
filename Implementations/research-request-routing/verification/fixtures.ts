@@ -11,6 +11,7 @@ import { MockProvider } from "../../../src/lib/agent-harness/providers/mock";
 import { storeDiscoveredSources } from "../../../src/lib/research/sources/corpus";
 import { saveReportArtifact } from "../../../src/lib/research/reporting/store";
 import { getTeamRequests, processResearchRequests } from "../../../src/lib/research/team";
+import { setPublicFetchForTests } from "../../../src/lib/net";
 
 export const skipDb = process.env.RUN_DB_INTEGRATION !== "1";
 export const TEAM = "../../../src/lib/research/team";
@@ -162,10 +163,12 @@ export function stubWeb(pages: Record<string, string> = {}, results: (query: str
     const page = pages[url.href];
     return page ? new Response(page, { headers: { "content-type": "text/html" } }) : new Response("not found", { status: 404 });
   }) as typeof fetch;
+  setPublicFetchForTests(globalThis.fetch);
   return {
     searches: () => calls.filter(href => new URL(href).hostname === "search.example").map(href => new URL(href).searchParams.get("q") || ""),
     restore() {
       globalThis.fetch = original;
+      setPublicFetchForTests(undefined);
       for (const [key, value] of Object.entries(prior)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
     },
   };
