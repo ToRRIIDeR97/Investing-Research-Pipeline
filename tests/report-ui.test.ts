@@ -192,13 +192,22 @@ test('Valuation summary puts code-written gaps, omitted methods and dates in pla
 });
 
 test('Falling capital expenditure with free cash flow turning positive reads as spending that eases', () => {
-  const ops = valuationArtifacts().map(a => a.artifact_type !== 'operating_scenario_set' ? a : artifact('operating_scenario_set', { scenarios: (a.content_json.scenarios as any[]).map(sc =>
-    sc.scenario_type !== 'base' ? sc : { ...sc, resulting_financial_statements_json: { units: 'USD millions', years: years([252600, 288000, 322500], [85600, 103700, 122600], [137500, 115200, 103200]) } }) }));
-  const s = valuationSummary(ops.map(a => a.artifact_type !== 'valuation_scenario_set' ? a : artifact('valuation_scenario_set', { ...a.content_json,
-    method_schedules: [schedule('bear', [-71942, -84367, -86430], 232.33, 63570), schedule('base', [-46000, -6000, 24300], 395, 98500), schedule('bull', [-39710, -29701, -19516], 481.88, 100484)],
-    terminal_anchor_base: (98500 * 18 - 83664) / 2566 })))!;
-  assert.equal(s.reasons[1].title, 'Spending peaks, then eases.');
-  assert.equal(s.reasons[1].text, 'In the base case, capital expenditure falls from $137.5B to $103.2B a year by 2028, still more than the $98.5B the business earns after tax that year. Free cash flow turns positive in 2028.');
+  const spend = (capex: number[], cash: number[]) => {
+    const ops = valuationArtifacts().map(a => a.artifact_type !== 'operating_scenario_set' ? a : artifact('operating_scenario_set', { scenarios: (a.content_json.scenarios as any[]).map(sc =>
+      sc.scenario_type !== 'base' ? sc : { ...sc, resulting_financial_statements_json: { units: 'USD millions', years: years([252600, 288000, 322500], [85600, 103700, 122600], capex) } }) }));
+    return valuationSummary(ops.map(a => a.artifact_type !== 'valuation_scenario_set' ? a : artifact('valuation_scenario_set', { ...a.content_json,
+      method_schedules: [schedule('bear', [-71942, -84367, -86430], 232.33, 63570), schedule('base', cash, 395, 98500), schedule('bull', [-39710, -29701, -19516], 481.88, 100484)],
+      terminal_anchor_base: (98500 * 18 - 83664) / 2566 })))!.reasons[1];
+  };
+  const text = 'In the base case, capital expenditure falls from $137.5B to $103.2B a year by 2028, still more than the $98.5B the business earns after tax that year. Free cash flow turns positive in 2028.';
+  // Falling from the first forecast year is not a peak.
+  assert.deepEqual(spend([137500, 115200, 103200], [-46000, -6000, 24300]), { title: 'Spending eases.', text });
+  // Capex stored as a negative outflow reads the same way.
+  assert.deepEqual(spend([-137500, -115200, -103200], [-46000, -6000, 24300]), { title: 'Spending eases.', text });
+  assert.equal(spend([120000, 137500, 103200], [-46000, -6000, 24300]).title, 'Spending peaks, then eases.');
+  // Free cash flow that starts positive turns positive only after a negative year.
+  assert.match(spend([137500, 115200, 103200], [5000, -3000, 4000]).text, /Free cash flow turns positive in 2028\.$/);
+  assert.doesNotMatch(spend([137500, 115200, 103200], [5000, 3000, -4000]).text, /turns positive/);
 });
 
 test('What the last price implies compares the reverse valuation with the scenarios', () => {
@@ -209,9 +218,19 @@ test('What the last price implies compares the reverse valuation with the scenar
     'Or revenue growth of about 43% a year through 2028 (at base-case margins). Every scenario assumes less: 8–23%.',
   ]);
   const analyst = valuationSummary([...valuationArtifacts(), reverse({ implied_margin: 0.3, implied_growth: 0.056 })])!;
-  assert.match(analyst.priceImplies[0], /about 30% a year through 2028 \(at base-case growth\)\. The scenarios assume 25–34%\./);
-  assert.match(analyst.priceImplies[1], /about 6% a year .*Every scenario assumes more: 8–23%\./);
-  assert.match(analyst.priceImplies[2], /analyst’s own estimate/);
+  assert.deepEqual(analyst.priceImplies, [
+    'At the $720 last price, the analyst’s reverse valuation implies an operating margin of about 30%. The scenarios assume 25–34%.',
+    'It also implies revenue growth of about 6%. Every scenario assumes more: 8–23%.',
+    'These figures are the analyst’s own estimate, not solved from the cash-flow model, so treat them as unchecked.',
+  ]);
+  // An analyst-written method is still not the code solver.
+  const named = valuationSummary([...valuationArtifacts(), reverse({ method: 'current_market_price_relative_to_discounted_residual_income', implied_margin: 0.3, implied_growth: null })])!;
+  assert.deepEqual(named.priceImplies, [
+    'At the $720 last price, the analyst’s reverse valuation implies an operating margin of about 30%. The scenarios assume 25–34%.',
+    'These figures are the analyst’s own estimate, not solved from the cash-flow model, so treat them as unchecked.',
+  ]);
+  const analystNone = valuationSummary([...valuationArtifacts(), reverse({ method: 'residual_income', implied_margin: null, implied_growth: null })])!;
+  assert.deepEqual(analystNone.priceImplies, ['The analyst’s reverse valuation gives no implied operating margin or growth rate for the $720 last price.']);
   const none = valuationSummary([...valuationArtifacts(), reverse({ method: 'fcff', implied_margin: null, implied_growth: null })])!;
   assert.deepEqual(none.priceImplies, ['No operating margin or growth rate in the range tested makes the base case worth the $720 last price.']);
   assert.deepEqual(valuationSummary(valuationArtifacts())!.priceImplies, []);

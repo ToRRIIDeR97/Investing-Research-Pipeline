@@ -165,7 +165,8 @@ export function valuationSummary(artifacts:Row[],options:{conclusionStatus?:stri
       reasons.push({title:verb==='eases'?'Growth slows.':verb==='rises'?'Growth speeds up.':'Growth holds steady.',
         text:`In the base case, revenue growth ${verb} from about ${pct0(first)} in ${base.years[gi]} to ${pct0(last)} by ${base.years.at(-1)}.`});
     }
-    const capex=base.years.map(y=>line('base',y,capexKeys)),cash=base.rows.find(r=>r.label==='Free cash flow')?.values??[];
+    // Capex can be stored as a negative outflow; compare the size of the spend.
+    const capex=base.years.map(y=>{const v=line('base',y,capexKeys);return v==null?null:Math.abs(v);}),cash=base.rows.find(r=>r.label==='Free cash flow')?.values??[];
     const s=schedule('base'),lastYear=base.years.at(-1)!;
     const afterTax=s?.terminal?.type==='multiple'&&/nopat|after[_\s-]*tax/i.test(String(s.terminal.metric))?num(s.terminal.metric_value):null;
     const profit=line('base',lastYear,profitKeys),lastCapex=capex.at(-1);
@@ -176,10 +177,12 @@ export function valuationSummary(artifacts:Row[],options:{conclusionStatus?:stri
       const comparison=afterTax!=null?`${more?'more':'less'} than the ${m(afterTax)} the business earns after tax that year`:`${more?'more':'less'} than that year’s operating profit of ${m(profit!)}`;
       const falls=lastCapex<first*0.95;
       const path=lastCapex>first*1.05?`climbs from ${m(first)} to ${m(lastCapex)} a year by ${lastYear}`:falls?`falls from ${m(first)} to ${m(lastCapex)} a year by ${lastYear}`:`stays around ${range(known,m)} a year through ${lastYear}`;
-      // The first year from which free cash flow stays positive, when it starts negative.
-      const turn=!cash.length||negative||positive?undefined:base.years.find((_,i)=>cash.slice(i).every(v=>v!=null&&v>0));
+      // The first year after a negative one from which free cash flow stays positive.
+      const firstNegative=cash.findIndex(v=>v!=null&&v<0);
+      const turn=firstNegative<0||negative||positive?undefined:base.years.find((_,i)=>i>firstNegative&&cash.slice(i).every(v=>v!=null&&v>0));
+      const peak=capex.indexOf(Math.max(...known)),peaked=peak>0&&peak<capex.length-1;
       const tail=negative?`, so free cash flow stays negative through ${lastYear}`:positive?', leaving positive free cash flow':turn!=null?`. Free cash flow turns positive in ${turn}`:'';
-      reasons.push({title:negative?'Spending eats the cash.':falls&&turn!=null?'Spending peaks, then eases.':more?'Spending outpaces profit.':'Spending is covered.',
+      reasons.push({title:negative?'Spending eats the cash.':falls&&turn!=null?(peaked?'Spending peaks, then eases.':'Spending eases.'):more?'Spending outpaces profit.':'Spending is covered.',
         text:`In the base case, capital expenditure ${path}, ${falls?'still ':''}${comparison}${tail}.`});
     }
     const endMargin=(t:ScenarioType)=>{const y=calculations.find(c=>c.type===t)?.years.at(-1);return y==null?null:margin(t,y);};
@@ -255,12 +258,19 @@ export function valuationSummary(artifacts:Row[],options:{conclusionStatus?:stri
       const r=pctRange(values);if(!r)return '';
       return implied>Math.max(...values)+0.005?` Every scenario assumes less: ${r}.`:implied<Math.min(...values)-0.005?` Every scenario assumes more: ${r}.`:` The scenarios assume ${r}.`;
     };
-    const lead=`To be worth ${at}, the base case would need`;
-    if(impliedMargin!=null)priceImplies.push(`${lead} an operating margin of about ${pct0(impliedMargin)} a year${through} (at base-case growth).${compare(impliedMargin,scenarioMargins)}`);
-    if(impliedGrowth!=null)priceImplies.push(`${impliedMargin!=null?'Or':lead} revenue growth of about ${pct0(impliedGrowth)} a year${through} (at base-case margins).${compare(impliedGrowth,scenarioGrowth)}`);
-    if(impliedMargin==null&&impliedGrowth==null)priceImplies.push(`No operating margin or growth rate in the range tested makes the base case worth ${at}.`);
-    // Code-built reverse valuations record their method; older ones were written by the analyst.
-    else if(!reverse.method)priceImplies.push('These figures are the analyst’s own estimate, not solved from the cash-flow model, so treat them as unchecked.');
+    // Only the code solver writes method 'fcff'; any other reverse valuation is the analyst's own.
+    if(reverse.method==='fcff'){
+      const lead=`To be worth ${at}, the base case would need`;
+      if(impliedMargin!=null)priceImplies.push(`${lead} an operating margin of about ${pct0(impliedMargin)} a year${through} (at base-case growth).${compare(impliedMargin,scenarioMargins)}`);
+      if(impliedGrowth!=null)priceImplies.push(`${impliedMargin!=null?'Or':lead} revenue growth of about ${pct0(impliedGrowth)} a year${through} (at base-case margins).${compare(impliedGrowth,scenarioGrowth)}`);
+      if(impliedMargin==null&&impliedGrowth==null)priceImplies.push(`No operating margin or growth rate in the range tested makes the base case worth ${at}.`);
+    }else if(impliedMargin==null&&impliedGrowth==null)priceImplies.push(`The analyst’s reverse valuation gives no implied operating margin or growth rate for ${at}.`);
+    else{
+      const lead=`At ${at}, the analyst’s reverse valuation implies`;
+      if(impliedMargin!=null)priceImplies.push(`${lead} an operating margin of about ${pct0(impliedMargin)}.${compare(impliedMargin,scenarioMargins)}`);
+      if(impliedGrowth!=null)priceImplies.push(`${impliedMargin!=null?'It also implies':lead} revenue growth of about ${pct0(impliedGrowth)}.${compare(impliedGrowth,scenarioGrowth)}`);
+      priceImplies.push('These figures are the analyst’s own estimate, not solved from the cash-flow model, so treat them as unchecked.');
+    }
   }
 
   return {currency,terminalYear:ty,weighted,weightedReturn,price:marketPrice,priceDate,priceVerified,notFinal,scenarios,disagreements,reasons,calculations,
