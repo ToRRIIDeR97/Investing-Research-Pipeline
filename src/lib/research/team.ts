@@ -9,6 +9,8 @@ import { getStageOutputContract } from "./stage-contracts";
 import { getEmbeddingProvider, retrievePassages, runDocuments } from "./memory";
 import { runSearches } from "./sources/collector";
 import { extractEvidenceForSources } from "./handlers/evidence-extraction";
+import { costOfCapitalInputs } from "./valuation/cost-of-capital";
+import { latestRiskFreeRate } from "./valuation/engine";
 
 const Role = z.enum(["data", "financials", "business", "valuation"]);
 export const ResearchRequest = z.object({
@@ -181,6 +183,10 @@ export interface SystemFacts {
   fred?: { sourceId: string; csv: string } | null;
 }
 const MARKET_TERMS = /price|market cap/i;
+// Cost-of-capital phrasing only: a bare "beta" or "ERP" also names product betas and ERP software.
+const BETA_TERMS = new RegExp([String.raw`\b(?:equity|levered|unlevered|regression|stock|market|adjusted|raw)\s+betas?\b`,
+  String.raw`\bbetas?\s+(?:of|for)\s+(?:the\s+)?(?:stock|shares|company|equity)\b`, "equity risk premium", "cost of equity", String.raw`\bcapm\b`,
+  String.raw`\bbetas?\b[^.?!]*\b(?:discount rates?|wacc|cost of capital)\b`, String.raw`\b(?:discount rates?|wacc|cost of capital)\b[^.?!]*\bbetas?\b`].join("|"), "i");
 const RATE_TERMS = /dgs10|(?:10|ten)[- ]year treasury|treasury yields?|risk[- ]free rates?|discount rates?/i;
 const withThousands = (value: number) => String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
@@ -191,9 +197,23 @@ function latestFredObservation(csv: string) {
   return null;
 }
 
-/** Market history is checked before FRED, so a price request that also names DGS10 cites the stored bars. */
+/**
+ * Beta and ERP requests to the valuation owner or for market data are checked first (they also cite DGS10), then market history before FRED,
+ * so a price request that also names DGS10 cites the stored bars.
+ */
 export function systemAnswer(request: TeamRequest, facts: SystemFacts): TeamAnswer | null {
   const history = facts.marketHistory?.content;
+  const beta = history?.beta;
+  if (facts.marketHistory && beta?.status === "computed" && (request.role === "valuation" || request.source_role === "market_data")
+    && BETA_TERMS.test(request.question)) {
+    const riskFree = facts.fred ? latestRiskFreeRate(facts.fred.csv, String(history!.market_data_cutoff || new Date().toISOString())) : null;
+    const inputs = costOfCapitalInputs({ beta, riskFreeRate: riskFree, cutoffAt: new Date(String(history!.market_data_cutoff)) });
+    const erp = inputs.equity_risk_premium;
+    const answer = [`Regression beta of ${beta.stock_symbol} against the ${beta.benchmark.name} (${beta.benchmark.symbol}): ${beta.adjusted_beta} adjusted (raw ${beta.raw_beta}, R² ${beta.r_squared}, standard error ${beta.standard_error}) from ${beta.observations} weekly returns, ${beta.window_start} to ${beta.window_end} (${beta.verified ? "verified" : "unverified"} closes).`,
+      ...(erp ? [`Implied equity risk premium ${erp.rate} as of ${erp.as_of} (${erp.publisher}, ${erp.url}).`] : []),
+      ...(inputs.capm_cost_of_equity ? [`CAPM cost of equity ${inputs.capm_cost_of_equity.rate} = ${inputs.capm_cost_of_equity.formula}.`] : [])].join(" ");
+    return { status: "answered", answer, evidence_ids: [], artifact_ids: [facts.marketHistory.id], ...(riskFree ? { source_ids: [facts.fred!.sourceId] } : {}), resolved_by: "system:cost-of-capital" };
+  }
   const bars = Number(history?.bars_available || 0);
   if (facts.marketHistory && bars > 0 && (request.source_role === "market_data" || (request.role === "data" && MARKET_TERMS.test(request.question)))) {
     const check = history!.cross_check || {};

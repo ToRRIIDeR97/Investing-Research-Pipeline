@@ -6,8 +6,9 @@ import { readCapped } from "@/lib/net";
 
 export const STOOQ_BASE_URL = "https://stooq.com/q/d/l/";
 
-/** Stooq lists US shares as `<ticker>.us`. Other listings are not mapped yet. */
+/** Stooq lists US shares as `<ticker>.us` and the S&P 500 index as `^spx`. Other listings are not mapped yet. */
 export function stooqSymbol(symbol: string): string | null {
+  if (symbol.toUpperCase() === "^GSPC") return "^spx";
   return /^[A-Za-z]{1,6}(-[A-Za-z])?$/.test(symbol) ? `${symbol.toLowerCase()}.us` : null;
 }
 

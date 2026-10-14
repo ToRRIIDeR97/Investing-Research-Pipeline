@@ -116,6 +116,7 @@ export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
         coveredRoles: Array.from(coveredRoles),
         discoveryRounds: rounds.length,
         priceHistory: sourceCorpus.priceHistory,
+        benchmarkPriceHistory: sourceCorpus.benchmarkPriceHistory,
         gaps: gaps.map((g: any) => g.gapKey),
       };
     } finally {
