@@ -304,15 +304,28 @@ export async function skipRequestRerun(tx: Sql, runId: string, batch: RequestBat
 type RequestPassage = { passage_id: string; source_id: string; title: string; section_path: string[]; page: number | null; text: string };
 /**
  * Research-memory passages of the request's source role from this run's documents (keyword ranking unless
- * embeddings are on). A search is worth running first when nothing matched or the question names a period
- * no document in scope covers; any word of the question matches, so a non-empty result alone proves little.
+ * embeddings are on). The owner's own stage artifacts seed the graph, so passages holding the claims they cite
+ * can take up to half the slots. A search is worth running first when no passage matched the question or it
+ * names a period no document in scope covers; any word of the question matches, so a non-empty result alone
+ * proves little, and cited passages say nothing about what is missing.
  */
 async function requestPassages(sql: Sql, runId: string, request: TeamRequest): Promise<{ passages: RequestPassage[]; searchFirst: boolean }> {
-  const result = await retrievePassages(sql, { runId, need: { key: request.id, query: request.question, sourceRoles: [request.source_role] },
+  const seedArtifactIds = await ownedArtifactIds(sql, runId, request.role);
+  const result = await retrievePassages(sql, { runId, need: { key: request.id, query: request.question, sourceRoles: [request.source_role], seedArtifactIds },
     embeddings: getEmbeddingProvider() });
   return { passages: result.passages.map(p => ({ passage_id: p.passage_id, source_id: p.source_id, title: p.title,
     section_path: p.section_path, page: p.page, text: p.text })),
-    searchFirst: !result.passages.length || result.gaps.some(gap => gap.reason === "no_documents_for_period") };
+    searchFirst: !result.passages.some(p => p.matched !== "graph") || result.gaps.some(gap => gap.reason === "no_documents_for_period") };
+}
+
+/** Current validated or accepted artifacts of the stages a role owns: the work a request to that owner concerns. */
+async function ownedArtifactIds(sql: Sql, runId: string, role: Request["role"]): Promise<string[]> {
+  const types = [...stageArtifactTypes(Object.keys(STAGE_OWNERS).filter(key => STAGE_OWNERS[key] === role))];
+  if (!types.length) return [];
+  const rows = await sql`SELECT DISTINCT ON (artifact_type, scope_key) id FROM research_artifacts
+    WHERE research_run_id = ${runId} AND status IN ('validated', 'accepted') AND artifact_type = ANY(${types}::text[])
+    ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC`;
+  return rows.map(row => String(row.id));
 }
 
 /** One collector search for a request; evidence is read only from documents new to the run. */
@@ -329,7 +342,10 @@ async function searchForRequest(sql: Sql, ctx: ResearchRunContext, request: Team
  * stage reads (as its stage call receives them), so the valuation owner also sees operating scenarios.
  */
 export function ownerArtifactTypes(role: Request["role"]): Set<string> {
-  const stages = [...Object.keys(STAGE_OWNERS).filter(key => STAGE_OWNERS[key] === role), ...(STAGE_DEPENDENCIES[TEAM_ROLES[role].stage] || [])];
+  return stageArtifactTypes([...Object.keys(STAGE_OWNERS).filter(key => STAGE_OWNERS[key] === role), ...(STAGE_DEPENDENCIES[TEAM_ROLES[role].stage] || [])]);
+}
+
+function stageArtifactTypes(stages: string[]): Set<string> {
   const types = new Set(stages.flatMap(key => getStageOutputContract(key)?.requiredKeys || []));
   if (stages.includes("historical_record")) types.add("historical_record");
   return types;

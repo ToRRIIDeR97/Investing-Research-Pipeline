@@ -383,7 +383,7 @@ frame("loop [scheduling pass while stages are ready]", "#6f4fa3", xs[2] - 70, xs
 def requests_body():
     msg(4, 2, "processResearchRequests: queued → processing, no reset")
     msg(4, 2, "system answers: market_price_history, FRED DGS10")
-    msg(4, 2, "retrievePassages(request source role)")
+    msg(4, 2, "retrievePassages(source role, seeds: owner artifacts)")
     msg(4, 6, "team_answer(owner, report inputs + passages)")
     msg(6, 7, "one call; one more after a collector search")
     msg(4, 2, "requestResetPlan: none → answered · auto → reset once")
