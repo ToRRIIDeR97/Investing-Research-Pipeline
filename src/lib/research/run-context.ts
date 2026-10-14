@@ -389,15 +389,19 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
   const sourceLedger = asksForSources ? await getStageSourceRequests(params.sql, params.ctx.runId, params.stageKey) : null;
   const sourceRequests = asksForSources ? sourceRequestContext(sourceLedger) : null;
   // Rules precede the task packet, which stays the last part of the prompt.
-  const addRule = (rule: string) => {
+  const addRule = (rule: string, unlessPresent = false) => {
     const withRule = (text: string) => {
       const at = text.lastIndexOf("\n\nTask packet:");
+      // Only the instructions count: packet text could quote the rule.
+      if (unlessPresent && text.slice(0, at >= 0 ? at : undefined).includes(rule)) return text;
       return at >= 0 ? `${text.slice(0, at)}\n${rule}${text.slice(at)}` : `${rule}\n${text}`;
     };
     const factory = params.promptFactory;
     if (factory) params = { ...params, promptFactory: packet => withRule(factory(packet)) };
     else if (params.prompt) params = { ...params, prompt: withRule(params.prompt) };
   };
+  // exactJsonPrompt states the untrusted-data rule; a hand-written prompt gets it here, so no stage call lacks it (#27).
+  addRule(UNTRUSTED_DATA_RULE, true);
   if (sourceRequests) addRule(sourceRequestRule(sourceRequests.allowed));
   if (role && !params.taskType.startsWith("team_")) {
     const rows = await params.sql`SELECT artifact_type, scope_key, content_json FROM research_artifacts
@@ -450,7 +454,7 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
   const finish = async (output: Record<string, unknown>): Promise<T> => {
     if (!sourceRequests) return output as T;
     const { source_requests: asked, ...rest } = output;
-    const searches = sourceRequests.allowed ? parseSourceRequests(asked, sourceLedger) : [];
+    const searches = sourceRequests.allowed ? parseSourceRequests(asked, sourceLedger, { name: params.ctx.assetName, symbol: params.ctx.symbol }) : [];
     const waiting = sourceLedger?.rounds.some(round => round.task_key === taskKey && round.state === "queued");
     if (searches.length || waiting) {
       if (searches.length) await queueSourceRequests(params.sql, params.ctx, params.stageKey, role!, taskKey, searches);

@@ -5,32 +5,40 @@ import { storeDiscoveredSources } from "./corpus";
 import { discoverRoleSources } from "./role-discovery";
 import { recordSourceCoverage, reconcileRoleGaps, sourcePlanFor, v2RunContext, withLinkedRunSources } from "./role-coverage";
 import type { SourceRole } from "./roles";
-import { getQueuedSourceRequests, queryTermCoverage, saveStageSourceRequests, type FetchedDocument, type SourceSearch,
+import { constrainSearch, getQueuedSourceRequests, queryTermCoverage, saveStageSourceRequests, type FetchedDocument, type SourceSearch,
   type StageSourceRequest } from "./source-requests";
 
 export type SearchResult = SourceSearch & { status: "fetched" | "unavailable"; documents: FetchedDocument[] };
 
-/** Run named searches and store what was fetched, attributing each document to the query that found it. */
-export async function runSearches(sql: Sql, ctx: ResearchRunContext, searches: SourceSearch[], requestedBy: string,
+/**
+ * Run named searches and store what was fetched, attributing each document to the query that found it. Every query
+ * is model-chosen, so each passes constrainSearch first; a rejected one is recorded unavailable and never sent.
+ */
+export async function runSearches(sql: Sql, ctx: ResearchRunContext, requested: SourceSearch[], requestedBy: string,
   metadata: Record<string, unknown> = {}): Promise<SearchResult[]> {
+  const constrained = requested.map(search => constrainSearch(search, { name: ctx.assetName, symbol: ctx.symbol }));
+  const searches = constrained.filter((search): search is SourceSearch => Boolean(search));
   const roleQueries: Partial<Record<SourceRole, string[]>> = {};
   for (const search of searches) (roleQueries[search.source_role] ||= []).push(search.query);
-  const discovered = await discoverRoleSources({ assetName: ctx.assetName, symbol: ctx.symbol,
-    cutoffAt: ctx.cutoffAt.toISOString(), roleQueries, requestedOnly: true }, searches.map(search => search.source_role));
+  const discovered = searches.length ? await discoverRoleSources({ assetName: ctx.assetName, symbol: ctx.symbol,
+    cutoffAt: ctx.cutoffAt.toISOString(), roleQueries, requestedOnly: true }, searches.map(search => search.source_role)) : [];
   const stored = await storeDiscoveredSources(sql, v2RunContext(ctx), discovered);
   // A document already stored by another run keeps its first metadata, so attribute by fetch order.
-  const results = searches.map(search => {
+  const results = constrained.map((search, index) => {
+    if (!search) return { ...requested[index], status: "unavailable" as const, documents: [], rejected: true };
     const documents = stored.filter((_, index) => discovered[index].metadata.discovery_query === search.query
       && discovered[index].metadata.source_role === search.source_role)
       .map(source => ({ source_id: source.sourceId, title: source.title, url: source.url || null }));
-    return { ...search, status: documents.length ? "fetched" as const : "unavailable" as const, documents };
+    return { ...search, status: documents.length ? "fetched" as const : "unavailable" as const, documents, rejected: false };
   });
-  for (const result of results) await sql`INSERT INTO source_retrieval_attempts
+  // Every model-chosen query is logged with the text the model asked for, so a steered search can be reviewed.
+  for (const [index, { rejected, ...result }] of results.entries()) await sql`INSERT INTO source_retrieval_attempts
     (research_run_id, source_role, attempt_status, failure_reason, attempt_metadata_json)
     VALUES (${ctx.runId}, ${result.source_role}, ${result.status === "fetched" ? "attempted" : "unavailable"},
-      ${result.status === "fetched" ? null : "no_substantive_source_fetched"},
-      ${sql.json({ query: result.query, reason: result.reason, fetched_documents: result.documents.length, requested_by: requestedBy, ...metadata } as any)})`;
-  return results;
+      ${result.status === "fetched" ? null : rejected ? "query_rejected" : "no_substantive_source_fetched"},
+      ${sql.json({ query: result.query, requested_query: requested[index].query, reason: result.reason,
+        fetched_documents: result.documents.length, requested_by: requestedBy, ...metadata } as any)})`;
+  return results.map(({ rejected: _, ...result }) => result);
 }
 
 /** Reasons the collector gave for required roles it could not cover. */
