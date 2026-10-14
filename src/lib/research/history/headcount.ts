@@ -9,6 +9,7 @@
  * (metric_type 'calculated' or lower confidence) and require the evidence sentence.
  */
 import { dropElements } from '@/lib/html-scan';
+import { fiscalCalendar, type FiscalPeriod } from './fiscal-calendar';
 
 export type HeadcountFinding = {
   value: number;
@@ -140,7 +141,7 @@ export function extractHeadcount(text: string): HeadcountFinding[] {
 }
 
 export type HeadcountSource = { id: string; url: string; published_at: string; form: string };
-export type FiscalPeriod = { end: string; fiscal_year: number; fiscal_quarter: number };
+export type { FiscalPeriod };
 
 /**
  * Place findings on the run's fiscal calendar and shape them as `employees` observations.
@@ -149,17 +150,7 @@ export type FiscalPeriod = { end: string; fiscal_year: number; fiscal_quarter: n
  * Per as-of date the latest filing wins; a periodic report beats an 8-K filed the same day.
  */
 export function headcountObservations(found: { source: HeadcountSource; findings: HeadcountFinding[] }[], periods: FiscalPeriod[]) {
-  const known = new Map(periods.map(p => [p.end, p]));
-  const day = 86_400_000;
-  const place = (asOf: string) => {
-    if (known.has(asOf)) return known.get(asOf)!;
-    const nearest = [...known.values()].sort((a, b) => Math.abs(Date.parse(a.end) - Date.parse(asOf)) - Math.abs(Date.parse(b.end) - Date.parse(asOf)))[0];
-    if (!nearest) return null;
-    const quarters = (Date.parse(asOf) - Date.parse(nearest.end)) / day / 91.3125;
-    if (Math.abs(quarters - Math.round(quarters)) * 91.3125 > 10) return null;
-    const index = nearest.fiscal_year * 4 + nearest.fiscal_quarter - 1 + Math.round(quarters);
-    return { end: asOf, fiscal_year: Math.floor(index / 4), fiscal_quarter: index % 4 + 1 };
-  };
+  const place = fiscalCalendar(periods);
   const periodic = (form: string) => /^10-[KQ]/.test(form);
   const groups = new Map<string, { source: HeadcountSource; finding: HeadcountFinding }[]>();
   const unplaced: { source_document_id: string; as_of: string; value: number; evidence: string }[] = [];

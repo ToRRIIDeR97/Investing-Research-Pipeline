@@ -106,6 +106,8 @@ export const sourceDiscoveryHandler: StageHandler<Record<string, unknown>> = {
       await saveReportArtifact(sql, ctx, "source_review", "discovery", {
         sufficient: Boolean(final?.sufficient), assessment: final?.assessment || "", rounds,
         covered_roles: [...coveredRoles], missing_required_roles: missingRoles,
+        // Read by historical_record, so market_price_history reports whether the Stooq check ran.
+        price_history_sync: sourceCorpus.priceHistory,
       });
 
       return {
