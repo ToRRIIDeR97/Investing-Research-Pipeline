@@ -412,14 +412,16 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
     const dependencies = STAGE_DEPENDENCIES[params.stageKey] || [];
     const types = new Set(dependencies.flatMap(key => getStageOutputContract(key)?.requiredKeys || []));
     if (dependencies.includes("historical_record")) types.add("historical_record");
+    // Only the dependency types and, when the packet has none, the evidence are read; no input hash is needed.
     const inputs = role === "data" ? { artifacts: [], evidence: [] } :
-      await loadReportInputs(params.sql, params.ctx.runId, params.ctx.cutoffAt.toISOString());
+      await loadReportInputs(params.sql, params.ctx.runId, params.ctx.cutoffAt.toISOString(),
+        { types: [...types], fingerprint: false, evidence: !params.packet.evidence_claims });
     params = { ...params, packet: { ...params.packet,
       ...(!params.packet.evidence_claims && role !== "data" ? { evidence_claims: inputs.evidence } : {}),
       team_context: { role, purpose: TEAM_ROLES[role].purpose,
         brief: rows.find(r => r.artifact_type === "agent_brief")?.content_json || null,
         // The report packet already carries the same requests as specialist_requests.
-        ...("specialist_requests" in params.packet ? {} : { requests }), upstream_artifacts: inputs.artifacts.filter(a => types.has(a.artifact_type)),
+        ...("specialist_requests" in params.packet ? {} : { requests }), upstream_artifacts: inputs.artifacts,
         ...(sourceRequests ? { source_requests: { ...sourceRequests, instructions: sourceRequestRule(sourceRequests.allowed) } } : {}) },
     } };
   }
@@ -486,6 +488,7 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
       taskPacket: params.packet,
       prompt: params.prompt,
       promptFactory: params.promptFactory,
+      builtPrompt: request.prompt,
       outputFormat: params.outputFormat,
       cacheScope: params.ctx.runId,
       perCallKeys: params.perCallKeys,

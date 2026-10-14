@@ -172,9 +172,12 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
   const needs = evidenceNeeds(roles, { name: ctx.assetName }, { passageBudget: evidencePassageBudget(documents.length), kpis: options.kpis });
   const roleless = documents.filter((doc) => !doc.role).map((doc) => doc.id);
   if (roleless.length) needs.push({ key: "general", query: `${ctx.assetName} business revenue growth risk strategy`, sourceIds: roleless, maxPassages: 4 });
-  // With embeddings configured, every passage the packet can draw on gets a vector first.
+  // With embeddings configured, every passage the packet can draw on gets a vector first. Only run documents
+  // are retrieved from, so the companyfacts context (left out of them) is not indexed into XBRL fragments here.
   const embeddings = getEmbeddingProvider();
-  if (embeddings) for (const sourceId of sourceIds) await ensureDocumentIndexed(sql, { sourceId, runId: ctx.runId, embeddings });
+  if (embeddings) for (const sourceId of sourceIds) {
+    if (typeOf.has(sourceId)) await ensureDocumentIndexed(sql, { sourceId, runId: ctx.runId, embeddings });
+  }
   const chunks: ReturnType<typeof packetChunk>[] = [];
   const seen = new Set<string>();
   const add = (passage: RetrievedPassage, need: string) => {

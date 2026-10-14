@@ -139,6 +139,8 @@ export interface AgentRequest<T = unknown> {
   taskPacket: Record<string, unknown>;
   prompt?: string;
   promptFactory?: (packet: Record<string, unknown>) => string;
+  /** buildTaskPrompt's result for this request, when the caller already built it; it is not rebuilt. */
+  builtPrompt?: string;
   signal?: AbortSignal;
   policy?: Partial<ExecutionPolicy>;
   hooks?: AgentLifecycleHooks;
