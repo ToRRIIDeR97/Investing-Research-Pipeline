@@ -25,7 +25,10 @@
     "db:push": "drizzle-kit push",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "store:sync": "tsx scripts/research-store.ts sync",
+    "store:export": "tsx scripts/research-store.ts export",
+    "store:import": "tsx scripts/research-store.ts import"
   },
   "dependencies": {
     "@types/pg": "^8.11.14",

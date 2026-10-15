@@ -25,6 +25,8 @@ pnpm-debug.log*
 *.sqlite
 *.sqlite3
 storage/*
+# Checkout of the research-store branch (scripts/research-store.ts)
+/research-store/
 !storage/.gitkeep
 
 # TypeScript / framework caches

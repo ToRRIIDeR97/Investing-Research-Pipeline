@@ -14,7 +14,7 @@
 | Master UML views and coverage index | [docs/architecture.md](docs/architecture.md) |
 | Database setup, worker, test databases | [docs/local-development.md](docs/local-development.md) |
 | Provider configuration and limits | [docs/local-agent-harness.md](docs/local-agent-harness.md) |
-| Storage cleanup (dry run by default) | [docs/operations.md](docs/operations.md) |
+| Storage cleanup (dry run by default), research sync between machines (`npm run store:sync`) | [docs/operations.md](docs/operations.md) |
 | Original target-state proposal (not the current system) | [architecture.md](architecture.md) |
 
 ## Commands
