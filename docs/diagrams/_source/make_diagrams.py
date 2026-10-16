@@ -48,10 +48,11 @@ s.text(16, 690, "Solid: call/dependency · Dashed: network or DB access. All lib
 s.save(P("component.svg"))
 
 # ---------------------------------------------------------------- deployment
-s = Svg(1060, 520, "Research OS — UML deployment view (local only)",
+s = Svg(1060, 640, "Research OS — UML deployment view (local only)",
         "All runtime nodes run on one developer machine: Next.js server, research worker, python3 child processes, "
-        "./storage, and a Docker Postgres container. Outbound HTTPS to LLM and data providers. No hosted deployment exists.")
-s.zone(20, 50, 700, 450, "«device» Developer macOS host", "#3b6ea8")
+        "./storage, and a Docker Postgres container. Outbound HTTPS to LLM and data providers. No hosted deployment exists. "
+        "Machines share research only through the research-store branch on GitHub.")
+s.zone(20, 50, 700, 560, "«device» Developer macOS host", "#3b6ea8")
 s.box(40, 85, 300, 110, "Next.js 15 server", ["npm run dev | build && start", "UI + /api/* route handlers", "127.0.0.1 :3000 (dev-with-db.cjs) · :3002"], "api", stereo="execution environment")
 s.box(380, 85, 320, 110, "Research worker", ["npm run worker:research [-- --once]", "tsx src/workers/research-worker.ts", "env: DATABASE_URL, RESEARCH_*"], "worker", stereo="execution environment")
 s.box(380, 230, 320, 90, "Child processes", ["run_backtest.py run: sandbox-exec | bwrap", "docling_parser.py · pdftotext · node (repair)"], "worker", stereo="execution environment")
@@ -71,6 +72,9 @@ s.line([(700, 170), (760, 290)], "HTTPS", lx=735, ly=225)
 s.line([(700, 300), (760, 430)], "HTTPS", lx=740, ly=360)
 s.line([(340, 120), (380, 120)], None, dashed=True)
 s.text(345, 112, "DB-mediated", 10, fill="#555")
+s.box(40, 505, 300, 90, "Folder ./research-store", ["worktree of branch research-store", "npm run store:sync · gitignored"], "store", stereo="artifact")
+s.box(760, 510, 280, 80, "GitHub (private repo)", ["branch research-store", "other machines sync here"], "ext", stereo="external node")
+s.line([(340, 550), (760, 550)], "git fetch / push", lx=550, ly=542)
 s.save(P("deployment.svg"))
 
 # ---------------------------------------------------------------- class

@@ -205,7 +205,7 @@ Company genesis follows the same rule for citations: IDs still unknown after its
 
 ## Invariants
 
-- PostgreSQL owns all research state. Files under `storage/` are referenced from database rows by path and hash.
+- PostgreSQL owns all research state. Files under `storage/` are referenced from database rows by path and hash. Each machine has its own database; `npm run store:sync` copies rows and files between machines through the `research-store` branch ([operations](operations.md#sync-research-between-machines)).
 - Agents propose and validators accept. Model calls have no tool execution. Output passes structured-output parsing, then stage contracts and validators, before artifacts are `validated`. A human gate moves what it approved to `accepted`: plan approval accepts `research_plan`, and stage-22 approval accepts every current artifact (the approved report and its inputs). Artifacts saved after that gate (export, refresh schedule, chat) stay `validated`.
 - A run has one current artifact per type and scope. A save with changed content or status adds the next version and marks the earlier ones `superseded`, including on stage retries and re-runs; an unchanged save keeps the current row. Readers take `validated` or `accepted` and never `superseded`.
 - Execution goes only through `research_run_jobs`, which are owner-guarded by `lease_owner`, and through the per-run advisory lock in `runResearchPipeline`. The API never runs the pipeline in-process.

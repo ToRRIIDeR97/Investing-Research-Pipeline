@@ -61,7 +61,9 @@ Handlers are registered in the `STAGE_HANDLERS` map (`src/lib/research/handlers/
 
 ![UML deployment view: everything on one developer host plus Postgres and external HTTPS services](diagrams/deployment.svg)
 
-There's no hosted deployment and no CI workflow in the repository, so there are no rollback or on-call procedures, and therefore no `docs/operations.md`.
+There's no hosted deployment and no CI workflow in the repository, so there are no rollback or on-call procedures. `docs/operations.md` covers storage cleanup and research sync.
+
+Machines share research only through the `research-store` branch on GitHub. `npm run store:sync` imports and exports each machine's local Postgres rows and `storage/` files through the gitignored `./research-store/` worktree ([operations](operations.md#sync-research-between-machines)).
 
 Local entry points, all bound to `127.0.0.1`:
 - `npm run dev` and `npm run start`;
@@ -162,6 +164,7 @@ Report requests are answered inside the scheduling loop without resetting stages
 | Financials view: metric catalogue, statement charts, My charts | Component, Class | `src/components/financial-statements.tsx`, `src/components/financials/**`, `reporting/metric-catalogue.ts`, `reporting/chart-series.ts`, `reporting/saved-charts.ts`, `src/app/api/saved-charts/**` |
 | Postgres | Component, Deployment, Class | `src/db/schema/**`, `src/db/schemas.ts`, `drizzle/`, `docker-compose.yml` |
 | `./storage` | Component, Deployment, Trust | `storage/` (gitignored); opt-in cleanup `scripts/storage-gc.ts`, `src/lib/maintenance/storage-gc.ts` ([operations](operations.md#storage-cleanup)) |
+| Research store sync | Deployment, Trust | `scripts/research-store.ts`, `src/lib/maintenance/research-store.ts` (`exportStore`, `importStore`, `decideRow`), branch `research-store` checked out at `./research-store/` (gitignored) ([operations](operations.md#sync-research-between-machines)) |
 | Child processes | Component, Deployment, Trust | `python/**`, `repair/sandbox.ts` |
 | LLM and embedding providers | Component, Deployment, Sequence, Trust | `providers/*.ts`, `memory/embeddings.ts` |
 | Search and data APIs | Component, Deployment, Trust | `sources/role-discovery.ts`, `sources/corpus.ts`, `market-data/providers/yahoo.ts`, `market-data/providers/stooq.ts` |

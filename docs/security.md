@@ -20,6 +20,7 @@ This document was verified against source on 2026-10-05, and the controls change
 | Research state and decisions | Postgres: runs, stages, artifacts, evidence, `claim_relationships`, `document_embeddings`, `review_decisions`, … | Medium: private analysis; integrity matters |
 | Prompts, outputs, call metadata | `model_call_logs`, agent traces. Cache metadata stores hashes and byte counts, never prompt content | Medium |
 | Files | `storage/sources`, `storage/backtests`, `storage/exports` (gitignored) | Medium |
+| Research store | The `research-store` branch on GitHub: a copy of every synced table (research state, `model_call_logs`, budget ledger) and every `storage/` file a row names. The repository must stay private | Medium: the private analysis leaves the machine |
 | Database credentials | `DATABASE_URL`. `docker-compose.yml` publishes port 5432 on `127.0.0.1` only and reads `POSTGRES_PASSWORD` (default `research_os_dev`). `research_os` is a superuser in that image | Low on its own; high if the port is exposed |
 
 ## Trust boundaries
@@ -32,6 +33,7 @@ This document was verified against source on 2026-10-05, and the controls change
 | Z3 External hosts | LLM endpoint, embedding endpoint, configured search endpoint or DuckDuckGo/Bing HTML, discovered URLs, SEC, FRED, Yahoo, Stooq, World Bank, EIA, FDIC, Coinbase, blockchain.info | Their output is untrusted data |
 | Z4a python3 children | `run_backtest.py` (model-written code), `run_backtest_grid.py`, `docling_parser.py`, `pdftotext` | Run with the developer's OS privileges, except the `run_backtest.py run` phase, which runs in an OS sandbox that protects the host, not the integrity of the backtest's results (see below) |
 | Z4b Repair sandbox | `src/lib/research/repair/sandbox.ts`: model-written JavaScript in a separate Node process | Defence in depth (see below) |
+| Z5 Research store | The `research-store` branch, written by `npm run store:sync` on any machine with push access | Trusted like Z2, but anyone who can push to the branch can change rows and files that the next sync imports. Import accepts only rows that fit the local schema, inside one transaction |
 
 ## Authentication and authorization
 
