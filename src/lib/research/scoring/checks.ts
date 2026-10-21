@@ -128,7 +128,7 @@ export function runChecks(snapshot: RunSnapshot): CheckResult[] {
   checks.push(result("depth_critical_missing", "No decision-critical depth check missing", Array.isArray(review?.depth_checks) ? missing.length === 0 : null,
     missing.map((c: Row) => c.id).join(", ") || "none", missing.length));
   checks.push(result("effective_verdict", "Effective verdict allows position approval", derived ? isPassing(derived.effective_verdict) : null,
-    derived ? `model ${derived.model_verdict}, effective ${derived.effective_verdict}; ${derived.blocking.map((b) => b.reason).join("; ") || "no blocking findings"}` : "no review",
+    derived ? `model ${derived.model_verdict}, effective ${derived.effective_verdict}; ${[...new Set(derived.blocking.map((b) => b.reason))].join("; ") || "no blocking findings"}` : "no review",
     derived?.effective_verdict ?? null));
   if (document) {
     const reconciled = reconcileCoverage(document.coverage ?? [], undefined, { artifacts: artifacts as any, sections: document.sections ?? [], findings: review?.findings ?? [] });

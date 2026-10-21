@@ -1,0 +1,4 @@
+scoring_commit,case,run_id,run_created_at,cutoff,checks_passed,checks_applicable,probes_flagged,probes_total,traits_present,traits_total,figure_trace_rate,reader_leaks,effective_verdict,human_rating_mean,scored_at
+e40326c3,META,4fae0fb1-76b3-4d2b-b386-e48eb9547a75,2026-10-13T06:36:31.376Z,2026-10-13T06:36:31.375Z,2,13,8,8,3,12,0.805,33,needs_more_work,,2026-10-21T17:32:06.867Z
+e40326c3,SOFI,c2822589-ead9-4fee-a253-459f39ca4cb1,2026-08-05T17:37:31.334Z,2026-08-05T17:37:31.332Z,1,6,0,0,0,12,,,,,2026-10-21T17:32:06.881Z
+e40326c3,MELI,dca55615-62e4-46c3-ab2c-648460c37f56,2026-09-29T13:12:10.060Z,2026-09-29T13:12:10.059Z,4,13,0,0,2,12,0.901,62,needs_more_work,,2026-10-21T17:32:07.781Z
