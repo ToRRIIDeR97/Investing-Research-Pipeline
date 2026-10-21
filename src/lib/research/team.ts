@@ -11,6 +11,7 @@ import { runSearches } from "./sources/collector";
 import { extractEvidenceForSources } from "./handlers/evidence-extraction";
 import { costOfCapitalInputs } from "./valuation/cost-of-capital";
 import { latestRiskFreeRate } from "./valuation/engine";
+import { REWORK_STAGES, type ReworkStage } from "./reporting/depth";
 
 const Role = z.enum(["data", "financials", "business", "valuation"]);
 export const ResearchRequest = z.object({
@@ -30,11 +31,22 @@ export type TeamAnswer = {
   /** The owner asks for its stage and dependents to rerun. */
   requires_rerun?: boolean;
 };
-/** `source_searched`: the collector already searched for this request, so it is never searched again. */
-export type TeamRequest = Request & { id: string; response?: TeamAnswer; source_searched?: boolean };
-/** `rerun_stages`: analysis stages a re-run reopened; the batch waits for them before asking again. */
+/**
+ * `source_searched`: the collector already searched for this request, so it is never searched again.
+ * `rework_stage`: a review finding sent this analysis stage back; code asks for its rerun, and `reworked`
+ * records that the rerun was granted, so the request is then answered instead of rerun again.
+ */
+export type TeamRequest = Request & { id: string; response?: TeamAnswer; source_searched?: boolean;
+  rework_stage?: ReworkStage; section_id?: string; reworked?: boolean };
+/**
+ * `rerun_stages`: analysis stages a re-run reopened; the batch waits for them before asking again.
+ * `post_review_round`: the round the report review used. Pre-draft requests may use two rounds; one more is
+ * kept for the review's findings, and nothing is asked after it.
+ */
 export interface RequestBatch { round: number; state: "queued" | "processing" | "answered"; source_escalated?: boolean;
-  rerun_stages?: string[]; requests: TeamRequest[] }
+  rerun_stages?: string[]; post_review_round?: number; requests: TeamRequest[] }
+export type RequestPhase = "pre_draft" | "post_review";
+export const MAX_PRE_DRAFT_ROUNDS = 2;
 const MAX_REQUESTS = 5;
 /** The wire schema cannot carry maxItems, so requests past the fifth are dropped locally instead of costing a full-prompt repair. */
 const firstRequests = <T>(value: T): T => {
@@ -125,9 +137,12 @@ export function teamBriefScheduler(prepare: (ctx: ResearchRunContext) => Promise
   };
 }
 
-/** The next round: at most two, repeated questions dropped, per-run flags carried. Null when there is nothing new. */
-export function nextRequestBatch(previous: RequestBatch | null, proposed: Request[]): RequestBatch | null {
-  if ((previous?.round || 0) >= 2) return null;
+/**
+ * The next round: at most two before drafting and one after the review, repeated questions dropped, per-run
+ * flags carried. Null when there is nothing new or the phase has no round left.
+ */
+export function nextRequestBatch(previous: RequestBatch | null, proposed: (Request & Partial<TeamRequest>)[], phase: RequestPhase = "pre_draft"): RequestBatch | null {
+  if (!roundAvailable(previous, phase)) return null;
   const asked = new Set(previous?.requests.map(r => r.question.trim().toLowerCase()));
   const fresh = proposed.filter(r => {
     const key = r.question.trim().toLowerCase();
@@ -138,15 +153,52 @@ export function nextRequestBatch(previous: RequestBatch | null, proposed: Reques
   if (!fresh.length) return null;
   const round = (previous?.round || 0) + 1;
   return { round, state: "queued", ...(previous?.source_escalated !== undefined ? { source_escalated: previous.source_escalated } : {}),
+    ...(phase === "post_review" ? { post_review_round: round } : {}),
     requests: [...(previous?.requests || []), ...fresh.map((r, i) => ({ ...r, id: `request-${round}-${i + 1}` }))] };
 }
 
-/** The report owner decides what is missing, using the complete current input snapshot. */
-export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, findings: Record<string, any>[] = []) {
+const roundAvailable = (previous: RequestBatch | null, phase: RequestPhase) =>
+  !previous?.post_review_round && (phase === "post_review" || (previous?.round || 0) < MAX_PRE_DRAFT_ROUNDS);
+const inRound = (request: TeamRequest, round: number | undefined) => Boolean(round) && request.id.startsWith(`request-${round}-`);
+
+/** Requests asked before drafting: writers and the outline read only these, so post-review answers leave their cached calls intact. */
+export function preDraftRequests(batch: RequestBatch | null): TeamRequest[] {
+  return (batch?.requests || []).filter(r => !inRound(r, batch?.post_review_round));
+}
+export const preDraftBatch = (batch: RequestBatch | null): RequestBatch | null => batch && { ...batch, requests: preDraftRequests(batch) };
+
+/** The review round's requests with their answers, as repair feedback for the sections they name. */
+export function postReviewAnswers(batch: RequestBatch | null): Record<string, any>[] {
+  return (batch?.requests || []).filter(r => inRound(r, batch?.post_review_round) && r.response).map(r => ({
+    source: "team_answer", category: "team_answer", ...(r.section_id ? { section_id: r.section_id } : {}), question: r.question,
+    status: r.response!.status, answer: r.response!.answer, evidence_ids: r.response!.evidence_ids, artifact_ids: r.response!.artifact_ids }));
+}
+
+const REWORK_ROLE: Partial<Record<ReworkStage, Request["role"]>> = { asset_valuation: "valuation" };
+/** One rework request per owning stage from the review's analysis_rework findings. */
+export function reworkRequests(findings: Record<string, any>[]): (Request & Pick<TeamRequest, "rework_stage" | "section_id">)[] {
+  const byStage = new Map<ReworkStage, Record<string, any>>();
+  for (const f of findings) {
+    const stage = f.owner_stage as ReworkStage;
+    if (f.category === "analysis_rework" && (REWORK_STAGES as readonly string[]).includes(stage) && !byStage.has(stage)) byStage.set(stage, f);
+  }
+  return [...byStage].map(([stage, f]) => {
+    const issue = String(f.issue ?? f.message ?? f.description ?? f.repair ?? "").trim();
+    return { role: REWORK_ROLE[stage] ?? "business", material: true, needs_sources: false, source_role: "regulatory_filing" as const,
+      question: `Rework ${stage}: ${issue || "the reviewer found the analysis incomplete"}`.slice(0, 1500),
+      rework_stage: stage, ...(f.section_id ? { section_id: String(f.section_id) } : {}) };
+  });
+}
+
+/**
+ * The report owner decides what is missing, using the complete current input snapshot. The post-review phase also
+ * turns analysis_rework findings into rerun requests for their owning stages.
+ */
+export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, findings: Record<string, any>[] = [], phase: RequestPhase = "pre_draft") {
   const previous = await getTeamRequests(sql, ctx.runId);
   if (previous && previous.state !== "answered") throw new ResearchRequestsPending();
   // Persisted limit survives worker restarts. Unavailable material answers stay blocked.
-  if ((previous?.round || 0) >= 2) return;
+  if (!roundAvailable(previous, phase)) return;
   const inputs = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
   const packet = { asset: { name: ctx.assetName, symbol: ctx.symbol }, ...inputs, previous_requests: previous?.requests || [],
     findings, role: "report", output_contract: "team_requests" };
@@ -157,7 +209,7 @@ export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, 
         "Request only specific unanswered investment questions or material inconsistencies, at most 5, most material first. Return an empty requests array when the supplied research is adequate. Do not request information already present or repeat answered/unavailable requests.",
         "Route financial extraction/reconciliation to financials, management/operations/scenarios to business, valuation calculations to valuation, and missing documents to data. Set needs_sources when new external evidence is required; source_role tells the collector where to search. Stored price history and the FRED 10-year Treasury series are answered directly from the run's data. Owners answer from the run's documents without rerunning their analysis; the collector searches once for a missing document, and a stage reruns only when its owner says its own output must be recomputed.",
         "role names the specialist and must be exactly one of: data, financials, business, valuation. Document types such as regulatory_filing or market_data belong in source_role, never in role."] }) });
-  const batch = nextRequestBatch(previous, firstRequests(result).requests);
+  const batch = nextRequestBatch(previous, [...(phase === "post_review" ? reworkRequests(findings) : []), ...firstRequests(result).requests], phase);
   if (!batch) return;
   await saveReportArtifact(sql, ctx, "team_requests", "requests", batch);
   throw new ResearchRequestsPending();
@@ -248,9 +300,9 @@ async function loadSystemFacts(sql: Sql, runId: string): Promise<SystemFacts> {
     fred: fred?.csv ? { sourceId: String(fred.id), csv: String(fred.csv) } : null };
 }
 
-/** Only an owner's requires_rerun names a root; data requests never reopen source discovery. */
+/** Only an owner's requires_rerun names a root; data requests never reopen source discovery. Rework requests name their stage. */
 export function requestStageRoots(requests: TeamRequest[]): string[] {
-  return [...new Set(rerunRequests(requests).map(r => TEAM_ROLES[r.role].stage))];
+  return [...new Set(rerunRequests(requests).map(r => r.rework_stage ?? TEAM_ROLES[r.role].stage))];
 }
 const rerunRequests = (requests: TeamRequest[]) => requests.filter(r => r.response?.requires_rerun === true && r.role !== "data");
 
@@ -309,7 +361,7 @@ export async function rerunRequestStages(tx: Sql, runId: string, batch: RequestB
     requests: batch.requests.map(request => {
       if (!ids.has(request.id)) return request;
       const { response: _, ...asked } = request;
-      return asked;
+      return asked.rework_stage ? { ...asked, reworked: true } : asked;
     }) });
 }
 
@@ -433,6 +485,7 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
   const open: TeamRequest[] = [];
   let changed = false;
   for (const request of batch.requests.filter(r => !r.response)) {
+    if (request.rework_stage) { set({ ...request, response: reworkAnswer(request) }); changed = true; continue; }
     const system = systemAnswer(request, facts);
     if (system) { set({ ...request, response: system }); changed = true; continue; }
     if (request.needs_sources && !request.source_searched) {
@@ -508,6 +561,13 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
         || ${tx.json({ request_reset: { ...record, estimated_cost_usd: Number(cost) } })}, updated_at = NOW() WHERE id = ${ctx.runId}`;
   });
   return true;
+}
+
+/** A rework request asks for its stage's rerun once; after the rerun it is answered by the recomputed artifacts. */
+export function reworkAnswer(request: TeamRequest): TeamAnswer {
+  return request.reworked
+    ? { status: "answered", answer: `${request.rework_stage} was rerun for this review finding.`, evidence_ids: [], artifact_ids: [], resolved_by: "system:rework" }
+    : { status: "answered", answer: `The review sent ${request.rework_stage} back for rework.`, evidence_ids: [], artifact_ids: [], resolved_by: "system:rework", requires_rerun: true };
 }
 
 export function includeUnansweredQuestions(outline: ReportOutline, batch: RequestBatch | null): ReportOutline {

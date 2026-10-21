@@ -7,6 +7,7 @@ import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { draftAndReviewReport } from "../reporting/runtime";
+import { DEPTH_CHECKS, DEPTH_CHECK_RULE } from "../reporting/depth";
 
 /** Save each review sub-artifact. A quality_score of 0 or an empty findings list is a real answer, so only absent keys are skipped. */
 export async function persistReviewArtifacts(sql: ReturnType<typeof postgres>,
@@ -40,7 +41,7 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
         FROM research_artifacts
         WHERE research_run_id = ${ctx.runId}
           AND status IN ('validated', 'accepted')
-          AND artifact_type NOT IN ('review_summary', 'findings', 'quality_score', 'recommendations', 'review_verdict')
+          AND artifact_type NOT IN ('review_summary', 'findings', 'quality_score', 'recommendations', 'review_verdict', 'depth_checks')
         ORDER BY artifact_type
       `;
       const packet = {
@@ -54,6 +55,7 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
         artifacts: Object.fromEntries(
           artifacts.map((artifact) => [artifact.artifact_type, artifact.content_json])
         ),
+        depth_checks: DEPTH_CHECKS.map(({ id, label, ask, critical }) => ({ id, label, ask, decision_critical: critical })),
       };
       const taskKey = "research-reviewer:review";
 
@@ -65,6 +67,7 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
           "Perform a comprehensive review checking consistency and rules compliance across all generated artifacts.",
           "Judge the current artifacts in this packet; do not repeat findings from an earlier review.",
           "Verify that the backtest executed at least 50 thesis-distinct combinations, ranked a top 10, reviewed at least five weak or failed combinations, used shifted signals and transaction costs, and disclosed proxy-data limitations.",
+          DEPTH_CHECK_RULE,
         ],
       });
 

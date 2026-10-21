@@ -18,15 +18,17 @@ test("outline validation reports every violation and names the sections in one e
   ])));
 });
 
-test("report drops citations outside the usable inputs and records them in the section gaps", async () => {
+test("report drops citations outside the usable inputs and records them for the review, not the reader", async () => {
   const { keepUsableReferences } = await import("../src/lib/research/reporting/runtime");
   const artifacts = [{ id: "a1" }];
   const evidence = [{ id: "e1" }];
+  const dropped = new Set<string>();
   const { section } = keepUsableReferences({ section: { artifact_ids: ["a1", "a9"], gaps: [],
-    paragraphs: [{ kind: "fact", evidence_ids: ["e1", "e-undated"], artifact_ids: [] }] } }, artifacts, evidence) as any;
+    paragraphs: [{ kind: "fact", evidence_ids: ["e1", "e-undated"], artifact_ids: [] }] } }, artifacts, evidence, dropped) as any;
   assert.deepEqual(section.artifact_ids, ["a1"]);
   assert.deepEqual(section.paragraphs[0].evidence_ids, ["e1"]);
-  assert.match(section.gaps[0], /a9, e-undated/);
+  assert.deepEqual(section.gaps, [], "no reader-facing note");
+  assert.deepEqual([...dropped].sort(), ["a9", "e-undated"]);
   const { outline } = keepUsableReferences({ outline: { sections: [{ artifact_ids: ["a9"] }],
     questions: [{ evidence_ids: ["e-undated"], artifact_ids: ["a1"] }] } }, artifacts, evidence) as any;
   assert.deepEqual(outline.sections[0].artifact_ids, []);

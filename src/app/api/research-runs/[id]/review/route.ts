@@ -7,6 +7,8 @@ import { reviewDecisionSchema } from "@/lib/api/validation";
 import { CURRENT_PIPELINE_VERSION } from "@/lib/research/version";
 import { getReportState, loadReportInputs } from "@/lib/research/reporting/store";
 import type { Sql } from "@/lib/research/run-context";
+import { reviewGate } from "@/lib/research/reporting/depth";
+import { parseRubricRatings } from "@/lib/research/scoring/rubric";
 
 /**
  * Persist the final human decision before approving the workflow stage.
@@ -34,6 +36,9 @@ export async function POST(
     if (!isKnownHumanDecision(status)) {
       throw new ApiError("Unknown human review decision", 400, "INVALID_REVIEW_STATUS");
     }
+    let rubric: Record<string, number> | null;
+    try { rubric = parseRubricRatings(body.rubricRatings ?? body.rubric_ratings); }
+    catch (error) { throw new ApiError(error instanceof Error ? error.message : "Invalid rubric ratings", 400, "INVALID_RUBRIC_RATINGS"); }
 
     const sql = postgres(process.env.DATABASE_URL!);
     let decision: Record<string, unknown>;
@@ -67,8 +72,11 @@ export async function POST(
           if (body.reportHash !== report.document.content_hash) throw new ApiError("The report changed or was not loaded. Read the current report before approving.", 409, "STALE_REPORT");
           const current = await loadReportInputs(tx as unknown as Sql, runId, report.cutoff);
           if (current.input_hash !== report.document.input_hash) throw new ApiError("Research inputs changed. Regenerate and review the report.", 409, "STALE_REPORT_INPUTS");
-          if (!report.review || !["pass", "conditional_pass"].includes(report.review.review_verdict)) throw new ApiError("The report has unresolved review findings. Request more work before approving.", 422, "REPORT_REVIEW_FAILED");
+          const gate = reviewGate(report.review);
+          if (!gate.trackable) throw new ApiError("The report has unresolved review findings. Request more work before approving.", 422, "REPORT_REVIEW_FAILED");
+          if (status === "approved_for_position" && !gate.positionable) throw new ApiError(`Review findings block position approval: ${gate.blocking.join("; ")}. Request more work or approve for tracking.`, 422, "REVIEW_BLOCKS_POSITION");
           if (status === "approved_for_position" && report.document.conclusion_status === "withheld") throw new ApiError("Material research gaps prevent position approval. Request more work or approve for tracking.", 422, "RESEARCH_INCOMPLETE");
+          if (gate.open_severe > 0 && body.acknowledgeFindings !== true) throw new ApiError(`The review left ${gate.open_severe} high or critical findings open. Read and acknowledge them before approving.`, 422, "FINDINGS_NOT_ACKNOWLEDGED");
         }
 
         const existing = await tx`
@@ -105,6 +113,10 @@ export async function POST(
           RETURNING *
         `;
         if (!rows[0]) throw new ApiError("Unable to persist human review", 500, "REVIEW_NOT_SAVED");
+        // Ratings belong to the report version they judged; eval:score reads them beside its own checks.
+        if (rubric) await tx`UPDATE research_runs SET metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
+          || ${tx.json({ review_rubric: { ratings: rubric, report_hash: report.document?.content_hash ?? null, decision_id: rows[0].id,
+            rated_by: parsed.reviewed_by, rated_at: new Date().toISOString() } })} WHERE id = ${runId}`;
 
         if (report.required && isApprovedHumanDecision(status) && report.document) {
           await tx`UPDATE research_runs SET metadata_json = metadata_json || ${tx.json({ report_approval: {

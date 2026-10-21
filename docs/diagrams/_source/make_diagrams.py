@@ -385,7 +385,7 @@ def loop_body():
     msg(4, 4, "validate → advanceStage as each settles; start newly ready")
 frame("loop [scheduling pass while stages are ready]", "#6f4fa3", xs[2] - 70, xs[7] + 65, loop_body)
 def requests_body():
-    msg(4, 2, "processResearchRequests: queued → processing, no reset")
+    msg(4, 2, "processResearchRequests: no reset; review rework → requires_rerun")
     msg(4, 2, "system answers: market_price_history (incl. beta), FRED DGS10")
     msg(4, 2, "retrievePassages(source role, seeds: owner artifacts)")
     msg(4, 6, "team_answer(owner, report inputs + passages)")
@@ -394,7 +394,7 @@ def requests_body():
     msg(4, 2, "approval → run, ai_reviewer waiting; request_reset")
     msg(0, 1, "POST …/request-reset {rerun | skip}")
     msg(1, 2, "approveRequestReset + enqueue new job")
-frame("alt [report requests in team_requests]", "#2f7f7f", xs[0] - 60, xs[7] + 65, requests_body)
+frame("alt [report requests in team_requests: 2 rounds pre-draft, 1 after review]", "#2f7f7f", xs[0] - 60, xs[7] + 65, requests_body)
 def gate_body():
     msg(4, 2, "run + stage → waiting_for_human; release lock")
     msg(3, 2, "completeResearchRunJob (owner-guarded)")
@@ -412,7 +412,7 @@ def stop_body():
     msg(3, 2, "release job → queued, no attempt used [owner]")
 frame("alt [cancel or worker shutdown]", "#b23b3b", xs[0] - 60, xs[6] + 65, stop_body)
 assert y[0] < 1350, y[0]
-s.text(16, 1370, "Same pattern repeats at stage 22 human_review (POST …/review writes review_decisions; approve → enqueue). Final checks call completeRun or set needs_more_work.", 11, fill="#555")
+s.text(16, 1370, "Stage 22 human_review repeats this: POST …/review writes review_decisions; a position needs the effective review verdict; then completeRun or needs_more_work.", 11, fill="#555")
 s.save(P("sequence-research-run.svg"))
 
 # ---------------------------------------------------------------- trust boundaries

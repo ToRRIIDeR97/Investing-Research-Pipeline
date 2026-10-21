@@ -39,8 +39,12 @@ documents. A request that needs sources gets one collector search, which ingests
 eligible documents before the owner answers once more. Stages rerun only when an
 owner says its own output must be recomputed: automatically once per run for up to
 `RESEARCH_MAX_AUTO_RESET_STAGES` analysis stages, otherwise after a reviewer
-approves on the run page (see [system.md](system.md)). Two request rounds and one
-answer-triggered source escalation per run bound this work across restarts.
+approves on the run page (see [system.md](system.md)). Two request rounds before
+drafting, one after the first review, and one answer-triggered source escalation
+per run bound this work across restarts. The reviewer also answers fixed depth
+checks, and code derives the verdicts from them and the findings; a review finding
+can send an analysis stage back for rework once
+([system.md](system.md#report-review-depth-checks-and-rework)).
 Existing budget and model-attempt limits still apply. Unavailable or skipped
 material answers remain blocked questions and withhold the conclusion.
 
@@ -51,7 +55,9 @@ input-sensitive task cache, including section feedback and human revision notes.
 
 Final approval submits `reportHash` from the loaded report. The server checks the
 report, its input fingerprint, its review, and its integrity before approving.
-Position approval is unavailable when the report withholds a conclusion. A
+Position approval is unavailable when the report withholds a conclusion or the
+review's effective verdict does not pass. Open high or critical findings must be
+acknowledged before either approval. A
 `needs_more_work` decision queues report revision and returns to the same human
 gate. Export reproduces the approved Markdown exactly; the human decision stays
 in export metadata. Export and refresh scheduling still precede run completion.
