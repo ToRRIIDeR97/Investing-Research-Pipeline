@@ -72,12 +72,13 @@ async function main() {
       console.log(`Imported into ${database}: ${r.inserted} new rows, ${r.updated} updated, ${r.remapped} matched to existing rows, ${r.filesCopied} files copied.`);
       for (const c of r.conflicts) console.log(`  both changed ${c.table} ${c.id}: kept the ${c.kept} copy`);
       for (const f of r.fileConflicts) console.log(`  file differs, kept this machine's copy: ${f}`);
+      for (const f of r.skippedFiles) console.log(`  skipped (${f.reason}): ${f.path}`);
     }
     if (command === "import") return;
     const r = await exportStore(sql, { storeDir, projectRoot });
     await writeBase(basePath, r.base);
     console.log(`Exported ${database}: ${r.rows} rows from ${r.tables} tables, ${r.files} files to ${storeDir}.`);
-    for (const f of r.skippedFiles) console.log(`  skipped (over 95 MB, GitHub's limit): ${f}`);
+    for (const f of r.skippedFiles) console.log(`  skipped (${f.reason}): ${f.path}`);
     if (command !== "sync") return;
     git(["add", "-A"], storeDir);
     if (!git(["status", "--porcelain"], storeDir)) { console.log("Store unchanged; nothing to push."); return; }
