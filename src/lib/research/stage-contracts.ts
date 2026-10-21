@@ -14,6 +14,7 @@ import { validateMoatAssessment, validateMoatAttackMatrix, validateNoMoatCounter
 import { validateDriverTree, validateOperatingModel, validateOperatingScenarioSet, validateTopDownBottomUpReconciliation } from "./forecast/validation";
 import { validateInvestmentThesis, validateRiskRegister, validateCatalystRegister, validateThesisBreakers, validateMonitoringDashboard, validateExpectedReturnMatrix } from "./decision/validation";
 import { validateValuationScenarioSet, validateReverseValuation } from "./valuation/validation";
+import { DepthCheck, REWORK_STAGES, depthCheckErrors } from "./reporting/depth";
 
 type ContentValidation = { valid: boolean; errors: string[]; warnings: string[] };
 
@@ -91,13 +92,20 @@ const reviewer = z.object({
   review_summary: z.string().min(1), findings: z.array(z.record(z.string(), z.unknown())),
   quality_score: z.number().min(0).max(1), recommendations: z.array(z.record(z.string(), z.unknown())),
   review_verdict: z.enum(["pass", "conditional_pass", "fail", "needs_more_work"]),
+  depth_checks: z.array(DepthCheck),
 });
 export const AI_REVIEWER_CONTRACT: AgentOutputFormat = {
   requiredKeys: Object.keys(reviewer.shape),
   schema: z.toJSONSchema(reviewer, { target: "draft-7", io: "input" }),
   validate(value) {
     const parsed = reviewer.safeParse(value);
-    return parsed.success ? [] : parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message }));
+    if (!parsed.success) return parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message }));
+    const errors = depthCheckErrors(parsed.data.depth_checks).map((message) => ({ path: "depth_checks", message }));
+    parsed.data.findings.forEach((finding, i) => {
+      if (finding.category === "analysis_rework" && !(REWORK_STAGES as readonly string[]).includes(String(finding.owner_stage)))
+        errors.push({ path: `findings.${i}.owner_stage`, message: `An analysis_rework finding needs owner_stage, one of: ${REWORK_STAGES.join(", ")}` });
+    });
+    return errors;
   },
 };
 

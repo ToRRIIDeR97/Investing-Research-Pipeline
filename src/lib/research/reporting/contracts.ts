@@ -104,6 +104,15 @@ export function outputContract(shape: Record<string, z.ZodType>): AgentOutputFor
 export const OUTLINE_CONTRACT = outputContract({ outline: Outline });
 export const SECTION_CONTRACT = outputContract({ section: Section });
 
+/** What a strong analyst does, beyond format and integrity (RQ-MOD-5). Shared by every doctrine prompt. */
+export const ANALYST_BEHAVIOUR_RULES = [
+  "Separate the engines that earn from those that burn: give each segment's operating income, its share of group profit and the burners' losses as a share of the earners' profit, and value them separately.",
+  "Place every current metric against its own history: give the median, range or percentile from the computed history, not the latest value alone, and say whether today is typical.",
+  "Diagnose cash conversion: free cash flow against net income, capex against depreciation, and working-capital days, and explain why conversion moved.",
+  "State what the investor owns: the share class held, voting versus economic control, and any value that may not reach the holder.",
+  "Go below the bear case: name the impairment or tail case that would cause permanent loss, with its value, and what would change your mind.",
+];
+
 export const RESEARCH_DOCTRINE = [
   "The Financials deliverable is the complete issuer-reported primary statements from 10-Q and 10-K filings, with quarterly AND annual observations. Preserve custom line items, hierarchy, subtotals, fiscal calendars, units, source locations and restatements. A selected-metric shortlist is not complete. Check coverage against filing tables and reconcile totals. Never label annualized quarters or TTM as reported annual data. When financial_statement_summary is supplied, it is the record of what was captured: report a statement gap only where it shows one.",
   "Collect quarterly histories for every monitoring KPI, with stable metric_key, definition, unit, period, reporting basis and sources. Link thresholds and thesis breakers to model inputs. The KPI Dashboard and Monitoring and decision must use the same definitions and observations; never imply real-time disclosure where only a dated observation exists.",
@@ -111,7 +120,7 @@ export const RESEARCH_DOCTRINE = [
   "Write company analysis directly in an analyst's voice, with adjacent citations. Do not narrate artifacts, packets, saved records, database fields, record IDs, confidence scores or the research workflow (never corpus, node or supplied passages). Retain material uncertainty beside the affected claim. Do not create standalone Financial history or Evidence and limitations chapters. Financials is a separate tab of filing tables beside the Report, not a report chapter: discuss financial history inside the business, constraints, management or valuation chapter it explains, and citations retain source access.",
   "Combine operating scenarios, valuation, downside and permanent loss in one Valuation chapter. Present numerical driver assumptions and annual schedules with explicit Bear, Base and Bull cases. Select appropriate valuation methods separately from scenarios, rather than forcing three DCF methods. Show actual discounting, terminal value, capital/share bridges or the chosen method's equivalent calculation. Do not describe an exit multiple or interpolated price path as a DCF.",
   "Each quantitative chapter (financial history, business and segments, operating scenarios, valuation) carries one chart built by code from stored data, such as segment mix, a margin trend, bear/base/bull scenarios or the valuation bridge; when the data cannot support it, say why. Other exhibits explain a material trend, comparison or business mechanism; no Supporting evidence block in every chapter. Use relevant segment numbers where available. Management should include a sourced organization chart with names, roles, effective dates and documented reporting lines; never infer hierarchy from seniority.",
-  "Use Asset Research Agent Framework v2.1. Explain business processes and historical causes before relying on forecasts; write the executive judgment last.",
+  "Use Asset Research Agent Framework v2.1. Explain business processes and historical causes before relying on forecasts. Draft the executive judgment after the body; place it first.",
   "Separate disclosed facts, third-party data, derived estimates, analyst assumptions and speculative options. A citation ID alone does not prove a claim: verify the source passage supports the statement.",
   "Trace material forecasts through customer decisions, constraints, time lags, competitor responses, reinvestment and per-share value. Explain disagreements and what would disprove the interpretation.",
   "Use the latest reported fiscal periods available by the source cutoff, targeting 20 quarters where applicable. Preserve fiscal conventions, raw versus normalized data, units, currencies and missing periods. Do not fabricate quarterly data for semiannual reporters.",
@@ -119,4 +128,5 @@ export const RESEARCH_DOCTRINE = [
   "Adapt metrics and valuation to the asset and each segment. Do not impose banking capital metrics on unrelated businesses. Treat framework equations as conceptual until units, periods and accounting definitions are established.",
   "Spend detail on questions that change valuation, downside or confidence. Explain unavailable disclosures and their consequences. Required coverage may be grouped under any useful headings; add company-specific sections when material.",
   "Never invent sources, quotations, numerical inputs or calculated results. Numerical tables must reference supplied artifact paths. Label incomplete analysis and withhold a decision when a material gap blocks it.",
+  ...ANALYST_BEHAVIOUR_RULES,
 ];

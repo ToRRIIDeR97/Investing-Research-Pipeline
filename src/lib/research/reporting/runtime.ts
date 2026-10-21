@@ -1,17 +1,22 @@
 import { callResearchAgent, exactJsonPrompt, type ResearchRunContext, type Sql } from "../run-context";
 import { AI_REVIEWER_CONTRACT } from "../stage-contracts";
-import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, RESEARCH_DOCTRINE, normalizeOutlineStructure, validateProductOutline, validateChartPlan, type ReportOutline, type ReportSection } from "./contracts";
-import { composeReviewedReport, type ReportReview, REQUIRED_COVERAGE } from "./compose";
+import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Section, normalizeOutlineStructure, validateProductOutline, validateChartPlan, outputContract, type ReportOutline, type ReportSection } from "./contracts";
+import { composeReviewedReport, checkFinalCoverage, type ReportReview, type WrittenSection, REQUIRED_COVERAGE } from "./compose";
+import { z } from "zod/v4";
+import { DEPTH_CHECKS, DEPTH_CHECK_RULE, REWORK_STAGES, depthFindings } from "./depth";
 import { loadReportInputs, saveReportArtifact } from "./store";
 import { createReport, reviewDocument } from "./report";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { VISUAL_GUIDELINES } from './visuals';
-import { getTeamRequests, includeUnansweredQuestions, requestMissingResearch } from "../team";
+import { getTeamRequests, includeUnansweredQuestions, requestMissingResearch, preDraftBatch, preDraftRequests, postReviewAnswers } from "../team";
 import { buildReportFacts } from "./facts";
 
 /** Computed inputs every report call shares; they lead the packet instead of riding in each section's artifacts. */
 export const SHARED_REPORT_TYPES = ["financial_analytics", "financial_statement_summary", "report_facts"];
 export const REPORT_FACTS_RULE = "financial_analytics (computed history: statistics, segment economics, cash conversion, working capital, capital allocation), financial_statement_summary (which statements were captured) and report_facts (present values, terminal-value share, yields, implied multiples and no-rerating returns computed from the stored schedules) are code-computed. Cite their artifact_id for any figure they hold and never derive it again in prose; for statistics give the median and where the latest value sits. Their { columns, rows } tables may be requested at their paths (for example quarterly, segments.quarterly, segments.annual, cash_conversion.quarterly, capital_allocation.quarterly, cases). Report a statement gap only where financial_statement_summary shows one.";
+
+/** The reviewer challenges the framing, not only consistency (RQ-MOD-5): these are calculation findings. */
+export const REVIEW_FRAMING_RULE = "Challenge the valuation framing as calculation findings: a forecast horizon that ends inside a reinvestment cycle, terminal value above 75% of enterprise value (report_facts tv_share_of_ev), terminal-year capex far above depreciation, and unnormalized margins. Also check that the report answers research_framing's central_question and keeps its engines separate.";
 
 export const FRAMING_OUTLINE_RULE = "Answer the approved research_framing: give each framing key_question its own entry in questions with the same id, organize the sections around the central_question and the named engines, and make the opening conclusion section state whether the central_question and the decisive_insight_hypothesis held, with the evidence that decided it.";
 
@@ -83,25 +88,17 @@ function checkedContract(base: AgentOutputFormat, check: (value: any) => void, c
 
 /**
  * The analysis stages see every accepted claim, but the report may cite only dated, linked evidence
- * and current artifacts. A citation outside that set is dropped, as for team answers, and a section
- * records the removal in its gaps. A fact left without support still fails validation.
+ * and current artifacts. A citation outside that set is dropped, as for team answers, and its ID goes to
+ * `dropped` (saved with the review), never to the reader. A fact left without support still fails validation.
  */
-export function keepUsableReferences<T>(value: T, artifacts: { id: string }[], evidence: { id: string }[]): T {
+export function keepUsableReferences<T>(value: T, artifacts: { id: string }[], evidence: { id: string }[], dropped?: Set<string>): T {
   const usableArtifacts = new Set(artifacts.map((a) => a.id));
   const usableEvidence = new Set(evidence.map((e) => e.id));
-  const dropped: string[] = [];
-  const keep = (ids: string[] | undefined, usable: Set<string>) => (ids || []).filter((id) => usable.has(id) || (dropped.push(id), false));
+  const keep = (ids: string[] | undefined, usable: Set<string>) => (ids || []).filter((id) => usable.has(id) || (dropped?.add(id), false));
   const refs = (item: any) => item && ({ ...item,
     ...(item.evidence_ids ? { evidence_ids: keep(item.evidence_ids, usableEvidence) } : {}),
     ...(item.artifact_ids ? { artifact_ids: keep(item.artifact_ids, usableArtifacts) } : {}) });
-  const section = (s: any) => {
-    const start = dropped.length;
-    const next = { ...refs(s), ...(s.paragraphs ? { paragraphs: s.paragraphs.map(refs) } : {}) };
-    const removed = dropped.slice(start);
-    return removed.length && Array.isArray(s.gaps)
-      ? { ...next, gaps: [...s.gaps, `Citations removed because their source is undated or outside the report inputs: ${removed.join(", ")}.`] }
-      : next;
-  };
+  const section = (s: any) => ({ ...refs(s), ...(s.paragraphs ? { paragraphs: s.paragraphs.map(refs) } : {}) });
   const v = value as any;
   if (v?.outline) return { ...v, outline: { ...v.outline, sections: (v.outline.sections || []).map(section),
     questions: (v.outline.questions || []).map(refs) } };
@@ -109,21 +106,31 @@ export function keepUsableReferences<T>(value: T, artifacts: { id: string }[], e
   return value;
 }
 
+/** The last conclusion also returns the report's coverage, reconciled with what the chapters actually did. */
+export const CONCLUSION_CONTRACT = outputContract({ section: Section, coverage: z.array(CoverageResult) });
+export const FINAL_COVERAGE_RULE = "packet.provisional_coverage is the planner's coverage, set before any chapter was written. Return coverage with one entry per key, keeping key and section_ids, and set status and rationale to what the completed chapters actually deliver: downgrade a status the chapters do not support. The rationale is reader-facing.";
+/** Review finding categories that may send work back to the specialists after the review. */
+const REWORK_CATEGORIES = ["research_gap", "calculation", "evidence", "analysis_rework"];
+
 export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
   await requestMissingResearch(sql, ctx);
   const teamRequests = await getTeamRequests(sql, ctx.runId);
   await saveReportFacts(sql, ctx);
   const { artifacts, evidence } = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
   const { shared, packetArtifacts } = splitReportArtifacts(artifacts);
-  const usable = <T>(value: T) => keepUsableReferences(value, artifacts, evidence);
-  const usableOutline = (value: { outline: ReportOutline }) => { const kept = usable(value); return { ...kept, outline: normalizeOutlineStructure(kept.outline) }; };
+  const dropped = new Set<string>();
+  const usable = <T>(value: T) => keepUsableReferences(value, artifacts, evidence, dropped);
+  const check = <T>(value: T) => keepUsableReferences(value, artifacts, evidence);
+  const usableOutline = (value: { outline: ReportOutline }, keepIds = usable) => { const kept = keepIds(value); return { ...kept, outline: normalizeOutlineStructure(kept.outline) }; };
   const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}`;
   const common = { asset: { assetName: ctx.assetName, symbol: ctx.symbol, profile: ctx.profileKey },
     research_question: ctx.researchQuestion, source_cutoff: ctx.cutoffAt.toISOString(),
-    coverage_requirements: COVERAGE, ...shared, artifacts: packetArtifacts, evidence_claims: reportEvidenceView(evidence), specialist_requests: teamRequests?.requests || [],
+    coverage_requirements: COVERAGE, ...shared, artifacts: packetArtifacts, evidence_claims: reportEvidenceView(evidence), specialist_requests: preDraftRequests(teamRequests),
     human_revision_request: run?.metadata_json?.report_revision_request || null };
   const reportInput = { asset_name: ctx.assetName, cutoff: ctx.cutoffAt.toISOString(), is_test: ctx.testMode,
     required_coverage: REQUIRED_COVERAGE, artifacts, evidence };
+  // The latest outline's sections, so rework requests from missing depth checks name the chapter that owns them.
+  let outlineSections: ReportOutline["sections"] = [];
   return composeReviewedReport(reportInput, {
     async plan(feedback) {
       const packet = { ...common, feedback, output_contract: "report_outline", output_schema: OUTLINE_CONTRACT.schema };
@@ -134,8 +141,8 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
           createReport({ ...reportInput, ...outline, sections: outline.sections.map(section => ({ ...section,
             paragraphs: [{ kind: "analysis", text: section.purpose, evidence_ids: [], artifact_ids: section.artifact_ids }],
             counterevidence: "Outline validation", implication: "Outline validation", gaps: [], tables: [] })) });
-        }, usableOutline), promptFactory: p => exactJsonPrompt({ agentName: "asset-analyst", requiredKeys: ["outline"], packet: p,
-          extraRules: [...RESEARCH_DOCTRINE, REPORT_FACTS_RULE,
+        }, value => usableOutline(value, check)), promptFactory: p => exactJsonPrompt({ agentName: "asset-analyst", requiredKeys: ["outline"], packet: p,
+          extraRules: [REPORT_FACTS_RULE,
             "Design a report outline around the material investment questions. Use company-specific section titles. Cover every coverage_requirements key exactly once in coverage, mapping it to one or more sections. First section should summarize the eventual judgment, and its coverage is conclusion only.",
             "Section coverage rules: every section whose coverage includes history or evidence must also include at least one other key (for example business, moat, management or constraints); a section covering only history and/or evidence is rejected. Exactly one section may include valuation, and that section must also include forecasts and downside; the opening summary section must not list valuation. Backtest and market-timing evidence belongs in a section that lists monitoring, because it tests timing indicators, not the fundamental thesis.",
             "Use full artifacts and evidence to investigate the questions. Record an answer, evidence/artifact IDs, materiality, status, and specific next evidence needed. Add questions discovered from contradictions or missing disclosures. Do not claim you fetched new evidence.",
@@ -147,43 +154,57 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
       const unanswered = output.outline.questions.filter(q => q.status === "blocked" && q.materiality !== "supporting")
         .map(q => ({ category: "research_gap", question: q.question, follow_up: q.follow_up }));
       if (unanswered.length) await requestMissingResearch(sql, ctx, unanswered);
-      return includeFramingQuestions(includeUnansweredQuestions(output.outline, teamRequests), ctx.researchFraming);
+      const planned = includeFramingQuestions(includeUnansweredQuestions(output.outline, preDraftBatch(teamRequests)), ctx.researchFraming);
+      outlineSections = planned.sections;
+      return planned;
     },
-    async write(section, outline, feedback, completed) {
+    async write(section, outline, feedback, completed, options) {
       const selected = packetArtifacts.filter(a => section.artifact_ids.includes(a.id));
       // Conclusions synthesize the finished chapters and cite what they cite; filing passages serve the chapters' drafting.
       const conclusion = section.coverage.includes("conclusion") ? conclusionInputs(completed, common.evidence_claims) : null;
+      const finalCoverage = options?.coverage;
+      const contract = finalCoverage ? CONCLUSION_CONTRACT : SECTION_CONTRACT;
       const packet = { ...common, ...(conclusion ? { evidence_claims: conclusion.evidence, filing_passages: [] } : {}),
         artifacts: selected.length ? selected : packetArtifacts, section_plan: section, outline,
-        feedback, completed_sections: conclusion?.chapters ?? [],
-        visual_guidelines: VISUAL_GUIDELINES, output_contract: "report_section", output_schema: SECTION_CONTRACT.schema };
+        feedback, completed_sections: conclusion?.chapters ?? [], ...(finalCoverage ? { provisional_coverage: finalCoverage } : {}),
+        visual_guidelines: VISUAL_GUIDELINES, output_contract: "report_section", output_schema: contract.schema };
       // Sections of one round share everything but these keys, so the shared part is read from cache.
-      const output = usable(await callResearchAgent<{ section: ReportSection }>({ sql, ctx, stageKey: "ai_reviewer",
+      const output = usable(await callResearchAgent<{ section: ReportSection; coverage?: WrittenSection["final_coverage"] }>({ sql, ctx, stageKey: "ai_reviewer",
         taskKey: `report:section:${section.id}`, taskType: "report_section", agentName: "export-writer", modelTier: "mid", packet,
-        perCallKeys: ["artifacts", "section_plan", "completed_sections"], outputFormat: checkedContract(SECTION_CONTRACT, (result: { section: ReportSection }) => {
+        perCallKeys: ["artifacts", "section_plan", "completed_sections", "provisional_coverage"], outputFormat: checkedContract(contract, (result: { section: ReportSection; coverage?: WrittenSection["final_coverage"] }) => {
           if (result.section.id !== section.id || JSON.stringify(result.section.coverage) !== JSON.stringify(section.coverage)) throw new Error("Preserve section id and coverage exactly");
           validateChartPlan(section, result.section);
           createReport({ ...reportInput, required_coverage: section.coverage, sections: [result.section], questions: [],
             coverage: section.coverage.map(key => ({ key, status: "qualified", rationale: "Section validation", section_ids: [section.id] })) });
-        }, usable), promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: ["section"], packet: p,
-          extraRules: [...RESEARCH_DOCTRINE, REPORT_FACTS_RULE, ...SECTION_RULES] }) }));
-      return output.section;
+          if (finalCoverage) checkFinalCoverage(reportInput, outline, [...completed.filter(s => s.id !== section.id), result.section], result.coverage ?? []);
+        }, check), promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: contract.requiredKeys, packet: p,
+          extraRules: [REPORT_FACTS_RULE, ...SECTION_RULES, ...(finalCoverage ? [FINAL_COVERAGE_RULE] : [])] }) }));
+      return finalCoverage ? { ...output.section, final_coverage: output.coverage } : output.section;
     },
     async review(document) {
-      const packet = { ...common, visual_guidelines: VISUAL_GUIDELINES, report_document: reviewDocument(document), output_contract: "report_review", output_schema: AI_REVIEWER_CONTRACT.schema };
+      const packet = { ...common, visual_guidelines: VISUAL_GUIDELINES, report_document: reviewDocument(document),
+        depth_checks: DEPTH_CHECKS.map(({ id, label, ask, critical }) => ({ id, label, ask, decision_critical: critical })),
+        output_contract: "report_review", output_schema: AI_REVIEWER_CONTRACT.schema };
       const review = await callResearchAgent<ReportReview>({ sql, ctx, stageKey: "ai_reviewer", taskKey: "report:review", taskType: "ai_review",
         agentName: "research-reviewer", modelTier: "mid", packet, outputFormat: AI_REVIEWER_CONTRACT,
         promptFactory: p => exactJsonPrompt({ agentName: "research-reviewer", requiredKeys: AI_REVIEWER_CONTRACT.requiredKeys, packet: p,
-          extraRules: [...RESEARCH_DOCTRINE, REPORT_FACTS_RULE,
+          extraRules: [REPORT_FACTS_RULE,
             "Review the exact report_document against source passages AND complete analytical artifacts. Check citation entailment, unsupported facts/numbers, historical causes, counterarguments, operating-to-valuation links, contradictions across sections, numerical consistency and unjustified confidence. Flag analysis that lists figures without explaining what drove them, and figures repeated across sections.",
             "Review every visual under visual_guidelines: verify that the cited source entails each node, arrow and caption, and distinguish documented links from hypotheses. Check chart selection, units, basis and missing observations. A correct reference alone does not prove the diagram; flag misleading causality or accounting as evidence/calculation defects.",
             "The report is supplied as complete structured sections, questions, coverage and hashes. Tables refer to the complete artifacts and citations refer to evidence_claims supplied alongside it; rendered Markdown is omitted to avoid repeating that content. Review all sections and all referenced data.",
-            "Findings must name section_id, category (writing, evidence, calculation, research_gap), severity and a concrete repair. Treat unavailable facts or missing analytical artifacts as research_gap. Fail unsupported investment recommendations. A transparently qualified report may receive conditional_pass.",
-            "Also review existing framework backtest requirements and proxy limitations. A backtest does not prove the fundamental thesis. Do not change model outputs through prose."] }) });
-      const gaps = review.findings.filter(f => ["research_gap", "calculation", "evidence"].includes(f.category));
-      if (gaps.length) await requestMissingResearch(sql, ctx, gaps);
+            `Findings must name section_id, category (writing, evidence, calculation, research_gap, analysis_rework), severity and a concrete repair. Treat unavailable facts or missing analytical artifacts as research_gap. Use analysis_rework, with owner_stage (one of ${REWORK_STAGES.join(", ")}), only when a stage's own output is wrong or too thin and must be recomputed. Fail unsupported investment recommendations. Hedging does not substitute for analysis the stored data supports.`,
+            DEPTH_CHECK_RULE,
+            "Also review existing framework backtest requirements and proxy limitations. A backtest does not prove the fundamental thesis. Do not change model outputs through prose.",
+            REVIEW_FRAMING_RULE] }) });
       return review;
     },
-    save: (type, scope, content) => saveReportArtifact(sql, ctx, type, `${ctx.assetSlug}-${scope}`, content),
+    // Called once, after the first review is saved: the post-review round may pause the run; on resume its answers come back.
+    async rework(review) {
+      const gaps = [...review.findings.filter(f => REWORK_CATEGORIES.includes(f.category)), ...depthFindings(review.depth_checks, outlineSections)];
+      if (gaps.length) await requestMissingResearch(sql, ctx, gaps, "post_review");
+      return postReviewAnswers(await getTeamRequests(sql, ctx.runId));
+    },
+    save: (type, scope, content) => saveReportArtifact(sql, ctx, type, `${ctx.assetSlug}-${scope}`,
+      type === "report_review" ? { ...content, dropped_citations: [...dropped].sort() } : content),
   });
 }

@@ -7,6 +7,9 @@ import { ArrowLeft, ArrowRight, ArrowUpRight, Search } from "lucide-react";
 import ui from "@/components/research-ui.module.css";
 import { ResearchReport } from "@/components/research-report";
 import type { ReportDocument } from "@/lib/research/reporting/report";
+import { ReviewFindings } from "@/components/review-findings";
+import { reviewGate } from "@/lib/research/reporting/depth";
+import { RUBRIC_DIMENSIONS, RUBRIC_LEVELS } from "@/lib/research/scoring/rubric";
 
 interface ReviewItem {
   run_id: string;
@@ -26,6 +29,7 @@ const verdicts = [
   ["reject", "Reject"],
 ];
 const emptyForm = { status: "approved_for_tracking", conviction: "", priority: "medium", watchlistReason: "", positionSizingNote: "", whatWouldChangeMind: "", openQuestions: "" };
+const emptyRatings: Record<string, string> = {};
 
 export default function ReviewQueuePage() {
   return <Suspense fallback={<div className={ui.page} role="status">Loading reviews…</div>}><ReviewQueue /></Suspense>;
@@ -44,16 +48,21 @@ function ReviewQueue() {
   const [reviewForm, setReviewForm] = useState(emptyForm);
   const [reportDocument, setReportDocument] = useState<ReportDocument | null>(null);
   const [reportReady, setReportReady] = useState(false);
+  const [aiReview, setAiReview] = useState<Record<string, any> | null>(null);
+  const [ratings, setRatings] = useState(emptyRatings);
+  const [acknowledged, setAcknowledged] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    setReportDocument(null); setReportReady(false);
+    setReportDocument(null); setReportReady(false); setAiReview(null);
     if (!selectedItem) return;
     fetch(`/api/research-runs/${selectedItem.run_id}/report`).then(async response => {
       if (!response.ok) throw new Error("Unable to load the report for review.");
       const report = await response.json();
       if (cancelled) return;
       setReportDocument(report.report_document || null);
+      const hash = report.report_document?.content_hash;
+      setAiReview(report.artifacts?.find((a: any) => a.type === "report_review" && hash && a.content_json?.report_hash === hash)?.content_json || null);
       const required = report.artifacts?.some((a: any) => a.type === "research_plan" && a.content_json?.report_standard);
       setReportReady(!required || Boolean(report.report_document));
       if (required && !report.report_document) setSubmitError("The report is not ready for review yet.");
@@ -64,6 +73,8 @@ function ReviewQueue() {
   function selectItem(item: ReviewItem | null) {
     setSelectedItem(item);
     setReviewForm(emptyForm);
+    setRatings(emptyRatings);
+    setAcknowledged(false);
     setSubmitError("");
     setSaved(false);
   }
@@ -90,7 +101,8 @@ function ReviewQueue() {
     try {
       const res = await fetch(`/api/research-runs/${selectedItem.run_id}/review`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...reviewForm, assetId: selectedItem.asset_id, reviewedBy: "user", reportHash: reportDocument?.content_hash }),
+        body: JSON.stringify({ ...reviewForm, assetId: selectedItem.asset_id, reviewedBy: "user", reportHash: reportDocument?.content_hash,
+          rubricRatings: ratings, acknowledgeFindings: acknowledged }),
       });
       if (!res.ok) {
         const body = await res.json();
@@ -111,6 +123,7 @@ function ReviewQueue() {
       {selectedItem.research_question && <details className="mb-6 text-sm text-[#515d70]"><summary>Research question</summary><p className="mt-4 leading-7">{selectedItem.research_question}</p></details>}
       <Link href={`/assets/${selectedItem.asset_id}/view?run=${selectedItem.run_id}`} className={ui.textLink}>Read research<ArrowUpRight size={16} /></Link>
       {reportDocument && <details className={ui.section} open><summary>Report under review</summary><ResearchReport document={reportDocument} /></details>}
+      {reportDocument && <ReviewFindings review={aiReview} />}
       <form onSubmit={handleSubmitReview}>
         <section className={ui.section}>
           <div className={ui.sectionHead}><h2>Your decision</h2></div>
@@ -121,8 +134,13 @@ function ReviewQueue() {
               <label className={ui.field}>Priority<select value={reviewForm.priority} disabled={submitting} onChange={(event) => setReviewForm({ ...reviewForm, priority: event.target.value })}>{["high", "medium", "low"].map((value) => <option value={value} key={value}>{value[0].toUpperCase() + value.slice(1)}</option>)}</select></label>
             </div>
             <label className={ui.field}>What would change your mind?<textarea rows={3} value={reviewForm.whatWouldChangeMind} disabled={submitting} onChange={(event) => setReviewForm({ ...reviewForm, whatWouldChangeMind: event.target.value })} /></label>
+            {reviewGate(aiReview).open_severe > 0 && <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1" checked={acknowledged} disabled={submitting} onChange={(event) => setAcknowledged(event.target.checked)} />I have read the {reviewGate(aiReview).open_severe} open high or critical review findings. Approval needs this.</label>}
           </div>
         </section>
+        <details className={ui.section}><summary>Depth ratings (optional, 0-4)</summary><div className={`${ui.form} ${ui.sectionBody}`}>
+          <p className={ui.muted}>{RUBRIC_LEVELS.join(" · ")}</p>
+          <div className={ui.formGrid}>{RUBRIC_DIMENSIONS.map(d => <label key={d.id} className={ui.field} title={`3 = ${d.anchor3}`}>{d.label}<select value={ratings[d.id] ?? ""} disabled={submitting} onChange={(event) => setRatings({ ...ratings, [d.id]: event.target.value })}><option value="">Unrated</option>{[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}</select></label>)}</div>
+        </div></details>
         <details className={ui.section}><summary>Additional notes</summary><div className={`${ui.form} ${ui.sectionBody}`}>
           {[["watchlistReason", "Watchlist reason"], ["positionSizingNote", "Position sizing"], ["openQuestions", "Open questions"]].map(([key, label]) => <label key={key} className={ui.field}>{label}<textarea rows={3} disabled={submitting} value={reviewForm[key as keyof typeof reviewForm]} onChange={(event) => setReviewForm({ ...reviewForm, [key]: event.target.value })} /></label>)}
         </div></details>

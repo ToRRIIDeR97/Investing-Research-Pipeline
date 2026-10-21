@@ -1,6 +1,7 @@
 import { ProviderError } from "../errors";
 import { extractJsonObjects } from "../output-parser";
 import type { ModelEvent, ModelProvider, ModelRequest } from "../types";
+import { DEPTH_CHECKS } from "@/lib/research/reporting/depth";
 
 export interface MockProviderConfig {
   scenario: "success" | "slow_stream" | "inactivity_timeout" | "rate_limit" | "auth_error" | "malformed_json" | "cancellation";
@@ -62,7 +63,8 @@ const STATIC: Record<string, unknown> = {
       source: "sofi-10q-q3-2024", confidence: 0.93 }
   ], definition_mappings: [], conversion_notes: [], unresolved_ambiguities: [], quality_flags: [], source_gaps: [] },
   "backtest-coder": { strategy_name: "Mock strategy", strategy_description: "Mock backtest strategy", run_instructions: "Run it", assumptions: [], files: [{ path: "strategy.py", content: "def generate_signals(prices, params):\n    return prices" }] },
-  "research-reviewer": { review_summary: "All v3 artifacts are internally consistent.", findings: [{ severity: "info", message: "No issues found.", affected_artifact: "none" }], quality_score: 0.95, recommendations: [{ action: "continue", rationale: "All checks passed." }], review_verdict: "pass" },
+  "research-reviewer": { review_summary: "All v3 artifacts are internally consistent.", findings: [{ severity: "info", message: "No issues found.", affected_artifact: "none" }], quality_score: 0.95, recommendations: [{ action: "continue", rationale: "All checks passed." }], review_verdict: "pass",
+    depth_checks: DEPTH_CHECKS.map(check => ({ id: check.id, status: "met", section_id: "", why: "Synthetic fixture: exercises the workflow, not research depth." })) },
   "export-writer": { artifact_type: "report", title: "Investment Research Report", sections: [], tables: [], charts: [], disclosures: [], source_index: [], open_questions: [] },
 };
 
@@ -128,7 +130,7 @@ function adaptiveReportResponse(packet: Record<string, any>) {
       implication: "Reassess the relevant operating assumptions when evidence changes; the fixture is not an investment recommendation.",
       gaps: ["Synthetic data cannot establish live investment quality."],
       tables: matching && Object.hasOwn(matching.content_json, tablePath) ? [{ title: "Stored model data", artifact_id: matching.id, path: tablePath }] : [],
-    } };
+    }, ...(packet.provisional_coverage ? { coverage: packet.provisional_coverage } : {}) };
   }
   return STATIC["research-reviewer"];
 }
