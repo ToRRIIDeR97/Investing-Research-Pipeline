@@ -140,6 +140,6 @@ test("only affirmative founder claims satisfy the founder check", () => {
 test("founder needs come first, and filings are searched for the founding even without founder documents", () => {
   const needs = evidenceNeeds(["regulatory_filing", "founder_and_company_history", "earnings_release"], { name: "SoFi" });
   assert.deepEqual(needs.slice(0, 2).map(n => n.key), [FOUNDER_ORIGIN_NEED.key, FOUNDER_FILINGS_NEED.key]);
-  assert.deepEqual(evidenceNeeds(["regulatory_filing"], { name: "SoFi" }).map(n => n.key), [FOUNDER_FILINGS_NEED.key, "role:regulatory_filing"]);
+  assert.deepEqual(evidenceNeeds(["regulatory_filing"], { name: "SoFi" }).map(n => n.key), [FOUNDER_FILINGS_NEED.key, "governance", "role:regulatory_filing"]);
   assert.deepEqual(evidenceNeeds(["earnings_release"], { name: "SoFi" }).map(n => n.key), ["role:earnings_release"]);
 });

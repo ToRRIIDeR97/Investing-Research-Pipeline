@@ -16,6 +16,8 @@ const Role = z.enum(["data", "financials", "business", "valuation"]);
 export const ResearchRequest = z.object({
   role: Role, question: z.string().trim().min(10).max(1500), material: z.boolean(),
   needs_sources: z.boolean(), source_role: z.enum(SOURCE_ROLES),
+  document: z.string().trim().min(5).max(200).optional()
+    .describe("When needs_sources is true: the document to search for as organisation, document type and period, e.g. 'Meta Platforms 2026 proxy statement DEF 14A'. Not the question."),
 });
 type Request = z.infer<typeof ResearchRequest>;
 export type TeamAnswer = {
@@ -156,7 +158,8 @@ export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, 
       requiredKeys: ["requests"], packet: p, extraRules: [TEAM_ROLES.report.purpose,
         "Request only specific unanswered investment questions or material inconsistencies, at most 5, most material first. Return an empty requests array when the supplied research is adequate. Do not request information already present or repeat answered/unavailable requests.",
         "Route financial extraction/reconciliation to financials, management/operations/scenarios to business, valuation calculations to valuation, and missing documents to data. Set needs_sources when new external evidence is required; source_role tells the collector where to search. Stored price history and the FRED 10-year Treasury series are answered directly from the run's data. Owners answer from the run's documents without rerunning their analysis; the collector searches once for a missing document, and a stage reruns only when its owner says its own output must be recomputed.",
-        "role names the specialist and must be exactly one of: data, financials, business, valuation. Document types such as regulatory_filing or market_data belong in source_role, never in role."] }) });
+        "role names the specialist and must be exactly one of: data, financials, business, valuation. Document types such as regulatory_filing or market_data belong in source_role, never in role.",
+        "When needs_sources is true, set document to the specific document the collector should search for: the organisation, the document type and the period, in at most 200 characters. The collector searches document, not the question."] }) });
   const batch = nextRequestBatch(previous, firstRequests(result).requests);
   if (!batch) return;
   await saveReportArtifact(sql, ctx, "team_requests", "requests", batch);
@@ -322,7 +325,9 @@ export async function skipRequestRerun(tx: Sql, runId: string, batch: RequestBat
     answer: `Skipped by reviewer: re-run not approved.${r.response?.answer ? ` The owner's answer was: ${r.response.answer}` : ""}` } }) });
 }
 
-type RequestPassage = { passage_id: string; source_id: string; title: string; section_path: string[]; page: number | null; text: string };
+type RequestPassage = { passage_id: string; source_id: string; source_role: string | null; title: string; section_path: string[]; page: number | null; text: string };
+/** The researched company's own documents, searched when the request's role has none or none match. */
+const ISSUER_ROLES = ["regulatory_filing", "earnings_release", "company_investor_relations", "proxy_and_governance"];
 /**
  * Research-memory passages of the request's source role from this run's documents (keyword ranking unless
  * embeddings are on). The owner's own stage artifacts seed the graph, so passages holding the claims they cite
@@ -330,13 +335,23 @@ type RequestPassage = { passage_id: string; source_id: string; title: string; se
  * passage matched the question or it names a period no document in scope covers; any word of the question
  * matches, so a non-empty result alone proves little, and cited passages say nothing about what is missing.
  */
-async function requestPassages(sql: Sql, runId: string, request: TeamRequest): Promise<{ passages: RequestPassage[]; searchFirst: boolean }> {
+export async function requestPassages(sql: Sql, runId: string, request: TeamRequest): Promise<{ passages: RequestPassage[]; searchFirst: boolean }> {
   const seedArtifactIds = await ownedArtifactIds(sql, runId, request.role);
-  const result = await retrievePassages(sql, { runId, need: { key: request.id, query: request.question, sourceRoles: [request.source_role], seedArtifactIds },
-    embeddings: getEmbeddingProvider() });
-  return { passages: result.passages.map(p => ({ passage_id: p.passage_id, source_id: p.source_id, title: p.title,
+  const embeddings = getEmbeddingProvider();
+  const need = { key: request.id, query: request.question, sourceRoles: [request.source_role], seedArtifactIds };
+  const scoped = await retrievePassages(sql, { runId, need, embeddings });
+  const matched = (r: typeof scoped) => r.passages.some(p => p.matched !== "graph");
+  // A governance or filing question is often answered in the 10-K's risk factors although it was tagged with a role
+  // the run has no matching documents for (proxy_and_governance): search the issuer's own documents once more.
+  let result = scoped;
+  if (!matched(scoped)) {
+    const wider = await retrievePassages(sql, { runId, need: { ...need, sourceRoles: ISSUER_ROLES.filter(role => role !== request.source_role) }, embeddings });
+    if (matched(wider)) result = wider;
+  }
+  return { passages: result.passages.map(p => ({ passage_id: p.passage_id, source_id: p.source_id, source_role: p.source_role, title: p.title,
     section_path: p.section_path, page: p.page, text: p.text })),
-    searchFirst: !result.passages.some(p => p.matched !== "graph") || result.gaps.some(gap => gap.reason === "no_documents_for_period") };
+    // Whether to search first is judged on the request's own role: issuer passages do not stand in for a peer's filing.
+    searchFirst: !matched(scoped) || scoped.gaps.some(gap => gap.reason === "no_documents_for_period") };
 }
 
 /** Current validated or accepted artifacts of the stages a role owns: the work a request to that owner concerns. */
@@ -349,10 +364,16 @@ async function ownedArtifactIds(sql: Sql, runId: string, role: Request["role"]):
   return rows.map(row => String(row.id));
 }
 
+/** What the collector searches for a request: the named document, or the question when the requester gave none. */
+export function requestSearchQuery(request: Pick<TeamRequest, "question" | "document">): string {
+  return (request.document || request.question).replace(/\s+/g, " ").trim();
+}
+
 /** One collector search for a request; evidence is read only from documents new to the run. */
 async function searchForRequest(sql: Sql, ctx: ResearchRunContext, request: TeamRequest) {
   const known = new Set((await runDocuments(sql, ctx.runId)).map(doc => doc.id));
-  const query = `"${ctx.assetName}" ${ctx.symbol} ${request.question}`.replace(/\s+/g, " ").slice(0, 300).trim();
+  // The collector's constrainSearch anchors own-company roles to the asset and rejects generic external queries.
+  const query = requestSearchQuery(request);
   const [result] = await runSearches(sql, ctx, [{ source_role: request.source_role, query, reason: `Report request ${request.id}` }],
     `team:${request.role}`, { request_id: request.id });
   await extractEvidenceForSources(sql, ctx, result.documents.map(doc => doc.source_id).filter(id => !known.has(id)));

@@ -37,7 +37,8 @@ test('older 10-Ks and 10-Qs are selected from filings.files pages when recent do
   const selected=selectResearchFilings(rows,'2021-10-10','2026-10-10');
   const annual=selected.filter(f=>f.form==='10-K').map(f=>f.filingDate);
   assert.deepEqual(annual,['2026-01-30','2025-01-30','2024-01-30','2023-01-30','2022-01-30']);
-  assert.equal(selected.filter(f=>f.form==='10-Q').length,12);
+  // Every 10-Q inside the 20 quarters ending at the newest periodic filing (2026-07-28 back to 2021-10-28).
+  assert.equal(selected.filter(f=>f.form==='10-Q').length,15);
   assert.ok(selected.filter(f=>f.form==='10-Q').every((f,i,a)=>i===0||a[i-1].filingDate!>=f.filingDate!));
   // Without the pages, recent alone gives only the two newest 10-Ks: the original bug.
   const recentOnly=selectResearchFilings(await loadSubmissionFilings({filings:{recent:columns(recentRows)}},'2021-10-10','2026-10-10',mockFetch({})),'2021-10-10','2026-10-10');
