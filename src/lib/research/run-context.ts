@@ -26,6 +26,7 @@ import { getStageOutputContract } from "./stage-contracts";
 import { researchPacketForModel } from "./reporting/packet";
 import { FILING_PASSAGE_RULE, FILING_PASSAGE_TASKS, loadFilingPassages } from "./memory/filing-passages";
 import { FinancialAnalytics, analyticsDigest } from "./history/analytics";
+import { FRAMING_EXCLUDED_TASKS, FRAMING_RULE } from "./framing";
 export type { ValidationResult };
 
 export type Sql = ReturnType<typeof postgres>;
@@ -58,6 +59,8 @@ export interface ResearchRunContext {
   composedProfile: ComposedProfile | null;
   archetypeKeys: string[];
   overlayKeys: string[];
+  /** The framing the human approved at the plan gate (metadata.research_framing); null before approval or for older runs. */
+  researchFraming?: Record<string, unknown> | null;
   timingHypothesis: {
     hypothesis_text: string;
     accepted: boolean;
@@ -183,6 +186,8 @@ export async function loadRunContext(sql: Sql, runId: string): Promise<ResearchR
     composedProfile,
     archetypeKeys,
     overlayKeys,
+    researchFraming: metadata.research_framing && typeof metadata.research_framing === "object"
+      ? metadata.research_framing as Record<string, unknown> : null,
     timingHypothesis,
   };
 }
@@ -304,7 +309,7 @@ export async function failV3Task(sql: Sql, taskId: string, error: unknown): Prom
 
 // Run-wide context leads the packet, so calls with the same instructions (report sections, extraction
 // batches, retries) also share the packet's leading bytes and the provider can reuse them from cache.
-const RUN_CONTEXT_KEYS = ["asset", "research_question", "source_cutoff", "profile", "coverage_requirements", "evidence_claims", "filing_passages",
+const RUN_CONTEXT_KEYS = ["asset", "research_question", "research_framing", "source_cutoff", "profile", "coverage_requirements", "evidence_claims", "filing_passages",
   "financial_analytics", "financial_statement_summary", "report_facts"];
 
 /** Stages whose calls get the financial_analytics digest in their shared packet prefix. */
@@ -412,6 +417,11 @@ export async function prepareResearchCall(params: ResearchCallParams) {
   // exactJsonPrompt states the untrusted-data rule; a hand-written prompt gets it here, so no stage call lacks it (#27).
   addRule(UNTRUSTED_DATA_RULE, true);
   if (sourceRequests) addRule(sourceRequestRule(sourceRequests.allowed));
+  // The approved framing is the same for every call of a run, so it leads the shared, cached part of the packet.
+  if (params.ctx.researchFraming && !FRAMING_EXCLUDED_TASKS.has(params.taskType) && !("research_framing" in params.packet)) {
+    params = { ...params, packet: { ...params.packet, research_framing: params.ctx.researchFraming } };
+    addRule(FRAMING_RULE);
+  }
   if (role && !params.taskType.startsWith("team_")) {
     const rows = await params.sql`SELECT artifact_type, scope_key, content_json FROM research_artifacts
       WHERE research_run_id = ${params.ctx.runId} AND status IN ('validated', 'accepted')

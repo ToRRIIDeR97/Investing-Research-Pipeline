@@ -2,6 +2,7 @@ import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-
 import { makeValidationResult } from "../run-context";
 import { persistV3Composition } from "../run-context";
 import postgres from "postgres";
+import { classificationArchetypes } from "../framing";
 
 export const archetypeCompositionHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "archetype_composition",
@@ -11,27 +12,23 @@ export const archetypeCompositionHandler: StageHandler<Record<string, unknown>> 
       let archetypes: string[] = [];
       let overlays: string[] = [];
 
-      // Determine archetypes and overlays from the profile key, or run metadata if provided
+      // Archetypes named at run creation win. Otherwise the asset's stored sector and industry pick them
+      // (classificationArchetypes); the framing call may add more, and the reviewer can change them at the plan gate.
+      const [run] = await sql`SELECT metadata_json->>'v3_archetypes_source' AS source FROM research_runs WHERE id = ${ctx.runId}`;
+      let source = String(run?.source || "request");
       if (ctx.archetypeKeys && ctx.archetypeKeys.length > 0) {
         archetypes = ctx.archetypeKeys;
         overlays = ctx.overlayKeys || [];
       } else {
-        const profileKey = ctx.profileKey;
-        if (profileKey === "financials") {
-          archetypes = ["bank", "lender"];
-          overlays = [];
-        } else if (profileKey === "operating_company") {
-          archetypes = ["operating_company_core"];
-          overlays = [];
-        } else {
-          // Default to operating company core
-          archetypes = ["operating_company_core"];
-          overlays = [];
-        }
+        const [asset] = await sql`SELECT sector, industry, asset_kind AS "assetKind" FROM assets WHERE id = ${ctx.assetId}`;
+        archetypes = classificationArchetypes(ctx.profileKey, asset || {});
+        overlays = [];
+        source = "classification";
       }
 
       await persistV3Composition(sql, ctx.runId, archetypes, overlays);
-      return { status: "success", archetypes, overlays };
+      await sql`UPDATE research_runs SET metadata_json = coalesce(metadata_json, '{}'::jsonb) || ${sql.json({ v3_archetypes_source: source })} WHERE id = ${ctx.runId}`;
+      return { status: "success", archetypes, overlays, source };
     } finally {
       await sql.end();
     }
@@ -43,7 +40,6 @@ export const archetypeCompositionHandler: StageHandler<Record<string, unknown>> 
         SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}
       `;
       const metadata = runs[0]?.metadata_json as Record<string, any>;
-      console.log("[archetype.validate] metadata:", JSON.stringify(metadata));
       const archetypes = Array.isArray(metadata?.v3_archetypes) ? metadata.v3_archetypes : [];
       const errors: string[] = [];
       if (!Array.isArray(archetypes) || archetypes.length === 0) {

@@ -54,6 +54,29 @@ export function validateMoatAssessment(content: unknown): ValidationResult {
   return { valid: errors.length === 0, errors, warnings };
 }
 
+const HISTORY_PATH = /^(financial_analytics|historical_record|historical_diagnosis)\b/;
+const PEER_PATH = /^peer_benchmark\b/;
+
+/**
+ * Framework §7.7: a moat rated strong or exceptional must be tested against the multi-year record and against peers.
+ * Without a history path and a peer path code caps it at moderate and says why; it never raises a rating.
+ */
+export function capMoatClassifications<T extends { assessments: Array<{ classification: string; artifact_paths: string[]; classification_note?: string }> }>(assessment: T): T {
+  return { ...assessment, assessments: assessment.assessments.map((entry) => {
+    if (!["strong", "exceptional"].includes(entry.classification)) return entry;
+    const missing = [!entry.artifact_paths.some((p) => HISTORY_PATH.test(p)) && "history", !entry.artifact_paths.some((p) => PEER_PATH.test(p)) && "peer"].filter(Boolean);
+    return missing.length ? { ...entry, classification: "moderate",
+      classification_note: `Rated ${entry.classification} by the analyst; capped at moderate without ${missing.join(" and ")} evidence paths.` } : entry;
+  }) };
+}
+
+/** Every attack names a moat the assessment lists. */
+export function attackTargetErrors(assessment: { assessments: { claimed_moat: string }[] }, matrix: { attacks: { targets_moat: string; primary_attacker: string }[] }) {
+  const moats = new Set(assessment.assessments.map((a) => a.claimed_moat.trim().toLowerCase()));
+  return matrix.attacks.filter((a) => !moats.has(a.targets_moat.trim().toLowerCase()))
+    .map((a) => `Attack by '${a.primary_attacker}' targets '${a.targets_moat}', which is not a claimed_moat in moat_assessment.`);
+}
+
 export function validateMoatAttackMatrix(content: unknown): ValidationResult {
   const parsed = MoatAttackMatrix.safeParse(content);
   if (!parsed.success) {

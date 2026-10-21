@@ -13,6 +13,23 @@ import { buildReportFacts } from "./facts";
 export const SHARED_REPORT_TYPES = ["financial_analytics", "financial_statement_summary", "report_facts"];
 export const REPORT_FACTS_RULE = "financial_analytics (computed history: statistics, segment economics, cash conversion, working capital, capital allocation), financial_statement_summary (which statements were captured) and report_facts (present values, terminal-value share, yields, implied multiples and no-rerating returns computed from the stored schedules) are code-computed. Cite their artifact_id for any figure they hold and never derive it again in prose; for statistics give the median and where the latest value sits. Their { columns, rows } tables may be requested at their paths (for example quarterly, segments.quarterly, segments.annual, cash_conversion.quarterly, capital_allocation.quarterly, cases). Report a statement gap only where financial_statement_summary shows one.";
 
+export const FRAMING_OUTLINE_RULE = "Answer the approved research_framing: give each framing key_question its own entry in questions with the same id, organize the sections around the central_question and the named engines, and make the opening conclusion section state whether the central_question and the decisive_insight_hypothesis held, with the evidence that decided it.";
+
+/**
+ * Framing key questions the outline left out are added as qualified material questions, so the reader and the
+ * reviewer see the omission. They are not blocked: an unanswered framing question is a writing gap, not missing
+ * evidence, and must not withhold the conclusion on its own.
+ */
+export function includeFramingQuestions(outline: ReportOutline, framing: Record<string, any> | null | undefined): ReportOutline {
+  const keyQuestions: { id: string; question: string; falsifier?: string }[] = Array.isArray(framing?.key_questions) ? framing!.key_questions : [];
+  const present = new Set(outline.questions.map(q => q.id));
+  const missing = keyQuestions.filter(q => q.id && q.question && !present.has(q.id));
+  if (!missing.length) return outline;
+  return { ...outline, questions: [...outline.questions, ...missing.map(q => ({ id: q.id, question: q.question, materiality: "material" as const,
+    status: "qualified" as const, answer: "This report does not answer this framing question.", evidence_ids: [], artifact_ids: [],
+    follow_up: q.falsifier ? `Test the falsifier: ${q.falsifier}` : "Answer the framing question from the analysis." }))] };
+}
+
 /** Instructions for each report section writer, after the doctrine. */
 export const SECTION_RULES = [
   "Write a detailed analytical section. Preserve section_plan.id and coverage exactly. Explain evidence, mechanism, historical context, counterevidence, uncertainty and investment consequences. Develop the reasoning in connected paragraphs; do not merely restate artifact fields.",
@@ -125,11 +142,12 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
             "Coverage states: satisfied for evidenced analysis including a no-moat finding; qualified for usable analysis with explained limits; blocked for a decision-critical gap; not_applicable only with asset-specific justification. A missing artifact is not evidence of inapplicability.",
             "Use only supplied artifact and evidence IDs. Keep numerical models unchanged. Request missing analysis in follow_up when artifacts cannot answer a material question. Prefer 8-16 substantial sections, maximum 24. No word-count target.",
             "Allocate key figures: give each section 2-5 key_figures (metric and period, e.g. \"FY2024 take rate\"). Assign each figure to exactly one section, the one that explains it; other sections refer to it rather than repeat it.",
-            "Chart plan: for each section covering history, business, forecasts or valuation, set chart_plan to the one chart that best answers its quantitative question, naming the visual kind and the stored data, for example segment revenue mix (series, stacked) or operating margin trend (ratio) from historical_record observations (series listed in its chart_series), bear/base/bull revenue or margins (scenarios) from operating_scenario_set, value per share (scenarios) or the valuation bridge (valuation_bridge) from valuation_scenario_set. Leave chart_plan empty only when no stored numeric data fits. Other sections leave it empty."] }) }));
+            "Chart plan: for each section covering history, business, forecasts or valuation, set chart_plan to the one chart that best answers its quantitative question, naming the visual kind and the stored data, for example segment revenue mix (series, stacked) or operating margin trend (ratio) from historical_record observations (series listed in its chart_series), bear/base/bull revenue or margins (scenarios) from operating_scenario_set, value per share (scenarios) or the valuation bridge (valuation_bridge) from valuation_scenario_set. Leave chart_plan empty only when no stored numeric data fits. Other sections leave it empty.",
+            ...(ctx.researchFraming ? [FRAMING_OUTLINE_RULE] : [])] }) }));
       const unanswered = output.outline.questions.filter(q => q.status === "blocked" && q.materiality !== "supporting")
         .map(q => ({ category: "research_gap", question: q.question, follow_up: q.follow_up }));
       if (unanswered.length) await requestMissingResearch(sql, ctx, unanswered);
-      return includeUnansweredQuestions(output.outline, teamRequests);
+      return includeFramingQuestions(includeUnansweredQuestions(output.outline, teamRequests), ctx.researchFraming);
     },
     async write(section, outline, feedback, completed) {
       const selected = packetArtifacts.filter(a => section.artifact_ids.includes(a.id));
