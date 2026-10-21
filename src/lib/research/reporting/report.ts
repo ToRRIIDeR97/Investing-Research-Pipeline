@@ -51,6 +51,12 @@ export function plainMarkdown(text: string): string {
 }
 function cell(value: unknown): string { return plainMarkdown(value == null ? "Not disclosed" : typeof value === "object" ? JSON.stringify(value) : String(value)); }
 function tableMarkdown(value: unknown): string {
+  // Columnar tables (financial_analytics, report_facts) render as their rows.
+  const columnar = value as { columns?: unknown; rows?: unknown };
+  if (columnar && Array.isArray(columnar.columns) && Array.isArray(columnar.rows) && columnar.rows.every(Array.isArray)) {
+    const columns = columnar.columns as string[];
+    value = (columnar.rows as unknown[][]).map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+  }
   const rows = Array.isArray(value) ? value : [value];
   if (!rows.length) return "No observations available.";
   if (rows.every(row => row && typeof row === "object" && !Array.isArray(row))) {

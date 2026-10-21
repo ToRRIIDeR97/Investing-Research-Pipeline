@@ -3,8 +3,9 @@ import { linkArtifactCitations } from "../memory/graph";
 import { createReport, storedFingerprint, inputFingerprint, type ReportArtifact, type ReportEvidence, type ReportDocument } from "./report";
 
 // Review/export products cannot become their own upstream inputs.
-// Full filing tables live in Financials. The report uses historical_record observations;
-// duplicating every filing's display cells in the writing packet exhausts its context.
+// Full filing tables live in Financials; duplicating every filing's display cells in the writing packet exhausts
+// its context. Report packets read financial_analytics and financial_statement_summary instead, and see
+// historical_record only as the request view in packet.ts.
 // Period-end prices and market caps (market_price_history) are likewise read in Financials.
 const products = ["agent_brief", "team_requests", "source_requests", "source_review", "research_chat", "financial_statement_set", "market_price_history", "report_outline", "report_section", "report_document", "report_review", "question_register", "synthetic_report", "refresh_schedule", "review_summary", "findings", "quality_score", "recommendations", "review_verdict"];
 /**

@@ -288,7 +288,7 @@ export async function rerunRequestStages(tx: Sql, runId: string, batch: RequestB
   const affected = reset.stages;
   const types = [...new Set(affected.flatMap(key => getStageOutputContract(key)?.requiredKeys || [])),
     "report_outline", "report_section", "report_document", "report_review", "question_register"];
-  if (affected.includes("historical_record")) types.push("historical_record", "financial_statement_set", "market_price_history");
+  if (affected.includes("historical_record")) types.push("historical_record", "financial_statement_set", "market_price_history", "financial_analytics", "financial_statement_summary");
   await tx`UPDATE research_stages SET status = 'pending', started_at = NULL, completed_at = NULL,
     validation_result_json = NULL, failure_reason = NULL, updated_at = NOW()
     WHERE research_run_id = ${runId} AND stage_key = ANY(${affected}::text[]) AND status != 'skipped'`;
@@ -363,12 +363,16 @@ async function searchForRequest(sql: Sql, ctx: ResearchRunContext, request: Team
  * stage reads (as its stage call receives them), so the valuation owner also sees operating scenarios.
  */
 export function ownerArtifactTypes(role: Request["role"]): Set<string> {
-  return stageArtifactTypes([...Object.keys(STAGE_OWNERS).filter(key => STAGE_OWNERS[key] === role), ...(STAGE_DEPENDENCIES[TEAM_ROLES[role].stage] || [])]);
+  const owned = Object.keys(STAGE_OWNERS).filter(key => STAGE_OWNERS[key] === role);
+  const types = stageArtifactTypes([...owned, ...(STAGE_DEPENDENCIES[TEAM_ROLES[role].stage] || [])]);
+  // Other owners read history through financial_analytics, as their stage calls do.
+  if (!owned.includes("historical_record")) types.delete("historical_record");
+  return types;
 }
 
 function stageArtifactTypes(stages: string[]): Set<string> {
   const types = new Set(stages.flatMap(key => getStageOutputContract(key)?.requiredKeys || []));
-  if (stages.includes("historical_record")) types.add("historical_record");
+  if (stages.includes("historical_record")) ["historical_record", "financial_analytics", "financial_statement_summary"].forEach(type => types.add(type));
   return types;
 }
 

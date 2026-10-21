@@ -22,7 +22,9 @@ type Num = number | null;
 type Kind = "money" | "ratio" | "days" | "x" | "shares";
 
 const Cell = z.union([z.number(), z.string(), z.boolean(), z.null()]);
-const Table = z.array(z.record(z.string(), Cell));
+// Columnar tables keep the pack small; report tables render { columns, rows } directly.
+const Table = z.object({ columns: z.array(z.string()), rows: z.array(z.array(Cell)) });
+export type AnalyticsTable = z.infer<typeof Table>;
 export const AnalyticsStatistic = z.object({
   metric: z.string(), n: z.number().int(), median: z.number().nullable(), min: z.number().nullable(), max: z.number().nullable(),
   latest: z.number().nullable(), latest_period: z.string().nullable(), percentile: z.number().nullable(),
@@ -34,7 +36,7 @@ export const FinancialAnalytics = z.object({
   units: z.string(),
   window: z.object({ start: z.string(), end: z.string(), quarters: z.number().int() }),
   tax_rate: z.object({ normalized: z.number(), quarters_used: z.number().int(), method: z.string() }),
-  statistics: z.array(AnalyticsStatistic),
+  statistics: Table,
   quarterly: Table,
   segments: z.object({ members: Table, quarterly: Table, annual: Table }),
   cash_conversion: z.object({ quarterly: Table, incremental: Table }),
@@ -66,6 +68,16 @@ const median = (values: number[]) => {
   const sorted = [...values].sort((a, b) => a - b), mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 };
+
+/** Rows of a columnar table as objects. */
+export const tableRows = (table: AnalyticsTable): Row[] => table.rows.map((row) => Object.fromEntries(table.columns.map((column, i) => [column, row[i]])));
+function toTable(rows: Row[], rounded = true): AnalyticsTable {
+  const columns = Object.keys(rows[0] ?? {});
+  return { columns, rows: rows.map((row) => columns.map((column) => {
+    const v = row[column];
+    return typeof v === "number" && rounded ? round(v, columnKind(column)) : v ?? null;
+  })) };
+}
 
 /** "meta:RealityLabsMember" and "fb:RealityLabsMember" are one segment: RealityLabs. */
 export const segmentName = (member: string) => member.replace(/^[^:]*:/, "").replace(/Member$/, "");
@@ -270,7 +282,6 @@ export function buildFinancialAnalytics(input: AnalyticsInput): FinancialAnalyti
     ...segments.statistics,
   ].filter((s) => s.n > 0);
 
-  const tidy = (table: Row[]) => table.map((row) => Object.fromEntries(Object.entries(row).map(([key, v]) => [key, typeof v === "number" ? round(v, columnKind(key)) : v])));
   return {
     artifact_type: "financial_analytics",
     currency: book.get("revenue", end).currency ?? rows.find((r) => /^[A-Z]{3}$/.test(r.currency ?? ""))?.currency ?? null,
@@ -278,12 +289,12 @@ export function buildFinancialAnalytics(input: AnalyticsInput): FinancialAnalyti
     window: { start: periods[0], end: periods.at(-1)!, quarters: periods.length },
     tax_rate: { normalized: Number(taxRate.toFixed(4)), quarters_used: rates.length,
       method: rates.length ? "Median quarterly effective tax rate (tax ÷ pretax income) over the window, quarters outside 0-50% excluded" : "No usable quarterly tax rate; 21% statutory default" },
-    statistics,
-    quarterly: tidy(quarterly),
-    segments: { members: segments.members, quarterly: tidy(segments.quarterly), annual: tidy(segments.annual) },
-    cash_conversion: { quarterly: tidy(cash_conversion), incremental: tidy(incremental) },
-    working_capital: { quarterly: tidy(working_capital), notes: [...new Set(notes.working_capital)] },
-    capital_allocation: { quarterly: tidy(capital_allocation), share_classes, notes: notes.capital_allocation },
+    statistics: toTable(statistics, false),
+    quarterly: toTable(quarterly),
+    segments: { members: toTable(segments.members, false), quarterly: toTable(segments.quarterly), annual: toTable(segments.annual) },
+    cash_conversion: { quarterly: toTable(cash_conversion), incremental: toTable(incremental) },
+    working_capital: { quarterly: toTable(working_capital), notes: [...new Set(notes.working_capital)] },
+    capital_allocation: { quarterly: toTable(capital_allocation), share_classes: toTable(share_classes, false), notes: notes.capital_allocation },
     definitions: ANALYTICS_DEFINITIONS,
     derived_quarters: [...derived].sort(),
     missing,
@@ -356,8 +367,9 @@ function segmentEconomics(rows: Row[], window: PeriodRef[], periods: string[], c
  * plus the last eight quarters of each table. Report packets get the whole pack.
  */
 export function analyticsDigest(pack: FinancialAnalytics, artifactId?: string, quarters = 8) {
-  const recent = (table: Row[]) => table.slice(-quarters);
-  const segmentQuarters = new Set(pack.quarterly.slice(-quarters).map((q) => q.period));
+  const recent = (table: AnalyticsTable) => ({ ...table, rows: table.rows.slice(-quarters) });
+  const keep = new Set(pack.quarterly.rows.slice(-quarters).map((row) => row[0]));
+  const at = pack.segments.quarterly.columns.indexOf("period");
   return {
     ...(artifactId ? { artifact_id: artifactId } : {}),
     note: `Code-computed from the filed statements (window ${pack.window.start}-${pack.window.end}). Tables show the last ${quarters} quarters; statistics cover the whole window. The full pack is the financial_analytics artifact.`,
@@ -365,7 +377,7 @@ export function analyticsDigest(pack: FinancialAnalytics, artifactId?: string, q
     statistics: pack.statistics,
     quarterly: recent(pack.quarterly),
     segments: { members: pack.segments.members, annual: pack.segments.annual,
-      quarterly: pack.segments.quarterly.filter((q) => segmentQuarters.has(String(q.period))) },
+      quarterly: { ...pack.segments.quarterly, rows: pack.segments.quarterly.rows.filter((row) => keep.has(row[at])) } },
     cash_conversion: { quarterly: recent(pack.cash_conversion.quarterly), incremental: pack.cash_conversion.incremental },
     working_capital: { quarterly: recent(pack.working_capital.quarterly), notes: pack.working_capital.notes },
     capital_allocation: { quarterly: recent(pack.capital_allocation.quarterly), share_classes: pack.capital_allocation.share_classes, notes: pack.capital_allocation.notes },
@@ -389,9 +401,10 @@ export function analyticsMetrics(pack: FinancialAnalytics): Map<string, Analytic
       if (last) out.set(key ? `${key}.${column}` : column, { metric: key ? `${key}.${column}` : column, kind: columnKind(column), value: last[column], period: String(last.period), median: null, percentile: null });
     }
   };
-  for (const table of [pack.quarterly, pack.cash_conversion.quarterly, pack.working_capital.quarterly, pack.capital_allocation.quarterly]) add("", table);
-  for (const name of new Set(pack.segments.quarterly.map((q) => String(q.segment)))) add(`segment.${name}`, pack.segments.quarterly.filter((q) => q.segment === name));
-  for (const s of pack.statistics) {
+  for (const table of [pack.quarterly, pack.cash_conversion.quarterly, pack.working_capital.quarterly, pack.capital_allocation.quarterly]) add("", tableRows(table));
+  const segments = tableRows(pack.segments.quarterly);
+  for (const name of new Set(segments.map((q) => String(q.segment)))) add(`segment.${name}`, segments.filter((q) => q.segment === name));
+  for (const s of tableRows(pack.statistics)) {
     const known = out.get(s.metric);
     if (known && s.latest_period === known.period) out.set(s.metric, { ...known, median: s.median, percentile: s.percentile });
   }

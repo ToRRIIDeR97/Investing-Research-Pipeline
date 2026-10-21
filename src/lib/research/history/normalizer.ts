@@ -3,9 +3,9 @@
  */
 
 import type { HistoricalObservation, HistoricalCoverageMatrix, HistoricalRecord } from "./contracts";
-import { buildTTMSeries } from "./diagnostics";
+import { STOCK_METRICS, buildTTMSeries, computeHistoricalStatistics } from "./diagnostics";
 import { reconcileRecord } from "./reconciliation";
-import { computeHistoricalStatistics } from "./diagnostics";
+import { BASE_INPUTS } from "../reporting/metric-catalogue";
 
 const QUARTERS_REQUIRED = 20;
 
@@ -20,7 +20,10 @@ export type BuildHistoricalRecordInput = {
   asset_id: string;
   run_id?: string;
   observations: HistoricalObservation[];
+  /** Coverage keys: plan metric families ("income_statement") or metric keys. */
   requiredMetricKeys: string[];
+  /** Keys that get TTM rows and statistics; by default ttmMetricKeys(). */
+  ttmMetricKeys?: string[];
   endFiscalYear: number;
   endFiscalQuarter: number;
 };
@@ -59,7 +62,7 @@ export function buildHistoricalRecord(input: BuildHistoricalRecordInput): Histor
 
   const ttm = buildTTMSeries(
     canonical,
-    requiredMetricKeys,
+    input.ttmMetricKeys ?? ttmMetricKeys(canonical, requiredMetricKeys),
     startFiscalYear,
     startFiscalQuarter,
     endFiscalYear,
@@ -78,6 +81,20 @@ export function buildHistoricalRecord(input: BuildHistoricalRecordInput): Histor
     ttm_series: ttm,
     statistics,
   };
+}
+
+const CORE_FLOW_KEYS = ["revenue", "operating_income", "net_income", "operating_cash_flow", "capex"].flatMap((name) => BASE_INPUTS[name].aliases);
+
+/**
+ * Consolidated flow keys that get TTM rows: the core statement lines present, plus planned keys that are
+ * themselves observed flow keys. Plan families ("income_statement", "cash_flow") are coverage groups, not
+ * metric keys, and summing every key in a family would add stocks and per-share values.
+ */
+export function ttmMetricKeys(observations: HistoricalObservation[], planned: string[]): string[] {
+  const flows = new Set(observations.filter((o) => o.periodicity === "quarterly" && !o.segment && !o.geography
+    && /^[A-Z]{3}$/.test(o.unit ?? "") && o.metadata_json?.metric_category !== "balance_sheet" && !STOCK_METRICS.has(o.metric_key))
+    .map((o) => o.metric_key));
+  return [...new Set([...CORE_FLOW_KEYS, ...planned])].filter((key) => flows.has(key));
 }
 
 // Research plans require metric families ("income_statement", "share_count"); observations carry
@@ -246,36 +263,4 @@ export function takeLatestRestatement(observations: HistoricalObservation[]): Hi
     }
   }
   return Array.from(map.values());
-}
-
-export function buildMELIAdjustedFCFBridge(
-  reportedCFO: number,
-  customerFundCashMovement: number,
-  fintechLoanReceivableMovement: number,
-  netFintechFundingFlow: number,
-  capex: number,
-  intangibles: number
-): { adjusted_fcf: number; bridge_items: { label: string; value: number }[] } {
-  const bridge_items = [
-    { label: "reported_cfo", value: reportedCFO },
-    { label: "customer_fund_cash_movement", value: -customerFundCashMovement },
-    { label: "fintech_loan_receivable_movement", value: -fintechLoanReceivableMovement },
-    { label: "net_fintech_funding_flow", value: -netFintechFundingFlow },
-    { label: "capex", value: -capex },
-    { label: "intangibles", value: -intangibles },
-  ];
-  const adjusted_fcf = bridge_items.reduce((sum, item) => sum + item.value, 0);
-  return { adjusted_fcf, bridge_items };
-}
-
-export function separateMELIRevenueDefinition(
-  gaapRevenue: number,
-  netRevenuesAndFinancialIncome: number,
-  financialIncome: number
-): { gaap_revenue: number; financial_income: number; net_revenues_and_financial_income: number } {
-  return {
-    gaap_revenue: gaapRevenue,
-    financial_income: financialIncome,
-    net_revenues_and_financial_income: netRevenuesAndFinancialIncome,
-  };
 }

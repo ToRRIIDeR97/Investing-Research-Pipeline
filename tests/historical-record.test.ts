@@ -4,8 +4,7 @@ import {
   buildHistoricalRecord,
   computeStartPeriod,
   latestCompletedQuarter,
-  buildMELIAdjustedFCFBridge,
-  separateMELIRevenueDefinition,
+  ttmMetricKeys,
 } from "@/lib/research/history/normalizer";
 import type { HistoricalObservation } from "@/lib/research/history/contracts";
 import { reconcileRecord, reconcileAnnualToQuarters } from "@/lib/research/history/reconciliation";
@@ -139,18 +138,25 @@ describe("historical record", () => {
     assert.equal(record.observations.length, 2);
   });
 
-  it("C6-T10: MELI adjusted-FCF bridge signs reproduce disclosed bridge", () => {
-    const bridge = buildMELIAdjustedFCFBridge(1000, 100, 200, 50, 150, 50);
-    assert.equal(bridge.adjusted_fcf, 450);
-    assert.equal(bridge.bridge_items.find((i) => i.label === "reported_cfo")?.value, 1000);
-    assert.equal(bridge.bridge_items.find((i) => i.label === "customer_fund_cash_movement")?.value, -100);
-  });
-
-  it("MELI GAAP revenue separated from net revenues and financial income", () => {
-    const revenue = separateMELIRevenueDefinition(1000, 1200, 200);
-    assert.equal(revenue.gaap_revenue, 1000);
-    assert.equal(revenue.net_revenues_and_financial_income, 1200);
-    assert.equal(revenue.financial_income, 200);
+  it("builds TTM rows and statistics from line items when the plan lists metric families (RQ-EVAL-3)", () => {
+    const obs: HistoricalObservation[] = [];
+    for (let y = 2023; y <= 2024; y++) for (let q = 1; q <= 4; q++) {
+      obs.push({ ...makeObs("revenue", y, q, 100 * q), unit: "USD", currency: "USD", metadata_json: { metric_category: "income_statement" } });
+      obs.push({ ...makeObs("total_assets", y, q, 900), unit: "USD", currency: "USD", metadata_json: { metric_category: "balance_sheet" } });
+      obs.push({ ...makeObs("us_gaap_EarningsPerShareDiluted", y, q, 1.5), unit: "USD/shares", currency: "USD" });
+    }
+    const record = buildHistoricalRecord({
+      asset_id: "00000000-0000-0000-0000-000000000001",
+      observations: obs,
+      requiredMetricKeys: ["income_statement", "cash_flow", "balance_sheet"],
+      endFiscalYear: 2024,
+      endFiscalQuarter: 4,
+    });
+    const revenue = record.ttm_series.filter((row) => row.metric_key === "revenue");
+    assert.equal(revenue.length, 5);
+    assert.equal(revenue.at(-1)?.value_numeric, 1000);
+    assert.ok(record.statistics.revenue, "statistics are keyed by the line item");
+    assert.deepEqual(ttmMetricKeys(obs, ["income_statement"]), ["revenue"], "stocks, per-share values and family names get no TTM");
   });
 });
 

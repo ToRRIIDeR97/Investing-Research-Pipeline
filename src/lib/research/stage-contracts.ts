@@ -78,7 +78,7 @@ export const VALUATION_CONTRACT = artifactContract({
 export const DECISION_SYNTHESIS_CONTRACT = artifactContract({
   investment_thesis: InvestmentThesis, risk_register: RiskRegister, catalyst_register: CatalystRegister,
   expected_return_matrix: ExpectedReturnMatrix, thesis_breakers: ThesisBreakers,
-  monitoring_dashboard: MonitoringDashboard.extend({items:z.array(MonitoringDashboard.shape.items.element.extend({metric_key:z.string().min(1),definition:z.string().min(1),unit:z.string().min(1),reporting_basis:z.string().min(1)})).min(1)}), confidence_assessment: ConfidenceAssessment, decision_record: DecisionRecord,
+  monitoring_dashboard: MonitoringDashboard.extend({items:z.array(MonitoringDashboard.shape.items.element.omit({history_median:true,history_percentile:true}).extend({metric_key:z.string().min(1),definition:z.string().min(1),unit:z.string().min(1),reporting_basis:z.string().min(1)})).min(1)}), confidence_assessment: ConfidenceAssessment, decision_record: DecisionRecord,
 });
 
 const reviewer = z.object({
