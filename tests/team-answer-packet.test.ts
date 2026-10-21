@@ -18,7 +18,8 @@ test("an owner answers from its role's artifacts and its home stage's inputs, no
   assert.ok(!financials.has("operating_scenario_set") && !financials.has("valuation_scenario_set"));
 
   const business = ownerArtifactTypes("business");
-  for (const type of ["company_genesis", "historical_diagnosis", "moat_assessment", "operating_model", "operating_scenario_set"]) assert.ok(business.has(type), type);
+  for (const type of ["company_genesis", "historical_diagnosis", "moat_assessment", "operating_model", "operating_scenario_set", "financial_analytics"]) assert.ok(business.has(type), type);
+  assert.ok(financials.has("financial_analytics") && financials.has("financial_statement_summary"));
   for (const type of ["historical_record", "valuation_scenario_set", "investment_thesis"]) assert.ok(!business.has(type), type);
 });
 

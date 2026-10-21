@@ -53,8 +53,8 @@ flowchart TD
   Review -->|Sufficient, or gaps recorded| Data[Ingestion and evidence]
   Briefs --> Financials
   Briefs --> Business
-  Data --> Financials[Financial statements and diagnosis]
-  Data --> Business[Company history, operations and moat]
+  Data --> Financials[Financial statements, analytics pack and diagnosis]
+  Financials -->|financial_analytics digest| Business[Company history, operations and moat]
   Financials -.->|Document request| Collector[Collector fetches and reads new documents]
   Business -.->|Document request| Collector
   Valuation -.->|Document request| Collector
@@ -135,6 +135,29 @@ The historical-record stage reads the filed statements and the SEC companyfacts 
 
 If a readable filing still lacks a primary statement, the historical-record stage calls the repair specialist (`src/lib/research/repair/`). It writes a JavaScript `locateStatements(filings)` module from table summaries (surrounding text, tag names, row labels; no values). The module runs in a sandbox described in [security](security.md) and returns only table locations; the normal extractor then reads the facts. A repair is accepted only when every filing has all three statements, no unresolved facts and reconciling balance sheets. There are at most three attempts, each given the earlier errors. Every attempt's source, SHA-256 and errors are saved in a `statement_repair` artifact; nothing is written to the codebase. An unresolved repair leaves the stage failed with the original message and a summary.
 
+## Financial analytics pack
+
+After it builds the record, the historical-record stage computes `financial_analytics` (`src/lib/research/history/analytics.ts`, `buildFinancialAnalytics`) from the merged statement, record and market rows, and saves it with a small zod schema (`FinancialAnalytics`). It reuses `MetricBook` for aliases, fourth quarters derived from the fiscal-year total, TTM sums and average balances, so nothing is estimated and a missing input stays null with its reason in `missing`. Amounts are currency millions, ratios decimals; every table is `{ columns, rows }` (about 16 KB for META). It holds:
+
+- 20-quarter statistics (n, median, min, max, latest, percentile of the latest) for revenue YoY, gross, operating and FCF margin, capex/revenue, SBC/revenue, cash conversion, working-capital days, net cash, share change, yields and segment margins;
+- segments from the filings' segment note (member prefix and `Member` suffix stripped, so `fb:` and `meta:` rows merge): quarterly and fiscal-year revenue, operating income, margin, share of consolidated operating income, cumulative operating income, an earner/burner role and a burner's loss as a share of the earners' operating income;
+- cash conversion on TTM flows: FCF (also net of finance-lease principal), FCF/NI, OCF/NI, capex/D&A, capex − D&A as a growth-capex proxy, NOPAT at one normalized tax rate (the median quarterly effective rate within 0-50%), invested capital, ROIC, revenue/net PP&E, and 1/2/3-year incremental operating margin and ROIC;
+- working capital: DSO on TTM revenue, DPO and DIO on TTM cost of revenue, CCC and NWC/revenue; trade payables win and total payables fill the rest, with the switch noted;
+- capital allocation: net cash (cash + current securities − long-term debt), period-end shares summed over classes (`sharesAtPeriodEnd`) with the class split, TTM buybacks, dividends and SBC as a share of FCF, and buyback, dividend, FCF and FCF-minus-SBC yields on the period-end market cap.
+
+The same stage saves `financial_statement_summary` (`src/lib/research/history/statement-summary.ts`): captured filings and their status, window quarters with no filing, reconciliation results and the latest balance sheet's lines, with flags for current debt and finance-lease lines. Doctrine item 1 tells writers to report a statement gap only where this summary shows one.
+
+How the pack reaches the models:
+
+- **Analysis stages.** `prepareResearchCall` puts `analyticsDigest` (every statistic and segment total, the last eight quarters of each table, about 11 KB) in the shared, cached packet prefix for `company_genesis`, `business_process_analysis`, `moat_analysis`, `operating_model`, `operating_scenarios`, `asset_valuation` and `decision_synthesis`. `company_genesis` therefore depends on `historical_record`, and `business_process_analysis` on `historical_diagnosis`, so a financials re-run also re-runs genesis, business and moat (13 analysis stages, above the automatic re-run limit).
+- **Report packets.** `financial_analytics`, `financial_statement_summary` and `report_facts` lead the shared part of every outline, section and review packet (`splitReportArtifacts`). `packet.ts` replaces `historical_record` in model packets with a small view (coverage, reconciliation and a `chart_series` index of the quarterly series a chart may name); tables, charts and Financials still read the stored observations. Report packets drop `team_context.upstream_artifacts`, which repeated their own artifacts, and claim `url` and `location`, which code renders. Conclusion sections get the finished chapters without tables, visuals or plan fields, only the claims those chapters cite, and no filing passages.
+- **report_facts** (`src/lib/research/reporting/facts.ts`), saved before each report draft: per-case PV per share and return, terminal price target and undiscounted return, terminal value's share of EV, the explicit cash-flow sum, a no-rerating return (today's EV/NOPAT held to the terminal year), the probability-weighted PV, FCF and FCF-minus-SBC yields, and EV/NOPAT on TTM and next-year NOPAT.
+- **Monitoring KPIs.** `fillMonitoringLevels` (`src/lib/research/decision/monitoring-levels.ts`) matches each KPI by `metric_key` and segment, never by name, first against the pack (adding `history_median` and `history_percentile`) and then against the latest consolidated reported observation, scaled into the KPI's unit. A KPI stated with the opposite sign keeps the model's level.
+
+The record's TTM series and statistics cover the core consolidated flow lines present plus planned keys that are themselves observed flow keys (`ttmMetricKeys`); plan families stay coverage groups. The stage's validator fails a record with 12 or more quarters of consolidated revenue but no TTM revenue, or with no `financial_analytics`.
+
+`npx tsx scripts/report-packet-size.ts <run-id>` (read-only) rebuilds a stored run's report-section prompts with the current code and prints their size. On META run `4fae0fb1` the ten body sections come to 73-97K estimated tokens (81-278K logged); the two conclusion sections are 115K and 138K (151K and 366K logged), because they carry the full text of the finished chapters. `--live <section-id,...>` with `RUN_PAID_RESEARCH=1` also sends those sections to the configured provider, without writing to the database, and prints usage, cost and whether each output passes the section contract. On Claude Haiku 5.5 (2026-10-21) valuation-and-downside, executive-judgment and evidence-gaps-and-unresolved measured 93K, 110K and 133K input tokens and all three passed on the first attempt.
+
 ## Price history and market data
 
 Source discovery also keeps a daily price history for the asset (`src/lib/market-data/price-history.ts`). `syncAssetPriceHistory` runs beside the 5-day market snapshot and never fails the run; its summary is returned in the stage output as `priceHistory`.
@@ -190,7 +213,7 @@ Stages 16 to 19 run a fixed catalog of 16 price-based indicators and 50 strategy
 
 ## Decision synthesis
 
-The model writes the judgment calls: thesis, risks, catalysts, breakers, monitoring KPIs, confidence and the no-rerating, weak-stock and permanent-loss returns. Code sets everything the valuation stage already decided. `finalizeDecisionOutput` (`src/lib/research/decision/finalize.ts`) is a pure step that runs in this order:
+The model writes the judgment calls: thesis, risks, catalysts, breakers, monitoring KPIs, confidence and the no-rerating, weak-stock and permanent-loss returns. Monitoring current levels come from code where the KPI's metric key matches the analytics pack or a reported series ([Financial analytics pack](#financial-analytics-pack)); `latest_reported_metrics` holds consolidated rows only. Code sets everything the valuation stage already decided. `finalizeDecisionOutput` (`src/lib/research/decision/finalize.ts`) is a pure step that runs in this order:
 
 1. It drops citation IDs outside the accepted evidence packet.
 2. It moves a catalyst flagged `is_business_driver_only` to `monitoring_dashboard.drivers`. A risk flagged `is_source_gap_only`, or left with no citations, becomes a medium source gap owned by `system:decision-synthesis`.

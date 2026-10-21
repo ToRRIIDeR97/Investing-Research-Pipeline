@@ -42,8 +42,9 @@ export const STAGE_DEPENDENCIES: Record<string, string[]> = {
   intake: [], asset_identity: ["intake"], archetype_composition: ["asset_identity"],
   research_plan: ["archetype_composition"], source_discovery: ["research_plan"],
   source_ingestion: ["source_discovery"], evidence_extraction: ["source_ingestion"],
-  historical_record: ["evidence_extraction"], company_genesis: ["evidence_extraction"],
-  historical_diagnosis: ["historical_record"], business_process_analysis: ["company_genesis"],
+  // Analysis stages read the financial_analytics digest that historical_record saves.
+  historical_record: ["evidence_extraction"], company_genesis: ["evidence_extraction", "historical_record"],
+  historical_diagnosis: ["historical_record"], business_process_analysis: ["company_genesis", "historical_diagnosis"],
   moat_analysis: ["business_process_analysis"], operating_model: ["historical_diagnosis", "moat_analysis"],
   operating_scenarios: ["operating_model"], asset_valuation: ["operating_scenarios"],
   indicator_design: ["asset_valuation"], strategy_design: ["indicator_design"],
