@@ -12,6 +12,8 @@ import { withheldValuationReason } from "../valuation/contracts";
 import {
   DECISION_GAP_OWNER, decisionOutputFormat, finalizeDecisionOutput, stripCodeOwnedFields, type DecisionFinalizeInputs,
 } from "../decision/finalize";
+import { fillMonitoringLevels } from "../decision/monitoring-levels";
+import { FinancialAnalytics } from "../history/analytics";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -125,8 +127,17 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           AND status IN ('validated', 'accepted')
         LIMIT 1
       `;
+      const computedRows = await sql`
+        SELECT artifact_type, content_json FROM research_artifacts
+        WHERE research_run_id = ${ctx.runId} AND artifact_type IN ('financial_analytics', 'financial_statement_summary')
+          AND status IN ('validated', 'accepted')
+        ORDER BY artifact_version DESC, created_at DESC
+      `;
+      const analyticsParse = FinancialAnalytics.safeParse(computedRows.find((row) => row.artifact_type === "financial_analytics")?.content_json);
+      const statementSummary = computedRows.find((row) => row.artifact_type === "financial_statement_summary")?.content_json ?? null;
+      // Consolidated rows only: a share-class or segment row is not the company total.
       const latestMetrics = Object.values((Array.isArray(historicalRecord?.content_json?.observations)
-        ? historicalRecord.content_json.observations : [] as any[])
+        ? historicalRecord.content_json.observations.filter((o: any) => !o.segment && !o.geography) : [] as any[])
         .reduce((latest: Record<string, any>, observation: any) => {
           const prior = latest[observation.metric_key];
           const period = Number(observation.fiscal_year) * 10 + Number(observation.fiscal_quarter);
@@ -184,7 +195,9 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
               probability_bull: operatingScenarios.content_json.probability_bull,
             }
           : null,
-        latest_reported_metrics: latestMetrics,
+        financial_statement_summary: statementSummary,
+        latest_reported_metrics: (latestMetrics as any[]).map((o) => ({ metric_key: o.metric_key, period: o.fiscal_quarter ? `${o.fiscal_year}Q${o.fiscal_quarter}` : `FY${o.fiscal_year}`,
+          value: o.value_numeric, unit: o.unit, label: o.metadata_json?.statement_label ?? null })),
         output_contract: "decision_synthesis",
         output_schema: DECISION_SYNTHESIS_CONTRACT.schema,
         evidence_claims: evidenceClaims,
@@ -225,7 +238,7 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           "Code sets investment_thesis.valuation_accepted_first and the expected_return_matrix status, bear, base, bull and probability-weighted returns and dilution_omitted from accepted_valuation, terminal_return_inputs and operating_scenario_probabilities; values you give for them are replaced. Judge no_rerating_return, weak_stock_outcome and permanent_loss_limit over the terminal_year horizon.",
           "Risk probability and confidence must be between 0 and 1; risk severity must be between 1 and 5.",
           "The decision must remain pending because human review is the approval gate.",
-          "Use latest_reported_metrics for monitoring current levels. When a current level is unavailable or stale, set it to null and explain the gap in source_role; never use zero as a missing-data placeholder.",
+          "For a KPI that financial_analytics covers, use its metric key (for example operating_margin, fcf_ttm, dso, net_cash, shares, segment.<Segment>.operating_income): code then sets current_level and its 20-quarter median and percentile. Otherwise use latest_reported_metrics. When a current level is unavailable or stale, set it to null and explain the gap in source_role; never use zero as a missing-data placeholder.",
           "Each KPI must have a stable metric_key matching the captured quarterly history, a precise definition, reporting_basis and unit. Express current levels and bear/bull thresholds in that same unit. When the required series is absent, retain the KPI with current_level null and explain the missing disclosure; do not map it to a different definition.",
         ],
       });
@@ -241,26 +254,10 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
       if (adjustments.dropped_citation_ids.length) {
         console.warn(`decision synthesis dropped citations outside the accepted packet: ${adjustments.dropped_citation_ids.join(", ")}`);
       }
-      // Captured current levels replace the model's for KPIs the history and valuation report directly.
+      // Captured current levels replace the model's, matched by metric_key against the analytics pack and the reported history.
       const monitoringItems = output.monitoring_dashboard?.items;
       if (Array.isArray(monitoringItems)) {
-        const latestDeposits = (latestMetrics as any[]).find((metric) => metric.metric_key === "deposits");
-        const reportedDilutedShares = terminalReturnInputs?.reported_diluted_shares ?? 0;
-        for (const item of monitoringItems) {
-          if (/total deposits/i.test(String(item.kpi)) && latestDeposits?.value_numeric != null) {
-            item.current_level = /billion/i.test(String(item.kpi))
-              ? Number((Number(latestDeposits.value_numeric) / 1e9).toFixed(6))
-              : Number(latestDeposits.value_numeric);
-            item.source_role = `SEC companyfacts ${latestDeposits.fiscal_year}Q${latestDeposits.fiscal_quarter}`;
-          } else if (/diluted shares/i.test(String(item.kpi)) && reportedDilutedShares > 0) {
-            item.current_level = /million/i.test(String(item.kpi))
-              ? Number((reportedDilutedShares / 1e6).toFixed(6))
-              : reportedDilutedShares;
-            item.source_role = `SEC companyfacts quarter ended ${acceptedValuation.valuation_scenario_set?.dilution_assumption?.reported_period_end}`;
-          } else if (/not provided|requires current update|stale/i.test(String(item.source_role || ""))) {
-            item.current_level = null;
-          }
-        }
+        fillMonitoringLevels(monitoringItems, { analytics: analyticsParse.success ? analyticsParse.data : null, latestReported: latestMetrics as any[] });
       }
       // Check everything before the first write, so an invalid answer never leaves partial rows.
       const problems = [...errors, ...(DECISION_SYNTHESIS_CONTRACT.validate?.(output) || [])];

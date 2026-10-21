@@ -103,6 +103,9 @@ export const MonitoringKPI = z.object({
   reporting_frequency: z.string().min(1),
   model_input_affected: z.string(), // C12-T5 check: must not be empty
   source_role: z.string().min(1),
+  // Set by code from financial_analytics, never by the model.
+  history_median: z.number().nullable().optional(),
+  history_percentile: z.number().nullable().optional(),
 });
 export type MonitoringKPI = z.infer<typeof MonitoringKPI>;
 

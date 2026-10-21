@@ -13,6 +13,11 @@ import { repairModuleWriter } from '../repair/agent';
 import { HistoricalObservation } from '../history/contracts';
 import { fiscalCalendar, fiscalLabel, fiscalPeriodsFromObservations } from '../history/fiscal-calendar';
 import { createArtifactRepository } from "../artifacts/repository";
+import { BASE_INPUTS } from "../reporting/metric-catalogue";
+import { mergeObservations } from "../reporting/data-views";
+import { saveReportArtifact } from "../reporting/store";
+import { FinancialAnalytics, buildFinancialAnalytics } from "../history/analytics";
+import { buildStatementSummary } from "../history/statement-summary";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -236,10 +241,20 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
         created_by: "system-research-os",
       });
 
+      // The analytics pack and the statement summary are what later stages read instead of raw observations.
+      const analytics = FinancialAnalytics.parse(buildFinancialAnalytics({
+        observations: mergeObservations(filings.observations, record.observations, "error" in marketHistory ? [] : marketHistory.observations),
+        endFiscalYear: end.year, endFiscalQuarter: end.quarter,
+      }));
+      await saveReportArtifact(sql, ctx, "financial_analytics", `${ctx.assetSlug}-financial-analytics`, analytics);
+      const window = analytics.quarterly.rows.map((row) => String(row[0]));
+      await saveReportArtifact(sql, ctx, "financial_statement_summary", `${ctx.assetSlug}-financial-statement-summary`, buildStatementSummary(filings, window));
+
       return {
         status: "success",
         observationsCount: observations.length,
         ttmSeriesCount: record.ttm_series.length,
+        analyticsStatistics: analytics.statistics.rows.length,
         filingTableCount: filings.tables.length,
         filingCoverage: filings.coverage,
         marketHistory: "error" in marketHistory ? marketHistory
@@ -260,6 +275,19 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       if (Number(rows[0].cnt) === 0) {
         errors.push("No metric observations recorded for this run");
       }
+      // Regression guard (RQ-EVAL-3): a record with three years of consolidated revenue must carry its TTM series.
+      const [record] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${ctx.runId}
+        AND artifact_type = 'historical_record' AND status IN ('validated', 'accepted') ORDER BY created_at DESC LIMIT 1`;
+      const content = record?.content_json ?? {};
+      const revenueKeys = BASE_INPUTS.revenue.aliases;
+      const quarters = (content.observations ?? []).filter((o: any) => revenueKeys.includes(o.metric_key) && o.periodicity === "quarterly"
+        && !o.segment && !o.geography && o.value_numeric !== null).length;
+      if (quarters >= 12 && !(content.ttm_series ?? []).some((o: any) => revenueKeys.includes(o.metric_key))) {
+        errors.push(`historical_record holds ${quarters} quarterly revenue observations but no TTM revenue series`);
+      }
+      const [analytics] = await sql`SELECT 1 FROM research_artifacts WHERE research_run_id = ${ctx.runId}
+        AND artifact_type = 'financial_analytics' AND status IN ('validated', 'accepted') LIMIT 1`;
+      if (quarters && !analytics) errors.push("financial_analytics was not saved");
       return makeValidationResult(errors);
     } finally {
       await sql.end();

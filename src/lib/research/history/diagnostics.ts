@@ -1,5 +1,5 @@
 /**
- * Historical diagnostics: TTM, growth, incremental margins, and statistics.
+ * Historical diagnostics: TTM series, statistics and inflections.
  */
 
 import type { HistoricalObservation } from "./contracts";
@@ -62,10 +62,6 @@ export function buildTTMSeries(
   return ttm;
 }
 
-export function computeGrowthRate(values: number[]): number[] {
-  return values.map((v, i) => (i === 0 ? 0 : v / values[i - 1] - 1));
-}
-
 export function computeHistoricalStatistics(
   quarterly: HistoricalObservation[],
   ttm: HistoricalObservation[]
@@ -86,30 +82,6 @@ export function computeHistoricalStatistics(
     };
   }
   return stats;
-}
-
-export function computeIncrementalMargins(
-  revenueSeries: HistoricalObservation[],
-  profitSeries: HistoricalObservation[]
-): { period: string; incremental_margin: number; revenue_growth: number }[] {
-  const result: { period: string; incremental_margin: number; revenue_growth: number }[] = [];
-  const revs = revenueSeries
-    .filter((o) => o.value_numeric != null)
-    .sort((a, b) => (a.fiscal_year ?? 0) - (b.fiscal_year ?? 0));
-  const profits = profitSeries
-    .filter((o) => o.value_numeric != null)
-    .sort((a, b) => (a.fiscal_year ?? 0) - (b.fiscal_year ?? 0));
-  for (let i = 1; i < revs.length; i++) {
-    const revDelta = (revs[i].value_numeric ?? 0) - (revs[i - 1].value_numeric ?? 0);
-    const profitDelta = (profits[i]?.value_numeric ?? 0) - (profits[i - 1]?.value_numeric ?? 0);
-    if (revDelta === 0) continue;
-    result.push({
-      period: `${revs[i - 1].fiscal_year}Q${revs[i - 1].fiscal_quarter}-${revs[i].fiscal_year}Q${revs[i].fiscal_quarter}`,
-      incremental_margin: profitDelta / revDelta,
-      revenue_growth: revDelta / (revs[i - 1].value_numeric ?? 1),
-    });
-  }
-  return result;
 }
 
 export function detectInflections(
@@ -159,25 +131,4 @@ function groupByMetric(observations: HistoricalObservation[]): Map<string, Histo
     map.set(o.metric_key, list);
   }
   return map;
-}
-
-export function computeWorkingCapitalMetrics(
-  currentAssets: number,
-  currentLiabilities: number,
-  inventory: number,
-  receivables: number,
-  payables: number,
-  cfo: number,
-  revenue: number
-): { working_capital: number; cash_conversion: number; receivables_days: number; payables_days: number; inventory_days: number } {
-  const working_capital = currentAssets - currentLiabilities;
-  const cash_conversion = revenue === 0 ? 0 : working_capital / revenue;
-  const receivables_days = revenue === 0 ? 0 : (receivables / revenue) * 365;
-  const payables_days = revenue === 0 ? 0 : (payables / revenue) * 365;
-  const inventory_days = revenue === 0 ? 0 : (inventory / revenue) * 365;
-  return { working_capital, cash_conversion, receivables_days, payables_days, inventory_days };
-}
-
-export function perShare(value: number, shares: number): number {
-  return shares === 0 ? 0 : value / shares;
 }

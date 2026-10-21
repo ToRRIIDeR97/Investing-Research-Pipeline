@@ -49,11 +49,15 @@ test("collector searches the requested question and only accepts fetched documen
     for (const [key, value] of Object.entries(prior)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
   }
 });
-test("financials and business work overlap while forecasts wait for both branches", () => {
+test("business analysis starts once the financial analytics exist, and forecasts wait for both branches", () => {
   const stages = ledger(STAGE_CONFIGS.slice(0, 7).map(s => s.key));
-  assert.deepEqual(readyStages(stages), ["historical_record", "company_genesis"]);
+  assert.deepEqual(readyStages(stages), ["historical_record"]);
+  stages.find(s => s.stage_key === "historical_record")!.status = "completed";
+  assert.deepEqual(readyStages(stages), ["company_genesis", "historical_diagnosis"]);
   stages.find(s => s.stage_key === "company_genesis")!.status = "completed";
-  assert.deepEqual(readyStages(stages), ["historical_record", "business_process_analysis"]);
+  assert.deepEqual(readyStages(stages), ["historical_diagnosis"], "segment economics reach the business analysis");
+  stages.find(s => s.stage_key === "historical_diagnosis")!.status = "completed";
+  assert.deepEqual(readyStages(stages), ["business_process_analysis"]);
   assert.ok(!readyStages(stages).includes("asset_valuation"));
   stages.find(s => s.stage_key === "research_plan")!.status = "waiting_for_human";
   // Initial plan approval cannot be treated as dependency completion.
@@ -62,7 +66,9 @@ test("financials and business work overlap while forecasts wait for both branche
 test("replaying a specialist invalidates its consumers without reopening plan approval", () => {
   const financial = dependentStages(["historical_record"]);
   for (const key of ["historical_diagnosis", "operating_model", "asset_valuation", "ai_reviewer", "human_review", "export", "refresh_schedule"]) assert.ok(financial.includes(key));
-  for (const key of ["research_plan", "source_discovery", "company_genesis"]) assert.ok(!financial.includes(key));
+  for (const key of ["research_plan", "source_discovery", "evidence_extraction"]) assert.ok(!financial.includes(key));
+  // Analysis that read the analytics digest is redone; unchanged packets reuse their stored outputs.
+  for (const key of ["company_genesis", "business_process_analysis", "moat_analysis"]) assert.ok(financial.includes(key));
   assert.ok(dependentStages(["source_discovery"]).includes("historical_record"));
 });
 test("requests reopen only an owner's stage that asked for a re-run, and unresolved material questions block the report", () => {

@@ -5,9 +5,11 @@ export function artifactContent(artifacts:Row[],type:string):Row {
   return a?.content_json??a?.content??{};
 }
 export function researchObservations(artifacts:Row[]):Row[] {
-  const filed=artifactContent(artifacts,'financial_statement_set').observations??[];
-  const historical=artifactContent(artifacts,'historical_record').observations??[];
-  const market=artifactContent(artifacts,'market_price_history').observations??[];
+  return mergeObservations(artifactContent(artifacts,'financial_statement_set').observations??[],
+    artifactContent(artifacts,'historical_record').observations??[],artifactContent(artifacts,'market_price_history').observations??[]);
+}
+/** Filed statement rows first; history and market rows only fill series and periods the filings lack. */
+export function mergeObservations(filed:Row[],historical:Row[],market:Row[]):Row[] {
   const signature=(r:Row)=>JSON.stringify([r.metric_key,r.periodicity,r.fiscal_year,r.fiscal_quarter,r.unit,r.currency,r.reporting_basis,r.segment??'',r.geography??'']);
   const keys=new Set(filed.map(signature));const rows=[...filed,...historical.filter((r:Row)=>!keys.has(signature(r)))];
   const all=new Set(rows.map(signature));return [...rows,...market.filter((r:Row)=>!all.has(signature(r)))];

@@ -25,6 +25,7 @@ import { loadReportInputs } from "./reporting/store";
 import { getStageOutputContract } from "./stage-contracts";
 import { researchPacketForModel } from "./reporting/packet";
 import { FILING_PASSAGE_RULE, FILING_PASSAGE_TASKS, loadFilingPassages } from "./memory/filing-passages";
+import { FinancialAnalytics, analyticsDigest } from "./history/analytics";
 export type { ValidationResult };
 
 export type Sql = ReturnType<typeof postgres>;
@@ -303,7 +304,13 @@ export async function failV3Task(sql: Sql, taskId: string, error: unknown): Prom
 
 // Run-wide context leads the packet, so calls with the same instructions (report sections, extraction
 // batches, retries) also share the packet's leading bytes and the provider can reuse them from cache.
-const RUN_CONTEXT_KEYS = ["asset", "research_question", "source_cutoff", "profile", "coverage_requirements", "evidence_claims", "filing_passages"];
+const RUN_CONTEXT_KEYS = ["asset", "research_question", "source_cutoff", "profile", "coverage_requirements", "evidence_claims", "filing_passages",
+  "financial_analytics", "financial_statement_summary", "report_facts"];
+
+/** Stages whose calls get the financial_analytics digest in their shared packet prefix. */
+export const ANALYTICS_DIGEST_STAGES = new Set(["company_genesis", "business_process_analysis", "moat_analysis", "operating_model",
+  "operating_scenarios", "asset_valuation", "decision_synthesis"]);
+export const FINANCIAL_ANALYTICS_RULE = "financial_analytics is computed by code from the filed statements: 20-quarter statistics (median, min, max, latest, percentile of the latest), segment economics (who earns, who burns), cash conversion, working-capital days and capital allocation. Tables are { columns, rows }; amounts are currency millions and ratios are decimals. Use its figures instead of recomputing them, compare current values with their history, and cite its artifact_id for them. A null value means the input was not captured: say so rather than estimating it.";
 
 export function runContextFirst(packet: Record<string, unknown>): Record<string, unknown> {
   const leading = RUN_CONTEXT_KEYS.filter(key => key in packet);
@@ -362,11 +369,7 @@ export function researchTaskKey(taskKey: string, request: Record<string, unknown
   return `${taskKey}:${createHash("sha256").update(JSON.stringify(request)).digest("hex").slice(0, 24)}`;
 }
 
-/**
- * Bounded agent call for v3 handlers. Mirrors the v2 callAgent behavior:
- * budget preflight before every attempt and a per-attempt model-call ledger.
- */
-export async function callResearchAgent<T extends Record<string, unknown>>(params: {
+export type ResearchCallParams = {
   sql: Sql;
   ctx: ResearchRunContext;
   stageKey: string;
@@ -380,7 +383,13 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
   outputFormat?: Parameters<typeof runResearchAgent>[0]["outputFormat"];
   /** Packet keys that differ between sibling calls; they follow the shared context and its cache breakpoint. */
   perCallKeys?: string[];
-}): Promise<T> {
+};
+
+/**
+ * The packet and rules a stage call sends: team context, source-request state, the analytics digest and filing
+ * passages are added here. It only reads the database, so scripts can rebuild a call's exact prompt.
+ */
+export async function prepareResearchCall(params: ResearchCallParams) {
   const role = STAGE_OWNERS[params.stageKey];
   // Only the stage owner's own analysis may ask the collector for documents; helpers such as the
   // repair agent and team coordination calls cannot.
@@ -410,10 +419,12 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
     const requests = rows.find(r => r.artifact_type === "team_requests")?.content_json?.requests || [];
     // Handlers supply tailored views of older inputs; do not copy the whole archive into every successor.
     const dependencies = STAGE_DEPENDENCIES[params.stageKey] || [];
+    // Stages after historical_record read its economics from the financial_analytics digest, not raw observations.
     const types = new Set(dependencies.flatMap(key => getStageOutputContract(key)?.requiredKeys || []));
-    if (dependencies.includes("historical_record")) types.add("historical_record");
     // Only the dependency types and, when the packet has none, the evidence are read; no input hash is needed.
-    const inputs = role === "data" ? { artifacts: [], evidence: [] } :
+    // Report packets carry their own artifact selection, which upstream_artifacts would only repeat.
+    const ownArtifacts = "artifacts" in params.packet;
+    const inputs = role === "data" || (ownArtifacts && params.packet.evidence_claims) ? { artifacts: [], evidence: [] } :
       await loadReportInputs(params.sql, params.ctx.runId, params.ctx.cutoffAt.toISOString(),
         { types: [...types], fingerprint: false, evidence: !params.packet.evidence_claims });
     params = { ...params, packet: { ...params.packet,
@@ -421,9 +432,18 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
       team_context: { role, purpose: TEAM_ROLES[role].purpose,
         brief: rows.find(r => r.artifact_type === "agent_brief")?.content_json || null,
         // The report packet already carries the same requests as specialist_requests.
-        ...("specialist_requests" in params.packet ? {} : { requests }), upstream_artifacts: inputs.artifacts,
+        ...("specialist_requests" in params.packet ? {} : { requests }), ...(ownArtifacts ? {} : { upstream_artifacts: inputs.artifacts }),
         ...(sourceRequests ? { source_requests: { ...sourceRequests, instructions: sourceRequestRule(sourceRequests.allowed) } } : {}) },
     } };
+  }
+  if (ANALYTICS_DIGEST_STAGES.has(params.stageKey) && !params.taskType.startsWith("team_") && !("financial_analytics" in params.packet)) {
+    const [row] = await params.sql`SELECT id, content_json FROM research_artifacts WHERE research_run_id = ${params.ctx.runId}
+      AND artifact_type = 'financial_analytics' AND status IN ('validated', 'accepted') ORDER BY artifact_version DESC, created_at DESC LIMIT 1`;
+    const pack = row ? FinancialAnalytics.safeParse(row.content_json) : null;
+    if (pack?.success) {
+      params = { ...params, packet: { ...params.packet, financial_analytics: analyticsDigest(pack.data, String(row.id)) } };
+      addRule(FINANCIAL_ANALYTICS_RULE);
+    }
   }
   // Filing text (MD&A, segment notes, results discussion) for stages that explain drivers. It is the same for
   // every call of a run, so it sits in the shared, cached part of the packet after evidence_claims.
@@ -437,6 +457,16 @@ export async function callResearchAgent<T extends Record<string, unknown>>(param
     }
   }
   params = { ...params, packet: researchPacketForModel(perCallKeysLast(params.packet, params.perCallKeys)) };
+  return { params, sourceLedger, sourceRequests };
+}
+
+/**
+ * Bounded agent call for v3 handlers. Mirrors the v2 callAgent behavior:
+ * budget preflight before every attempt and a per-attempt model-call ledger.
+ */
+export async function callResearchAgent<T extends Record<string, unknown>>(input: ResearchCallParams): Promise<T> {
+  const { params, sourceLedger, sourceRequests } = await prepareResearchCall(input);
+  const role = STAGE_OWNERS[params.stageKey];
   const config = getAgentConfig(params.agentName);
   const outputFormat = params.outputFormat || config.outputFormat;
   const request = {
