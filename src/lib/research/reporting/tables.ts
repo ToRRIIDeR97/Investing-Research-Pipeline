@@ -29,31 +29,50 @@ const isCell = (value: unknown): value is TableCell => value === null || ["strin
 const isSchedule = (value: unknown): value is { years: unknown[] } & Record<string, unknown> =>
   isRecord(value) && Array.isArray(value.years) && typeof value.value_per_share === "number";
 
-/** The first array inside a value, as a path suffix the writer can request instead. */
+/** A list of plain values (claim IDs, mitigants) prints as one cell. */
+const isCellList = (value: unknown): value is TableCell[] => Array.isArray(value) && value.every(isCell);
+const cellOf = (value: unknown): TableCell | undefined =>
+  value === undefined ? null : isCell(value) ? value : isCellList(value) ? value.map((item) => String(item)).join("; ") : undefined;
+
+/**
+ * The nearest list of records under a record, as a path suffix the writer can request instead. Only records are
+ * searched, never a list's items, so the suggestion is a table, not a field inside one row.
+ */
 function arrayChild(value: unknown, prefix = ""): string | null {
-  if (Array.isArray(value)) return prefix ? prefix : value.length ? arrayChild(value[0], "0") : null;
   if (!isRecord(value)) return null;
-  for (const [key, child] of Object.entries(value)) if (Array.isArray(child)) return prefix ? `${prefix}.${key}` : key;
+  const path = (key: string) => (prefix ? `${prefix}.${key}` : key);
   for (const [key, child] of Object.entries(value)) {
-    const found = arrayChild(child, prefix ? `${prefix}.${key}` : key);
+    if ((Array.isArray(child) && child.length && child.every(isRecord)) || isYearKeyed(child)) return path(key);
+  }
+  for (const [key, child] of Object.entries(value)) {
+    const found = arrayChild(child, path(key));
     if (found) return found;
   }
   return null;
 }
 
-/** A record with values one level deep at most, as flat columns ("build.capital_expenditures"); deeper is rejected. */
+/**
+ * A record with values one level deep at most, as flat columns ("build.capital_expenditures"); a list of plain
+ * values is one joined cell. Anything deeper is rejected.
+ */
 function flatRow(row: Record<string, unknown>): Record<string, TableCell> | null {
   const flat: Record<string, TableCell> = {};
   for (const [key, value] of Object.entries(row)) {
-    if (isCell(value) || value === undefined) { flat[key] = value ?? null; continue; }
+    const direct = cellOf(value);
+    if (direct !== undefined) { flat[key] = direct; continue; }
     if (!isRecord(value)) return null;
     for (const [sub, inner] of Object.entries(value)) {
-      if (!isCell(inner) && inner !== undefined) return null;
-      flat[`${key}.${sub}`] = inner ?? null;
+      const nested = cellOf(inner);
+      if (nested === undefined) return null;
+      flat[`${key}.${sub}`] = nested;
     }
   }
   return flat;
 }
+
+/** A record keyed by fiscal year whose values are records (scenario statements by year). */
+const isYearKeyed = (value: unknown): value is Record<string, Record<string, unknown>> =>
+  isRecord(value) && Object.keys(value).length > 0 && Object.entries(value).every(([key, row]) => /^\d{4}$/.test(key) && isRecord(row));
 
 /**
  * The rows a report table prints, or an error the section writer can act on. A table is a { columns, rows } table,
@@ -74,14 +93,16 @@ export function flatTable(table: ReportSection["tables"][number], artifacts: Rep
     notes.push(["terminal_value", "terminal_present_value", "equity_value", "value_per_share"]
       .filter(key => typeof schedule[key] === "number").map(key => `${key}: ${schedule[key]}`).join("; "));
     value = schedule.years;
+  } else if (isYearKeyed(value)) {
+    value = Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([year, row]) => ({ fiscal_year: Number(year), ...row }));
   }
   const rows = Array.isArray(value) ? value : [value];
   if (rows.length > MAX_TABLE_ROWS) throw new Error(`${where} has ${rows.length} rows; a report table holds at most ${MAX_TABLE_ROWS}. Request a summary table (financial_analytics) or a chart instead.`);
-  const flat = rows.map(row => isCell(row) ? { Value: row } : isRecord(row) ? (isSchedule(row) ? null : flatRow(row)) : null);
+  const flat = rows.map(row => isCell(row) || isCellList(row) ? { Value: cellOf(row)! } : isRecord(row) ? (isSchedule(row) ? null : flatRow(row)) : null);
   if (flat.some(row => row === null)) {
     // A list of valuation schedules is requested one schedule at a time; anything else at its nearest array.
     const schedule = rows.findIndex(isSchedule);
-    const child = schedule >= 0 ? String(schedule) : arrayChild(value);
+    const child = schedule >= 0 ? String(schedule) : Array.isArray(value) ? null : arrayChild(value);
     const suggestion = child ? ` Request ${[table.path, child].filter(Boolean).join(".")} instead.` : "";
     throw new Error(`${where} is not a list of flat rows: its values nest more than one level.${suggestion}`);
   }

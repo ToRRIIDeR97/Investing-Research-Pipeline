@@ -158,6 +158,22 @@ test("report tables print flat rows: schedules as years, nested paths and long l
   assert.deepEqual(flatTable(table("expected"), tableArtifacts).rows, [{ return: null, basis: "pv" }]);
 });
 
+test("lists of plain values print as one cell, year-keyed records print a row per year, and suggestions never point inside a row", () => {
+  const artifacts: ReportArtifact[] = [{ id: "risk", artifact_type: "risk_register", scope_key: "default", artifact_version: 1, content_json: {
+    risks: [{ name: "Regulation", evidence_ids: ["e1", "e2"], mitigants: ["Lobbying", "Diversification"], impact: { severity: 4 } }],
+    events: [{ name: "IPO", evidence_claim_ids: ["c1"], detail: { deep: { x: 1 } } }],
+    scenarios: [{ resulting_financial_statements_json: { years: { 2027: { revenue: 110, fcff: 9 }, 2026: { revenue: 100, fcff: 8 } } } }],
+  } }];
+  const t = (path: string) => ({ title: "T", artifact_id: "risk", path });
+  assert.deepEqual(flatTable(t("risks"), artifacts).rows,
+    [{ name: "Regulation", evidence_ids: "e1; e2", mitigants: "Lobbying; Diversification", "impact.severity": 4 }]);
+  assert.deepEqual(flatTable(t("scenarios.0.resulting_financial_statements_json.years"), artifacts).rows,
+    [{ fiscal_year: 2026, revenue: 100, fcff: 8 }, { fiscal_year: 2027, revenue: 110, fcff: 9 }]);
+  // A row nested too deep is rejected without suggesting a field inside the row.
+  assert.throws(() => flatTable(t("events"), artifacts), (error: Error) => /not a list of flat rows/.test(error.message) && !/Request/.test(error.message));
+  assert.throws(() => flatTable(t(""), artifacts), /Request risks instead/);
+});
+
 const section = (tables: ReportSection["tables"], evidence_ids: string[] = []): ReportSection => ({ id: "valuation", title: "Valuation", purpose: "p",
   coverage: ["valuation"], artifact_ids: ["val"], paragraphs: [{ kind: "analysis", text: "Value.", evidence_ids, artifact_ids: ["val"] }],
   counterevidence: "c", implication: "i", gaps: [], tables });

@@ -808,7 +808,7 @@ async function fetchSecContext(ctx: RunContext) {
     ? "0000-01-01"
     : earliestDate.toISOString().slice(0, 10);
   const beforeCutoff = (value: unknown) => !value || String(value).slice(0, 10) <= cutoffDate;
-  const withinFiveYears = (value: unknown) => beforeCutoff(value) && String(value || "0000-01-01").slice(0, 10) >= earliestDateText;
+  const withinFilingWindow = (value: unknown) => beforeCutoff(value) && String(value || "0000-01-01").slice(0, 10) >= earliestDateText;
   const factBeforeCutoff = (fact: Record<string, unknown>) =>
     beforeCutoff(fact.filed) && beforeCutoff(fact.end);
   const usGaap = companyFacts.facts?.["us-gaap"] || {};
@@ -819,7 +819,7 @@ async function fetchSecContext(ctx: RunContext) {
     .slice(-8);
   const filingRows = await loadSubmissionFilings(submissions, earliestDateText, cutoffDate);
   const recentFilings = selectResearchFilings(filingRows, earliestDateText, cutoffDate)
-    .filter((filing) => withinFiveYears(filing.filingDate));
+    .filter((filing) => withinFilingWindow(filing.filingDate));
 
   return {
     cik,

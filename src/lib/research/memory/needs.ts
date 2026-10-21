@@ -134,14 +134,14 @@ export function evidencePassageBudget(documentCount: number, env: Record<string,
   return Math.max(32, Math.min(max, Math.round(documentCount * perDocument)));
 }
 
-/** Roles that take the slots other roles cannot fill: the issuer's filings, then its earnings material. */
+/** Roles that take the slots other roles cannot fill first: the issuer's filings, then its earnings material. */
 const OVERFLOW_ROLES = ["regulatory_filing", "earnings_release"];
 
 /**
  * Split `budget` passages across roles in proportion to the square root of each role's stored passages, at least 3
  * each, so 17 filings get far more than one aggregator page without taking every slot. A role never gets more than
  * it stores; the slots it leaves go to the other roles in the same proportion, and rounding leftovers go to filings
- * and earnings material. Without counts every role gets an equal share.
+ * and earnings material, or without them to any role with passages to spare. Without counts every role gets an equal share.
  */
 export function rolePassageShares(roles: string[], budget: number, counts?: Record<string, number>): Record<string, number> {
   const shares: Record<string, number> = {};
@@ -166,7 +166,8 @@ export function rolePassageShares(roles: string[], budget: number, counts?: Reco
     if (!open.length) break;
   }
   let spare = budget - Object.values(shares).reduce((sum, n) => sum + n, 0);
-  for (const role of OVERFLOW_ROLES) {
+  // Filings and earnings first; without them, any role that stores more than it was given.
+  for (const role of [...OVERFLOW_ROLES, ...roles.filter((role) => !OVERFLOW_ROLES.includes(role))]) {
     if (spare <= 0 || !(role in shares)) continue;
     const add = Math.min(spare, cap(role) - shares[role]);
     shares[role] += add;
