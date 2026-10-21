@@ -200,7 +200,7 @@ s.initial(cx, 50)
 s.line([(cx, 57), (cx, 70)])
 s.box(100, 70, 400, 96, "Load inputs (code)", [
     "operating_scenario_set yearly_drivers · operating_model",
-    "financial_inputs · historyRatios · equityBridge · diluted shares",
+    "financial_inputs · historyRatios (PP&E, IC) · equityBridge · shares · analytics pack",
     "risk-free (FRED DGS10) · beta (market_price_history) · implied ERP",
     "price: stored close; historical run without one → withheld"], "lib", title_size=12)
 s.line([(cx, 166), (cx, 186)])
@@ -210,18 +210,18 @@ s.line([(cx + 14, 200), (760, 200), (760, 226)], "yes", lx=600, ly=194)
 s.line([(cx, 214), (cx, 236)], "no", lx=cx + 6, ly=230, lanchor="start")
 s.diamond(cx, 250)
 s.text(cx + 20, 246, "ready? drivers for every horizon year,", 11, fill="#5a4700", italic=True)
-s.text(cx + 20, 259, "diluted shares, price, base-year revenue", 11, fill="#5a4700", italic=True)
+s.text(cx + 20, 259, "shares, price, base revenue; FX + ADS ratio if foreign", 11, fill="#5a4700", italic=True)
 s.line([(cx - 14, 250), (40, 250), (40, 610)], "no → withheld, no model call", lx=160, ly=244)
 s.line([(cx, 264), (cx, 286)], "yes", lx=cx + 6, ly=280, lanchor="start")
-s.box(130, 286, 340, 66, "valuation-analyst (model)", ["valuation_assumptions for bear, base, bull",
-    "discount_rate > risk-free · NOPAT multiple or g < r"], "ui", title_size=12)
+s.box(130, 286, 340, 66, "valuation-analyst (model)", ["sets: conservative, base, aggressive",
+    "r, g ≤ risk-free, RONIC, fade years (code defaults)"], "ui", title_size=12)
 s.line([(cx, 352), (cx, 372)])
-s.box(130, 372, 340, 66, "Statements → FCFF schedules (code)", ["FCFF = NOPAT + D&A − capex − ΔNWC",
-    "base case's first year pinned to operating_model"], "lib", title_size=12)
+s.box(130, 372, 340, 66, "Statements → FCFF schedules (code)", ["PP&E roll-forward D&A · fade years · timing",
+    "value-driver TV = NOPAT(1+g)(1−g/RONIC)/(r−g)"], "lib", title_size=12)
 s.line([(cx, 438), (cx, 458)])
-s.box(130, 458, 790, 66, "assembleValuation (code)", [
-    "value per share at each year end · anchor = terminal-year price · weighted target · returns",
-    "FCFF: impliedOperatingMargin / impliedRevenueGrowth → reverse_valuation (banks keep the model's)"], "lib", title_size=12)
+s.box(130, 458, 790, 66, "assembleValuation + buildFcffValuation (code)", [
+    "anchors on the base set · case × set matrix · r × g grid · multiples vs own history · no-rerating · lenses",
+    "reverse: implied multiple, perpetual and 10-year FCF growth · sanity flags · stress below bear (banks keep the model's)"], "lib", title_size=12)
 s.box(600, 226, 320, 66, "valuation-analyst (model)", ["FCFE, dividend or book method_inputs × 3",
     "reverse_valuation, or withheld with a reason"], "ui", title_size=12)
 s.line([(760, 292), (760, 312)])
@@ -244,7 +244,7 @@ s.box(560, 590, 300, 70, "Persist (handler)", ["valuation_signals · scenarios r
 s.line([(280, 640), (560, 640)])
 s.line([(860, 625), (900, 625)])
 s.final(910, 625)
-s.text(16, 722, "Source: handlers/asset-valuation.ts, valuation/engine.ts, handlers/operating-scenarios.ts. Blue: model call; purple: code.", 11, fill="#555")
+s.text(16, 722, "Source: handlers/asset-valuation.ts, valuation/engine.ts, valuation/v2.ts, handlers/operating-scenarios.ts. Blue: model call; purple: code.", 11, fill="#555")
 s.save(P("activity-valuation.svg"))
 
 # ---------------------------------------------------------------- state machines

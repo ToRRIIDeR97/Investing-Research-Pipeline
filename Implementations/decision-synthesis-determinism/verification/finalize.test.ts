@@ -74,7 +74,8 @@ test("AC-5/AC-6: a complete valuation without a market price keeps the model lin
   const m = out.output.expected_return_matrix;
   assert.equal(m.status, "unavailable");
   assert.deepEqual([m.bear_return, m.base_return, m.bull_return, m.probability_weighted_return], [null, null, null, null]);
-  assert.deepEqual([m.no_rerating_return, m.weak_stock_outcome, m.permanent_loss_limit], [0.12, -0.1, -0.3]);
+  // Valuation v2: no_rerating_return comes from the valuation stage's cross_checks, here absent.
+  assert.deepEqual([m.no_rerating_return, m.weak_stock_outcome, m.permanent_loss_limit], [null, -0.1, -0.3]);
 });
 
 test("AC-6: weights come from the inputs; missing weights leave the weighted return null", async () => {

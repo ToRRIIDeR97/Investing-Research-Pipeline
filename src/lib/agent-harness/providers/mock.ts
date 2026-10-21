@@ -617,16 +617,12 @@ function v3OperatingScenariosResponse(packet: Record<string, unknown>) {
 }
 
 function v3ValuationResponse(packet: Record<string, unknown>) {
-  // Operating companies: only the per-scenario assumptions; code builds the schedules and the path.
+  // Operating companies: only the three valuation sets; code builds the schedules and the path. The fixture keeps the defaults.
   if (packet.output_contract === "valuation_assumptions") {
-    const riskFree = Number((packet.risk_free_rate as { rate?: number } | null)?.rate) || 0.04;
+    const defaults = Array.isArray(packet.default_valuation_sets) ? packet.default_valuation_sets as Record<string, unknown>[] : [];
     return { valuation_assumptions: {
       artifact_type: "valuation_assumptions",
-      scenarios: [["bear", 0.05, 12], ["base", 0.04, 15], ["bull", 0.035, 18]].map(([scenario_type, premium, multiple]) => ({
-        scenario_type, discount_rate: Number((riskFree + Number(premium)).toFixed(4)),
-        terminal: { type: "multiple", metric: "nopat", multiple },
-        rationale: "Synthetic fixture: risk-free rate plus an equity premium; exit multiple of final-year NOPAT.",
-      })),
+      sets: defaults.map((set) => ({ ...set, rationale: `Synthetic fixture: code default. ${String(set.rationale ?? "")}`.trim() })),
       omitted_methods: [{ method: "fcfe", reason: "Synthetic operating company: FCFF is the primary method." }],
       source_notes: ["Synthetic fixture; not investment analysis"],
     } };

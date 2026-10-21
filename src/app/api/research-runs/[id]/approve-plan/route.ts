@@ -22,7 +22,8 @@ export async function POST(
       );
       return successResponse(result, result.success ? 200 : 422);
     }
-    const result = await approveResearchPlan(runId, body.approved_by || "user");
+    const forecastYears = body.forecast_years === undefined || body.forecast_years === null ? undefined : Number(body.forecast_years);
+    const result = await approveResearchPlan(runId, body.approved_by || "user", { forecastYears });
     if (result.success) {
       const job = await enqueueResearchRun(runId, body.approved_by || "user");
       return successResponse({ ...result, jobId: job.id, job });

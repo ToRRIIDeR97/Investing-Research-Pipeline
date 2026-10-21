@@ -7,8 +7,9 @@
 
 type Row = Record<string, any>;
 
-// First captured alias wins for each period. Sums are used only for split lease balances.
-const COLUMNS: { key: string; aliases: string[]; sum?: string[]; scale: "millions" | "count" }[] = [
+// First captured alias wins for each period, then the first key matching `pattern` (company-prefixed tags such as
+// meta_NonmarketableEquitySecuritiesCarryingValue). Sums are used only for split lease balances.
+const COLUMNS: { key: string; aliases: string[]; pattern?: RegExp; sum?: string[]; scale: "millions" | "count" }[] = [
   { key: "revenue", aliases: ["revenue", "us_gaap_Revenues", "us_gaap_RevenueFromContractWithCustomerExcludingAssessedTax"], scale: "millions" },
   { key: "cost_of_revenue", aliases: ["us_gaap_CostOfRevenue", "us_gaap_CostOfGoodsAndServicesSold"], scale: "millions" },
   { key: "operating_income", aliases: ["operating_income", "us_gaap_OperatingIncomeLoss"], scale: "millions" },
@@ -24,6 +25,12 @@ const COLUMNS: { key: string; aliases: string[]; sum?: string[]; scale: "million
   { key: "current_debt", aliases: ["us_gaap_LongTermDebtCurrent", "us_gaap_DebtCurrent"], scale: "millions" },
   { key: "operating_lease_liabilities", aliases: ["us_gaap_OperatingLeaseLiability"], sum: ["us_gaap_OperatingLeaseLiabilityCurrent", "us_gaap_OperatingLeaseLiabilityNoncurrent"], scale: "millions" },
   { key: "finance_lease_liabilities", aliases: ["us_gaap_FinanceLeaseLiability"], sum: ["us_gaap_FinanceLeaseLiabilityCurrent", "us_gaap_FinanceLeaseLiabilityNoncurrent"], scale: "millions" },
+  // Equity-method and non-marketable stakes: non-operating assets the equity bridge adds.
+  { key: "long_term_investments", aliases: ["us_gaap_LongTermInvestments", "us_gaap_EquityMethodInvestments", "us_gaap_EquitySecuritiesWithoutReadilyDeterminableFairValueAmount"],
+    pattern: /^[a-z]+_Non[Mm]arketableEquitySecuritiesCarryingValue$/, scale: "millions" },
+  { key: "noncontrolling_interest", aliases: ["us_gaap_MinorityInterest"], scale: "millions" },
+  { key: "net_ppe", aliases: ["us_gaap_PropertyPlantAndEquipmentNet", "us_gaap_PropertyPlantAndEquipmentAndFinanceLeaseRightOfUseAssetAfterAccumulatedDepreciationAndAmortization"], scale: "millions" },
+  { key: "stockholders_equity", aliases: ["stockholders_equity", "us_gaap_StockholdersEquity"], scale: "millions" },
   { key: "diluted_shares", aliases: ["us_gaap_WeightedAverageNumberOfDilutedSharesOutstanding"], scale: "millions" },
   { key: "employees", aliases: ["employees"], scale: "count" },
 ];
@@ -91,16 +98,18 @@ export function valuationFinancialInputs(params: {
 
   const table = (periodicity: "quarterly" | "annual", limit: number) => {
     const values = index(statements, periodicity, cutoffDay);
+    const keys = [...values.keys()].sort();
+    const aliasesOf = (column: (typeof COLUMNS)[number]) => [...column.aliases, ...(column.pattern ? keys.filter((key) => column.pattern!.test(key)) : [])];
     const prices = index(market, periodicity, cutoffDay);
     const ends = new Set<string>();
     for (const column of COLUMNS) {
-      for (const key of [...column.aliases, ...(column.sum ?? [])]) for (const end of values.get(key)?.keys() ?? []) ends.add(end);
+      for (const key of [...aliasesOf(column), ...(column.sum ?? [])]) for (const end of values.get(key)?.keys() ?? []) ends.add(end);
     }
     const periods = [...ends].sort().slice(-limit);
     return periods.map((end) => {
       const fiscal = COLUMNS.flatMap((c) => c.aliases).map((key) => values.get(key)?.get(end)).find(Boolean);
       const cells = COLUMNS.map((column) => {
-        const found = column.aliases.map((key) => values.get(key)?.get(end)).find(Boolean);
+        const found = aliasesOf(column).map((key) => values.get(key)?.get(end)).find(Boolean);
         let value: number | null = found ? found.value_numeric : null;
         if (value === null && column.sum) {
           const parts = column.sum.map((key) => values.get(key)?.get(end));
@@ -136,7 +145,7 @@ export function valuationFinancialInputs(params: {
     units: `Amounts in ${revenueCurrency ?? "reporting currency"} millions. diluted_shares in millions (weighted-average diluted). employees is a headcount. period_end_close is per share; market_cap in millions.`,
     basis: [
       "Consolidated values only, as filed and public by the cutoff; quarterly flows are standalone quarters (cash-flow quarters derived from cumulative filings).",
-      "Balance-sheet columns (cash, securities, debt, leases) are period-end values.",
+      "Balance-sheet columns (cash, securities, investments, debt, leases, noncontrolling interest, net PP&E, equity) are period-end values.",
       "period_end_close is the stored exchange close on or before the period end; price_verified=false means the second provider did not confirm it, not that the close is missing.",
       "Rows are chronological. null means not captured for that period.",
     ],
