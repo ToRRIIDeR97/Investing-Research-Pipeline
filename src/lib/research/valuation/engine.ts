@@ -8,7 +8,7 @@
 import { z } from "zod/v4";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import type { ValuationFinancialInputs } from "./financial-inputs";
-import { calculateValuationSchedule, type ValuationMethodInput } from "./schedules";
+import { calculateValuationSchedule, yearTimes, type ValuationMethodInput } from "./schedules";
 
 export const SCENARIOS = ["bear", "base", "bull"] as const;
 export type Scenario = (typeof SCENARIOS)[number];
@@ -17,11 +17,30 @@ export type YearlyDriver = {
   fiscal_year: number; revenue_growth: number; operating_margin: number;
   capex_to_revenue?: number | null; da_to_revenue?: number | null; tax_rate?: number | null; nwc_to_revenue_change?: number | null;
 };
-export type StatementRatios = { da_to_revenue: number | null; capex_to_revenue: number | null; tax_rate: number };
+/** Net PP&E at the base fiscal year end and that year's D&A as a share of the PP&E it started with. */
+export type PpeBase = { opening_net_ppe: number; depreciation_rate: number; as_of: string };
+export type StatementRatios = {
+  da_to_revenue: number | null; capex_to_revenue: number | null; tax_rate: number;
+  ppe?: PpeBase | null;
+  /** Equity + debt - cash - current securities at the base fiscal year end (the analytics definition). */
+  invested_capital?: number | null;
+};
 export type StatementYear = {
   fiscal_year: number; revenue: number; revenue_growth: number; operating_income: number; operating_margin: number;
   depreciation_amortization: number; capital_expenditures: number; tax_rate: number; nopat: number;
   change_in_net_working_capital: number; fcff: number;
+  /** How D&A was set: a driver override, the PP&E roll-forward, or the history revenue ratio. */
+  depreciation_basis?: "driver" | "ppe_roll_forward" | "revenue_ratio";
+  net_ppe_closing?: number | null;
+  /** Capex up to D&A maintains the asset base; the rest grows it. */
+  maintenance_capex?: number; growth_capex?: number;
+  /** Capex - D&A + change in NWC. */
+  net_reinvestment?: number;
+  invested_capital_closing?: number | null;
+  /** NOPAT over the invested capital the year started with. */
+  roic?: number | null;
+  /** Change in NOPAT over the prior year's net reinvestment. */
+  incremental_roic?: number | null;
 };
 export type Terminal = { type: "multiple"; metric: "nopat"; multiple: number } | { type: "perpetuity"; growth_rate: number };
 export type ValuationAssumption = { scenario_type: Scenario; discount_rate: number; terminal: Terminal; rationale: string };
@@ -63,11 +82,23 @@ export function historyRatios(fi: ValuationFinancialInputs | null) {
     return rate !== null && rate >= 0 && rate < 1 ? rate : null;
   }));
   const base = fi ? [...fi.annual].reverse().find((row) => (cell(fi, row, "revenue") ?? 0) > 0) : undefined;
+  // PP&E roll-forward base: base-year net PP&E, and base-year D&A over the prior year-end net PP&E.
+  const baseIndex = base ? fi!.annual.indexOf(base) : -1;
+  const prior = baseIndex > 0 ? fi!.annual[baseIndex - 1] : undefined;
+  const ppeNow = base ? cell(fi!, base, "net_ppe") : null, ppeBefore = prior ? cell(fi!, prior, "net_ppe") : null;
+  const daNow = base ? cell(fi!, base, "depreciation_amortization") : null;
+  const ppe = ppeNow !== null && ppeNow > 0 && ppeBefore !== null && ppeBefore > 0 && daNow !== null && daNow > 0
+    ? { opening_net_ppe: ppeNow, depreciation_rate: Number((Math.abs(daNow) / ppeBefore).toFixed(6)), as_of: String(base![0]) } : null;
+  const equity = base ? cell(fi!, base, "stockholders_equity") : null, cash = base ? cell(fi!, base, "cash_and_equivalents") : null;
+  const invested_capital = equity !== null && cash !== null
+    ? equity + (cell(fi!, base!, "long_term_debt") ?? 0) + (cell(fi!, base!, "current_debt") ?? 0) - cash - (cell(fi!, base!, "marketable_securities") ?? 0) : null;
   return {
     da_to_revenue: mean(rows.map((row) => ratio(row, "depreciation_amortization"))),
     capex_to_revenue: mean(rows.map((row) => ratio(row, "capital_expenditures"))),
     tax_rate: tax ?? 0.21,
     tax_rate_source: (tax === null ? "statutory_default" : "history") as "history" | "statutory_default",
+    ppe,
+    invested_capital,
     base_year: base ? {
       fiscal_year: Number(base[fi!.columns.indexOf("fiscal_year")]),
       revenue: cell(fi!, base, "revenue")!,
@@ -76,37 +107,66 @@ export function historyRatios(fi: ValuationFinancialInputs | null) {
   };
 }
 
+/**
+ * Equity bridge items. Operating lease liabilities are not subtracted: under US GAAP operating lease cost is already
+ * inside operating income, so the FCFF has paid for them. Non-operating investments (equity-method and non-marketable
+ * stakes) are added; noncontrolling interests are subtracted.
+ */
 const BRIDGE_ITEMS = [
-  ["cash_and_equivalents", 1], ["marketable_securities", 1], ["long_term_debt", -1], ["current_debt", -1],
-  ["operating_lease_liabilities", -1], ["finance_lease_liabilities", -1],
+  ["cash_and_equivalents", 1], ["marketable_securities", 1], ["long_term_investments", 1], ["long_term_debt", -1], ["current_debt", -1],
+  ["finance_lease_liabilities", -1], ["noncontrolling_interest", -1],
 ] as const;
 
-/** Equity bridge from the latest row (annual or quarterly) with any balance item: cash + securities − debt − leases. */
-export function equityBridge(fi: ValuationFinancialInputs | null): { amount: number; period_end: string; components: Record<string, number>; missing: string[] } | null {
+export type EquityBridge = {
+  amount: number; period_end: string; components: Record<string, number>; missing: string[];
+  /** Items taken from an earlier period than the bridge date, with that period. */
+  carried_forward: Record<string, string>;
+  /** Captured but left out, with the amount. */
+  excluded: Record<string, number>;
+};
+
+/**
+ * Equity bridge at the latest balance-sheet date (the latest period with cash, else with any item): each item's
+ * latest value on or before that date, so a quarter missing a debt tag falls back to the prior period with a note.
+ */
+export function equityBridge(fi: ValuationFinancialInputs | null): EquityBridge | null {
   if (!fi) return null;
-  const rows = [...fi.annual, ...fi.quarterly]
-    .map((row) => ({ row, items: BRIDGE_ITEMS.filter(([key]) => cell(fi, row, key) !== null) }))
-    .filter((entry) => entry.items.length)
-    .sort((a, b) => String(a.row[0]).localeCompare(String(b.row[0])) || a.items.length - b.items.length);
-  const latest = rows.at(-1);
-  if (!latest) return null;
-  const components = Object.fromEntries(latest.items.map(([key]) => [key, cell(fi, latest.row, key)!]));
-  const amount = latest.items.reduce((sum, [key, sign]) => sum + sign * components[key], 0);
+  const rows = [...fi.annual, ...fi.quarterly].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  const withItem = (key: string) => rows.filter((row) => cell(fi, row, key) !== null);
+  const dated = withItem("cash_and_equivalents").at(-1) ?? rows.filter((row) => BRIDGE_ITEMS.some(([key]) => cell(fi, row, key) !== null)).at(-1);
+  if (!dated) return null;
+  const date = String(dated[0]);
+  const components: Record<string, number> = {}, carried_forward: Record<string, string> = {};
+  for (const [key] of BRIDGE_ITEMS) {
+    const row = withItem(key).filter((candidate) => String(candidate[0]) <= date).at(-1);
+    if (!row) continue;
+    components[key] = cell(fi, row, key)!;
+    if (String(row[0]) !== date) carried_forward[key] = String(row[0]);
+  }
+  const amount = BRIDGE_ITEMS.reduce((sum, [key, sign]) => sum + (key in components ? sign * components[key] : 0), 0);
+  const leaseRow = withItem("operating_lease_liabilities").filter((row) => String(row[0]) <= date).at(-1);
   return {
-    amount: Number(amount.toFixed(6)), period_end: String(latest.row[0]), components,
+    amount: Number(amount.toFixed(6)), period_end: date, components, carried_forward,
+    excluded: leaseRow ? { operating_lease_liabilities: cell(fi, leaseRow, "operating_lease_liabilities")! } : {},
     missing: BRIDGE_ITEMS.map(([key]) => key).filter((key) => !(key in components)),
   };
 }
 
 /**
  * Yearly statements from the drivers: revenue grows from the prior year, operating income is revenue × margin,
- * D&A and capex are revenue × (override ?? history ratio), NOPAT = OI × (1 − tax), ΔNWC = nwc_to_revenue_change × Δrevenue
+ * capex is revenue × (override ?? history ratio), NOPAT = OI × (1 − tax), ΔNWC = nwc_to_revenue_change × Δrevenue
  * and FCFF = NOPAT + D&A − capex − ΔNWC. firstYear pins the first year's revenue and operating income.
+ * D&A is the driver's da_to_revenue when given; otherwise, with a PP&E base, the history depreciation rate times the
+ * net PP&E the year starts with (closing PP&E = opening + capex − D&A), so a capex surge raises later D&A; otherwise
+ * revenue × the history ratio. Invested capital rolls forward by net reinvestment from the base-year value.
  */
 export function buildScenarioStatements(input: StatementInput): StatementYear[] {
   const drivers = [...input.drivers].sort((a, b) => a.fiscal_year - b.fiscal_year);
   if (!drivers.length) throw new Error(`No yearly drivers after FY${input.baseYear}.`);
   let prior = input.baseRevenue;
+  let ppe = input.ratios.ppe?.opening_net_ppe ?? null;
+  let capital = finite(input.ratios.invested_capital) ? input.ratios.invested_capital : null;
+  let priorNopat: number | null = null, priorReinvestment: number | null = null;
   return drivers.map((driver, index) => {
     const year = input.baseYear + 1 + index;
     if (driver.fiscal_year !== year) throw new Error(`Yearly drivers miss FY${year}.`);
@@ -117,16 +177,32 @@ export function buildScenarioStatements(input: StatementInput): StatementYear[] 
     const revenue = pinned ? pinned.revenue : prior * (1 + driver.revenue_growth);
     const operating_income = pinned ? pinned.operating_income : revenue * driver.operating_margin;
     const tax_rate = driver.tax_rate ?? input.ratios.tax_rate;
-    const depreciation_amortization = revenue * (driver.da_to_revenue ?? input.ratios.da_to_revenue ?? 0);
     const capital_expenditures = revenue * (driver.capex_to_revenue ?? input.ratios.capex_to_revenue ?? 0);
+    const depreciation_basis: StatementYear["depreciation_basis"] = finite(driver.da_to_revenue) ? "driver"
+      : ppe !== null && input.ratios.ppe ? "ppe_roll_forward" : "revenue_ratio";
+    const depreciation_amortization = depreciation_basis === "driver" ? revenue * driver.da_to_revenue!
+      : depreciation_basis === "ppe_roll_forward" ? ppe! * input.ratios.ppe!.depreciation_rate
+      : revenue * (input.ratios.da_to_revenue ?? 0);
     const nopat = operating_income * (1 - tax_rate);
     const change_in_net_working_capital = (driver.nwc_to_revenue_change ?? 0) * (revenue - prior);
-    const row = {
+    const net_reinvestment = capital_expenditures - depreciation_amortization + change_in_net_working_capital;
+    if (ppe !== null) ppe = ppe + capital_expenditures - depreciation_amortization;
+    const openingCapital = capital;
+    if (capital !== null) capital += net_reinvestment;
+    const row: StatementYear = {
       fiscal_year: year, revenue, revenue_growth: revenue / prior - 1, operating_income, operating_margin: operating_income / revenue,
       depreciation_amortization, capital_expenditures, tax_rate, nopat, change_in_net_working_capital,
       fcff: nopat + depreciation_amortization - capital_expenditures - change_in_net_working_capital,
+      depreciation_basis, net_ppe_closing: ppe,
+      maintenance_capex: Math.min(capital_expenditures, depreciation_amortization),
+      growth_capex: Math.max(0, capital_expenditures - depreciation_amortization),
+      net_reinvestment, invested_capital_closing: capital,
+      roic: openingCapital !== null && openingCapital > 0 ? nopat / openingCapital : null,
+      incremental_roic: priorNopat !== null && priorReinvestment !== null && priorReinvestment > 0 ? (nopat - priorNopat) / priorReinvestment : null,
     };
     prior = revenue;
+    priorNopat = nopat;
+    priorReinvestment = net_reinvestment;
     return row;
   });
 }
@@ -156,16 +232,24 @@ export function buildFcffSchedule(input: {
   };
 }
 
-/** Value per share at each year end: (PV at t of later cash flows + PV at t of terminal value + bridge) / shares. */
+/**
+ * Value per share at each explicit year end (fade years are valued but not listed): the value then of the later cash
+ * flows and the terminal value, plus the bridge. For FCFF the bridge also grows by the cash flows counted so far,
+ * since no dividends are forecast: the cash stays in the company rather than vanishing from the path. Other methods
+ * treat their cash flows as distributed, as before.
+ */
 export function valuationPricePath(schedule: ValuationMethodInput): { fiscal_year: number; price_target: number }[] {
   const calc = calculateValuationSchedule(schedule);
-  const path: { fiscal_year: number; price_target: number }[] = [];
-  let value = calc.terminal_value;
-  for (let i = calc.years.length - 1; i >= 0; i -= 1) {
-    path.unshift({ fiscal_year: calc.years[i].fiscal_year, price_target: (value + calc.equity_bridge) / calc.diluted_shares });
-    value = (value + calc.years[i].cash_flow) / (1 + calc.discount_rate);
-  }
-  return path;
+  const r = calc.discount_rate, times = yearTimes(calc), last = calc.years.length - 1;
+  const retain = calc.method === "fcff";
+  let retained = 0;
+  return calc.years.flatMap((year, i) => {
+    retained += retain ? ((year as { counted_cash_flow?: number }).counted_cash_flow ?? year.cash_flow) : 0;
+    if (year.fade) return [];
+    let value = calc.terminal_value / (1 + r) ** (times[last] - times[i]);
+    for (let j = i + 1; j <= last; j += 1) value += calc.years[j].cash_flow / (1 + r) ** (times[j] - times[i]);
+    return [{ fiscal_year: year.fiscal_year, price_target: (value + calc.equity_bridge + retained) / calc.diluted_shares }];
+  });
 }
 
 const methodKey = (schedule: ValuationMethodInput) => schedule.method === "fcff"
@@ -189,12 +273,17 @@ export function assembleValuation(input: {
   }
   const terminalYear = years.at(-1)!;
   const anchors = Object.fromEntries(SCENARIOS.map((scenario) => [scenario, paths[scenario].at(-1)!.price_target])) as Record<Scenario, number>;
+  // Today's value per case and, against the market price, the annualized return to the terminal-year anchor.
+  const today = Object.fromEntries(SCENARIOS.map((scenario) => [scenario, calculateValuationSchedule(schedules[scenario]).value_per_share])) as Record<Scenario, number>;
+  const horizonYears = yearTimes(schedules.base)[years.length - 1];
   const market = Number(input.marketPrice);
   // Without a market price there is no return; 0 is stored only because the contract needs a number.
   const totalReturn = (price: number) => (market > 0 ? (price - market) / market : 0);
   const probabilities = SCENARIOS.map((scenario) => Number(input.probabilities[`probability_${scenario}`]));
   const weighted = probabilities.every(Number.isFinite) && Math.abs(probabilities.reduce((sum, p) => sum + p, 0) - 1) <= 0.001
     ? SCENARIOS.reduce((sum, scenario, i) => sum + anchors[scenario] * probabilities[i], 0) : null;
+  const weightedToday = weighted === null ? null : SCENARIOS.reduce((sum, scenario, i) => sum + today[scenario] * probabilities[i], 0);
+  const irr = (anchor: number) => market > 0 && anchor > 0 ? (anchor / market) ** (1 / horizonYears) - 1 : null;
   const shares = schedules.base.diluted_shares;
   const monthDay = /^\d{2}-\d{2}$/.test(input.fiscalYearEnd ?? "") ? input.fiscalYearEnd : "12-31";
   return {
@@ -204,8 +293,11 @@ export function assembleValuation(input: {
       uses_adjusted_fcf: true, segments_reconciled: true,
       method_inputs: SCENARIOS.map((scenario) => schedules[scenario]), omitted_methods: [] as { method: string; reason: string }[],
       methods: [...new Set(SCENARIOS.map((scenario) => methodKey(schedules[scenario])))],
+      value_today_bear: today.bear, value_today_base: today.base, value_today_bull: today.bull,
+      irr_to_terminal_year: Object.fromEntries(SCENARIOS.map((scenario) => [scenario, irr(anchors[scenario])])),
       ...(weighted === null ? {} : {
         probability_bear: probabilities[0], probability_base: probabilities[1], probability_bull: probabilities[2], weighted_target: weighted,
+        weighted_value_today: weightedToday,
       }),
       ...(market > 0 ? { current_market_price: market } : {}),
     },
@@ -352,7 +444,13 @@ export function operatingModelFirstYear(model: { consolidated_revenue?: unknown;
   return unit === undefined ? null : { revenue: revenue / unit, operating_income: income / unit };
 }
 
-/** Forecast years after the base fiscal year (RESEARCH_FORECAST_YEARS, default 3). */
-export function forecastHorizon(baseFiscalYear: number, years = Number(process.env.RESEARCH_FORECAST_YEARS) || 3): number[] {
+/** The run's forecast years: its own forecast_years (set at the plan gate), else RESEARCH_FORECAST_YEARS, else 5; 3 to 10. */
+export function forecastYears(runValue?: number | null): number {
+  const value = Number(runValue) || Number(process.env.RESEARCH_FORECAST_YEARS) || 5;
+  return Math.max(3, Math.min(10, Math.round(value)));
+}
+
+/** Forecast years after the base fiscal year. */
+export function forecastHorizon(baseFiscalYear: number, years = forecastYears()): number[] {
   return Array.from({ length: Math.max(1, Math.min(10, Math.round(years))) }, (_, i) => baseFiscalYear + 1 + i);
 }
