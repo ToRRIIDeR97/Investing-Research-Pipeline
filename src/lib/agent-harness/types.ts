@@ -32,7 +32,12 @@ export interface ModelRequest {
   cacheAffinityId?: string;
   /** JSON schema of the task output. Only anthropic-direct uses it; other providers ignore it. */
   outputSchema?: Record<string, unknown>;
+  /** Reasoning effort. Only anthropic-direct sends it (output_config.effort, Claude models that support it). */
+  effort?: ReasoningEffort;
 }
+
+/** Claude output_config.effort levels. */
+export type ReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
 export type ModelEvent =
   | { type: "request.sent"; body: string }
@@ -69,6 +74,8 @@ export interface ExecutionPolicy {
   retryBaseDelayMs: number;
   /** First retry delay after a 5xx, overload or rate limit that sent no retry-after; doubles per attempt. */
   overloadRetryDelayMs?: number;
+  /** Reasoning effort for every pass of the task (see ModelRequest.effort). */
+  effort?: ReasoningEffort;
 }
 
 export interface AgentAttempt {
@@ -153,6 +160,10 @@ export interface AgentRequest<T = unknown> {
    */
   perCallKeys?: string[];
   outputFormat?: AgentOutputFormat;
+  /** The model for this task (resolveTaskModel); without it the agent's model is resolved. */
+  model?: string;
+  /** The fallback for `model`; null means none. Undefined keeps the agent's own fallback rules. */
+  fallbackModel?: string | null;
   _outputType?: T;
 }
 

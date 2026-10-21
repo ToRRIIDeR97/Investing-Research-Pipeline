@@ -23,6 +23,60 @@ ANTHROPIC_API_KEY=replace-locally
 RESEARCH_ALL_AGENTS_MODEL=claude-haiku-5-5
 ```
 
+### Model tiers and effort
+
+Every research call names a tier at its call site (`modelTier` in `callResearchAgent`):
+
+- **premium**: `business_process_analysis`, `moat_analysis`, `operating_model`, `operating_scenarios`, `asset_valuation`, and the thesis half of `decision_synthesis`;
+- **mid**: `company_genesis`, the report outline, report sections, the AI review and the statement repair agent;
+- **cheap**: team briefs, team requests, team answers, the decision registers, evidence extraction, metric normalization, source review and the depth review.
+
+A new stage call adopts tiering by passing its `modelTier`; nothing else is needed (`src/lib/research/model-tiering.ts`).
+
+The model for a task, first match wins:
+
+1. an explicit override from the caller;
+2. `RESEARCH_STAGE_<STAGE_KEY>_MODEL` (for example `RESEARCH_STAGE_DECISION_SYNTHESIS_MODEL`);
+3. `RESEARCH_<TIER>_MODEL`: `RESEARCH_PREMIUM_MODEL`, `RESEARCH_MID_MODEL` or `RESEARCH_CHEAP_MODEL`;
+4. `RESEARCH_ALL_AGENTS_MODEL`;
+5. `RESEARCH_<AGENT>_MODEL`, then the agent's configured tier variable;
+6. the agent's default model.
+
+`RESEARCH_MID_MODEL` and `RESEARCH_CHEAP_MODEL` used to rank below `RESEARCH_ALL_AGENTS_MODEL` and the per-agent variables. They now rank above both for tiered calls; leave them unset to keep a single all-agents model.
+
+Fallbacks: a model from a stage or tier variable falls back only to `RESEARCH_STAGE_<KEY>_FALLBACK_MODEL` or `RESEARCH_<TIER>_FALLBACK_MODEL` (none when unset). Other models keep the agent's own fallback rules.
+
+Effort (anthropic-direct only), first match wins: `RESEARCH_STAGE_<KEY>_EFFORT`, `RESEARCH_<TIER>_EFFORT`, `RESEARCH_EFFORT`, then the tier default.
+
+- **Tier defaults:** premium `high`, mid `medium`, cheap `low`.
+- **Values:** `low`, `medium`, `high`, `xhigh` or `max`. `default` sends none, leaving the model's own default (`medium` on Opus 5.5 and Haiku 5.5, `high` on Sonnet 5.5).
+- **Wire shape:** the request sends `output_config: {effort, format}` and `thinking: {type: "adaptive"}`. It never sends `budget_tokens`, which Claude 5.5 models reject with a 400.
+- **Turning it off:** `RESEARCH_ANTHROPIC_EFFORT=0`.
+- **Model coverage:** Haiku 4.5 and older Claude models, OpenAI-compatible endpoints and OpenCode Go (including its Anthropic-protocol models) get neither field.
+- **Task reuse:** effort is part of the task fingerprint, so an output made at another effort is not reused.
+
+Limits per task:
+
+- **Output cap:** `decision_synthesis` and `operating_scenarios` start at 65,536 output tokens instead of 32,768 (Haiku's synthesis needed 39K and was cut off at 32K on META 4fae0fb1).
+- **Premium timeout:** premium calls get `RESEARCH_PREMIUM_TIMEOUT_MS`, default 1,200,000 ms. Haiku 5.5 measured 195-252 output tokens/s on the heavy META calls, and a full 65,536-token answer at a quarter of that speed takes about 1,100 s. Re-size it from `latency_ms` and `output_tokens` in `model_call_logs` after the first premium run.
+- **Budget reserve:** each attempt's reserve is a 100K-token prompt plus a full-cap answer at the model's list price (`telemetry.ts`). The floor is `RESEARCH_ATTEMPT_BUDGET_RESERVE_USD` (0.1), and `RESEARCH_<TIER>_ATTEMPT_BUDGET_RESERVE_USD` overrides it. That gives about $1.71 for Opus 5.5 on a long-output stage, and the $0.10 floor for Haiku.
+
+Each run records what it ran with in `research_runs.metadata_json.effective_config`:
+
+- `run`: the provider, the base URL's host (never its path or credentials), the all-agents, tier and stage models and efforts, and the horizon, concurrency, evidence, output and timeout settings, plus the git HEAD. It is written when a job starts; a later job with different settings moves the earlier ones to `history`.
+- `tasks.<task_type>`: the agent, tier, model, its source, effort, output cap, timeout, reserve, and every model the task type used.
+
+`model_call_logs.request_metadata_json` also records each attempt's effort, model source and reserve.
+
+The paid check of this request shape costs a few cents (one tiny call per tier on Haiku 5.5):
+
+```bash
+RUN_PROVIDER_SMOKE=1 RESEARCH_MODEL_PROVIDER=anthropic-direct RESEARCH_MODEL_BASE_URL=https://api.anthropic.com/v1 \
+  RESEARCH_MODEL_ALLOWED_HOSTS=api.anthropic.com npm run test:effort-smoke
+```
+
+It prints the effort and thinking each request carried, the tokens, latency and cost, and `shape_ok`. `SMOKE_MODEL=claude-sonnet-5-5` or `claude-opus-5-5` checks another model.
+
 ### Prompt caching
 
 `src/lib/agent-harness/providers/anthropic-cache.ts` places every `cache_control` breakpoint ([Anthropic prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)). Claude models get two of the four allowed breakpoints:

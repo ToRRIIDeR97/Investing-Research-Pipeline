@@ -134,7 +134,7 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
 
       const output = await callResearchAgent<Record<string, any>>({
         sql, ctx, stageKey: "operating_model", taskKey,
-        taskType: "operating_model", agentName: "asset-analyst", modelTier: "mid",
+        taskType: "operating_model", agentName: "asset-analyst", modelTier: "premium",
         packet, promptFactory,
         outputFormat: { ...OPERATING_MODEL_CONTRACT, validate: (value: unknown) => {
           const normalized = normalizeReconciliation(value as Record<string, any>);

@@ -762,6 +762,66 @@ export function resolveAgentModel(agentName: ResearchAgentName, modelOverride?: 
   return normalizeModelEnvValue(configured);
 }
 
+/** Call-site model tiers. Phase-tagged calls pass one to callResearchAgent; other values (embedding, specialist) use agent models. */
+export const MODEL_TIERS = ["premium", "mid", "cheap"] as const;
+export type ModelTier = (typeof MODEL_TIERS)[number];
+const isModelTier = (value: unknown): value is ModelTier => (MODEL_TIERS as readonly string[]).includes(String(value));
+const envKey = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+/** Default effort per tier; Claude Opus 5.5 and Haiku 5.5 otherwise default to medium. */
+export const TIER_EFFORT: Record<ModelTier, (typeof EFFORTS)[number]> = { premium: "high", mid: "medium", cheap: "low" };
+
+export type TaskModelSource = "override" | "stage" | "tier" | "all_agents" | "agent" | "default";
+
+/**
+ * The model for one task, first match wins:
+ * 1. modelOverride (a caller's explicit choice);
+ * 2. RESEARCH_STAGE_<STAGE_KEY>_MODEL;
+ * 3. RESEARCH_<TIER>_MODEL (premium, mid or cheap);
+ * 4. RESEARCH_ALL_AGENTS_MODEL;
+ * 5. RESEARCH_<AGENT>_MODEL, then the agent config's own env var;
+ * 6. the agent's default model.
+ * A stage or tier model takes its fallback from RESEARCH_STAGE_<KEY>_FALLBACK_MODEL or RESEARCH_<TIER>_FALLBACK_MODEL
+ * (none when unset); otherwise the agent's own fallback rules apply (fallbackModel undefined).
+ */
+export function resolveTaskModel(input: { agentName: ResearchAgentName; tier?: string | null; stageKey?: string | null; modelOverride?: string | null }):
+  { model: string; source: TaskModelSource; fallbackModel?: string | null } {
+  const stage = input.stageKey ? process.env[`RESEARCH_STAGE_${envKey(input.stageKey)}_MODEL`] : undefined;
+  const tier = isModelTier(input.tier) ? process.env[`RESEARCH_${envKey(input.tier)}_MODEL`] : undefined;
+  if (input.modelOverride) return { model: normalizeModelEnvValue(input.modelOverride), source: "override" };
+  const fallback = (scope: string) => {
+    const value = process.env[`RESEARCH_${scope}_FALLBACK_MODEL`];
+    return value ? normalizeModelEnvValue(value) : null;
+  };
+  if (stage) return { model: normalizeModelEnvValue(stage), source: "stage",
+    fallbackModel: fallback(`STAGE_${envKey(input.stageKey!)}`) ?? (isModelTier(input.tier) ? fallback(envKey(input.tier)) : null) };
+  if (tier) return { model: normalizeModelEnvValue(tier), source: "tier", fallbackModel: fallback(envKey(input.tier!)) };
+  const config = getAgentConfig(input.agentName);
+  const source: TaskModelSource = process.env.RESEARCH_ALL_AGENTS_MODEL ? "all_agents"
+    : process.env[`RESEARCH_${envKey(input.agentName)}_MODEL`] || process.env[config.modelEnvVar] ? "agent" : "default";
+  return { model: resolveAgentModel(input.agentName), source };
+}
+
+/**
+ * Reasoning effort for one task, first match wins: RESEARCH_STAGE_<STAGE_KEY>_EFFORT, RESEARCH_<TIER>_EFFORT,
+ * RESEARCH_EFFORT, then the tier default (premium high, mid medium, cheap low). "default" (or "none") at any level
+ * sends no effort, leaving the model's own default. Untiered calls send none unless RESEARCH_EFFORT is set.
+ */
+export function resolveTaskEffort(input: { tier?: string | null; stageKey?: string | null }): (typeof EFFORTS)[number] | undefined {
+  const values = [
+    input.stageKey ? process.env[`RESEARCH_STAGE_${envKey(input.stageKey)}_EFFORT`] : undefined,
+    isModelTier(input.tier) ? process.env[`RESEARCH_${envKey(input.tier)}_EFFORT`] : undefined,
+    process.env.RESEARCH_EFFORT,
+  ];
+  for (const raw of values) {
+    const value = raw?.trim().toLowerCase();
+    if (!value) continue;
+    if (value === "default" || value === "none") return undefined;
+    if ((EFFORTS as readonly string[]).includes(value)) return value as (typeof EFFORTS)[number];
+  }
+  return isModelTier(input.tier) ? TIER_EFFORT[input.tier] : undefined;
+}
+
 export function listResearchAgents(): ResearchAgentConfig[] {
   return RESEARCH_AGENT_NAMES.map((agentName) => AGENT_CONFIGS[agentName]);
 }

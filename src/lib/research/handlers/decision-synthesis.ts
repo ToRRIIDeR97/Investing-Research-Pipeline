@@ -1,6 +1,6 @@
 import type { ResearchRunContext, StageHandler } from "../run-context";
 import { callResearchAgent, exactJsonPrompt } from "../run-context";
-import { DECISION_SYNTHESIS_CONTRACT } from "../stage-contracts";
+import { DECISION_REGISTERS_CONTRACT, DECISION_REGISTER_KEYS, DECISION_SYNTHESIS_CONTRACT, DECISION_THESIS_CONTRACT, DECISION_THESIS_KEYS } from "../stage-contracts";
 import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -221,11 +221,7 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           && terminalReturnInputs.diluted_shares_millions * 1e6 >= terminalReturnInputs.reported_diluted_shares - 1),
       };
 
-      const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
-        agentName: "asset-analyst",
-        requiredKeys: DECISION_SYNTHESIS_CONTRACT.requiredKeys,
-        packet: p,
-        extraRules: [
+      const decisionRules = [
           "Synthesize the final investment decision, including a clear thesis statement, risk factors, and upcoming catalysts.",
           "Use the backtest only as timing/risk evidence. Preserve its proxy-data limitations and do not claim that it proves the fundamental thesis.",
           "If the backtest framework gate did not pass, state exactly: Conclusion withheld - research incomplete.",
@@ -240,15 +236,48 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           "The decision must remain pending because human review is the approval gate.",
           "For a KPI that financial_analytics covers, use its metric key (for example operating_margin, fcf_ttm, dso, net_cash, shares, segment.<Segment>.operating_income): code then sets current_level and its 20-quarter median and percentile. Otherwise use latest_reported_metrics. When a current level is unavailable or stale, set it to null and explain the gap in source_role; never use zero as a missing-data placeholder.",
           "Each KPI must have a stable metric_key matching the captured quarterly history, a precise definition, reporting_basis and unit. Express current levels and bear/bull thresholds in that same unit. When the required series is absent, retain the KPI with current_level null and explain the missing disclosure; do not map it to a different definition.",
-        ],
-      });
+      ];
+      const pick = (value: unknown, keys: readonly string[]) => Object.fromEntries(keys
+        .filter((key) => value && typeof value === "object" && key in (value as Record<string, unknown>))
+        .map((key) => [key, (value as Record<string, unknown>)[key]]));
+      const promptFactory = (keys: readonly string[], rules: string[]) => (p: Record<string, unknown>) => exactJsonPrompt({
+        agentName: "asset-analyst", requiredKeys: [...keys], packet: p, extraRules: [...decisionRules, ...rules] });
 
-      const raw = await callResearchAgent<Record<string, any>>({
-        sql, ctx, stageKey: "decision_synthesis", taskKey,
-        taskType: "decision_synthesis", agentName: "asset-analyst", modelTier: "mid",
-        packet, promptFactory,
-        outputFormat: decisionOutputFormat(finalizeInputs),
-      });
+      // 1. Premium: the thesis, the confidence assessment and the decision record.
+      const thesisFormat = {
+        requiredKeys: [...DECISION_THESIS_KEYS], schema: DECISION_THESIS_CONTRACT.schema,
+        validate(value: unknown) {
+          const { output, errors } = finalizeDecisionOutput(stripCodeOwnedFields(pick(value, DECISION_THESIS_KEYS)), finalizeInputs);
+          return [...(DECISION_THESIS_CONTRACT.validate?.(pick(output, DECISION_THESIS_KEYS)) || []), ...errors];
+        },
+      };
+      const thesis = pick(await callResearchAgent<Record<string, any>>({
+        sql, ctx, stageKey: "decision_synthesis", taskKey: `${taskKey}:thesis`,
+        taskType: "decision_synthesis", agentName: "asset-analyst", modelTier: "premium",
+        packet: { ...packet, output_contract: "decision_synthesis_thesis", output_schema: thesisFormat.schema },
+        promptFactory: promptFactory(DECISION_THESIS_KEYS, [
+          "This call writes only investment_thesis, confidence_assessment and decision_record: the judgment. A second call then writes the risk, catalyst, return, thesis-breaker and monitoring registers from your thesis, so state the must-be-true conditions and disproving evidence they will be built on.",
+        ]),
+        outputFormat: thesisFormat,
+      }), DECISION_THESIS_KEYS);
+
+      // 2. Cheap: the registers, built from the accepted thesis. The merged answer is judged as one decision.
+      const registersFormat = {
+        requiredKeys: [...DECISION_REGISTER_KEYS], schema: DECISION_REGISTERS_CONTRACT.schema,
+        validate(value: unknown) {
+          return decisionOutputFormat(finalizeInputs).validate!({ ...thesis, ...pick(value, DECISION_REGISTER_KEYS) });
+        },
+      };
+      const registers = pick(await callResearchAgent<Record<string, any>>({
+        sql, ctx, stageKey: "decision_synthesis", taskKey: `${taskKey}:registers`,
+        taskType: "decision_registers", agentName: "asset-analyst", modelTier: "cheap",
+        packet: { ...packet, output_contract: "decision_synthesis_registers", output_schema: registersFormat.schema, decided_thesis: thesis },
+        promptFactory: promptFactory(DECISION_REGISTER_KEYS, [
+          "decided_thesis holds the accepted investment_thesis, confidence_assessment and decision_record. Do not restate or change them. Write only risk_register, catalyst_register, expected_return_matrix, thesis_breakers and monitoring_dashboard, consistent with that thesis: each thesis breaker tests one of its must-be-true conditions or disproving evidence.",
+        ]),
+        outputFormat: registersFormat,
+      }), DECISION_REGISTER_KEYS);
+      const raw = { ...thesis, ...registers };
       // The model-facing format already judged a finalized copy; finalizing again yields the same output.
       const { output, adjustments, gaps, errors } = finalizeDecisionOutput(stripCodeOwnedFields(raw), finalizeInputs);
       if (adjustments.dropped_citation_ids.length) {

@@ -97,7 +97,7 @@ export async function prepareResearchTeam(sql: Sql, ctx: ResearchRunContext) {
     const packet = { asset: { name: ctx.assetName, symbol: ctx.symbol }, research_question: ctx.researchQuestion,
       profile: ctx.composedProfile, role, purpose: definition.purpose, corpus, output_contract: "team_brief" };
     const brief = await callResearchAgent<Record<string, unknown>>({ sql, ctx, stageKey: definition.stage,
-      taskKey: `team:brief:${role}`, taskType: "team_brief", agentName: definition.agent, modelTier: "mid", packet,
+      taskKey: `team:brief:${role}`, taskType: "team_brief", agentName: definition.agent, modelTier: "cheap", packet,
       outputFormat: BRIEF_CONTRACT, promptFactory: p => exactJsonPrompt({ agentName: definition.agent,
         requiredKeys: BRIEF_CONTRACT.requiredKeys!, packet: p, extraRules: [definition.purpose,
           "Prepare a company-specific work plan and completeness checks against the collected corpus. You are planning, not claiming to have found evidence. Explain what information your specialist needs that the corpus does not contain; the specialist can ask the collector for named documents while it works."] }) });
@@ -205,7 +205,7 @@ export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, 
   const packet = { asset: { name: ctx.assetName, symbol: ctx.symbol }, ...inputs, previous_requests: previous?.requests || [],
     findings, role: "report", output_contract: "team_requests" };
   const result = await callResearchAgent<{ requests: Request[] }>({ sql, ctx, stageKey: "ai_reviewer",
-    taskKey: `team:requests:${previous?.round || 0}`, taskType: "team_requests", agentName: "export-writer", modelTier: "mid",
+    taskKey: `team:requests:${previous?.round || 0}`, taskType: "team_requests", agentName: "export-writer", modelTier: "cheap",
     packet, outputFormat: REQUEST_CONTRACT, promptFactory: p => exactJsonPrompt({ agentName: "export-writer",
       requiredKeys: ["requests"], packet: p, extraRules: [TEAM_ROLES.report.purpose,
         "Request only specific unanswered investment questions or material inconsistencies, at most 5, most material first. Return an empty requests array when the supplied research is adequate. Do not request information already present or repeat answered/unavailable requests.",
@@ -461,7 +461,7 @@ async function ownerAnswer(sql: Sql, ctx: ResearchRunContext, request: TeamReque
     evidence: inputs.evidence, role: request.role, output_contract: "team_answer",
     request: { id, role, question, material, needs_sources, source_role }, source_search_attempted: searched, passages };
   const response = await callResearchAgent<TeamAnswer>({ sql, ctx, stageKey: owner.stage,
-    taskKey: `team:answer:${request.id}`, taskType: "team_answer", agentName: owner.agent, modelTier: "mid", packet,
+    taskKey: `team:answer:${request.id}`, taskType: "team_answer", agentName: owner.agent, modelTier: "cheap", packet,
     perCallKeys: ["request", "source_search_attempted", "passages"], outputFormat: { ...ANSWER_CONTRACT, validate(value) {
       const errors = ANSWER_CONTRACT.validate?.(value) || [];
       if (errors.length) return errors;

@@ -92,7 +92,7 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
 
       const output = await callResearchAgent<Record<string, any>>({
         sql, ctx, stageKey: "operating_scenarios", taskKey,
-        taskType: "operating_scenarios", agentName: "asset-analyst", modelTier: "mid",
+        taskType: "operating_scenarios", agentName: "asset-analyst", modelTier: "premium",
         packet, promptFactory,
         outputFormat: { ...OPERATING_SCENARIOS_CONTRACT, validate(value: unknown) {
           const errors = OPERATING_SCENARIOS_CONTRACT.validate?.(value) || [];
