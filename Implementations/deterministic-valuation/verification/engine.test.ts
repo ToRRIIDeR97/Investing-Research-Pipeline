@@ -79,8 +79,9 @@ test("AC-5/AC-6: perpetuity terminal value and a net-debt bridge flow through th
   assert.equal(s.terminal.type, "perpetuity");
   const path = valuationPricePath(s);
   const tv = statements[1].fcff * 1.02 / (0.11 - 0.02);
-  near(path[1].price_target, (tv - 300) / 40);
-  near(path[0].price_target, ((tv + statements[1].fcff) / 1.11 - 300) / 40);
+  // Valuation v2: each year-end value also carries the FCFF retained to then.
+  near(path[1].price_target, (tv - 300 + statements[0].fcff + statements[1].fcff) / 40);
+  near(path[0].price_target, ((tv + statements[1].fcff) / 1.11 - 300 + statements[0].fcff) / 40);
   near(((((tv + statements[1].fcff) / 1.11) + statements[0].fcff) / 1.11 - 300) / 40, calculateValuationSchedule(s).value_per_share, 1e-9);
 });
 
@@ -139,6 +140,8 @@ test("AC-3: the equity bridge uses the latest balance row and names missing comp
   });
   const bridge = equityBridge(fi);
   assert.equal(bridge.period_end, "2026-06-30");
-  near(bridge.amount, 120 - 400 - 20);
+  // Valuation v2: operating lease liabilities are not subtracted (their cost is in operating income).
+  near(bridge.amount, 120 - 400);
+  assert.deepEqual(bridge.excluded, { operating_lease_liabilities: 20 });
   assert.ok(bridge.missing.includes("marketable_securities"));
 });
