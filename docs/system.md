@@ -156,7 +156,7 @@ How the pack reaches the models:
 
 The record's TTM series and statistics cover the core consolidated flow lines present plus planned keys that are themselves observed flow keys (`ttmMetricKeys`); plan families stay coverage groups. The stage's validator fails a record with 12 or more quarters of consolidated revenue but no TTM revenue, or with no `financial_analytics`.
 
-`npx tsx scripts/report-packet-size.ts <run-id>` (read-only) rebuilds a stored run's report-section prompts with the current code and prints their size. On META run `4fae0fb1` the ten body sections come to 73-97K estimated tokens (81-278K logged); the two conclusion sections are 115K and 138K (151K and 366K logged), because they carry the full text of the finished chapters.
+`npx tsx scripts/report-packet-size.ts <run-id>` (read-only) rebuilds a stored run's report-section prompts with the current code and prints their size. On META run `4fae0fb1` the ten body sections come to 73-97K estimated tokens (81-278K logged); the two conclusion sections are 115K and 138K (151K and 366K logged), because they carry the full text of the finished chapters. `--live <section-id,...>` with `RUN_PAID_RESEARCH=1` also sends those sections to the configured provider, without writing to the database, and prints usage, cost and whether each output passes the section contract. On Claude Haiku 5.5 (2026-10-21) valuation-and-downside, executive-judgment and evidence-gaps-and-unresolved measured 93K, 110K and 133K input tokens and all three passed on the first attempt.
 
 ## Price history and market data
 
