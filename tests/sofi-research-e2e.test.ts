@@ -8,6 +8,7 @@ import { db } from "../src/db";
 import { POST as createRun } from "../src/app/api/assets/[id]/research-runs/route";
 import { POST as queueRun } from "../src/app/api/research-runs/[id]/run-system-pipeline/route";
 import { POST as approvePlan } from "../src/app/api/research-runs/[id]/approve-plan/route";
+import { POST as requestPlanChanges } from "../src/app/api/research-runs/[id]/request-plan-changes/route";
 import { POST as submitReview } from "../src/app/api/research-runs/[id]/review/route";
 import {POST as askResearch, GET as loadChat} from '../src/app/api/research-runs/[id]/chat/route';
 import {loadReportInputs} from '../src/lib/research/reporting/store';
@@ -277,9 +278,27 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     // ==========================================
     // Gate 1 Approval: Approve Research Plan
     // ==========================================
-    const planApproval = await approvePlan(request({ approved_by: "system-test-harness" }), paramsFor(runId));
+    // Plan feedback redrafts the framing: the plan stage reopens, the job reruns it, and the gate opens on version 2.
+    assert.ok(persistedPlan.content_json.framing?.central_question, "the plan carries a drafted framing");
+    const changes = await requestPlanChanges(request({ notes: "Value the lending engine separately from the tech platform.", requested_by: "system-test-harness" }), paramsFor(runId));
+    assert.equal(changes.status, 200);
+    assert.equal((await changes.json()).status, "redraft_queued");
+    state = await runQueuedJob(runId);
+    assert.equal(state.status, "waiting_for_human");
+    const [redrafted] = await sql`SELECT artifact_version, content_json FROM research_artifacts WHERE research_run_id = ${runId}
+      AND artifact_type = 'research_plan' AND status = 'validated' ORDER BY artifact_version DESC LIMIT 1`;
+    assert.equal(redrafted.artifact_version, 2);
+    assert.match(redrafted.content_json.framing.decisive_insight_hypothesis, /lending engine separately/);
+    assert.equal(redrafted.content_json.plan_feedback.length, 1);
+    const editedFraming = { ...redrafted.content_json.framing, central_question: "Does the lending engine earn above its cost of funding through a credit cycle?" };
+    const planApproval = await approvePlan(request({ approved_by: "system-test-harness", framing: editedFraming }), paramsFor(runId));
     assert.equal(planApproval.status, 200);
     assert.equal((await planApproval.json()).success, true);
+    const [approvedRun] = await sql`SELECT metadata_json->'research_framing' AS framing FROM research_runs WHERE id = ${runId}`;
+    assert.equal(approvedRun.framing.central_question, editedFraming.central_question, "the approved framing is the reviewer's edit");
+    const [edited] = await sql`SELECT artifact_version, status, content_json->>'framing_source' AS source FROM research_artifacts WHERE research_run_id = ${runId}
+      AND artifact_type = 'research_plan' ORDER BY artifact_version DESC LIMIT 1`;
+    assert.deepEqual([edited.artifact_version, edited.status, edited.source], [3, "accepted", "reviewer"]);
 
     // ==========================================
     // Invocation 2: Execute research through decision synthesis & AI review to human_review gate
@@ -293,6 +312,16 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
       `;
       assert.fail(`Expected final review gate, got ${state.status}: ${JSON.stringify(failed)}`);
     }
+    // The approved framing rides in every analysis packet except deterministic normalization and the framing call.
+    const unframed = await sql`SELECT DISTINCT task_type FROM research_tasks WHERE research_run_id = ${runId} AND input_json ? 'packet'
+      AND task_type IN ('moat_analysis', 'business_process_analysis', 'management_assessment', 'operating_model', 'decision_synthesis', 'report_outline')
+      AND NOT (input_json->'packet' ? 'research_framing')`;
+    assert.deepEqual(unframed.map((r) => r.task_type), [], "analysis packets without research_framing");
+    const [framedCalls] = await sql`SELECT count(*)::int AS n FROM research_tasks WHERE research_run_id = ${runId}
+      AND input_json->'packet'->'research_framing'->>'central_question' = ${editedFraming.central_question}`;
+    assert.ok(framedCalls.n >= 5, `the approved framing reached ${framedCalls.n} calls`);
+    const [management] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId} AND artifact_type = 'management_assessment'`;
+    assert.equal(management?.content_json.axes.length, 5, "management is scored on five axes");
 
     const [finalStage] = await sql`
       SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'human_review'

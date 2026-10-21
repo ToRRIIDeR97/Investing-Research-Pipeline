@@ -57,7 +57,9 @@ export const FRAMING_EXCLUDED_TASKS = new Set(["metric_normalization", "research
 
 /** The framing as packets carry it: the approved content without proposal metadata. */
 export function packetFraming(framing: ResearchFraming, researchQuestion: string) {
-  const { archetypes: _a, overlays: _o, ...rest } = framing;
+  const rest: Partial<ResearchFraming> = { ...framing };
+  delete rest.archetypes;
+  delete rest.overlays;
   return { research_question: researchQuestion, ...rest };
 }
 

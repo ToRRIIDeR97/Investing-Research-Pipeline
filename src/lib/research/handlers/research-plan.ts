@@ -40,7 +40,7 @@ export function buildResearchPlan(ctx: import("../run-context").ResearchRunConte
       max_report_request_rounds: 2, source_escalations_per_round: 1 },
     report_standard: {
       version: STANDARD_VERSION,
-      output_requirements: RESEARCH_DOCTRINE,
+      output_requirements: `${RESEARCH_DOCTRINE.length} doctrine rules, applied in every analysis and report prompt (not repeated here).`,
       required_coverage: COVERAGE,
       historical_policy: "Latest reported fiscal periods available by source cutoff; target 20 quarters where applicable. Disclose unavailable periods and use the issuer's reporting frequency.",
       editorial_policy: "Choose section titles and order from material questions; add company-specific sections. Write executive judgment after the body. Preserve evidence, counterarguments, assumptions and uncertainty.",
