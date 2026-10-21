@@ -17,10 +17,9 @@ import type { AgentAttempt } from "../src/lib/agent-harness/types";
 import { exactJsonPrompt, loadRunContext, prepareResearchCall } from "../src/lib/research/run-context";
 import { loadReportInputs } from "../src/lib/research/reporting/store";
 import { COVERAGE, SECTION_CONTRACT, validateChartPlan } from "../src/lib/research/reporting/contracts";
-import { REPORT_FACTS_RULE, SECTION_RULES, conclusionInputs, reportEvidenceView, splitReportArtifacts } from "../src/lib/research/reporting/runtime";
+import { reportEvidenceView, reportSectionCall, splitReportArtifacts } from "../src/lib/research/reporting/runtime";
 import { buildReportFacts } from "../src/lib/research/reporting/facts";
 import { mergeObservations } from "../src/lib/research/reporting/data-views";
-import { VISUAL_GUIDELINES } from "../src/lib/research/reporting/visuals";
 import { FinancialAnalytics, buildFinancialAnalytics } from "../src/lib/research/history/analytics";
 import { buildStatementSummary } from "../src/lib/research/history/statement-summary";
 import { getTeamRequests } from "../src/lib/research/team";
@@ -68,16 +67,18 @@ async function main() {
   console.log(["section", "bytes", "est_tokens", "logged_tokens_max", "largest keys (KB)"].join("\t"));
   let worst = 0;
   const prepared = new Map<string, { section: any; params: Awaited<ReturnType<typeof prepareResearchCall>>["params"] }>();
-  for (const section of outline.sections) {
-    const selected = packetArtifacts.filter((a) => section.artifact_ids.includes(a.id));
-    const conclusion = section.coverage.includes("conclusion")
-      ? conclusionInputs((document?.sections ?? []).filter((s: any) => !s.coverage?.includes("conclusion")), common.evidence_claims) : null;
-    const packet = { ...common, ...(conclusion ? { evidence_claims: conclusion.evidence, filing_passages: [] } : {}),
-      artifacts: selected.length ? selected : packetArtifacts, section_plan: section, outline, feedback: [],
-      completed_sections: conclusion?.chapters ?? [], visual_guidelines: VISUAL_GUIDELINES, output_contract: "report_section", output_schema: SECTION_CONTRACT.schema };
+  // Like the runtime: body chapters first, then each conclusion reads every section before it; the last returns coverage.
+  const isConclusion = (s: any) => s.coverage?.includes("conclusion");
+  const completed: any[] = (document?.sections ?? []).filter((s: any) => !isConclusion(s));
+  const lastConclusion = outline.sections.filter(isConclusion).at(-1)?.id;
+  for (const section of [...outline.sections.filter((s: any) => !isConclusion(s)), ...outline.sections.filter(isConclusion)]) {
+    const call = reportSectionCall(common, packetArtifacts, section, outline, [], isConclusion(section) ? [...completed] : [],
+      section.id === lastConclusion ? outline.coverage : undefined);
     const { params } = await prepareResearchCall({ sql, ctx, stageKey: "ai_reviewer", taskKey: `report:section:${section.id}`, taskType: "report_section",
-      agentName: "export-writer", modelTier: "mid", packet, perCallKeys: ["artifacts", "section_plan", "completed_sections"],
-      promptFactory: (p) => exactJsonPrompt({ agentName: "export-writer", requiredKeys: ["section"], packet: p, extraRules: [REPORT_FACTS_RULE, ...SECTION_RULES] }) });
+      agentName: "export-writer", modelTier: "mid", packet: call.packet, perCallKeys: call.perCallKeys,
+      promptFactory: (p) => exactJsonPrompt({ agentName: "export-writer", requiredKeys: call.contract.requiredKeys, packet: p, extraRules: call.extraRules }) });
+    const written = (document?.sections ?? []).find((s: any) => s.id === section.id);
+    if (isConclusion(section) && written) completed.push(written);
     prepared.set(section.id, { section, params });
     const bytes = Buffer.byteLength(params.promptFactory!(params.packet));
     const tokens = Math.round(bytes * ratio);

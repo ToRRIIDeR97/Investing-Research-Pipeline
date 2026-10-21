@@ -1,6 +1,6 @@
 import { callResearchAgent, exactJsonPrompt, type ResearchRunContext, type Sql } from "../run-context";
 import { AI_REVIEWER_CONTRACT } from "../stage-contracts";
-import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Section, normalizeOutlineStructure, validateProductOutline, validateChartPlan, outputContract, type ReportOutline, type ReportSection } from "./contracts";
+import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Section, normalizeOutlineStructure, validateProductOutline, validateChartPlan, outputContract, type ReportOutline, type ReportSection, type CoverageCheck } from "./contracts";
 import { composeReviewedReport, checkFinalCoverage, type ReportReview, type WrittenSection, REQUIRED_COVERAGE } from "./compose";
 import { z } from "zod/v4";
 import { DEPTH_CHECKS, DEPTH_CHECK_RULE, REWORK_STAGES, depthFindings } from "./depth";
@@ -50,14 +50,74 @@ export const SECTION_RULES = [
 export const reportEvidenceView = <E extends { id: string }>(evidence: E[]) =>
   evidence.map(claim => Object.fromEntries(Object.entries(claim).filter(([key]) => key !== "url" && key !== "location")) as Omit<E, "url" | "location">);
 
+/** Longest digest point, implication or counterevidence, and gap, in characters. */
+export const DIGEST_LIMITS = { point: 320, summary: 1200, gap: 400 };
+// A sentence ends at . ! or ? before whitespace, so decimals such as 1.5% stay inside it.
+const sentencesOf = (text: string) => text.match(/(?:[^.!?]|[.!?]+(?!\s|$))+(?:[.!?]+|$)/g)?.map(s => s.trim()).filter(Boolean) ?? [];
+const clip = (text: string, max: number) => text.length <= max ? text : `${text.slice(0, max - 1).replace(/\s+\S*$/, "")}…`;
+/** The opening sentence, plus the first sentence with a figure when the opening has none. */
+function keyPoint(paragraph: ReportSection["paragraphs"][number]) {
+  const sentences = sentencesOf(paragraph.text);
+  const lead = sentences[0] ?? paragraph.text;
+  const figure = /\d/.test(lead) ? undefined : sentences.slice(1).find(s => /\d/.test(s));
+  const kind = paragraph.kind === "assumption" || paragraph.kind === "speculation" ? `[${paragraph.kind}] ` : "";
+  return clip(kind + [lead, figure].filter(Boolean).join(" "), DIGEST_LIMITS.point);
+}
 /**
- * What a conclusion section reads of the finished chapters: their analysis, implications and gaps with the
- * citations they used. Tables, visuals and plan fields are left out, and so are claims no chapter cites.
+ * A finished chapter as a conclusion writer reads it, built by code: its title and implication (the headline),
+ * one key point per paragraph with the figure it carries, the counterevidence and gaps, and every evidence and
+ * artifact ID the chapter cites. The full text stays in the report; a digest is bounded by its paragraph count.
+ */
+export function chapterDigest(section: ReportSection) {
+  const ids = (key: "evidence_ids" | "artifact_ids") => [...new Set(section.paragraphs.flatMap(p => p[key] || []))];
+  return { id: section.id, title: section.title, ...(section.key_figures?.length ? { key_figures: section.key_figures } : {}),
+    implication: clip(section.implication, DIGEST_LIMITS.summary), key_points: section.paragraphs.map(keyPoint),
+    counterevidence: clip(section.counterevidence, DIGEST_LIMITS.summary), gaps: section.gaps.map(g => clip(g, DIGEST_LIMITS.gap)),
+    evidence_ids: ids("evidence_ids"), artifact_ids: ids("artifact_ids") };
+}
+
+/** Largest top-level artifact field a conclusion packet carries; the chapters already analysed the larger ones. */
+export const CONCLUSION_FIELD_BYTES = 4096;
+/**
+ * A selected artifact as a conclusion writer sees it: its top-level fields up to CONCLUSION_FIELD_BYTES each.
+ * Larger fields (schedules, inputs, chart series) are named in omitted_fields; their figures reach the conclusion
+ * through report_facts, financial_analytics and the chapter digests, and their paths may still be requested as tables.
+ */
+export function conclusionArtifactView<T extends { content_json: any }>(artifact: T) {
+  const content = artifact.content_json;
+  if (!content || typeof content !== "object" || Array.isArray(content)) return artifact;
+  const omitted = Object.keys(content).filter(key => Buffer.byteLength(JSON.stringify(content[key] ?? null)) > CONCLUSION_FIELD_BYTES);
+  return omitted.length ? { ...artifact, content_json: Object.fromEntries(Object.entries(content).filter(([key]) => !omitted.includes(key))), omitted_fields: omitted } : artifact;
+}
+
+/**
+ * What a conclusion section reads of the finished chapters: a digest of each (see chapterDigest) and the claims
+ * they cite. Tables, visuals, plan fields and claims no chapter cites are left out.
  */
 export function conclusionInputs<E extends { id: string }>(completed: ReportSection[], evidence: E[]) {
-  const chapters = completed.map(({ id, title, paragraphs, counterevidence, implication, gaps }) => ({ id, title, paragraphs, counterevidence, implication, gaps }));
-  const cited = new Set(chapters.flatMap(c => c.paragraphs.flatMap(p => p.evidence_ids || [])));
+  const chapters = completed.map(chapterDigest);
+  const cited = new Set(chapters.flatMap(c => c.evidence_ids));
   return { chapters, evidence: evidence.filter(e => cited.has(e.id)) };
+}
+
+/**
+ * The packet, contract and rules of one report-section call; the report runtime and the packet-size replay both
+ * build it here. Conclusions read chapter digests, the claims those cite and capped artifacts, with no filing
+ * passages; the last one also gets the provisional coverage to return reconciled.
+ */
+export function reportSectionCall<A extends { id: string; content_json: any }>(common: Record<string, any> & { evidence_claims: { id: string }[] }, packetArtifacts: A[],
+  section: ReportOutline["sections"][number], outline: ReportOutline, feedback: Record<string, any>[], completed: ReportSection[], finalCoverage?: CoverageCheck[]) {
+  const selected = packetArtifacts.filter(a => section.artifact_ids.includes(a.id));
+  const conclusion = section.coverage.includes("conclusion") ? conclusionInputs(completed, common.evidence_claims) : null;
+  const contract = finalCoverage ? CONCLUSION_CONTRACT : SECTION_CONTRACT;
+  const artifacts = selected.length ? selected : packetArtifacts;
+  const packet = { ...common, ...(conclusion ? { evidence_claims: conclusion.evidence, filing_passages: [] } : {}),
+    artifacts: conclusion ? artifacts.map(conclusionArtifactView) : artifacts, section_plan: section, outline,
+    feedback, completed_sections: conclusion?.chapters ?? [], ...(finalCoverage ? { provisional_coverage: finalCoverage } : {}),
+    visual_guidelines: VISUAL_GUIDELINES, output_contract: "report_section", output_schema: contract.schema };
+  // Sections of one round share everything but these keys, so the shared part is read from cache.
+  return { packet, contract, perCallKeys: ["artifacts", "section_plan", "completed_sections", "provisional_coverage"],
+    extraRules: [REPORT_FACTS_RULE, ...SECTION_RULES, ...(conclusion ? [CONCLUSION_DIGEST_RULE] : []), ...(finalCoverage ? [FINAL_COVERAGE_RULE] : [])] };
 }
 
 /** Save report_facts from the current valuation and analytics, so writers can cite it like any artifact. */
@@ -108,7 +168,8 @@ export function keepUsableReferences<T>(value: T, artifacts: { id: string }[], e
 
 /** The last conclusion also returns the report's coverage, reconciled with what the chapters actually did. */
 export const CONCLUSION_CONTRACT = outputContract({ section: Section, coverage: z.array(CoverageResult) });
-export const FINAL_COVERAGE_RULE = "packet.provisional_coverage is the planner's coverage, set before any chapter was written. Return coverage with one entry per key, keeping key and section_ids, and set status and rationale to what the completed chapters actually deliver: downgrade a status the chapters do not support. The rationale is reader-facing.";
+export const CONCLUSION_DIGEST_RULE = "completed_sections are code-built digests of the finished chapters: each chapter's implication, one key point per paragraph, its counterevidence and gaps, and every evidence_id and artifact_id it cites. Synthesize from them and refer to a chapter by title; cite the IDs a digest lists for the point you use. Figures not in a digest, report_facts or financial_analytics stay with their chapter. An artifact's omitted_fields were analysed in the chapters that cite it; their paths may still be requested as tables.";
+export const FINAL_COVERAGE_RULE ="packet.provisional_coverage is the planner's coverage, set before any chapter was written. Return coverage with one entry per key, keeping key and section_ids, and set status and rationale to what the completed chapters actually deliver: downgrade a status the chapters do not support. The rationale is reader-facing.";
 /** Review finding categories that may send work back to the specialists after the review. */
 const REWORK_CATEGORIES = ["research_gap", "calculation", "evidence", "analysis_rework"];
 
@@ -159,26 +220,17 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
       return planned;
     },
     async write(section, outline, feedback, completed, options) {
-      const selected = packetArtifacts.filter(a => section.artifact_ids.includes(a.id));
-      // Conclusions synthesize the finished chapters and cite what they cite; filing passages serve the chapters' drafting.
-      const conclusion = section.coverage.includes("conclusion") ? conclusionInputs(completed, common.evidence_claims) : null;
       const finalCoverage = options?.coverage;
-      const contract = finalCoverage ? CONCLUSION_CONTRACT : SECTION_CONTRACT;
-      const packet = { ...common, ...(conclusion ? { evidence_claims: conclusion.evidence, filing_passages: [] } : {}),
-        artifacts: selected.length ? selected : packetArtifacts, section_plan: section, outline,
-        feedback, completed_sections: conclusion?.chapters ?? [], ...(finalCoverage ? { provisional_coverage: finalCoverage } : {}),
-        visual_guidelines: VISUAL_GUIDELINES, output_contract: "report_section", output_schema: contract.schema };
-      // Sections of one round share everything but these keys, so the shared part is read from cache.
+      const { packet, contract, perCallKeys, extraRules } = reportSectionCall(common, packetArtifacts, section, outline, feedback, completed, finalCoverage);
       const output = usable(await callResearchAgent<{ section: ReportSection; coverage?: WrittenSection["final_coverage"] }>({ sql, ctx, stageKey: "ai_reviewer",
         taskKey: `report:section:${section.id}`, taskType: "report_section", agentName: "export-writer", modelTier: "mid", packet,
-        perCallKeys: ["artifacts", "section_plan", "completed_sections", "provisional_coverage"], outputFormat: checkedContract(contract, (result: { section: ReportSection; coverage?: WrittenSection["final_coverage"] }) => {
+        perCallKeys, outputFormat: checkedContract(contract, (result: { section: ReportSection; coverage?: WrittenSection["final_coverage"] }) => {
           if (result.section.id !== section.id || JSON.stringify(result.section.coverage) !== JSON.stringify(section.coverage)) throw new Error("Preserve section id and coverage exactly");
           validateChartPlan(section, result.section);
           createReport({ ...reportInput, required_coverage: section.coverage, sections: [result.section], questions: [],
             coverage: section.coverage.map(key => ({ key, status: "qualified", rationale: "Section validation", section_ids: [section.id] })) });
           if (finalCoverage) checkFinalCoverage(reportInput, outline, [...completed.filter(s => s.id !== section.id), result.section], result.coverage ?? []);
-        }, check), promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: contract.requiredKeys, packet: p,
-          extraRules: [REPORT_FACTS_RULE, ...SECTION_RULES, ...(finalCoverage ? [FINAL_COVERAGE_RULE] : [])] }) }));
+        }, check), promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: contract.requiredKeys, packet: p, extraRules }) }));
       return finalCoverage ? { ...output.section, final_coverage: output.coverage } : output.section;
     },
     async review(document) {
