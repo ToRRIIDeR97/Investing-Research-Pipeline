@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "description": "Fixed research-quality cases. npm run eval:score scores stored runs with code checks and depth probes (SELECT-only, no model calls). New runs for a case are paid and need the user's approval (RUN_PAID_RESEARCH=1 with scripts/new-equity-run.ts and RESEARCH_ACCEPTANCE_CUTOFF_AT set to the case cutoff).",
+  "cases": [
+    {
+      "id": "META",
+      "role": "depth",
+      "asset_slug": "meta-platforms",
+      "symbol": "META",
+      "cutoff": "2026-10-13",
+      "reference": null,
+      "note": "Baseline run 4fae0fb1 (2026-10-13, Haiku 5.5). Earlier runs are kept for the stability comparison.",
+      "baseline_runs": [
+        "4fae0fb1-76b3-4d2b-b386-e48eb9547a75",
+        "7fa1f00a-fad5-4503-821b-8673df41ec2f",
+        "1d427f3f-449b-4bea-a8d0-d3db9098fe7d",
+        "02c8d48b-cd29-4dfa-814f-f38c9f5568a3"
+      ],
+      "probes": [
+        { "id": "founder_voting_control", "label": "Founder voting control",
+          "data": { "source": "chunks", "text": "voting (power|control)", "min": 5 },
+          "report": { "topic": "voting (power|control)|controlling (stockholder|shareholder)|super-?voting|ten votes" } },
+        { "id": "class_b_share_counts", "label": "Class B share counts",
+          "data": { "source": "observations", "metric_key": "SharesOutstanding", "segment": "ClassB", "min": 8 },
+          "report": { "topic": "class b" } },
+        { "id": "peer_pricing", "label": "Snap and Pinterest figures",
+          "data": { "source": "claims", "text": "snap|pinterest", "min": 3 },
+          "report": { "topic": "\\b(snap|pinterest)\\b" } },
+        { "id": "us_ad_market", "label": "US internet ad market of $294.6bn",
+          "data": { "source": "claims", "text": "294\\.6" },
+          "report": { "topic": "(\\bus\\b|u\\.s\\.|united states) (internet |digital |online )?ad(vertising)? (market|revenue|spend)|\\biab\\b|interactive advertising bureau", "value": "294\\.6" } },
+        { "id": "reality_labs_revenue_history", "label": "Reality Labs revenue history",
+          "data": { "source": "observations", "metric_key": "^revenue$", "segment": "RealityLabs", "periodicity": "quarterly", "min": 12 },
+          "report": { "topic": "reality labs[^.]*revenue|revenue[^.]*reality labs" } },
+        { "id": "leases_not_commenced", "label": "$278.99bn of leases not yet commenced",
+          "data": { "source": "chunks", "text": "278\\.99" },
+          "report": { "topic": "not yet commenced", "value": "278\\.99|279\\.0" } },
+        { "id": "notes_november_2025", "label": "$30.0bn of notes issued in November 2025",
+          "data": { "source": "chunks", "text": "November 2025", "also": "notes" },
+          "report": { "topic": "november 2025[^.]*notes|notes[^.]*november 2025", "value": "november 2025" } },
+        { "id": "receivables_history", "label": "Receivables history",
+          "data": { "source": "observations", "metric_key": "AccountsReceivable", "periodicity": "quarterly", "min": 8 },
+          "report": { "topic": "receivable days|days sales outstanding|\\bDSO\\b|(accounts )?receivables?[^.]*(days|turnover|rose|fell|grew|increased|decreased|billion|million)" } }
+      ]
+    },
+    {
+      "id": "SOFI",
+      "role": "depth",
+      "asset_slug": "sofi",
+      "symbol": "SOFI",
+      "cutoff": "2026-07-17",
+      "reference": "Research References/SoFi Technologies Investment Research Report.docx",
+      "note": "Reference report dated 2026-07-17 (price $17). The completed v3 run predates the adaptive report.",
+      "baseline_runs": ["c2822589-ead9-4fee-a253-459f39ca4cb1"],
+      "probes": []
+    },
+    {
+      "id": "DECK",
+      "role": "depth",
+      "asset_slug": "deckers-outdoor",
+      "symbol": "DECK",
+      "cutoff": "2026-07-17",
+      "reference": "Research References/Deckers Outdoor Corporation Investment Research Report.docx",
+      "note": "No DECK asset exists in the database yet; seed it before the first paid run.",
+      "baseline_runs": [],
+      "probes": []
+    },
+    {
+      "id": "MELI",
+      "role": "depth",
+      "asset_slug": "mercado-libre",
+      "symbol": "MELI",
+      "cutoff": "2026-08-06",
+      "reference": "MercadoLibre_Framework_v3_Full_Initiation_Report.md",
+      "note": "Reference valuation date 2026-08-06, price $1,835. docs/meli-v3-acceptance-rubric.md holds the manual items.",
+      "baseline_runs": ["dca55615-62e4-46c3-ab2c-648460c37f56"],
+      "probes": []
+    },
+    {
+      "id": "JD",
+      "role": "coverage_stress",
+      "asset_slug": "jd-com",
+      "symbol": "JD",
+      "cutoff": "2026-10-21",
+      "reference": "User-supplied JD.com initiation (handover files, 2026-10-21)",
+      "note": "Foreign private issuer (20-F/6-K, RMB, ADS). Expected to fail statement coverage until Phase 6; it is a coverage stress case, never a depth score.",
+      "expected": { "statement_quarters_min": 12 },
+      "baseline_runs": [],
+      "probes": []
+    }
+  ]
+}
