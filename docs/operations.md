@@ -75,13 +75,13 @@ What one sync does:
 1. Refuses to start while a research worker is polling this database (a heartbeat in the last 30 s). Stop the worker first.
 2. Adds the worktree on first use: it checks out `origin/research-store` if it exists, or creates the branch.
 3. Resets the folder to `origin/research-store`. The store is derived from the database, so an unpushed local commit is safe to drop: the export in step 5 writes those rows again.
-4. Imports the store in one transaction, in foreign-key order. A failure changes nothing. Each row is merged three ways against this machine's last export, kept in `storage/.research-store-base.<database>.json`:
+4. Imports the store in one transaction, in foreign-key order, reading it a line at a time and inserting in batches (a row that points at another row of its table goes in after it). A failure changes nothing. Each row is merged three ways against this machine's last export, kept in `storage/.research-store-base.<database>.json`:
    - changed only in the store: the store's row is taken;
    - changed only here: this machine's row is kept;
    - changed on both machines: the newer `updated_at` wins, and a table without `updated_at` keeps this machine's row. Each such row is printed;
    - deleted here and unchanged in the store: it stays deleted.
-   A store row whose unique key (an asset slug, a file hash, a seeded definition) matches a different local row is treated as that row, and its id is rewritten to the local id wherever it appears. Files the store has and this machine lacks are copied into `storage/`. A file that differs is kept as it is here and reported.
-5. Exports every table except `research_run_jobs` and `research_worker_heartbeats` to `tables/<table>/<first id character>.jsonl`, one `to_jsonb` row per line, sorted by id. It mirrors every `storage/...` path a row names into `files/`, skipping files over 95 MB (GitHub's limit), and writes `manifest.json` with each table's columns.
+   A store row whose unique key (an asset slug, a file hash, a seeded definition) matches a different local row is treated as that row, and its id is rewritten to the local id wherever it appears. Files the store has and this machine lacks are copied into `storage/`. A file that differs is kept as it is here and reported. Import skips and reports any store file outside `files/storage/<dir>/`, any symlink, and any file whose target folder resolves outside `storage/<dir>`.
+5. Exports every table except `research_run_jobs` and `research_worker_heartbeats` to `tables/<table>/<first two id characters>.jsonl` (256 shards per table), one `to_jsonb` row per line, sorted by id. Rows stream through a cursor, so only one shard is in memory at a time. If a shard would pass 95 MB, export stops with an error before writing it, rather than letting GitHub reject the push. It mirrors every `storage/...` path a row names into `files/`. It copies only regular files whose real path stays inside their `storage/<dir>`, skips and reports symlinks and files over 95 MB (GitHub's limit), and writes `manifest.json` with each table's columns.
 6. Commits and pushes if anything changed.
 
 Import refuses a store whose tables or columns differ from this database. Run `npm run db:migrate` on both machines, on the same code, before syncing.
@@ -92,5 +92,7 @@ Rules and limits:
 - Work on a given run on one machine at a time. When both machines change the same row, one version wins and the other is lost.
 - Deletions don't propagate. A row deleted on one machine comes back from the other machine's next export.
 - Two machines syncing at the same moment race on the push. The second push fails; run `store:sync` again.
+- Stores written before the switch to two-character shards still import. The first export after the switch rewrites every table file once, so that sync pushes a large commit.
+- A shard refused for size needs finer sharding (`shardOf` in `src/lib/maintenance/research-store.ts`) before sync works again. A failed export leaves the store folder half-written; the next sync resets it to the branch.
 
 To set up a new machine: install Postgres, create an empty database, point `DATABASE_URL` at it, run `npm run db:migrate`, then `npm run store:sync`. Skip `npm run db:seed`, since the store already holds the seeded rows.

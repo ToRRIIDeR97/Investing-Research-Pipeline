@@ -3,7 +3,8 @@
 // into the local database. The local database is the merge point, git only carries files. See docs/operations.md.
 import postgres from "postgres";
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { constants, createReadStream } from "node:fs";
+import { appendFile, copyFile, lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 
 type Sql = postgres.Sql;
@@ -11,23 +12,29 @@ type Sql = postgres.Sql;
 export const STORE_FORMAT = 1;
 /** Machine-local state: the queue and heartbeats would make an imported run start, or look alive, elsewhere. */
 export const EXCLUDED_TABLES = new Set(["research_run_jobs", "research_worker_heartbeats"]);
-/** GitHub rejects files over 100 MB. */
-const MAX_FILE_BYTES = 95 * 1024 * 1024;
+/** GitHub rejects files over 100 MB. Applies to mirrored files and table shards. */
+export const MAX_FILE_BYTES = 95 * 1024 * 1024;
+/** Insert batches end at whichever limit comes first: research_tasks and research_artifacts rows average 140-190 KB, up to 9 MB. */
 const BATCH_ROWS = 500;
+const BATCH_BYTES = 16 * 1024 * 1024;
+const CURSOR_ROWS = 100;
 const STORAGE_PATH = /"(storage\/[^"\\]+)"/g;
 
 /** Per table, the hash of each row as of this machine's last export. Lets import tell who changed a row. */
 export type StoreBase = Record<string, Record<string, string>>;
 
-export interface TableInfo { name: string; columns: string[]; types: string[]; hasUpdatedAt: boolean; uniqueKeys: string[][]; selfReferencing: boolean }
+export interface TableInfo { name: string; columns: string[]; types: string[]; hasUpdatedAt: boolean; uniqueKeys: string[][]; selfKeys: string[] }
 
 export type Decision = "insert" | "update" | "keep" | "same" | "remap";
 export interface Conflict { table: string; id: string; kept: "local" | "store" }
-export interface ImportResult { inserted: number; updated: number; remapped: number; conflicts: Conflict[]; filesCopied: number; fileConflicts: string[] }
-export interface ExportResult { tables: number; rows: number; files: number; skippedFiles: string[]; base: StoreBase }
+export interface SkippedFile { path: string; reason: string }
+export interface ImportResult { inserted: number; updated: number; remapped: number; conflicts: Conflict[]; filesCopied: number; fileConflicts: string[]; skippedFiles: SkippedFile[] }
+export interface ExportResult { tables: number; rows: number; files: number; skippedFiles: SkippedFile[]; base: StoreBase }
 
 export const rowHash = (line: string) => createHash("sha1").update(line).digest("hex").slice(0, 16);
-const shardOf = (id: string) => id.slice(0, 1).toLowerCase();
+/** 256 shards per table. Stores written with one-character shards still import: import reads every *.jsonl. */
+export const shardOf = (id: string) => id.slice(0, 2).toLowerCase();
+const megabytes = (bytes: number) => `${+(bytes / 2 ** 20).toFixed(2)} MB`;
 
 /**
  * Three-way decision for one store row. `base` is the row's hash when this machine last exported, so a side whose
@@ -74,6 +81,10 @@ export async function describeTables(sql: Sql): Promise<TableInfo[]> {
   for (const e of edges) {
     if (tables.includes(e.from) && EXCLUDED_TABLES.has(e.to)) throw new Error(`${e.from} references machine-local table ${e.to}`);
   }
+  // Columns of a table's foreign keys to itself (a superseded artifact, a parent session).
+  const selfKeys = await sql`SELECT c.conrelid::regclass::text AS t, a.attname::text AS col FROM pg_constraint c
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+    WHERE c.contype = 'f' AND c.conrelid = c.confrelid AND c.connamespace = 'public'::regnamespace`;
   // Partial and expression indexes only bind some rows, so they can't identify a row on their own.
   const uniques = await sql`SELECT c.relname::text AS t, ARRAY(SELECT a.attname::text FROM unnest(i.indkey) WITH ORDINALITY k(n, o)
       JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.n ORDER BY k.o) AS cols
@@ -86,7 +97,7 @@ export async function describeTables(sql: Sql): Promise<TableInfo[]> {
     if (!cols.includes("id")) throw new Error(`${t} has no id column; the store keys rows by id`);
     info.set(t, { name: t, columns: cols, types: own.map(r => `${r.c} ${r.type}`), hasUpdatedAt: cols.includes("updated_at"),
       uniqueKeys: uniques.filter(u => u.t === t).map(u => u.cols as string[]),
-      selfReferencing: edges.some(e => e.from === t && e.to === t) });
+      selfKeys: selfKeys.filter(k => k.t === t).map(k => String(k.col)) });
   }
   return orderTables(tables, edges).map(t => info.get(t)!);
 }
@@ -101,29 +112,98 @@ export async function liveWorkerIds(sql: Sql): Promise<string[]> {
   return rows.map(r => String(r.worker_id));
 }
 
-async function localRows(sql: Sql, table: string): Promise<Array<{ id: string; line: string }>> {
-  return (await sql`SELECT id::text AS id, to_jsonb(t)::text AS line FROM ${sql(table)} t ORDER BY id`)
-    .map(r => ({ id: String(r.id), line: String(r.line) }));
+/** A table's rows in id order, streamed through a cursor so a large table never sits in memory whole. */
+async function* localRows(sql: Sql, table: string): AsyncGenerator<{ id: string; line: string }> {
+  for await (const batch of sql`SELECT id::text AS id, to_jsonb(t)::text AS line FROM ${sql(table)} t ORDER BY id`.cursor(CURSOR_ROWS)) {
+    for (const r of batch) yield { id: String(r.id), line: String(r.line) };
+  }
 }
 
-async function readStoreTable(storeDir: string, table: string): Promise<string[]> {
-  const dir = join(storeDir, "tables", table);
-  let names: string[];
-  try { names = (await readdir(dir)).filter(n => n.endsWith(".jsonl")).sort(); } catch { return []; }
-  const lines: string[] = [];
-  for (const name of names) for (const line of (await readFile(join(dir, name), "utf8")).split(/\r?\n/)) if (line) lines.push(line);
-  return lines;
+/** Per local row, its hash, plus updated_at and unique-key values when the table has them. Holds no whole rows. */
+async function localIndex(sql: Sql, table: TableInfo) {
+  const hashes = new Map<string, string>();
+  const updatedAt = new Map<string, string | null>();
+  const byUnique = table.uniqueKeys.map(cols => ({ cols, index: new Map<string, string>() }));
+  for await (const r of localRows(sql, table.name)) {
+    hashes.set(r.id, rowHash(r.line));
+    if (!byUnique.length && !table.hasUpdatedAt) continue;
+    const row = JSON.parse(r.line);
+    if (table.hasUpdatedAt) updatedAt.set(r.id, row.updated_at ?? null);
+    for (const u of byUnique) { const key = uniqueValue(row, u.cols); if (key) u.index.set(key, r.id); }
+  }
+  return { hashes, updatedAt, byUnique };
 }
 
-async function listFiles(dir: string): Promise<string[]> {
-  let entries;
-  try { entries = await readdir(dir, { withFileTypes: true }); } catch { return []; }
+/** Non-empty lines of a file. The next chunk is read only once these lines are consumed (readline queues 1,024). */
+export async function* fileLines(path: string): AsyncGenerator<string> {
+  let pending: string[] = [];
+  for await (const chunk of createReadStream(path, { encoding: "utf8" }) as AsyncIterable<string>) {
+    let start = 0;
+    for (let end = chunk.indexOf("\n"); end >= 0; start = end + 1, end = chunk.indexOf("\n", start)) {
+      pending.push(chunk.slice(start, end));
+      const line = pending.join("").replace(/\r$/, "");
+      pending = [];
+      if (line) yield line;
+    }
+    pending.push(chunk.slice(start));
+  }
+  const last = pending.join("").replace(/\r$/, "");
+  if (last) yield last;
+}
+
+/**
+ * Regular files under dir. Symlinks (dir itself included) and other special entries are never followed: they go to
+ * `skipped`. A link planted in a backtest folder or a pushed store can't make sync read or write outside it.
+ */
+async function listFiles(dir: string, skipped: string[] = []): Promise<string[]> {
+  const info = await lstat(dir).catch(() => null);
+  if (!info) return [];
+  if (!info.isDirectory()) { skipped.push(dir); return []; }
   const found: string[] = [];
-  for (const e of entries) {
+  for (const e of await readdir(dir, { withFileTypes: true })) {
     const path = join(dir, e.name);
-    if (e.isDirectory()) found.push(...await listFiles(path)); else found.push(path);
+    if (e.isDirectory()) found.push(...await listFiles(path, skipped));
+    else if (e.isFile()) found.push(path);
+    else skipped.push(path);
   }
   return found;
+}
+
+/** Removes links a pushed store could plant to redirect export's writes out of the store folder. */
+async function dropStoreLinks(storeDir: string) {
+  const links: string[] = [];
+  for (const name of ["tables", "files"]) await listFiles(join(storeDir, name), links);
+  for (const link of [...links, join(storeDir, "manifest.json"), join(storeDir, ".gitattributes")]) await rm(link, { recursive: true, force: true });
+}
+
+/**
+ * Writes one table's rows, given in id order, as shard files. A shard's rows arrive together (uuid order is hex
+ * order), so only the current shard is held in memory. Throws before writing a shard over `maxFileBytes`.
+ */
+export function shardWriter(dir: string, maxFileBytes = MAX_FILE_BYTES) {
+  const written = new Map<string, number>();
+  let shard = "";
+  let lines: string[] = [];
+  let bytes = 0;
+  const flush = async () => {
+    if (!lines.length) return;
+    await mkdir(dir, { recursive: true });
+    await appendFile(join(dir, `${shard}.jsonl`), lines.join("\n") + "\n");
+    written.set(shard, bytes);
+    lines = [];
+  };
+  return {
+    async add(row: { id: string; line: string }) {
+      const next = shardOf(row.id);
+      if (next !== shard) { await flush(); shard = next; bytes = written.get(shard) ?? 0; }
+      lines.push(row.line);
+      bytes += Buffer.byteLength(row.line) + 1;
+      if (bytes > maxFileBytes) {
+        throw new Error(`Refusing to export: shard ${join(dir, shard)}.jsonl would pass ${megabytes(maxFileBytes)}, and GitHub rejects files over 100 MB. Shard this table more finely (shardOf) before syncing.`);
+      }
+    },
+    close: flush,
+  };
 }
 
 async function sameFile(a: string, b: string): Promise<boolean> {
@@ -137,58 +217,164 @@ async function sameFile(a: string, b: string): Promise<boolean> {
 
 const posix = (path: string) => path.split(sep).join("/");
 
-export async function exportStore(sql: Sql, options: { storeDir: string; projectRoot: string }): Promise<ExportResult> {
+export async function exportStore(sql: Sql, options: { storeDir: string; projectRoot: string; maxFileBytes?: number }): Promise<ExportResult> {
   const storeDir = resolve(options.storeDir);
   const tables = await describeTables(sql);
+  await dropStoreLinks(storeDir);
   const base: StoreBase = {};
   const referenced = new Set<string>();
   let rows = 0;
   await mkdir(join(storeDir, "tables"), { recursive: true });
   for (const table of tables) {
-    const shards = new Map<string, string[]>();
-    base[table.name] = {};
-    for (const row of await localRows(sql, table.name)) {
-      base[table.name][row.id] = rowHash(row.line);
-      const shard = shardOf(row.id);
-      shards.set(shard, [...(shards.get(shard) || []), row.line]);
-      for (const m of row.line.matchAll(STORAGE_PATH)) referenced.add(m[1]);
-      rows += 1;
-    }
+    const hashes: Record<string, string> = base[table.name] = {};
     const dir = join(storeDir, "tables", table.name);
     await rm(dir, { recursive: true, force: true });
-    if (shards.size) await mkdir(dir, { recursive: true });
-    for (const [shard, lines] of shards) await writeFile(join(dir, `${shard}.jsonl`), lines.join("\n") + "\n");
+    const shards = shardWriter(dir, options.maxFileBytes);
+    for await (const row of localRows(sql, table.name)) {
+      hashes[row.id] = rowHash(row.line);
+      for (const m of row.line.matchAll(STORAGE_PATH)) referenced.add(m[1]);
+      await shards.add(row);
+      rows += 1;
+    }
+    await shards.close();
   }
   // Tables that no longer exist here leave no stale directory behind.
   const names = new Set(tables.map(t => t.name));
   for (const entry of await readdir(join(storeDir, "tables"))) if (!names.has(entry)) await rm(join(storeDir, "tables", entry), { recursive: true, force: true });
 
-  // Mirror the storage/ files rows name. A referenced directory (a backtest run folder) goes in whole.
-  const filesDir = join(storeDir, "files");
-  const wanted = new Set<string>();
-  const skippedFiles: string[] = [];
-  for (const ref of referenced) {
-    const source = resolve(options.projectRoot, ref);
-    if (!source.startsWith(resolve(options.projectRoot, "storage") + sep)) continue;
-    let info;
-    try { info = await stat(source); } catch { continue; }
-    for (const file of info.isDirectory() ? await listFiles(source) : [source]) {
-      const rel = posix(relative(options.projectRoot, file));
-      if ((await stat(file)).size > MAX_FILE_BYTES) { skippedFiles.push(rel); continue; }
-      wanted.add(rel);
-      const target = join(filesDir, rel);
-      if (await sameFile(file, target)) continue;
-      await mkdir(dirname(target), { recursive: true });
-      await copyFile(file, target);
-    }
-  }
-  for (const file of await listFiles(filesDir)) if (!wanted.has(posix(relative(filesDir, file)))) await rm(file);
+  const mirrored = await mirrorFiles(referenced, options);
 
   // Stored bytes must survive checkout unchanged: source files are checked against their file_hash.
   await writeFile(join(storeDir, ".gitattributes"), "* -text\n");
   const manifest = { format: STORE_FORMAT, excludedTables: [...EXCLUDED_TABLES], schema: schemaOf(tables) };
   await writeFile(join(storeDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
-  return { tables: tables.length, rows, files: wanted.size, skippedFiles, base };
+  return { tables: tables.length, rows, files: mirrored.files, skippedFiles: mirrored.skipped, base };
+}
+
+/**
+ * Mirrors the storage/ files rows name into the store's files/ folder. A referenced directory (a backtest run folder)
+ * goes in whole. Only regular files whose real path stays inside their storage/<dir> are copied, so a link that
+ * sandboxed backtest code wrote can't carry ~/.ssh or .env.local into the store. storage/<dir> itself may be a link:
+ * worktrees share the main checkout's storage that way.
+ */
+export async function mirrorFiles(referenced: Iterable<string>, options: { storeDir: string; projectRoot: string; maxFileBytes?: number }) {
+  const filesDir = join(resolve(options.storeDir), "files");
+  const storageDir = resolve(options.projectRoot, "storage");
+  const maxFileBytes = options.maxFileBytes ?? MAX_FILE_BYTES;
+  const wanted = new Set<string>();
+  const skipped = new Map<string, string>();
+  const links: string[] = [];
+  const roots = new Map<string, Promise<string | null>>();
+  for (const ref of referenced) {
+    const source = resolve(options.projectRoot, ref);
+    if (!source.startsWith(storageDir + sep)) continue;
+    const [first, ...rest] = relative(storageDir, source).split(sep);
+    if (!rest.length) { skipped.set(ref, "not inside a storage/ folder"); continue; }
+    if (!roots.has(first)) roots.set(first, realpath(join(storageDir, first)).catch(() => null));
+    const root = await roots.get(first);
+    if (!root) continue;
+    let info;
+    try { info = await stat(source); } catch { continue; }
+    for (const file of info.isDirectory() ? await listFiles(source, links) : [source]) {
+      const rel = posix(relative(options.projectRoot, file));
+      const real = await realpath(file).catch(() => null);
+      if (!real?.startsWith(root + sep)) { skipped.set(rel, `resolves outside storage/${first}`); continue; }
+      if ((await stat(real)).size > maxFileBytes) { skipped.set(rel, `over ${megabytes(maxFileBytes)}, GitHub's limit`); continue; }
+      wanted.add(rel);
+      const target = join(filesDir, rel);
+      if (await sameFile(real, target)) continue;
+      await mkdir(dirname(target), { recursive: true });
+      await copyFile(real, target);
+    }
+  }
+  for (const link of links) skipped.set(posix(relative(options.projectRoot, link)), "symlink or special file");
+  for (const file of await listFiles(filesDir)) if (!wanted.has(posix(relative(filesDir, file)))) await rm(file);
+  return { files: wanted.size, skipped: [...skipped].map(([path, reason]) => ({ path, reason })) };
+}
+
+/**
+ * Copies store files this machine lacks into storage/. Only regular files under files/storage/<dir>/ are taken, and
+ * only into a folder whose real path stays inside that storage/<dir>, so a pushed store can't write code or config
+ * anywhere else in the project. A file that differs is left alone and reported.
+ */
+export async function importFiles(options: { storeDir: string; projectRoot: string }) {
+  const filesDir = join(resolve(options.storeDir), "files");
+  const storageDir = resolve(options.projectRoot, "storage");
+  const result = { copied: 0, conflicts: [] as string[], skipped: [] as SkippedFile[] };
+  const links: string[] = [];
+  for (const file of await listFiles(filesDir, links)) {
+    const rel = posix(relative(filesDir, file));
+    const [top, first, ...rest] = rel.split("/");
+    if (top !== "storage" || !rest.length) { result.skipped.push({ path: rel, reason: "outside storage/" }); continue; }
+    const target = resolve(options.projectRoot, rel);
+    try {
+      await stat(target);
+      if (!await sameFile(file, target)) result.conflicts.push(rel);
+      continue;
+    } catch { /* missing here: copy it */ }
+    try {
+      await mkdir(dirname(target), { recursive: true });
+      const [root, dir] = await Promise.all([realpath(join(storageDir, first)), realpath(dirname(target))]);
+      if (dir !== root && !dir.startsWith(root + sep)) { result.skipped.push({ path: rel, reason: `resolves outside storage/${first}` }); continue; }
+      await copyFile(file, target, constants.COPYFILE_EXCL);
+      result.copied += 1;
+    } catch (error) {
+      result.skipped.push({ path: rel, reason: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  for (const link of links) result.skipped.push({ path: posix(relative(filesDir, link)), reason: "symlink or special file" });
+  return result;
+}
+
+/**
+ * Each table's shard files in name order: any tables/<table>/*.jsonl, so one-character shards from older stores read
+ * the same as two-character ones. Links in a pushed store are skipped, not followed.
+ */
+export async function storeShards(storeDir: string) {
+  const tablesDir = join(resolve(storeDir), "tables");
+  const links: string[] = [];
+  const shardFiles = new Map<string, string[]>();
+  for (const file of (await listFiles(tablesDir, links)).sort()) {
+    const [table, name, ...deeper] = relative(tablesDir, file).split(sep);
+    if (name?.endsWith(".jsonl") && !deeper.length) (shardFiles.get(table) ?? shardFiles.set(table, []).get(table)!).push(file);
+  }
+  const skipped: SkippedFile[] = links.map(link => ({ path: posix(relative(resolve(storeDir), link)), reason: "symlink or special file" }));
+  return { shardFiles, skipped };
+}
+
+/**
+ * Orders a table's accepted rows so none goes in before a row of the same table it points at: import inserts in
+ * batches, and Postgres checks foreign keys per statement. A row whose parent hasn't gone in yet waits. Rows still
+ * waiting at the end (a cycle, or a parent that is missing) go in together in the last statement, where Postgres
+ * checks them.
+ */
+export function parentFirst(keys: string[], exists: (id: string) => boolean) {
+  const added = new Set<string>();
+  let waiting: Array<{ id: string; line: string; parents: string[] }> = [];
+  const take = (id: string, line: string) => { if (keys.length) added.add(id); return line; };
+  return {
+    /** The line, when every row it points at is in already; otherwise it waits. */
+    add(row: Record<string, unknown>, line: string): string[] {
+      const id = String(row.id);
+      const parents = keys.map(k => row[k]).filter((p): p is string => typeof p === "string" && p !== id && !exists(p) && !added.has(p));
+      if (parents.length) { waiting.push({ id, line, parents }); return []; }
+      return [take(id, line)];
+    },
+    /** Waiting lines, each after its parents, then those left over, which must share one statement. */
+    rest(): { ordered: string[]; leftover: string[] } {
+      const ordered: string[] = [];
+      for (let progress = true; progress;) {
+        progress = false;
+        waiting = waiting.filter(w => {
+          if (!w.parents.every(p => added.has(p))) return true;
+          ordered.push(take(w.id, w.line));
+          progress = true;
+          return false;
+        });
+      }
+      return { ordered, leftover: waiting.map(w => w.line) };
+    },
+  };
 }
 
 function uniqueValue(row: Record<string, unknown>, cols: string[]): string | null {
@@ -212,67 +398,69 @@ export async function importStore(sql: Sql, options: { storeDir: string; project
   if (differing.length) {
     throw new Error(`Schema mismatch in ${differing.join(", ")}. Bring both machines to the same code and run npm run db:migrate first.`);
   }
-  const result: ImportResult = { inserted: 0, updated: 0, remapped: 0, conflicts: [], filesCopied: 0, fileConflicts: [] };
+  const result: ImportResult = { inserted: 0, updated: 0, remapped: 0, conflicts: [], filesCopied: 0, fileConflicts: [], skippedFiles: [] };
   const remap = new Map<string, string>();
-  const rewrite = (line: string) => {
-    for (const [from, to] of remap) if (line.includes(from)) line = line.split(from).join(to);
-    return line;
-  };
+
+  const { shardFiles, skipped } = await storeShards(storeDir);
+  result.skippedFiles.push(...skipped);
 
   await sql.begin(async tx => {
     for (const table of tables) {
-      const lines = (await readStoreTable(storeDir, table.name)).map(rewrite);
-      if (!lines.length) continue;
-      const here = await localRows(tx as unknown as Sql, table.name);
-      const localById = new Map(here.map(r => [r.id, r.line]));
-      const parsedLocal = table.uniqueKeys.length || table.hasUpdatedAt ? new Map(here.map(r => [r.id, JSON.parse(r.line)])) : new Map();
-      const byUnique = table.uniqueKeys.map(cols => {
-        const index = new Map<string, string>();
-        for (const [id, row] of parsedLocal) { const key = uniqueValue(row, cols); if (key) index.set(key, id); }
-        return { cols, index };
-      });
+      const files = shardFiles.get(table.name);
+      if (!files) continue;
+      // Ids matched in earlier tables; matches found in this table apply from the next one on.
+      const pairs = [...remap];
+      const rewrite = (line: string) => {
+        for (const [from, to] of pairs) if (line.includes(from)) line = line.split(from).join(to);
+        return line;
+      };
+      const here = await localIndex(tx as unknown as Sql, table);
       const base = options.base[table.name] || {};
-      const accepted: string[] = [];
-      for (const line of lines) {
+      const assignments = table.columns.filter(c => c !== "id").map(c => `"${c}" = EXCLUDED."${c}"`).join(", ");
+      let accepted: string[] = [];
+      let acceptedBytes = 0;
+      const flush = async () => {
+        if (!accepted.length) return;
+        await tx.unsafe(`INSERT INTO "${table.name}" SELECT * FROM json_populate_recordset(NULL::"${table.name}", $1::text::json)
+          ON CONFLICT (id) DO ${assignments ? `UPDATE SET ${assignments}` : "NOTHING"}`, [`[${accepted.join(",")}]`]);
+        accepted = [];
+        acceptedBytes = 0;
+      };
+      const accept = async (lines: string[], batched = true) => {
+        for (const line of lines) {
+          accepted.push(line);
+          acceptedBytes += line.length;
+          if (batched && (accepted.length >= BATCH_ROWS || acceptedBytes >= BATCH_BYTES)) await flush();
+        }
+      };
+      const order = parentFirst(table.selfKeys, id => here.hashes.has(id));
+      for (const file of files) for await (const raw of fileLines(file)) {
+        const line = rewrite(raw);
         const row = JSON.parse(line);
         const id = String(row.id);
-        const localLine = localById.get(id);
-        if (localLine === undefined) {
-          const match = byUnique.map(u => { const key = uniqueValue(row, u.cols); return key ? u.index.get(key) : undefined; }).find(Boolean);
+        const local = here.hashes.get(id);
+        if (local === undefined) {
+          const match = here.byUnique.map(u => { const key = uniqueValue(row, u.cols); return key ? u.index.get(key) : undefined; }).find(Boolean);
           if (match) { remap.set(id, match); result.remapped += 1; continue; }
         }
-        const { decision, conflict } = decideRow({ line, local: localLine === undefined ? undefined : rowHash(localLine), base: base[id],
-          storeUpdatedAt: row.updated_at ?? null, localUpdatedAt: parsedLocal.get(id)?.updated_at ?? null });
+        const { decision, conflict } = decideRow({ line, local, base: base[id],
+          storeUpdatedAt: row.updated_at ?? null, localUpdatedAt: here.updatedAt.get(id) ?? null });
         if (conflict) result.conflicts.push({ table: table.name, id, kept: conflict });
         if (decision === "insert") result.inserted += 1;
         if (decision === "update") result.updated += 1;
-        if (decision === "insert" || decision === "update") accepted.push(line);
+        if (decision === "insert" || decision === "update") await accept(order.add(row, line));
       }
-      // A self-referencing table goes in one statement: its foreign keys are checked at the end of the statement.
-      const size = table.selfReferencing ? accepted.length : BATCH_ROWS;
-      const assignments = table.columns.filter(c => c !== "id").map(c => `"${c}" = EXCLUDED."${c}"`).join(", ");
-      for (let i = 0; i < accepted.length; i += size) {
-        const batch = `[${accepted.slice(i, i + size).join(",")}]`;
-        await tx.unsafe(`INSERT INTO "${table.name}" SELECT * FROM json_populate_recordset(NULL::"${table.name}", $1::text::json)
-          ON CONFLICT (id) DO ${assignments ? `UPDATE SET ${assignments}` : "NOTHING"}`, [batch]);
-      }
+      const { ordered, leftover } = order.rest();
+      await accept(ordered);
+      await accept(leftover, false);
+      await flush();
     }
   });
 
-  // Files: copy what this machine lacks. A file that differs is left alone and reported.
-  const filesDir = join(storeDir, "files");
-  for (const file of await listFiles(filesDir)) {
-    const rel = relative(filesDir, file);
-    const target = resolve(options.projectRoot, rel);
-    try {
-      await stat(target);
-      if (!await sameFile(file, target)) result.fileConflicts.push(posix(rel));
-    } catch {
-      await mkdir(dirname(target), { recursive: true });
-      await copyFile(file, target);
-      result.filesCopied += 1;
-    }
-  }
+  const files = await importFiles(options);
+  result.filesCopied = files.copied;
+  result.fileConflicts = files.conflicts;
+  result.skippedFiles.push(...files.skipped);
   return result;
 }
 
