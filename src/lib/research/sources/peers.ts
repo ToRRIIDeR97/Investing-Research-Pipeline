@@ -87,28 +87,33 @@ export function peerBenchmarkRow(peer: ResolvedPeer, companyFacts: Row, cutoff: 
     quarters, annual: years };
 }
 
-let tickerCache: Record<string, TickerEntry> | null = null;
-const factsCache = new Map<string, Row>();
+const TICKER_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_CACHED_ROWS = 200;
+let tickerCache: { at: number; map: Record<string, TickerEntry> } | null = null;
+// Only the compact benchmark row is kept (a companyfacts file can be tens of MB), per CIK and cutoff, oldest evicted first.
+const rowCache = new Map<string, ReturnType<typeof peerBenchmarkRow>>();
 
-/** Fetches are cached for the worker's lifetime: the ticker map once, each peer's companyfacts once. */
-export async function buildPeerBenchmark(requests: PeerRequest[], cutoff: string, fetchImpl: typeof fetchCapped = fetchCapped) {
+/** The ticker map is refetched after a day; each peer's compact row is cached per cutoff, at most MAX_CACHED_ROWS. */
+export async function buildPeerBenchmark(requests: PeerRequest[], cutoff: string, fetchImpl: typeof fetchCapped = fetchCapped, now = Date.now()) {
   const note = "Consolidated SEC companyfacts in USD millions; companyfacts has no segment detail, so peers compare on group growth, margin and capex only.";
   if (!requests.length) return { artifact_type: "peer_benchmark", note, peers: [], gaps: [], status: "no_named_peers" };
-  if (!tickerCache) {
+  if (!tickerCache || now - tickerCache.at > TICKER_TTL_MS) {
     const response = await fetchImpl("https://www.sec.gov/files/company_tickers.json", { headers: { "User-Agent": SEC_USER_AGENT } });
     if (!response.ok) throw new Error(`SEC ticker map failed: ${response.status}`);
-    tickerCache = await response.json();
+    tickerCache = { at: now, map: await response.json() };
   }
-  const { resolved, gaps } = resolvePeers(requests, tickerCache!);
+  const { resolved, gaps } = resolvePeers(requests, tickerCache.map);
   const peers = [];
   for (const peer of resolved) {
     try {
-      if (!factsCache.has(peer.cik)) {
+      const key = `${peer.cik}:${cutoff}`;
+      if (!rowCache.has(key)) {
         const response = await fetchImpl(`https://data.sec.gov/api/xbrl/companyfacts/CIK${peer.cik}.json`, { headers: { "User-Agent": SEC_USER_AGENT } });
         if (!response.ok) throw new Error(`companyfacts ${response.status}`);
-        factsCache.set(peer.cik, await response.json());
+        rowCache.set(key, peerBenchmarkRow(peer, await response.json(), cutoff));
+        if (rowCache.size > MAX_CACHED_ROWS) rowCache.delete(rowCache.keys().next().value!);
       }
-      peers.push(peerBenchmarkRow(peer, factsCache.get(peer.cik)!, cutoff));
+      peers.push({ ...rowCache.get(key)!, name: peer.name });
     } catch (error) {
       gaps.push({ name: peer.name, reason: `SEC companyfacts unavailable: ${error instanceof Error ? error.message : String(error)}`.slice(0, 200) });
     }

@@ -291,9 +291,18 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     assert.match(redrafted.content_json.framing.decisive_insight_hypothesis, /lending engine separately/);
     assert.equal(redrafted.content_json.plan_feedback.length, 1);
     const editedFraming = { ...redrafted.content_json.framing, central_question: "Does the lending engine earn above its cost of funding through a credit cycle?" };
-    const planApproval = await approvePlan(request({ approved_by: "system-test-harness", framing: editedFraming }), paramsFor(runId));
+    const invalid = await approvePlan(request({ approved_by: "system-test-harness", framing: editedFraming, forecast_years: 6, archetypes: ["lender"] }), paramsFor(runId));
+    assert.equal(invalid.status, 422, "archetypes without a base are refused");
+    const [untouched] = await sql`SELECT forecast_years FROM research_runs WHERE id = ${runId}`;
+    assert.equal(untouched.forecast_years, null, "a refused edit rolls back the horizon too");
+    const planApproval = await approvePlan(request({ approved_by: "system-test-harness", framing: editedFraming, forecast_years: 6 }), paramsFor(runId));
     assert.equal(planApproval.status, 200);
     assert.equal((await planApproval.json()).success, true);
+    const late = await approvePlan(request({ approved_by: "system-test-harness", framing: editedFraming }), paramsFor(runId));
+    assert.equal(late.status, 409, "edits after approval are refused, not dropped");
+    const [horizon] = await sql`SELECT forecast_years, (SELECT content_json->'forecast_years' FROM research_artifacts WHERE research_run_id = ${runId}
+      AND artifact_type = 'research_plan' ORDER BY artifact_version DESC LIMIT 1) AS planned FROM research_runs WHERE id = ${runId}`;
+    assert.deepEqual([horizon.forecast_years, Number(horizon.planned)], [6, 6], "the reviewer's plan version carries the new horizon");
     const [approvedRun] = await sql`SELECT metadata_json->'research_framing' AS framing FROM research_runs WHERE id = ${runId}`;
     assert.equal(approvedRun.framing.central_question, editedFraming.central_question, "the approved framing is the reviewer's edit");
     const [edited] = await sql`SELECT artifact_version, status, content_json->>'framing_source' AS source FROM research_artifacts WHERE research_run_id = ${runId}

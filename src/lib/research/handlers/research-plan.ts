@@ -7,6 +7,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { getAllStagesForRun } from "@/lib/workflow/stages";
 import { STANDARD_VERSION, COVERAGE, RESEARCH_DOCTRINE } from "../reporting/contracts";
 import { TEAM_ROLES, STAGE_DEPENDENCIES, STAGE_OWNERS } from "../team-plan";
+import { forecastYears } from "../valuation/engine";
 import { callResearchAgent, exactJsonPrompt, loadRunContext, persistV3Composition, type Sql } from "../run-context";
 import { FRAMING_RULES, framingContract, mergeFramingArchetypes, type ResearchFraming } from "../framing";
 import { businessArchetypes, archetypeOverlays } from "../archetypes/registry";
@@ -74,6 +75,8 @@ export function buildResearchPlan(ctx: import("../run-context").ResearchRunConte
       ledger_status,
       skip_reason,
     })),
+    // The explicit forecast horizon; the reviewer may change it when approving the plan (research_runs.forecast_years).
+    forecast_years: forecastYears(ctx.forecastYears),
     cutoffs: {
       source_cutoff_at: ctx.cutoffAt.toISOString(),
       market_data_cutoff_at: ctx.marketDataCutoffAt?.toISOString() || null,

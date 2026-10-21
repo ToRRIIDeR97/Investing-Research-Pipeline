@@ -15,6 +15,8 @@ export interface DecisionFinalizeInputs {
   terminalReturns: { bear: number; base: number; bull: number } | null; // null: no returns can be computed
   probabilities: { probability_bear: number; probability_base: number; probability_bull: number } | null;
   dilutionCovered: boolean; // the terminal projection covers the reported diluted shares
+  /** Base-case return to the terminal year if today's EV/NOPAT holds (valuation cross_checks); null when not computed. */
+  noReratingReturn?: number | null;
 }
 
 export interface DecisionAdjustments {
@@ -26,7 +28,8 @@ export interface DecisionAdjustments {
 export const DECISION_GAP_OWNER = "system:decision-synthesis";
 export type DecisionGap = { gap_key: string; description: string; severity: "medium"; owner: typeof DECISION_GAP_OWNER };
 
-const JUDGMENT_KEYS = ["no_rerating_return", "weak_stock_outcome", "permanent_loss_limit"] as const;
+// no_rerating_return is arithmetic and comes from the valuation stage; these two stay the model's judgment.
+const JUDGMENT_KEYS = ["weak_stock_outcome", "permanent_loss_limit"] as const;
 
 const isRecord = (value: unknown): value is Record<string, any> =>
   !!value && typeof value === "object" && !Array.isArray(value);
@@ -137,6 +140,7 @@ export function finalizeDecisionOutput(raw: unknown, inputs: DecisionFinalizeInp
     matrix.base_return = returns?.base ?? null;
     matrix.bull_return = returns?.bull ?? null;
     matrix.probability_weighted_return = returns ? weightedReturn : null;
+    matrix.no_rerating_return = withheld ? null : inputs.noReratingReturn ?? null;
     if (withheld) for (const key of JUDGMENT_KEYS) matrix[key] = null;
     matrix.dilution_omitted = false;
   }

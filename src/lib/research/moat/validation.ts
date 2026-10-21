@@ -54,19 +54,50 @@ export function validateMoatAssessment(content: unknown): ValidationResult {
   return { valid: errors.length === 0, errors, warnings };
 }
 
-const HISTORY_PATH = /^(financial_analytics|historical_record|historical_diagnosis)\b/;
-const PEER_PATH = /^peer_benchmark\b/;
+const HISTORY_TYPES = ["financial_analytics", "historical_record", "historical_diagnosis"];
+
+/** What the run actually stores, so a cited path is checked against data rather than trusted as a string. */
+export interface MoatEvidenceContext { artifacts: Record<string, any>; claimIds: Set<string> }
+
+/** A dotted path that exists in a stored artifact: object keys, array indexes, or a columnar table's column name. */
+export function resolvesInArtifacts(path: string, artifacts: Record<string, any>): boolean {
+  const [type, ...keys] = path.split(".").map((part) => part.trim()).filter(Boolean);
+  let node = artifacts[type];
+  if (node === undefined || node === null) return false;
+  for (const key of keys) {
+    if (Array.isArray(node?.columns) && Array.isArray(node?.rows) && !(key in node)) return node.columns.includes(key);
+    if (Array.isArray(node)) { node = node[Number(key)]; if (!/^\d+$/.test(key)) return false; }
+    else if (node && typeof node === "object" && key in node) node = node[key];
+    else return false;
+    if (node === undefined || node === null) return false;
+  }
+  return true;
+}
+
+/** A peer path names a peer the stored, complete peer_benchmark holds: peer_benchmark.peers.<TICKER>[.field]. */
+export function resolvesToPeer(path: string, artifacts: Record<string, any>): boolean {
+  const [type, list, ticker] = path.split(".").map((part) => part.trim());
+  const benchmark = artifacts.peer_benchmark;
+  if (type !== "peer_benchmark" || list !== "peers" || !ticker || benchmark?.status !== "complete" || !Array.isArray(benchmark.peers)) return false;
+  return benchmark.peers.some((peer: any) => String(peer?.ticker ?? "").toUpperCase() === ticker.toUpperCase());
+}
 
 /**
  * Framework §7.7: a moat rated strong or exceptional must be tested against the multi-year record and against peers.
- * Without a history path and a peer path code caps it at moderate and says why; it never raises a rating.
+ * Code resolves every cited path against the run's stored artifacts: it needs a history path that exists, a peer path
+ * naming a peer in a complete peer_benchmark, and at least one supporting claim that is the run's own. Otherwise the
+ * moat is capped at moderate with the reason; code never raises a rating.
  */
-export function capMoatClassifications<T extends { assessments: Array<{ classification: string; artifact_paths: string[]; classification_note?: string }> }>(assessment: T): T {
+export function capMoatClassifications<T extends { assessments: Array<{ classification: string; artifact_paths: string[]; supporting_claim_ids?: string[]; classification_note?: string }> }>(
+  assessment: T, context: MoatEvidenceContext): T {
   return { ...assessment, assessments: assessment.assessments.map((entry) => {
     if (!["strong", "exceptional"].includes(entry.classification)) return entry;
-    const missing = [!entry.artifact_paths.some((p) => HISTORY_PATH.test(p)) && "history", !entry.artifact_paths.some((p) => PEER_PATH.test(p)) && "peer"].filter(Boolean);
+    const history = entry.artifact_paths.some((p) => HISTORY_TYPES.includes(p.split(".")[0]) && resolvesInArtifacts(p, context.artifacts));
+    const peer = entry.artifact_paths.some((p) => resolvesToPeer(p, context.artifacts));
+    const claims = (entry.supporting_claim_ids ?? []).some((id) => context.claimIds.has(id));
+    const missing = [!history && "a stored history path", !peer && "a peer in a complete peer_benchmark", !claims && "a supporting claim"].filter(Boolean);
     return missing.length ? { ...entry, classification: "moderate",
-      classification_note: `Rated ${entry.classification} by the analyst; capped at moderate without ${missing.join(" and ")} evidence paths.` } : entry;
+      classification_note: `Rated ${entry.classification} by the analyst; capped at moderate without ${missing.join(", ")}.` } : entry;
   }) };
 }
 

@@ -154,7 +154,7 @@ test("report tables print flat rows: schedules as years, nested paths and long l
   assert.match(schedule.notes[0], /value_per_share: /);
   assert.throws(() => flatTable(table("method_schedules"), tableArtifacts), /not a list of flat rows.*Request method_schedules\.0 instead/);
   assert.throws(() => flatTable(table("observations"), tableArtifacts), new RegExp(`200 rows; a report table holds at most ${MAX_TABLE_ROWS}`));
-  assert.throws(() => flatTable({ ...table(""), artifact_id: "val" }, tableArtifacts), /Request method_schedules instead/);
+  assert.throws(() => flatTable({ ...table(""), artifact_id: "val" }, tableArtifacts), /Request method_schedules\.0 instead/);
   assert.deepEqual(flatTable(table("expected"), tableArtifacts).rows, [{ return: null, basis: "pv" }]);
 });
 
@@ -172,6 +172,25 @@ test("lists of plain values print as one cell, year-keyed records print a row pe
   // A row nested too deep is rejected without suggesting a field inside the row.
   assert.throws(() => flatTable(t("events"), artifacts), (error: Error) => /not a list of flat rows/.test(error.message) && !/Request/.test(error.message));
   assert.throws(() => flatTable(t(""), artifacts), /Request risks instead/);
+});
+
+test("driver-input tables point to a path that renders: method_inputs to method_schedules.N, scenarios to a row's yearly_drivers", () => {
+  const scenario = { scenario_type: "base", yearly_drivers: [{ fiscal_year: 2026, revenue_growth: 0.1, operating_margin: 0.3 }],
+    numeric_assumptions: [{ driver_key: "g", fiscal_year: 2026, value: 0.1, source_ids: [] }] };
+  const competitors = { competitors: [{ name: "A", metrics: { growth: { value: 1 } } }], attacks: [{ name: "price war", severity: 3 }] };
+  const artifacts: ReportArtifact[] = [
+    { id: "val", artifact_type: "valuation_scenario_set", scope_key: "d", artifact_version: 1, content_json: {
+      method_inputs: ["bear", "base", "bull"].map(method), method_schedules: ["bear", "base", "bull"].map(s => calculateValuationSchedule(method(s))) } },
+    { id: "ops", artifact_type: "operating_scenario_set", scope_key: "d", artifact_version: 1, content_json: { scenarios: [scenario] } },
+    { id: "moat", artifact_type: "competitive_response_matrix", scope_key: "d", artifact_version: 1, content_json: competitors },
+  ];
+  const message = (artifact_id: string, path: string) => { try { flatTable({ title: "T", artifact_id, path }, artifacts); return ""; } catch (e) { return String(e); } };
+  assert.match(message("val", "method_inputs"), /Request method_schedules\.0 instead/);
+  assert.match(message("val", "method_inputs.2"), /Request method_schedules\.2 instead/);
+  assert.match(message("ops", "scenarios"), /Request scenarios\.0\.yearly_drivers instead/);
+  // Every suggestion renders when followed; competitors nests too deep, so the root suggests attacks.
+  assert.match(message("moat", ""), /Request attacks instead/);
+  for (const [id, path] of [["val", "method_schedules.0"], ["ops", "scenarios.0.yearly_drivers"], ["moat", "attacks"]]) assert.equal(message(id, path), "");
 });
 
 const section = (tables: ReportSection["tables"], evidence_ids: string[] = []): ReportSection => ({ id: "valuation", title: "Valuation", purpose: "p",

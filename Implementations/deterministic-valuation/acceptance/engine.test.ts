@@ -80,12 +80,14 @@ test("AC-6: the price path is the schedule's value at each year end and rolls ba
   const s = await schedule();
   const path = valuationPricePath(s);
   assert.deepEqual(path.map((p: any) => p.fiscal_year), [2026, 2027, 2028]);
-  close(path[2].price_target, (89_709.312 * 20 + BRIDGE) / SHARES);
-  // Roll back: EV(t-1) = (EV(t) + CF(t)) / (1 + r); EV = price * shares - bridge.
-  let ev = path[2].price_target * SHARES - BRIDGE;
+  // Valuation v2: the FCFF path also carries the cash flows retained to each year end (no dividends are forecast).
+  const retained = (i: number) => s.years.slice(0, i + 1).reduce((sum: number, y: any) => sum + y.cash_flow, 0);
+  close(path[2].price_target, (89_709.312 * 20 + BRIDGE + retained(2)) / SHARES);
+  // Roll back: EV(t-1) = (EV(t) + CF(t)) / (1 + r); EV = price * shares - bridge - retained cash.
+  let ev = 89_709.312 * 20;
   for (let i = s.years.length - 1; i >= 0; i -= 1) {
     ev = (ev + s.years[i].cash_flow) / 1.09;
-    if (i > 0) close(path[i - 1].price_target, (ev + BRIDGE) / SHARES, 1e-9);
+    if (i > 0) close(path[i - 1].price_target, (ev + BRIDGE + retained(i - 1)) / SHARES, 1e-9);
   }
   close((ev + BRIDGE) / SHARES, calculateValuationSchedule(s).value_per_share, 1e-9);
 });

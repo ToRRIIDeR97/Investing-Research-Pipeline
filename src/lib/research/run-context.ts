@@ -52,6 +52,8 @@ export interface ResearchRunContext {
   profileKey: string | null;
   researchQuestion: string;
   budgetLimitUsd: number;
+  /** The run's forecast years from the plan gate; null uses the environment default. */
+  forecastYears?: number | null;
   budgetSpentUsd: number;
   budgetRemainingUsd: number;
   testMode: boolean;
@@ -87,6 +89,7 @@ type RunRow = {
   source_cutoff_at: string | Date | null;
   market_data_cutoff_at: string | Date | null;
   budget_limit_usd: string | number | null;
+  forecast_years: number | null;
   actual_cost_usd: string | number | null;
   pipeline_version: number | string | null;
   metadata_json: unknown;
@@ -114,7 +117,7 @@ export async function loadRunContext(sql: Sql, runId: string): Promise<ResearchR
     SELECT
       rr.id, rr.run_type, rr.status, rr.asset_id, rr.profile_id,
       rr.research_question, rr.source_cutoff_at, rr.market_data_cutoff_at,
-      rr.budget_limit_usd, rr.actual_cost_usd, rr.pipeline_version, rr.metadata_json,
+      rr.budget_limit_usd, rr.forecast_years, rr.actual_cost_usd, rr.pipeline_version, rr.metadata_json,
       a.canonical_name, a.slug,
       rp.profile_key,
       l.symbol
@@ -177,6 +180,7 @@ export async function loadRunContext(sql: Sql, runId: string): Promise<ResearchR
     profileKey: row.profile_key,
     researchQuestion: row.research_question || "",
     budgetLimitUsd: budgetLimit,
+    forecastYears: row.forecast_years == null ? null : Number(row.forecast_years),
     budgetSpentUsd: budgetSpent,
     budgetRemainingUsd: Math.max(0, budgetLimit - budgetSpent),
     testMode: process.env.RESEARCH_TEST_MODE === "1",

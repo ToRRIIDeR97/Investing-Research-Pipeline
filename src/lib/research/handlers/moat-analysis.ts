@@ -33,7 +33,7 @@ export const moatAnalysisHandler: StageHandler<Record<string, unknown>> = {
         extraRules: [
           "Test each claimed moat source (network effects, switching costs, cost advantage, intangibles, efficient scale) against a specific KPI and its trend: retention or churn, pricing versus peers, unit cost versus competitors, share stability, or return on incremental capital above the cost of capital.",
           "Explain how each advantage shows up in margins or returns, and state the counter-evidence: competitor entry, price cuts, rising acquisition cost, falling take rate or retention. A source without KPI support is unproven; no demonstrated moat is a valid conclusion.",
-          "Classify each moat as unproven, weak, moderate, strong or exceptional and score the six scores 0-5. Cite evidence_claims ids in supporting_claim_ids and the computed data you tested it against in artifact_paths: financial_analytics paths for the multi-year record (margins, returns, segment economics) and peer_benchmark paths for competitor growth and margins. Strong or exceptional needs both; code caps it at moderate otherwise.",
+          "Classify each moat as unproven, weak, moderate, strong or exceptional and score the six scores 0-5. Cite evidence_claims ids in supporting_claim_ids and the computed data you tested it against in artifact_paths: financial_analytics paths for the multi-year record (margins, returns, segment economics; for example financial_analytics.segments.quarterly) and peer_benchmark.peers.<TICKER> for a named peer's growth and margins. Strong or exceptional needs a history path, a peer path and a supporting claim; code checks each against the stored data and caps the moat at moderate otherwise.",
           "Build the attack table from the named attackers, including competitors the filing passages name (for example in risk factors) and research_framing.named_peers. Each attack names the claimed_moat it tests in targets_moat and says whether the moat survives fully, partially or not at all, with competitor numbers from peer_benchmark where stored.",
           "Follow output_schema exactly, including every nested required field and primitive type.",
         ],
@@ -50,7 +50,17 @@ export const moatAnalysisHandler: StageHandler<Record<string, unknown>> = {
           return attackTargetErrors(v.moat_assessment, v.moat_attack_matrix).map(message => ({ path: "moat_attack_matrix.attacks", message }));
         } },
       });
-      if (output.moat_assessment) output.moat_assessment = capMoatClassifications(output.moat_assessment);
+      if (output.moat_assessment) {
+        // Cited paths and claims are checked against what this run stores, not trusted as strings.
+        const stored = await sql`SELECT DISTINCT ON (artifact_type) artifact_type, content_json FROM research_artifacts
+          WHERE research_run_id = ${ctx.runId} AND status IN ('validated', 'accepted')
+            AND artifact_type IN ('financial_analytics', 'historical_record', 'historical_diagnosis', 'peer_benchmark')
+          ORDER BY artifact_type, artifact_version DESC, created_at DESC`;
+        const claims = await sql`SELECT id FROM evidence_claims WHERE research_run_id = ${ctx.runId} AND review_status = 'accepted'`;
+        output.moat_assessment = capMoatClassifications(output.moat_assessment, {
+          artifacts: Object.fromEntries(stored.map((row) => [String(row.artifact_type), row.content_json])),
+          claimIds: new Set(claims.map((row) => String(row.id))) });
+      }
 
       // Persist generated sub-artifacts
       const db = drizzle(sql, { schema });

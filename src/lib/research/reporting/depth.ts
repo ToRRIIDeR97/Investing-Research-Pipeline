@@ -153,6 +153,8 @@ export function valuationFlags(artifacts: Row[]): CodeFlag[] {
   const matrix = latest(artifacts, "expected_return_matrix");
   const valuation = latest(artifacts, "valuation_scenario_set");
   const cases = columnRows(facts?.cases);
+  // tv_share_of_ev is the terminal value alone, after any fade years; the share beyond the explicit forecast
+  // (value_beyond_explicit_share) is information and is not gated.
   const highTv = cases.filter((row) => typeof row.tv_share_of_ev === "number" && row.tv_share_of_ev > 0.85);
   if (highTv.length) flags.push({ id: "terminal_share_high", topic: /terminal/i,
     message: `Terminal value is ${highTv.map((row) => `${Math.round(row.tv_share_of_ev * 100)}% (${row.case})`).join(", ")} of enterprise value.` });

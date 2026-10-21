@@ -20,8 +20,9 @@ export const REPORT_FACT_DEFINITIONS: Record<string, string> = {
   return_to_pv: "PV per share ÷ market price − 1 (not annualized)",
   terminal_price_target: "Undiscounted value per share at the end of the terminal year (the scenario anchor)",
   undiscounted_return_to_terminal: "Terminal price target ÷ market price − 1, cumulative and undiscounted",
-  tv_share_of_ev: "Present value of the terminal value ÷ (present value of explicit cash flows + present value of the terminal value)",
-  explicit_cash_flow_sum: "Sum of the explicit-year cash flows, undiscounted (currency millions)",
+  tv_share_of_ev: "Present value of the terminal value alone (after any fade years) ÷ enterprise value",
+  value_beyond_explicit_share: "Present value of everything after the explicit forecast (fade years and terminal value) ÷ enterprise value; information, not a gate",
+  explicit_cash_flow_sum: "Sum of the explicit-year cash flows, undiscounted (currency millions); fade years excluded",
   no_rerating_return: "Return to the terminal year if EV/NOPAT stays at today's level: (today's EV/NOPAT × terminal-year NOPAT + equity bridge + explicit cash flows) ÷ diluted shares ÷ market price − 1",
   no_rerating_return_annualized: "no_rerating_return compounded per explicit year",
   weighted_pv_per_share: "Probability-weighted PV per share over bear, base and bull",
@@ -60,11 +61,15 @@ export function buildReportFacts(artifacts: Row[]) {
     if (!s) return [];
     let calc: ReturnType<typeof calculateValuationSchedule>;
     try { calc = calculateValuationSchedule(s); } catch { return []; }
-    const explicitPv = calc.years.reduce((n, y) => n + y.present_value, 0);
-    const enterprise = explicitPv + calc.terminal_present_value;
-    const explicit = calc.years.reduce((n, y) => n + y.cash_flow, 0);
-    const lastNopat = calc.years.at(-1)?.build?.starting_profit ?? null;
-    const noRerating = price !== null && multiple !== null && lastNopat !== null
+    // Fade years (valuation v2) are valued but are not part of the explicit forecast.
+    const explicitYears = calc.years.filter((y) => !y.fade);
+    const explicitPv = explicitYears.reduce((n, y) => n + y.present_value, 0);
+    const enterprise = calc.years.reduce((n, y) => n + y.present_value, 0) + calc.terminal_present_value;
+    const explicit = explicitYears.reduce((n, y) => n + ((y as { counted_cash_flow?: number }).counted_cash_flow ?? y.cash_flow), 0);
+    const lastNopat = explicitYears.at(-1)?.build?.starting_profit ?? null;
+    // The valuation stage's own no-rerating figure wins when it computed one.
+    const staged = valuation?.cross_checks?.no_rerating?.[type]?.return;
+    const noRerating = typeof staged === "number" ? staged : price !== null && multiple !== null && lastNopat !== null
       ? (multiple * lastNopat + calc.equity_bridge + explicit) / calc.diluted_shares / price - 1 : null;
     const anchor = Number(valuation?.[`terminal_anchor_${type}`]);
     unrounded.set(type, calc.value_per_share);
@@ -73,13 +78,14 @@ export function buildReportFacts(artifacts: Row[]) {
       method: s.method, discount_rate: s.discount_rate,
       terminal: s.terminal.type === "multiple" ? `${s.terminal.multiple}x ${s.terminal.metric}` : `perpetuity growth ${s.terminal.growth_rate}`,
       pv_per_share: r2(calc.value_per_share), return_to_pv: r4(price ? calc.value_per_share / price - 1 : null),
-      terminal_year: calc.years.at(-1)!.fiscal_year,
+      terminal_year: explicitYears.at(-1)!.fiscal_year,
       terminal_price_target: r2(Number.isFinite(anchor) ? anchor : null),
       undiscounted_return_to_terminal: r4(price && Number.isFinite(anchor) ? anchor / price - 1 : null),
       tv_share_of_ev: r4(enterprise > 0 ? calc.terminal_present_value / enterprise : null),
+      value_beyond_explicit_share: r4(enterprise > 0 ? (enterprise - explicitPv) / enterprise : null),
       explicit_cash_flow_sum: r2(explicit),
       no_rerating_return: r4(noRerating),
-      no_rerating_return_annualized: r4(noRerating !== null && noRerating > -1 ? (1 + noRerating) ** (1 / calc.years.length) - 1 : null),
+      no_rerating_return_annualized: r4(noRerating !== null && noRerating > -1 ? (1 + noRerating) ** (1 / explicitYears.length) - 1 : null),
     }];
   });
   const weights = cases.map((c) => c.probability);
@@ -93,7 +99,7 @@ export function buildReportFacts(artifacts: Row[]) {
     currency: base?.currency ?? pack?.currency ?? null,
     market_price: price,
     cases: { columns: ["case", "probability", "method", "discount_rate", "terminal", "pv_per_share", "return_to_pv", "terminal_year",
-      "terminal_price_target", "undiscounted_return_to_terminal", "tv_share_of_ev", "explicit_cash_flow_sum", "no_rerating_return", "no_rerating_return_annualized"],
+      "terminal_price_target", "undiscounted_return_to_terminal", "tv_share_of_ev", "value_beyond_explicit_share", "explicit_cash_flow_sum", "no_rerating_return", "no_rerating_return_annualized"],
       rows: cases.map((c) => Object.values(c)) },
     weighted: { pv_per_share: r2(weighted), return_to_pv: r4(weighted !== null && price ? weighted / price - 1 : null) },
     market: {

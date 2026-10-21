@@ -19,13 +19,24 @@ const SCORED = {
 };
 
 describe("moat proof and attack artifacts (Component 9)", () => {
-  it("a strong moat without history and peer evidence paths is capped at moderate; attacks must name a claimed moat", () => {
-    const entry: { claimed_moat: string; classification: string; artifact_paths: string[]; classification_note?: string } =
-      { claimed_moat: "Scale", classification: "strong", artifact_paths: ["financial_analytics.segments.quarterly"] };
-    const capped = capMoatClassifications({ assessments: [entry, { ...entry, artifact_paths: [...entry.artifact_paths, "peer_benchmark.peers"] }] });
-    assert.equal(capped.assessments[0].classification, "moderate");
-    assert.match(capped.assessments[0].classification_note!, /without peer/);
-    assert.equal(capped.assessments[1].classification, "strong");
+  it("a strong moat must cite stored history, a peer in a complete benchmark and a run claim, or it is capped at moderate", () => {
+    type Entry = { claimed_moat: string; classification: string; artifact_paths: string[]; supporting_claim_ids?: string[]; classification_note?: string };
+    const claim = "6f9619ff-8b86-4d11-b42d-00c04fc964ff";
+    const stored = { financial_analytics: { segments: { quarterly: { columns: ["period", "operating_margin"], rows: [] } } },
+      peer_benchmark: { status: "complete", peers: [{ ticker: "GOOGL" }] } };
+    const context = { artifacts: stored, claimIds: new Set([claim]) };
+    const entry: Entry = { claimed_moat: "Scale", classification: "strong", supporting_claim_ids: [claim],
+      artifact_paths: ["financial_analytics.segments.quarterly.operating_margin", "peer_benchmark.peers.GOOGL"] };
+    const cap = (e: Entry, ctx = context) => capMoatClassifications({ assessments: [e] }, ctx).assessments[0];
+    assert.equal(cap(entry).classification, "strong", "every citation resolves");
+    // The bypass: the right-looking strings, but the benchmark is unavailable and holds no peer.
+    const unavailable = { artifacts: { ...stored, peer_benchmark: { status: "unavailable", peers: [] } }, claimIds: context.claimIds };
+    assert.equal(cap(entry, unavailable).classification, "moderate");
+    assert.match(cap(entry, unavailable).classification_note!, /peer in a complete peer_benchmark/);
+    assert.equal(cap({ ...entry, artifact_paths: ["financial_analytics.invented.path", "peer_benchmark.peers.GOOGL"] }).classification, "moderate", "a path that does not resolve");
+    assert.equal(cap({ ...entry, artifact_paths: [...entry.artifact_paths.slice(0, 1), "peer_benchmark.peers.SNAP"] }).classification, "moderate", "a peer the benchmark lacks");
+    assert.match(cap({ ...entry, supporting_claim_ids: [] }).classification_note!, /supporting claim/);
+    assert.equal(cap({ ...entry, classification: "weak" }).classification, "weak", "code never raises a rating");
     assert.deepEqual(attackTargetErrors({ assessments: [{ claimed_moat: "Scale" }] },
       { attacks: [{ targets_moat: "scale", primary_attacker: "A" }, { targets_moat: "Brand", primary_attacker: "B" }] }).length, 1);
   });

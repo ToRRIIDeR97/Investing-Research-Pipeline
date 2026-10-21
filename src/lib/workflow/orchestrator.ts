@@ -403,7 +403,12 @@ export async function approveResearchPlan(
   runId: string,
   approvedBy: string = "user",
   edits: PlanGateEdits = {}
-): Promise<{ success: boolean; nextStage?: string; error?: string }> {
+): Promise<{ success: boolean; nextStage?: string; error?: string; alreadyApproved?: boolean }> {
+  const years = edits.forecastYears;
+  const hasEdits = [edits.framing, edits.archetypes, edits.overlays, edits.forecastYears].some((value) => value !== undefined);
+  if (years !== undefined && !(Number.isInteger(years) && years >= 3 && years <= 10)) {
+    return { success: false, error: "forecast_years must be a whole number from 3 to 10" };
+  }
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
@@ -419,9 +424,12 @@ export async function approveResearchPlan(
         WHERE research_run_id = ${runId} AND stage_key = 'research_plan'
         LIMIT 1 FOR UPDATE
       `;
-      if (!stages[0]) return { success: false as const, error: "Research plan stage not found" };
+      if (!stages[0]) return { success: false as const, error: "Research plan stage not found" } as PlanApproval;
       if (stages[0].status !== "waiting_for_human") {
-        if (stages[0].status === "completed") return { success: true as const };
+        // A repeated plain approval is idempotent; edits sent after approval would be silently dropped, so they are refused.
+        if (stages[0].status === "completed") return hasEdits
+          ? { success: false as const, alreadyApproved: true, error: "The research plan was already approved; edits can no longer be applied." }
+          : { success: true as const };
         return { success: false as const, error: `Research plan is not waiting for approval (status: ${stages[0].status})` };
       }
       const [plan] = await tx`
@@ -429,9 +437,12 @@ export async function approveResearchPlan(
           AND artifact_type = 'research_plan' AND status IN ('validated', 'accepted') LIMIT 1
       `;
       if (!plan) return { success: false as const, error: "A persisted research plan is required before approval" };
-      let framing: unknown;
-      try { framing = await applyPlanGateEdits(tx as unknown as Sql, runId, edits); }
-      catch (error) { return { success: false as const, error: `Invalid plan edits: ${error instanceof Error ? error.message : String(error)}` }; }
+      // The reviewer's horizon is written first, so the plan version applyPlanGateEdits rebuilds carries it.
+      if (years !== undefined) await tx`UPDATE research_runs SET forecast_years = ${years}, updated_at = NOW() WHERE id = ${runId}`;
+      // Invalid edits throw, which rolls back the horizon write too.
+      const framing = await applyPlanGateEdits(tx as unknown as Sql, runId, edits).catch((error) => {
+        throw new PlanEditError(`Invalid plan edits: ${error instanceof Error ? error.message : String(error)}`);
+      });
       await acceptCurrentArtifacts(tx as unknown as Sql, runId, ["research_plan"]);
       await tx`
         UPDATE research_stages
@@ -452,7 +463,10 @@ export async function approveResearchPlan(
             updated_at = NOW()
         WHERE id = ${runId}
       `;
-      return { success: true as const };
+      return { success: true as const } as PlanApproval;
+    }).catch((error) => {
+      if (error instanceof PlanEditError) return { success: false as const, error: error.message } as PlanApproval;
+      throw error;
     });
     if (!transition.success) return transition;
   } finally {
@@ -584,7 +598,9 @@ export async function approveRequestReset(
   }
 }
 
-export interface PlanGateEdits { framing?: unknown; archetypes?: unknown; overlays?: unknown }
+export interface PlanGateEdits { framing?: unknown; archetypes?: unknown; overlays?: unknown; forecastYears?: number }
+type PlanApproval = { success: boolean; error?: string; alreadyApproved?: boolean };
+class PlanEditError extends Error {}
 
 /**
  * Reviewer edits made at the plan gate, inside the approval transaction: changed archetypes recompose the profile,
@@ -595,7 +611,9 @@ async function applyPlanGateEdits(tx: Sql, runId: string, edits: PlanGateEdits) 
   const [current] = await tx`SELECT id, asset_id, artifact_version, scope_key, content_json FROM research_artifacts WHERE research_run_id = ${runId}
     AND artifact_type = 'research_plan' AND status IN ('validated', 'accepted') ORDER BY artifact_version DESC LIMIT 1`;
   const plan = current.content_json as Record<string, any>;
-  const changed = edits.framing !== undefined || edits.archetypes !== undefined || edits.overlays !== undefined;
+  // A new horizon also gets a new plan version, so the approved plan shows the forecast_years the stages will use.
+  const changed = edits.framing !== undefined || edits.archetypes !== undefined || edits.overlays !== undefined
+    || (edits.forecastYears !== undefined && edits.forecastYears !== plan.forecast_years);
   const checked = checkGateEdits(edits, String(current.asset_id));
   const framing = checked.framing ?? (plan.framing ? ResearchFraming.parse(plan.framing) : null);
   if (changed) {

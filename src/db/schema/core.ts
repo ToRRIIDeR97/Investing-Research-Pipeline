@@ -102,6 +102,8 @@ export const instruments = pgTable("instruments", {
   cusip: text("cusip"),
   figi: text("figi"),
   contract_specs_json: jsonb("contract_specs_json").notNull().default({}),
+  // Ordinary shares per listed share (an ADS); 1 for an ordinary listing. Needed to value a foreign issuer per ADS.
+  depositary_ratio: numeric("depositary_ratio"),
   active_from: date("active_from"),
   active_to: date("active_to"),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

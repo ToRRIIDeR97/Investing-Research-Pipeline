@@ -35,23 +35,6 @@ const cellOf = (value: unknown): TableCell | undefined =>
   value === undefined ? null : isCell(value) ? value : isCellList(value) ? value.map((item) => String(item)).join("; ") : undefined;
 
 /**
- * The nearest list of records under a record, as a path suffix the writer can request instead. Only records are
- * searched, never a list's items, so the suggestion is a table, not a field inside one row.
- */
-function arrayChild(value: unknown, prefix = ""): string | null {
-  if (!isRecord(value)) return null;
-  const path = (key: string) => (prefix ? `${prefix}.${key}` : key);
-  for (const [key, child] of Object.entries(value)) {
-    if ((Array.isArray(child) && child.length && child.every(isRecord)) || isYearKeyed(child)) return path(key);
-  }
-  for (const [key, child] of Object.entries(value)) {
-    const found = arrayChild(child, path(key));
-    if (found) return found;
-  }
-  return null;
-}
-
-/**
  * A record with values one level deep at most, as flat columns ("build.capital_expenditures"); a list of plain
  * values is one joined cell. Anything deeper is rejected.
  */
@@ -74,15 +57,8 @@ function flatRow(row: Record<string, unknown>): Record<string, TableCell> | null
 const isYearKeyed = (value: unknown): value is Record<string, Record<string, unknown>> =>
   isRecord(value) && Object.keys(value).length > 0 && Object.entries(value).every(([key, row]) => /^\d{4}$/.test(key) && isRecord(row));
 
-/**
- * The rows a report table prints, or an error the section writer can act on. A table is a { columns, rows } table,
- * a valuation schedule (its years, with the totals as a note), an array of records whose values are at most one
- * level deep, or a single such record. Anything deeper names the nearest array to request instead, and a table
- * longer than MAX_TABLE_ROWS is rejected.
- */
-export function flatTable(table: ReportSection["tables"][number], artifacts: ReportArtifact[]): FlatTable {
-  let value = resolveTable(table, artifacts);
-  const where = `Table "${table.title}" (${table.artifact_id} ${table.path || "root"})`;
+/** A table value as flat rows, or null when it nests too deep. Columnar tables, schedules and year-keyed records are reshaped first. */
+function rowsOf(value: unknown): FlatTable | null {
   const notes: string[] = [];
   const columnar = value as { columns?: unknown; rows?: unknown };
   if (isRecord(columnar) && Array.isArray(columnar.columns) && Array.isArray(columnar.rows) && columnar.rows.every(Array.isArray)) {
@@ -97,14 +73,72 @@ export function flatTable(table: ReportSection["tables"][number], artifacts: Rep
     value = Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([year, row]) => ({ fiscal_year: Number(year), ...row }));
   }
   const rows = Array.isArray(value) ? value : [value];
-  if (rows.length > MAX_TABLE_ROWS) throw new Error(`${where} has ${rows.length} rows; a report table holds at most ${MAX_TABLE_ROWS}. Request a summary table (financial_analytics) or a chart instead.`);
   const flat = rows.map(row => isCell(row) || isCellList(row) ? { Value: cellOf(row)! } : isRecord(row) ? (isSchedule(row) ? null : flatRow(row)) : null);
-  if (flat.some(row => row === null)) {
-    // A list of valuation schedules is requested one schedule at a time; anything else at its nearest array.
-    const schedule = rows.findIndex(isSchedule);
-    const child = schedule >= 0 ? String(schedule) : Array.isArray(value) ? null : arrayChild(value);
-    const suggestion = child ? ` Request ${[table.path, child].filter(Boolean).join(".")} instead.` : "";
+  return flat.some(row => row === null) ? null : { rows: flat as Record<string, TableCell>[], notes: notes.filter(Boolean) };
+}
+
+/** A path that would render, at most MAX_TABLE_ROWS long. */
+const renders = (value: unknown) => {
+  const shaped = rowsOf(value);
+  return Boolean(shaped && shaped.rows.length && shaped.rows.length <= MAX_TABLE_ROWS);
+};
+/** A multi-row table: a list of records or a year-keyed record. A lone record renders too but is a weaker suggestion. */
+const isTableLike = (value: unknown) => (Array.isArray(value) && value.length > 0 && value.every(isRecord)) || isYearKeyed(value);
+
+/**
+ * The nearest path under a too-deep value that does render, so the suggestion always works when followed:
+ * a schedule for a list of schedules or driver inputs (method_inputs -> method_schedules.N), a list of records or
+ * year-keyed record under a record, or, for a list of rows, the first row's own table (scenarios.0.yearly_drivers).
+ */
+function renderableChild(value: unknown, content: unknown, path: string): string | null {
+  const join = (...parts: string[]) => parts.filter(Boolean).join(".");
+  const inputs = path.match(/(?:^|\.)method_inputs(?:\.(\d+))?$/);
+  const schedules = isRecord(content) && Array.isArray(content.method_schedules) ? content.method_schedules : null;
+  if (inputs && schedules) {
+    const index = inputs[1] ?? "0";
+    if (renders(schedules[Number(index)])) return `method_schedules.${index}`;
+  }
+  if (Array.isArray(value)) {
+    const at = value.findIndex(isSchedule);
+    if (at >= 0) return join(path, String(at));
+    const first = value.find(isRecord);
+    for (const [key, child] of Object.entries(first ?? {})) if (isTableLike(child) && renders(child)) return join(path, String(value.indexOf(first)), key);
+    return null;
+  }
+  // Breadth first through records, never into a list's items: tables first, a list of schedules as its first
+  // schedule, then a lone record.
+  const queue: [string, unknown][] = [[path, value]];
+  let single: string | null = null;
+  while (queue.length) {
+    const [at, node] = queue.shift()!;
+    if (!isRecord(node)) continue;
+    for (const [key, child] of Object.entries(node)) {
+      if (isTableLike(child) && renders(child)) return join(at, key);
+      if (Array.isArray(child) && isSchedule(child[0]) && renders(child[0])) return join(at, key, "0");
+      if (!single && isRecord(child) && renders(child)) single = join(at, key);
+    }
+    for (const [key, child] of Object.entries(node)) if (isRecord(child)) queue.push([join(at, key), child]);
+  }
+  return single;
+}
+
+/**
+ * The rows a report table prints, or an error the section writer can act on. A table is a { columns, rows } table,
+ * a valuation schedule (its years, with the totals as a note), a record keyed by fiscal year, an array of records
+ * whose values are at most one level deep, or a single such record. Anything deeper names the nearest path that
+ * renders, and a table longer than MAX_TABLE_ROWS is rejected.
+ */
+export function flatTable(table: ReportSection["tables"][number], artifacts: ReportArtifact[]): FlatTable {
+  const value = resolveTable(table, artifacts);
+  const where = `Table "${table.title}" (${table.artifact_id} ${table.path || "root"})`;
+  const shaped = rowsOf(value);
+  const count = (shaped?.rows.length ?? (Array.isArray(value) ? value.length : 1));
+  if (count > MAX_TABLE_ROWS) throw new Error(`${where} has ${count} rows; a report table holds at most ${MAX_TABLE_ROWS}. Request a summary table (financial_analytics) or a chart instead.`);
+  if (!shaped) {
+    const content = artifacts.find(a => a.id === table.artifact_id)?.content_json;
+    const child = renderableChild(value, content, (table.path ?? "").replace(/^content_json(?:\.|$)/, ""));
+    const suggestion = child ? ` Request ${child} instead.` : "";
     throw new Error(`${where} is not a list of flat rows: its values nest more than one level.${suggestion}`);
   }
-  return { rows: flat as Record<string, TableCell>[], notes: notes.filter(Boolean) };
+  return shaped;
 }

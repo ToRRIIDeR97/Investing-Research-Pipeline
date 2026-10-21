@@ -38,6 +38,7 @@ export const createResearchRunSchema = z.object({
   requested_by: z.string().max(200).optional(),
   profile_id: z.string().uuid().optional(),
   budget_limit_usd: z.number().positive().optional(),
+  forecast_years: z.number().int().min(3).max(10).optional(),
   source_cutoff_at: z.string().datetime().optional(),
   market_data_cutoff_at: z.string().datetime().optional(),
 });
