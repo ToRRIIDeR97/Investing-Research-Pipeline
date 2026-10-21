@@ -9,6 +9,7 @@ import { POST as createRun } from "../src/app/api/assets/[id]/research-runs/rout
 import { POST as queueRun } from "../src/app/api/research-runs/[id]/run-system-pipeline/route";
 import { POST as approvePlan } from "../src/app/api/research-runs/[id]/approve-plan/route";
 import { POST as submitReview } from "../src/app/api/research-runs/[id]/review/route";
+import { POST as refreshRun } from "../src/app/api/research-runs/[id]/refresh/route";
 import {POST as askResearch, GET as loadChat} from '../src/app/api/research-runs/[id]/chat/route';
 import {loadReportInputs} from '../src/lib/research/reporting/store';
 import { processNextResearchRunJob } from "../src/workers/research-worker";
@@ -796,5 +797,103 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     const failedStages = await sql`SELECT id FROM research_stages WHERE research_run_id = ${runId} AND status = 'failed'`;
     assert.equal(failedStages.length, 0);
     await deleteAssetCascade(sql, testAssetId, runId);
+  });
+
+  test("a second run links to the first completed run, starts from its prior_research and reports what changed", { timeout: 120_000 }, async () => {
+    const cutoffAt = "2026-01-01T00:00:00.000Z";
+    const create = async (body: Record<string, unknown>) => createRun(request({ run_type: "deep_dive", research_question: "Mock SOFI lineage?",
+      requested_by: "system-test-harness", budget_limit_usd: 100, source_cutoff_at: cutoffAt, market_data_cutoff_at: cutoffAt, ...body }), paramsFor(testAssetId));
+    const toFinalGate = async (runId: string) => {
+      assert.equal((await queueRun(request(), paramsFor(runId))).status, 202);
+      assert.equal((await runQueuedJob(runId)).status, "waiting_for_human");
+      assert.equal((await approvePlan(request({ approved_by: "system-test-harness" }), paramsFor(runId))).status, 200);
+      assert.equal((await runQueuedJob(runId)).status, "waiting_for_human");
+      const [draft] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId}
+        AND artifact_type = 'report_document' AND status = 'validated' ORDER BY artifact_version DESC LIMIT 1`;
+      return draft.content_json;
+    };
+
+    // Run A: an explicit fresh start, driven through both gates to completion.
+    const createdA = await create({ prior_run_id: null });
+    assert.equal(createdA.status, 201);
+    const runA = await createdA.json();
+    assert.equal(runA.prior_run_id, null);
+    const draftA = await toFinalGate(runA.id);
+    assert.ok(!draftA.markdown.includes("Changes since the prior run"), "a run without a prior has no change log");
+    const approval = await submitReview(request({ status: "approved_for_tracking", reviewed_by: "human-reviewer-1", reportHash: draftA.content_hash,
+      acknowledgeFindings: true, open_questions: "Explain capital spending versus returns." }), paramsFor(runA.id));
+    assert.equal(approval.status, 201, JSON.stringify(await approval.clone().json()));
+    assert.equal((await runQueuedJob(runA.id)).status, "completed");
+    // Without a prior, no packet carries prior_research and no change log is saved.
+    const tasksA = await sql`SELECT input_json FROM research_tasks WHERE research_run_id = ${runA.id} AND input_json ? 'packet'`;
+    assert.ok(tasksA.length > 0 && tasksA.every(t => !("prior_research" in t.input_json.packet)));
+    const [noLog] = await sql`SELECT count(*)::int AS n FROM research_artifacts WHERE research_run_id = ${runA.id} AND artifact_type IN ('prior_research', 'version_change_log')`;
+    assert.equal(noLog.n, 0);
+    // Give run A a different valuation so run B has something to report.
+    const [valuationA] = await sql`UPDATE research_artifacts SET content_json = jsonb_set(content_json, '{weighted_target}',
+        to_jsonb(COALESCE((content_json->>'weighted_target')::numeric, 10) * 1.25))
+      WHERE research_run_id = ${runA.id} AND artifact_type = 'valuation_scenario_set' AND status = 'accepted' RETURNING content_json->>'weighted_target' AS weighted`;
+    assert.ok(valuationA);
+
+    // The prior run must belong to the same asset.
+    assert.equal((await create({ prior_run_id: crypto.randomUUID() })).status, 404);
+    const otherAsset = crypto.randomUUID(), otherRun = crypto.randomUUID();
+    await sql`INSERT INTO assets (id, canonical_name, slug, status, asset_kind) VALUES (${otherAsset}, 'Lineage other asset', ${`lineage-${otherAsset.slice(0, 8)}`}, 'active', 'equity')`;
+    await sql`INSERT INTO research_runs (id, asset_id, run_type, status, pipeline_version) VALUES (${otherRun}, ${otherAsset}, 'deep_dive', 'completed', 3)`;
+    try {
+      const crossed = await create({ prior_run_id: otherRun });
+      assert.equal(crossed.status, 422);
+      assert.equal((await crossed.json()).code, "PRIOR_RUN_OTHER_ASSET");
+    } finally {
+      await sql`DELETE FROM research_runs WHERE id = ${otherRun}`;
+      await sql`DELETE FROM assets WHERE id = ${otherAsset}`;
+    }
+    // Refresh types are no longer created.
+    assert.equal((await create({ run_type: "valuation_refresh" })).status, 400);
+
+    // Run B: no prior_run_id given, so it links to run A by default.
+    const createdB = await create({});
+    assert.equal(createdB.status, 201);
+    const runB = await createdB.json();
+    assert.equal(runB.prior_run_id, runA.id);
+    const [prior] = await sql`SELECT content_json, length(content_json::text) AS bytes FROM research_artifacts
+      WHERE research_run_id = ${runB.id} AND artifact_type = 'prior_research'`;
+    assert.ok(prior, "prior_research is saved when the run is created");
+    assert.ok(Number(prior.bytes) <= 10 * 1024 + 64);
+    assert.equal(prior.content_json.prior_run_id, runA.id);
+    assert.equal(prior.content_json.review_status, "accepted");
+    assert.equal(prior.content_json.human_decision, "approved_for_tracking");
+    assert.equal(prior.content_json.human_follow_up.open_questions, "Explain capital spending versus returns.");
+    assert.ok(prior.content_json.documents.length > 0 || prior.content_json.omitted.documents > 0);
+    assert.equal(prior.content_json.valuation_summary.weighted_value_per_share, Number(valuationA.weighted));
+
+    const draftB = await toFinalGate(runB.id);
+    // Analysis and report packets carry the block in the shared prefix, ahead of the evidence.
+    const tasksB = await sql`SELECT task_type, input_json FROM research_tasks WHERE research_run_id = ${runB.id}
+      AND task_type IN ('operating_model', 'report_outline', 'report_section')`;
+    assert.ok(tasksB.some(t => t.task_type === "operating_model") && tasksB.some(t => t.task_type === "report_section"));
+    for (const task of tasksB) {
+      assert.equal(task.input_json.packet.prior_research?.prior_run_id, runA.id, `${task.task_type} lacks prior_research`);
+      assert.match(task.input_json.prompt_instructions, /prior_research is a code-built summary/);
+    }
+    const [log] = await sql`SELECT id, status, content_json FROM research_artifacts WHERE research_run_id = ${runB.id}
+      AND artifact_type = 'version_change_log' AND status <> 'superseded'`;
+    assert.ok(log, "version_change_log is saved before the report");
+    assert.equal(log.content_json.prior_run_id, runA.id);
+    const weighted = log.content_json.changes.find((c: any) => c.field === "valuation.weighted_value_per_share");
+    assert.equal(weighted?.previous, Number(valuationA.weighted));
+    assert.equal(weighted?.material, true);
+    assert.ok(draftB.artifacts.some((a: any) => a.id === String(log.id)), "the change log is a report input");
+    assert.match(draftB.markdown, /## Changes since the prior run/);
+    assert.match(draftB.markdown, /\| Probability-weighted value per share \|/);
+
+    // A refresh of run A is a new run of the same type linked to A, not a valuation_refresh.
+    const refreshed = await refreshRun(request({}), paramsFor(runA.id));
+    assert.equal(refreshed.status, 201);
+    const runC = await refreshed.json();
+    assert.deepEqual([runC.run_type, runC.prior_run_id, runC.requested_by], ["deep_dive", runA.id, "refresh"]);
+    assert.equal((await refreshRun(request({ run_type: "valuation_refresh" }), paramsFor(runA.id))).status, 400);
+
+    for (const id of [runC.id, runB.id, runA.id]) await deleteAssetCascade(sql, testAssetId, id);
   });
 });

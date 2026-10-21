@@ -12,6 +12,7 @@
     "test:db": "node scripts/test-db.cjs",
     "eval:score": "tsx scripts/score-research.ts",
     "eval:judge": "tsx scripts/judge-research.ts",
+    "monitor:check": "tsx scripts/monitor-check.ts",
     "test:provider-smoke": "tsx scripts/provider-smoke.ts",
     "test:provider-cache-smoke": "tsx scripts/provider-cache-smoke.ts",
     "test:source-reader-smoke": "tsx scripts/source-reader-smoke.ts",

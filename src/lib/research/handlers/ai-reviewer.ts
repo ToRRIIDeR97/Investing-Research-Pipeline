@@ -8,6 +8,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { draftAndReviewReport } from "../reporting/runtime";
 import { DEPTH_CHECKS, DEPTH_CHECK_RULE } from "../reporting/depth";
+import { saveVersionChangeLog } from "../lineage/runs";
 
 /** Save each review sub-artifact. A quality_score of 0 or an empty findings list is a real answer, so only absent keys are skipped. */
 export async function persistReviewArtifacts(sql: ReturnType<typeof postgres>,
@@ -36,6 +37,8 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = postgres(process.env.DATABASE_URL!);
     try {
+      // What changed since the prior run, computed by code before the report is written; nothing without a prior.
+      await saveVersionChangeLog(sql, ctx);
       const artifacts = await sql`
         SELECT artifact_type, content_json
         FROM research_artifacts

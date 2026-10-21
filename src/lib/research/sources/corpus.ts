@@ -838,7 +838,7 @@ async function fetchSecContext(ctx: RunContext) {
   };
 }
 
-function secArchiveUrl(cik: string, accessionNumber: string, primaryDocument: string) {
+export function secArchiveUrl(cik: string, accessionNumber: string, primaryDocument: string) {
   const cikNumber = String(Number(cik));
   const accessionPath = accessionNumber.replace(/-/g, "");
   return `https://www.sec.gov/Archives/edgar/data/${cikNumber}/${accessionPath}/${primaryDocument}`;
@@ -1493,7 +1493,7 @@ async function fetchExorIssuerContext(ctx: RunContext) {
   };
 }
 
-async function resolveSecCik(symbol: string) {
+export async function resolveSecCik(symbol: string) {
   const upper = symbol.toUpperCase();
   const baseSymbol = upper.includes("_TEST") ? upper.split("_TEST")[0] : upper.split("_")[0];
   const response = await fetchCapped("https://www.sec.gov/files/company_tickers.json", {

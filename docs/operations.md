@@ -96,3 +96,24 @@ Rules and limits:
 - A shard refused for size needs finer sharding (`shardOf` in `src/lib/maintenance/research-store.ts`) before sync works again. A failed export leaves the store folder half-written; the next sync resets it to the branch.
 
 To set up a new machine: install Postgres, create an empty database, point `DATABASE_URL` at it, run `npm run db:migrate`, then `npm run store:sync`. Skip `npm run db:seed`, since the store already holds the seeded rows.
+
+## Monitoring check
+
+`npm run monitor:check` checks whether an asset's research is out of date. It is free: it makes no model call, and it never queues or starts a run. It reads EDGAR and writes one row per asset to `asset_monitor_checks`. The asset page shows the latest row.
+
+```bash
+npm run monitor:check                          # every asset with a completed run
+npm run monitor:check -- meta-platforms sofi   # only these asset slugs
+```
+
+For each asset's latest `completed` pipeline-v3 run, it:
+
+1. Takes the SEC CIK from the run's stored EDGAR filing URLs, or looks up the listing symbol in SEC's ticker map.
+2. Reads `https://data.sec.gov/submissions/CIK<cik>.json` and lists the 10-Q and 10-K filings filed after the run's source cutoff. Only `data.sec.gov` and `www.sec.gov` are fetched, over HTTPS and without redirects.
+3. Parses the newest four with the deterministic filing parser, reusing a stored copy of the filing when one exists.
+4. Scores the run's monitoring dashboard on the new quarter. An item with no reading in the new filings is `not_checkable`.
+5. Stores the result: `refresh_due` or `current`, `skipped` (no CIK) or `failed` (the error is kept in the reasons). One asset's failure doesn't stop the others.
+
+A refresh is due when a new 10-Q or 10-K exists, a KPI is past its danger line, or the run's `refresh_schedule.next_refresh_at` has passed. To act on it, start a new run of the asset from the UI or with `POST /api/assets/<id>/research-runs`. The new run links to the last completed run by default, and queuing it is a separate, explicit step. To schedule the check, run the command from cron or launchd. It needs only `DATABASE_URL`, which it reads from `.env.local` when the variable isn't set. Rows accumulate, and nothing prunes them. They are deleted with their asset.
+
+Recovery: a `failed` row usually means the SEC was unreachable or rate-limited it. Run the command again later. SEC asks for a descriptive User-Agent, and the script sends the same placeholder as the pipeline (AR-SEC-6).

@@ -1,6 +1,8 @@
 import postgres from "postgres";
 import { getAllStagesForRun } from "@/lib/workflow/stages";
 import { CURRENT_PIPELINE_VERSION } from "./version";
+import { resolvePriorRunId, savePriorResearch } from "./lineage/runs";
+import type { Sql } from "./run-context";
 
 export interface CreateResearchRunInput {
   assetId: string;
@@ -12,6 +14,8 @@ export interface CreateResearchRunInput {
   budgetLimitUsd: number | null;
   sourceCutoffAt: Date | null;
   marketDataCutoffAt: Date | null;
+  /** undefined links the asset's latest completed or approved v3 run; null starts fresh; an id must be a run of the same asset. */
+  priorRunId?: string | null;
 }
 /**
  * Create a run and its complete stage ledger in one database transaction.
@@ -21,23 +25,25 @@ export async function createResearchRunWithStages(input: CreateResearchRunInput)
   const sql = postgres(process.env.DATABASE_URL!);
   try {
     return await sql.begin(async (tx) => {
+      const priorRunId = await resolvePriorRunId(tx as unknown as Sql, input.assetId, input.priorRunId, CURRENT_PIPELINE_VERSION);
       const inserted = await tx`
         INSERT INTO research_runs (
           asset_id, run_type, status, research_question, requested_by,
           profile_id, profile_version, budget_limit_usd,
           source_cutoff_at, market_data_cutoff_at, pipeline_version,
-          metadata_json, created_at, updated_at
+          metadata_json, prior_run_id, created_at, updated_at
         ) VALUES (
           ${input.assetId}, ${input.runType}, 'pending', ${input.researchQuestion},
           ${input.requestedBy}, ${input.profileId}, ${input.profileVersion},
           ${input.budgetLimitUsd === null ? null : String(input.budgetLimitUsd)},
           ${input.sourceCutoffAt}, ${input.marketDataCutoffAt},
-          ${CURRENT_PIPELINE_VERSION}, '{}'::jsonb, NOW(), NOW()
+          ${CURRENT_PIPELINE_VERSION}, '{}'::jsonb, ${priorRunId}, NOW(), NOW()
         )
         RETURNING *
       `;
       const run = inserted[0];
       if (!run) throw new Error("Unable to create research run");
+      if (priorRunId) await savePriorResearch(tx as unknown as Sql, { id: run.id, asset_id: input.assetId, prior_run_id: priorRunId });
 
       const { applicable, skipped } = getAllStagesForRun(input.runType);
       const stages = [...applicable, ...skipped].sort((a, b) => a.order - b.order);

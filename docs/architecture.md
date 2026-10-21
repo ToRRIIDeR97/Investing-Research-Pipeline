@@ -1,6 +1,6 @@
 # Research OS — master architecture views
 
-This document holds the master UML 2.5.1 views of the **current** system, traced from source on 2026-10-05 (pipeline version 3, 24 stages).
+This document holds the master UML 2.5.1 views of the **current** system, traced from source on 2026-10-05 (pipeline version 3, 24 stages); research across runs added 2026-10-22.
 
 - [system.md](system.md) owns component responsibilities, the specialist team and the research-memory narrative.
 - [security.md](security.md) owns trust boundaries.
@@ -83,7 +83,7 @@ Schema modules (`src/db/schema/`) and their key tables:
 | --- | --- |
 | core | assets, instruments, listings, entities |
 | profiles | research_profiles, profile_module_schemas, asset_profile_assignments |
-| workflow | runs, stages, tasks, task dependencies, validation results |
+| workflow | runs (with `prior_run_id`, the run it builds on), stages, tasks, task dependencies, validation results |
 | research-run-jobs | jobs, worker heartbeats |
 | corpus | source documents, parses, chunks, `document_embeddings`, tables, locations |
 | source-intelligence | source_retrieval_attempts, source_role_coverage, source_role_assignments, source_document_metadata |
@@ -97,8 +97,9 @@ Schema modules (`src/db/schema/`) and their key tables:
 | backtesting | backtest_runs, backtest_artifacts |
 | market-data | market_price_bars (with Stooq cross-check status; S&P 500 benchmark bars under the `benchmark-gspc` reference asset), corporate_actions, market_data_fetches, instrument_provider_mappings |
 | saved-charts | saved_charts (My charts board definitions; series keys, never values) |
+| monitoring | asset_monitor_checks (monitor-check results: refresh due, reasons, filings, KPI scores) |
 
-Migrations are `0000`–`0006`, `0009_research_memory_graph`, which adds provenance and review fields plus a uniqueness constraint to `claim_relationships`, `0010_price_history_verification`, which adds the cross-check columns to `market_price_bars`, `0011_saved_charts`, which adds the `saved_charts` table, `0012_task_budget_reservation`, which adds `research_tasks.budget_reservation_usd` for in-flight budget reservations, `0013_research_memory_search`, which adds `document_chunks.search_tsv` (research-memory passages only, backfilled) with a partial GIN index, and `0014_performance_indexes`, which indexes `document_chunks.source_document_id`, `evidence_claims (research_run_id, review_status)`, `evidence_links.evidence_claim_id` and `source_locations`' chunk and document columns.
+Migrations are `0000`–`0006`, `0009_research_memory_graph`, which adds provenance and review fields plus a uniqueness constraint to `claim_relationships`, `0010_price_history_verification`, which adds the cross-check columns to `market_price_bars`, `0011_saved_charts`, which adds the `saved_charts` table, `0012_task_budget_reservation`, which adds `research_tasks.budget_reservation_usd` for in-flight budget reservations, `0013_research_memory_search`, which adds `document_chunks.search_tsv` (research-memory passages only, backfilled) with a partial GIN index, and `0014_performance_indexes`, which indexes `document_chunks.source_document_id`, `evidence_claims (research_run_id, review_status)`, `evidence_links.evidence_claim_id` and `source_locations`' chunk and document columns, and `0015_research_lineage_monitoring`, which adds `research_runs.prior_run_id` (self-reference, set null on delete) and the `asset_monitor_checks` table.
 
 Artifact statuses are listed in `src/lib/research/artifacts/contracts.ts`; the lifecycle is in the [state machine view](#5-behavioral--state-machine). Each run keeps one current version per artifact type and scope.
 
@@ -172,6 +173,7 @@ Report requests (two rounds before drafting, one after the first review) are ans
 | Child processes | Component, Deployment, Trust | `python/**`, `repair/sandbox.ts` |
 | LLM and embedding providers | Component, Deployment, Sequence, Trust | `providers/*.ts`, `memory/embeddings.ts` |
 | Search and data APIs | Component, Deployment, Trust | `sources/role-discovery.ts`, `sources/corpus.ts`, `market-data/providers/yahoo.ts`, `market-data/providers/stooq.ts` |
+| Research across runs: lineage, change log, monitoring | [research-across-runs.svg](diagrams/research-across-runs.svg), Component, Class | `lineage/runs.ts` (`resolvePriorRunId`, `savePriorResearch`, `loadPriorResearch`, `saveVersionChangeLog`), `lineage/prior-research.ts`, `lineage/change-log.ts`, `run-context.ts:prepareResearchCall`, `handlers/ai-reviewer.ts`, `monitoring/monitor-check.ts`, `monitoring/monitor-score.ts`, `scripts/monitor-check.ts`, `src/app/api/assets/[id]/monitor/route.ts`, `src/app/api/research-runs/[id]/refresh/route.ts` ([system](system.md#research-across-runs), [operations](operations.md#monitoring-check)) |
 | Research run workflow | Activity, State, Sequence | see the rows above |
 | Development workflow | [dev-workflow.svg](diagrams/dev-workflow.svg) | [AGENTS.md](../AGENTS.md) |
 
