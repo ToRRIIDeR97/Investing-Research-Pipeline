@@ -102,3 +102,25 @@ test("statements in RMB against a USD price are withheld without an FX rate and 
     assert.equal(calls[0].n, 0, "withheld without a model call");
   } finally { await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
 });
+
+test("an ADS listing is withheld without its depositary ratio even when statements and price are both in USD", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!, { onnotice: () => {} });
+  const run = await createRun(sql);
+  try {
+    await seed(sql, run, "USD");
+    await sql`INSERT INTO instruments (asset_id, instrument_type, name, currency) VALUES (${run.assetId}, 'listed_security', 'Fixture Holdings ADS', 'USD')`;
+    await assetValuationHandler.execute(await context(sql, run));
+    const set = await latest(sql, run.runId, "valuation_scenario_set");
+    assert.equal(set.valuation_status, "withheld");
+    assert.match(set.withheld_reason, /depositary ratio/);
+    await sql`UPDATE instruments SET depositary_ratio = 2 WHERE asset_id = ${run.assetId}`;
+    await assetValuationHandler.execute(await context(sql, run));
+    const valued = await latest(sql, run.runId, "valuation_scenario_set");
+    assert.equal(valued.valuation_status, "complete");
+    assert.equal(valued.currency_conversion.depositary_ratio, 2);
+    assert.equal(valued.method_inputs[0].diluted_shares, 50, "100m ordinary shares are 50m ADSs");
+  } finally {
+    await sql`DELETE FROM instruments WHERE asset_id = ${run.assetId}`;
+    await cleanup(sql, [run.runId], [run.assetId]); await sql.end();
+  }
+});

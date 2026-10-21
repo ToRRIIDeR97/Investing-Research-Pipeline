@@ -501,8 +501,16 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         ` : [];
         const fxValue = fxDoc?.csv && series ? latestFredValue(String(fxDoc.csv), cutoff.toISOString()) : null;
         const [instrument] = await sql`SELECT depositary_ratio FROM instruments WHERE asset_id = ${ctx.assetId} AND depositary_ratio IS NOT NULL ORDER BY created_at LIMIT 1`;
+        // A depositary listing (an ADS/ADR instrument, or a 20-F/40-F filer) needs its ratio even in one currency.
+        const [depositary] = await sql`
+          SELECT 1 FROM instruments WHERE asset_id = ${ctx.assetId}
+            AND (lower(instrument_type) IN ('ads', 'adr', 'depositary_receipt', 'depositary_share') OR name ~* '\\m(ADS|ADR)\\M|depositary')
+          UNION ALL
+          SELECT 1 FROM research_run_sources rrs JOIN source_documents sd ON sd.id = rrs.source_document_id
+          WHERE rrs.research_run_id = ${ctx.runId} AND sd.metadata_json->>'form' IN ('20-F', '20-F/A', '40-F', '40-F/A')
+          LIMIT 1`;
         const conversion = currencyConversion({ statementCurrency, priceCurrency, depositaryRatio: instrument ? Number(instrument.depositary_ratio) : null,
-          fx: fxValue && series ? { series: series.series, perUsd: series.perUsd, ...fxValue } : null });
+          fx: fxValue && series ? { series: series.series, perUsd: series.perUsd, ...fxValue } : null, depositaryListing: Boolean(depositary) });
         if (!readiness.ready || conversion.missing.length) {
           // Nothing a model could judge is missing here; withhold without a call and name each input.
           output = withheldValuation(`Valuation inputs are missing: ${[...readiness.missing, ...conversion.missing].join("; ")}.`, horizon, priceCurrency || currency);

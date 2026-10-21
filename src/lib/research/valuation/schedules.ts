@@ -61,6 +61,8 @@ export function calculateValuationSchedule(value:unknown) {
   });
   const t=model.terminal;
   if(t.type!=='multiple'&&t.growth_rate>=r)throw new Error('Terminal growth must be below the discount rate.');
+  // At RONIC <= g growth costs at least all of NOPAT, and the value-driver terminal turns zero or negative.
+  if(t.type==='value_driver'&&t.ronic<=t.growth_rate)throw new Error('RONIC must exceed terminal growth.');
   const terminal_value=t.type==='multiple'?t.metric_value*t.multiple
     :t.type==='value_driver'?t.metric_value*(1+t.growth_rate)*(1-t.growth_rate/t.ronic)/(r-t.growth_rate)
     :years.at(-1)!.cash_flow*(1+t.growth_rate)/(r-t.growth_rate);

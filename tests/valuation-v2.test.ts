@@ -137,6 +137,25 @@ test("a foreign listing needs an FX rate and the depositary ratio; with both, th
   const perAds = calculateValuationSchedule(driverSchedule(scaled, "base", set(), { ...common, bridge: 50 * conversion.fx_rate, shares: 10 / 2 })).value_per_share;
   close(perAds, ordinary * conversion.fx_rate * 2, 1e-9);
   assert.deepEqual(currencyConversion({ statementCurrency: "USD", priceCurrency: "USD", depositaryRatio: null, fx: null }).missing, []);
+  // An ADS needs its ratio even in one currency, and a missing statement currency withholds.
+  assert.match(currencyConversion({ statementCurrency: "USD", priceCurrency: "USD", depositaryRatio: null, fx: null, depositaryListing: true }).missing.join(), /depositary ratio/);
+  assert.deepEqual(currencyConversion({ statementCurrency: "USD", priceCurrency: "USD", depositaryRatio: 2, fx: null, depositaryListing: true }).missing, []);
+  assert.match(currencyConversion({ statementCurrency: null, priceCurrency: "USD", depositaryRatio: null, fx: null }).missing.join(), /statement currency/);
+});
+
+test("RONIC at or below terminal growth is rejected by the validator and the schedule math", () => {
+  const defaults = defaultValuationSets({ capm: 0.09, riskFree: 0.04, ronic: 0.18 });
+  const bad = defaults.map((d) => d.set === "base" ? { ...d, ronic: 0.01, ronic_rationale: "test" } : d);
+  assert.match(validateValuationSets(bad, defaults, 0.04).map((e) => e.message).join(" "), /must exceed terminal_growth/);
+  assert.throws(() => calculateValuationSchedule(driverSchedule(statements(), "base", set({ ronic: 0.02, terminal_growth: 0.02 }), common)), /RONIC must exceed terminal growth/);
+});
+
+test("the gated terminal share is the terminal value alone; the share beyond the explicit forecast is reported separately", () => {
+  const out = valuation(defaultValuationSets({ capm: 0.09, riskFree: 0.04, ronic: 0.2 }));
+  const tv = out.additions.terminal_value_share.base!, beyond = out.additions.value_beyond_explicit_share.base!;
+  close(tv, calculateValuationSchedule(out.schedules.base).tv_share_of_ev!, 1e-3);
+  assert.ok(beyond > tv, "fade years add to the share beyond the explicit forecast");
+  assert.ok(out.additions.sanity.flags.filter((f) => f.flag.startsWith("terminal_share")).every((f) => f.value! > 0.85));
 });
 
 test("loss-making segments are valued as a persistent or fading loss stream, and segments must reconcile", () => {

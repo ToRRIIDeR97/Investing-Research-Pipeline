@@ -132,6 +132,7 @@ async function main() {
     value_today: { bear: set$.value_today_bear, base: set$.value_today_base, bull: set$.value_today_bull, weighted: set$.weighted_value_today ?? null },
     anchors: { terminal_year: set$.terminal_year, bear: set$.terminal_anchor_bear, base: set$.terminal_anchor_base, bull: set$.terminal_anchor_bull, weighted: set$.weighted_target ?? null },
     terminal_value_share: built.additions.terminal_value_share,
+    value_beyond_explicit_share: built.additions.value_beyond_explicit_share,
     matrix: built.additions.valuation_matrix.rows,
     ...(flag("--grid") ? { sensitivity_grid: built.additions.sensitivity_grid.rows } : {}),
     reverse: built.reverse, cross_checks: built.additions.cross_checks, lenses: built.lenses,

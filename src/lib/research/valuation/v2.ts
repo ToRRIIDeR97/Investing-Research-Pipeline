@@ -161,6 +161,7 @@ export function validateValuationSets(sets: ValuationSet[], defaults: ValuationS
     const path = `valuation_assumptions.sets.${i}`;
     if (riskFree !== null && set.discount_rate <= riskFree) errors.push({ path: `${path}.discount_rate`, message: `${set.set} discount_rate ${set.discount_rate} must exceed the risk-free rate ${riskFree} (FRED DGS10).` });
     if (set.terminal_growth >= set.discount_rate) errors.push({ path: `${path}.terminal_growth`, message: `${set.set} terminal_growth must be below its discount_rate.` });
+    if (set.ronic <= set.terminal_growth) errors.push({ path: `${path}.ronic`, message: `${set.set} ronic ${set.ronic} must exceed terminal_growth ${set.terminal_growth}: at or below it, growth costs all of NOPAT and the terminal value is zero or negative.` });
     if (riskFree !== null && set.terminal_growth > riskFree + 1e-9) errors.push({ path: `${path}.terminal_growth`, message: `${set.set} terminal_growth ${set.terminal_growth} must not exceed the risk-free rate ${riskFree}: no business outgrows the economy forever.` });
     const fallback = defaults.find((d) => d.set === set.set);
     if (fallback && Math.abs(set.ronic - fallback.ronic) > 0.005 && !set.ronic_rationale?.trim()) {
@@ -245,11 +246,16 @@ export function latestFredValue(csv: string, cutoffDate: string): { value: numbe
 export function currencyConversion(input: {
   statementCurrency: string | null; priceCurrency: string | null; depositaryRatio: Num;
   fx: { series: string; value: number; observation_date: string; perUsd: boolean } | null;
+  /** The listing is a depositary share (ADS/ADR) or the issuer files as a foreign private issuer. */
+  depositaryListing?: boolean;
 }) {
   const foreign = Boolean(input.statementCurrency && input.priceCurrency && input.statementCurrency !== input.priceCurrency);
+  // A depositary share needs its ratio even when statements and price share a currency.
+  const needsRatio = foreign || Boolean(input.depositaryListing);
   const missing = [
+    ...(!input.statementCurrency ? ["the statement currency (financial_inputs.currency was not captured)"] : []),
     ...(foreign && !input.fx ? [`an FX rate from ${input.statementCurrency} to ${input.priceCurrency} on or before the cutoff${fxSeriesFor(input.statementCurrency!, input.priceCurrency!) ? ` (FRED ${fxSeriesFor(input.statementCurrency!, input.priceCurrency!)!.series})` : ""}`] : []),
-    ...(foreign && !(Number(input.depositaryRatio) > 0) ? ["the depositary ratio (ordinary shares per listed share; 1 for an ordinary listing) on the asset's instrument"] : []),
+    ...(needsRatio && !(Number(input.depositaryRatio) > 0) ? ["the depositary ratio (ordinary shares per listed share; 1 for an ordinary listing) on the asset's instrument"] : []),
   ];
   const rate = foreign && input.fx ? (input.fx.perUsd ? 1 / input.fx.value : input.fx.value) : 1;
   const ratio = Number(input.depositaryRatio) > 0 ? Number(input.depositaryRatio) : 1;
@@ -438,10 +444,11 @@ export function sanityFlags(input: {
   price: number; weightedToday: Num; capm: Num; riskFree: Num; historyRoic: Num; checks: ReturnType<typeof marketCrossChecks>;
 }) {
   const flags: { flag: string; value: Num; threshold: string; message: string }[] = [];
+  // The 0.85 gate is the terminal value alone, after the fade years (the same measure as report_facts' tv_share_of_ev).
   for (const scenario of SCENARIOS) {
-    const share = valueBeyondExplicitShare(input.schedules[scenario]);
+    const share = calculateValuationSchedule(input.schedules[scenario]).tv_share_of_ev;
     if (share !== null && share > 0.85) flags.push({ flag: `terminal_share_${scenario}`, value: r4(share), threshold: "> 0.85",
-      message: `${Math.round(share * 100)}% of the ${scenario} enterprise value comes after FY${input.statements[scenario].at(-1)!.fiscal_year}; the explicit forecast decides little.` });
+      message: `The terminal value is ${Math.round(share * 100)}% of the ${scenario} enterprise value even after the fade years; the forecast decides little.` });
   }
   const today = input.weightedToday ?? valueToday(input.schedules.base);
   const ratio = input.price > 0 ? today / input.price : null;
@@ -456,7 +463,10 @@ export function sanityFlags(input: {
     message: `Base FY${last.fiscal_year} capex is ${capexToDa.toFixed(2)}x D&A; the fade years bring reinvestment to g / RONIC, so check the explicit forecast does not end mid-cycle.` });
   const fires = flags.some((flag) => flag.flag === "value_to_price" || flag.flag.startsWith("terminal_share"));
   const base = valueToday(input.schedules.base);
-  const alt = (set: ValuationSet) => valueToday(driverSchedule(input.statements.base, "base", set, input.common)) - base;
+  // A change the schedule rejects (g at or above r, RONIC at or below g) gives no delta rather than failing the stage.
+  const alt = (set: ValuationSet): number | null => {
+    try { return valueToday(driverSchedule(input.statements.base, "base", set, input.common)) - base; } catch { return null; }
+  };
   const attribution = !fires ? [] : [
     ...(own?.median != null ? [(() => {
       const calc = calculateValuationSchedule(input.schedules.base), n = explicitCount(input.schedules.base);
@@ -569,7 +579,7 @@ export function buildFcffValuation(input: FcffValuationInput) {
   const b = set("base");
   const grid = [-0.01, 0, 0.01].flatMap((dr) => [-0.01, 0, 0.01].map((dg) => {
     const s = { ...b, discount_rate: Number((b.discount_rate + dr).toFixed(4)), terminal_growth: Number((b.terminal_growth + dg).toFixed(4)) };
-    const value = s.terminal_growth < s.discount_rate - 0.001 ? valueToday(driverSchedule(input.statements.base, "base", s, common("base"))) : null;
+    const value = s.terminal_growth < s.discount_rate - 0.001 && s.terminal_growth < s.ronic ? valueToday(driverSchedule(input.statements.base, "base", s, common("base"))) : null;
     return [s.discount_rate, s.terminal_growth, r2(value)];
   }));
   const checks = marketCrossChecks({ price: input.price, shares: input.common.shares, bridge: input.common.bridge, pack: input.pack, fx: input.fx, schedules });
@@ -592,7 +602,9 @@ export function buildFcffValuation(input: FcffValuationInput) {
         note: "Value per share today for every operating case under every valuation set; anchors and weights use the base set." },
       sensitivity_grid: { columns: ["discount_rate", "terminal_growth", "value_per_share"], rows: grid, case: "base",
         note: `Base operating case, base RONIC ${b.ronic} and ${b.fade_years} fade years; null where g is not below r.` },
-      terminal_value_share: Object.fromEntries(SCENARIOS.map((scenario) => [scenario, r4(valueBeyondExplicitShare(schedules[scenario]))])),
+      // tv_share_of_ev is the terminal value alone (the gated measure); value_beyond_explicit_share adds the fade years (information).
+      terminal_value_share: Object.fromEntries(SCENARIOS.map((scenario) => [scenario, r4(calculateValuationSchedule(schedules[scenario]).tv_share_of_ev)])),
+      value_beyond_explicit_share: Object.fromEntries(SCENARIOS.map((scenario) => [scenario, r4(valueBeyondExplicitShare(schedules[scenario]))])),
       cross_checks: checks,
       lens_values: lenses,
       sanity: sanity,
