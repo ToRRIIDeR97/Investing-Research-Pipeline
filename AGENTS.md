@@ -3,7 +3,7 @@
 - Research OS is a Next.js app backed by PostgreSQL. The database owns run, stage, artifact and job state. A separate worker runs queued research jobs (pipeline version 3, 24 stages, scheduled from a dependency graph).
 - UI run creation lives in `src/lib/research/run-service.ts`. Durable jobs live in `src/lib/research/run-queue.ts`. Execution runs in `src/workers/research-worker.ts` and `src/lib/research/pipeline-runner.ts`.
 - Keep both human gates explicit. Don't complete a run before export and refresh scheduling. Treat typed `research_artifacts` as the report source of truth.
-- Keep provider credentials in local environment files and never commit them. Paid runs require an explicit flag (`RUN_PAID_RESEARCH=1`, `RUN_PAID_MELI=1`, `RUN_PROVIDER_SMOKE=1`, `RUN_SOURCE_READER_SMOKE=1`). Run them only when the user asks.
+- Keep provider credentials in local environment files and never commit them. Paid runs require an explicit flag (`RUN_PAID_RESEARCH=1`, `RUN_PAID_MELI=1`, `RUN_PROVIDER_SMOKE=1`, `RUN_SOURCE_READER_SMOKE=1`, `RUN_PAID_EVAL=1`). Run them only when the user asks.
 
 ## Read first
 
@@ -33,6 +33,8 @@ When persistence, the queue, orchestration or the pipeline changes, also run the
 - `npm run test:sofi-v3`: the mock pipeline, against `DATABASE_URL` (or the one in `.env.local`) with migrations applied.
 - `npm run test:db`: every database-backed suite, one file at a time, with the mock provider. It takes only `DATABASE_URL` from `.env.local`. The suites share one database and interfere when run in parallel.
 - Both refuse a database a research worker is polling (a heartbeat in the last 30 s). Use a separate test database.
+
+Research quality: `npm run eval:score -- --case META` (or a run id, `--all`, `--stability META`) scores stored runs with code checks and depth probes. It is read-only and free, so run it before and after changes to prompts, contracts or models and quote the `evals/scores.csv` rows in the PR. `npm run eval:judge` is the paid LLM judge (`RUN_PAID_EVAL=1`). See [docs/system.md](docs/system.md#measuring-research-quality).
 
 `npm run lint` runs ESLint with the flat config in `eslint.config.mjs` (`next/core-web-vitals` + `next/typescript`). Errors fail it; warnings (unused variables, hook dependencies) don't. `no-explicit-any` is off for now.
 

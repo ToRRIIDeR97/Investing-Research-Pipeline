@@ -473,12 +473,29 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     const [oldVersion] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${runId}
       AND artifact_type = 'report_document' AND content_json->>'content_hash' = ${firstHash}`;
     assert.equal(oldVersion.content_json.content_hash, firstHash, "prior report text remains available");
+    // The gate reads the stored review: a confirmed blocking finding stops a position, and an open high finding
+    // must be acknowledged before either approval. report_review is not a report input, so the hash stays valid.
+    const currentHash = draft.content_json.content_hash;
+    await sql`UPDATE research_artifacts SET content_json = content_json || ${sql.json({ effective_verdict: "needs_more_work",
+      findings: [{ section_id: "valuation", category: "calculation", severity: "high", issue: "Terminal value exceeds enterprise value." }],
+      blocking: [{ reason: "High calculation finding confirmed by code: terminal value share above 85%." }] })}
+      WHERE research_run_id = ${runId} AND artifact_type = 'report_review' AND content_json->>'report_hash' = ${currentHash}`;
+    const blockedPosition = await submitReview(request({ status: "approved_for_position", reviewed_by: "human-reviewer-1",
+      reportHash: currentHash, acknowledgeFindings: true }), paramsFor(runId));
+    assert.equal(blockedPosition.status, 422);
+    assert.equal((await blockedPosition.json()).code, "REVIEW_BLOCKS_POSITION");
+    const unacknowledged = await submitReview(request({ status: "approved_for_tracking", reviewed_by: "human-reviewer-1", reportHash: currentHash }), paramsFor(runId));
+    assert.equal(unacknowledged.status, 422);
+    assert.equal((await unacknowledged.json()).code, "FINDINGS_NOT_ACKNOWLEDGED");
     const reviewResponse = await submitReview(request({
       status: "approved_for_tracking", reviewed_by: "human-reviewer-1",
-      reportHash: draft.content_json.content_hash,
+      reportHash: draft.content_json.content_hash, acknowledgeFindings: true,
+      rubricRatings: { framing: 2, valuation: 1 },
     }), paramsFor(runId));
     assert.equal(reviewResponse.status, 201);
     assert.equal((await reviewResponse.json()).workflow.success, true);
+    const [rated] = await sql`SELECT metadata_json->'review_rubric' AS rubric FROM research_runs WHERE id = ${runId}`;
+    assert.deepEqual([rated.rubric.ratings, rated.rubric.report_hash], [{ framing: 2, valuation: 1 }, currentHash], "ratings stored with the report version they judged");
 
     // ==========================================
     // Invocation 3: Execute terminal export and refresh_schedule stages
