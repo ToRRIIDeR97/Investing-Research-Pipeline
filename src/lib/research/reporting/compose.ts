@@ -117,7 +117,7 @@ export async function composeReviewedReport(input: Omit<ReportInput, "sections" 
     if ((passed && !substance.length) || round === 1) return { document, review };
     priorFindings = review.findings;
     const answers = !passed && actions.rework ? await actions.rework(review) : [];
-    const findings = [...review.findings.filter(f => f.source !== "substance_check" || f.section_id), ...depthFindings(review.depth_checks)];
+    const findings = [...review.findings.filter(f => f.source !== "substance_check" || f.section_id), ...depthFindings(review.depth_checks, outline.sections)];
     const feedback = [...findings, ...answers];
     // A passed review repairs only the substance findings: no outline re-plan, only the flagged sections and conclusions.
     const researchFindings = passed ? [] : findings.filter(f => f.category === "research_gap");

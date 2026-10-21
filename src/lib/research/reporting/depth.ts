@@ -214,12 +214,26 @@ export function deriveReview(review: { review_verdict: unknown; findings?: Row[]
     blocking: blocking.map(({ finding, reason }) => ({ reason, section_id: finding.section_id, issue: String(finding.issue ?? finding.message ?? finding.description ?? "") })) };
 }
 
-/** Missing decision-critical checks, as review findings the repair round and the rework requests can act on. */
-export function depthFindings(checks: ResolvedDepthCheck[]) {
-  return checks.filter((check) => check.critical && check.status === "missing").map((check) => ({
-    section_id: check.section_id || undefined, category: "research_gap", severity: "high", source: "depth_check", check_id: check.id,
-    owner_stage: check.owner_stage, issue: `${check.label} is missing: ${check.why}`, repair: DEFINITIONS.get(check.id)!.ask,
-  }));
+/** The report coverage key whose chapter should carry each check. */
+const CHECK_COVERAGE: Record<string, string> = {
+  decisive_insight: "conclusion", ownership_and_control: "ownership", segment_economics: "business", history_statistics: "history",
+  cash_conversion: "business", working_capital: "business", capital_allocation: "management", demand_backdrop: "constraints",
+  moat_attacks: "moat", management_assessment: "management", valuation_matrix: "valuation", reverse_valuation: "valuation",
+  fcf_yield_cross_check: "valuation", no_rerating_return: "valuation", tail_below_bear: "downside", thesis_breakers: "monitoring",
+  monitoring_dashboard: "monitoring", what_would_change_my_mind: "conclusion", scorecard_confidence: "conclusion",
+};
+
+/**
+ * Missing decision-critical checks, as writing findings for the section repair (category depth_gap, not research_gap:
+ * the data exists, so there is nothing to re-plan or block). A finding names the reviewer's section, or the first
+ * section covering the check's coverage key, so the repair rewrites that chapter rather than every one.
+ */
+export function depthFindings(checks: ResolvedDepthCheck[], sections: { id: string; coverage: string[] }[] = []) {
+  return checks.filter((check) => check.critical && check.status === "missing").map((check) => {
+    const owner = sections.find((s) => s.coverage.includes(CHECK_COVERAGE[check.id]))?.id;
+    return { section_id: check.section_id || owner || undefined, category: "depth_gap", severity: "high", source: "depth_check", check_id: check.id,
+      owner_stage: check.owner_stage, issue: `${check.label} is missing: ${check.why}`, repair: DEFINITIONS.get(check.id)!.ask };
+  });
 }
 
 export const isPassing = (verdict: unknown) => verdict === "pass" || verdict === "conditional_pass";
@@ -231,15 +245,19 @@ export const isPassing = (verdict: unknown) => verdict === "pass" || verdict ===
  */
 export function reviewGate(review: Row | null | undefined) {
   const model = review?.model_verdict ?? review?.review_verdict;
-  const effective = review?.effective_verdict ?? review?.review_verdict;
   const findings: Row[] = Array.isArray(review?.findings) ? review!.findings : [];
   const checks: Row[] = Array.isArray(review?.depth_checks) ? review!.depth_checks : [];
+  // A review stored before this gate has no effective_verdict: any open critical finding still blocks a position.
+  const legacyCritical = review && review.effective_verdict === undefined
+    ? findings.filter((f) => String(f.severity ?? "").toLowerCase() === "critical") : [];
+  const effective = review?.effective_verdict ?? (legacyCritical.length ? "needs_more_work" : review?.review_verdict);
   const blocking = [
     ...(Array.isArray(review?.blocking) ? review!.blocking.map((b: Row) => String(b.reason)) : []),
+    ...legacyCritical.map(() => "Unresolved critical finding"),
     ...checks.filter((c) => c.critical && c.status === "missing").map((c) => `${c.label ?? c.id} is missing`),
   ];
   return { trackable: Boolean(review) && isPassing(model), positionable: Boolean(review) && isPassing(effective),
-    blocking: blocking.length ? blocking : effective && !isPassing(effective) ? [`the review verdict is ${effective}`] : [],
+    blocking: blocking.length ? [...new Set(blocking)] : effective && !isPassing(effective) ? [`the review verdict is ${effective}`] : [],
     open_severe: findings.filter((f) => ["high", "critical"].includes(String(f.severity ?? "").toLowerCase())).length };
 }
 export const depthCheckDefinition = (id: string) => DEFINITIONS.get(id);

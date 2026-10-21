@@ -46,12 +46,24 @@ export function latestFilings(documents: RunDocument[], cutoff?: string): RunDoc
     .sort((a, b) => docDate(b).localeCompare(docDate(a)) || a.sourceType.localeCompare(b.sourceType) || a.id.localeCompare(b.id));
 }
 
-/** Section titles that discuss drivers or operating metrics rank first; risk and legal boilerplate ranks last. */
-export function sectionScore(sectionPath: string[]): number {
+/**
+ * Risk-factor text that states who controls the company or names its competitors ("ten votes per share",
+ * "competitive products and services, such as TikTok"). The filing often says this nowhere else.
+ */
+const OWNERSHIP_OR_COMPETITION = /dual[- ]class|votes? per share|voting power|controlled company|controlling (?:stock|share)holder|variable interest entit|depositary shares?|\bcompet\w*\b[^.]{0,120}\bsuch as\b/i;
+
+/**
+ * Section titles that discuss drivers or operating metrics rank first; risk and legal boilerplate ranks last.
+ * A risk passage whose `text` states ownership, voting control or named competitors ranks as a driver section.
+ */
+export function sectionScore(sectionPath: string[], text = ""): number {
   const section = sectionPath.join(" / ").toLowerCase();
   // 10-Q risk subsections sit under "Part II" without "Risk Factors" in their path ("Risks Related to Our Business Operations and Financial Results").
+  if (/risk factors|risks related to/.test(section) && OWNERSHIP_OR_COMPETITION.test(text)) return 3;
   if (/risk factors|risks related to|forward-looking|exhibit|signature|table of contents|cover page|legal proceedings|limitations of/.test(section)) return -4;
   let score = 0;
+  // The business section on competition and the equity note on share classes.
+  if (/\bcompetition\b|common stock|stockholders.? equity/.test(section)) score += 2;
   if (/trends in/.test(section)) score += 4;
   if (/metrics/.test(section)) score += 2;
   if (/management.s discussion|md&a|results of operations|executive overview/.test(section)) score += 2;
@@ -73,7 +85,7 @@ const BOILERPLATE = /in this section,? we (?:discuss|provide)|the following disc
 export function passageScore(passage: Pick<FilingPassageCandidate, "section_path" | "text">): number {
   const text = passage.text;
   const letters = (text.match(/\p{L}/gu) || []).length;
-  return sectionScore(passage.section_path) + count(text, DRIVER, 4) + count(text, CHANGE, 3)
+  return sectionScore(passage.section_path, text) + count(text, DRIVER, 4) + count(text, CHANGE, 3)
     - (BOILERPLATE.test(text) ? 4 : 0) - (letters < text.length * 0.45 ? 2 : 0);
 }
 

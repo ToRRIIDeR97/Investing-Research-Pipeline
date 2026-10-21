@@ -5,6 +5,8 @@ import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { loadReportInputs } from "../src/lib/research/reporting/store";
+import { persistEvidence, storeDiscoveredSources } from "../src/lib/research/sources/corpus";
+import { cleanup, createRun } from "../Implementations/research-request-routing/acceptance/fixtures";
 
 const skip = process.env.RUN_DB_INTEGRATION !== "1";
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
@@ -38,4 +40,34 @@ test("loadReportInputs filters by type and skips the fingerprint and evidence on
     await sql`DELETE FROM assets WHERE id = ${assetId}`;
     await sql.end();
   }
+});
+
+// GAP-3-2: a NULL published_at failed `published_at <= cutoff`, so undated documents (industry reports, peer PDFs)
+// never reached a packet. Only a point-in-time run, where an undated page may postdate the cutoff, still drops them.
+test("loadReportInputs keeps evidence from undated documents except in point-in-time runs", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!, { onnotice: () => {} });
+  const run = await createRun(sql);
+  try {
+    await sql`UPDATE research_runs SET source_cutoff_at = created_at WHERE id = ${run.runId}`;
+    const ctx = { runId: run.runId, runType: "deep_dive", assetId: run.assetId, assetName: run.assetName, assetSlug: run.assetSlug,
+      symbol: run.symbol, profileId: "", profileKey: "", requiredModules: [], requiredLenses: [], marketDataCutoffAt: null, pipelineVersion: 3 } as any;
+    const doc = (title: string, publishedAt: string | null) => ({ sourceType: "web_industry_primary", title, publisher: "fixture.example",
+      url: `https://fixture.example/${randomUUID()}`, content: `${title}: U.S. internet advertising revenues increased 13.9%. ${run.runId}`,
+      mimeType: "text/plain", qualityScore: "0.9", publishedAt, periodEnd: null,
+      metadata: { source_role: "industry_primary", system_generated: true }, chunkTitle: title });
+    const stored = await storeDiscoveredSources(sql, ctx, [doc("Dated report", "2026-09-01"), doc("Undated report", null)] as any);
+    for (const source of stored) {
+      const [chunk] = await sql`SELECT dc.id FROM document_chunks dc JOIN document_parses dp ON dp.id = dc.document_parse_id
+        WHERE dc.source_document_id = ${source.sourceId} AND dp.parser_name = 'research-memory' LIMIT 1`;
+      await persistEvidence(sql, ctx, [source], { evidence_claims: [{ claim_text: `Ad revenue grew 13.9% (${source.title}).`, claim_type: "industry",
+        claim_category: "fact", confidence: 0.8, source_id: source.sourceId, document_chunk_id: String(chunk.id) }] });
+    }
+    const cutoff = new Date().toISOString();
+    const titles = async () => (await loadReportInputs(sql as any, run.runId, cutoff)).evidence.map(e => `${e.source_title}:${e.published_at}`).sort();
+    assert.deepEqual(await titles(), ["Dated report:2026-09-01T00:00:00.000Z", "Undated report:null"]);
+    await sql`UPDATE research_runs SET run_type = 'backtest_only' WHERE id = ${run.runId}`;
+    assert.deepEqual(await titles(), ["Dated report:2026-09-01T00:00:00.000Z"], "a backtest drops undated documents");
+    await sql`UPDATE research_runs SET run_type = 'deep_dive', source_cutoff_at = created_at - INTERVAL '30 days' WHERE id = ${run.runId}`;
+    assert.deepEqual(await titles(), ["Dated report:2026-09-01T00:00:00.000Z"], "so does a run with a past source cutoff");
+  } finally { await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
 });

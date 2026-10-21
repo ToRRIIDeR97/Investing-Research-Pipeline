@@ -207,7 +207,7 @@ export class AnthropicCompatibleProvider implements ModelProvider {
           if (oneHourWrites) {
             const total = { ...startUsage, ...usage };
             usage.costUsd = Number((calculateCost(request.model, total.inputTokens, total.outputTokens, total)
-              + oneHourCacheWriteSurcharge(request.model, oneHourWrites)).toFixed(6));
+              + oneHourCacheWriteSurcharge(request.model, oneHourWrites, total.inputTokens)).toFixed(6));
           }
           events.push({ type: "usage", usage });
         }

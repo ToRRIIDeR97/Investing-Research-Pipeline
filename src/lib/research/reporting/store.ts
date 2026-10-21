@@ -7,6 +7,18 @@ import { createReport, storedFingerprint, inputFingerprint, type ReportArtifact,
 // its context. Report packets read financial_analytics and financial_statement_summary instead, and see
 // historical_record only as the request view in packet.ts.
 // Period-end prices and market caps (market_price_history) are likewise read in Financials.
+/**
+ * A point-in-time run studies the asset as of a past date, so a document without a publication date may postdate
+ * the cutoff and is excluded. That is a backtest_only run, or a source cutoff set more than a day before the run was
+ * created. Every other run keeps undated documents (filings fetched without a date, industry reports, peer PDFs).
+ */
+export function isPointInTimeRun(run: { run_type?: string | null; source_cutoff_at?: string | Date | null; created_at?: string | Date | null } | undefined) {
+  if (!run) return false;
+  if (run.run_type === "backtest_only") return true;
+  if (!run.source_cutoff_at || !run.created_at) return false;
+  return new Date(run.created_at).getTime() - new Date(run.source_cutoff_at).getTime() > 24 * 60 * 60 * 1000;
+}
+
 const products = ["agent_brief", "team_requests", "source_requests", "source_review", "research_chat", "financial_statement_set", "market_price_history", "report_outline", "report_section", "report_document", "report_review", "question_register", "synthetic_report", "refresh_schedule", "review_summary", "findings", "quality_score", "recommendations", "review_verdict", "depth_checks"];
 /**
  * The report's upstream artifacts and accepted evidence. Gates that compare input_hash use the defaults; a
@@ -22,6 +34,8 @@ export async function loadReportInputs(sql: Sql, runId: string, cutoff: string,
       ${options.types ? sql`AND artifact_type = ANY(${options.types}::text[])` : sql``}
     ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC
   `;
+  const [run] = options.evidence === false ? [] : await sql`SELECT run_type, source_cutoff_at, created_at FROM research_runs WHERE id = ${runId}`;
+  const keepUndated = !isPointInTimeRun(run);
   const claims = options.evidence === false ? [] : await sql`
     SELECT DISTINCT ON (ec.id) ec.id, ec.claim_text, sd.title AS source_title, sd.url,
       sd.published_at, el.quoted_text AS quote,
@@ -32,12 +46,12 @@ export async function loadReportInputs(sql: Sql, runId: string, cutoff: string,
     JOIN source_documents sd ON sd.id = sl.source_document_id
     WHERE ec.research_run_id = ${runId} AND ec.review_status = 'accepted'
       AND el.support_type IN ('supports', 'calculation_source')
-      AND sd.published_at <= ${cutoff}::timestamptz AND sd.url ~ '^https?://'
+      AND (sd.published_at <= ${cutoff}::timestamptz OR (${keepUndated} AND sd.published_at IS NULL)) AND sd.url ~ '^https?://'
       AND length(trim(COALESCE(el.quoted_text, ''))) > 0
     ORDER BY ec.id, el.confidence DESC NULLS LAST, el.id
   `;
   const artifacts = rows.map(r => ({ ...r, id: String(r.id), artifact_version: Number(r.artifact_version) })) as ReportArtifact[];
-  const evidence = claims.map(r => ({ ...r, id: String(r.id), published_at: new Date(r.published_at).toISOString() })) as ReportEvidence[];
+  const evidence = claims.map(r => ({ ...r, id: String(r.id), published_at: r.published_at ? new Date(r.published_at).toISOString() : null })) as ReportEvidence[];
   return { artifacts, evidence, input_hash: options.fingerprint === false ? "" : inputFingerprint(artifacts, evidence) };
 }
 

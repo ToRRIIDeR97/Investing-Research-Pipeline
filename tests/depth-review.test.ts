@@ -38,7 +38,9 @@ test("missing decision-critical depth sends the report back; unavailable data ca
   const missing = deriveReview(review({ depth_checks: withStatus("what_would_change_my_mind", "missing") }), [facts(0.1)]);
   assert.equal(missing.review_verdict, "needs_more_work");
   assert.equal(missing.model_verdict, "pass", "the reviewer's own verdict is kept");
-  assert.equal(depthFindings(missing.depth_checks)[0].owner_stage, "decision_synthesis");
+  const [finding] = depthFindings(missing.depth_checks, [{ id: "summary", coverage: ["conclusion"] }, { id: "valuation", coverage: ["valuation"] }]);
+  assert.deepEqual([finding.owner_stage, finding.category, finding.section_id], ["decision_synthesis", "depth_gap", "summary"],
+    "a section-repair finding aimed at the chapter that owns the check's coverage");
   const unavailable = deriveReview(review({ depth_checks: withStatus("ownership_and_control", "data_unavailable") }), [facts(0.1)]);
   assert.equal(unavailable.review_verdict, "conditional_pass");
   const optional = deriveReview(review({ depth_checks: withStatus("scorecard_confidence", "missing") }), [facts(0.1)]);
@@ -65,6 +67,9 @@ test("unresolved critical findings and code-confirmed high calculation findings 
   assert.equal(reviewGate({ ...missingCritical(), review_verdict: "needs_more_work" }).trackable, true, "missing depth never deadlocks tracking");
   assert.deepEqual(reviewGate({ review_verdict: "conditional_pass", findings: [{ severity: "high" }] }),
     { trackable: true, positionable: true, blocking: [], open_severe: 1 }, "a review stored before depth checks gates as before");
+  const legacy = reviewGate({ review_verdict: "conditional_pass", findings: [{ severity: "critical" }, { severity: "critical" }] });
+  assert.deepEqual([legacy.trackable, legacy.positionable, legacy.blocking], [true, false, ["Unresolved critical finding"]],
+    "a stored review with an open critical finding blocks a position even without effective_verdict");
   assert.equal(reviewGate(null).trackable, false);
 });
 const missingCritical = () => ({ ...deriveReview(review({ depth_checks: withStatus("thesis_breakers", "missing") }), []), findings: [] });

@@ -16,6 +16,17 @@ export const FOUNDER_FILINGS_NEED: RetrievalNeed = {
   maxPassages: 3,
 };
 
+/**
+ * Who owns and controls the company: share classes, voting power, holders, pay and buybacks. Filings state this in
+ * risk factors and the equity note; the proxy and ownership schedules state it in full.
+ */
+export const GOVERNANCE_NEED: RetrievalNeed = {
+  key: "governance",
+  query: "voting power class B votes per share beneficial ownership controlling shareholder controlled company executive compensation repurchase",
+  sourceRoles: ["regulatory_filing", "proxy_and_governance"],
+  maxPassages: 8,
+};
+
 /** Needs whose passages the founder pass reads, founder-history documents first. */
 export const FOUNDER_NEED_KEYS = [FOUNDER_ORIGIN_NEED.key, FOUNDER_FILINGS_NEED.key];
 
@@ -123,24 +134,72 @@ export function evidencePassageBudget(documentCount: number, env: Record<string,
   return Math.max(32, Math.min(max, Math.round(documentCount * perDocument)));
 }
 
+/** Roles that take the slots other roles cannot fill first: the issuer's filings, then its earnings material. */
+const OVERFLOW_ROLES = ["regulatory_filing", "earnings_release"];
+
+/**
+ * Split `budget` passages across roles in proportion to the square root of each role's stored passages, at least 3
+ * each, so 17 filings get far more than one aggregator page without taking every slot. A role never gets more than
+ * it stores; the slots it leaves go to the other roles in the same proportion, and rounding leftovers go to filings
+ * and earnings material, or without them to any role with passages to spare. Without counts every role gets an equal share.
+ */
+export function rolePassageShares(roles: string[], budget: number, counts?: Record<string, number>): Record<string, number> {
+  const shares: Record<string, number> = {};
+  if (!roles.length) return shares;
+  if (!counts) {
+    for (const role of roles) shares[role] = Math.max(3, Math.floor(budget / roles.length));
+    return shares;
+  }
+  const cap = (role: string) => counts[role] ?? Infinity;
+  let open = [...roles];
+  let left = budget;
+  for (;;) {
+    const weight = open.reduce((sum, role) => sum + Math.sqrt(Math.max(1, counts[role] ?? 1)), 0);
+    const want = new Map(open.map(role => [role, Math.max(3, Math.floor(left * Math.sqrt(Math.max(1, counts[role] ?? 1)) / weight))]));
+    const capped = open.filter(role => want.get(role)! >= cap(role));
+    if (!capped.length) {
+      for (const role of open) shares[role] = want.get(role)!;
+      break;
+    }
+    for (const role of capped) { shares[role] = cap(role); left -= cap(role); }
+    open = open.filter(role => !capped.includes(role));
+    if (!open.length) break;
+  }
+  let spare = budget - Object.values(shares).reduce((sum, n) => sum + n, 0);
+  // Filings and earnings first; without them, any role that stores more than it was given.
+  for (const role of [...OVERFLOW_ROLES, ...roles.filter((role) => !OVERFLOW_ROLES.includes(role))]) {
+    if (spare <= 0 || !(role in shares)) continue;
+    const add = Math.min(spare, cap(role) - shares[role]);
+    shares[role] += add;
+    spare -= add;
+  }
+  return shares;
+}
+
 /**
  * One need per role present in the run, sharing a packet of `passageBudget` passages (default 32). Founder needs come
  * first so their passages keep the founder tag when a role need would also match them. The headline-KPI need comes
- * next and takes a quarter of the budget when filings or earnings material are present.
+ * next and takes a quarter of the budget when filings or earnings material are present, then the governance need.
+ * `rolePassages` (stored passages per role) sizes the role needs; see rolePassageShares.
  */
-export function evidenceNeeds(roles: string[], asset: { name: string }, options: { passageBudget?: number; kpis?: string[] } = {}): RetrievalNeed[] {
+export function evidenceNeeds(roles: string[], asset: { name: string }, options: { passageBudget?: number; kpis?: string[]; rolePassages?: Record<string, number> } = {}): RetrievalNeed[] {
   const unique = [...new Set(roles.filter(Boolean))];
   const budget = options.passageBudget || 32;
   const kpiRoles = unique.filter(role => KPI_SOURCE_ROLES.includes(role));
   const kpi: RetrievalNeed[] = options.kpis?.length && kpiRoles.length
     ? [{ key: "headline_kpis", query: kpiPhrases(options.kpis).join(" "), phrases: kpiPhrases(options.kpis), sourceRoles: kpiRoles, maxPassages: Math.max(6, Math.floor(budget / 4)) }]
     : [];
-  const share = Math.max(3, Math.floor((budget - (kpi[0]?.maxPassages || 0)) / Math.max(1, unique.length)));
+  const governanceRoles = GOVERNANCE_NEED.sourceRoles!.filter(role => unique.includes(role));
+  const governance: RetrievalNeed[] = governanceRoles.length ? [{ ...GOVERNANCE_NEED, sourceRoles: governanceRoles }] : [];
   const founder = [
     ...(unique.includes("founder_and_company_history") ? [FOUNDER_ORIGIN_NEED] : []),
     ...(unique.some(role => FOUNDER_FILINGS_NEED.sourceRoles!.includes(role)) ? [FOUNDER_FILINGS_NEED] : []),
   ];
-  const byRole = unique.filter(role => role !== "founder_and_company_history")
-    .map(role => ({ key: `role:${role}`, query: ROLE_QUERIES[role] || `${asset.name} business revenue growth risk`, sourceRoles: [role], maxPassages: share }));
-  return [...founder, ...kpi, ...byRole];
+  const roleKeys = unique.filter(role => role !== "founder_and_company_history");
+  const shares = rolePassageShares(roleKeys,
+    budget - (kpi[0]?.maxPassages || 0) - (governance[0]?.maxPassages || 0), options.rolePassages);
+  const byRole = roleKeys
+    .map(role => ({ key: `role:${role}`, query: ROLE_QUERIES[role] || `${asset.name} business revenue growth risk`, sourceRoles: [role], maxPassages: shares[role] }))
+    .filter(need => need.maxPassages > 0);
+  return [...founder, ...kpi, ...governance, ...byRole];
 }

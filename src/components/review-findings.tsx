@@ -22,7 +22,7 @@ export function ReviewFindings({ review }: { review: Row | null }) {
       <div><dt>Reviewer verdict</dt><dd>{label(review.model_verdict ?? review.review_verdict)}</dd></div>
       <div><dt>Verdict for a position</dt><dd>{label(review.effective_verdict ?? review.review_verdict)}</dd></div>
       <div><dt>Open high or critical findings</dt><dd>{gate.open_severe}</dd></div>
-      <div><dt>Depth checks missing</dt><dd>{checks.filter(c => c.status === "missing").length} of {checks.length || "not checked"}</dd></div>
+      <div><dt>Depth checks missing</dt><dd>{checks.length ? `${checks.filter(c => c.status === "missing").length} of ${checks.length}` : "Not checked"}</dd></div>
     </dl>
     {gate.blocking.length > 0 && <div className={ui.sectionBody}><p className={ui.error} role="status">Position approval is blocked: {gate.blocking.join("; ")}.</p></div>}
     {review.review_summary && <p className="mt-4 text-sm leading-7 text-[#515d70]">{String(review.review_summary)}</p>}
