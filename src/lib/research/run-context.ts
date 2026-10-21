@@ -310,12 +310,19 @@ export async function failV3Task(sql: Sql, taskId: string, error: unknown): Prom
 // Run-wide context leads the packet, so calls with the same instructions (report sections, extraction
 // batches, retries) also share the packet's leading bytes and the provider can reuse them from cache.
 const RUN_CONTEXT_KEYS = ["asset", "research_question", "research_framing", "source_cutoff", "profile", "coverage_requirements", "evidence_claims", "filing_passages",
-  "financial_analytics", "financial_statement_summary", "report_facts"];
+  "financial_analytics", "financial_statement_summary", "report_facts", "peer_benchmark", "demand_backdrop"];
 
 /** Stages whose calls get the financial_analytics digest in their shared packet prefix. */
 export const ANALYTICS_DIGEST_STAGES = new Set(["company_genesis", "business_process_analysis", "moat_analysis", "operating_model",
   "operating_scenarios", "asset_valuation", "decision_synthesis"]);
 export const FINANCIAL_ANALYTICS_RULE = "financial_analytics is computed by code from the filed statements: 20-quarter statistics (median, min, max, latest, percentile of the latest), segment economics (who earns, who burns), cash conversion, working-capital days and capital allocation. Tables are { columns, rows }; amounts are currency millions and ratios are decimals. Use its figures instead of recomputing them, compare current values with their history, and cite its artifact_id for them. A null value means the input was not captured: say so rather than estimating it.";
+
+export const PEER_BENCHMARK_RULE = "peer_benchmark holds named peers' consolidated SEC figures (USD millions): last 8 quarters of revenue and operating income, TTM operating margin and revenue growth, and annual cash flow and capex. Compare the company's growth, margin and capex intensity with them and cite the artifact_id; its gaps name peers without SEC data. It has no segment detail.";
+export const DEMAND_BACKDROP_RULE = "demand_backdrop holds the home country's demand series (retail sales, consumption, e-commerce, inflation or GDP growth) with latest values and year-on-year change. State whether the forecast's revenue growth needs share gains or pricing above end-demand growth, and cite the artifact_id.";
+const BENCHMARK_INJECTIONS: [string, Set<string>, string][] = [
+  ["peer_benchmark", new Set(["business_process_analysis", "moat_analysis", "asset_valuation", "decision_synthesis"]), PEER_BENCHMARK_RULE],
+  ["demand_backdrop", new Set(["business_process_analysis", "operating_model", "operating_scenarios"]), DEMAND_BACKDROP_RULE],
+];
 
 export function runContextFirst(packet: Record<string, unknown>): Record<string, unknown> {
   const leading = RUN_CONTEXT_KEYS.filter(key => key in packet);
@@ -453,6 +460,18 @@ export async function prepareResearchCall(params: ResearchCallParams) {
     if (pack?.success) {
       params = { ...params, packet: { ...params.packet, financial_analytics: analyticsDigest(pack.data, String(row.id)) } };
       addRule(FINANCIAL_ANALYTICS_RULE);
+    }
+  }
+  // Peer and demand benchmarks are code-built from SEC companyfacts, FRED and the World Bank; stages that test the
+  // moat, the forecast or the valuation against them get them in the shared prefix, with their artifact_id.
+  if (!params.taskType.startsWith("team_")) {
+    for (const [type, stages, rule] of BENCHMARK_INJECTIONS) {
+      if (!stages.has(params.stageKey) || type in params.packet) continue;
+      const [row] = await params.sql`SELECT id, content_json FROM research_artifacts WHERE research_run_id = ${params.ctx.runId}
+        AND artifact_type = ${type} AND status IN ('validated', 'accepted') ORDER BY artifact_version DESC, created_at DESC LIMIT 1`;
+      if (row?.content_json?.status !== "complete") continue;
+      params = { ...params, packet: { ...params.packet, [type]: { artifact_id: String(row.id), ...row.content_json } } };
+      addRule(rule);
     }
   }
   // Filing text (MD&A, segment notes, results discussion) for stages that explain drivers. It is the same for
