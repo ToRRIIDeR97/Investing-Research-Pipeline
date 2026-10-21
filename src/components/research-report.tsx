@@ -16,7 +16,7 @@ type RecordValue=Record<string,any>;
 const names=chapterNames as Record<string,string>;
 const clean=readerText;
 const chapterName=(s:ReportSection)=>names[s.id]||clean(s.title);
-const date=(value:string)=>new Date(value).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'});
+const date=(value:string|null)=>value?new Date(value).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}):'Undated';
 
 function Values({value}:{value:any}):ReactNode {
   if (Array.isArray(value)) return value.length?<ul>{value.map((v,i)=><li key={i}><Values value={v}/></li>)}</ul>:<span className={styles.muted}>No observations available</span>;
