@@ -4,6 +4,8 @@ import {
   validateMoatAssessment,
   validateMoatAttackMatrix,
   validateNoMoatCounterfactual,
+  capMoatClassifications,
+  attackTargetErrors,
 } from "@/lib/research/moat/validation";
 import type {
   MoatAssessment,
@@ -11,7 +13,23 @@ import type {
   NoMoatCounterfactual,
 } from "@/lib/research/moat/contracts";
 
+const SCORED = {
+  classification: "moderate" as const, supporting_claim_ids: [], artifact_paths: [],
+  scores: { current_strength: 3, breadth_across_revenue: 3, replication_difficulty: 3, pricing_power: 3, attack_resistance: 3, expected_durability: 3 },
+};
+
 describe("moat proof and attack artifacts (Component 9)", () => {
+  it("a strong moat without history and peer evidence paths is capped at moderate; attacks must name a claimed moat", () => {
+    const entry: { claimed_moat: string; classification: string; artifact_paths: string[]; classification_note?: string } =
+      { claimed_moat: "Scale", classification: "strong", artifact_paths: ["financial_analytics.segments.quarterly"] };
+    const capped = capMoatClassifications({ assessments: [entry, { ...entry, artifact_paths: [...entry.artifact_paths, "peer_benchmark.peers"] }] });
+    assert.equal(capped.assessments[0].classification, "moderate");
+    assert.match(capped.assessments[0].classification_note!, /without peer/);
+    assert.equal(capped.assessments[1].classification, "strong");
+    assert.deepEqual(attackTargetErrors({ assessments: [{ claimed_moat: "Scale" }] },
+      { attacks: [{ targets_moat: "scale", primary_attacker: "A" }, { targets_moat: "Brand", primary_attacker: "B" }] }).length, 1);
+  });
+
   it("C9-T1: High margins as only evidence is rejected", () => {
     const assessment: MoatAssessment = {
       artifact_type: "moat_assessment",
@@ -31,6 +49,7 @@ describe("moat proof and attack artifacts (Component 9)", () => {
           decay_velocity: "Low",
           failure_indicators: ["Competitor third-party warehouse adoption"],
           confidence: 0.8,
+          ...SCORED,
         },
       ],
     };
@@ -59,6 +78,7 @@ describe("moat proof and attack artifacts (Component 9)", () => {
           failure_indicators: ["Lower buyer frequency"],
           confidence: 0.9,
           engagement_per_participant: -0.05, // declining engagement
+          ...SCORED,
         },
       ],
     };
@@ -86,6 +106,7 @@ describe("moat proof and attack artifacts (Component 9)", () => {
           decay_velocity: "Low",
           failure_indicators: ["Deteriorating NPS"],
           confidence: 0.85,
+          ...SCORED,
         },
       ],
     };
@@ -108,6 +129,8 @@ describe("moat proof and attack artifacts (Component 9)", () => {
           leading_indicators: ["Amazon warehouse additions", "Prime adoption rates"],
           financial_translation: "None", // no translation
           residual_moat: "Weakened",
+          targets_moat: "Scale advantage",
+          survives: "partially",
         },
       ],
     };
