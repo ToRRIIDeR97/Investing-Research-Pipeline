@@ -86,8 +86,8 @@ test("AC-6: the automatic limit is inclusive and configurable", () => {
   assert.equal(requestResetPlan(valuation, ledger(), { autoResetUsed: false, maxAutoStages: 6 }).mode, "auto", "6 of 6");
   assert.equal(requestResetPlan(valuation, ledger(), { autoResetUsed: false, maxAutoStages: 5 }).mode, "approval", "6 of 5");
   const financials = [rerun(request("r2", "financials", "regulatory_filing", "Recapture the Q3 2025 cash flow quarter"))];
-  process.env.RESEARCH_MAX_AUTO_RESET_STAGES = "10";
-  try { assert.equal(requestResetPlan(financials, ledger(), { autoResetUsed: false }).mode, "auto", "10 of 10 from the environment"); }
+  process.env.RESEARCH_MAX_AUTO_RESET_STAGES = "13";
+  try { assert.equal(requestResetPlan(financials, ledger(), { autoResetUsed: false }).mode, "auto", "13 of 13 from the environment"); }
   finally { delete process.env.RESEARCH_MAX_AUTO_RESET_STAGES; }
   assert.equal(requestResetPlan(financials, ledger(), { autoResetUsed: false }).mode, "approval", "default limit 6");
 });

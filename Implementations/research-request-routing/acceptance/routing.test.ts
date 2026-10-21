@@ -75,11 +75,12 @@ test("AC-6: the first valuation re-run (6 analysis stages) is planned as automat
   assert.deepEqual(plan.request_ids, ["request-1-4"]);
 });
 
-test("AC-6: a financials re-run (10 analysis stages) or a second automatic reset needs approval", () => {
+test("AC-6: a financials re-run (13 analysis stages) or a second automatic reset needs approval", () => {
   const requestResetPlan = exported(TEAM, "requestResetPlan");
   const financials = requestResetPlan([rerun(REQUEST_1_2, "a2")], completed, { autoResetUsed: false });
   assert.equal(financials.mode, "approval");
-  assert.equal(financials.analysis_stages.length, 10);
+  // Genesis, business and moat read the financial_analytics digest, so they re-run with the record.
+  assert.equal(financials.analysis_stages.length, 13);
   assert.deepEqual(sorted(financials.stages), sorted(dependentStages(["historical_record"])));
   assert.equal(requestResetPlan([rerun(REQUEST_1_4, "a1")], completed, { autoResetUsed: true }).mode, "approval");
 });

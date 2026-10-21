@@ -162,11 +162,11 @@ describe("run lifecycle reliability", { skip: process.env.RUN_DB_INTEGRATION !==
     });
   }
 
-  /** A running run whose stages before the financial and business branches are done (skipped, so no team briefs run). */
+  /** A running run whose stages before the business and diagnosis branches are done (skipped, so no team briefs run). */
   async function runAtBranches() {
     const runId = await newRun("running");
     await sql`UPDATE research_stages SET status = 'skipped' WHERE research_run_id = ${runId}
-      AND stage_key IN ('intake', 'asset_identity', 'archetype_composition', 'research_plan', 'source_discovery', 'source_ingestion', 'evidence_extraction')`;
+      AND stage_key IN ('intake', 'asset_identity', 'archetype_composition', 'research_plan', 'source_discovery', 'source_ingestion', 'evidence_extraction', 'historical_record')`;
     return runId;
   }
   const invalid = async (): Promise<ValidationResult> => ({ valid: false, errors: ["stub output rejected"], warnings: [], checkedAt: new Date().toISOString() });
@@ -182,14 +182,14 @@ describe("run lifecycle reliability", { skip: process.env.RUN_DB_INTEGRATION !==
     let seenBySlowSibling = 0;
     const result = await withHandlers({
       company_genesis: { stageKey: "company_genesis", execute: async () => { genesisCalls += 1; return {}; }, validate: invalid },
-      historical_record: { stageKey: "historical_record", execute: async () => {
+      historical_diagnosis: { stageKey: "historical_diagnosis", execute: async () => {
         // A lockstep loop could not call company_genesis again until this stage returns.
         for (let waited = 0; genesisCalls < 2 && waited < 5_000; waited += 25) await new Promise((r) => setTimeout(r, 25));
         seenBySlowSibling = genesisCalls;
         throw fatal();
       } },
     }, () => runResearchPipeline(runId));
-    assert.ok(seenBySlowSibling >= 2, `company_genesis ran ${seenBySlowSibling} time(s) while historical_record was in flight`);
+    assert.ok(seenBySlowSibling >= 2, `company_genesis ran ${seenBySlowSibling} time(s) while historical_diagnosis was in flight`);
     assert.ok(["needs_more_work", "failed"].includes(result.status), result.failure_reason || result.notes.join("\n"));
   });
 

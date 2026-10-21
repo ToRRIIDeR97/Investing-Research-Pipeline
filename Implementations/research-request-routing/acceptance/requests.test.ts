@@ -125,7 +125,7 @@ test("AC-4: when the search finds nothing the single answer attempt ends unavail
   } finally { model.restore(); web.restore(); await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
 });
 
-/** A financials answer that asks for a re-run: 10 analysis stages, above the default limit of 6. */
+/** A financials answer that asks for a re-run: 13 analysis stages, above the default limit of 6. */
 async function pauseOnFinancialsRerun(sql: postgres.Sql, run: Run) {
   const record = await saveReportArtifact(sql, run, "historical_record", `${run.assetSlug}-historical-record`,
     { artifact_type: "historical_record", summary: `Capex series with year-to-date derived quarters. Fixture ${run.runId}.` });
@@ -154,7 +154,8 @@ test("AC-6: a re-run above the automatic limit pauses the run with its stages, r
     assert.ok(reset, "metadata.request_reset is set");
     assert.deepEqual(sorted(reset.stages), sorted(dependentStages(["historical_record"])));
     assert.deepEqual(reset.request_ids, [REQUEST_1_2.id]);
-    assert.ok(Math.abs(Number(reset.estimated_cost_usd) - 0.751) < 1e-6, `estimated cost ${reset.estimated_cost_usd}`);
+    // Every reset stage's earlier cost, company_genesis included now that it reads the analytics digest.
+    assert.ok(Math.abs(Number(reset.estimated_cost_usd) - 0.911) < 1e-6, `estimated cost ${reset.estimated_cost_usd}`);
     const statuses = await stageStatuses(sql, run.runId);
     assert.equal(statuses.ai_reviewer, "waiting_for_human");
     assert.equal(statuses.historical_record, "completed", "nothing is reset before approval");
@@ -197,7 +198,7 @@ test("AC-7: approving the re-run performs the reset and resumes the run", { skip
     assert.equal(state.metadata.request_reset ?? null, null);
     const statuses = await stageStatuses(sql, run.runId);
     for (const key of dependentStages(["historical_record"])) assert.equal(statuses[key], "pending", key);
-    for (const key of ["source_discovery", "company_genesis"]) assert.equal(statuses[key], "completed", key);
+    for (const key of ["source_discovery", "evidence_extraction"]) assert.equal(statuses[key], "completed", key);
     const [record] = await sql`SELECT status FROM research_artifacts WHERE id = ${recordId}`;
     assert.equal(record.status, "needs_more_work", "the reset invalidates the owner's artifacts as before");
     assert.equal((await getTeamRequests(sql, run.runId))?.state, "processing");
