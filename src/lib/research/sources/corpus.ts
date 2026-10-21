@@ -4,7 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { canonicalResearchKey } from "@/lib/research/v2-contracts";
 import { canonicalMetricPlan, normalizeSourceGap, positiveFiniteNumber, selectLatestFact } from "@/lib/research/pipeline-helpers";
-import { ensureDocumentIndexed, evidenceNeeds, evidencePassageBudget, FOUNDER_NEED_KEYS, getEmbeddingProvider, indexDocumentContent, openingPassages, recordContradictions,
+import { ensureDocumentIndexed, evidenceNeeds, rolePassageCounts, evidencePassageBudget, FOUNDER_NEED_KEYS, getEmbeddingProvider, indexDocumentContent, openingPassages, recordContradictions,
   retrievePassages, runDocuments, type RetrievedPassage } from "@/lib/research/memory";
 import { getAgentConfig } from "@/lib/agent-harness/registry";
 import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
@@ -171,7 +171,8 @@ export async function buildSourcePacket(sql: Sql, ctx: RunContext, sources: Stor
   const documents = (await runDocuments(sql, ctx.runId)).filter((doc) => sourceIds.includes(doc.id));
   const typeOf = new Map(documents.map((doc) => [doc.id, doc.sourceType]));
   const roles = [...new Set(documents.map((doc) => doc.role).filter((role): role is string => Boolean(role)))];
-  const needs = evidenceNeeds(roles, { name: ctx.assetName }, { passageBudget: evidencePassageBudget(documents.length), kpis: options.kpis });
+  const needs = evidenceNeeds(roles, { name: ctx.assetName }, { passageBudget: evidencePassageBudget(documents.length), kpis: options.kpis,
+    rolePassages: await rolePassageCounts(sql, ctx.runId, documents) });
   const roleless = documents.filter((doc) => !doc.role).map((doc) => doc.id);
   if (roleless.length) needs.push({ key: "general", query: `${ctx.assetName} business revenue growth risk strategy`, sourceIds: roleless, maxPassages: 4 });
   // With embeddings configured, every passage the packet can draw on gets a vector first. Only run documents
@@ -591,6 +592,23 @@ type SecFiling = {
   filingFamily?: string;
 };
 
+/** Quarters of history the historical record covers; the 10-Qs selected cover this window. */
+const HISTORY_QUARTERS = 20;
+const OWNERSHIP_FORM = /^(SC 13[DG]|SCHEDULE 13[DG])(\/A)?$/;
+
+/** The 10-Qs whose period ends inside the HISTORY_QUARTERS window ending at the newest 10-K or 10-Q period (filing dates when no period is given). */
+function windowQuarterlyReports(periodic: SecFiling[], quarterly: SecFiling[]) {
+  const end = (filing: SecFiling) => String(filing.reportDate || filing.filingDate || "").slice(0, 10);
+  const newest = periodic.map(end).filter(Boolean).sort().at(-1);
+  if (!newest) return quarterly.slice(0, HISTORY_QUARTERS);
+  // A 52/53-week fiscal quarter can end a few days off the calendar date, so the boundary moves forward 15 days.
+  const start = new Date(`${newest}T00:00:00Z`);
+  start.setUTCMonth(start.getUTCMonth() - HISTORY_QUARTERS * 3);
+  start.setUTCDate(start.getUTCDate() + 15);
+  const from = start.toISOString().slice(0, 10);
+  return quarterly.filter((filing) => end(filing) >= from);
+}
+
 export function selectResearchFilings(filings: SecFiling[], earliestDate: string, cutoffDate: string) {
   const eligible = filings.filter((filing) => {
     const filed = String(filing.filingDate || "").slice(0, 10);
@@ -609,15 +627,20 @@ export function selectResearchFilings(filings: SecFiling[], earliestDate: string
     .map((filing) => ({ ...filing, filingFamily, semanticRole: "annual_report" }));
 
   if (filingFamily === "domestic_issuer") {
-    const quarterly = eligible
-      .filter((filing) => filing.form === "10-Q")
-      .slice(0, 12)
+    const tenQs = eligible.filter((filing) => filing.form === "10-Q");
+    const quarterly = windowQuarterlyReports([...annual, ...tenQs], tenQs)
       .map((filing) => ({ ...filing, filingFamily, semanticRole: "quarterly_report" }));
     const earningsUpdates = eligible
       .filter((filing) => filing.form === "8-K" && /(^|,)2\.02(,|$)/.test(String(filing.items || "")))
       .slice(0, 4)
       .map((filing) => ({ ...filing, filingFamily, semanticRole: "earnings_release" }));
-    return [...annual, ...quarterly, ...earningsUpdates];
+    // Governance: the newest proxy statement and up to three beneficial-ownership schedules (SC 13D/G, renamed
+    // SCHEDULE 13D/G in December 2024). Foreign issuers report the same in 20-F Items 6-7.
+    const governance = [
+      ...eligible.filter((filing) => filing.form === "DEF 14A").slice(0, 1),
+      ...eligible.filter((filing) => OWNERSHIP_FORM.test(filing.form)).slice(0, 3),
+    ].map((filing) => ({ ...filing, filingFamily, semanticRole: "proxy_and_governance" }));
+    return [...annual, ...quarterly, ...earningsUpdates, ...governance];
   }
 
   const resultTerms = /results|earnings|financial statements|interim|quarter|six months|nine months|press release/i;
@@ -778,13 +801,14 @@ async function fetchSecContext(ctx: RunContext) {
   const companyFacts = await companyFactsRes.json();
   const submissions = await submissionsRes.json();
   const cutoffDate = ctx.marketDataCutoffAt?.slice(0, 10) || new Date().toISOString().slice(0, 10);
+  // Five years and a half: the oldest 10-Q of the 20-quarter window can be filed up to a quarter before cutoff - 5 years.
   const earliestDate = new Date(cutoffDate);
-  earliestDate.setFullYear(earliestDate.getFullYear() - 5);
+  earliestDate.setMonth(earliestDate.getMonth() - 66);
   const earliestDateText = Number.isNaN(earliestDate.getTime())
     ? "0000-01-01"
     : earliestDate.toISOString().slice(0, 10);
   const beforeCutoff = (value: unknown) => !value || String(value).slice(0, 10) <= cutoffDate;
-  const withinFiveYears = (value: unknown) => beforeCutoff(value) && String(value || "0000-01-01").slice(0, 10) >= earliestDateText;
+  const withinFilingWindow = (value: unknown) => beforeCutoff(value) && String(value || "0000-01-01").slice(0, 10) >= earliestDateText;
   const factBeforeCutoff = (fact: Record<string, unknown>) =>
     beforeCutoff(fact.filed) && beforeCutoff(fact.end);
   const usGaap = companyFacts.facts?.["us-gaap"] || {};
@@ -795,7 +819,7 @@ async function fetchSecContext(ctx: RunContext) {
     .slice(-8);
   const filingRows = await loadSubmissionFilings(submissions, earliestDateText, cutoffDate);
   const recentFilings = selectResearchFilings(filingRows, earliestDateText, cutoffDate)
-    .filter((filing) => withinFiveYears(filing.filingDate));
+    .filter((filing) => withinFilingWindow(filing.filingDate));
 
   return {
     cik,
@@ -826,7 +850,7 @@ function filingSourcePayload(ctx: RunContext, cik: string, filing: Record<string
   const reportDate = textValue(filing.reportDate, "");
   const filingDate = textValue(filing.filingDate, "");
   return {
-    sourceType: `sec_filing_${form.toLowerCase()}`,
+    sourceType: `sec_filing_${form.toLowerCase().replace(/\s+/g, "_")}`,
     title: `${ctx.assetName} ${form}${semanticRole === "earnings_release" ? " earnings release" : ""}${reportDate ? ` report ${reportDate}` : ""}`,
     publisher: "SEC EDGAR",
     url: secArchiveUrl(cik, textValue(filing.accessionNumber), textValue(filing.primaryDocument)),
@@ -846,6 +870,8 @@ function filingSourcePayload(ctx: RunContext, cik: string, filing: Record<string
       filingFamily: filing.filingFamily,
       semanticRole: filing.semanticRole,
       attachmentType: filing.attachmentType,
+      // Proxy statements and ownership schedules are read as governance sources, not as financial filings.
+      ...(semanticRole === "proxy_and_governance" ? { source_role: "proxy_and_governance" } : {}),
     },
     chunkTitle: `${form} filing ${reportDate || filingDate}`,
   };
@@ -958,7 +984,7 @@ export async function fetchSecFilingPayloads(sql: Sql, ctx: RunContext, secConte
         });
         if (!response.ok) {
           payloads.push({
-            sourceType: `sec_filing_${textValue(filing.form, "unknown").toLowerCase()}`,
+            sourceType: `sec_filing_${textValue(filing.form, "unknown").toLowerCase().replace(/\s+/g, "_")}`,
             title: `${ctx.assetName} ${textValue(filing.form, "SEC filing")} ${documentInfo.attachmentType} download failed`,
             publisher: "SEC EDGAR",
             url,
@@ -977,7 +1003,7 @@ export async function fetchSecFilingPayloads(sql: Sql, ctx: RunContext, secConte
       payloads.push(filingSourcePayload(ctx, cik, documentFiling, content));
     } catch {
       payloads.push({
-        sourceType: `sec_filing_${textValue(filing.form, "unknown").toLowerCase()}`,
+        sourceType: `sec_filing_${textValue(filing.form, "unknown").toLowerCase().replace(/\s+/g, "_")}`,
         title: `${ctx.assetName} ${textValue(filing.form, "SEC filing")} ${documentInfo.attachmentType} ${textValue(filing.reportDate, "")}`.trim(),
         publisher: "SEC EDGAR",
         url,

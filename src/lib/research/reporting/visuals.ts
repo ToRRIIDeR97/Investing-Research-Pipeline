@@ -213,7 +213,7 @@ export function validateVisual(visual: VisualSpec, input: Pick<ReportDocument,'a
     const people=new Map(visual.people.map(p=>[p.id,p]));if(people.size!==visual.people.length)throw new Error('Duplicate organization person');
     if(!Number.isFinite(Date.parse(visual.as_of))||Date.parse(visual.as_of)>Date.parse(input.cutoff))throw new Error('Invalid organization date');
     for(const p of visual.people){const seen=new Set([p.id]);let parent=p.reports_to;while(parent){if(!people.has(parent)||seen.has(parent))throw new Error('Unknown or cyclic reporting relationship');seen.add(parent);parent=people.get(parent)!.reports_to;}
-      for(const id of p.evidence_ids){const e=input.evidence.find(e=>e.id===id);if(!e?.quote?.trim()||!/^https?:\/\//i.test(e.url)||!Number.isFinite(Date.parse(e.published_at))||Date.parse(e.published_at)>Date.parse(input.cutoff))throw new Error('Organization source unavailable');}
+      for(const id of p.evidence_ids){const e=input.evidence.find(e=>e.id===id);if(!e?.quote?.trim()||!/^https?:\/\//i.test(e.url)||(e.published_at!==null&&!(Date.parse(e.published_at)<=Date.parse(input.cutoff))))throw new Error('Organization source unavailable');}
     }return;
   }
   for (const lane of visual.lanes) {
@@ -221,7 +221,7 @@ export function validateVisual(visual: VisualSpec, input: Pick<ReportDocument,'a
     for (const id of lane.artifact_ids) if (!input.artifacts.some(a=>a.id===id)) throw new Error(`Unknown visual artifact ${id}`);
     for (const id of lane.evidence_ids) {
       const e=input.evidence.find(e=>e.id===id);
-      if (!e || !e.quote?.trim() || !e.location?.trim() || !/^https?:\/\//i.test(e.url) || !Number.isFinite(Date.parse(e.published_at)) || Date.parse(e.published_at)>Date.parse(input.cutoff)) throw new Error(`Invalid visual evidence ${id}`);
+      if (!e || !e.quote?.trim() || !e.location?.trim() || !/^https?:\/\//i.test(e.url) || (e.published_at !== null && !(Date.parse(e.published_at) <= Date.parse(input.cutoff)))) throw new Error(`Invalid visual evidence ${id}`);
     }
   }
 }

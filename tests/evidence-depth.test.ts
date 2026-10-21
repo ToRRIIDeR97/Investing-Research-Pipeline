@@ -33,10 +33,11 @@ test("every archetype has headline KPIs, and an ad platform asks for users, ARPU
 test("the headline-KPI need follows the founder needs and covers filings and earnings material only", () => {
   const kpis = headlineKpis(["advertising_platform"]);
   const needs = evidenceNeeds(["regulatory_filing", "earnings_release", "industry_primary"], { name: "Meta" }, { passageBudget: 128, kpis });
-  assert.deepEqual(needs.map((need) => need.key), ["founder_origin_filings", "headline_kpis", "role:regulatory_filing", "role:earnings_release", "role:industry_primary"]);
+  assert.deepEqual(needs.map((need) => need.key), ["founder_origin_filings", "headline_kpis", "governance", "role:regulatory_filing", "role:earnings_release", "role:industry_primary"]);
   assert.deepEqual(needs[1].sourceRoles, ["regulatory_filing", "earnings_release"]);
   assert.equal(needs[1].maxPassages, 32);
-  assert.equal(needs[2].maxPassages, 32);
+  assert.deepEqual(needs[2].sourceRoles, ["regulatory_filing"]);
+  assert.equal(needs[3].maxPassages, 29, "without passage counts the rest is split equally: (128 - 32 - 8) / 3");
   assert.ok(!evidenceNeeds(["industry_primary"], { name: "Meta" }, { kpis }).some((need) => need.key === "headline_kpis"));
 });
 

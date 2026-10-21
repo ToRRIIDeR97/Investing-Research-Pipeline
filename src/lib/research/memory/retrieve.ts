@@ -210,6 +210,19 @@ async function latestParses(sql: postgres.Sql, ids: string[]): Promise<string[]>
     ORDER BY source_document_id, completed_at DESC NULLS LAST, created_at DESC`).map(row => String(row.id));
 }
 
+/** Research-memory passages stored per source role across `documents`, indexing any document that lacks a parse. */
+export async function rolePassageCounts(sql: postgres.Sql, runId: string, documents: RunDocument[]): Promise<Record<string, number>> {
+  const withRole = documents.filter(doc => doc.role);
+  const ids = withRole.map(doc => doc.id);
+  await ensureIndexed(sql, ids, runId);
+  const parseIds = ids.length ? await latestParses(sql, ids) : [];
+  const perDocument = new Map((parseIds.length ? await sql`SELECT source_document_id, count(*)::int AS n FROM document_chunks
+    WHERE document_parse_id = ANY(${parseIds}::uuid[]) GROUP BY source_document_id` : []).map(row => [String(row.source_document_id), Number(row.n)]));
+  const counts: Record<string, number> = {};
+  for (const doc of withRole) counts[doc.role!] = (counts[doc.role!] || 0) + (perDocument.get(doc.id) || 0);
+  return counts;
+}
+
 /**
  * Passages nearest the query by cosine similarity, using only vectors of the provider's model.
  * Vectors are streamed in batches and only their scores are kept, so a large corpus is never

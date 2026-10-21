@@ -1,4 +1,4 @@
-import { resolveTable } from "./tables";
+import { flatTable, resolveTable, type FlatTable } from "./tables";
 import { validateVisual, historySeries, buildVisual } from './visuals';
 export { resolveTable } from "./tables";
 import { createHash } from "node:crypto";
@@ -10,7 +10,8 @@ export interface ReportArtifact {
 }
 export interface ReportEvidence {
   id: string; claim_text: string; source_title: string; url: string;
-  published_at: string; location: string; quote: string;
+  /** null for an undated document; loadReportInputs keeps those only outside point-in-time runs. */
+  published_at: string | null; location: string; quote: string;
 }
 export interface ReportInput {
   asset_name: string; cutoff: string; is_test: boolean; required_coverage: string[];
@@ -50,6 +51,15 @@ export function plainMarkdown(text: string): string {
     .replace(/([\\`*_[\]#|])/g, "\\$1").replace(/\r?\n/g, " ");
 }
 function cell(value: unknown): string { return plainMarkdown(value == null ? "Not disclosed" : typeof value === "object" ? JSON.stringify(value) : String(value)); }
+/** Report tables of STANDARD_VERSION: flat rows, a missing value as an em dash (not computed is not undisclosed). */
+function flatTableMarkdown(table: FlatTable): string {
+  if (!table.rows.length) return "No observations available.";
+  const blank = (value: unknown) => plainMarkdown(value == null ? "—" : String(value));
+  const keys = [...new Set(table.rows.flatMap(row => Object.keys(row)))];
+  return [`| ${keys.map(blank).join(" | ")} |`, `| ${keys.map(() => "---").join(" | ")} |`,
+    ...table.rows.map(row => `| ${keys.map(k => blank(row[k])).join(" | ")} |`), ...table.notes.flatMap(note => ["", plainMarkdown(note)])].join("\n");
+}
+/** The renderer of reports stored before STANDARD_VERSION adaptive-2; kept so their content hash still verifies. */
 function tableMarkdown(value: unknown): string {
   // Columnar tables (financial_analytics, report_facts) render as their rows.
   const columnar = value as { columns?: unknown; rows?: unknown };
@@ -69,6 +79,11 @@ function tableMarkdown(value: unknown): string {
 
 export function createReport(input: ReportInput): ReportDocument {
   const errors: string[] = [];
+  // A stored report keeps the standard it was written under, so re-rendering it reproduces its hash.
+  const stored = (input as Partial<ReportDocument>).standard_version;
+  const legacy = Boolean(stored) && stored !== STANDARD_VERSION;
+  const renderTable = (table: ReportSection["tables"][number]) => legacy
+    ? tableMarkdown(resolveTable(table, input.artifacts)) : flatTableMarkdown(flatTable(table, input.artifacts));
   const sections = input.sections.map(s => Section.parse(s));
   const coverage = input.coverage.map(c => CoverageResult.parse(c));
   const questions = input.questions.map(q => Question.parse(q));
@@ -88,7 +103,7 @@ export function createReport(input: ReportInput): ReportDocument {
       if (!e) { errors.push(`Unknown evidence ${id}`); continue; }
       if (!e.quote.trim() || !e.location.trim()) errors.push(`Evidence ${id} has no source passage/location`);
       if (!/^https?:\/\//i.test(e.url)) errors.push(`Evidence ${id} has no usable source URL`);
-      if (!Number.isFinite(Date.parse(e.published_at)) || Date.parse(e.published_at) > cutoff) errors.push(`Evidence ${id} is undated or beyond cutoff`);
+      if (e.published_at !== null && !(Date.parse(e.published_at) <= cutoff)) errors.push(`Evidence ${id} is misdated or beyond cutoff`);
     }
   }
   for (const section of sections) {
@@ -99,7 +114,7 @@ export function createReport(input: ReportInput): ReportDocument {
       if (p.kind === "fact" && !p.evidence_ids.length && !p.artifact_ids.length) errors.push(`Unsupported fact in ${section.id}`);
     }
     for (const table of section.tables) {
-      try { resolveTable(table, input.artifacts); } catch (error) { errors.push(String(error)); }
+      try { renderTable(table); } catch (error) { errors.push(String(error)); }
     }
     for (const visual of section.visuals ?? []) {
       try { validateVisual(visual, input); } catch (error) { errors.push(String(error)); }
@@ -132,7 +147,7 @@ export function createReport(input: ReportInput): ReportDocument {
   for (const s of sections) {
     lines.push(`## ${plainMarkdown(s.title)}`, "");
     for (const p of s.paragraphs) lines.push(`${p.kind === "assumption" ? "Analyst assumption. " : p.kind === "speculation" ? "Speculative option. " : ""}${plainMarkdown(p.text)} ${p.evidence_ids.map(citation).join(" ")}`.trim(), "");
-    for (const table of s.tables) lines.push(`### ${plainMarkdown(table.title)}`, "", tableMarkdown(resolveTable(table, input.artifacts)), "");
+    for (const table of s.tables) lines.push(`### ${plainMarkdown(table.title)}`, "", renderTable(table), "");
     // Visual specifications and provenance are part of the approved/exported content.
     for (const visual of s.visuals ?? []) {
       lines.push(`### ${plainMarkdown(visual.title)}`, '', plainMarkdown(visual.caption), '');
@@ -156,11 +171,11 @@ export function createReport(input: ReportInput): ReportDocument {
   lines.push("## Sources", "");
   for (const id of usedIds) {
     const e = evidence.get(id)!;
-    lines.push(`${citation(id)} [${plainMarkdown(e.source_title)}](${encodeURI(e.url).replace(/[()]/g, c => c === "(" ? "%28" : "%29")}) · ${plainMarkdown(e.published_at)} · ${plainMarkdown(e.location)}`, "", `Supporting passage: ${plainMarkdown(e.quote)}`, "");
+    lines.push(`${citation(id)} [${plainMarkdown(e.source_title)}](${encodeURI(e.url).replace(/[()]/g, c => c === "(" ? "%28" : "%29")}) · ${plainMarkdown(e.published_at ?? "undated")} · ${plainMarkdown(e.location)}`, "", `Supporting passage: ${plainMarkdown(e.quote)}`, "");
   }
   const markdown = lines.join("\n");
   const visualSpecs = sections.flatMap(s=>(s.visuals??[]).map(v=>({section_id:s.id,...v})));
-  return { ...input, sections, coverage, questions, standard_version: STANDARD_VERSION,
+  return { ...input, sections, coverage, questions, standard_version: legacy ? stored! : STANDARD_VERSION,
     input_hash: inputFingerprint(input.artifacts, input.evidence), content_hash: createHash("sha256").update(markdown + (visualSpecs.length ? fingerprint(visualSpecs) : '')).digest("hex"),
     conclusion_status: withheld ? "withheld" : qualified ? "qualified" : "ready_for_review", markdown };
 }
