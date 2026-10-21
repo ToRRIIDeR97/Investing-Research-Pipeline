@@ -2,7 +2,8 @@ import { z } from "zod/v4";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { ReportVisual, QUANTITATIVE_VISUALS } from './visuals';
 
-export const STANDARD_VERSION = "asset-framework-2.1-adaptive-1";
+/** adaptive-2: report tables print flat rows only (see flatTable). Reports stored under adaptive-1 render as before. */
+export const STANDARD_VERSION = "asset-framework-2.1-adaptive-2";
 export const COVERAGE = {
   ownership: "Investor claim, entity structure and value accrual",
   evidence: "Evidence quality, definitions, periods and missing disclosures",

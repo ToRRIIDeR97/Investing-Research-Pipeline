@@ -15,3 +15,75 @@ export function resolveTable(table: ReportSection["tables"][number], artifacts: 
   }
   return value;
 }
+
+/** Most rows a report table may print; a longer series belongs in Financials or a chart. */
+export const MAX_TABLE_ROWS = 60;
+
+export type TableCell = string | number | boolean | null;
+export interface FlatTable { rows: Record<string, TableCell>[]; notes: string[] }
+
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+const isCell = (value: unknown): value is TableCell => value === null || ["string", "number", "boolean"].includes(typeof value);
+
+/** A computed valuation schedule (calculateValuationSchedule): yearly rows plus its totals. */
+const isSchedule = (value: unknown): value is { years: unknown[] } & Record<string, unknown> =>
+  isRecord(value) && Array.isArray(value.years) && typeof value.value_per_share === "number";
+
+/** The first array inside a value, as a path suffix the writer can request instead. */
+function arrayChild(value: unknown, prefix = ""): string | null {
+  if (Array.isArray(value)) return prefix ? prefix : value.length ? arrayChild(value[0], "0") : null;
+  if (!isRecord(value)) return null;
+  for (const [key, child] of Object.entries(value)) if (Array.isArray(child)) return prefix ? `${prefix}.${key}` : key;
+  for (const [key, child] of Object.entries(value)) {
+    const found = arrayChild(child, prefix ? `${prefix}.${key}` : key);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** A record with values one level deep at most, as flat columns ("build.capital_expenditures"); deeper is rejected. */
+function flatRow(row: Record<string, unknown>): Record<string, TableCell> | null {
+  const flat: Record<string, TableCell> = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (isCell(value) || value === undefined) { flat[key] = value ?? null; continue; }
+    if (!isRecord(value)) return null;
+    for (const [sub, inner] of Object.entries(value)) {
+      if (!isCell(inner) && inner !== undefined) return null;
+      flat[`${key}.${sub}`] = inner ?? null;
+    }
+  }
+  return flat;
+}
+
+/**
+ * The rows a report table prints, or an error the section writer can act on. A table is a { columns, rows } table,
+ * a valuation schedule (its years, with the totals as a note), an array of records whose values are at most one
+ * level deep, or a single such record. Anything deeper names the nearest array to request instead, and a table
+ * longer than MAX_TABLE_ROWS is rejected.
+ */
+export function flatTable(table: ReportSection["tables"][number], artifacts: ReportArtifact[]): FlatTable {
+  let value = resolveTable(table, artifacts);
+  const where = `Table "${table.title}" (${table.artifact_id} ${table.path || "root"})`;
+  const notes: string[] = [];
+  const columnar = value as { columns?: unknown; rows?: unknown };
+  if (isRecord(columnar) && Array.isArray(columnar.columns) && Array.isArray(columnar.rows) && columnar.rows.every(Array.isArray)) {
+    const columns = columnar.columns as string[];
+    value = (columnar.rows as unknown[][]).map(row => Object.fromEntries(columns.map((c, i) => [c, row[i]])));
+  } else if (isSchedule(value)) {
+    const schedule = value;
+    notes.push(["terminal_value", "terminal_present_value", "equity_value", "value_per_share"]
+      .filter(key => typeof schedule[key] === "number").map(key => `${key}: ${schedule[key]}`).join("; "));
+    value = schedule.years;
+  }
+  const rows = Array.isArray(value) ? value : [value];
+  if (rows.length > MAX_TABLE_ROWS) throw new Error(`${where} has ${rows.length} rows; a report table holds at most ${MAX_TABLE_ROWS}. Request a summary table (financial_analytics) or a chart instead.`);
+  const flat = rows.map(row => isCell(row) ? { Value: row } : isRecord(row) ? (isSchedule(row) ? null : flatRow(row)) : null);
+  if (flat.some(row => row === null)) {
+    // A list of valuation schedules is requested one schedule at a time; anything else at its nearest array.
+    const schedule = rows.findIndex(isSchedule);
+    const child = schedule >= 0 ? String(schedule) : arrayChild(value);
+    const suggestion = child ? ` Request ${[table.path, child].filter(Boolean).join(".")} instead.` : "";
+    throw new Error(`${where} is not a list of flat rows: its values nest more than one level.${suggestion}`);
+  }
+  return { rows: flat as Record<string, TableCell>[], notes: notes.filter(Boolean) };
+}

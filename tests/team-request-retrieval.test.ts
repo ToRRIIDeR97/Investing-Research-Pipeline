@@ -88,3 +88,33 @@ test("an owner's packet carries the passages its own artifacts cite, which anoth
     assert.ok(!cited("request-1-2"), "the financials owner's artifacts cite nothing, and the passage shares no word with the question");
   } finally { model.restore(); await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
 });
+
+// GAP-3-3 / RQ-SRC-8: a governance request tagged proxy_and_governance searched zero documents although the 10-K
+// states the voting control, and its web search was the question prose.
+test("a request for a role the run lacks searches its named document, then reads the issuer's own filings", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!);
+  const run = await createRun(sql);
+  const model = scriptModel(packet => packet.output_contract !== "team_answer" ? undefined : { status: "answered",
+    answer: "The founder controls a majority of the voting power through Class B shares.", evidence_ids: [], artifact_ids: [],
+    source_ids: (packet.passages || []).slice(0, 1).map((p: any) => p.source_id) });
+  try {
+    await storeDiscoveredSources(sql, { runId: run.runId, runType: "deep_dive", assetId: run.assetId, assetName: run.assetName, assetSlug: run.assetSlug,
+      symbol: run.symbol, profileId: "", profileKey: "", requiredModules: [], requiredLenses: [], marketDataCutoffAt: null, pipelineVersion: 3 } as any, [{
+      sourceType: "sec_filing_10-k", title: "10-K report 2025-12-31", publisher: "sec.gov", url: `https://fixture.example/${randomUUID()}`,
+      content: `Risks Related to Ownership of Our Class A Common Stock\n\nOur Class B common stock has ten votes per share, and our founder controls a majority of the voting power. ${run.runId}`,
+      mimeType: "text/plain", qualityScore: "0.9", publishedAt: "2026-01-30", periodEnd: "2025-12-31",
+      metadata: { source_role: "regulatory_filing", system_generated: true }, chunkTitle: "10-K",
+    }] as any);
+    const document = "Routing Fixture Platforms 2026 proxy statement DEF 14A";
+    await saveBatch(sql, run, [{ id: "request-1-1", role: "business", material: true, needs_sources: true, source_role: "proxy_and_governance",
+      question: "Management, governance and ownership are not sourced. Who controls the voting power and through which share class?", document }]);
+
+    await processResearchRequests(sql, stageCtx(run));
+
+    const [attempt] = await sql`SELECT attempt_metadata_json->>'requested_query' AS query FROM source_retrieval_attempts WHERE research_run_id = ${run.runId}`;
+    assert.equal(attempt?.query, document, "the collector searched the named document");
+    const [packet] = model.answers().map(call => call.packet);
+    assert.ok(packet.passages.some((p: any) => /ten votes per share/.test(p.text) && p.source_role === "regulatory_filing"),
+      "the owner reads the 10-K's voting-control passage, labelled with its own role");
+  } finally { model.restore(); await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
+});
