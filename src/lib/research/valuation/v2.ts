@@ -12,6 +12,8 @@
 
 import { calculateValuationSchedule, yearTimes, type ValuationMethodInput } from "./schedules";
 import { SCENARIOS, assembleValuation, buildScenarioStatements, solve, type Scenario, type StatementYear, type YearlyDriver } from "./engine";
+import { z } from "zod/v4";
+import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { tableRows, type FinancialAnalytics } from "../history/analytics";
 
 export const VALUATION_SETS = ["conservative", "base", "aggressive"] as const;
@@ -178,34 +180,86 @@ export function validateValuationSets(sets: ValuationSet[], defaults: ValuationS
 
 /**
  * Discount timing from the valuation date: the fraction of the first forecast year still ahead, and the FCFF that year
- * already reported in the quarters up to the valuation date (NOPAT at the forecast tax rate + D&A - capex). When those
- * quarters are incomplete, the reported part is pro-rated from the case's own first-year FCFF.
+ * already reported in its quarters up to the valuation date (NOPAT at the forecast tax rate + D&A - capex). The equity
+ * bridge is at the latest reported quarter, so first-year cash after that quarter is what still counts. When a reported
+ * quarter lacks a component, the reported part is pro-rated (a quarter of the case's first-year FCFF per quarter).
  */
 export function valuationTiming(input: {
   valuationDate: string; firstYearEnd: string; taxRate: number;
   reportedQuarters: { period_end: string; operating_income: Num; depreciation_amortization: Num; capital_expenditures: Num }[];
-  quartersExpected: number;
 }): (Timing & { first_year_reported_quarters: string[] }) | null {
   const start = Date.parse(`${input.valuationDate.slice(0, 10)}T00:00:00Z`), end = Date.parse(`${input.firstYearEnd}T00:00:00Z`);
   if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
   const fraction = Math.max(1 / 365, Math.min(1, (end - start) / (365 * 86_400_000)));
-  const quarters = input.reportedQuarters.filter((q) => q.period_end <= input.valuationDate.slice(0, 10));
-  const complete = quarters.length === input.quartersExpected && quarters.every((q) => finite(q.operating_income) && finite(q.depreciation_amortization) && finite(q.capital_expenditures));
+  const quarters = input.reportedQuarters.filter((q) => q.period_end <= input.valuationDate.slice(0, 10)).slice(0, 3);
+  const complete = quarters.every((q) => finite(q.operating_income) && finite(q.depreciation_amortization) && finite(q.capital_expenditures));
   const reported = complete ? quarters.reduce((sum, q) => sum + q.operating_income! * (1 - input.taxRate) + Math.abs(q.depreciation_amortization!) - Math.abs(q.capital_expenditures!), 0) : 0;
   return {
     valuation_date: input.valuationDate.slice(0, 10), first_year_fraction: Number(fraction.toFixed(6)),
     first_year_reported_cash_flow: Number(reported.toFixed(3)),
-    reported_basis: input.quartersExpected === 0 ? "none" : complete ? "reported" : "pro_rata",
-    first_year_reported_quarters: complete ? quarters.map((q) => q.period_end) : [],
+    reported_basis: !quarters.length ? "none" : complete ? "reported" : "pro_rata",
+    first_year_reported_quarters: quarters.map((q) => q.period_end),
   };
 }
 
 /** A case's timing: pro-rata timing takes the reported part from the case's own first-year FCFF. */
 export function caseTiming(timing: ReturnType<typeof valuationTiming>, statements: StatementYear[]): Timing | null {
   if (!timing) return null;
-  const { first_year_reported_quarters: _, ...rest } = timing;
+  const { first_year_reported_quarters: quarters, ...rest } = timing;
   return rest.reported_basis === "pro_rata"
-    ? { ...rest, first_year_reported_cash_flow: Number((statements[0].fcff * (1 - rest.first_year_fraction)).toFixed(3)) } : rest;
+    ? { ...rest, first_year_reported_cash_flow: Number((statements[0].fcff * quarters.length / 4).toFixed(3)) } : rest;
+}
+
+// ---------------------------------------------------------------- currency
+
+/** FRED daily rates against the US dollar; `perUsd` series quote foreign units per dollar. */
+const FX_SERIES: Record<string, { series: string; perUsd: boolean }> = {
+  CNY: { series: "DEXCHUS", perUsd: true }, JPY: { series: "DEXJPUS", perUsd: true }, EUR: { series: "DEXUSEU", perUsd: false },
+  GBP: { series: "DEXUSUK", perUsd: false }, CAD: { series: "DEXCAUS", perUsd: true }, HKD: { series: "DEXHKUS", perUsd: true },
+  KRW: { series: "DEXKOUS", perUsd: true }, INR: { series: "DEXINUS", perUsd: true }, BRL: { series: "DEXBZUS", perUsd: true },
+  MXN: { series: "DEXMXUS", perUsd: true }, CHF: { series: "DEXSZUS", perUsd: true }, AUD: { series: "DEXUSAL", perUsd: false },
+  TWD: { series: "DEXTAUS", perUsd: true },
+};
+
+/** The FRED series that converts statement currency into a USD price currency, or null. */
+export function fxSeriesFor(statementCurrency: string, priceCurrency: string) {
+  return priceCurrency === "USD" ? FX_SERIES[statementCurrency] ?? null : null;
+}
+
+/** Last numeric FRED value on or before the cutoff, as quoted. */
+export function latestFredValue(csv: string, cutoffDate: string): { value: number; observation_date: string } | null {
+  let found: { value: number; observation_date: string } | null = null;
+  for (const line of csv.trim().split(/\r?\n/)) {
+    const [date = "", raw = ""] = line.split(",").map((part) => part.trim());
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > cutoffDate.slice(0, 10) || !raw || raw === "." || !Number.isFinite(Number(raw)) || !(Number(raw) > 0)) continue;
+    if (!found || date >= found.observation_date) found = { value: Number(raw), observation_date: date };
+  }
+  return found;
+}
+
+/**
+ * Price-currency units per statement-currency unit and ordinary shares per listed share. When the statement currency
+ * differs from the price currency, both an FX rate and the depositary ratio must be known, or the valuation is withheld
+ * rather than comparing, say, RMB per ordinary share with a USD price per ADS.
+ */
+export function currencyConversion(input: {
+  statementCurrency: string | null; priceCurrency: string | null; depositaryRatio: Num;
+  fx: { series: string; value: number; observation_date: string; perUsd: boolean } | null;
+}) {
+  const foreign = Boolean(input.statementCurrency && input.priceCurrency && input.statementCurrency !== input.priceCurrency);
+  const missing = [
+    ...(foreign && !input.fx ? [`an FX rate from ${input.statementCurrency} to ${input.priceCurrency} on or before the cutoff${fxSeriesFor(input.statementCurrency!, input.priceCurrency!) ? ` (FRED ${fxSeriesFor(input.statementCurrency!, input.priceCurrency!)!.series})` : ""}`] : []),
+    ...(foreign && !(Number(input.depositaryRatio) > 0) ? ["the depositary ratio (ordinary shares per listed share; 1 for an ordinary listing) on the asset's instrument"] : []),
+  ];
+  const rate = foreign && input.fx ? (input.fx.perUsd ? 1 / input.fx.value : input.fx.value) : 1;
+  const ratio = Number(input.depositaryRatio) > 0 ? Number(input.depositaryRatio) : 1;
+  return {
+    missing, fx_rate: Number(rate.toPrecision(8)), depositary_ratio: ratio,
+    statement_currency: input.statementCurrency, price_currency: input.priceCurrency ?? input.statementCurrency,
+    fx_source: foreign && input.fx ? { series: input.fx.series, source: "FRED", observation_date: input.fx.observation_date, quoted: input.fx.value } : null,
+    basis: foreign ? `Amounts converted at ${rate.toPrecision(6)} ${input.priceCurrency} per ${input.statementCurrency}; per-share values per listed share of ${ratio} ordinary shares.`
+      : ratio !== 1 ? `Per-share values per listed share of ${ratio} ordinary shares.` : "Statements and price share one currency; ordinary shares.",
+  };
 }
 
 // ---------------------------------------------------------------- reverse valuation
@@ -347,7 +401,9 @@ export type LensValue = { lens: string; value_per_share: Num; value_to_price: Nu
 const lensSignal = (value: Num, price: number) => {
   if (value === null || !(price > 0)) return { value_to_price: null, signal: "not_applicable", cheapness_score: null };
   const ratio = value / price;
-  return { value_to_price: r4(ratio), signal: ratio >= 1.15 ? "undervalued" : ratio <= 0.85 ? "overvalued" : "fairly_valued", cheapness_score: r4(Math.max(0, Math.min(1, ratio / 2))) };
+  // The signal vocabulary the valuation-signal views draw.
+  const signal = ratio >= 1.5 ? "very_cheap" : ratio >= 1.15 ? "cheap" : ratio > 0.85 ? "neutral" : ratio > 0.6 ? "expensive" : "very_expensive";
+  return { value_to_price: r4(ratio), signal, cheapness_score: r4(Math.max(0, Math.min(1, ratio / 2))) };
 };
 
 /** The required lenses with real values: DCF today, own-history EV/NOPAT on next-year NOPAT, and own-history FCF yield on TTM FCF. */
@@ -544,6 +600,33 @@ export function buildFcffValuation(input: FcffValuationInput) {
       segment_cross_check: segments,
       segments_reconciled: segments.segments_reconciled,
       timing: input.timing,
+    },
+  };
+}
+
+// ---------------------------------------------------------------- model contract
+
+const ValuationSetsOutput = z.object({ valuation_assumptions: z.object({
+  artifact_type: z.literal("valuation_assumptions"),
+  sets: z.array(z.object({
+    set: z.enum(VALUATION_SETS), discount_rate: z.number().gt(0).lt(1), terminal_growth: z.number().min(-0.05).lt(0.2),
+    ronic: z.number().gt(0).max(2), fade_years: z.number().int().min(0).max(10), rationale: z.string().min(1),
+    ronic_rationale: z.string().nullable().optional(),
+  })).length(3),
+  omitted_methods: z.array(z.object({ method: z.string().min(1), reason: z.string().min(1) })).default([]),
+  source_notes: z.array(z.string().min(1)).default([]),
+}) });
+export type ValuationSetsOutput = z.infer<typeof ValuationSetsOutput>["valuation_assumptions"];
+
+/** The model-facing format: three valuation sets, checked against the risk-free rate and the code defaults. */
+export function valuationSetsFormat(riskFree: Num, defaults: ValuationSet[]): AgentOutputFormat {
+  return {
+    requiredKeys: ["valuation_assumptions"],
+    schema: z.toJSONSchema(ValuationSetsOutput, { target: "draft-7", io: "input", reused: "inline" }) as Record<string, unknown>,
+    validate(value) {
+      const parsed = ValuationSetsOutput.safeParse(value);
+      if (!parsed.success) return parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message }));
+      return validateValuationSets(parsed.data.valuation_assumptions.sets as ValuationSet[], defaults, riskFree);
     },
   };
 }

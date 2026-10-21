@@ -399,8 +399,13 @@ export async function advanceStage(
  */
 export async function approveResearchPlan(
   runId: string,
-  approvedBy: string = "user"
+  approvedBy: string = "user",
+  options: { forecastYears?: number } = {}
 ): Promise<{ success: boolean; nextStage?: string; error?: string }> {
+  const years = options.forecastYears;
+  if (years !== undefined && !(Number.isInteger(years) && years >= 3 && years <= 10)) {
+    return { success: false, error: "forecast_years must be a whole number from 3 to 10" };
+  }
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
@@ -426,6 +431,8 @@ export async function approveResearchPlan(
           AND artifact_type = 'research_plan' AND status IN ('validated', 'accepted') LIMIT 1
       `;
       if (!plan) return { success: false as const, error: "A persisted research plan is required before approval" };
+      // The reviewer's horizon applies to the stages after the gate; the plan artifact keeps the proposed value.
+      if (years !== undefined) await tx`UPDATE research_runs SET forecast_years = ${years}, updated_at = NOW() WHERE id = ${runId}`;
       await acceptCurrentArtifacts(tx as unknown as Sql, runId, ["research_plan"]);
       await tx`
         UPDATE research_stages

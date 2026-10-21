@@ -25,11 +25,16 @@ test("the equity bridge uses the latest balance row and names missing items; tax
     obs("us_gaap_CashAndCashEquivalentsAtCarryingValue", "2026-06-30", 50 * m, "quarterly"),
     obs("us_gaap_LongTermDebtNoncurrent", "2026-06-30", 30 * m, "quarterly"),
     obs("us_gaap_OperatingLeaseLiability", "2026-06-30", 15 * m, "quarterly"),
+    obs("us_gaap_MarketableSecuritiesCurrent", "2025-12-31", 4 * m),
+    obs("meta_NonmarketableEquitySecuritiesCarryingValue", "2026-06-30", 6 * m, "quarterly"),
   ], cutoff: new Date("2026-10-10") });
   const bridge = equityBridge(fi)!;
-  assert.equal(bridge.amount, 5);
+  // Cash 50 + securities 4 (carried from FY2025) + investments 6 - debt 30; operating leases are not subtracted.
+  assert.equal(bridge.amount, 30);
   assert.equal(bridge.period_end, "2026-06-30");
-  assert.deepEqual(bridge.missing, ["marketable_securities", "current_debt", "finance_lease_liabilities"]);
+  assert.deepEqual(bridge.carried_forward, { marketable_securities: "2025-12-31" });
+  assert.deepEqual(bridge.excluded, { operating_lease_liabilities: 15 });
+  assert.deepEqual(bridge.missing, ["current_debt", "finance_lease_liabilities", "noncontrolling_interest"]);
   const ratios = historyRatios(fi);
   assert.deepEqual([ratios.tax_rate, ratios.tax_rate_source, ratios.da_to_revenue], [0.21, "statutory_default", null]);
   assert.equal(equityBridge(null), null);

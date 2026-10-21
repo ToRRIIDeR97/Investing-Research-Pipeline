@@ -577,7 +577,7 @@ export async function validateAssetProfile(
     // Check required valuation lenses have signals
     if (requiredLenses.length > 0) {
       const lensRows = await sql`
-        SELECT DISTINCT lens_family
+        SELECT lens_family, signal, current_value_text
         FROM valuation_signals
         WHERE research_run_id = ${runId}
       `;
@@ -587,6 +587,10 @@ export async function validateAssetProfile(
           errors.push(
             `Required valuation lens "${lens}" has no valuation signals for this run`
           );
+        } else if (lensRows.filter((r) => r.lens_family === lens).every((r) => r.signal === "not_applicable")) {
+          // A lens the valuation could not compute is a visible gap, not a pass.
+          const reason = lensRows.find((r) => r.lens_family === lens)?.current_value_text;
+          warnings.push(`Required valuation lens "${lens}" was not computed${reason ? `: ${reason}` : ""}`);
         }
       }
     }

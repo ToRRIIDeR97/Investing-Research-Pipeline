@@ -326,7 +326,7 @@ export function assembleValuation(input: {
 }
 
 /** Scan the range for the first crossing of the target, then bisect it. Null when no value in range reaches it. */
-function solve(value: (x: number) => number, lo: number, hi: number, target: number | null): number | null {
+export function solve(value: (x: number) => number, lo: number, hi: number, target: number | null): number | null {
   if (!(Number(target) > 0)) return null;
   const f = (x: number) => { try { return value(x) - target!; } catch { return Number.NaN; } };
   const steps = 100;

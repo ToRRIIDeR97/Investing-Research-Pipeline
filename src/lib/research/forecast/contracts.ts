@@ -34,6 +34,8 @@ export const YearlyDriver = z.object({
   da_to_revenue: z.number().min(0).nullable().optional(),
   tax_rate: z.number().min(0).lt(1).nullable().optional(),
   nwc_to_revenue_change: z.number().nullable().optional(),
+  /** Per-segment operating income in currency millions, summing to consolidated; used for the loss-segment cross-check. */
+  segment_operating_income: z.array(z.object({ segment: z.string().min(1), operating_income: z.number() })).nullable().optional(),
 });
 
 export const OperatingScenarioEntry = z.object({
