@@ -1,6 +1,6 @@
 import { callResearchAgent, exactJsonPrompt, type ResearchRunContext, type Sql } from "../run-context";
 import { AI_REVIEWER_CONTRACT } from "../stage-contracts";
-import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, RESEARCH_DOCTRINE, CoverageResult, Section, normalizeOutlineStructure, validateProductOutline, validateChartPlan, outputContract, type ReportOutline, type ReportSection } from "./contracts";
+import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Section, normalizeOutlineStructure, validateProductOutline, validateChartPlan, outputContract, type ReportOutline, type ReportSection } from "./contracts";
 import { composeReviewedReport, checkFinalCoverage, type ReportReview, type WrittenSection, REQUIRED_COVERAGE } from "./compose";
 import { z } from "zod/v4";
 import { DEPTH_CHECKS, DEPTH_CHECK_RULE, REWORK_STAGES, depthFindings } from "./depth";
@@ -14,6 +14,26 @@ import { buildReportFacts } from "./facts";
 /** Computed inputs every report call shares; they lead the packet instead of riding in each section's artifacts. */
 export const SHARED_REPORT_TYPES = ["financial_analytics", "financial_statement_summary", "report_facts"];
 export const REPORT_FACTS_RULE = "financial_analytics (computed history: statistics, segment economics, cash conversion, working capital, capital allocation), financial_statement_summary (which statements were captured) and report_facts (present values, terminal-value share, yields, implied multiples and no-rerating returns computed from the stored schedules) are code-computed. Cite their artifact_id for any figure they hold and never derive it again in prose; for statistics give the median and where the latest value sits. Their { columns, rows } tables may be requested at their paths (for example quarterly, segments.quarterly, segments.annual, cash_conversion.quarterly, capital_allocation.quarterly, cases). Report a statement gap only where financial_statement_summary shows one.";
+
+/** The reviewer challenges the framing, not only consistency (RQ-MOD-5): these are calculation findings. */
+export const REVIEW_FRAMING_RULE = "Challenge the valuation framing as calculation findings: a forecast horizon that ends inside a reinvestment cycle, terminal value above 75% of enterprise value (report_facts tv_share_of_ev), terminal-year capex far above depreciation, and unnormalized margins. Also check that the report answers research_framing's central_question and keeps its engines separate.";
+
+export const FRAMING_OUTLINE_RULE = "Answer the approved research_framing: give each framing key_question its own entry in questions with the same id, organize the sections around the central_question and the named engines, and make the opening conclusion section state whether the central_question and the decisive_insight_hypothesis held, with the evidence that decided it.";
+
+/**
+ * Framing key questions the outline left out are added as qualified material questions, so the reader and the
+ * reviewer see the omission. They are not blocked: an unanswered framing question is a writing gap, not missing
+ * evidence, and must not withhold the conclusion on its own.
+ */
+export function includeFramingQuestions(outline: ReportOutline, framing: Record<string, any> | null | undefined): ReportOutline {
+  const keyQuestions: { id: string; question: string; falsifier?: string }[] = Array.isArray(framing?.key_questions) ? framing!.key_questions : [];
+  const present = new Set(outline.questions.map(q => q.id));
+  const missing = keyQuestions.filter(q => q.id && q.question && !present.has(q.id));
+  if (!missing.length) return outline;
+  return { ...outline, questions: [...outline.questions, ...missing.map(q => ({ id: q.id, question: q.question, materiality: "material" as const,
+    status: "qualified" as const, answer: "This report does not answer this framing question.", evidence_ids: [], artifact_ids: [],
+    follow_up: q.falsifier ? `Test the falsifier: ${q.falsifier}` : "Answer the framing question from the analysis." }))] };
+}
 
 /** Instructions for each report section writer, after the doctrine. */
 export const SECTION_RULES = [
@@ -109,6 +129,8 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
     human_revision_request: run?.metadata_json?.report_revision_request || null };
   const reportInput = { asset_name: ctx.assetName, cutoff: ctx.cutoffAt.toISOString(), is_test: ctx.testMode,
     required_coverage: REQUIRED_COVERAGE, artifacts, evidence };
+  // The latest outline's sections, so rework requests from missing depth checks name the chapter that owns them.
+  let outlineSections: ReportOutline["sections"] = [];
   return composeReviewedReport(reportInput, {
     async plan(feedback) {
       const packet = { ...common, feedback, output_contract: "report_outline", output_schema: OUTLINE_CONTRACT.schema };
@@ -120,18 +142,21 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
             paragraphs: [{ kind: "analysis", text: section.purpose, evidence_ids: [], artifact_ids: section.artifact_ids }],
             counterevidence: "Outline validation", implication: "Outline validation", gaps: [], tables: [] })) });
         }, value => usableOutline(value, check)), promptFactory: p => exactJsonPrompt({ agentName: "asset-analyst", requiredKeys: ["outline"], packet: p,
-          extraRules: [...RESEARCH_DOCTRINE, REPORT_FACTS_RULE,
+          extraRules: [REPORT_FACTS_RULE,
             "Design a report outline around the material investment questions. Use company-specific section titles. Cover every coverage_requirements key exactly once in coverage, mapping it to one or more sections. First section should summarize the eventual judgment, and its coverage is conclusion only.",
             "Section coverage rules: every section whose coverage includes history or evidence must also include at least one other key (for example business, moat, management or constraints); a section covering only history and/or evidence is rejected. Exactly one section may include valuation, and that section must also include forecasts and downside; the opening summary section must not list valuation. Backtest and market-timing evidence belongs in a section that lists monitoring, because it tests timing indicators, not the fundamental thesis.",
             "Use full artifacts and evidence to investigate the questions. Record an answer, evidence/artifact IDs, materiality, status, and specific next evidence needed. Add questions discovered from contradictions or missing disclosures. Do not claim you fetched new evidence.",
             "Coverage states: satisfied for evidenced analysis including a no-moat finding; qualified for usable analysis with explained limits; blocked for a decision-critical gap; not_applicable only with asset-specific justification. A missing artifact is not evidence of inapplicability.",
             "Use only supplied artifact and evidence IDs. Keep numerical models unchanged. Request missing analysis in follow_up when artifacts cannot answer a material question. Prefer 8-16 substantial sections, maximum 24. No word-count target.",
             "Allocate key figures: give each section 2-5 key_figures (metric and period, e.g. \"FY2024 take rate\"). Assign each figure to exactly one section, the one that explains it; other sections refer to it rather than repeat it.",
-            "Chart plan: for each section covering history, business, forecasts or valuation, set chart_plan to the one chart that best answers its quantitative question, naming the visual kind and the stored data, for example segment revenue mix (series, stacked) or operating margin trend (ratio) from historical_record observations (series listed in its chart_series), bear/base/bull revenue or margins (scenarios) from operating_scenario_set, value per share (scenarios) or the valuation bridge (valuation_bridge) from valuation_scenario_set. Leave chart_plan empty only when no stored numeric data fits. Other sections leave it empty."] }) }));
+            "Chart plan: for each section covering history, business, forecasts or valuation, set chart_plan to the one chart that best answers its quantitative question, naming the visual kind and the stored data, for example segment revenue mix (series, stacked) or operating margin trend (ratio) from historical_record observations (series listed in its chart_series), bear/base/bull revenue or margins (scenarios) from operating_scenario_set, value per share (scenarios) or the valuation bridge (valuation_bridge) from valuation_scenario_set. Leave chart_plan empty only when no stored numeric data fits. Other sections leave it empty.",
+            ...(ctx.researchFraming ? [FRAMING_OUTLINE_RULE] : [])] }) }));
       const unanswered = output.outline.questions.filter(q => q.status === "blocked" && q.materiality !== "supporting")
         .map(q => ({ category: "research_gap", question: q.question, follow_up: q.follow_up }));
       if (unanswered.length) await requestMissingResearch(sql, ctx, unanswered);
-      return includeUnansweredQuestions(output.outline, preDraftBatch(teamRequests));
+      const planned = includeFramingQuestions(includeUnansweredQuestions(output.outline, preDraftBatch(teamRequests)), ctx.researchFraming);
+      outlineSections = planned.sections;
+      return planned;
     },
     async write(section, outline, feedback, completed, options) {
       const selected = packetArtifacts.filter(a => section.artifact_ids.includes(a.id));
@@ -153,7 +178,7 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
             coverage: section.coverage.map(key => ({ key, status: "qualified", rationale: "Section validation", section_ids: [section.id] })) });
           if (finalCoverage) checkFinalCoverage(reportInput, outline, [...completed.filter(s => s.id !== section.id), result.section], result.coverage ?? []);
         }, check), promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: contract.requiredKeys, packet: p,
-          extraRules: [...RESEARCH_DOCTRINE, REPORT_FACTS_RULE, ...SECTION_RULES, ...(finalCoverage ? [FINAL_COVERAGE_RULE] : [])] }) }));
+          extraRules: [REPORT_FACTS_RULE, ...SECTION_RULES, ...(finalCoverage ? [FINAL_COVERAGE_RULE] : [])] }) }));
       return finalCoverage ? { ...output.section, final_coverage: output.coverage } : output.section;
     },
     async review(document) {
@@ -163,18 +188,19 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
       const review = await callResearchAgent<ReportReview>({ sql, ctx, stageKey: "ai_reviewer", taskKey: "report:review", taskType: "ai_review",
         agentName: "research-reviewer", modelTier: "mid", packet, outputFormat: AI_REVIEWER_CONTRACT,
         promptFactory: p => exactJsonPrompt({ agentName: "research-reviewer", requiredKeys: AI_REVIEWER_CONTRACT.requiredKeys, packet: p,
-          extraRules: [...RESEARCH_DOCTRINE, REPORT_FACTS_RULE,
+          extraRules: [REPORT_FACTS_RULE,
             "Review the exact report_document against source passages AND complete analytical artifacts. Check citation entailment, unsupported facts/numbers, historical causes, counterarguments, operating-to-valuation links, contradictions across sections, numerical consistency and unjustified confidence. Flag analysis that lists figures without explaining what drove them, and figures repeated across sections.",
             "Review every visual under visual_guidelines: verify that the cited source entails each node, arrow and caption, and distinguish documented links from hypotheses. Check chart selection, units, basis and missing observations. A correct reference alone does not prove the diagram; flag misleading causality or accounting as evidence/calculation defects.",
             "The report is supplied as complete structured sections, questions, coverage and hashes. Tables refer to the complete artifacts and citations refer to evidence_claims supplied alongside it; rendered Markdown is omitted to avoid repeating that content. Review all sections and all referenced data.",
             `Findings must name section_id, category (writing, evidence, calculation, research_gap, analysis_rework), severity and a concrete repair. Treat unavailable facts or missing analytical artifacts as research_gap. Use analysis_rework, with owner_stage (one of ${REWORK_STAGES.join(", ")}), only when a stage's own output is wrong or too thin and must be recomputed. Fail unsupported investment recommendations. Hedging does not substitute for analysis the stored data supports.`,
             DEPTH_CHECK_RULE,
-            "Also review existing framework backtest requirements and proxy limitations. A backtest does not prove the fundamental thesis. Do not change model outputs through prose."] }) });
+            "Also review existing framework backtest requirements and proxy limitations. A backtest does not prove the fundamental thesis. Do not change model outputs through prose.",
+            REVIEW_FRAMING_RULE] }) });
       return review;
     },
     // Called once, after the first review is saved: the post-review round may pause the run; on resume its answers come back.
     async rework(review) {
-      const gaps = [...review.findings.filter(f => REWORK_CATEGORIES.includes(f.category)), ...depthFindings(review.depth_checks)];
+      const gaps = [...review.findings.filter(f => REWORK_CATEGORIES.includes(f.category)), ...depthFindings(review.depth_checks, outlineSections)];
       if (gaps.length) await requestMissingResearch(sql, ctx, gaps, "post_review");
       return postReviewAnswers(await getTeamRequests(sql, ctx.runId));
     },

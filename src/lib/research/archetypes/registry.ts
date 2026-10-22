@@ -339,7 +339,7 @@ export const businessArchetypes: BusinessArchetype[] = [
       { metric_family: "ad_revenue", required: true, minimum_quarters: 20, rationale: "Advertising revenue" },
       { metric_family: "ad_impressions", required: true, minimum_quarters: 20, rationale: "Inventory" },
       { metric_family: "cpm_or_cpc", required: true, minimum_quarters: 20, rationale: "Pricing" },
-      { metric_family: "advertiser_count", required: true, minimum_quarters: 12, rationale: "Customer base" },
+      { metric_family: "advertiser_count", required: false, minimum_quarters: 12, rationale: "Customer base; many platforms do not report it" },
     ],
     required_artifacts: commonArtifacts(),
     required_process_nodes: [
@@ -355,7 +355,7 @@ export const businessArchetypes: BusinessArchetype[] = [
     required_scenario_drivers: [
       { driver_key: "ad_impressions", required: true, rationale: "Inventory" },
       { driver_key: "cpm", required: true, rationale: "Pricing" },
-      { driver_key: "advertiser_count", required: true, rationale: "Customer base" },
+      { driver_key: "advertiser_count", required: false, rationale: "Customer base; many platforms do not report it" },
     ],
     monitoring_kpis: [
       { kpi_key: "ad_revenue_growth", frequency: "quarterly", rationale: "Revenue growth" },

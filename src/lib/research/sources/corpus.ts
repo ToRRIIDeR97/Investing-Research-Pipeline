@@ -633,7 +633,7 @@ export function selectResearchFilings(filings: SecFiling[], earliestDate: string
       .map((filing) => ({ ...filing, filingFamily, semanticRole: "quarterly_report" }));
     const earningsUpdates = eligible
       .filter((filing) => filing.form === "8-K" && /(^|,)2\.02(,|$)/.test(String(filing.items || "")))
-      .slice(0, 4)
+      .slice(0, MAX_EARNINGS_RELEASES)
       .map((filing) => ({ ...filing, filingFamily, semanticRole: "earnings_release" }));
     // Governance: the newest proxy statement and up to three beneficial-ownership schedules (SC 13D/G, renamed
     // SCHEDULE 13D/G in December 2024). Foreign issuers report the same in 20-F Items 6-7.
@@ -663,6 +663,31 @@ export function isResultsCover(html: string): boolean {
 }
 
 const SEC_USER_AGENT = "ResearchOS/0.1 research-pipeline-test@example.com";
+/** Every results release (8-K item 2.02) in the 20-quarter window, plus one: releases carry the KPI and segment tables. Stored once, reused by later runs. */
+export const MAX_EARNINGS_RELEASES = 21;
+
+const IR_HOST = /\b((?:investors?|ir)\.[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,})\b/gi;
+/** Issuer investor-relations hosts named in an earnings exhibit (for example investor.atmeta.com), most mentioned first. */
+export function irHostsFromText(text: string): string[] {
+  const counts = new Map<string, number>();
+  for (const match of text.matchAll(IR_HOST)) {
+    const host = match[1].toLowerCase().replace(/\.+$/, "");
+    if (host.endsWith("sec.gov")) continue;
+    counts.set(host, (counts.get(host) ?? 0) + 1);
+  }
+  return [...counts].sort((a, b) => b[1] - a[1]).map(([host]) => host).slice(0, 2);
+}
+
+/**
+ * IR seeds from the newest stored earnings exhibit of this asset (SEC submissions often carry no website). The first
+ * run of an asset has none stored yet; later runs seed discovery with the issuer's own IR site ahead of aggregators.
+ */
+async function storedIrSeedUrls(sql: Sql, assetId: string): Promise<string[]> {
+  const rows = await sql`SELECT string_agg(dc.text, ' ' ORDER BY dc.chunk_index) AS text FROM document_chunks dc
+    WHERE dc.source_document_id = (SELECT sd.id FROM source_documents sd WHERE sd.asset_id = ${assetId} AND sd.source_type = 'sec_filing_8-k'
+      AND sd.url ~* 'ex(hibit)?-?99' ORDER BY sd.published_at DESC NULLS LAST, sd.created_at DESC LIMIT 1)`;
+  return irHostsFromText(String(rows[0]?.text ?? "")).map((host) => `https://${host}/`);
+}
 const SUBMISSIONS_PAGE_NAME = /^CIK\d{10}-submissions-\d{3}\.json$/;
 
 /** Turn one columnar submissions block (`filings.recent` or an older page) into rows. */
@@ -1685,11 +1710,12 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
   } catch {
     throw new Error("RESEARCH_SOURCE_ROLE_SEEDS must be a JSON object of source-role URL arrays");
   }
-  const seedUrls = [
+  const seedUrls = [...new Set([
     textValue(context.investorWebsite),
+    ...(textValue(context.investorWebsite) ? [] : await storedIrSeedUrls(sql, ctx.assetId).catch(() => [])),
     textValue(context.website),
     ...configuredSeedUrls,
-  ].filter(Boolean);
+  ].filter(Boolean))];
   const marketCutoff = ctx.marketDataCutoffAt ? new Date(ctx.marketDataCutoffAt) : null;
   const testMode = process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock" || process.env.RESEARCH_TEST_MODE === "1";
   const [marketPayload, priceHistory, benchmarkPriceHistory, macroPayload, industryPayload, discoveredRolePayloads] = await Promise.all([

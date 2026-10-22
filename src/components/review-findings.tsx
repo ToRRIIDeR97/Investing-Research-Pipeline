@@ -15,12 +15,12 @@ export function ReviewFindings({ review }: { review: Row | null }) {
   const bySeverity = SEVERITIES.map(severity => [severity, findings.filter(f => String(f.severity ?? "").toLowerCase() === severity)] as const)
     .filter(([, list]) => list.length);
   const other = findings.filter(f => !SEVERITIES.includes(String(f.severity ?? "").toLowerCase()));
-  const verdict = String(review.effective_verdict ?? review.review_verdict ?? "");
+  const verdict = String(gate.verdict ?? "");
   return <section className={ui.section}>
     <div className={ui.sectionHead}><h2>AI review</h2><span className={ui.status} data-status={verdict === "pass" ? "pass" : verdict === "fail" ? "fail" : "needs_more_work"}>{label(verdict)}</span></div>
     <dl className={ui.metadata}>
       <div><dt>Reviewer verdict</dt><dd>{label(review.model_verdict ?? review.review_verdict)}</dd></div>
-      <div><dt>Verdict for a position</dt><dd>{label(review.effective_verdict ?? review.review_verdict)}</dd></div>
+      <div><dt>Verdict for a position</dt><dd>{label(gate.verdict)}</dd></div>
       <div><dt>Open high or critical findings</dt><dd>{gate.open_severe}</dd></div>
       <div><dt>Depth checks missing</dt><dd>{checks.length ? `${checks.filter(c => c.status === "missing").length} of ${checks.length}` : "Not checked"}</dd></div>
     </dl>

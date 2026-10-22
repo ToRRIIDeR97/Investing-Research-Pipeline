@@ -16,7 +16,7 @@ import { ResearchAgentRunError } from "../src/lib/agent-harness/errors";
 import type { AgentAttempt } from "../src/lib/agent-harness/types";
 import { exactJsonPrompt, loadRunContext, prepareResearchCall } from "../src/lib/research/run-context";
 import { loadReportInputs } from "../src/lib/research/reporting/store";
-import { COVERAGE, RESEARCH_DOCTRINE, SECTION_CONTRACT, validateChartPlan } from "../src/lib/research/reporting/contracts";
+import { COVERAGE, SECTION_CONTRACT, validateChartPlan } from "../src/lib/research/reporting/contracts";
 import { REPORT_FACTS_RULE, SECTION_RULES, conclusionInputs, reportEvidenceView, splitReportArtifacts } from "../src/lib/research/reporting/runtime";
 import { buildReportFacts } from "../src/lib/research/reporting/facts";
 import { mergeObservations } from "../src/lib/research/reporting/data-views";
@@ -77,7 +77,7 @@ async function main() {
       completed_sections: conclusion?.chapters ?? [], visual_guidelines: VISUAL_GUIDELINES, output_contract: "report_section", output_schema: SECTION_CONTRACT.schema };
     const { params } = await prepareResearchCall({ sql, ctx, stageKey: "ai_reviewer", taskKey: `report:section:${section.id}`, taskType: "report_section",
       agentName: "export-writer", modelTier: "mid", packet, perCallKeys: ["artifacts", "section_plan", "completed_sections"],
-      promptFactory: (p) => exactJsonPrompt({ agentName: "export-writer", requiredKeys: ["section"], packet: p, extraRules: [...RESEARCH_DOCTRINE, REPORT_FACTS_RULE, ...SECTION_RULES] }) });
+      promptFactory: (p) => exactJsonPrompt({ agentName: "export-writer", requiredKeys: ["section"], packet: p, extraRules: [REPORT_FACTS_RULE, ...SECTION_RULES] }) });
     prepared.set(section.id, { section, params });
     const bytes = Buffer.byteLength(params.promptFactory!(params.packet));
     const tokens = Math.round(bytes * ratio);

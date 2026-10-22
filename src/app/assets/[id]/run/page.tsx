@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import ui from "@/components/research-ui.module.css";
+import { FramingEditor, type FramingEdits } from "@/components/framing-editor";
 import { pollTick, runProgressIsLive } from "@/lib/research/run-polling";
 
 interface Message {
@@ -324,6 +325,7 @@ export default function RunResearchPage() {
   const [researchPlan, setResearchPlan] = useState<Record<string, any> | null>(null);
   const [planChangeNotes, setPlanChangeNotes] = useState("");
   const [planForecastYears, setPlanForecastYears] = useState(5);
+  const [planEdits, setPlanEdits] = useState<FramingEdits>({});
   const [sourceCutoffAt, setSourceCutoffAt] = useState("");
   const [marketDataCutoffAt, setMarketDataCutoffAt] = useState("");
   const [budgetLimitUsd, setBudgetLimitUsd] = useState("");
@@ -485,7 +487,7 @@ export default function RunResearchPage() {
       const res = await fetch(`/api/research-runs/${runId}/approve-plan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approved_by: "user", forecast_years: planForecastYears }),
+        body: JSON.stringify({ approved_by: "user", forecast_years: planForecastYears, ...planEdits }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Unable to approve plan");
@@ -510,8 +512,9 @@ export default function RunResearchPage() {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Unable to save plan changes");
-      setMessages((prev) => [...prev, { role: "system", content: "Plan-change notes saved. The run remains at the research-plan gate." }]);
+      setMessages((prev) => [...prev, { role: "system", content: "Redrafting the plan with your feedback. The plan gate reopens when the new draft is ready." }]);
       setPlanChangeNotes("");
+      setPhase("pipeline");
       fetchProgress(runId);
     } catch (error) {
       setMessages((prev) => [...prev, { role: "system", content: `Plan-change error: ${error instanceof Error ? error.message : String(error)}` }]);
@@ -800,6 +803,7 @@ export default function RunResearchPage() {
       <div className={ui.actions}><span /><button className={ui.primary} disabled={isProcessing || !input.trim()}>{isProcessing ? "Creating…" : "Create research plan"}</button></div>
     </form> : phase === "plan" ? <>
       <h2 className="mb-8 text-[22px]">Review research plan</h2>
+      {researchPlan && <FramingEditor key={`${researchPlan.generated_at}`} plan={researchPlan} disabled={isProcessing} onChange={setPlanEdits} />}
       <ResearchPlanCard plan={researchPlan} />
       <div className={`${ui.form} mt-8`}><ForecastYearsField value={planForecastYears} onChange={setPlanForecastYears} disabled={isProcessing} /><label className={ui.field}>Requested changes<textarea rows={3} value={planChangeNotes} onChange={(event) => setPlanChangeNotes(event.target.value)} disabled={isProcessing} /></label><div className={ui.actions}>
         <button className={ui.secondary} onClick={handleRequestPlanChanges} disabled={isProcessing || !planChangeNotes.trim()}>Request changes</button>

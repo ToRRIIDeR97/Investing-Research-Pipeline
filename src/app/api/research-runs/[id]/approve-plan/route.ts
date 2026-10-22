@@ -1,11 +1,14 @@
 import { NextRequest } from "next/server";
-import { approveResearchPlan, requestResearchPlanChanges } from "@/lib/workflow/orchestrator";
+import { approveResearchPlan } from "@/lib/workflow/orchestrator";
 import { handleApiError, successResponse } from "@/lib/api/errors";
 import { enqueueResearchRun } from "@/lib/research/run-queue";
 
 /**
  * POST /api/research-runs/:id/approve-plan
- * Approve the research plan human gate and resume the workflow.
+ * Approve the research plan human gate and resume the workflow. Optional `framing`, `archetypes`, `overlays` and
+ * `forecast_years` are the reviewer's edits: they are validated, saved as the next plan version and approved in the
+ * same step. Edits for a plan that is already approved get 409.
+ * Plan feedback that needs a redraft goes to POST …/request-plan-changes.
  */
 export async function POST(
   request: NextRequest,
@@ -14,22 +17,15 @@ export async function POST(
   try {
     const { id: runId } = await params;
     const body = await request.json().catch(() => ({}));
-    if (body.action === "request_changes") {
-      const result = await requestResearchPlanChanges(
-        runId,
-        String(body.notes || "Changes requested by reviewer"),
-        body.requested_by || body.requestedBy || "user"
-      );
-      return successResponse(result, result.success ? 200 : 422);
-    }
+    const approvedBy = body.approved_by || "user";
     const forecastYears = body.forecast_years === undefined || body.forecast_years === null ? undefined : Number(body.forecast_years);
-    const result = await approveResearchPlan(runId, body.approved_by || "user", { forecastYears });
+    const result = await approveResearchPlan(runId, approvedBy, { framing: body.framing, archetypes: body.archetypes, overlays: body.overlays, forecastYears });
     if (result.success) {
-      const job = await enqueueResearchRun(runId, body.approved_by || "user");
+      const job = await enqueueResearchRun(runId, approvedBy);
       return successResponse({ ...result, jobId: job.id, job });
     }
-
-    return successResponse(result, result.success ? 200 : 422);
+    // Edits sent after the plan was approved are refused, and no job is queued for them.
+    return successResponse(result, result.alreadyApproved ? 409 : 422);
   } catch (error) {
     return handleApiError(error);
   }

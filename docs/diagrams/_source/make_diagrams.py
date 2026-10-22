@@ -398,8 +398,8 @@ frame("alt [report requests in team_requests: 2 rounds pre-draft, 1 after review
 def gate_body():
     msg(4, 2, "run + stage → waiting_for_human; release lock")
     msg(3, 2, "completeResearchRunJob (owner-guarded)")
-    msg(0, 1, "POST …/approve-plan")
-    msg(1, 2, "approveResearchPlan + enqueue new job")
+    msg(0, 1, "POST …/approve-plan {framing edits} or …/request-plan-changes")
+    msg(1, 2, "approve (save edits, research_framing) or reopen plan; enqueue job")
 frame("alt [stage 4 research_plan gate]", "#b23b3b", xs[0] - 60, xs[4] + 70, gate_body)
 def crash_body():
     msg(3, 2, "lease expires → requeue if attempts < 3, else failed")

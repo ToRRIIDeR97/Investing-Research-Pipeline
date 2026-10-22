@@ -258,7 +258,7 @@ export function reviewGate(review: Row | null | undefined) {
     ...legacyCritical.map(() => "Unresolved critical finding"),
     ...checks.filter((c) => c.critical && c.status === "missing").map((c) => `${c.label ?? c.id} is missing`),
   ];
-  return { trackable: Boolean(review) && isPassing(model), positionable: Boolean(review) && isPassing(effective),
+  return { verdict: effective ?? null, trackable: Boolean(review) && isPassing(model), positionable: Boolean(review) && isPassing(effective),
     blocking: blocking.length ? [...new Set(blocking)] : effective && !isPassing(effective) ? [`the review verdict is ${effective}`] : [],
     open_severe: findings.filter((f) => ["high", "critical"].includes(String(f.severity ?? "").toLowerCase())).length };
 }

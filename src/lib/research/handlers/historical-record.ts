@@ -18,6 +18,8 @@ import { mergeObservations } from "../reporting/data-views";
 import { saveReportArtifact } from "../reporting/store";
 import { FinancialAnalytics, buildFinancialAnalytics } from "../history/analytics";
 import { buildStatementSummary } from "../history/statement-summary";
+import { buildPeerBenchmark } from "../sources/peers";
+import { buildDemandBackdrop } from "../sources/demand";
 import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -61,6 +63,25 @@ const NORMALIZER_OUTPUT_KEYS = [
   "quality_flags",
   "source_gaps",
 ];
+
+/**
+ * Peer and demand benchmarks beside the subject's own history: peers named in the approved framing through EDGAR,
+ * and the home country's demand series. Network failures become gaps in the artifacts and never fail the stage.
+ * Mock and test runs make no external fetch.
+ */
+async function saveExternalBenchmarks(sql: ReturnType<typeof postgres>, ctx: ResearchRunContext) {
+  const offline = process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock" || process.env.RESEARCH_TEST_MODE === "1";
+  const cutoff = ctx.cutoffAt.toISOString().slice(0, 10);
+  const named = Array.isArray(ctx.researchFraming?.named_peers) ? ctx.researchFraming!.named_peers as { name?: unknown; ticker?: unknown }[] : [];
+  const requests = named.filter((p) => typeof p?.name === "string").map((p) => ({ name: String(p.name), ticker: typeof p.ticker === "string" ? p.ticker : undefined }));
+  const [asset] = await sql`SELECT home_country FROM assets WHERE id = ${ctx.assetId}`;
+  const offlineNote = (type: string) => ({ artifact_type: type, status: "offline", note: "Mock or test run: no external fetch.", peers: [], series: [], gaps: [] });
+  const peers = offline ? offlineNote("peer_benchmark") : await buildPeerBenchmark(requests, cutoff)
+    .catch((error) => ({ artifact_type: "peer_benchmark", status: "unavailable", peers: [], gaps: [{ name: "all", reason: String(error?.message ?? error).slice(0, 200) }] }));
+  const demand = offline ? offlineNote("demand_backdrop") : await buildDemandBackdrop(asset?.home_country, cutoff);
+  await saveReportArtifact(sql, ctx, "peer_benchmark", `${ctx.assetSlug}-peer-benchmark`, peers);
+  await saveReportArtifact(sql, ctx, "demand_backdrop", `${ctx.assetSlug}-demand-backdrop`, demand);
+}
 
 export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "historical_record",
@@ -249,6 +270,7 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       await saveReportArtifact(sql, ctx, "financial_analytics", `${ctx.assetSlug}-financial-analytics`, analytics);
       const window = analytics.quarterly.rows.map((row) => String(row[0]));
       await saveReportArtifact(sql, ctx, "financial_statement_summary", `${ctx.assetSlug}-financial-statement-summary`, buildStatementSummary(filings, window));
+      await saveExternalBenchmarks(sql, ctx);
 
       return {
         status: "success",
