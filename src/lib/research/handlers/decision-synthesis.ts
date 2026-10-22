@@ -80,6 +80,33 @@ export async function persistDecisionRows(sql: Sql, ctx: Pick<ResearchRunContext
   });
 }
 
+/** True when a merged-decision check fails on a key the thesis call owns, so retrying the registers alone cannot fix it. */
+export function decisionErrorsBlameThesis(errors: { path: string }[]): boolean {
+  return errors.some((error) => (DECISION_THESIS_KEYS as readonly string[]).includes(String(error.path).split(".")[0]));
+}
+
+/**
+ * The two decision calls. When the registers call fails and its last merged check blamed the thesis (a cached thesis
+ * the registers cannot repair), the thesis task is invalidated once and both calls run again; any other failure, or
+ * a second failure, propagates to the stage's normal retry.
+ */
+export async function runDecisionCalls(steps: {
+  thesis: () => Promise<Record<string, unknown>>;
+  registers: (thesis: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  thesisBlamed: () => boolean;
+  invalidateThesis: () => Promise<void>;
+}): Promise<Record<string, unknown>> {
+  let thesis = await steps.thesis();
+  try {
+    return { ...thesis, ...await steps.registers(thesis) };
+  } catch (error) {
+    if (!steps.thesisBlamed()) throw error;
+    await steps.invalidateThesis();
+    thesis = await steps.thesis();
+    return { ...thesis, ...await steps.registers(thesis) };
+  }
+}
+
 export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "decision_synthesis",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
@@ -253,7 +280,7 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           return [...(DECISION_THESIS_CONTRACT.validate?.(pick(output, DECISION_THESIS_KEYS)) || []), ...errors];
         },
       };
-      const thesis = pick(await callResearchAgent<Record<string, any>>({
+      const runThesis = async () => pick(await callResearchAgent<Record<string, any>>({
         sql, ctx, stageKey: "decision_synthesis", taskKey: `${taskKey}:thesis`,
         taskType: "decision_synthesis", agentName: "asset-analyst", modelTier: "premium",
         packet: { ...packet, output_contract: "decision_synthesis_thesis", output_schema: thesisFormat.schema },
@@ -264,22 +291,33 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
       }), DECISION_THESIS_KEYS);
 
       // 2. Cheap: the registers, built from the accepted thesis. The merged answer is judged as one decision.
-      const registersFormat = {
+      let lastRegisterErrors: { path: string; message: string }[] = [];
+      const registersFormat = (thesis: Record<string, unknown>) => ({
         requiredKeys: [...DECISION_REGISTER_KEYS], schema: DECISION_REGISTERS_CONTRACT.schema,
         validate(value: unknown) {
-          return decisionOutputFormat(finalizeInputs).validate!({ ...thesis, ...pick(value, DECISION_REGISTER_KEYS) });
+          lastRegisterErrors = decisionOutputFormat(finalizeInputs).validate!({ ...thesis, ...pick(value, DECISION_REGISTER_KEYS) });
+          return lastRegisterErrors;
         },
-      };
-      const registers = pick(await callResearchAgent<Record<string, any>>({
+      });
+      const runRegisters = async (thesis: Record<string, unknown>) => pick(await callResearchAgent<Record<string, any>>({
         sql, ctx, stageKey: "decision_synthesis", taskKey: `${taskKey}:registers`,
         taskType: "decision_registers", agentName: "asset-analyst", modelTier: "cheap",
-        packet: { ...packet, output_contract: "decision_synthesis_registers", output_schema: registersFormat.schema, decided_thesis: thesis },
+        packet: { ...packet, output_contract: "decision_synthesis_registers", output_schema: DECISION_REGISTERS_CONTRACT.schema, decided_thesis: thesis },
         promptFactory: promptFactory(DECISION_REGISTER_KEYS, [
           "decided_thesis holds the accepted investment_thesis, confidence_assessment and decision_record. Do not restate or change them. Write only risk_register, catalyst_register, expected_return_matrix, thesis_breakers and monitoring_dashboard, consistent with that thesis: each thesis breaker tests one of its must-be-true conditions or disproving evidence.",
         ]),
-        outputFormat: registersFormat,
+        outputFormat: registersFormat(thesis),
       }), DECISION_REGISTER_KEYS);
-      const raw = { ...thesis, ...registers };
+      const raw = await runDecisionCalls({
+        thesis: runThesis, registers: runRegisters,
+        thesisBlamed: () => decisionErrorsBlameThesis(lastRegisterErrors),
+        // The cached thesis is what fails the merged check: invalidate it so the next thesis call generates afresh.
+        invalidateThesis: async () => {
+          await sql`UPDATE research_tasks SET status = 'failed', validation_status = 'invalid', updated_at = NOW(),
+              failure_reason = 'The merged decision failed on the thesis; regenerating it'
+            WHERE research_run_id = ${ctx.runId} AND task_key LIKE ${`${taskKey}:thesis:%`} AND status = 'completed'`;
+        },
+      });
       // The model-facing format already judged a finalized copy; finalizing again yields the same output.
       const { output, adjustments, gaps, errors } = finalizeDecisionOutput(stripCodeOwnedFields(raw), finalizeInputs);
       if (adjustments.dropped_citation_ids.length) {
