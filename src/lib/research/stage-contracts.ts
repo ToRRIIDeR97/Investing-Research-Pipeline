@@ -82,10 +82,24 @@ export const OPERATING_SCENARIOS_CONTRACT = artifactContract({ operating_scenari
 export const VALUATION_CONTRACT = artifactContract({
   valuation_scenario_set: ValuationScenarioSet.extend({method_inputs:z.array(ValuationMethodInput),omitted_methods:z.array(z.object({method:z.string().min(1),reason:z.string().min(1)}))}), reverse_valuation: ReverseValuation, annual_price_target_path: AnnualPriceTargetPath,
 });
+const DECISION_RECORD_SCHEMA = DecisionRecord;
+const DECISION_MONITORING = MonitoringDashboard.extend({items:z.array(MonitoringDashboard.shape.items.element.omit({history_median:true,history_percentile:true}).extend({metric_key:z.string().min(1),definition:z.string().min(1),unit:z.string().min(1),reporting_basis:z.string().min(1)})).min(1)});
 export const DECISION_SYNTHESIS_CONTRACT = artifactContract({
   investment_thesis: InvestmentThesis, risk_register: RiskRegister, catalyst_register: CatalystRegister,
   expected_return_matrix: ExpectedReturnMatrix, thesis_breakers: ThesisBreakers,
-  monitoring_dashboard: MonitoringDashboard.extend({items:z.array(MonitoringDashboard.shape.items.element.omit({history_median:true,history_percentile:true}).extend({metric_key:z.string().min(1),definition:z.string().min(1),unit:z.string().min(1),reporting_basis:z.string().min(1)})).min(1)}), confidence_assessment: ConfidenceAssessment, decision_record: DecisionRecord,
+  monitoring_dashboard: DECISION_MONITORING, confidence_assessment: ConfidenceAssessment, decision_record: DECISION_RECORD_SCHEMA,
+});
+/**
+ * decision_synthesis runs as two calls: a premium call writes the thesis, confidence and decision record, and a cheap
+ * call writes the registers from that thesis. The stage still accepts the merged answer only through
+ * DECISION_SYNTHESIS_CONTRACT and the finalize step.
+ */
+export const DECISION_THESIS_KEYS = ["investment_thesis", "confidence_assessment", "decision_record"] as const;
+export const DECISION_REGISTER_KEYS = ["risk_register", "catalyst_register", "expected_return_matrix", "thesis_breakers", "monitoring_dashboard"] as const;
+export const DECISION_THESIS_CONTRACT = artifactContract({ investment_thesis: InvestmentThesis, confidence_assessment: ConfidenceAssessment, decision_record: DECISION_RECORD_SCHEMA });
+export const DECISION_REGISTERS_CONTRACT = artifactContract({
+  risk_register: RiskRegister, catalyst_register: CatalystRegister, expected_return_matrix: ExpectedReturnMatrix,
+  thesis_breakers: ThesisBreakers, monitoring_dashboard: DECISION_MONITORING,
 });
 
 const reviewer = z.object({

@@ -24,14 +24,16 @@ Labels in the views: *unverified* means the relationship wasn't proven from sour
   - `mock`;
   - `direct-openai-compatible` (the default);
   - `opencode-go-direct`, which uses the Anthropic protocol for qwen and minimax models;
-  - `anthropic-direct`, which calls the Anthropic Messages API (`api.anthropic.com`), omits `temperature` for Claude models and caches the instructions and the shared part of the task prompt, which ends before a call's per-call packet keys (`anthropic-cache.ts`). For Claude models it also sends the task's output schema as `output_config.format` when `anthropic-schema.ts` can express it, and resends once without it if the API rejects the schema (`RESEARCH_ANTHROPIC_STRUCTURED_OUTPUT=0` turns this off);
+  - `anthropic-direct`, which calls the Anthropic Messages API (`api.anthropic.com`), omits `temperature` for Claude models and caches the instructions and the shared part of the task prompt, which ends before a call's per-call packet keys (`anthropic-cache.ts`). For Claude models it also sends the task's output schema as `output_config.format` when `anthropic-schema.ts` can express it, and resends once without it if the API rejects the schema (`RESEARCH_ANTHROPIC_STRUCTURED_OUTPUT=0` turns this off). Claude models that accept it (Opus/Sonnet 4.6+, Haiku 5+, Fable, Mythos) also get the task's `output_config.effort` with `thinking: {type: "adaptive"}`, never a `budget_tokens` (`RESEARCH_ANTHROPIC_EFFORT=0` turns this off). No other provider receives effort or thinking fields;
   - `local-openai-compatible`.
-- `registry.ts` picks the model in this order:
+- `registry.ts` picks a research task's model (`resolveTaskModel`, called by `callResearchAgent` with the call site's `modelTier` and stage key) in this order:
   1. an explicit override;
-  2. `RESEARCH_ALL_AGENTS_MODEL`;
-  3. `RESEARCH_<AGENT>_MODEL`;
-  4. the tier variable (`RESEARCH_CHEAP_MODEL`, `RESEARCH_MID_MODEL`, `RESEARCH_VISION_MODEL`);
-  5. the agent's default model.
+  2. `RESEARCH_STAGE_<STAGE_KEY>_MODEL`;
+  3. `RESEARCH_<TIER>_MODEL` for a premium, mid or cheap call;
+  4. `RESEARCH_ALL_AGENTS_MODEL`;
+  5. `RESEARCH_<AGENT>_MODEL`, then the agent config's variable (`RESEARCH_CHEAP_MODEL`, `RESEARCH_MID_MODEL`, `RESEARCH_VISION_MODEL`);
+  6. the agent's default model.
+  Calls outside `callResearchAgent` (`resolveAgentModel`) skip steps 2-3. Effort follows `RESEARCH_STAGE_<KEY>_EFFORT`, `RESEARCH_<TIER>_EFFORT`, `RESEARCH_EFFORT`, then the tier default (premium high, mid medium, cheap low). `src/lib/research/model-tiering.ts` adds the per-task output cap, premium timeout and budget reserve, and records each run's `effective_config`.
 - `runner.ts` makes up to 4 model attempts with one schema repair, compaction fallback and output-limit doubling. 5xx and overload errors are retried with a 5 s floor, and a reply cut off at its output limit is regenerated with twice the limit rather than repaired.
 - `cache.ts` handles prompt-cache layout and the affinity key.
 - `output-parser.ts` and `validation.ts` parse and check structured output.

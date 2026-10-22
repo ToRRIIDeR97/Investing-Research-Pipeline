@@ -23,6 +23,7 @@ export function getProvider(providerTypeOverride?: string): ModelProvider {
     const apiKey = process.env.RESEARCH_MODEL_API_KEY || process.env.ANTHROPIC_API_KEY || "";
     return new AnthropicCompatibleProvider({
       baseUrl, apiKey, allowedHosts: allowedHosts(), structuredOutput: process.env.RESEARCH_ANTHROPIC_STRUCTURED_OUTPUT !== "0",
+      effort: process.env.RESEARCH_ANTHROPIC_EFFORT !== "0",
     });
   }
   if (providerType === "direct-openai-compatible") {

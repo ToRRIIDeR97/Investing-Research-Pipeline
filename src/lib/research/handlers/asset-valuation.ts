@@ -464,7 +464,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         };
         const answer = await callResearchAgent<Record<string, any>>({
           sql, ctx, stageKey: "asset_valuation", taskKey,
-          taskType: "asset_valuation", agentName: "valuation-analyst", modelTier: "mid",
+          taskType: "asset_valuation", agentName: "valuation-analyst", modelTier: "premium",
           packet, promptFactory: equityMethodsPrompt, outputFormat,
         });
         const set = answer.valuation_scenario_set;
@@ -565,7 +565,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
           };
           const answer = (await callResearchAgent<Record<string, any>>({
             sql, ctx, stageKey: "asset_valuation", taskKey,
-            taskType: "asset_valuation", agentName: "valuation-analyst", modelTier: "mid",
+            taskType: "asset_valuation", agentName: "valuation-analyst", modelTier: "premium",
             packet, promptFactory: valuationPrompt, outputFormat,
           })).valuation_assumptions as ValuationSetsOutput;
           const sets = answer.sets.map((set) => ({ ...set, ronic_rationale: set.ronic_rationale ?? null })) as ValuationSet[];

@@ -9,6 +9,7 @@ import { CURRENT_PIPELINE_VERSION } from "./version";
 import { prepareResearchTeam, processResearchRequests, ResearchRequestsPending, teamBriefScheduler } from "./team";
 import { processSourceRequests } from "./sources/collector";
 import { SourceRequestsPending } from "./sources/source-requests";
+import { recordEffectiveRunConfig } from "./model-tiering";
 
 export interface SystemPipelineResult {
   runId: string;
@@ -125,6 +126,8 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
     if (!locked) throw new ResearchRunLocked("Another worker is still executing this research run");
     const [run] = await sql`SELECT pipeline_version, status FROM research_runs WHERE id = ${runId}`;
     if (!run) throw new Error(`Research run not found: ${runId}`);
+    // The provider, models, effort and limits this process runs the job with (AR-QOL-3).
+    await recordEffectiveRunConfig(sql, runId).catch((error) => console.warn(`effective_config write failed for run ${runId}:`, error));
     if (Number(run.pipeline_version) !== CURRENT_PIPELINE_VERSION) {
       throw new Error(`Run ${runId} has unsupported pipeline_version ${run.pipeline_version}. Only pipeline_version ${CURRENT_PIPELINE_VERSION} is supported.`);
     }

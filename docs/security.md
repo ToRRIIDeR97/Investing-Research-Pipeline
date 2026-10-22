@@ -65,11 +65,12 @@ This document was verified against source on 2026-10-05, and the controls change
 - Paid runs are opt-in:
   - `RUN_PAID_RESEARCH=1` for `new-equity-run.ts`, `resume-research-run.ts` and `provider-cache-smoke.ts`;
   - `RUN_PAID_MELI` for `new-meli-run.ts`;
-  - `RUN_PROVIDER_SMOKE=1` for `provider-smoke.ts`;
+  - `RUN_PROVIDER_SMOKE=1` for `provider-smoke.ts` and `effort-smoke.ts` (`npm run test:effort-smoke`);
   - `RUN_SOURCE_READER_SMOKE` for `source-reader-smoke.ts`;
   - `RUN_PAID_EVAL=1` for `judge-research.ts` (`npm run eval:judge`). `npm run eval:score` makes no model call and opens its database connection read-only.
 - The harness `redact()` (`src/lib/agent-harness/runner.ts`) replaces `RESEARCH_MODEL_API_KEY`, `ANTHROPIC_API_KEY`, `OPENCODE_GO_API_KEY`, `RESEARCH_WEB_SEARCH_API_KEY`, `RESEARCH_EMBEDDING_API_KEY`, `DATABASE_URL` and `bearer` tokens ([#10](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/10)). Provider error bodies are truncated and pattern-scrubbed. The embedding provider removes its own key from its errors.
 - The backtest child process gets an allowlisted environment (`backtestEnv` in `src/lib/backtesting/executor.ts`): `PATH`, `HOME`, `TMPDIR`, locale, proxy and CA-bundle variables, and `PYTHONPATH`. It gets no provider key and no `DATABASE_URL` ([#11](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/11)). The phase that runs model-written code also drops `PYTHONPATH` and runs in an OS sandbox that can't read the home or repository directories, so it can't read `.env.local` either, or other tools' files in the shared temp directories (see [Untrusted inputs](#untrusted-inputs)).
+- A run's `metadata_json.effective_config` records allowlisted settings only: provider, base-URL host (no path, query or userinfo), model names, efforts, limits and the git HEAD. It never copies the environment or a credential (`effectiveRunConfig` in `src/lib/research/model-tiering.ts`).
 - The web-search endpoint must use HTTPS, and its key goes to the first hop only, never to a redirect target ([#22](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/22)).
 
 ## Untrusted inputs
