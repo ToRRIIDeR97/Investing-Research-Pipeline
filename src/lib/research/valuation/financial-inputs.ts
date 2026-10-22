@@ -10,10 +10,11 @@ type Row = Record<string, any>;
 // First captured alias wins for each period, then the first key matching `pattern` (company-prefixed tags such as
 // meta_NonmarketableEquitySecuritiesCarryingValue). Sums are used only for split lease balances.
 /**
- * Borrowings the long_term_debt and current_debt aliases miss, summed per period (other_borrowings): short-term
- * borrowings and commercial paper always; separately tagged notes, bonds and loans only when no long-term debt total
- * (LongTermDebt, LongTermDebtNoncurrent) is captured for the period, because those totals already include them; and
- * the face lines of an earnings release (press_ keys), which are separate balance-sheet lines by construction.
+ * Borrowings the long_term_debt and current_debt aliases miss, summed per period (other_borrowings), for foreign
+ * private issuers only: short-term borrowings and commercial paper; separately tagged notes, bonds and loans only when
+ * no long-term debt total (LongTermDebt, LongTermDebtNoncurrent) is captured for the period, because those totals
+ * already include them; and the face lines of an earnings release (press_ keys). US filers' inputs and bridges are
+ * unchanged: a US lender's loans payable (Mercado Libre's) fund its credit book and are not acquisition debt.
  */
 const ALWAYS_SEPARATE = ["us_gaap_ShortTermBorrowings", "us_gaap_CommercialPaper"];
 const NOTE_COMPONENTS = /^us_gaap_(?:SeniorNotes|NotesPayable|ConvertibleNotesPayable|UnsecuredDebt|SecuredDebt|LongTermLoansPayable|LoansPayable|BondsPayable)(?:Current|Noncurrent)?$/;
@@ -52,6 +53,7 @@ const COLUMNS: { key: string; aliases: string[]; pattern?: RegExp; sum?: string[
   { key: "employees", aliases: ["employees"], scale: "count" },
 ];
 const MARKET_COLUMNS = ["period_end_close", "market_cap", "price_verified"];
+const OPTIONAL_COLUMNS = ["other_borrowings", "lease_liabilities_ifrs"];
 
 export type ValuationFinancialInputs = {
   currency: string | null;
@@ -102,6 +104,8 @@ export function valuationFinancialInputs(params: {
   marketObservations?: Row[];
   marketCrossCheck?: Row | null;
   cutoff: Date;
+  /** A 20-F/40-F filer whose statements come from releases: only then is other_borrowings computed. */
+  foreignIssuer?: boolean;
   quarters?: number;
   years?: number;
 }): ValuationFinancialInputs | null {
@@ -130,7 +134,7 @@ export function valuationFinancialInputs(params: {
       const cells = COLUMNS.map((column) => {
         const found = aliasesOf(column).map((key) => values.get(key)?.get(end)).find(Boolean);
         let value: number | null = found ? found.value_numeric : null;
-        if (column.debtLines) {
+        if (column.debtLines && params.foreignIssuer) {
           const present = keys.filter((key) => values.get(key)?.has(end));
           const lines = otherBorrowingKeys(present, LONG_TERM_TOTALS.some((key) => values.get(key)?.has(end)));
           value = lines.length ? lines.reduce((total, key) => total + values.get(key)!.get(end)!.value_numeric, 0) : null;
@@ -168,7 +172,8 @@ export function valuationFinancialInputs(params: {
   const gaap = statements.filter((row) => String(row.metadata_json?.concept ?? "").startsWith("us-gaap:")).length;
   return {
     currency: revenueCurrency,
-    accounting_standard: ifrs > gaap ? "ifrs-full" : "us-gaap",
+    // Set only for IFRS filers, so a US filer's inputs serialize exactly as before.
+    ...(ifrs > gaap ? { accounting_standard: "ifrs-full" as const } : {}),
     units: `Amounts in ${revenueCurrency ?? "reporting currency"} millions. diluted_shares in millions (weighted-average diluted). employees is a headcount. period_end_close is per share; market_cap in millions.`,
     basis: [
       "Consolidated values only, as filed and public by the cutoff; quarterly flows are standalone quarters (cash-flow quarters derived from cumulative filings).",
@@ -179,7 +184,8 @@ export function valuationFinancialInputs(params: {
     columns: keep(allColumns) as string[],
     quarterly: quarterly.map(keep),
     annual: annual.map(keep),
-    not_captured: allColumns.filter((_, i) => empty[i]),
+    // The foreign-issuer columns are optional: their absence is not a gap, and US inputs stay unchanged.
+    not_captured: allColumns.filter((column, i) => empty[i] && !OPTIONAL_COLUMNS.includes(column)),
     price_cross_check: crossCheck ? {
       provider: String(crossCheck.provider ?? "stooq"),
       verified_periods: Number(crossCheck.verified_periods) || 0,

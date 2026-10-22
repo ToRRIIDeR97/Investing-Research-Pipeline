@@ -244,7 +244,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       // Captured statements and period-end prices, reduced to a compact table.
       const capturedRows = await sql`
         SELECT artifact_type, content_json->'observations' AS observations, content_json->'cross_check' AS cross_check,
-          content_json->'beta' AS beta
+          content_json->'beta' AS beta, content_json ? 'quarter_coverage' AS foreign_issuer
         FROM research_artifacts
         WHERE research_run_id = ${ctx.runId}
           AND artifact_type IN ('financial_statement_set', 'market_price_history')
@@ -257,6 +257,8 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         marketObservations: Array.isArray(captured("market_price_history")?.observations) ? captured("market_price_history")!.observations : [],
         marketCrossCheck: captured("market_price_history")?.cross_check ?? null,
         cutoff,
+        // quarter_coverage is recorded only for foreign issuers (20-F/40-F filers and 6-K releases).
+        foreignIssuer: captured("financial_statement_set")?.foreign_issuer === true,
       });
       const requireDepreciationAddBack = hasDepreciationInputs(financialInputs);
       const [marketRow] = await sql`

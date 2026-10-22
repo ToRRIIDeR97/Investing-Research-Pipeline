@@ -58,7 +58,7 @@ console.log(`\nQuarter coverage: ${coverage.quarters} quarters (${coverage.first
 console.log(`Balance checks: ${checks.filter((c) => c.status === "passed").length} passed, ${checks.filter((c) => c.status !== "passed").length} unconfirmed (a release can omit a line the filed balance sheet has).`);
 
 // The equity bridge the valuation would use, per ADS in the reporting currency (FX is applied in the valuation).
-const inputs = valuationFinancialInputs({ statementObservations: observations, cutoff: new Date("2026-09-30") });
+const inputs = valuationFinancialInputs({ statementObservations: observations, cutoff: new Date("2026-09-30"), foreignIssuer: true });
 const bridge = equityBridge(inputs);
 const diluted = companyFacts.facts["us-gaap"].WeightedAverageNumberOfDilutedSharesOutstanding?.units?.shares?.filter((x: any) => x.form === "20-F").at(-1);
 if (bridge && diluted && ratio) {

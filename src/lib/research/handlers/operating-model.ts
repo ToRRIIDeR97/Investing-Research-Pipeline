@@ -79,13 +79,14 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
         [segment, recentByMetric(segmentRows.filter((row) => row.segment === segment), 8)]));
       // Code fixes the forecast period: the year after the latest captured fiscal year, as operating scenarios use.
       const [statementSet] = await sql`
-        SELECT content_json->'observations' AS observations FROM research_artifacts
+        SELECT content_json->'observations' AS observations, content_json ? 'quarter_coverage' AS foreign_issuer FROM research_artifacts
         WHERE research_run_id = ${ctx.runId} AND artifact_type = 'financial_statement_set' AND status IN ('validated', 'accepted')
         ORDER BY created_at DESC LIMIT 1
       `;
       const cutoff = ctx.marketDataCutoffAt || ctx.cutoffAt;
       const ratios = historyRatios(valuationFinancialInputs({
         statementObservations: Array.isArray(statementSet?.observations) ? statementSet.observations : [], cutoff,
+        foreignIssuer: statementSet?.foreign_issuer === true,
       }));
       const baseYear = ratios.base_year?.fiscal_year ?? cutoff.getUTCFullYear() - 1;
       const forecastPeriod = { fiscal_year: forecastHorizon(baseYear, forecastYears(ctx.forecastYears))[0], base_fiscal_year: baseYear, base_revenue_millions: ratios.base_year?.revenue ?? null };

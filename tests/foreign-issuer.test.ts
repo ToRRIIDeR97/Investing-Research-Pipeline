@@ -96,7 +96,7 @@ test("IFRS 16 lease liabilities join the equity bridge; US GAAP operating leases
 
 test("JD's unsecured senior notes and short-term debts reach the bridge's debt, current and non-current", () => {
   const { observations } = capture();
-  const fi = valuationFinancialInputs({ statementObservations: observations, cutoff: new Date("2026-09-30") })!;
+  const fi = valuationFinancialInputs({ statementObservations: observations, cutoff: new Date("2026-09-30"), foreignIssuer: true })!;
   const at = (end: string, key: string) => { const row = fi.quarterly.find((r) => r[0] === end)!; return row[fi.columns.indexOf(key)]; };
   // 31 Dec 2025: senior notes 3,511 current + 20,798 non-current (about RMB24bn) and short-term debts 8,014.
   assert.equal(at("2025-12-31", "other_borrowings"), 3_511 + 20_798 + 8_014);
@@ -104,7 +104,25 @@ test("JD's unsecured senior notes and short-term debts reach the bridge's debt, 
   const bridge = equityBridge(fi)!;
   assert.equal(bridge.period_end, "2026-06-30");
   assert.equal(bridge.components.other_borrowings, 13_555 + 16_607 + 3_534);
-  assert.equal(bridge.amount, 89_068 + 132_594 - 36_196 - 33_696 - 63_257);
+  assert.equal(bridge.components.long_term_investments, 58_040, "investment in equity investees is added like META's non-marketable equity");
+  assert.equal(bridge.amount, 89_068 + 132_594 + 58_040 - 36_196 - 33_696 - 63_257);
+});
+
+test("a US filer's bridge is unchanged: a lender's loans payable are not read as acquisition debt (Mercado Libre shape)", () => {
+  const obs = (key: string, value: number) => ({ metric_key: key, value_numeric: value * 1e6, unit: "USD", currency: "USD", periodicity: "quarterly",
+    period_end: "2026-06-30", fiscal_year: 2026, fiscal_quarter: 2, available_at: "2026-08-01", metadata_json: { concept: `us-gaap:${key.replace(/^us_gaap_/, "")}` } });
+  const rows = [obs("revenue", 7_000), obs("us_gaap_CashAndCashEquivalentsAtCarryingValue", 3_000), obs("us_gaap_ShortTermInvestments", 6_000),
+    obs("us_gaap_LoansPayableCurrent", 6_500), obs("us_gaap_LongTermLoansPayable", 4_100), obs("us_gaap_ShortTermBorrowings", 500), obs("us_gaap_MinorityInterest", 55)];
+  const us = valuationFinancialInputs({ statementObservations: rows, cutoff: new Date("2026-09-30") })!;
+  const bridge = equityBridge(us)!;
+  assert.equal(bridge.amount, 3_000 + 6_000 - 55, "cash and investments less NCI, exactly as before");
+  assert.equal("other_borrowings" in bridge.components, false);
+  assert.equal(us.columns.includes("other_borrowings"), false);
+  assert.equal(us.not_captured.includes("other_borrowings"), false, "US inputs serialize as before");
+  assert.equal("accounting_standard" in us, false);
+  // The same lines on a foreign issuer are borrowings the bridge subtracts.
+  const fpi = equityBridge(valuationFinancialInputs({ statementObservations: rows, cutoff: new Date("2026-09-30"), foreignIssuer: true }))!;
+  assert.equal(fpi.components.other_borrowings, 6_500 + 4_100 + 500);
 });
 
 test("separately tagged notes are added only when no long-term debt total already includes them", () => {

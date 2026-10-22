@@ -113,6 +113,8 @@ const CONCEPTS: [RegExp, string, boolean?][] = [
   [/^cash and cash equivalents$/, "CashAndCashEquivalentsAtCarryingValue"], [/^short-term investments$/, "ShortTermInvestments"],
   [/^accounts receivable, net\b/, "AccountsReceivableNetCurrent"], [/^inventories, net$/, "InventoryNet"],
   [/^property, equipment and software, net$/, "PropertyPlantAndEquipmentNet"], [/^total assets$/, "Assets"],
+  // Equity-method stakes are non-operating assets the bridge adds (long_term_investments), as for META's non-marketable equity.
+  [/^investments? in equity (?:investees|method investees)$/, "EquityMethodInvestments"],
   [/^short-term (?:borrowings|debts?)$/, "ShortTermBorrowings"], [/^accounts payable$/, "AccountsPayableCurrent"],
   [/^long-term (?:borrowings|debts?)$/, "LongTermDebtNoncurrent"], [/^total liabilities$/, "Liabilities"],
   [/^(?:total )?mezzanine equity$/, "TemporaryEquityCarryingAmountAttributableToParent"],

@@ -83,6 +83,28 @@ async function saveExternalBenchmarks(sql: ReturnType<typeof postgres>, ctx: Res
   await saveReportArtifact(sql, ctx, "demand_backdrop", `${ctx.assetSlug}-demand-backdrop`, demand);
 }
 
+/**
+ * The ADS ratio belongs to the depositary instrument only: a Hong Kong ordinary listing of the same company is one
+ * share per share. The target is the instrument marked ADS/ADR (type or name), else, when none is marked, the one
+ * whose currency is the valuation price's. A ratio already set is never overwritten. Returns the instrument written.
+ */
+export async function writeDepositaryRatio(sql: ReturnType<typeof postgres>, assetId: string, ratio: number): Promise<string | null> {
+  const marked = await sql`SELECT id, depositary_ratio FROM instruments WHERE asset_id = ${assetId}
+    AND (lower(instrument_type) IN ('ads', 'adr', 'depositary_receipt', 'depositary_share') OR name ~* '\\m(ADS|ADR)\\M|depositary')
+    ORDER BY created_at LIMIT 1`;
+  let target = marked[0] ?? null;
+  if (!target) {
+    const [price] = await sql`SELECT content_json->'valuation_price'->>'currency' AS currency FROM research_artifacts a
+      JOIN research_runs r ON r.id = a.research_run_id WHERE r.asset_id = ${assetId} AND a.artifact_type = 'market_price_history'
+      ORDER BY a.created_at DESC LIMIT 1`;
+    const currency = price?.currency || "USD";
+    [target] = await sql`SELECT id, depositary_ratio FROM instruments WHERE asset_id = ${assetId} AND currency = ${currency} ORDER BY created_at LIMIT 1`;
+  }
+  if (!target || target.depositary_ratio !== null) return null;
+  await sql`UPDATE instruments SET depositary_ratio = ${ratio}, updated_at = NOW() WHERE id = ${target.id}`;
+  return String(target.id);
+}
+
 export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "historical_record",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
@@ -146,8 +168,7 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       // The ADS ratio read from the release or 20-F fills the instrument's depositary_ratio, which the valuation needs
       // to put per-ordinary-share values on the per-ADS price. A ratio someone already set is kept.
       const depositary = (filings as { depositary_ratio?: { value: number } | null }).depositary_ratio;
-      if (depositary?.value) await sql`UPDATE instruments SET depositary_ratio = ${depositary.value}, updated_at = NOW()
-        WHERE asset_id = ${ctx.assetId} AND depositary_ratio IS NULL`;
+      if (depositary?.value) await writeDepositaryRatio(sql, ctx.assetId, depositary.value);
       // 3. Call metric-normalizer agent, only for metrics the filings and companyfacts do not cover.
       const coverage = normalizerCoverage(requiredMetricKeys, [...filings.observations, ...secFacts]);
       const taskKey = "metric-normalizer:observations";
