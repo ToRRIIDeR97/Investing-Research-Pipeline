@@ -840,7 +840,8 @@ export class MockProvider implements ModelProvider {
         response = v3OperatingScenariosResponse(packet);
       } else if (contract === "asset_valuation") {
         response = v3ValuationResponse(packet);
-      } else if (contract === "decision_synthesis") {
+      } else if (contract?.startsWith("decision_synthesis")) {
+        // Both decision calls (thesis, registers) get the full fixture; the handler keeps the keys each call owns.
         response = v3DecisionResponse(packet);
       } else if (contract === "ai_reviewer") {
         response = STATIC["research-reviewer"];

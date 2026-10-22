@@ -71,7 +71,7 @@ export async function checkAsset(sql: Sql, target: MonitorTarget, options: { fet
   const fetchEdgar = edgarFetch(options.fetch);
   const now = options.now ?? new Date();
   const base = { asset_id: target.asset_id, slug: target.slug, run_id: target.run_id };
-  const cik = target.cik ?? (target.symbol ? await resolveSecCik(target.symbol).catch(() => null) : null);
+  const cik = target.cik ?? (target.symbol ? await resolveSecCik(target.symbol, fetchEdgar).catch(() => null) : null);
   if (!cik) return { ...base, status: "skipped", refresh_due: false, reasons: ["No SEC CIK for this asset, so EDGAR cannot be checked."], filings: [], kpis: [] };
 
   const cutoff = target.source_cutoff_at.slice(0, 10);

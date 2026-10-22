@@ -10,7 +10,8 @@
 import postgres from "postgres";
 import { createHash } from "node:crypto";
 import { runResearchAgent, buildTaskPrompt, UNTRUSTED_DATA_RULE } from "@/lib/agent-harness/runner";
-import { getAgentConfig, resolveAgentModel, type ResearchAgentName } from "@/lib/agent-harness/registry";
+import { getAgentConfig, type ResearchAgentName } from "@/lib/agent-harness/registry";
+import { recordEffectiveTaskConfig, taskExecution } from "./model-tiering";
 import { validateSchema } from "@/lib/agent-harness/validation";
 import { assertModelBudgetAvailable, recordModelCall } from "@/lib/agents/model-calls";
 import { composeProfile } from "./archetypes/compose";
@@ -395,6 +396,7 @@ export type ResearchCallParams = {
   taskKey: string;
   taskType: string;
   agentName: Parameters<typeof runResearchAgent>[0]["agentName"];
+  /** "premium", "mid" or "cheap" picks the task's model, effort and limits (model-tiering.ts); other values keep the agent's. */
   modelTier: string;
   packet: Record<string, unknown>;
   prompt?: string;
@@ -513,12 +515,15 @@ export async function callResearchAgent<T extends Record<string, unknown>>(input
   const role = STAGE_OWNERS[params.stageKey];
   const config = getAgentConfig(params.agentName);
   const outputFormat = params.outputFormat || config.outputFormat;
+  const execution = taskExecution({ agentName: params.agentName as ResearchAgentName, modelTier: params.modelTier, stageKey: params.stageKey });
   const request = {
     packet: params.packet,
     prompt: buildTaskPrompt({ agentName: params.agentName, taskPacket: params.packet, prompt: params.prompt, promptFactory: params.promptFactory }, config),
     output_format: outputFormat,
     agent: params.agentName,
-    model: resolveAgentModel(params.agentName as ResearchAgentName),
+    // The model and effort are part of the task key, so an output from another model or effort is never reused.
+    model: execution.model,
+    ...(execution.effort ? { effort: execution.effort } : {}),
     provider: process.env.RESEARCH_MODEL_PROVIDER || "direct-openai-compatible",
     base_url: process.env.RESEARCH_MODEL_BASE_URL || null,
     prompt_version: PROMPT_VERSION,
@@ -549,6 +554,9 @@ export async function callResearchAgent<T extends Record<string, unknown>>(input
   `;
   const task = await createV3Task(params.sql, params.ctx.runId, params.stageKey, taskKey, params.taskType, params.agentName,
     storedTaskRequest(request));
+  // The run records what each task type ran with (AR-QOL-3). A failed write never blocks the call.
+  await recordEffectiveTaskConfig(params.sql, params.ctx.runId, params.taskType, { ...execution, agentName: params.agentName })
+    .catch((error) => console.warn(`effective_config write failed for run ${params.ctx.runId}:`, error));
 
   const escalationReason = params.modelTier === "premium" || params.modelTier === "specialist"
     ? "Research OS v3 stage requires specialist reasoning"
@@ -567,6 +575,9 @@ export async function callResearchAgent<T extends Record<string, unknown>>(input
       cacheScope: params.ctx.runId,
       perCallKeys: params.perCallKeys,
       signal: params.ctx.signal,
+      model: execution.model,
+      ...(execution.fallbackModel !== undefined ? { fallbackModel: execution.fallbackModel } : {}),
+      policy: execution.policy,
       hooks: {
         beforeAttempt: async () => {
           await assertModelBudgetAvailable({
@@ -574,7 +585,7 @@ export async function callResearchAgent<T extends Record<string, unknown>>(input
             stageId: task.stage_id,
             taskId: task.id,
             modelTier: params.modelTier,
-            reserveUsd: Number(process.env.RESEARCH_ATTEMPT_BUDGET_RESERVE_USD || 0.1),
+            reserveUsd: execution.reserveUsd,
           });
         },
         onAttemptComplete: async (attempt) => {
@@ -601,6 +612,9 @@ export async function callResearchAgent<T extends Record<string, unknown>>(input
               input_bytes: attempt.inputBytes,
               max_output_tokens: attempt.maxOutputTokens,
               original_input_bytes: attempt.originalInputBytes,
+              effort: execution.effort ?? null,
+              model_source: execution.modelSource,
+              budget_reserve_usd: execution.reserveUsd,
             },
             responseMetadata: {
               request_id: attempt.requestId,

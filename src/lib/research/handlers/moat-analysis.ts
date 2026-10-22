@@ -41,7 +41,7 @@ export const moatAnalysisHandler: StageHandler<Record<string, unknown>> = {
 
       const output = await callResearchAgent<Record<string, any>>({
         sql, ctx, stageKey: "moat_analysis", taskKey,
-        taskType: "moat_analysis", agentName: "asset-analyst", modelTier: "mid",
+        taskType: "moat_analysis", agentName: "asset-analyst", modelTier: "premium",
         packet, promptFactory,
         outputFormat: { ...MOAT_CONTRACT, validate(value) {
           const errors = MOAT_CONTRACT.validate?.(value) || [];

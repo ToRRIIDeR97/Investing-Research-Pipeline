@@ -267,3 +267,28 @@ test("the change log diffs two v2 valuations: forecast years, sets, matrix cells
   // The same v2 artifact on both sides: nothing changes.
   assert.equal(buildVersionChangeLog(id(1), side(v2Artifact(5, 0.09)), side(v2Artifact(5, 0.09))).changes.length, 0);
 });
+
+test("without a stored CIK, monitor-check resolves it from SEC's ticker map through the same guarded fetch", async () => {
+  const calls: { url: string; redirect: unknown; agent: unknown }[] = [];
+  const fixtureFetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), redirect: init?.redirect, agent: (init?.headers as Record<string, string> | undefined)?.["User-Agent"] });
+    if (String(url).endsWith("/files/company_tickers.json")) return new Response(JSON.stringify({ 0: { cik_str: 1, ticker: "EXM", title: "Example" } }));
+    if (String(url).endsWith("CIK0000000001.json")) return new Response(JSON.stringify(submissions));
+    if (String(url).endsWith("/q3.htm")) return new Response(tenQ);
+    return new Response("not found", { status: 404 });
+  }) as typeof fetch;
+  const sql = (async (strings: TemplateStringsArray) => {
+    const text = strings.join("?");
+    if (/FROM source_documents|FROM research_artifacts/.test(text)) return [];
+    throw new Error(`Unexpected query: ${text}`);
+  }) as unknown as Sql;
+  const target = { asset_id: id(5), slug: "example", symbol: "EXM", run_id: id(1), source_cutoff_at: "2026-08-01T00:00:00.000Z", cik: null };
+  const result = await checkAsset(sql, target, { fetch: fixtureFetch, now: new Date("2026-11-01T00:00:00Z") });
+  assert.equal(calls[0].url, "https://www.sec.gov/files/company_tickers.json");
+  assert.ok(calls.every(c => c.redirect === "error" && /^ResearchOS\//.test(String(c.agent))), "every request goes through edgarFetch");
+  assert.equal(calls[1].url, "https://data.sec.gov/submissions/CIK0000000001.json");
+  assert.deepEqual([result.status, result.filings.map(f => f.form)], ["refresh_due", ["10-Q"]]);
+  // A symbol the ticker map lacks is skipped, not failed.
+  const unknown = await checkAsset(sql, { ...target, symbol: "NOPE" }, { fetch: fixtureFetch, now: new Date("2026-11-01T00:00:00Z") });
+  assert.equal(unknown.status, "skipped");
+});

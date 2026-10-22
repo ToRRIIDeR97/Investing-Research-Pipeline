@@ -889,11 +889,29 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     // Refresh types are no longer created.
     assert.equal((await create({ run_type: "valuation_refresh" })).status, 400);
 
+    // Newer runs that were approved and then cancelled or failed are never the default prior, and a run still
+    // pending or running cannot be named as one (its prior_research would be partial).
+    const abandoned = [crypto.randomUUID(), crypto.randomUUID()], unfinished = crypto.randomUUID();
+    for (const [index, id] of abandoned.entries()) {
+      await sql`INSERT INTO research_runs (id, asset_id, run_type, status, pipeline_version, completed_at, created_at)
+        VALUES (${id}, ${testAssetId}, 'deep_dive', ${index ? "failed" : "cancelled"}, 3, NOW() + INTERVAL '1 hour', NOW() + INTERVAL '1 hour')`;
+      await sql`INSERT INTO review_decisions (asset_id, research_run_id, status, reviewed_by) VALUES (${testAssetId}, ${id}, 'approved_for_tracking', 'human-reviewer-1')`;
+    }
+    await sql`INSERT INTO research_runs (id, asset_id, run_type, status, pipeline_version) VALUES (${unfinished}, ${testAssetId}, 'deep_dive', 'pending', 3)`;
+    const incomplete = await create({ prior_run_id: unfinished });
+    assert.equal(incomplete.status, 422);
+    assert.equal((await incomplete.json()).code, "PRIOR_RUN_INCOMPLETE");
+    assert.equal((await refreshRun(request({}), paramsFor(unfinished))).status, 422, "a refresh of an unfinished run is refused");
+    // The abandoned runs stay in place while run B is created below, so its default prior must still be run A.
+
     // Run B: no prior_run_id given, so it links to run A by default.
     const createdB = await create({});
     assert.equal(createdB.status, 201);
     const runB = await createdB.json();
-    assert.equal(runB.prior_run_id, runA.id);
+    assert.equal(runB.prior_run_id, runA.id, "newer approved-then-cancelled or failed runs are skipped");
+    await sql`DELETE FROM review_decisions WHERE research_run_id = ANY(${abandoned}::uuid[])`;
+    await sql`DELETE FROM research_stages WHERE research_run_id = ANY(${[...abandoned, unfinished]}::uuid[])`;
+    await sql`DELETE FROM research_runs WHERE id = ANY(${[...abandoned, unfinished]}::uuid[])`;
     const [prior] = await sql`SELECT content_json, length(content_json::text) AS bytes FROM research_artifacts
       WHERE research_run_id = ${runB.id} AND artifact_type = 'prior_research'`;
     assert.ok(prior, "prior_research is saved when the run is created");

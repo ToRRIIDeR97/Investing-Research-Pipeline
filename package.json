@@ -15,6 +15,7 @@
     "monitor:check": "tsx scripts/monitor-check.ts",
     "test:provider-smoke": "tsx scripts/provider-smoke.ts",
     "test:provider-cache-smoke": "tsx scripts/provider-cache-smoke.ts",
+    "test:effort-smoke": "tsx scripts/effort-smoke.ts",
     "test:source-reader-smoke": "tsx scripts/source-reader-smoke.ts",
     "test:meli-mock": "tsx scripts/new-meli-run.ts",
     "test:sofi-mock": "RESEARCH_ASSET=SOFI tsx scripts/new-equity-run.ts",

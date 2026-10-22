@@ -14,18 +14,21 @@ const LINEAGE_TYPES = ["decision_record", "investment_thesis", "expected_return_
 const APPROVED = ["approved_for_tracking", "approved_for_position"];
 
 export class PriorRunError extends Error {
-  constructor(message: string, public code: "PRIOR_RUN_NOT_FOUND" | "PRIOR_RUN_OTHER_ASSET" | "PRIOR_RUN_UNSUPPORTED") {
+  constructor(message: string, public code: "PRIOR_RUN_NOT_FOUND" | "PRIOR_RUN_OTHER_ASSET" | "PRIOR_RUN_UNSUPPORTED" | "PRIOR_RUN_INCOMPLETE") {
     super(message);
     this.name = "PriorRunError";
   }
 }
 
-/** The asset's most recent completed, or human-approved, pipeline-v3 run. */
+/** Runs still executing: their prior_research would be partial. */
+const IN_PROGRESS = ["pending", "running"];
+
+/** The asset's most recent completed, or human-approved and not since cancelled or failed, pipeline-v3 run. */
 export async function defaultPriorRunId(sql: Sql, assetId: string, pipelineVersion = 3): Promise<string | null> {
   const [row] = await sql`SELECT rr.id FROM research_runs rr
     WHERE rr.asset_id = ${assetId} AND rr.pipeline_version = ${pipelineVersion}
-      AND (rr.status = 'completed' OR EXISTS (SELECT 1 FROM review_decisions rd
-        WHERE rd.research_run_id = rr.id AND rd.status = ANY(${APPROVED}::text[])))
+      AND (rr.status = 'completed' OR (rr.status NOT IN ('cancelled', 'failed') AND EXISTS (SELECT 1 FROM review_decisions rd
+        WHERE rd.research_run_id = rr.id AND rd.status = ANY(${APPROVED}::text[]))))
     ORDER BY COALESCE(rr.completed_at, rr.updated_at, rr.created_at) DESC, rr.created_at DESC, rr.id DESC
     LIMIT 1`;
   return row ? String(row.id) : null;
@@ -38,10 +41,11 @@ export async function defaultPriorRunId(sql: Sql, assetId: string, pipelineVersi
 export async function resolvePriorRunId(sql: Sql, assetId: string, requested: string | null | undefined, pipelineVersion = 3) {
   if (requested === null) return null;
   if (requested === undefined) return defaultPriorRunId(sql, assetId, pipelineVersion);
-  const [row] = await sql`SELECT id, asset_id, pipeline_version FROM research_runs WHERE id = ${requested}`;
+  const [row] = await sql`SELECT id, asset_id, pipeline_version, status FROM research_runs WHERE id = ${requested}`;
   if (!row) throw new PriorRunError("Prior run not found", "PRIOR_RUN_NOT_FOUND");
   if (String(row.asset_id) !== assetId) throw new PriorRunError("The prior run belongs to a different asset", "PRIOR_RUN_OTHER_ASSET");
   if (Number(row.pipeline_version) !== pipelineVersion) throw new PriorRunError(`The prior run must be a pipeline-v${pipelineVersion} run`, "PRIOR_RUN_UNSUPPORTED");
+  if (IN_PROGRESS.includes(String(row.status))) throw new PriorRunError(`The prior run is still ${row.status}; its research is not finished`, "PRIOR_RUN_INCOMPLETE");
   return String(row.id);
 }
 
