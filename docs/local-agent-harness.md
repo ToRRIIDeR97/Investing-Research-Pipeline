@@ -27,8 +27,8 @@ RESEARCH_ALL_AGENTS_MODEL=claude-haiku-5-5
 
 Every research call names a tier at its call site (`modelTier` in `callResearchAgent`):
 
-- **premium**: `business_process_analysis`, `moat_analysis`, `operating_model`, `operating_scenarios`, `asset_valuation`, and the thesis half of `decision_synthesis`;
-- **mid**: `company_genesis`, the report outline, report sections, the AI review and the statement repair agent;
+- **premium**: `business_process_analysis` and its `management_assessment` call, `moat_analysis`, `operating_model`, `operating_scenarios`, `asset_valuation`, and the thesis half of `decision_synthesis`;
+- **mid**: the plan stage's `research_framing` call, `company_genesis`, the report outline, report sections, the AI review and the statement repair agent;
 - **cheap**: team briefs, team requests, team answers, the decision registers, evidence extraction, metric normalization, source review and the depth review.
 
 A new stage call adopts tiering by passing its `modelTier`; nothing else is needed (`src/lib/research/model-tiering.ts`).
@@ -36,7 +36,7 @@ A new stage call adopts tiering by passing its `modelTier`; nothing else is need
 The model for a task, first match wins:
 
 1. an explicit override from the caller;
-2. `RESEARCH_STAGE_<STAGE_KEY>_MODEL` (for example `RESEARCH_STAGE_DECISION_SYNTHESIS_MODEL`);
+2. `RESEARCH_STAGE_<STAGE_KEY>_MODEL` (for example `RESEARCH_STAGE_DECISION_SYNTHESIS_MODEL`). It covers every call of the stage, whatever its tier: both decision calls, or the business stage's management call;
 3. `RESEARCH_<TIER>_MODEL`: `RESEARCH_PREMIUM_MODEL`, `RESEARCH_MID_MODEL` or `RESEARCH_CHEAP_MODEL`;
 4. `RESEARCH_ALL_AGENTS_MODEL`;
 5. `RESEARCH_<AGENT>_MODEL`, then the agent's configured tier variable;
