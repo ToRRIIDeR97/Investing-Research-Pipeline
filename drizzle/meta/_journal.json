@@ -97,7 +97,14 @@
       "idx": 13,
       "version": "7",
       "when": 1792022400000,
-      "tag": "0015_research_lineage_monitoring",
+      "tag": "0015_valuation_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792108800000,
+      "tag": "0016_research_lineage_monitoring",
       "breakpoints": true
     }
   ]

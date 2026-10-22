@@ -4,6 +4,8 @@ import {
   validateMoatAssessment,
   validateMoatAttackMatrix,
   validateNoMoatCounterfactual,
+  capMoatClassifications,
+  attackTargetErrors,
 } from "@/lib/research/moat/validation";
 import type {
   MoatAssessment,
@@ -11,7 +13,34 @@ import type {
   NoMoatCounterfactual,
 } from "@/lib/research/moat/contracts";
 
+const SCORED = {
+  classification: "moderate" as const, supporting_claim_ids: [], artifact_paths: [],
+  scores: { current_strength: 3, breadth_across_revenue: 3, replication_difficulty: 3, pricing_power: 3, attack_resistance: 3, expected_durability: 3 },
+};
+
 describe("moat proof and attack artifacts (Component 9)", () => {
+  it("a strong moat must cite stored history, a peer in a complete benchmark and a run claim, or it is capped at moderate", () => {
+    type Entry = { claimed_moat: string; classification: string; artifact_paths: string[]; supporting_claim_ids?: string[]; classification_note?: string };
+    const claim = "6f9619ff-8b86-4d11-b42d-00c04fc964ff";
+    const stored = { financial_analytics: { segments: { quarterly: { columns: ["period", "operating_margin"], rows: [] } } },
+      peer_benchmark: { status: "complete", peers: [{ ticker: "GOOGL" }] } };
+    const context = { artifacts: stored, claimIds: new Set([claim]) };
+    const entry: Entry = { claimed_moat: "Scale", classification: "strong", supporting_claim_ids: [claim],
+      artifact_paths: ["financial_analytics.segments.quarterly.operating_margin", "peer_benchmark.peers.GOOGL"] };
+    const cap = (e: Entry, ctx = context) => capMoatClassifications({ assessments: [e] }, ctx).assessments[0];
+    assert.equal(cap(entry).classification, "strong", "every citation resolves");
+    // The bypass: the right-looking strings, but the benchmark is unavailable and holds no peer.
+    const unavailable = { artifacts: { ...stored, peer_benchmark: { status: "unavailable", peers: [] } }, claimIds: context.claimIds };
+    assert.equal(cap(entry, unavailable).classification, "moderate");
+    assert.match(cap(entry, unavailable).classification_note!, /peer in a complete peer_benchmark/);
+    assert.equal(cap({ ...entry, artifact_paths: ["financial_analytics.invented.path", "peer_benchmark.peers.GOOGL"] }).classification, "moderate", "a path that does not resolve");
+    assert.equal(cap({ ...entry, artifact_paths: [...entry.artifact_paths.slice(0, 1), "peer_benchmark.peers.SNAP"] }).classification, "moderate", "a peer the benchmark lacks");
+    assert.match(cap({ ...entry, supporting_claim_ids: [] }).classification_note!, /supporting claim/);
+    assert.equal(cap({ ...entry, classification: "weak" }).classification, "weak", "code never raises a rating");
+    assert.deepEqual(attackTargetErrors({ assessments: [{ claimed_moat: "Scale" }] },
+      { attacks: [{ targets_moat: "scale", primary_attacker: "A" }, { targets_moat: "Brand", primary_attacker: "B" }] }).length, 1);
+  });
+
   it("C9-T1: High margins as only evidence is rejected", () => {
     const assessment: MoatAssessment = {
       artifact_type: "moat_assessment",
@@ -31,6 +60,7 @@ describe("moat proof and attack artifacts (Component 9)", () => {
           decay_velocity: "Low",
           failure_indicators: ["Competitor third-party warehouse adoption"],
           confidence: 0.8,
+          ...SCORED,
         },
       ],
     };
@@ -59,6 +89,7 @@ describe("moat proof and attack artifacts (Component 9)", () => {
           failure_indicators: ["Lower buyer frequency"],
           confidence: 0.9,
           engagement_per_participant: -0.05, // declining engagement
+          ...SCORED,
         },
       ],
     };
@@ -86,6 +117,7 @@ describe("moat proof and attack artifacts (Component 9)", () => {
           decay_velocity: "Low",
           failure_indicators: ["Deteriorating NPS"],
           confidence: 0.85,
+          ...SCORED,
         },
       ],
     };
@@ -108,6 +140,8 @@ describe("moat proof and attack artifacts (Component 9)", () => {
           leading_indicators: ["Amazon warehouse additions", "Prime adoption rates"],
           financial_translation: "None", // no translation
           residual_moat: "Weakened",
+          targets_moat: "Scale advantage",
+          survives: "partially",
         },
       ],
     };

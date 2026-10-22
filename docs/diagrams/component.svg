@@ -62,7 +62,7 @@
 <rect x="260" y="560" width="300" height="100" rx="6" fill="#eaf4f4" stroke="#2f7f7f" stroke-width="1.4"/>
 <text x="410.0" y="578" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«datastore»</text>
 <text x="410.0" y="594" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">PostgreSQL 16 + pgvector</text>
-<text x="410.0" y="611" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/db/schema/** · drizzle 0000–0006, 0009–0015</text>
+<text x="410.0" y="611" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">src/db/schema/** · drizzle 0000–0006, 0009–0016</text>
 <text x="410.0" y="626" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">runs, stages, tasks, jobs, artifacts,</text>
 <text x="410.0" y="641" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">evidence graph, embeddings, price bars</text>
 <rect x="600" y="560" width="220" height="100" rx="6" fill="#eaf4f4" stroke="#2f7f7f" stroke-width="1.4"/>

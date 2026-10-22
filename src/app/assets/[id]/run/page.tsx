@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import ui from "@/components/research-ui.module.css";
+import { FramingEditor, type FramingEdits } from "@/components/framing-editor";
 import { pollTick, runProgressIsLive } from "@/lib/research/run-polling";
 
 interface Message {
@@ -251,6 +252,12 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={ui.status} data-status={status}>{humanize(status).replace(/^./, (letter) => letter.toUpperCase())}</span>;
 }
 
+/** Forecast horizon set at the plan gate (3-10 years); sent with the approval. */
+function ForecastYearsField({ value, onChange, disabled }: { value: number; onChange: (years: number) => void; disabled: boolean }) {
+  return <label className={ui.field}>Forecast years<input type="number" min={3} max={10} step={1} value={value} disabled={disabled}
+    onChange={(event) => onChange(Math.max(3, Math.min(10, Math.round(Number(event.target.value) || 5))))} /></label>;
+}
+
 function ResearchPlanCard({ plan }: { plan: Record<string, any> | null }) {
   if (!plan) return <p className={ui.notice}>Preparing the research plan…</p>;
   const list = (value: unknown): any[] => Array.isArray(value) ? value : [];
@@ -258,6 +265,7 @@ function ResearchPlanCard({ plan }: { plan: Record<string, any> | null }) {
     <p className={ui.lead}>{plan.research_question || "No research question recorded."}</p>
     <dl className={ui.metadata}>
       <div><dt>Budget</dt><dd>{plan.budget?.limit_usd != null ? `$${plan.budget.limit_usd}` : "Not set"}</dd></div>
+      <div><dt>Forecast years</dt><dd>{plan.forecast_years ?? "Not set"}</dd></div>
       <div><dt>Profile</dt><dd>{[...list(plan.composed_archetypes), ...list(plan.overlays)].map(humanize).join(" · ") || "Not set"}</dd></div>
     </dl>
     {[
@@ -316,6 +324,8 @@ export default function RunResearchPage() {
   const [assetName, setAssetName] = useState("");
   const [researchPlan, setResearchPlan] = useState<Record<string, any> | null>(null);
   const [planChangeNotes, setPlanChangeNotes] = useState("");
+  const [planForecastYears, setPlanForecastYears] = useState(5);
+  const [planEdits, setPlanEdits] = useState<FramingEdits>({});
   const [sourceCutoffAt, setSourceCutoffAt] = useState("");
   const [marketDataCutoffAt, setMarketDataCutoffAt] = useState("");
   const [budgetLimitUsd, setBudgetLimitUsd] = useState("");
@@ -477,7 +487,7 @@ export default function RunResearchPage() {
       const res = await fetch(`/api/research-runs/${runId}/approve-plan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ approved_by: "user" }),
+        body: JSON.stringify({ approved_by: "user", forecast_years: planForecastYears, ...planEdits }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Unable to approve plan");
@@ -502,8 +512,9 @@ export default function RunResearchPage() {
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || "Unable to save plan changes");
-      setMessages((prev) => [...prev, { role: "system", content: "Plan-change notes saved. The run remains at the research-plan gate." }]);
+      setMessages((prev) => [...prev, { role: "system", content: "Redrafting the plan with your feedback. The plan gate reopens when the new draft is ready." }]);
       setPlanChangeNotes("");
+      setPhase("pipeline");
       fetchProgress(runId);
     } catch (error) {
       setMessages((prev) => [...prev, { role: "system", content: `Plan-change error: ${error instanceof Error ? error.message : String(error)}` }]);
@@ -582,7 +593,10 @@ export default function RunResearchPage() {
       const artifactsData = planRes?.ok ? await planRes.json() : { artifacts: [] };
       if (!current()) return;
       const planArtifact = (artifactsData.artifacts || []).find((artifact: any) => artifact.type === "research_plan");
-      if (planArtifact) setResearchPlan(planArtifact.content_json || null);
+      if (planArtifact) {
+        setResearchPlan(planArtifact.content_json || null);
+        if (Number(planArtifact.content_json?.forecast_years) > 0) setPlanForecastYears(Number(planArtifact.content_json.forecast_years));
+      }
       if (planWaiting) setPhase("plan");
       else if (phase === "plan") setPhase("pipeline");
 
@@ -789,8 +803,9 @@ export default function RunResearchPage() {
       <div className={ui.actions}><span /><button className={ui.primary} disabled={isProcessing || !input.trim()}>{isProcessing ? "Creating…" : "Create research plan"}</button></div>
     </form> : phase === "plan" ? <>
       <h2 className="mb-8 text-[22px]">Review research plan</h2>
+      {researchPlan && <FramingEditor key={`${researchPlan.generated_at}`} plan={researchPlan} disabled={isProcessing} onChange={setPlanEdits} />}
       <ResearchPlanCard plan={researchPlan} />
-      <div className={`${ui.form} mt-8`}><label className={ui.field}>Requested changes<textarea rows={3} value={planChangeNotes} onChange={(event) => setPlanChangeNotes(event.target.value)} disabled={isProcessing} /></label><div className={ui.actions}>
+      <div className={`${ui.form} mt-8`}><ForecastYearsField value={planForecastYears} onChange={setPlanForecastYears} disabled={isProcessing} /><label className={ui.field}>Requested changes<textarea rows={3} value={planChangeNotes} onChange={(event) => setPlanChangeNotes(event.target.value)} disabled={isProcessing} /></label><div className={ui.actions}>
         <button className={ui.secondary} onClick={handleRequestPlanChanges} disabled={isProcessing || !planChangeNotes.trim()}>Request changes</button>
         <button className={ui.primary} onClick={handleApprovePlan} disabled={isProcessing}>{isProcessing ? "Saving…" : "Approve plan & start"}</button>
       </div></div>

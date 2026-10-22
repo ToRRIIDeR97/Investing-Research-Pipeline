@@ -104,6 +104,15 @@ export function outputContract(shape: Record<string, z.ZodType>): AgentOutputFor
 export const OUTLINE_CONTRACT = outputContract({ outline: Outline });
 export const SECTION_CONTRACT = outputContract({ section: Section });
 
+/** What a strong analyst does, beyond format and integrity (RQ-MOD-5). Shared by every doctrine prompt. */
+export const ANALYST_BEHAVIOUR_RULES = [
+  "Separate the engines that earn from those that burn: give each segment's operating income, its share of group profit and the burners' losses as a share of the earners' profit, and value them separately.",
+  "Place every current metric against its own history: give the median, range or percentile from the computed history, not the latest value alone, and say whether today is typical.",
+  "Diagnose cash conversion: free cash flow against net income, capex against depreciation, and working-capital days, and explain why conversion moved.",
+  "State what the investor owns: the share class held, voting versus economic control, and any value that may not reach the holder.",
+  "Go below the bear case: name the impairment or tail case that would cause permanent loss, with its value, and what would change your mind.",
+];
+
 export const RESEARCH_DOCTRINE = [
   "The Financials deliverable is the complete issuer-reported primary statements from 10-Q and 10-K filings, with quarterly AND annual observations. Preserve custom line items, hierarchy, subtotals, fiscal calendars, units, source locations and restatements. A selected-metric shortlist is not complete. Check coverage against filing tables and reconcile totals. Never label annualized quarters or TTM as reported annual data. When financial_statement_summary is supplied, it is the record of what was captured: report a statement gap only where it shows one.",
   "Collect quarterly histories for every monitoring KPI, with stable metric_key, definition, unit, period, reporting basis and sources. Link thresholds and thesis breakers to model inputs. The KPI Dashboard and Monitoring and decision must use the same definitions and observations; never imply real-time disclosure where only a dated observation exists.",
@@ -119,4 +128,5 @@ export const RESEARCH_DOCTRINE = [
   "Adapt metrics and valuation to the asset and each segment. Do not impose banking capital metrics on unrelated businesses. Treat framework equations as conceptual until units, periods and accounting definitions are established.",
   "Spend detail on questions that change valuation, downside or confidence. Explain unavailable disclosures and their consequences. Required coverage may be grouped under any useful headings; add company-specific sections when material.",
   "Never invent sources, quotations, numerical inputs or calculated results. Numerical tables must reference supplied artifact paths. Label incomplete analysis and withhold a decision when a material gap blocks it.",
+  ...ANALYST_BEHAVIOUR_RULES,
 ];

@@ -219,6 +219,8 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           : null,
         dilutionCovered: Boolean(terminalReturnInputs && terminalReturnInputs.reported_diluted_shares > 0
           && terminalReturnInputs.diluted_shares_millions * 1e6 >= terminalReturnInputs.reported_diluted_shares - 1),
+        noReratingReturn: Number.isFinite(acceptedValuation.valuation_scenario_set?.cross_checks?.no_rerating?.base?.return)
+          ? Number(acceptedValuation.valuation_scenario_set.cross_checks.no_rerating.base.return) : null,
       };
 
       const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
@@ -235,7 +237,7 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
           ...(valuationWithheld ? [
             "accepted_valuation is withheld: no price target exists. Do not state price targets or returns; use investment_thesis.expected_return_linkage to say what the conclusion depends on, and name the missing valuation inputs in confidence_assessment.",
           ] : []),
-          "Code sets investment_thesis.valuation_accepted_first and the expected_return_matrix status, bear, base, bull and probability-weighted returns and dilution_omitted from accepted_valuation, terminal_return_inputs and operating_scenario_probabilities; values you give for them are replaced. Judge no_rerating_return, weak_stock_outcome and permanent_loss_limit over the terminal_year horizon.",
+          "Code sets investment_thesis.valuation_accepted_first and the expected_return_matrix status, bear, base, bull and probability-weighted returns and dilution_omitted from accepted_valuation, terminal_return_inputs and operating_scenario_probabilities; values you give for them are replaced. Code also sets no_rerating_return from accepted_valuation.valuation_scenario_set.cross_checks.no_rerating (base case). Judge weak_stock_outcome and permanent_loss_limit over the terminal_year horizon; for permanent_loss_limit weigh the code-built stress_cases (impairment and tail below bear) rather than copying the bear return.",
           "Risk probability and confidence must be between 0 and 1; risk severity must be between 1 and 5.",
           "The decision must remain pending because human review is the approval gate.",
           "For a KPI that financial_analytics covers, use its metric key (for example operating_margin, fcf_ttm, dso, net_cash, shares, segment.<Segment>.operating_income): code then sets current_level and its 20-quarter median and percentile. Otherwise use latest_reported_metrics. When a current level is unavailable or stale, set it to null and explain the gap in source_role; never use zero as a missing-data placeholder.",
