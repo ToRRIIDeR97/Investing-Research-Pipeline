@@ -140,6 +140,14 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       const filings = await captureFilingStatements(sql, ctx, { writeModule: repairModuleWriter(sql, ctx) });
       if(filings.failures.length||filings.coverage.some(c=>c.status==='incomplete')||filings.reconciliation.some(c=>c.status==='mismatch'))throw new Error('Primary financial statements are incomplete or do not reconcile. Inspect financial_statement_set coverage before continuing.'+
         (filings.repair?` Repair specialist: ${filings.repair.status} after ${filings.repair.attempts} attempt(s)${filings.repair.last_errors.length?`; last errors: ${filings.repair.last_errors.slice(0,3).join('; ')}`:''}.`:''));
+      // A foreign issuer has no 10-Qs: its quarters come from 6-K results releases, and fewer than 12 is not a history.
+      const quarters = (filings as { quarter_coverage?: { quarters: number; first: string | null; last: string | null; minimum: number } }).quarter_coverage;
+      if (quarters && quarters.quarters < quarters.minimum) throw new Error(`Foreign-issuer statements cover ${quarters.quarters} quarters (${quarters.first ?? "none"} to ${quarters.last ?? "none"}), below the ${quarters.minimum} needed; the 20-F and the stored 6-K results releases do not give a 20-quarter history.`);
+      // The ADS ratio read from the release or 20-F fills the instrument's depositary_ratio, which the valuation needs
+      // to put per-ordinary-share values on the per-ADS price. A ratio someone already set is kept.
+      const depositary = (filings as { depositary_ratio?: { value: number } | null }).depositary_ratio;
+      if (depositary?.value) await sql`UPDATE instruments SET depositary_ratio = ${depositary.value}, updated_at = NOW()
+        WHERE asset_id = ${ctx.assetId} AND depositary_ratio IS NULL`;
       // 3. Call metric-normalizer agent, only for metrics the filings and companyfacts do not cover.
       const coverage = normalizerCoverage(requiredMetricKeys, [...filings.observations, ...secFacts]);
       const taskKey = "metric-normalizer:observations";

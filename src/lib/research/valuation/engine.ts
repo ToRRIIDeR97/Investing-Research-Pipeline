@@ -131,24 +131,29 @@ export type EquityBridge = {
  */
 export function equityBridge(fi: ValuationFinancialInputs | null): EquityBridge | null {
   if (!fi) return null;
+  // Under IFRS 16 every lease is a liability whose cost (depreciation and interest) sits outside FCFF's operating
+  // costs, so lease liabilities are debt-like and the bridge subtracts them. US GAAP operating lease cost is already
+  // in operating income, so those stay out (excluded below).
+  const ifrs = fi.accounting_standard === "ifrs-full";
+  const items: readonly (readonly [string, number])[] = ifrs ? [...BRIDGE_ITEMS, ["lease_liabilities_ifrs", -1]] : BRIDGE_ITEMS;
   const rows = [...fi.annual, ...fi.quarterly].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
   const withItem = (key: string) => rows.filter((row) => cell(fi, row, key) !== null);
-  const dated = withItem("cash_and_equivalents").at(-1) ?? rows.filter((row) => BRIDGE_ITEMS.some(([key]) => cell(fi, row, key) !== null)).at(-1);
+  const dated = withItem("cash_and_equivalents").at(-1) ?? rows.filter((row) => items.some(([key]) => cell(fi, row, key) !== null)).at(-1);
   if (!dated) return null;
   const date = String(dated[0]);
   const components: Record<string, number> = {}, carried_forward: Record<string, string> = {};
-  for (const [key] of BRIDGE_ITEMS) {
+  for (const [key] of items) {
     const row = withItem(key).filter((candidate) => String(candidate[0]) <= date).at(-1);
     if (!row) continue;
     components[key] = cell(fi, row, key)!;
     if (String(row[0]) !== date) carried_forward[key] = String(row[0]);
   }
-  const amount = BRIDGE_ITEMS.reduce((sum, [key, sign]) => sum + (key in components ? sign * components[key] : 0), 0);
-  const leaseRow = withItem("operating_lease_liabilities").filter((row) => String(row[0]) <= date).at(-1);
+  const amount = items.reduce((sum, [key, sign]) => sum + (key in components ? sign * components[key] : 0), 0);
+  const leaseRow = ifrs ? undefined : withItem("operating_lease_liabilities").filter((row) => String(row[0]) <= date).at(-1);
   return {
     amount: Number(amount.toFixed(6)), period_end: date, components, carried_forward,
     excluded: leaseRow ? { operating_lease_liabilities: cell(fi, leaseRow, "operating_lease_liabilities")! } : {},
-    missing: BRIDGE_ITEMS.map(([key]) => key).filter((key) => !(key in components)),
+    missing: items.map(([key]) => key).filter((key) => !(key in components)),
   };
 }
 

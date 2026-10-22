@@ -10,6 +10,8 @@ import { getAgentConfig } from "@/lib/agent-harness/registry";
 import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
 import { fetchCapped } from "@/lib/net";
 import { isResultsRelease } from "@/lib/research/history/press-release";
+import { dominantCurrency, reportingTaxonomy } from "@/lib/research/history/sec-companyfacts";
+import { fxSeriesFor } from "@/lib/research/valuation/v2";
 import { SourceRole } from "@/lib/research/sources/roles";
 import { syncAssetPriceHistory, syncBenchmarkPriceHistory, type PriceHistorySync } from "@/lib/market-data/price-history";
 
@@ -856,6 +858,9 @@ async function fetchSecContext(ctx: RunContext) {
     entityName: companyFacts.entityName,
     website: submissions.website || null,
     investorWebsite: submissions.investorWebsite || null,
+    // Foreign issuers report in their own currency (CNY for JD); the valuation converts with an FX series.
+    reportingCurrency: dominantCurrency(companyFacts),
+    reportingTaxonomy: reportingTaxonomy(companyFacts),
     sic: submissions.sic || null,
     sicDescription: submissions.sicDescription || null,
     companyFacts,
@@ -913,6 +918,35 @@ export function recentFredObservations(csv: string, cutoffDate: string, rows = M
   const [header, ...lines] = csv.trim().split(/\r?\n/);
   const kept = lines.filter((line) => line.slice(0, 10) <= cutoffDate).slice(-rows);
   return [header, ...kept].join("\n");
+}
+
+/**
+ * The FRED FX series that converts a non-USD reporting currency to the USD listing price (DEXCHUS for CNY). The
+ * valuation reads its latest value on or before the cutoff from this document (`series_id`); without it a
+ * foreign-currency valuation is withheld. Mock runs fetch nothing.
+ */
+export async function fxSourcePayload(ctx: RunContext, reportingCurrency: string, fetchImpl: typeof fetchCapped = fetchCapped): Promise<SourcePayload | null> {
+  const series = reportingCurrency && reportingCurrency !== "USD" ? fxSeriesFor(reportingCurrency, "USD") : null;
+  if (!series || process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock" || process.env.RESEARCH_TEST_MODE === "1") return null;
+  const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${series.series}`;
+  try {
+    const response = await fetchImpl(url, { headers: { "User-Agent": "ResearchOS/0.1 research-pipeline@example.com" } }, { timeoutMs: 30_000, maxBytes: 4_000_000 });
+    if (!response.ok) return null;
+    const raw = await response.text();
+    if (!raw.includes("observation_date")) return null;
+    const retrievedAt = new Date().toISOString();
+    return {
+      sourceType: "macro_context",
+      title: `${reportingCurrency} per USD exchange rate (FRED ${series.series})`,
+      publisher: "Federal Reserve Bank of St. Louis (FRED)",
+      url, content: recentFredObservations(raw, ctx.marketDataCutoffAt?.slice(0, 10) || retrievedAt.slice(0, 10)),
+      mimeType: "text/csv", qualityScore: "0.94", publishedAt: retrievedAt,
+      metadata: { system_generated: true, source: "fred", series_id: series.series, retrieved_at: retrievedAt, currency_pair: `${reportingCurrency}/USD` },
+      chunkTitle: `FRED ${series.series} FX series`,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function macroSourcePayload(ctx: RunContext): Promise<SourcePayload | null> {
@@ -1718,6 +1752,7 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
   ].filter(Boolean))];
   const marketCutoff = ctx.marketDataCutoffAt ? new Date(ctx.marketDataCutoffAt) : null;
   const testMode = process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock" || process.env.RESEARCH_TEST_MODE === "1";
+  const fxPayload = await fxSourcePayload(ctx, textValue(context.reportingCurrency, "USD"));
   const [marketPayload, priceHistory, benchmarkPriceHistory, macroPayload, industryPayload, discoveredRolePayloads] = await Promise.all([
     marketSourcePayload(ctx),
     syncAssetPriceHistory(sql, { assetId: ctx.assetId, assetName: ctx.assetName, symbol: ctx.symbol, cutoffAt: marketCutoff }),
@@ -1769,6 +1804,7 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
     ...discoveredRolePayloads,
     ...(marketPayload ? [marketPayload] : []),
     ...(macroPayload ? [macroPayload] : []),
+    ...(fxPayload ? [fxPayload] : []),
     ...(industryPayload ? [industryPayload] : []),
   ];
   const stored: StoredSource[] = [];

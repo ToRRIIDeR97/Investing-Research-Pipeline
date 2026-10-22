@@ -10,7 +10,7 @@ import type { FilingFact, FilingSource, FilingTable, StatementKind } from "./fil
 
 const MAX_HTML = 4_000_000, MAX_TABLES = 120, MAX_ROWS = 150, MAX_CELLS = 40;
 const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
-const DATE = /^(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2}),\s+(\d{4})$/i;
+const DATE = /^(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2}),\s*(\d{4})$/i;
 /** Reporting-currency tokens in release headers; anything else (US$, HK$ translations) is a convenience column. */
 const CURRENCY: Record<string, string> = { rmb: "CNY", "rmb'000": "CNY", hk$: "HKD", "us$": "USD", usd: "USD", "nt$": "TWD", "₩": "KRW", "r$": "BRL", "€": "EUR", eur: "EUR" };
 
@@ -45,7 +45,7 @@ export function scanTables(html: string): RawTable[] {
     }
     if (!current || depth !== 1) continue;
     if (tag.name === "tr") {
-      if (row && row.length) current.rows.length < MAX_ROWS && current.rows.push(row);
+      if (row && row.length && current.rows.length < MAX_ROWS) current.rows.push(row);
       row = tag.closing ? null : [];
       cell = null;
     } else if (tag.name === "td" || tag.name === "th") {
@@ -100,8 +100,8 @@ function headerColumns(rows: string[][]): { columns: Column[]; dataStart: number
 }
 
 /** Release line labels mapped to US-GAAP concepts, so the metric catalogue and analytics read them; others stay custom. */
-const PL = "(?:income|loss|income\\/\\(loss\\)|\\(loss\\)\\/income|loss\\/\\(income\\))";
-const CASH = "net cash \\(?(?:provided by|used in)\\)?(?:\\/\\(?(?:provided by|used in)\\)?)?";
+const PL = "(?:income|loss)(?:\\/(?:income|loss))?";
+const CASH = "net cash (?:provided by|used in)(?:\\/(?:provided by|used in))?";
 const CONCEPTS: [RegExp, string, boolean?][] = [
   [/^total (?:consolidated )?net revenues$/, "Revenues"], [/^cost of revenues$/, "CostOfRevenue"],
   [/^marketing$/, "SellingAndMarketingExpense"], [/^research and development$/, "ResearchAndDevelopmentExpense"],
@@ -148,7 +148,8 @@ function startOf(end: string, months: number) {
   return start.toISOString().slice(0, 10);
 }
 
-export interface ReleaseOptions { reportingCurrency: string; yearEndMonth?: number; scale?: number }
+/** reportingCurrency defaults to the first value column's currency (releases show the reporting currency first, translations after). */
+export interface ReleaseOptions { reportingCurrency?: string; yearEndMonth?: number; scale?: number }
 
 /**
  * Statement tables from one earnings release. Values are in millions unless the heading says otherwise; per-share
@@ -180,12 +181,12 @@ export function extractReleaseStatements(html: string, source: FilingSource, opt
       const segment = kind === "segment" && section && segmentNames.has(name) ? label.replace(/\*+$/, "").trim() : null;
       const mapped = kind === "segment"
         ? (segment && /net revenues/.test(section) ? ["Revenues"] : segment && /from operations/.test(section) ? ["OperatingIncomeLoss"] : null)
-        : CONCEPTS.find(([pattern]) => pattern.test(name))?.slice(1) as [string, boolean?] | undefined;
+        : CONCEPTS.find(([pattern]) => pattern.test(name.replace(/[()]/g, "")))?.slice(1) as [string, boolean?] | undefined;
       if (kind === "segment" && !mapped) continue;
       const concept = mapped ? `us-gaap:${mapped[0]}` : `press:${slug(label)}`;
       const cells = header.columns.map((column, i) => {
         const value = values[i];
-        if (column.currency !== options.reportingCurrency) return null;
+        if (column.currency !== (options.reportingCurrency ?? header.columns[0].currency)) return null;
         const { fiscal_year, fiscal_quarter } = fiscal(column.end, yearEndMonth);
         const fact: FilingFact = { concept, value: value === null ? null : (mapped?.[1] ? Math.abs(value) : value) * scale, text: rest[i] ?? "",
           unit: column.currency, start: column.periodicity === "instant" ? null : startOf(column.end, column.months),
