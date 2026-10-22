@@ -10,6 +10,7 @@ import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { VISUAL_GUIDELINES } from './visuals';
 import { getTeamRequests, includeUnansweredQuestions, requestMissingResearch, preDraftBatch, preDraftRequests, postReviewAnswers } from "../team";
 import { buildReportFacts } from "./facts";
+import { researchPacketForModel } from "./packet";
 
 /** Computed inputs every report call shares; they lead the packet instead of riding in each section's artifacts. */
 export const SHARED_REPORT_TYPES = ["financial_analytics", "financial_statement_summary", "report_facts"];
@@ -50,8 +51,8 @@ export const SECTION_RULES = [
 export const reportEvidenceView = <E extends { id: string }>(evidence: E[]) =>
   evidence.map(claim => Object.fromEntries(Object.entries(claim).filter(([key]) => key !== "url" && key !== "location")) as Omit<E, "url" | "location">);
 
-/** Longest digest point, implication or counterevidence, and gap, in characters. */
-export const DIGEST_LIMITS = { point: 320, summary: 1200, gap: 400 };
+/** Longest digest point, implication or counterevidence, gap and figure clause, in characters. */
+export const DIGEST_LIMITS = { point: 320, summary: 1200, gap: 400, figure: 90 };
 // A sentence ends at . ! or ? before whitespace, so decimals such as 1.5% stay inside it.
 const sentencesOf = (text: string) => text.match(/(?:[^.!?]|[.!?]+(?!\s|$))+(?:[.!?]+|$)/g)?.map(s => s.trim()).filter(Boolean) ?? [];
 const clip = (text: string, max: number) => text.length <= max ? text : `${text.slice(0, max - 1).replace(/\s+\S*$/, "")}…`;
@@ -59,35 +60,69 @@ const clip = (text: string, max: number) => text.length <= max ? text : `${text.
 function keyPoint(paragraph: ReportSection["paragraphs"][number]) {
   const sentences = sentencesOf(paragraph.text);
   const lead = sentences[0] ?? paragraph.text;
-  const figure = /\d/.test(lead) ? undefined : sentences.slice(1).find(s => /\d/.test(s));
   const kind = paragraph.kind === "assumption" || paragraph.kind === "speculation" ? `[${paragraph.kind}] ` : "";
-  return clip(kind + [lead, figure].filter(Boolean).join(" "), DIGEST_LIMITS.point);
+  return clip(kind + lead, DIGEST_LIMITS.point);
+}
+const FIGURE = /\d+(?:,\d{3})*(?:\.\d+)?/g;
+// Clause boundaries inside a sentence; "200,966" has no space after its comma, so it stays whole.
+const CLAUSE = /[,;:]\s+|\s+(?:while|whereas|but)\s+/;
+/**
+ * The figures a chapter states that its key points, summaries and gaps do not: for each, the clause that carries it
+ * (for example "total costs and expenses rose to 42.03bn"), in the order the chapter states them.
+ */
+function otherFigures(section: ReportSection, digestText: string) {
+  const shown = new Set(digestText.match(FIGURE) ?? []);
+  const clauses: string[] = [];
+  for (const sentence of [...section.paragraphs.map(p => p.text), section.implication, section.counterevidence, ...section.gaps].flatMap(sentencesOf))
+    // A relative clause ("which is about 4.21 USD per share") keeps the clause it qualifies, so the figure keeps its subject.
+    for (const clause of sentence.split(CLAUSE).reduce<string[]>((out, part) =>
+      out.length && /^(?:which|that|who|giving|bringing|leaving|implying)\b/i.test(part) ? [...out.slice(0, -1), `${out.at(-1)}, ${part}`] : [...out, part], [])) {
+      const text = clause.trim().replace(/^(?:and|or|so|then)\s+/i, "").replace(/[.!?]+$/, "");
+      while (true) {
+        const fresh = [...text.matchAll(FIGURE)].find(m => !shown.has(m[0]));
+        if (!fresh) break;
+        // A long clause is cut to a window that ends just after the figure, so the figure itself always survives.
+        const end = Math.min(text.length, fresh.index! + fresh[0].length + 24);
+        const start = Math.max(0, end - DIGEST_LIMITS.figure);
+        const window = text.length <= DIGEST_LIMITS.figure ? text
+          : `${start ? "…" : ""}${text.slice(start, end).replace(start ? /^\S*\s+/ : /^/, "").replace(end < text.length ? /\s+\S*$/ : /$/, "")}${end < text.length ? "…" : ""}`;
+        (window.match(FIGURE) ?? []).forEach(f => shown.add(f));
+        shown.add(fresh[0]);
+        clauses.push(window);
+      }
+    }
+  return clauses;
 }
 /**
  * A finished chapter as a conclusion writer reads it, built by code: its title and implication (the headline),
- * one key point per paragraph with the figure it carries, the counterevidence and gaps, and every evidence and
- * artifact ID the chapter cites. The full text stays in the report; a digest is bounded by its paragraph count.
+ * one key point per paragraph with the figure it carries, the counterevidence and gaps, every other figure it
+ * states with its clause, and every evidence and artifact ID it cites. The full text stays in the report.
  */
 export function chapterDigest(section: ReportSection) {
   const ids = (key: "evidence_ids" | "artifact_ids") => [...new Set(section.paragraphs.flatMap(p => p[key] || []))];
-  return { id: section.id, title: section.title, ...(section.key_figures?.length ? { key_figures: section.key_figures } : {}),
+  const digest = { id: section.id, title: section.title, ...(section.key_figures?.length ? { key_figures: section.key_figures } : {}),
     implication: clip(section.implication, DIGEST_LIMITS.summary), key_points: section.paragraphs.map(keyPoint),
-    counterevidence: clip(section.counterevidence, DIGEST_LIMITS.summary), gaps: section.gaps.map(g => clip(g, DIGEST_LIMITS.gap)),
-    evidence_ids: ids("evidence_ids"), artifact_ids: ids("artifact_ids") };
+    counterevidence: clip(section.counterevidence, DIGEST_LIMITS.summary), gaps: section.gaps.map(g => clip(g, DIGEST_LIMITS.gap)) };
+  return { ...digest, other_figures: otherFigures(section, JSON.stringify(digest)), evidence_ids: ids("evidence_ids"), artifact_ids: ids("artifact_ids") };
 }
 
 /** Largest top-level artifact field a conclusion packet carries; the chapters already analysed the larger ones. */
 export const CONCLUSION_FIELD_BYTES = 4096;
+/** Valuation v2 judgments a conclusion always reads, whatever their size. */
+export const CONCLUSION_KEPT_FIELDS = ["valuation_matrix", "sanity", "cross_checks", "terminal_value_share", "value_beyond_explicit_share"];
 /**
- * A selected artifact as a conclusion writer sees it: its top-level fields up to CONCLUSION_FIELD_BYTES each.
+ * A selected artifact as a conclusion writer sees it: the model view (historical_record becomes its coverage and
+ * reconciliation view first), then its top-level fields up to CONCLUSION_FIELD_BYTES each, plus CONCLUSION_KEPT_FIELDS.
  * Larger fields (schedules, inputs, chart series) are named in omitted_fields; their figures reach the conclusion
  * through report_facts, financial_analytics and the chapter digests, and their paths may still be requested as tables.
  */
 export function conclusionArtifactView<T extends { content_json: any }>(artifact: T) {
-  const content = artifact.content_json;
-  if (!content || typeof content !== "object" || Array.isArray(content)) return artifact;
-  const omitted = Object.keys(content).filter(key => Buffer.byteLength(JSON.stringify(content[key] ?? null)) > CONCLUSION_FIELD_BYTES);
-  return omitted.length ? { ...artifact, content_json: Object.fromEntries(Object.entries(content).filter(([key]) => !omitted.includes(key))), omitted_fields: omitted } : artifact;
+  if (!artifact.content_json || typeof artifact.content_json !== "object" || Array.isArray(artifact.content_json)) return artifact;
+  const content = researchPacketForModel(artifact.content_json);
+  const omitted = Object.keys(content).filter(key => !CONCLUSION_KEPT_FIELDS.includes(key)
+    && Buffer.byteLength(JSON.stringify(content[key] ?? null)) > CONCLUSION_FIELD_BYTES);
+  return { ...artifact, content_json: omitted.length ? Object.fromEntries(Object.entries(content).filter(([key]) => !omitted.includes(key))) : content,
+    ...(omitted.length ? { omitted_fields: omitted } : {}) };
 }
 
 /**
@@ -112,7 +147,9 @@ export function reportSectionCall<A extends { id: string; content_json: any }>(c
   const contract = finalCoverage ? CONCLUSION_CONTRACT : SECTION_CONTRACT;
   const artifacts = selected.length ? selected : packetArtifacts;
   const packet = { ...common, ...(conclusion ? { evidence_claims: conclusion.evidence, filing_passages: [] } : {}),
-    artifacts: conclusion ? artifacts.map(conclusionArtifactView) : artifacts, section_plan: section, outline,
+    artifacts: conclusion ? artifacts.map(conclusionArtifactView) : artifacts, section_plan: section,
+    // A conclusion reads the outline's questions and coverage whole, and of the other plans only what names them.
+    outline: conclusion ? { ...outline, sections: outline.sections.map(({ id, title, coverage, key_figures }) => ({ id, title, coverage, ...(key_figures ? { key_figures } : {}) })) } : outline,
     feedback, completed_sections: conclusion?.chapters ?? [], ...(finalCoverage ? { provisional_coverage: finalCoverage } : {}),
     visual_guidelines: VISUAL_GUIDELINES, output_contract: "report_section", output_schema: contract.schema };
   // Sections of one round share everything but these keys, so the shared part is read from cache.
