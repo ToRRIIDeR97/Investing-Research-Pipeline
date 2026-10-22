@@ -110,14 +110,16 @@ function requiredKeys(outputFormat: Record<string, unknown> | { requiredKeys?: s
   return Array.isArray(schema?.required) ? schema.required.filter((key): key is string => typeof key === "string") : [];
 }
 
-function modelCandidates(agentName: ResearchAgentName, maxAttempts: number, providerId: string) {
-  const primary = resolveAgentModel(agentName);
+function modelCandidates(agentName: ResearchAgentName, maxAttempts: number, providerId: string, task: Pick<AgentRequest, "model" | "fallbackModel"> = {}) {
+  const primary = task.model ? normalizeModelEnvValue(task.model) : resolveAgentModel(agentName);
   const fallbackKey = `RESEARCH_${agentName.toUpperCase().replace(/-/g, "_")}_FALLBACK_MODEL`;
   // Built-in fallbacks are OpenCode Go model IDs; the Anthropic API answers them with a 404.
   const builtIns: Partial<Record<ResearchAgentName, string>> = providerId === "direct-anthropic-compatible" ? {} : {
     "source-reader": "deepseek-v4-pro", "asset-analyst": "qwen3.7-plus", "valuation-analyst": "deepseek-v4-pro",
   };
-  const fallback = process.env.RESEARCH_ALL_AGENTS_MODEL ? undefined : process.env[fallbackKey] || builtIns[agentName];
+  // A task model from a stage or tier variable carries its own fallback (null: none).
+  const fallback = task.fallbackModel !== undefined ? task.fallbackModel ?? undefined
+    : process.env.RESEARCH_ALL_AGENTS_MODEL ? undefined : process.env[fallbackKey] || builtIns[agentName];
   const models = [primary, fallback ? normalizeModelEnvValue(fallback) : null]
     .filter((model): model is string => Boolean(model))
     .filter((model, index, all) => all.indexOf(model) === index);
@@ -269,6 +271,7 @@ async function executePass(params: {
     ...(params.cacheablePromptChars === undefined ? {} : { cacheablePromptChars: params.cacheablePromptChars }), temperature: 0.2,
     maxTokens: params.maxOutputTokens ?? params.policy.maxOutputTokens, agentName: params.agentName,
     cacheAffinityId: params.cacheAffinityId, ...(params.outputSchema ? { outputSchema: params.outputSchema } : {}),
+    ...(params.policy.effort ? { effort: params.policy.effort } : {}),
   }, params.deadline.signal)[Symbol.asyncIterator]();
   try {
     let completed = false;
@@ -454,7 +457,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
   const keys = requiredKeys(effectiveOutputFormat);
   // Sent unchanged on generation and repair; only anthropic-direct turns it into output_config.
   const outputSchema = isPlainObject(effectiveOutputFormat.schema) ? effectiveOutputFormat.schema : undefined;
-  const candidates = modelCandidates(input.agentName as ResearchAgentName, policy.maxAttempts, provider.id);
+  const candidates = modelCandidates(input.agentName as ResearchAgentName, policy.maxAttempts, provider.id, input);
   const primaryModel = candidates[0];
   const originalPromptBytes = Buffer.byteLength(promptText, "utf8");
   const cacheScope = input.cacheScope || `agent:${input.agentName}`;

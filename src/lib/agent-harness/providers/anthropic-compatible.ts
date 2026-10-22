@@ -12,6 +12,16 @@ export interface AnthropicProviderOptions {
   headers?: Record<string, string>;
   /** Constrain Claude output to the request's outputSchema with output_config. Only anthropic-direct sets it. */
   structuredOutput?: boolean;
+  /** Send the request's effort as output_config.effort with adaptive thinking. Only anthropic-direct sets it. */
+  effort?: boolean;
+}
+
+/**
+ * Claude models that take output_config.effort with adaptive thinking: Opus 4.6+, Sonnet 4.6+, Haiku 5+, Fable and
+ * Mythos. Haiku 4.5 and older take a thinking budget instead and reject effort, so they get neither.
+ */
+export function supportsAdaptiveEffort(model: string): boolean {
+  return /^claude-(opus-(4-[6-9]|[5-9])|sonnet-(4-[6-9]|[5-9])|haiku-[5-9]|fable|mythos)/i.test(model);
 }
 
 function validateBaseUrl(baseUrl: string, allowedHosts: string[]) {
@@ -94,6 +104,9 @@ export class AnthropicCompatibleProvider implements ModelProvider {
 
   async *stream(request: ModelRequest, signal: AbortSignal, options: { headers?: Record<string, string> } = {}): AsyncIterable<ModelEvent> {
     let format = this.outputFormat(request);
+    // Effort and adaptive thinking go only to Claude models that accept them, on anthropic-direct. A thinking
+    // budget (budget_tokens) is never sent: Claude 5.5 models reject it with a 400.
+    const effort = this.options.effort && request.effort && supportsAdaptiveEffort(request.model) ? request.effort : undefined;
     // Cache breakpoints are placed by anthropic-cache.ts.
     const serialize = () => JSON.stringify({
       model: request.model,
@@ -103,7 +116,8 @@ export class AnthropicCompatibleProvider implements ModelProvider {
       max_tokens: request.maxTokens || Number(process.env.RESEARCH_ANTHROPIC_PROTOCOL_MAX_TOKENS || 65_536),
       // Current Claude models reject non-default sampling values with a 400.
       ...(/^claude-/i.test(request.model) ? {} : { temperature: request.temperature ?? 0.2 }),
-      ...(format ? { output_config: { format } } : {}),
+      ...(effort ? { thinking: { type: "adaptive" } } : {}),
+      ...(format || effort ? { output_config: { ...(format ? { format } : {}), ...(effort ? { effort } : {}) } } : {}),
       stream: true,
     });
     let body = serialize();

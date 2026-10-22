@@ -72,7 +72,7 @@ export const businessProcessAnalysisHandler: StageHandler<Record<string, unknown
 
       const output = await callResearchAgent<Record<string, any>>({
         sql, ctx, stageKey: "business_process_analysis", taskKey,
-        taskType: "business_process_analysis", agentName: "asset-analyst", modelTier: "mid",
+        taskType: "business_process_analysis", agentName: "asset-analyst", modelTier: "premium",
         packet, promptFactory,
         outputFormat: BUSINESS_PROCESS_CONTRACT,
       });
@@ -124,7 +124,7 @@ export const businessProcessAnalysisHandler: StageHandler<Record<string, unknown
       };
       const management = await callResearchAgent<Record<string, any>>({
         sql, ctx, stageKey: "business_process_analysis", taskKey: "business-model-analyst:management",
-        taskType: "management_assessment", agentName: "asset-analyst", modelTier: "mid", packet: managementPacket,
+        taskType: "management_assessment", agentName: "asset-analyst", modelTier: "premium", packet: managementPacket,
         outputFormat: MANAGEMENT_CONTRACT, promptFactory: p => exactJsonPrompt({ agentName: "asset-analyst",
           requiredKeys: MANAGEMENT_CONTRACT.requiredKeys, packet: p, extraRules: MANAGEMENT_RULES }),
       });
