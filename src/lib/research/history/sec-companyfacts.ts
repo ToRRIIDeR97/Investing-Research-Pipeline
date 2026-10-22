@@ -16,7 +16,7 @@ export function latestSecInstantFact(
   const cutoffDate = cutoff.toISOString().slice(0, 10);
   const rows = ((companyFacts as any)?.facts?.[taxonomy]?.[concept]?.units?.[unit] || []) as SecFact[];
   const fact = rows.filter((row) =>
-    !row.start && (row.form === "10-K" || row.form === "10-Q") &&
+    !row.start && PERIODIC_FORMS.has(String(row.form)) &&
     typeof row.val === "number" && Number.isFinite(row.val) &&
     !!row.end && !!row.filed && !!row.accn &&
     row.end <= cutoffDate && row.filed <= cutoffDate
@@ -117,7 +117,7 @@ export function latestSecQuarterlyFact(
   const rows = ((companyFacts as any)?.facts?.[taxonomy]?.[concept]?.units?.[unit] || []) as SecFact[];
   const fact = rows.filter((row) => {
     return isQuarterDuration(row) &&
-      (row.form === "10-K" || row.form === "10-Q") &&
+      PERIODIC_FORMS.has(String(row.form)) &&
       typeof row.val === "number" && Number.isFinite(row.val) &&
       !!row.filed && !!row.accn && row.end! <= cutoffDate && row.filed <= cutoffDate;
   }).sort((a, b) => b.end!.localeCompare(a.end!) || b.filed!.localeCompare(a.filed!))[0];
@@ -128,11 +128,32 @@ function latest(rows: SecFact[]): SecFact | null {
   return rows.sort((a, b) => (b.filed || "").localeCompare(a.filed || "") || (b.accn || "").localeCompare(a.accn || ""))[0] || null;
 }
 
+/** Annual and quarterly report forms, domestic and foreign; a foreign issuer's 20-F or 40-F is its annual report. */
+const PERIODIC_FORMS = new Set(["10-K", "10-Q", "20-F", "40-F"]);
+
+/** The ISO currency most us-gaap money facts use (CNY for JD), instead of assuming USD; USD when none is present. */
+export function dominantCurrency(companyFacts: unknown): string {
+  const counts = new Map<string, number>();
+  for (const taxonomy of ["us-gaap", "ifrs-full"]) {
+    for (const concept of Object.values(((companyFacts as any)?.facts?.[taxonomy] ?? {}) as Record<string, any>)) {
+      for (const [unit, rows] of Object.entries(concept?.units ?? {})) if (/^[A-Z]{3}$/.test(unit) && Array.isArray(rows)) counts.set(unit, (counts.get(unit) ?? 0) + rows.length);
+    }
+  }
+  return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "USD";
+}
+
+/** The reporting taxonomy: "ifrs-full" when IFRS facts outnumber US-GAAP ones (most 20-F filers), else "us-gaap". */
+export function reportingTaxonomy(companyFacts: unknown): "us-gaap" | "ifrs-full" {
+  const count = (t: string) => Object.keys(((companyFacts as any)?.facts?.[t] ?? {}) as object).length;
+  return count("ifrs-full") > count("us-gaap") ? "ifrs-full" : "us-gaap";
+}
+
 export function secQuarterlyObservations(companyFacts: unknown, cutoff: Date): SecQuarterlyObservation[] {
   const facts = (companyFacts as any)?.facts?.["us-gaap"] || {};
+  const currency = dominantCurrency(companyFacts);
   const cutoffDate = cutoff.toISOString().slice(0, 10);
   const usable = (row: SecFact) =>
-    (row.form === "10-K" || row.form === "10-Q") &&
+    PERIODIC_FORMS.has(String(row.form)) &&
     typeof row.val === "number" && Number.isFinite(row.val) &&
     !!row.end && !!row.filed && !!row.accn &&
     row.end <= cutoffDate && row.filed <= cutoffDate;
@@ -141,7 +162,7 @@ export function secQuarterlyObservations(companyFacts: unknown, cutoff: Date): S
   for (const metric of METRICS) {
     if (metric.instant) continue;
     for (const concept of metric.concepts) {
-      for (const row of (facts[concept]?.units?.USD || []) as SecFact[]) {
+      for (const row of (facts[concept]?.units?.[currency] || []) as SecFact[]) {
         if (row.start && row.end && (isQuarterDuration(row) || (days(row.start, row.end) >= 350 && days(row.start, row.end) <= 380))) periodEnds.add(row.end);
       }
     }
@@ -150,7 +171,7 @@ export function secQuarterlyObservations(companyFacts: unknown, cutoff: Date): S
   for (const metric of METRICS) {
     const isBankContractRevenue = metric.key === "revenue" && !!facts.RevenuesNetOfInterestExpense;
     // A fallback concept is used only when the preferred concept is absent.
-    const rows: SecFact[] = metric.concepts.map((concept) => facts[concept]?.units?.USD as SecFact[] | undefined)
+    const rows: SecFact[] = metric.concepts.map((concept) => facts[concept]?.units?.[currency] as SecFact[] | undefined)
       .find((items) => Array.isArray(items) && items.length > 0) || [];
     const valid = rows.filter(usable);
     const quarters = new Map<string, { fact: SecFact; value: number; start: string | null; formula?: string }>();
@@ -189,8 +210,8 @@ export function secQuarterlyObservations(companyFacts: unknown, cutoff: Date): S
         metric_category: metric.category,
         unit_type: "currency",
         value_numeric: value,
-        unit: "USD",
-        currency: "USD",
+        unit: currency,
+        currency,
         period_start: start,
         period_end: end,
         as_of_date: end,

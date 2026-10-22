@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import postgres from "postgres";
 import { randomUUID } from "node:crypto";
 import { assetValuationHandler } from "../src/lib/research/handlers/asset-valuation";
+import { writeDepositaryRatio } from "../src/lib/research/handlers/historical-record";
 import { storeDiscoveredSources } from "../src/lib/research/sources/corpus";
 import { saveReportArtifact } from "../src/lib/research/reporting/store";
 import { cleanup, createRun, loadEnv, skipDb as skip, stageCtx, type Run } from "../Implementations/research-request-routing/acceptance/fixtures";
@@ -101,6 +102,54 @@ test("statements in RMB against a USD price are withheld without an FX rate and 
     const calls = await sql`SELECT count(*)::int AS n FROM model_call_logs WHERE research_run_id = ${run.runId}`;
     assert.equal(calls[0].n, 0, "withheld without a model call");
   } finally { await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
+});
+
+test("statements in RMB are valued per ADS in USD once the DEXCHUS series and the ADS ratio are stored", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!, { onnotice: () => {} });
+  const run = await createRun(sql);
+  try {
+    await seed(sql, run, "CNY");
+    // As source discovery stores it for a CNY reporter (fxSourcePayload): FRED CSV with series_id metadata.
+    await storeDiscoveredSources(sql, { runId: run.runId, runType: "deep_dive", assetId: run.assetId, assetName: run.assetName, assetSlug: run.assetSlug,
+      symbol: run.symbol, profileId: "", profileKey: "", requiredModules: [], requiredLenses: [], marketDataCutoffAt: null, pipelineVersion: 3 } as any, [{
+      sourceType: "macro_context", title: "CNY per USD exchange rate (FRED DEXCHUS)", publisher: "FRED", url: `https://fixture.example/fred/${randomUUID()}`,
+      content: "observation_date,DEXCHUS\n2026-09-29,7.12\n2026-09-30,7.10\n", mimeType: "text/csv", qualityScore: "0.94", publishedAt: "2026-09-30",
+      periodEnd: null, metadata: { system_generated: true, source: "fred", series_id: "DEXCHUS" }, chunkTitle: "FRED DEXCHUS" }] as any);
+    await sql`INSERT INTO instruments (asset_id, instrument_type, name, currency) VALUES (${run.assetId}, 'listed_security', 'Fixture Holdings ordinary shares (HK)', 'HKD')`;
+    await sql`INSERT INTO instruments (asset_id, instrument_type, name, currency) VALUES (${run.assetId}, 'listed_security', 'Fixture Holdings ADS', 'USD')`;
+    const written = await writeDepositaryRatio(sql as any, run.assetId, 2);
+    const ratios = await sql`SELECT name, depositary_ratio FROM instruments WHERE asset_id = ${run.assetId} ORDER BY name`;
+    assert.deepEqual(ratios.map((r) => [r.name.includes("ADS") ? "ADS" : "HK", r.depositary_ratio === null ? null : Number(r.depositary_ratio)]), [["ADS", 2], ["HK", null]],
+      "only the ADS instrument gets the ratio");
+    assert.ok(written);
+    assert.equal(await writeDepositaryRatio(sql as any, run.assetId, 3), null, "a ratio already set is kept");
+    await assetValuationHandler.execute(await context(sql, run));
+    const set = await latest(sql, run.runId, "valuation_scenario_set");
+    assert.equal(set.valuation_status, "complete", set.withheld_reason);
+    assert.equal(set.currency_conversion.fx_source.series, "DEXCHUS");
+    assert.equal(set.currency_conversion.fx_rate, Number((1 / 7.1).toPrecision(8)), "USD per CNY from the latest value on or before the cutoff");
+    assert.equal(set.currency_conversion.depositary_ratio, 2);
+    assert.equal(set.method_inputs[0].diluted_shares, 50, "100m ordinary shares are 50m ADSs");
+    assert.ok(set.value_today_base > 0);
+  } finally {
+    await sql`DELETE FROM instruments WHERE asset_id = ${run.assetId}`;
+    await cleanup(sql, [run.runId], [run.assetId]); await sql.end();
+  }
+});
+
+test("with no instrument marked ADS, the ratio goes to the instrument in the price currency", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!, { onnotice: () => {} });
+  const run = await createRun(sql);
+  try {
+    await sql`INSERT INTO instruments (asset_id, instrument_type, name, currency) VALUES (${run.assetId}, 'listed_security', 'Fixture ordinary (HK)', 'HKD')`;
+    await sql`INSERT INTO instruments (asset_id, instrument_type, name, currency) VALUES (${run.assetId}, 'listed_security', 'Fixture Nasdaq listing', 'USD')`;
+    await writeDepositaryRatio(sql as any, run.assetId, 2);
+    const rows = await sql`SELECT currency, depositary_ratio FROM instruments WHERE asset_id = ${run.assetId} ORDER BY currency`;
+    assert.deepEqual(rows.map((r) => [r.currency, r.depositary_ratio === null ? null : Number(r.depositary_ratio)]), [["HKD", null], ["USD", 2]]);
+  } finally {
+    await sql`DELETE FROM instruments WHERE asset_id = ${run.assetId}`;
+    await cleanup(sql, [run.runId], [run.assetId]); await sql.end();
+  }
 });
 
 test("an ADS listing is withheld without its depositary ratio even when statements and price are both in USD", { skip }, async () => {

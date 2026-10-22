@@ -9,21 +9,39 @@ type Row = Record<string, any>;
 
 // First captured alias wins for each period, then the first key matching `pattern` (company-prefixed tags such as
 // meta_NonmarketableEquitySecuritiesCarryingValue). Sums are used only for split lease balances.
-const COLUMNS: { key: string; aliases: string[]; pattern?: RegExp; sum?: string[]; scale: "millions" | "count" }[] = [
-  { key: "revenue", aliases: ["revenue", "us_gaap_Revenues", "us_gaap_RevenueFromContractWithCustomerExcludingAssessedTax"], scale: "millions" },
+/**
+ * Borrowings the long_term_debt and current_debt aliases miss, summed per period (other_borrowings), for foreign
+ * private issuers only: short-term borrowings and commercial paper; separately tagged notes, bonds and loans only when
+ * no long-term debt total (LongTermDebt, LongTermDebtNoncurrent) is captured for the period, because those totals
+ * already include them; and the face lines of an earnings release (press_ keys). US filers' inputs and bridges are
+ * unchanged: a US lender's loans payable (Mercado Libre's) fund its credit book and are not acquisition debt.
+ */
+const ALWAYS_SEPARATE = ["us_gaap_ShortTermBorrowings", "us_gaap_CommercialPaper"];
+const NOTE_COMPONENTS = /^us_gaap_(?:SeniorNotes|NotesPayable|ConvertibleNotesPayable|UnsecuredDebt|SecuredDebt|LongTermLoansPayable|LoansPayable|BondsPayable)(?:Current|Noncurrent)?$/;
+const LONG_TERM_TOTALS = ["us_gaap_LongTermDebt", "us_gaap_LongTermDebtNoncurrent"];
+const RELEASE_DEBT = /^press_(?!total)[a-z0-9_]*(?:senior_notes|notes_payable|convertible_notes|bonds(?:_payable)?|borrowings|bank_loans|loans_payable)(?:_current(?:_portion)?|_non_current)?$/;
+export function otherBorrowingKeys(keys: string[], hasLongTermTotal: boolean) {
+  return keys.filter((key) => ALWAYS_SEPARATE.includes(key) || RELEASE_DEBT.test(key) || (!hasLongTermTotal && NOTE_COMPONENTS.test(key)));
+}
+
+const COLUMNS: { key: string; aliases: string[]; pattern?: RegExp; sum?: string[]; debtLines?: true; scale: "millions" | "count" }[] = [
+  { key: "revenue", aliases: ["revenue", "us_gaap_Revenues", "us_gaap_RevenueFromContractWithCustomerExcludingAssessedTax", "ifrs_full_Revenue"], scale: "millions" },
   { key: "cost_of_revenue", aliases: ["us_gaap_CostOfRevenue", "us_gaap_CostOfGoodsAndServicesSold"], scale: "millions" },
-  { key: "operating_income", aliases: ["operating_income", "us_gaap_OperatingIncomeLoss"], scale: "millions" },
+  { key: "operating_income", aliases: ["operating_income", "us_gaap_OperatingIncomeLoss", "ifrs_full_ProfitLossFromOperatingActivities"], scale: "millions" },
   { key: "pretax_income", aliases: ["pretax_income", "us_gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest", "us_gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments"], scale: "millions" },
   { key: "income_tax_expense", aliases: ["income_tax_expense", "us_gaap_IncomeTaxExpenseBenefit"], scale: "millions" },
   { key: "depreciation_amortization", aliases: ["us_gaap_DepreciationDepletionAndAmortization", "us_gaap_DepreciationAmortizationAndAccretionNet", "us_gaap_DepreciationAndAmortization"], scale: "millions" },
   { key: "share_based_compensation", aliases: ["us_gaap_ShareBasedCompensation", "us_gaap_AllocatedShareBasedCompensationExpense"], scale: "millions" },
-  { key: "operating_cash_flow", aliases: ["operating_cash_flow", "us_gaap_NetCashProvidedByUsedInOperatingActivities"], scale: "millions" },
+  { key: "operating_cash_flow", aliases: ["operating_cash_flow", "us_gaap_NetCashProvidedByUsedInOperatingActivities", "ifrs_full_CashFlowsFromUsedInOperatingActivities"], scale: "millions" },
   { key: "capital_expenditures", aliases: ["capex", "us_gaap_PaymentsToAcquirePropertyPlantAndEquipment", "us_gaap_PaymentsToAcquireProductiveAssets"], scale: "millions" },
-  { key: "cash_and_equivalents", aliases: ["us_gaap_CashAndCashEquivalentsAtCarryingValue"], scale: "millions" },
+  { key: "cash_and_equivalents", aliases: ["us_gaap_CashAndCashEquivalentsAtCarryingValue", "ifrs_full_CashAndCashEquivalents"], scale: "millions" },
   { key: "marketable_securities", aliases: ["us_gaap_MarketableSecuritiesCurrent", "us_gaap_ShortTermInvestments", "us_gaap_AvailableForSaleSecuritiesDebtSecuritiesCurrent"], scale: "millions" },
   { key: "long_term_debt", aliases: ["us_gaap_LongTermDebtNoncurrent", "us_gaap_LongTermDebt"], scale: "millions" },
   { key: "current_debt", aliases: ["us_gaap_LongTermDebtCurrent", "us_gaap_DebtCurrent"], scale: "millions" },
+  { key: "other_borrowings", aliases: [], debtLines: true, scale: "millions" },
   { key: "operating_lease_liabilities", aliases: ["us_gaap_OperatingLeaseLiability"], sum: ["us_gaap_OperatingLeaseLiabilityCurrent", "us_gaap_OperatingLeaseLiabilityNoncurrent"], scale: "millions" },
+  // IFRS 16 has one lease liability: no operating/finance split, and lease cost sits below operating income.
+  { key: "lease_liabilities_ifrs", aliases: ["ifrs_full_LeaseLiabilities"], sum: ["ifrs_full_CurrentLeaseLiabilities", "ifrs_full_NoncurrentLeaseLiabilities"], scale: "millions" },
   { key: "finance_lease_liabilities", aliases: ["us_gaap_FinanceLeaseLiability"], sum: ["us_gaap_FinanceLeaseLiabilityCurrent", "us_gaap_FinanceLeaseLiabilityNoncurrent"], scale: "millions" },
   // Equity-method and non-marketable stakes: non-operating assets the equity bridge adds.
   { key: "long_term_investments", aliases: ["us_gaap_LongTermInvestments", "us_gaap_EquityMethodInvestments", "us_gaap_EquitySecuritiesWithoutReadilyDeterminableFairValueAmount"],
@@ -35,9 +53,12 @@ const COLUMNS: { key: string; aliases: string[]; pattern?: RegExp; sum?: string[
   { key: "employees", aliases: ["employees"], scale: "count" },
 ];
 const MARKET_COLUMNS = ["period_end_close", "market_cap", "price_verified"];
+const OPTIONAL_COLUMNS = ["other_borrowings", "lease_liabilities_ifrs"];
 
 export type ValuationFinancialInputs = {
   currency: string | null;
+  /** The taxonomy the captured statements use: us-gaap, or ifrs-full (IFRS 16 leases are debt-like). Optional for stored inputs. */
+  accounting_standard?: "us-gaap" | "ifrs-full";
   units: string;
   basis: string[];
   columns: string[];
@@ -83,6 +104,8 @@ export function valuationFinancialInputs(params: {
   marketObservations?: Row[];
   marketCrossCheck?: Row | null;
   cutoff: Date;
+  /** A 20-F/40-F filer whose statements come from releases: only then is other_borrowings computed. */
+  foreignIssuer?: boolean;
   quarters?: number;
   years?: number;
 }): ValuationFinancialInputs | null {
@@ -111,6 +134,11 @@ export function valuationFinancialInputs(params: {
       const cells = COLUMNS.map((column) => {
         const found = aliasesOf(column).map((key) => values.get(key)?.get(end)).find(Boolean);
         let value: number | null = found ? found.value_numeric : null;
+        if (column.debtLines && params.foreignIssuer) {
+          const present = keys.filter((key) => values.get(key)?.has(end));
+          const lines = otherBorrowingKeys(present, LONG_TERM_TOTALS.some((key) => values.get(key)?.has(end)));
+          value = lines.length ? lines.reduce((total, key) => total + values.get(key)!.get(end)!.value_numeric, 0) : null;
+        }
         if (value === null && column.sum) {
           const parts = column.sum.map((key) => values.get(key)?.get(end));
           if (parts.every(Boolean)) value = parts.reduce((total, part) => total + part!.value_numeric, 0);
@@ -140,8 +168,12 @@ export function valuationFinancialInputs(params: {
   const empty = allColumns.map((_, i) => i >= 3 && [...quarterly, ...annual].every((row) => row[i] === null));
   const keep = (row: unknown[]) => row.filter((_, i) => !empty[i]) as (string | number | boolean | null)[];
   const crossCheck = params.marketCrossCheck;
+  const ifrs = statements.filter((row) => String(row.metadata_json?.concept ?? "").startsWith("ifrs-full:")).length;
+  const gaap = statements.filter((row) => String(row.metadata_json?.concept ?? "").startsWith("us-gaap:")).length;
   return {
     currency: revenueCurrency,
+    // Set only for IFRS filers, so a US filer's inputs serialize exactly as before.
+    ...(ifrs > gaap ? { accounting_standard: "ifrs-full" as const } : {}),
     units: `Amounts in ${revenueCurrency ?? "reporting currency"} millions. diluted_shares in millions (weighted-average diluted). employees is a headcount. period_end_close is per share; market_cap in millions.`,
     basis: [
       "Consolidated values only, as filed and public by the cutoff; quarterly flows are standalone quarters (cash-flow quarters derived from cumulative filings).",
@@ -152,7 +184,8 @@ export function valuationFinancialInputs(params: {
     columns: keep(allColumns) as string[],
     quarterly: quarterly.map(keep),
     annual: annual.map(keep),
-    not_captured: allColumns.filter((_, i) => empty[i]),
+    // The foreign-issuer columns are optional: their absence is not a gap, and US inputs stay unchanged.
+    not_captured: allColumns.filter((column, i) => empty[i] && !OPTIONAL_COLUMNS.includes(column)),
     price_cross_check: crossCheck ? {
       provider: String(crossCheck.provider ?? "stooq"),
       verified_periods: Number(crossCheck.verified_periods) || 0,

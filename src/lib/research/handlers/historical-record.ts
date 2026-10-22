@@ -83,6 +83,28 @@ async function saveExternalBenchmarks(sql: ReturnType<typeof postgres>, ctx: Res
   await saveReportArtifact(sql, ctx, "demand_backdrop", `${ctx.assetSlug}-demand-backdrop`, demand);
 }
 
+/**
+ * The ADS ratio belongs to the depositary instrument only: a Hong Kong ordinary listing of the same company is one
+ * share per share. The target is the instrument marked ADS/ADR (type or name), else, when none is marked, the one
+ * whose currency is the valuation price's. A ratio already set is never overwritten. Returns the instrument written.
+ */
+export async function writeDepositaryRatio(sql: ReturnType<typeof postgres>, assetId: string, ratio: number): Promise<string | null> {
+  const marked = await sql`SELECT id, depositary_ratio FROM instruments WHERE asset_id = ${assetId}
+    AND (lower(instrument_type) IN ('ads', 'adr', 'depositary_receipt', 'depositary_share') OR name ~* '\\m(ADS|ADR)\\M|depositary')
+    ORDER BY created_at LIMIT 1`;
+  let target = marked[0] ?? null;
+  if (!target) {
+    const [price] = await sql`SELECT content_json->'valuation_price'->>'currency' AS currency FROM research_artifacts a
+      JOIN research_runs r ON r.id = a.research_run_id WHERE r.asset_id = ${assetId} AND a.artifact_type = 'market_price_history'
+      ORDER BY a.created_at DESC LIMIT 1`;
+    const currency = price?.currency || "USD";
+    [target] = await sql`SELECT id, depositary_ratio FROM instruments WHERE asset_id = ${assetId} AND currency = ${currency} ORDER BY created_at LIMIT 1`;
+  }
+  if (!target || target.depositary_ratio !== null) return null;
+  await sql`UPDATE instruments SET depositary_ratio = ${ratio}, updated_at = NOW() WHERE id = ${target.id}`;
+  return String(target.id);
+}
+
 export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "historical_record",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
@@ -140,6 +162,13 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       const filings = await captureFilingStatements(sql, ctx, { writeModule: repairModuleWriter(sql, ctx) });
       if(filings.failures.length||filings.coverage.some(c=>c.status==='incomplete')||filings.reconciliation.some(c=>c.status==='mismatch'))throw new Error('Primary financial statements are incomplete or do not reconcile. Inspect financial_statement_set coverage before continuing.'+
         (filings.repair?` Repair specialist: ${filings.repair.status} after ${filings.repair.attempts} attempt(s)${filings.repair.last_errors.length?`; last errors: ${filings.repair.last_errors.slice(0,3).join('; ')}`:''}.`:''));
+      // A foreign issuer has no 10-Qs: its quarters come from 6-K results releases, and fewer than 12 is not a history.
+      const quarters = (filings as { quarter_coverage?: { quarters: number; first: string | null; last: string | null; minimum: number } }).quarter_coverage;
+      if (quarters && quarters.quarters < quarters.minimum) throw new Error(`Foreign-issuer statements cover ${quarters.quarters} quarters (${quarters.first ?? "none"} to ${quarters.last ?? "none"}), below the ${quarters.minimum} needed; the 20-F and the stored 6-K results releases do not give a 20-quarter history.`);
+      // The ADS ratio read from the release or 20-F fills the instrument's depositary_ratio, which the valuation needs
+      // to put per-ordinary-share values on the per-ADS price. A ratio someone already set is kept.
+      const depositary = (filings as { depositary_ratio?: { value: number } | null }).depositary_ratio;
+      if (depositary?.value) await writeDepositaryRatio(sql, ctx.assetId, depositary.value);
       // 3. Call metric-normalizer agent, only for metrics the filings and companyfacts do not cover.
       const coverage = normalizerCoverage(requiredMetricKeys, [...filings.observations, ...secFacts]);
       const taskKey = "metric-normalizer:observations";

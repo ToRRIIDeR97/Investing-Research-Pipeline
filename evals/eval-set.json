@@ -83,7 +83,7 @@
       "symbol": "JD",
       "cutoff": "2026-10-21",
       "reference": "User-supplied JD.com initiation (handover files, 2026-10-21)",
-      "note": "Foreign private issuer (20-F/6-K, RMB, ADS). Expected to fail statement coverage until Phase 6; it is a coverage stress case, never a depth score.",
+      "note": "Foreign private issuer (20-F/6-K, RMB, ADS). Statement capture from 6-K results releases, the FX series and the ADS ratio exist since Phase 6 (scripts/fpi-capture-demo.ts on tests/fixtures/jd); no JD run exists yet. A coverage stress case, never a depth score.",
       "expected": { "statement_quarters_min": 12 },
       "baseline_runs": [],
       "probes": []

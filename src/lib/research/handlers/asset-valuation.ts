@@ -9,7 +9,7 @@ import postgres from "postgres";
 import { z } from "zod/v4";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { CURRENT_PIPELINE_VERSION } from "../version";
-import { latestSecInstantFact, latestSecQuarterlyFact, secFactSpan } from "../history/sec-companyfacts";
+import { dominantCurrency, latestSecInstantFact, latestSecQuarterlyFact, secFactSpan } from "../history/sec-companyfacts";
 import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { calculateValuationSchedule, cashFlowBuildErrors, validateMethodInputs, ModelMethodInput, type ValuationMethodInput } from "../valuation/schedules";
@@ -244,7 +244,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       // Captured statements and period-end prices, reduced to a compact table.
       const capturedRows = await sql`
         SELECT artifact_type, content_json->'observations' AS observations, content_json->'cross_check' AS cross_check,
-          content_json->'beta' AS beta
+          content_json->'beta' AS beta, content_json ? 'quarter_coverage' AS foreign_issuer
         FROM research_artifacts
         WHERE research_run_id = ${ctx.runId}
           AND artifact_type IN ('financial_statement_set', 'market_price_history')
@@ -257,6 +257,8 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         marketObservations: Array.isArray(captured("market_price_history")?.observations) ? captured("market_price_history")!.observations : [],
         marketCrossCheck: captured("market_price_history")?.cross_check ?? null,
         cutoff,
+        // quarter_coverage is recorded only for foreign issuers (20-F/40-F filers and 6-K releases).
+        foreignIssuer: captured("financial_statement_set")?.foreign_issuer === true,
       });
       const requireDepreciationAddBack = hasDepreciationInputs(financialInputs);
       const [marketRow] = await sql`
@@ -319,9 +321,10 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         if (!sourcePath.startsWith(sourceRoot + sep)) throw new Error("Invalid primary source path");
         const fileText = await readFile(sourcePath, "utf8");
         const companyFacts = JSON.parse(fileText).companyFacts;
-        const equity = latestSecInstantFact(companyFacts, "us-gaap", "StockholdersEquity", "USD", cutoff);
-        const goodwill = latestSecInstantFact(companyFacts, "us-gaap", "Goodwill", "USD", cutoff);
-        const intangibles = latestSecInstantFact(companyFacts, "us-gaap", "IntangibleAssetsNetExcludingGoodwill", "USD", cutoff);
+        const bookCurrency = dominantCurrency(companyFacts);
+        const equity = latestSecInstantFact(companyFacts, "us-gaap", "StockholdersEquity", bookCurrency, cutoff);
+        const goodwill = latestSecInstantFact(companyFacts, "us-gaap", "Goodwill", bookCurrency, cutoff);
+        const intangibles = latestSecInstantFact(companyFacts, "us-gaap", "IntangibleAssetsNetExcludingGoodwill", bookCurrency, cutoff);
         const shares = latestSecInstantFact(companyFacts, "dei", "EntityCommonStockSharesOutstanding", "shares", cutoff);
         reportedDilutedShares = latestSecQuarterlyFact(
           companyFacts, "us-gaap", "WeightedAverageNumberOfDilutedSharesOutstanding", "shares", cutoff
@@ -580,7 +583,9 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
             ...(answer.source_notes ?? []),
           ];
           const bridgeExplanation = bridge
-            ? `Balance sheet at ${bridge.period_end}: ${Object.entries(bridge.components).map(([key, value]) => `${key.replace(/_/g, " ")} ${value}${bridge.carried_forward[key] ? ` (from ${bridge.carried_forward[key]})` : ""}`).join(", ")}; cash, securities and non-operating investments added, debt, finance leases and noncontrolling interest subtracted. Operating lease liabilities${bridge.excluded.operating_lease_liabilities !== undefined ? ` (${bridge.excluded.operating_lease_liabilities})` : ""} are not subtracted: their cost is already in operating income.${bridge.missing.length ? ` Not captured: ${bridge.missing.join(", ")}.` : ""}${fx !== 1 ? ` Converted at ${fx}.` : ""}`
+            ? `Balance sheet at ${bridge.period_end}: ${Object.entries(bridge.components).map(([key, value]) => `${key.replace(/_/g, " ")} ${value}${bridge.carried_forward[key] ? ` (from ${bridge.carried_forward[key]})` : ""}`).join(", ")}; cash, securities and non-operating investments added, debt, finance leases and noncontrolling interest subtracted. ${financialInputs?.accounting_standard === "ifrs-full"
+              ? "IFRS 16 lease liabilities are subtracted: lease cost is not in operating costs under IFRS."
+              : `Operating lease liabilities${bridge.excluded.operating_lease_liabilities !== undefined ? ` (${bridge.excluded.operating_lease_liabilities})` : ""} are not subtracted: their cost is already in operating income.`}${bridge.missing.length ? ` Not captured: ${bridge.missing.join(", ")}.` : ""}${fx !== 1 ? ` Converted at ${fx}.` : ""}`
             : "No cash, debt or lease balance was captured, so the equity bridge is 0.";
           const firstYearRows = (financialInputs?.quarterly ?? []).filter((row) => Number(row[1]) === horizon[0]);
           const column = (row: unknown[], key: string) => { const at = financialInputs!.columns.indexOf(key); return at >= 0 && typeof row[at] === "number" ? (row[at] as number) * fx : null; };

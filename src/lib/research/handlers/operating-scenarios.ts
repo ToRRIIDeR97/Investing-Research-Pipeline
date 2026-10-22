@@ -49,13 +49,14 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
       ) as Record<string, any>;
       // The horizon starts after the latest captured fiscal year; code builds each year's statements from the drivers.
       const [statementSet] = await sql`
-        SELECT content_json->'observations' AS observations FROM research_artifacts
+        SELECT content_json->'observations' AS observations, content_json ? 'quarter_coverage' AS foreign_issuer FROM research_artifacts
         WHERE research_run_id = ${ctx.runId} AND artifact_type = 'financial_statement_set' AND status IN ('validated', 'accepted')
         ORDER BY created_at DESC LIMIT 1
       `;
       const cutoff = ctx.marketDataCutoffAt || ctx.cutoffAt;
       const financialInputs = valuationFinancialInputs({
         statementObservations: Array.isArray(statementSet?.observations) ? statementSet.observations : [], cutoff,
+        foreignIssuer: statementSet?.foreign_issuer === true,
       });
       const ratios = historyRatios(financialInputs);
       const baseYear = ratios.base_year?.fiscal_year ?? cutoff.getUTCFullYear() - 1;
