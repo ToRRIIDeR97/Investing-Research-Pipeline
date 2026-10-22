@@ -8,6 +8,7 @@ import {
   jsonb,
   unique,
   index,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { assets } from "./core";
@@ -38,9 +39,11 @@ export const research_runs = pgTable("research_runs", {
   completed_at: timestamp("completed_at", { withTimezone: true }),
   failure_reason: text("failure_reason"),
   metadata_json: jsonb("metadata_json").notNull().default({}),
+  // The earlier run of the same asset this run builds on (prior_research, version_change_log). Null: a fresh start.
+  prior_run_id: uuid("prior_run_id").references((): AnyPgColumn => research_runs.id, { onDelete: "set null" }),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [index("research_runs_prior_run_idx").on(table.prior_run_id)]);
 
 // ============================================================
 // research_stages — §27.6

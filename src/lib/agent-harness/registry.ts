@@ -781,8 +781,9 @@ export type TaskModelSource = "override" | "stage" | "tier" | "all_agents" | "ag
  * 4. RESEARCH_ALL_AGENTS_MODEL;
  * 5. RESEARCH_<AGENT>_MODEL, then the agent config's own env var;
  * 6. the agent's default model.
- * A stage or tier model takes its fallback from RESEARCH_STAGE_<KEY>_FALLBACK_MODEL or RESEARCH_<TIER>_FALLBACK_MODEL
- * (none when unset); otherwise the agent's own fallback rules apply (fallbackModel undefined).
+ * A stage model falls back only to RESEARCH_STAGE_<KEY>_FALLBACK_MODEL and a tier model only to
+ * RESEARCH_<TIER>_FALLBACK_MODEL (none when unset): a stage pinned to one model never inherits its tier's fallback.
+ * Otherwise the agent's own fallback rules apply (fallbackModel undefined).
  */
 export function resolveTaskModel(input: { agentName: ResearchAgentName; tier?: string | null; stageKey?: string | null; modelOverride?: string | null }):
   { model: string; source: TaskModelSource; fallbackModel?: string | null } {
@@ -793,8 +794,7 @@ export function resolveTaskModel(input: { agentName: ResearchAgentName; tier?: s
     const value = process.env[`RESEARCH_${scope}_FALLBACK_MODEL`];
     return value ? normalizeModelEnvValue(value) : null;
   };
-  if (stage) return { model: normalizeModelEnvValue(stage), source: "stage",
-    fallbackModel: fallback(`STAGE_${envKey(input.stageKey!)}`) ?? (isModelTier(input.tier) ? fallback(envKey(input.tier)) : null) };
+  if (stage) return { model: normalizeModelEnvValue(stage), source: "stage", fallbackModel: fallback(`STAGE_${envKey(input.stageKey!)}`) };
   if (tier) return { model: normalizeModelEnvValue(tier), source: "tier", fallbackModel: fallback(envKey(input.tier!)) };
   const config = getAgentConfig(input.agentName);
   const source: TaskModelSource = process.env.RESEARCH_ALL_AGENTS_MODEL ? "all_agents"

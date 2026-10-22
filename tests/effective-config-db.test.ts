@@ -25,6 +25,9 @@ test("effective_config keeps the run's settings, the history of a changed job, a
       recordEffectiveTaskConfig(sql, run.runId, "team_answer", { ...taskExecution({ agentName: "asset-analyst", modelTier: "cheap", stageKey: "ai_reviewer" }), agentName: "asset-analyst" }),
     ]);
     await recordEffectiveTaskConfig(sql, run.runId, "decision_synthesis", { ...plain, agentName: "asset-analyst" });
+    // Unchanged settings are not written again; changed ones are.
+    assert.equal(await recordEffectiveTaskConfig(sql, run.runId, "decision_synthesis", { ...plain, agentName: "asset-analyst" }), false);
+    assert.equal(await recordEffectiveTaskConfig(sql, run.runId, "decision_synthesis", { ...premium, agentName: "asset-analyst" }), true);
     const [row] = await sql`SELECT metadata_json->'effective_config' AS config FROM research_runs WHERE id = ${run.runId}`;
     const config = row.config;
     assert.equal(config.run.tier_models.premium, "claude-opus-5-5");

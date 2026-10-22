@@ -78,6 +78,27 @@ interface BacktestRun {
   completed_at: string | null;
 }
 
+interface MonitorCheck {
+  status: string;
+  refresh_due: boolean;
+  reasons: string[];
+  checked_at: string;
+  newer_run: boolean;
+}
+
+function MonitorStatus({ monitor }: { monitor: MonitorCheck }) {
+  const checked = new Date(monitor.checked_at).toLocaleDateString();
+  if (!monitor.refresh_due) {
+    const outcome = monitor.status === "current" ? "no refresh due" : monitor.status === "skipped" ? "not checked" : "check failed";
+    return <p className={ui.muted} role="status">Monitor check {checked}: {outcome}.{monitor.status !== "current" && monitor.reasons[0] ? ` ${monitor.reasons[0]}` : ""}</p>;
+  }
+  return <section className={ui.notice} role="status" aria-label="Refresh due">
+    <strong>Refresh due</strong> (monitor check {checked})
+    <ul>{monitor.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul>
+    <p>{monitor.newer_run ? "A newer run of this asset already exists." : "A new run builds on the last completed run and reports what changed. Nothing starts automatically."}</p>
+  </section>;
+}
+
 function formatPercent(value: unknown) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "—";
   return `${(value * 100).toFixed(1)}%`;
@@ -101,6 +122,12 @@ export default function AssetDetailPage() {
   const [backtests, setBacktests] = useState<BacktestRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [monitor, setMonitor] = useState<MonitorCheck | null>(null);
+
+  // The stored monitor-check result; the check itself runs from npm run monitor:check, never from this page.
+  useEffect(() => {
+    fetch(`/api/assets/${assetId}/monitor`).then((res) => res.ok ? res.json() : null).then(setMonitor).catch(() => setMonitor(null));
+  }, [assetId]);
 
   useEffect(() => {
     async function load() {
@@ -161,6 +188,7 @@ export default function AssetDetailPage() {
       <Link href={`/assets/${assetId}/view`} className={ui.textLink}>Read research<ArrowUpRight size={16} /></Link>
       <Link href={`/assets/${assetId}/run`} className={ui.primary}>{runs.length ? "Open run" : "Start research"}</Link>
     </div>
+    {monitor && <MonitorStatus monitor={monitor} />}
     <details className={ui.section} open><summary>Asset details</summary><dl className={`${ui.metadata} ${ui.sectionBody}`}>
       {[["Sector", asset.sector], ["Industry", asset.industry], ["Country", asset.home_country], ["Currency", asset.base_currency], ["Profile", asset.profile_name], ["Status", asset.status], ["Exchange", listing?.exchange], ["Last run", runs[0] ? new Date(runs[0].created_at).toLocaleDateString() : "None"]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || "Not set"}</dd></div>)}
     </dl></details>
