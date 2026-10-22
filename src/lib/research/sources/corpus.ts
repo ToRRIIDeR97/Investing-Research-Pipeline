@@ -9,6 +9,7 @@ import { ensureDocumentIndexed, evidenceNeeds, rolePassageCounts, evidencePassag
 import { getAgentConfig } from "@/lib/agent-harness/registry";
 import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
 import { fetchCapped } from "@/lib/net";
+import { isResultsRelease } from "@/lib/research/history/press-release";
 import { SourceRole } from "@/lib/research/sources/roles";
 import { syncAssetPriceHistory, syncBenchmarkPriceHistory, type PriceHistorySync } from "@/lib/market-data/price-history";
 
@@ -643,19 +644,22 @@ export function selectResearchFilings(filings: SecFiling[], earliestDate: string
     return [...annual, ...quarterly, ...earningsUpdates, ...governance];
   }
 
-  const resultTerms = /results|earnings|financial statements|interim|quarter|six months|nine months|press release/i;
-  const sixKs = eligible.filter((filing) => filing.form === "6-K");
-  const likelyResults = sixKs.filter((filing) => resultTerms.test([
-    filing.primaryDocDescription,
-    filing.primaryDocument,
-    filing.items,
-  ].filter(Boolean).join(" ")) || Boolean(filing.reportDate));
-  const selectedSixKs = (likelyResults.length ? likelyResults : sixKs).slice(0, 8).map((filing) => ({
-    ...filing,
-    filingFamily,
-    semanticRole: likelyResults.length ? "interim_results_or_update" : "recent_foreign_issuer_update",
-  }));
+  // A 6-K's description and reportDate say nothing about its content (JD files every 6-K as "FORM 6-K" dated on
+  // filing), so every 6-K in the window is a candidate; fetchSecFilingPayloads keeps only results releases, judged
+  // from the cover's exhibit index and the Ex-99.1 title.
+  const selectedSixKs = eligible.filter((filing) => filing.form === "6-K").slice(0, MAX_FOREIGN_UPDATES)
+    .map((filing) => ({ ...filing, filingFamily, semanticRole: "foreign_issuer_update" }));
   return [...annual, ...selectedSixKs];
+}
+
+/** 6-Ks examined per run: a frequent filer files several a month, and results come once a quarter. */
+export const MAX_FOREIGN_UPDATES = 90;
+
+/** A 6-K cover whose exhibit index names a results release ("99.1 Press Release—... Announces First Quarter ... Results"). */
+export function isResultsCover(html: string): boolean {
+  const text = html.slice(0, 200_000).replace(/<[^<>]*>/g, " ").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ");
+  return /exhibit\s+(?:index|no\.?)[\s\S]{0,600}?(?:announces?|reports?)[^.]{0,120}(?:quarter|interim|annual|full[- ]year|fiscal)[^.]{0,60}results/i.test(text)
+    || isResultsRelease(html);
 }
 
 const SEC_USER_AGENT = "ResearchOS/0.1 research-pipeline-test@example.com";
@@ -954,6 +958,10 @@ export async function fetchSecFilingPayloads(sql: Sql, ctx: RunContext, secConte
         attachmentType: "primary_document",
       },
     ];
+    if (textValue(filing.form).toUpperCase() === "6-K") {
+      payloads.push(...await foreignResultsPayloads(sql, ctx, cik, filing));
+      continue;
+    }
     if (textValue(filing.form).toUpperCase() === "8-K") {
       const attachmentNames = await fetchSecEarningsAttachments(cik, accessionNumber, primaryDocument);
       for (const document of attachmentNames) {
@@ -1287,6 +1295,35 @@ async function fetchSecEarningsAttachments(cik: string, accessionNumber: string,
   } catch {
     return [];
   }
+}
+
+/** A stored EDGAR document, or a fresh capped download; null when it can't be read. Mock runs fetch nothing. */
+async function secDocument(sql: Sql, url: string): Promise<string | null> {
+  const stored = await storedSecFiling(sql, url);
+  if (stored !== null) return stored;
+  if (process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock" || process.env.RESEARCH_TEST_MODE === "1") return null;
+  try {
+    const response = await fetchCapped(url, { headers: { "User-Agent": "ResearchOS/0.1 research-pipeline@example.com" } }, { timeoutMs: 30_000, maxBytes: 8_000_000 });
+    return response.ok ? await response.text() : null;
+  } catch { return null; }
+}
+
+/**
+ * A foreign issuer's 6-K becomes sources only when it is a results release: the cover's exhibit index must name
+ * one, and each Ex-99 exhibit is kept only if its own opening announces results. Other 6-Ks (notices, buyback
+ * reports, interim-report duplicates) are not stored. Releases stored by an earlier run are read back.
+ */
+async function foreignResultsPayloads(sql: Sql, ctx: RunContext, cik: string, filing: Record<string, unknown>): Promise<SourcePayload[]> {
+  const accession = textValue(filing.accessionNumber), primary = textValue(filing.primaryDocument);
+  const cover = await secDocument(sql, secArchiveUrl(cik, accession, primary));
+  if (!cover || !isResultsCover(cover)) return [];
+  const release = { ...filing, semanticRole: "earnings_release" };
+  const payloads = [filingSourcePayload(ctx, cik, { ...release, attachmentType: "primary_document" }, cover)];
+  for (const document of await fetchSecEarningsAttachments(cik, accession, primary)) {
+    const html = await secDocument(sql, secArchiveUrl(cik, accession, document));
+    if (html && isResultsRelease(html)) payloads.push(filingSourcePayload(ctx, cik, { ...release, primaryDocument: document, attachmentType: "earnings_exhibit" }, html));
+  }
+  return payloads;
 }
 
 function externalSourcePayloads(ctx: RunContext): SourcePayload[] {
