@@ -8,7 +8,8 @@ import { OpenAICompatibleProvider } from "../src/lib/agent-harness/providers/ope
 import { OpenCodeGoProvider } from "../src/lib/agent-harness/providers/opencode-go";
 import { runResearchAgent } from "../src/lib/agent-harness/runner";
 import type { ModelEvent, ModelRequest } from "../src/lib/agent-harness/types";
-import { LONG_OUTPUT_TOKENS, PREMIUM_TIMEOUT_MS, effectiveRunConfig, taskExecution } from "../src/lib/research/model-tiering";
+import { LONG_OUTPUT_TOKENS, PREMIUM_TIMEOUT_MS, RESERVE_PROMPT_TOKENS, effectiveRunConfig, taskExecution } from "../src/lib/research/model-tiering";
+import { decisionErrorsBlameThesis, runDecisionCalls } from "../src/lib/research/handlers/decision-synthesis";
 
 const KEYS = ["RESEARCH_ALL_AGENTS_MODEL", "RESEARCH_ASSET_ANALYST_MODEL", "RESEARCH_PREMIUM_MODEL", "RESEARCH_MID_MODEL", "RESEARCH_CHEAP_MODEL",
   "RESEARCH_STAGE_DECISION_SYNTHESIS_MODEL", "RESEARCH_PREMIUM_FALLBACK_MODEL", "RESEARCH_STAGE_DECISION_SYNTHESIS_FALLBACK_MODEL",
@@ -43,6 +44,11 @@ test("task model precedence: override, stage, tier, all agents, agent, default",
     assert.deepEqual(resolve(), { model: "claude-sonnet-5-5", source: "stage", fallbackModel: null });
     assert.equal(resolve("premium", "decision_synthesis", "claude-haiku-5-5").model, "claude-haiku-5-5", "an explicit override wins");
   });
+  // A stage model never inherits its tier's fallback; only its own stage fallback applies.
+  await withEnv({ RESEARCH_STAGE_DECISION_SYNTHESIS_MODEL: "claude-sonnet-5-5", RESEARCH_PREMIUM_FALLBACK_MODEL: "claude-opus-5-5" }, () =>
+    assert.equal(resolve().fallbackModel, null));
+  await withEnv({ RESEARCH_STAGE_DECISION_SYNTHESIS_MODEL: "claude-sonnet-5-5", RESEARCH_PREMIUM_FALLBACK_MODEL: "claude-opus-5-5",
+    RESEARCH_STAGE_DECISION_SYNTHESIS_FALLBACK_MODEL: "claude-haiku-5-5" }, () => assert.equal(resolve().fallbackModel, "claude-haiku-5-5"));
 });
 
 test("effort: stage, tier, global, then the tier default; 'default' sends none", async () => {
@@ -62,11 +68,13 @@ test("per-task limits: 65,536 output tokens for long stages, the premium timeout
   await withEnv({ RESEARCH_PREMIUM_MODEL: "claude-opus-5-5", RESEARCH_CHEAP_MODEL: "claude-haiku-5-5" }, () => {
     const decision = taskExecution({ agentName: "asset-analyst", modelTier: "premium", stageKey: "decision_synthesis" });
     assert.deepEqual(decision.policy, { effort: "high", maxOutputTokens: LONG_OUTPUT_TOKENS, totalTimeoutMs: PREMIUM_TIMEOUT_MS });
-    // 100K prompt at $4 + 65,536 output at $20 per MTok.
-    assert.equal(decision.reserveUsd, Number((0.4 + 65_536 * 20 / 1e6).toFixed(4)));
+    // 100,001-token prompt at $4 + 65,536 output at $20 per MTok.
+    assert.equal(decision.reserveUsd, Number((RESERVE_PROMPT_TOKENS * 4 / 1e6 + 65_536 * 20 / 1e6).toFixed(4)));
     const cheap = taskExecution({ agentName: "asset-analyst", modelTier: "cheap", stageKey: "team_requests" });
     assert.deepEqual(cheap.policy, { effort: "low" });
-    assert.equal(cheap.reserveUsd, 0.1, "Haiku's priced reserve is below the floor");
+    // Haiku 5.5 above 100K prompt tokens bills $0.50/$2.50: 100,001 x 0.5 + 32,768 x 2.5 per MTok, above the $0.10 floor.
+    assert.equal(cheap.reserveUsd, Number((RESERVE_PROMPT_TOKENS * 0.5 / 1e6 + 32_768 * 2.5 / 1e6).toFixed(4)));
+    assert.ok(cheap.reserveUsd > 0.1);
     assert.equal(taskExecution({ agentName: "asset-analyst", modelTier: "mid", stageKey: "operating_scenarios" }).policy.maxOutputTokens, LONG_OUTPUT_TOKENS);
   });
   await withEnv({ RESEARCH_CHEAP_ATTEMPT_BUDGET_RESERVE_USD: "0.02", RESEARCH_PREMIUM_TIMEOUT_MS: "900000" }, () => {
@@ -174,4 +182,31 @@ test("the runner passes the task model and the policy effort to the provider", a
     assert.equal(seen[0].effort, "high");
     assert.equal(seen[0].maxTokens, 65_536);
   });
+});
+
+test("a merged decision that fails on the cached thesis invalidates the thesis once and regenerates both calls", async () => {
+  assert.equal(decisionErrorsBlameThesis([{ path: "investment_thesis.horizon" }]), true);
+  assert.equal(decisionErrorsBlameThesis([{ path: "risk_register" }, { path: "catalyst_register.catalysts.0" }]), false);
+  const log: string[] = [];
+  let theses = 0, blamed = true;
+  const raw = await runDecisionCalls({
+    thesis: async () => { log.push("thesis"); theses += 1; return { investment_thesis: { version: theses } }; },
+    registers: async (thesis: any) => {
+      log.push(`registers:${thesis.investment_thesis.version}`);
+      if (thesis.investment_thesis.version === 1) throw new Error("merged check failed");
+      blamed = false;
+      return { risk_register: { risks: [] } };
+    },
+    thesisBlamed: () => blamed,
+    invalidateThesis: async () => { log.push("invalidate"); },
+  });
+  assert.deepEqual(log, ["thesis", "registers:1", "invalidate", "thesis", "registers:2"]);
+  assert.deepEqual(raw, { investment_thesis: { version: 2 }, risk_register: { risks: [] } });
+  // A failure the registers own propagates without touching the thesis, and a second thesis failure is not retried again.
+  await assert.rejects(runDecisionCalls({ thesis: async () => ({}), registers: async () => { throw new Error("registers"); },
+    thesisBlamed: () => false, invalidateThesis: async () => { throw new Error("must not invalidate"); } }), /registers/);
+  let invalidations = 0;
+  await assert.rejects(runDecisionCalls({ thesis: async () => ({}), registers: async () => { throw new Error("still failing"); },
+    thesisBlamed: () => true, invalidateThesis: async () => { invalidations += 1; } }), /still failing/);
+  assert.equal(invalidations, 1);
 });

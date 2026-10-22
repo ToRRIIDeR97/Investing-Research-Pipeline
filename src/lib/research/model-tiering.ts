@@ -25,6 +25,9 @@ const DEFAULT_OUTPUT_TOKENS = 32_768;
  */
 export const PREMIUM_TIMEOUT_MS = 1_200_000;
 
+/** Prompt size the reserve is priced at: one token over the 100K long-prompt threshold. */
+export const RESERVE_PROMPT_TOKENS = 100_001;
+
 const positive = (name: string) => {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value > 0 ? value : undefined;
@@ -53,7 +56,8 @@ export function taskExecution(input: { agentName: ResearchAgentName; modelTier: 
   const outputLimit = policy.maxOutputTokens ?? positive("RESEARCH_MAX_OUTPUT_TOKENS") ?? DEFAULT_OUTPUT_TOKENS;
   const floor = positive("RESEARCH_ATTEMPT_BUDGET_RESERVE_USD") ?? 0.1;
   const tierReserve = isTier(input.modelTier) ? positive(`RESEARCH_${input.modelTier.toUpperCase()}_ATTEMPT_BUDGET_RESERVE_USD`) : undefined;
-  const reserveUsd = tierReserve ?? Math.max(floor, Number(calculateCost(resolved.model, 100_000, outputLimit).toFixed(4)));
+  // Priced at a prompt just over 100K tokens, so Haiku 5.5's 5x long-prompt rate is covered (24 of META 4fae0fb1's 79 calls exceeded 100K).
+  const reserveUsd = tierReserve ?? Math.max(floor, Number(calculateCost(resolved.model, RESERVE_PROMPT_TOKENS, outputLimit).toFixed(4)));
   return { tier: input.modelTier, model: resolved.model, modelSource: resolved.source,
     ...(resolved.fallbackModel !== undefined ? { fallbackModel: resolved.fallbackModel } : {}), effort, policy, reserveUsd };
 }
@@ -115,16 +119,25 @@ export async function recordEffectiveRunConfig(sql: Sql, runId: string) {
 /**
  * Records one task type's model, tier, effort and limits (metadata_json.effective_config.tasks.<task_type>), in one
  * statement so parallel calls of a run never overwrite each other. models lists every model the task type has used.
+ * Unchanged settings are written once per process; returns whether this call wrote.
  */
+const recordedTaskConfigs = new Map<string, string>();
+
 export async function recordEffectiveTaskConfig(sql: Sql, runId: string, taskType: string, execution: TaskExecution & { agentName: string }) {
   const entry = { agent: execution.agentName, tier: execution.tier, model: execution.model, model_source: execution.modelSource,
     effort: execution.effort ?? null, max_output_tokens: execution.policy.maxOutputTokens ?? null,
     total_timeout_ms: execution.policy.totalTimeoutMs ?? null, reserve_usd: execution.reserveUsd };
+  // One write per run, task type and settings in this process: fan-out calls (source-reader batches, report sections)
+  // would otherwise each update the run row before their model call.
+  const memo = `${runId}:${taskType}`, signature = JSON.stringify(entry);
+  if (recordedTaskConfigs.get(memo) === signature) return false;
+  recordedTaskConfigs.set(memo, signature);
   await sql`UPDATE research_runs SET metadata_json = COALESCE(metadata_json, '{}'::jsonb) || jsonb_build_object('effective_config',
     COALESCE(metadata_json->'effective_config', '{}'::jsonb) || jsonb_build_object('tasks',
       COALESCE(metadata_json->'effective_config'->'tasks', '{}'::jsonb) || jsonb_build_object(${taskType}::text,
         ${sql.json(entry as any)}::jsonb || jsonb_build_object('models', (
           SELECT COALESCE(jsonb_agg(DISTINCT m), '[]'::jsonb) FROM jsonb_array_elements_text(
             COALESCE(metadata_json->'effective_config'->'tasks'->${taskType}::text->'models', '[]'::jsonb) || to_jsonb(${execution.model}::text)) m)))))
-    WHERE id = ${runId}`;
+    WHERE id = ${runId}`.catch((error) => { recordedTaskConfigs.delete(memo); throw error; });
+  return true;
 }
