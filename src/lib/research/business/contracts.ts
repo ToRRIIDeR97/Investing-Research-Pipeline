@@ -122,6 +122,10 @@ export type ResponseScenario = z.infer<typeof ResponseScenario>;
 
 export const CompetitorEntry = z.object({
   competitor_name: z.string().min(1),
+  /** Listed ticker, so code can attach the peer's SEC numbers (peer_benchmark); omitted for private competitors. */
+  ticker: z.string().max(12).optional(),
+  /** "peer_benchmark.peers.<TICKER>" when the peer's numbers are stored, otherwise why they are not. */
+  peer_metrics: z.string().max(300).optional(),
   /** null when the share is not disclosed. */
   market_share: z.number().min(0).max(1).nullable(),
   main_advantages: z.array(z.string().min(1)).min(1),
@@ -134,6 +138,24 @@ export const CompetitiveResponseMatrix = z.object({
   competitors: z.array(CompetitorEntry).min(1),
 });
 export type CompetitiveResponseMatrix = z.infer<typeof CompetitiveResponseMatrix>;
+
+/** Management scored on separate axes, so weak governance can sit beside strong execution (JD example section 10). */
+export const MANAGEMENT_AXES = ["operating_execution", "balance_sheet_discipline", "capital_returns", "capital_allocation", "governance_alignment"] as const;
+export const ManagementAxis = z.object({
+  axis: z.enum(MANAGEMENT_AXES),
+  /** 1-5, or null when the evidence can't support a score. */
+  score: z.number().min(1).max(5).nullable(),
+  rationale: z.string().min(1),
+  /** Paths into code-computed artifacts, for example financial_analytics.capital_allocation.quarterly. */
+  analytics_paths: z.array(z.string().min(1)),
+  supporting_claim_ids: z.array(z.guid()),
+});
+export const ManagementAssessment = z.object({
+  artifact_type: z.literal("management_assessment"),
+  axes: z.array(ManagementAxis).length(MANAGEMENT_AXES.length),
+  summary: z.string().min(1),
+});
+export type ManagementAssessment = z.infer<typeof ManagementAssessment>;
 
 export const BusinessArtifactSet = z.union([
   SegmentModel,

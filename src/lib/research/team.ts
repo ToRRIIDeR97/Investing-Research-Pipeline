@@ -343,7 +343,7 @@ export async function rerunRequestStages(tx: Sql, runId: string, batch: RequestB
   const affected = reset.stages;
   const types = [...new Set(affected.flatMap(key => getStageOutputContract(key)?.requiredKeys || [])),
     "report_outline", "report_section", "report_document", "report_review", "question_register"];
-  if (affected.includes("historical_record")) types.push("historical_record", "financial_statement_set", "market_price_history", "financial_analytics", "financial_statement_summary");
+  if (affected.includes("historical_record")) types.push("historical_record", "financial_statement_set", "market_price_history", "financial_analytics", "financial_statement_summary", "peer_benchmark", "demand_backdrop");
   await tx`UPDATE research_stages SET status = 'pending', started_at = NULL, completed_at = NULL,
     validation_result_json = NULL, failure_reason = NULL, updated_at = NOW()
     WHERE research_run_id = ${runId} AND stage_key = ANY(${affected}::text[]) AND status != 'skipped'`;
@@ -445,7 +445,7 @@ export function ownerArtifactTypes(role: Request["role"]): Set<string> {
 
 function stageArtifactTypes(stages: string[]): Set<string> {
   const types = new Set(stages.flatMap(key => getStageOutputContract(key)?.requiredKeys || []));
-  if (stages.includes("historical_record")) ["historical_record", "financial_analytics", "financial_statement_summary"].forEach(type => types.add(type));
+  if (stages.includes("historical_record")) ["historical_record", "financial_analytics", "financial_statement_summary", "peer_benchmark", "demand_backdrop"].forEach(type => types.add(type));
   return types;
 }
 

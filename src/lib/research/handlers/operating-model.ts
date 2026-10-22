@@ -1,7 +1,7 @@
 import type { ResearchRunContext, StageHandler } from "../run-context";
 import { callResearchAgent, exactJsonPrompt } from "../run-context";
 import { OPERATING_MODEL_CONTRACT } from "../stage-contracts";
-import { forecastHorizon, historyRatios, operatingModelFirstYear } from "../valuation/engine";
+import { forecastHorizon, forecastYears, historyRatios, operatingModelFirstYear } from "../valuation/engine";
 import { valuationFinancialInputs } from "../valuation/financial-inputs";
 import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
@@ -88,7 +88,7 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
         statementObservations: Array.isArray(statementSet?.observations) ? statementSet.observations : [], cutoff,
       }));
       const baseYear = ratios.base_year?.fiscal_year ?? cutoff.getUTCFullYear() - 1;
-      const forecastPeriod = { fiscal_year: forecastHorizon(baseYear)[0], base_fiscal_year: baseYear, base_revenue_millions: ratios.base_year?.revenue ?? null };
+      const forecastPeriod = { fiscal_year: forecastHorizon(baseYear, forecastYears(ctx.forecastYears))[0], base_fiscal_year: baseYear, base_revenue_millions: ratios.base_year?.revenue ?? null };
       const packet = {
         asset: {
           runId: ctx.runId,

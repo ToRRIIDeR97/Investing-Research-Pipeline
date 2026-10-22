@@ -2,14 +2,14 @@ import { z } from "zod/v4";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { CompanyGenesis, FounderProfile, StrategicHistoryTimeline, StrategicDNA } from "./genesis/contracts";
 import { HistoricalDiagnosisArtifact, validateHistoricalDiagnosis } from "./diagnosis/contracts";
-import { SegmentModel, CustomerDecisionMap, BusinessProcessMap, BottleneckRegister, CompetitiveResponseMatrix } from "./business/contracts";
+import { SegmentModel, CustomerDecisionMap, BusinessProcessMap, BottleneckRegister, CompetitiveResponseMatrix, ManagementAssessment } from "./business/contracts";
 import { MoatAssessment, MoatAttackMatrix, NoMoatCounterfactual } from "./moat/contracts";
 import { DriverTree, OperatingModel, TopDownBottomUpReconciliation, ReinvestmentModel, OperatingScenarioSet, OperatingScenarioEntry, NumericAssumption, YearlyDriver } from "./forecast/contracts";
 import {ValuationMethodInput} from './valuation/schedules';
 import { ValuationScenarioSet, ReverseValuation, AnnualPriceTargetPath } from "./valuation/contracts";
 import { InvestmentThesis, RiskRegister, CatalystRegister, ExpectedReturnMatrix, ThesisBreakers, MonitoringDashboard, ConfidenceAssessment, DecisionRecord } from "./decision/contracts";
 import { validateGenesisArtifact, validateFounderProfile, validateStrategicHistoryTimeline, validateStrategicDNA } from "./genesis/validation";
-import { validateSegmentModel, validateCustomerDecisionMap, validateBusinessProcessMap, validateBottleneckRegister, validateCompetitiveResponseMatrix } from "./business/validation";
+import { validateSegmentModel, validateCustomerDecisionMap, validateBusinessProcessMap, validateBottleneckRegister, validateCompetitiveResponseMatrix, validateManagementAssessment } from "./business/validation";
 import { validateMoatAssessment, validateMoatAttackMatrix, validateNoMoatCounterfactual } from "./moat/validation";
 import { validateDriverTree, validateOperatingModel, validateOperatingScenarioSet, validateTopDownBottomUpReconciliation } from "./forecast/validation";
 import { validateInvestmentThesis, validateRiskRegister, validateCatalystRegister, validateThesisBreakers, validateMonitoringDashboard, validateExpectedReturnMatrix } from "./decision/validation";
@@ -25,6 +25,7 @@ const contentValidators: Record<string, (value: unknown) => ContentValidation> =
   segment_model: validateSegmentModel, customer_decision_map: validateCustomerDecisionMap,
   business_process_map: validateBusinessProcessMap, bottleneck_register: validateBottleneckRegister,
   competitive_response_matrix: validateCompetitiveResponseMatrix,
+  management_assessment: validateManagementAssessment,
   moat_assessment: validateMoatAssessment, moat_attack_matrix: validateMoatAttackMatrix,
   no_moat_counterfactual: validateNoMoatCounterfactual,
   driver_tree: validateDriverTree, operating_model: validateOperatingModel,
@@ -65,6 +66,11 @@ export const BUSINESS_PROCESS_CONTRACT = artifactContract({
   business_process_map: BusinessProcessMap, bottleneck_register: BottleneckRegister,
   competitive_response_matrix: CompetitiveResponseMatrix,
 });
+/** A second, small business_process_analysis call: management scored on separate axes. */
+export const MANAGEMENT_CONTRACT = artifactContract({ management_assessment: ManagementAssessment });
+/** What business_process_analysis must store: both calls' artifacts. */
+const BUSINESS_STAGE_OUTPUTS: AgentOutputFormat = { ...BUSINESS_PROCESS_CONTRACT,
+  requiredKeys: [...BUSINESS_PROCESS_CONTRACT.requiredKeys, ...MANAGEMENT_CONTRACT.requiredKeys] };
 export const MOAT_CONTRACT = artifactContract({
   moat_assessment: MoatAssessment, moat_attack_matrix: MoatAttackMatrix, no_moat_counterfactual: NoMoatCounterfactual,
 });
@@ -119,7 +125,7 @@ export const AI_REVIEWER_CONTRACT: AgentOutputFormat = {
 
 export const STAGE_OUTPUT_CONTRACTS: Record<string, AgentOutputFormat> = {
   company_genesis: COMPANY_GENESIS_CONTRACT, historical_diagnosis: HISTORICAL_DIAGNOSIS_CONTRACT,
-  business_process_analysis: BUSINESS_PROCESS_CONTRACT, moat_analysis: MOAT_CONTRACT,
+  business_process_analysis: BUSINESS_STAGE_OUTPUTS, moat_analysis: MOAT_CONTRACT,
   operating_model: OPERATING_MODEL_CONTRACT, operating_scenarios: OPERATING_SCENARIOS_CONTRACT,
   asset_valuation: VALUATION_CONTRACT, decision_synthesis: DECISION_SYNTHESIS_CONTRACT,
   ai_reviewer: AI_REVIEWER_CONTRACT,

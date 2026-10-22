@@ -78,6 +78,23 @@ function packetFromPrompt(prompt: string) {
   return {};
 }
 
+/** A synthetic framing that keeps the run's own archetypes, so mock runs compose as before. */
+function mockFraming(packet: Record<string, any>) {
+  const name = packet.asset?.name || "the company";
+  const current = packet.current_archetypes?.archetypes?.length ? packet.current_archetypes.archetypes : ["operating_company_core"];
+  return {
+    central_question: `Will ${name}'s core operations convert into per-share cash for holders over the forecast horizon?`,
+    decisive_insight_hypothesis: "Synthetic fixture: the core engine funds the growth investment, so value depends on capital allocation.",
+    what_investor_owns: "Synthetic fixture: one class of common stock with equal votes; no holding-company layers.",
+    engines: [{ name: "Core operations", role: "earner", value_treatment: "Cash-flow model" }],
+    key_questions: [{ id: "core-conversion", question: `Does ${name}'s core engine convert earnings into free cash flow?`,
+      why_it_decides_value: "Cash conversion sets the value per share.", falsifier: "FCF below 50% of net income for four quarters." }],
+    named_peers: [], priority_documents: ["Latest annual report"], management_axes: ["operating execution", "capital allocation"],
+    archetypes: current.map((key: string) => ({ key, reason: "Synthetic fixture keeps the composed archetype." })), overlays: [],
+    ...(packet.human_plan_feedback?.length ? { decisive_insight_hypothesis: `Redrafted after feedback: ${String(packet.human_plan_feedback.at(-1)).slice(0, 300)}` } : {}),
+  };
+}
+
 function adaptiveReportResponse(packet: Record<string, any>) {
   const artifacts = packet.artifacts as Array<Record<string, any>> || [];
   const evidence = packet.evidence_claims as Array<Record<string, any>> || [];
@@ -462,7 +479,11 @@ function v3MoatResponse(packet: Record<string, unknown>) {
           durability: "high",
           decay_velocity: "slow",
           failure_indicators: ["Client churn"],
-          confidence: 0.9
+          confidence: 0.9,
+          classification: "strong",
+          scores: { current_strength: 4, breadth_across_revenue: 3, replication_difficulty: 4, pricing_power: 3, attack_resistance: 3, expected_durability: 4 },
+          supporting_claim_ids: [],
+          artifact_paths: ["financial_analytics.segments.quarterly"],
         }
       ]
     },
@@ -478,7 +499,9 @@ function v3MoatResponse(packet: Record<string, unknown>) {
           incumbent_defense: "Bundle lending or volume discounts",
           leading_indicators: ["API call deceleration"],
           financial_translation: "-10% tech platform revenue",
-          residual_moat: "Medium strength"
+          residual_moat: "Medium strength",
+          targets_moat: "High switching costs in technology platform",
+          survives: "partially"
         }
       ]
     },
@@ -617,16 +640,12 @@ function v3OperatingScenariosResponse(packet: Record<string, unknown>) {
 }
 
 function v3ValuationResponse(packet: Record<string, unknown>) {
-  // Operating companies: only the per-scenario assumptions; code builds the schedules and the path.
+  // Operating companies: only the three valuation sets; code builds the schedules and the path. The fixture keeps the defaults.
   if (packet.output_contract === "valuation_assumptions") {
-    const riskFree = Number((packet.risk_free_rate as { rate?: number } | null)?.rate) || 0.04;
+    const defaults = Array.isArray(packet.default_valuation_sets) ? packet.default_valuation_sets as Record<string, unknown>[] : [];
     return { valuation_assumptions: {
       artifact_type: "valuation_assumptions",
-      scenarios: [["bear", 0.05, 12], ["base", 0.04, 15], ["bull", 0.035, 18]].map(([scenario_type, premium, multiple]) => ({
-        scenario_type, discount_rate: Number((riskFree + Number(premium)).toFixed(4)),
-        terminal: { type: "multiple", metric: "nopat", multiple },
-        rationale: "Synthetic fixture: risk-free rate plus an equity premium; exit multiple of final-year NOPAT.",
-      })),
+      sets: defaults.map((set) => ({ ...set, rationale: `Synthetic fixture: code default. ${String(set.rationale ?? "")}`.trim() })),
       omitted_methods: [{ method: "fcfe", reason: "Synthetic operating company: FCFF is the primary method." }],
       source_notes: ["Synthetic fixture; not investment analysis"],
     } };
@@ -763,6 +782,13 @@ export class MockProvider implements ModelProvider {
 
     if (this.config.responseText) {
       response = this.config.responseText;
+    } else if (packet.output_contract === "management_assessment") {
+      response = { management_assessment: { artifact_type: "management_assessment", summary: "Synthetic fixture: axes scored only where computed data exists.",
+        axes: ["operating_execution", "balance_sheet_discipline", "capital_returns", "capital_allocation", "governance_alignment"].map(axis => ({ axis,
+          score: axis === "governance_alignment" ? null : 3, rationale: "Synthetic fixture rationale.",
+          analytics_paths: axis === "governance_alignment" ? [] : ["financial_analytics.capital_allocation.quarterly"], supporting_claim_ids: [] })) } };
+    } else if (packet.output_contract === "research_framing") {
+      response = { framing: mockFraming(packet) };
     } else if (packet.output_contract === "team_brief") {
       response = { approach: `Synthetic ${packet.role} specialist plan`, checks: ["Verify source coverage and trace assumptions"], information_needed: [] };
     } else if (packet.output_contract === "source_review") {

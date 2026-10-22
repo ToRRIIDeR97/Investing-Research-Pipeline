@@ -29,6 +29,8 @@ export const research_runs = pgTable("research_runs", {
   source_cutoff_at: timestamp("source_cutoff_at", { withTimezone: true }),
   market_data_cutoff_at: timestamp("market_data_cutoff_at", { withTimezone: true }),
   budget_limit_usd: numeric("budget_limit_usd"),
+  // Forecast years (3-10) set at the plan gate; null uses RESEARCH_FORECAST_YEARS, else 5.
+  forecast_years: integer("forecast_years"),
   actual_cost_usd: numeric("actual_cost_usd").notNull().default("0"),
   // Historical v1/v2 rows remain readable. New runs use the current server-owned pipeline.
   pipeline_version: integer("pipeline_version").notNull().default(3),

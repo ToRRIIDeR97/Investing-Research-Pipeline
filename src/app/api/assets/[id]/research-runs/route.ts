@@ -60,6 +60,7 @@ export async function POST(
       profileId,
       profileVersion,
       budgetLimitUsd: parsed.budget_limit_usd ?? null,
+      forecastYears: parsed.forecast_years ?? null,
       sourceCutoffAt: parsed.source_cutoff_at ? new Date(parsed.source_cutoff_at) : null,
       marketDataCutoffAt: parsed.market_data_cutoff_at
         ? new Date(parsed.market_data_cutoff_at)

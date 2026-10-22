@@ -260,6 +260,13 @@ export function valuationSummary(artifacts:Row[],options:{conclusionStatus?:stri
     };
     // Only the code solver writes method 'fcff'; any other reverse valuation is the analyst's own.
     if(reverse.method==='fcff'){
+      // Valuation v2 leads with the market's expectations in multiple and FCF-growth terms.
+      const multiple=num(reverse.implied_terminal_multiple),perpetual=num(reverse.implied_perpetual_growth);
+      const current=num(valuation.cross_checks?.ev_to_nopat),assumed=num(valuation.cross_checks?.assumed_terminal_ev_to_nopat);
+      if(multiple!=null)priceImplies.push(`${at[0].toUpperCase()}${at.slice(1)} needs about ${multiple.toFixed(1)}x NOPAT at the end of the forecast${through}${assumed!=null?`; the valuation assumes ${assumed.toFixed(1)}x`:''}${current!=null?`, against ${current.toFixed(1)}x today`:''}.`);
+      if(perpetual!=null)priceImplies.push(`Or perpetual growth of about ${pct0(perpetual)} after the fade at the base RONIC.`);
+      const ownerEarnings=((reverse.implied_fcf_growth_10y??[]) as Row[]).find(b=>b.basis==='nopat'&&num(b.implied_growth)!=null);
+      if(ownerEarnings)priceImplies.push(`Or ${pct0(num(ownerEarnings.implied_growth)!)} a year growth in owner earnings (${readerText(ownerEarnings.label)}) for ten years, then the terminal rate.`);
       const lead=`To be worth ${at}, the base case would need`;
       if(impliedMargin!=null)priceImplies.push(`${lead} an operating margin of about ${pct0(impliedMargin)} a year${through} (at base-case growth).${compare(impliedMargin,scenarioMargins)}`);
       if(impliedGrowth!=null)priceImplies.push(`${impliedMargin!=null?'Or':lead} revenue growth of about ${pct0(impliedGrowth)} a year${through} (at base-case margins).${compare(impliedGrowth,scenarioGrowth)}`);

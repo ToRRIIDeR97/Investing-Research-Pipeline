@@ -66,7 +66,7 @@ test("unresolved critical findings and code-confirmed high calculation findings 
   assert.equal(gate.positionable, false);
   assert.equal(reviewGate({ ...missingCritical(), review_verdict: "needs_more_work" }).trackable, true, "missing depth never deadlocks tracking");
   assert.deepEqual(reviewGate({ review_verdict: "conditional_pass", findings: [{ severity: "high" }] }),
-    { trackable: true, positionable: true, blocking: [], open_severe: 1 }, "a review stored before depth checks gates as before");
+    { verdict: "conditional_pass", trackable: true, positionable: true, blocking: [], open_severe: 1 }, "a review stored before depth checks gates as before");
   const legacy = reviewGate({ review_verdict: "conditional_pass", findings: [{ severity: "critical" }, { severity: "critical" }] });
   assert.deepEqual([legacy.trackable, legacy.positionable, legacy.blocking], [true, false, ["Unresolved critical finding"]],
     "a stored review with an open critical finding blocks a position even without effective_verdict");

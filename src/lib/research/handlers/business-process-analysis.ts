@@ -1,6 +1,12 @@
 import type { ResearchRunContext, StageHandler } from "../run-context";
 import { callResearchAgent, exactJsonPrompt } from "../run-context";
-import { BUSINESS_PROCESS_CONTRACT } from "../stage-contracts";
+import { BUSINESS_PROCESS_CONTRACT, MANAGEMENT_CONTRACT } from "../stage-contracts";
+
+export const MANAGEMENT_RULES = [
+  "Score management on five separate axes, 1 (poor) to 5 (excellent): operating_execution (delivery against plans, margins and growth versus history), balance_sheet_discipline (net cash or leverage, liquidity, debt maturities), capital_returns (buybacks and dividends against FCF, net share count change, the SBC offset), capital_allocation (returns on reinvestment and acquisitions, loss-making segments, capex against returns) and governance_alignment (share classes, voting versus economic control, board independence, incentives).",
+  "Score each axis from evidence: cite financial_analytics paths (for example financial_analytics.capital_allocation.quarterly or financial_analytics.cash_conversion.quarterly) in analytics_paths and claim ids from evidence_claims in supporting_claim_ids. Leave score null with a rationale saying what is missing when the evidence can't support it. Axes are independent: strong execution does not lift weak governance.",
+  "Use research_framing.management_axes, when present, as the questions each axis must answer.",
+];
 import { loadAcceptedEvidencePacket } from "../sources/corpus";
 import { createArtifactRepository } from "../artifacts/repository";
 import { schema } from "@/db";
@@ -110,7 +116,26 @@ export const businessProcessAnalysisHandler: StageHandler<Record<string, unknown
         }
       }
 
-      return output;
+      // A second, small call scores management on separate axes from the capital-allocation pack and the evidence.
+      const managementPacket = {
+        asset: packet.asset, evidence_claims: evidenceClaims,
+        business_analysis: { segment_model: output.segment_model ?? null, bottleneck_register: output.bottleneck_register ?? null },
+        output_contract: "management_assessment", output_schema: MANAGEMENT_CONTRACT.schema,
+      };
+      const management = await callResearchAgent<Record<string, any>>({
+        sql, ctx, stageKey: "business_process_analysis", taskKey: "business-model-analyst:management",
+        taskType: "management_assessment", agentName: "asset-analyst", modelTier: "mid", packet: managementPacket,
+        outputFormat: MANAGEMENT_CONTRACT, promptFactory: p => exactJsonPrompt({ agentName: "asset-analyst",
+          requiredKeys: MANAGEMENT_CONTRACT.requiredKeys, packet: p, extraRules: MANAGEMENT_RULES }),
+      });
+      await repo.upsertArtifact({
+        research_run_id: ctx.runId, asset_id: ctx.assetId, profile_id: ctx.profileId || undefined,
+        artifact_type: "management_assessment", scope_key: `${ctx.assetSlug}-management-assessment`, status: "validated",
+        content_json: management.management_assessment, schema_version: "3.0.0", validator_version: "1.0.0",
+        prompt_version: "current", created_by: "system-research-os",
+      });
+
+      return { ...output, management_assessment: management.management_assessment };
     } finally {
       await sql.end();
     }

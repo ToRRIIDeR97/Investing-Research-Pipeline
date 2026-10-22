@@ -89,7 +89,10 @@ describe("decision finalize step", () => {
     const matrix = output.expected_return_matrix;
     assert.equal(matrix.status, "unavailable");
     assert.deepEqual([matrix.bear_return, matrix.base_return, matrix.bull_return, matrix.probability_weighted_return], [null, null, null, null]);
-    assert.deepEqual([matrix.no_rerating_return, matrix.weak_stock_outcome, matrix.permanent_loss_limit], [0.03, -0.1, -0.3]);
+    // no_rerating_return is code-owned (valuation cross_checks); the model's 0.03 is replaced by the input, here absent.
+    assert.deepEqual([matrix.no_rerating_return, matrix.weak_stock_outcome, matrix.permanent_loss_limit], [null, -0.1, -0.3]);
+    const coded = finalizeDecisionOutput(answer(), inputs({ dilutionCovered: false, noReratingReturn: 0.46 })).output.expected_return_matrix;
+    assert.equal(coded.no_rerating_return, 0.46);
     assert.equal(matrix.dilution_omitted, false);
     assert.equal(output.investment_thesis.valuation_accepted_first, true);
     assert.equal(output.investment_thesis.expected_return_linkage, "Model linkage.");

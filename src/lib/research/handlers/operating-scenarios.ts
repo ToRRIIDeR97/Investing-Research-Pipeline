@@ -6,7 +6,7 @@ import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { valuationFinancialInputs } from "../valuation/financial-inputs";
-import { buildScenarioStatements, forecastHorizon, historyRatios, operatingModelFirstYear, validateScenarioDriverCoverage } from "../valuation/engine";
+import { buildScenarioStatements, forecastHorizon, forecastYears, historyRatios, operatingModelFirstYear, validateScenarioDriverCoverage } from "../valuation/engine";
 
 /**
  * Post-processing text about the copied reinvestment_model. It states the values actually copied;
@@ -59,7 +59,7 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
       });
       const ratios = historyRatios(financialInputs);
       const baseYear = ratios.base_year?.fiscal_year ?? cutoff.getUTCFullYear() - 1;
-      const horizon = forecastHorizon(baseYear);
+      const horizon = forecastHorizon(baseYear, forecastYears(ctx.forecastYears));
       const packet = {
         asset: {
           runId: ctx.runId,
@@ -86,7 +86,8 @@ export const operatingScenariosHandler: StageHandler<Record<string, unknown>> = 
           "Follow output_schema exactly and return exactly one bear, one base, and one bull scenario.",
           "Keep the base scenario consistent with forecast_artifacts; explain deviations in bear and bull assumptions.",
           "Copy the operating_model base revenue, operating income, and segment values exactly. Copy reinvestment_model working_capital_forecast exactly for the base case; it is a funding-surplus proxy, not a negative working-capital balance.",
-          "Every scenario needs yearly_drivers with one entry per year in forecast_horizon.years: fiscal_year, revenue_growth and operating_margin as decimals. Add capex_to_revenue, da_to_revenue, tax_rate or nwc_to_revenue_change only where history_ratios should not apply. The application builds each year's revenue, operating income, D&A, capex, NOPAT and FCFF from these drivers and history_ratios; the base case's first year takes revenue and operating income from operating_model.",
+          "Every scenario needs yearly_drivers with one entry per year in forecast_horizon.years: fiscal_year, revenue_growth and operating_margin as decimals. Add capex_to_revenue, da_to_revenue, tax_rate or nwc_to_revenue_change only where history_ratios should not apply. The application builds each year's revenue, operating income, D&A, capex, NOPAT and FCFF from these drivers and history_ratios (D&A rolls forward from net PP&E when history_ratios.ppe is given, so capex raises later D&A); the base case's first year takes revenue and operating income from operating_model.",
+          "Where the company reports segments, add segment_operating_income to each yearly_drivers entry: [{segment, operating_income}] in currency millions, including any corporate or reconciling line, summing to that year's operating income (revenue x operating_margin) within 0.5%. The application values loss-making segments separately as a cross-check.",
         ],
       });
 

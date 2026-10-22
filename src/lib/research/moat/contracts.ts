@@ -4,6 +4,13 @@
 
 import { z } from "zod/v4";
 
+export const MOAT_CLASSES = ["unproven", "weak", "moderate", "strong", "exceptional"] as const;
+const score = z.number().int().min(0).max(5);
+export const MoatScores = z.object({
+  current_strength: score, breadth_across_revenue: score, replication_difficulty: score,
+  pricing_power: score, attack_resistance: score, expected_durability: score,
+});
+
 export const MoatAssessmentEntry = z.object({
   claimed_moat: z.string().min(1),
   moat_source: z.string().min(1),
@@ -20,6 +27,15 @@ export const MoatAssessmentEntry = z.object({
   failure_indicators: z.array(z.string().min(1)).min(1),
   confidence: z.number().min(0).max(1),
   engagement_per_participant: z.number().optional(), // For network-effect check
+  /** Framework §7.6 classification. Code caps strong and exceptional at moderate without history and peer paths. */
+  classification: z.enum(MOAT_CLASSES),
+  /** Framework §7.6 dimensions, reduced to six, each 0-5. */
+  scores: MoatScores,
+  supporting_claim_ids: z.array(z.guid()),
+  /** Paths into computed artifacts the moat is tested against, for example financial_analytics.segments.quarterly or peer_benchmark.peers. */
+  artifact_paths: z.array(z.string().min(1)),
+  /** Set by code when it lowers the classification. */
+  classification_note: z.string().optional(),
 });
 export type MoatAssessmentEntry = z.infer<typeof MoatAssessmentEntry>;
 
@@ -39,6 +55,9 @@ export const MoatAttackEntry = z.object({
   leading_indicators: z.array(z.string().min(1)).min(1),
   financial_translation: z.string().min(1),
   residual_moat: z.string().min(1),
+  /** The claimed_moat of the moat_assessment entry this attack tests. */
+  targets_moat: z.string().min(1),
+  survives: z.enum(["fully", "partially", "not_at_all"]),
 });
 export type MoatAttackEntry = z.infer<typeof MoatAttackEntry>;
 

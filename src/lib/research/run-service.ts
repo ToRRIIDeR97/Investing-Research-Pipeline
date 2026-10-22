@@ -10,6 +10,7 @@ export interface CreateResearchRunInput {
   profileId: string | null;
   profileVersion: number | null;
   budgetLimitUsd: number | null;
+  forecastYears?: number | null;
   sourceCutoffAt: Date | null;
   marketDataCutoffAt: Date | null;
 }
@@ -24,13 +25,13 @@ export async function createResearchRunWithStages(input: CreateResearchRunInput)
       const inserted = await tx`
         INSERT INTO research_runs (
           asset_id, run_type, status, research_question, requested_by,
-          profile_id, profile_version, budget_limit_usd,
+          profile_id, profile_version, budget_limit_usd, forecast_years,
           source_cutoff_at, market_data_cutoff_at, pipeline_version,
           metadata_json, created_at, updated_at
         ) VALUES (
           ${input.assetId}, ${input.runType}, 'pending', ${input.researchQuestion},
           ${input.requestedBy}, ${input.profileId}, ${input.profileVersion},
-          ${input.budgetLimitUsd === null ? null : String(input.budgetLimitUsd)},
+          ${input.budgetLimitUsd === null ? null : String(input.budgetLimitUsd)}, ${input.forecastYears ?? null},
           ${input.sourceCutoffAt}, ${input.marketDataCutoffAt},
           ${CURRENT_PIPELINE_VERSION}, '{}'::jsonb, NOW(), NOW()
         )

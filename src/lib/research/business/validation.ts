@@ -8,6 +8,8 @@ import {
   BusinessProcessMap,
   BottleneckRegister,
   CompetitiveResponseMatrix,
+  ManagementAssessment,
+  MANAGEMENT_AXES,
   type SegmentDetails,
   type CustomerDecision,
   type ProcessNode,
@@ -126,4 +128,22 @@ export function validateCompetitiveResponseMatrix(content: unknown): ValidationR
   }
 
   return { valid: errors.length === 0, errors, warnings };
+}
+
+/**
+ * Each axis once. A score needs a computed path or a cited claim, and governance needs a cited claim (share classes,
+ * voting control, board): code can compute capital returns, but not governance.
+ */
+export function validateManagementAssessment(content: unknown): ValidationResult {
+  const parsed = ManagementAssessment.safeParse(content);
+  if (!parsed.success) return { valid: false, errors: parsed.error.issues.map((e) => e.message), warnings: [] };
+  const errors: string[] = [];
+  const axes = parsed.data.axes.map((a) => a.axis);
+  for (const axis of MANAGEMENT_AXES) if (axes.filter((a) => a === axis).length !== 1) errors.push(`management_assessment must score ${axis} exactly once.`);
+  for (const a of parsed.data.axes) {
+    if (a.score === null) continue;
+    if (!a.analytics_paths.length && !a.supporting_claim_ids.length) errors.push(`${a.axis} is scored without an analytics path or a cited claim; cite one or leave the score null.`);
+    if (a.axis === "governance_alignment" && !a.supporting_claim_ids.length) errors.push("governance_alignment is scored without a cited claim on control or the board; leave it null when none is supplied.");
+  }
+  return { valid: errors.length === 0, errors, warnings: [] };
 }

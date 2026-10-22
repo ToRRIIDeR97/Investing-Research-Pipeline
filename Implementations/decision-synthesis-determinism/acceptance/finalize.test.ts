@@ -100,7 +100,9 @@ test("AC-6: returns come from code: estimated when complete, null when withheld"
   assert.equal(complete.status, "estimated");
   assert.deepEqual([complete.bear_return, complete.base_return, complete.bull_return], [-0.4, -0.2, 0.1]);
   assert.equal(complete.probability_weighted_return, -0.175);
-  assert.equal(complete.no_rerating_return, 0.04, "judgment fields stay as the model wrote them");
+  // Valuation v2: no_rerating_return is code-owned (valuation cross_checks); the other judgment fields stay the model's.
+  assert.equal(complete.no_rerating_return, null, "no code-computed no-rerating return was supplied");
+  assert.equal(finalizeDecisionOutput(rawDecision(), { ...completeInputs(), noReratingReturn: 0.35 }).output.expected_return_matrix.no_rerating_return, 0.35);
   assert.equal(complete.dilution_omitted, false);
 
   const withheld = finalizeDecisionOutput(rawDecision(), withheldInputs()).output.expected_return_matrix;

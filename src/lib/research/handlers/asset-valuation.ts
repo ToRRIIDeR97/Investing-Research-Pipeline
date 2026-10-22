@@ -12,30 +12,35 @@ import { CURRENT_PIPELINE_VERSION } from "../version";
 import { latestSecInstantFact, latestSecQuarterlyFact, secFactSpan } from "../history/sec-companyfacts";
 import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
-import { calculateValuationSchedule, cashFlowBuildErrors, validateMethodInputs, ValuationMethodInput } from "../valuation/schedules";
+import { calculateValuationSchedule, cashFlowBuildErrors, validateMethodInputs, ModelMethodInput, type ValuationMethodInput } from "../valuation/schedules";
 import { valuationDatePrice } from "@/lib/market-data/price-history";
 import { costOfCapitalInputs } from "../valuation/cost-of-capital";
 import { hasDepreciationInputs, valuationFinancialInputs } from "../valuation/financial-inputs";
 import { ReverseValuation, withheldValuationReason } from "../valuation/contracts";
 import {
-  SCENARIOS, assembleValuation, buildFcffSchedule, buildScenarioStatements, equityBridge, forecastHorizon, historyRatios,
-  impliedOperatingMargin, impliedRevenueGrowth, latestRiskFreeRate, operatingModelFirstYear, valuationAssumptionsFormat,
-  valuationReadiness, type Scenario, type ValuationAssumptionsOutput, type YearlyDriver,
+  SCENARIOS, assembleValuation, buildScenarioStatements, equityBridge, forecastHorizon, forecastYears, historyRatios,
+  latestRiskFreeRate, operatingModelFirstYear, valuationReadiness, type Scenario, type YearlyDriver,
 } from "../valuation/engine";
+import {
+  buildFcffValuation, currencyConversion, defaultValuationSets, depreciationWarnings, fxSeriesFor, latestFredValue, ronicDefault,
+  valuationSetsFormat, valuationTiming, type LensValue, type SegmentDriver, type ValuationSet, type ValuationSetsOutput,
+} from "../valuation/v2";
+import { FinancialAnalytics, tableRows } from "../history/analytics";
 
 /** Shared by both valuation prompts: anchor discount rates on the sourced beta and equity risk premium. */
 const COST_OF_CAPITAL_RULE = "cost_of_capital_inputs holds a regression beta against the S&P 500 (beta), a dated implied equity risk premium (equity_risk_premium) and the CAPM cost of equity they give with risk_free_rate (capm_cost_of_equity). Build each discount rate from them, cite their values and as-of dates in rationale, and explain any departure from the CAPM rate. Flag an input marked unverified or stale; when one is null, say so and state the assumption used instead.";
 
-/** The valuation analyst prompt for FCFF assets: assumptions only. Rules precede the packet so the packet stays last. */
+/** The valuation analyst prompt for FCFF assets: three valuation sets. Rules precede the packet so the packet stays last. */
 export const valuationPrompt = (p: Record<string, unknown>) => exactJsonPrompt({
   agentName: "valuation-analyst",
   requiredKeys: ["valuation_assumptions"],
   packet: p,
   extraRules: [
-    "The application builds each scenario's yearly statements and FCFF schedule from the operating scenarios' yearly_drivers and history_ratios (shown in scenario_statements), then computes the DCF, the yearly value per share, the scenario anchors, the weighted target, the returns and the reverse valuation. Supply only valuation_assumptions.",
-    "For each of bear, base and bull give discount_rate, terminal and rationale. discount_rate is a decimal cost of capital for free cash flow to the firm and must exceed risk_free_rate.rate, the 10-year Treasury yield on risk_free_rate.observation_date; state the premium over it in rationale.",
+    "The application builds each operating case's statements and FCFF from the operating scenarios' yearly_drivers (shown in scenario_statements), appends fade years in which growth moves to the terminal rate and reinvestment = growth / RONIC x NOPAT, and values the terminal as NOPAT x (1 + g) x (1 - g / RONIC) / (r - g). It values every case under every valuation set, and computes the anchors, weights, returns, reverse valuation, multiples and stress cases. Supply only valuation_assumptions.",
+    "valuation_assumptions.sets holds exactly three sets, conservative, base and aggressive, each with discount_rate, terminal_growth, ronic, fade_years and rationale. default_valuation_sets holds the code-prepared sets: start from them. Valuation sets are separate from operating cases; never make a set pessimistic or optimistic about the business itself.",
+    "discount_rate is a decimal cost of capital for free cash flow to the firm and must exceed risk_free_rate.rate; conservative >= base >= aggressive. terminal_growth must be below the discount rate and must not exceed risk_free_rate.rate; conservative <= base <= aggressive.",
     COST_OF_CAPITAL_RULE,
-    "terminal is {\"type\": \"multiple\", \"metric\": \"nopat\", \"multiple\": x} applied to the final year's NOPAT, or {\"type\": \"perpetuity\", \"growth_rate\": g} with g below the discount rate. Calibrate it to each scenario's growth, margins and reinvestment in scenario_statements.",
+    "ronic is the return on new invested capital after the forecast. ronic_default gives the code default and its basis (history ROIC and the base case's explicit incremental ROIC). Keep it unless the evidence says otherwise; any ronic more than 0.5pt from the default needs ronic_rationale.",
     "Use the valuation specialist's team_context.brief. Do not return statements, schedules or per-share values and do not change the scenario drivers; note any disagreement with them in source_notes.",
     "Name the sources and calibration behind each rate in source_notes. List methods you judged inappropriate for this company, with the reason, in omitted_methods.",
     "Follow output_schema exactly.",
@@ -47,13 +52,13 @@ const EquityMethodsOutput = z.object({
   valuation_scenario_set: z.object({
     artifact_type: z.literal("valuation_scenario_set"),
     valuation_status: z.enum(["complete", "withheld"]),
-    method_inputs: z.array(ValuationMethodInput),
+    method_inputs: z.array(ModelMethodInput),
     omitted_methods: z.array(z.object({ method: z.string().min(1), reason: z.string().min(1) })),
     withheld_reason: z.string().optional(),
   }),
   reverse_valuation: ReverseValuation,
 });
-const METHOD_ORDER = ValuationMethodInput.shape.method.options;
+const METHOD_ORDER = ModelMethodInput.shape.method.options;
 
 /** The three schedules of the first method (in METHOD_ORDER) that has all of them; the path is assembled from it. */
 export function primarySchedules(models: ValuationMethodInput[]): Record<Scenario, ValuationMethodInput> | null {
@@ -137,7 +142,8 @@ function withheldValuation(reason: string, horizon: number[], currency: string) 
       artifact_type: "valuation_scenario_set", terminal_year: year, terminal_anchor_bear: 0, terminal_anchor_base: 0, terminal_anchor_bull: 0,
       uses_adjusted_fcf: true, segments_reconciled: true, method_inputs: [], omitted_methods: [{ method: "all", reason }], ...status,
     },
-    reverse_valuation: { artifact_type: "reverse_valuation", implied_growth: null, implied_margin: null, ...status },
+    reverse_valuation: { artifact_type: "reverse_valuation", implied_growth: null, implied_margin: null, implied_terminal_multiple: null,
+      implied_perpetual_growth: null, implied_fcf_growth_10y: [], ...status },
     annual_price_target_path: {
       artifact_type: "annual_price_target_path", currency, market_price_currency: currency,
       annual_projections: [{ fiscal_year: year, target_date: `${year}-12-31`, operating_values: {}, balance_sheet_values: {}, per_share_values: {} }],
@@ -151,8 +157,8 @@ function withheldValuation(reason: string, horizon: number[], currency: string) 
 }
 
 const pct = (value: number | null) => (value === null ? "not captured" : `${(value * 100).toFixed(1)}%`);
-const rounded = (row: Record<string, number>) => Object.fromEntries(Object.entries(row).map(([key, value]) =>
-  [key, key === "fiscal_year" ? value : Number(value.toFixed(/rate|margin|growth/.test(key) ? 4 : 1))]));
+const rounded = (row: object) => Object.fromEntries(Object.entries(row).map(([key, value]) =>
+  [key, typeof value !== "number" || key === "fiscal_year" ? value : Number(value.toFixed(/rate|margin|growth|roic/.test(key) ? 4 : 1))]));
 
 type ValuationSignalRow = {
   signal_key: string; signal_name: string; lens_family: string; current_value_text: string | null;
@@ -410,13 +416,15 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       const ratios = historyRatios(financialInputs);
       const baseYear = ratios.base_year?.fiscal_year ?? cutoff.getUTCFullYear() - 1;
       const horizon: number[] = Array.isArray(scenarioSetInput.forecast_horizon?.years) && scenarioSetInput.forecast_horizon.years.length
-        ? scenarioSetInput.forecast_horizon.years.map(Number) : forecastHorizon(baseYear);
+        ? scenarioSetInput.forecast_horizon.years.map(Number) : forecastHorizon(baseYear, forecastYears(ctx.forecastYears));
       const baseRow = [...(financialInputs?.annual ?? [])].reverse().find((row) => Number(row[1]) === baseYear);
       const fiscalYearEnd = baseRow ? String(baseRow[0]).slice(5) : undefined;
       const asset = { runId: ctx.runId, assetId: ctx.assetId, assetName: ctx.assetName, symbol: ctx.symbol, profileKey: ctx.profileKey };
       const equityMethods = ctx.archetypeKeys.includes("bank") || ctx.profileKey === "financials";
       const taskKey = "valuation-analyst:valuation";
       let output: Record<string, any>;
+      // Code-computed lens values (FCFF path); other paths keep one signal per lens.
+      let lenses: LensValue[] | null = null;
 
       if (priceWithheld) {
         // A historical run is never valued against a later market; nothing a model could judge would change that.
@@ -478,19 +486,60 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
           scenarioList.find((entry) => entry.scenario_type === scenario)?.yearly_drivers])) as Record<Scenario, YearlyDriver[] | undefined>;
         const baseRevenue = ratios.base_year?.revenue ?? null;
         const readiness = valuationReadiness({ drivers, horizon, dilutedSharesMillions: dilutedMillions, marketPrice, baseRevenue });
-        if (!readiness.ready) {
+        // Statements in one currency and a price in another need an FX rate and the depositary ratio, or the valuation is withheld.
+        const priceCurrency = valuationPrice?.currency ? String(valuationPrice.currency) : marketSnapshot.currency ? String(marketSnapshot.currency) : null;
+        const statementCurrency = financialInputs?.currency ?? null;
+        const series = statementCurrency && priceCurrency && statementCurrency !== priceCurrency ? fxSeriesFor(statementCurrency, priceCurrency) : null;
+        const [fxDoc] = series ? await sql`
+          SELECT string_agg(dc.text, '' ORDER BY dc.chunk_index) AS csv
+          FROM research_run_sources rrs
+          JOIN source_documents sd ON sd.id = rrs.source_document_id
+          JOIN document_parses dp ON dp.source_document_id = sd.id AND dp.parser_name <> 'research-memory'
+          JOIN document_chunks dc ON dc.document_parse_id = dp.id
+          WHERE rrs.research_run_id = ${ctx.runId} AND sd.metadata_json->>'series_id' = ${series.series}
+          GROUP BY sd.id, sd.retrieved_at, dp.id ORDER BY sd.retrieved_at DESC LIMIT 1
+        ` : [];
+        const fxValue = fxDoc?.csv && series ? latestFredValue(String(fxDoc.csv), cutoff.toISOString()) : null;
+        const [instrument] = await sql`SELECT depositary_ratio FROM instruments WHERE asset_id = ${ctx.assetId} AND depositary_ratio IS NOT NULL ORDER BY created_at LIMIT 1`;
+        // A depositary listing (an ADS/ADR instrument, or a 20-F/40-F filer) needs its ratio even in one currency.
+        const [depositary] = await sql`
+          SELECT 1 FROM instruments WHERE asset_id = ${ctx.assetId}
+            AND (lower(instrument_type) IN ('ads', 'adr', 'depositary_receipt', 'depositary_share') OR name ~* '\\m(ADS|ADR)\\M|depositary')
+          UNION ALL
+          SELECT 1 FROM research_run_sources rrs JOIN source_documents sd ON sd.id = rrs.source_document_id
+          WHERE rrs.research_run_id = ${ctx.runId} AND sd.metadata_json->>'form' IN ('20-F', '20-F/A', '40-F', '40-F/A')
+          LIMIT 1`;
+        const conversion = currencyConversion({ statementCurrency, priceCurrency, depositaryRatio: instrument ? Number(instrument.depositary_ratio) : null,
+          fx: fxValue && series ? { series: series.series, perUsd: series.perUsd, ...fxValue } : null, depositaryListing: Boolean(depositary) });
+        if (!readiness.ready || conversion.missing.length) {
           // Nothing a model could judge is missing here; withhold without a call and name each input.
-          output = withheldValuation(`Valuation inputs are missing: ${readiness.missing.join("; ")}.`, horizon, currency);
+          output = withheldValuation(`Valuation inputs are missing: ${[...readiness.missing, ...conversion.missing].join("; ")}.`, horizon, priceCurrency || currency);
         } else {
+          const fx = conversion.fx_rate, valueCurrency = conversion.price_currency || currency;
+          const scaledRatios = { ...ratios,
+            ppe: ratios.ppe ? { ...ratios.ppe, opening_net_ppe: ratios.ppe.opening_net_ppe * fx } : null,
+            invested_capital: ratios.invested_capital == null ? null : ratios.invested_capital * fx };
           const statementInput = (scenario: Scenario) => ({
-            baseRevenue: baseRevenue!, baseYear, ratios,
+            baseRevenue: baseRevenue! * fx, baseYear, ratios: scaledRatios,
             drivers: drivers[scenario]!.filter((driver) => horizon.includes(driver.fiscal_year)),
           });
-          const firstYear = operatingModelFirstYear(upstream.operating_model, baseRevenue);
+          const pinned = operatingModelFirstYear(upstream.operating_model, baseRevenue);
+          const firstYear = pinned ? { revenue: pinned.revenue * fx, operating_income: pinned.operating_income * fx } : null;
           const statements = Object.fromEntries(SCENARIOS.map((scenario) => [scenario,
-            buildScenarioStatements({ ...statementInput(scenario), firstYear: scenario === "base" ? firstYear : null })]));
+            buildScenarioStatements({ ...statementInput(scenario), firstYear: scenario === "base" ? firstYear : null })])) as Record<Scenario, ReturnType<typeof buildScenarioStatements>>;
           const bridge = equityBridge(financialInputs);
-          const outputFormat = valuationAssumptionsFormat(riskFree?.rate ?? null);
+          const shares = dilutedMillions! / conversion.depositary_ratio;
+          const [analyticsRow] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${ctx.runId}
+            AND artifact_type = 'financial_analytics' AND status IN ('validated', 'accepted') ORDER BY artifact_version DESC, created_at DESC LIMIT 1`;
+          const parsedPack = FinancialAnalytics.safeParse(analyticsRow?.content_json);
+          const pack = parsedPack.success ? parsedPack.data : null;
+          const roicStat = pack ? tableRows(pack.statistics).find((row) => row.metric === "roic") : undefined;
+          const historyRoic = typeof roicStat?.median === "number" ? roicStat.median : null;
+          const capm = costOfCapital.capm_cost_of_equity?.rate ?? null;
+          const baseRate = defaultValuationSets({ capm, riskFree: riskFree?.rate ?? null, ronic: 0.1 })[1].discount_rate;
+          const ronic = ronicDefault({ historyRoic, baseStatements: statements.base, discountRate: baseRate });
+          const defaults = defaultValuationSets({ capm, riskFree: riskFree?.rate ?? null, ronic: ronic.ronic });
+          const outputFormat = valuationSetsFormat(riskFree?.rate ?? null, defaults);
           const packet = {
             asset,
             required_lenses: requiredLenses,
@@ -499,8 +548,11 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
             cost_of_capital_inputs: costOfCapital,
             financial_inputs: financialInputs,
             history_ratios: ratios,
+            currency_conversion: conversion,
             equity_bridge: bridge,
-            diluted_shares_millions: dilutedMillions,
+            diluted_shares_millions: shares,
+            ronic_default: ronic,
+            default_valuation_sets: defaults,
             operating_scenarios: { ...probabilities, scenarios: scenarioList.map((scenario) => ({
               scenario_type: scenario.scenario_type, yearly_drivers: scenario.yearly_drivers, numeric_assumptions: scenario.numeric_assumptions,
             })) },
@@ -514,42 +566,52 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
             sql, ctx, stageKey: "asset_valuation", taskKey,
             taskType: "asset_valuation", agentName: "valuation-analyst", modelTier: "premium",
             packet, promptFactory: valuationPrompt, outputFormat,
-          })).valuation_assumptions as ValuationAssumptionsOutput;
-          const assumption = (scenario: Scenario) => answer.scenarios.find((entry) => entry.scenario_type === scenario)!;
+          })).valuation_assumptions as ValuationSetsOutput;
+          const sets = answer.sets.map((set) => ({ ...set, ronic_rationale: set.ronic_rationale ?? null })) as ValuationSet[];
           const sourceNotes = [
             `Statements built by code from operating_scenario_set yearly_drivers for FY${horizon[0]}-FY${horizon.at(-1)}${firstYear ? `; the base case's FY${horizon[0]} revenue and operating income come from operating_model` : ""}.`,
-            `D&A ${pct(ratios.da_to_revenue)} and capex ${pct(ratios.capex_to_revenue)} of revenue (mean of the last ${Math.min(3, financialInputs?.annual.length ?? 0)} fiscal years in financial_inputs) unless a yearly driver overrides them; tax rate ${pct(ratios.tax_rate)} (${ratios.tax_rate_source}).`,
+            ratios.ppe
+              ? `D&A rolls forward from net PP&E (${ratios.ppe.as_of}) at ${pct(ratios.ppe.depreciation_rate)} of opening net PP&E a year unless a yearly driver sets da_to_revenue; capex ${pct(ratios.capex_to_revenue)} of revenue (3-year mean) unless overridden; tax rate ${pct(ratios.tax_rate)} (${ratios.tax_rate_source}).`
+              : `D&A ${pct(ratios.da_to_revenue)} and capex ${pct(ratios.capex_to_revenue)} of revenue (mean of the last ${Math.min(3, financialInputs?.annual.length ?? 0)} fiscal years in financial_inputs) unless a yearly driver overrides them; tax rate ${pct(ratios.tax_rate)} (${ratios.tax_rate_source}).`,
             riskFree ? `Risk-free rate ${riskFree.rate} on ${riskFree.observation_date} (FRED DGS10).` : "No FRED DGS10 observation was available by the cutoff.",
-            ...(costOfCapital.capm_cost_of_equity ? [`CAPM cost of equity ${costOfCapital.capm_cost_of_equity.rate} = ${costOfCapital.capm_cost_of_equity.formula}.`] : []),
+            ...(costOfCapital.capm_cost_of_equity ? [`CAPM cost of equity ${costOfCapital.capm_cost_of_equity.rate} = ${costOfCapital.capm_cost_of_equity.formula}; used as the FCFF discount rate.`] : []),
+            `RONIC default ${ronic.ronic}: ${ronic.basis}`,
+            conversion.basis,
             ...(answer.source_notes ?? []),
           ];
           const bridgeExplanation = bridge
-            ? `Latest balance sheet (${bridge.period_end}): ${Object.entries(bridge.components).map(([key, value]) => `${key.replace(/_/g, " ")} ${value}`).join(", ")}; cash and securities added, debt and leases subtracted.${bridge.missing.length ? ` Not captured: ${bridge.missing.join(", ")}.` : ""}`
+            ? `Balance sheet at ${bridge.period_end}: ${Object.entries(bridge.components).map(([key, value]) => `${key.replace(/_/g, " ")} ${value}${bridge.carried_forward[key] ? ` (from ${bridge.carried_forward[key]})` : ""}`).join(", ")}; cash, securities and non-operating investments added, debt, finance leases and noncontrolling interest subtracted. Operating lease liabilities${bridge.excluded.operating_lease_liabilities !== undefined ? ` (${bridge.excluded.operating_lease_liabilities})` : ""} are not subtracted: their cost is already in operating income.${bridge.missing.length ? ` Not captured: ${bridge.missing.join(", ")}.` : ""}${fx !== 1 ? ` Converted at ${fx}.` : ""}`
             : "No cash, debt or lease balance was captured, so the equity bridge is 0.";
-          const schedules = Object.fromEntries(SCENARIOS.map((scenario) => [scenario, buildFcffSchedule({
-            statements: statements[scenario], assumptions: assumption(scenario), bridge: bridge?.amount ?? 0,
-            dilutedSharesMillions: dilutedMillions!, currency, sourceNotes, bridgeExplanation,
-          })])) as Record<Scenario, ValuationMethodInput>;
-          const assembled = assembleValuation({ schedules, probabilities, marketPrice, currency, fiscalYearEnd });
-          const reverseInput = { ...statementInput("base"), assumptions: assumption("base"), bridge: bridge?.amount ?? 0, dilutedSharesMillions: dilutedMillions!, marketPrice };
+          const firstYearRows = (financialInputs?.quarterly ?? []).filter((row) => Number(row[1]) === horizon[0]);
+          const column = (row: unknown[], key: string) => { const at = financialInputs!.columns.indexOf(key); return at >= 0 && typeof row[at] === "number" ? (row[at] as number) * fx : null; };
+          const valuationDate = String(valuationPrice?.trading_date ?? cutoff.toISOString()).slice(0, 10);
+          const timing = valuationTiming({ valuationDate, firstYearEnd: `${horizon[0]}-${fiscalYearEnd ?? "12-31"}`, taxRate: ratios.tax_rate,
+            reportedQuarters: firstYearRows.map((row) => ({ period_end: String(row[0]), operating_income: column(row, "operating_income"),
+              depreciation_amortization: column(row, "depreciation_amortization"), capital_expenditures: column(row, "capital_expenditures") })) });
+          const built = buildFcffValuation({
+            statements, sets, probabilities, price: marketPrice, currency: valueCurrency, fiscalYearEnd,
+            common: { bridge: (bridge?.amount ?? 0) * fx, shares, currency: valueCurrency, sourceNotes, bridgeExplanation },
+            timing, pack, fx, capm, riskFree: riskFree?.rate ?? null, historyRoic,
+            segmentDrivers: (drivers.base ?? []) as SegmentDriver[],
+          });
+          lenses = built.lenses;
           output = {
             valuation_scenario_set: {
-              ...assembled.valuation_scenario_set, omitted_methods: answer.omitted_methods ?? [], risk_free_rate: riskFreeRate,
-              cost_of_capital_inputs: costOfCapital,
-              valuation_assumptions: answer, history_ratios: ratios,
+              ...built.assembled.valuation_scenario_set, ...built.additions, omitted_methods: answer.omitted_methods ?? [], risk_free_rate: riskFreeRate,
+              cost_of_capital_inputs: costOfCapital, valuation_assumptions: answer, default_valuation_sets: defaults, ronic_default: ronic,
+              history_ratios: ratios, currency_conversion: conversion, equity_bridge_detail: bridge,
+              scenario_statements: Object.fromEntries(SCENARIOS.map((scenario) => [scenario, statements[scenario].map(rounded)])),
+              depreciation_warnings: depreciationWarnings(statements),
               source_gaps: [
                 ...(bridge?.missing.length ? [`Equity bridge items not captured: ${bridge.missing.join(", ")}.`] : bridge ? [] : ["No balance-sheet items were captured for the equity bridge."]),
                 ...(ratios.tax_rate_source === "statutory_default" ? ["No captured tax history; NOPAT uses the 21% statutory rate."] : []),
                 ...(riskFree ? [] : ["No FRED DGS10 observation was available by the cutoff; discount rates are unchecked against a risk-free rate."]),
+                ...(pack ? [] : ["No financial_analytics pack: own-history multiples, the multiple and cash-flow lenses and the FCF-growth reverse valuation are not computed."]),
                 ...costOfCapital.gaps,
               ],
             },
-            annual_price_target_path: assembled.annual_price_target_path,
-            reverse_valuation: {
-              artifact_type: "reverse_valuation", method: "fcff",
-              implied_margin: impliedOperatingMargin(reverseInput), implied_growth: impliedRevenueGrowth(reverseInput), market_price: marketPrice,
-              basis: `The uniform FY${horizon[0]}-FY${horizon.at(-1)} operating margin (with base revenue growth) and the uniform revenue growth (with base margins) at which the base FCFF value per share equals the market price, holding the base discount rate, terminal assumption, bridge and shares. null means no value in range reaches the price.`,
-            },
+            annual_price_target_path: { ...built.assembled.annual_price_target_path, market_price_currency: valueCurrency },
+            reverse_valuation: built.reverse,
           };
         }
       }
@@ -630,16 +692,25 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
               cheapness_score: 0.5,
               confidence: 0.7,
             },
-            ...requiredLenses.map((lens) => ({
-              signal_key: `${lens}_scenario_price_target`,
-              signal_name: `${lens} scenario price target`,
-              lens_family: lens,
-              current_value_text: String(baseAnchor),
-              comparison_range_json: comparisonRange,
-              signal: "inconclusive",
-              cheapness_score: 0.5,
-              confidence: 0.65,
-            })),
+            ...requiredLenses.map((lens) => {
+              const value = lenses?.find((entry) => entry.lens === lens);
+              if (value) return {
+                signal_key: `${lens}_scenario_price_target`, signal_name: `${lens} value per share`, lens_family: lens,
+                current_value_text: value.value_per_share === null ? `Not computed: ${value.reason ?? "inputs missing"}` : String(value.value_per_share),
+                comparison_range_json: { value_to_price: value.value_to_price, basis: value.basis, market_price: marketPrice },
+                signal: value.signal, cheapness_score: value.cheapness_score, confidence: value.value_per_share === null ? null : 0.6,
+              };
+              return {
+                signal_key: `${lens}_scenario_price_target`,
+                signal_name: `${lens} scenario price target`,
+                lens_family: lens,
+                current_value_text: String(baseAnchor),
+                comparison_range_json: comparisonRange,
+                signal: "inconclusive",
+                cheapness_score: 0.5,
+                confidence: 0.65,
+              };
+            }),
           ];
 
       await persistValuationSignals(sql, ctx, signals);
