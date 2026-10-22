@@ -7,7 +7,7 @@ import { quarterCoverage, MIN_FOREIGN_QUARTERS } from "../src/lib/research/histo
 import { dominantCurrency, reportingTaxonomy } from "../src/lib/research/history/sec-companyfacts";
 import { isResultsCover, selectResearchFilings, fxSourcePayload, MAX_FOREIGN_UPDATES } from "../src/lib/research/sources/corpus";
 import { equityBridge } from "../src/lib/research/valuation/engine";
-import { valuationFinancialInputs } from "../src/lib/research/valuation/financial-inputs";
+import { valuationFinancialInputs, otherBorrowingKeys } from "../src/lib/research/valuation/financial-inputs";
 import { currencyConversion } from "../src/lib/research/valuation/v2";
 
 const dir = new URL("./fixtures/jd/", import.meta.url);
@@ -92,6 +92,27 @@ test("IFRS 16 lease liabilities join the equity bridge; US GAAP operating leases
   const inputs = valuationFinancialInputs({ statementObservations: [obs("revenue", "ifrs-full:Revenue", 1e9), obs("ifrs_full_LeaseLiabilities", "ifrs-full:LeaseLiabilities", 3e8)], cutoff: new Date("2026-09-30") })!;
   assert.equal(inputs.accounting_standard, "ifrs-full");
   assert.ok(inputs.columns.includes("lease_liabilities_ifrs"));
+});
+
+test("JD's unsecured senior notes and short-term debts reach the bridge's debt, current and non-current", () => {
+  const { observations } = capture();
+  const fi = valuationFinancialInputs({ statementObservations: observations, cutoff: new Date("2026-09-30") })!;
+  const at = (end: string, key: string) => { const row = fi.quarterly.find((r) => r[0] === end)!; return row[fi.columns.indexOf(key)]; };
+  // 31 Dec 2025: senior notes 3,511 current + 20,798 non-current (about RMB24bn) and short-term debts 8,014.
+  assert.equal(at("2025-12-31", "other_borrowings"), 3_511 + 20_798 + 8_014);
+  assert.equal(at("2025-12-31", "long_term_debt"), 41_675, "long-term debts stay in their own column");
+  const bridge = equityBridge(fi)!;
+  assert.equal(bridge.period_end, "2026-06-30");
+  assert.equal(bridge.components.other_borrowings, 13_555 + 16_607 + 3_534);
+  assert.equal(bridge.amount, 89_068 + 132_594 - 36_196 - 33_696 - 63_257);
+});
+
+test("separately tagged notes are added only when no long-term debt total already includes them", () => {
+  assert.deepEqual(otherBorrowingKeys(["us_gaap_SeniorNotesNoncurrent", "us_gaap_ShortTermBorrowings", "us_gaap_CommercialPaper"], true),
+    ["us_gaap_ShortTermBorrowings", "us_gaap_CommercialPaper"], "a LongTermDebt total already holds the notes");
+  assert.deepEqual(otherBorrowingKeys(["us_gaap_SeniorNotesNoncurrent", "us_gaap_NotesPayableCurrent"], false), ["us_gaap_SeniorNotesNoncurrent", "us_gaap_NotesPayableCurrent"]);
+  assert.deepEqual(otherBorrowingKeys(["press_unsecured_senior_notes_current", "press_total_borrowings", "press_accounts_payable", "press_bonds_payable_non_current"], true),
+    ["press_unsecured_senior_notes_current", "press_bonds_payable_non_current"], "release face lines count; totals and payables do not");
 });
 
 test("a CNY reporter with a stored FX rate and ADS ratio is valued, not withheld", async () => {

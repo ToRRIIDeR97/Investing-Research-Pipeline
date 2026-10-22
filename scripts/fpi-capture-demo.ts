@@ -14,6 +14,8 @@ import { quarterCoverage } from "../src/lib/research/history/filing-store";
 import { dominantCurrency, reportingTaxonomy } from "../src/lib/research/history/sec-companyfacts";
 import { isResultsCover, selectResearchFilings } from "../src/lib/research/sources/corpus";
 import { fxSeriesFor } from "../src/lib/research/valuation/v2";
+import { valuationFinancialInputs } from "../src/lib/research/valuation/financial-inputs";
+import { equityBridge } from "../src/lib/research/valuation/engine";
 
 const dir = resolve(process.argv[2] ?? "tests/fixtures/jd");
 const read = (name: string) => readFileSync(join(dir, name), "utf8");
@@ -54,3 +56,13 @@ const coverage = quarterCoverage(observations);
 const checks = reconcileFiledBalances(tables);
 console.log(`\nQuarter coverage: ${coverage.quarters} quarters (${coverage.first} to ${coverage.last}); minimum ${coverage.minimum}: ${coverage.quarters >= coverage.minimum ? "passes" : "fails"}.`);
 console.log(`Balance checks: ${checks.filter((c) => c.status === "passed").length} passed, ${checks.filter((c) => c.status !== "passed").length} unconfirmed (a release can omit a line the filed balance sheet has).`);
+
+// The equity bridge the valuation would use, per ADS in the reporting currency (FX is applied in the valuation).
+const inputs = valuationFinancialInputs({ statementObservations: observations, cutoff: new Date("2026-09-30") });
+const bridge = equityBridge(inputs);
+const diluted = companyFacts.facts["us-gaap"].WeightedAverageNumberOfDilutedSharesOutstanding?.units?.shares?.filter((x: any) => x.form === "20-F").at(-1);
+if (bridge && diluted && ratio) {
+  const perAds = (amount: number) => (amount / (diluted.val / 1e6 / ratio)).toFixed(2);
+  console.log(`\nEquity bridge at ${bridge.period_end} (${currency} millions): ${Object.entries(bridge.components).map(([k, v]) => `${k} ${v}`).join(", ")}.`);
+  console.log(`Bridge ${bridge.amount} = ${currency} ${perAds(bridge.amount)} per ADS on ${(diluted.val / 1e6).toFixed(0)}m diluted ordinary shares (FY${diluted.fy}) and ${ratio} shares per ADS.`);
+}

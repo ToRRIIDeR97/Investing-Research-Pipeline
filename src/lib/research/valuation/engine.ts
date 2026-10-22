@@ -91,7 +91,7 @@ export function historyRatios(fi: ValuationFinancialInputs | null) {
     ? { opening_net_ppe: ppeNow, depreciation_rate: Number((Math.abs(daNow) / ppeBefore).toFixed(6)), as_of: String(base![0]) } : null;
   const equity = base ? cell(fi!, base, "stockholders_equity") : null, cash = base ? cell(fi!, base, "cash_and_equivalents") : null;
   const invested_capital = equity !== null && cash !== null
-    ? equity + (cell(fi!, base!, "long_term_debt") ?? 0) + (cell(fi!, base!, "current_debt") ?? 0) - cash - (cell(fi!, base!, "marketable_securities") ?? 0) : null;
+    ? equity + (cell(fi!, base!, "long_term_debt") ?? 0) + (cell(fi!, base!, "current_debt") ?? 0) + (cell(fi!, base!, "other_borrowings") ?? 0) - cash - (cell(fi!, base!, "marketable_securities") ?? 0) : null;
   return {
     da_to_revenue: mean(rows.map((row) => ratio(row, "depreciation_amortization"))),
     capex_to_revenue: mean(rows.map((row) => ratio(row, "capital_expenditures"))),
@@ -113,7 +113,7 @@ export function historyRatios(fi: ValuationFinancialInputs | null) {
  * stakes) are added; noncontrolling interests are subtracted.
  */
 const BRIDGE_ITEMS = [
-  ["cash_and_equivalents", 1], ["marketable_securities", 1], ["long_term_investments", 1], ["long_term_debt", -1], ["current_debt", -1],
+  ["cash_and_equivalents", 1], ["marketable_securities", 1], ["long_term_investments", 1], ["long_term_debt", -1], ["current_debt", -1], ["other_borrowings", -1],
   ["finance_lease_liabilities", -1], ["noncontrolling_interest", -1],
 ] as const;
 
@@ -153,7 +153,8 @@ export function equityBridge(fi: ValuationFinancialInputs | null): EquityBridge 
   return {
     amount: Number(amount.toFixed(6)), period_end: date, components, carried_forward,
     excluded: leaseRow ? { operating_lease_liabilities: cell(fi, leaseRow, "operating_lease_liabilities")! } : {},
-    missing: items.map(([key]) => key).filter((key) => !(key in components)),
+    // other_borrowings is an optional sum (most issuers have no separate notes lines), so its absence is not a gap.
+    missing: items.map(([key]) => key).filter((key) => key !== "other_borrowings" && !(key in components)),
   };
 }
 

@@ -183,7 +183,10 @@ export function extractReleaseStatements(html: string, source: FilingSource, opt
         ? (segment && /net revenues/.test(section) ? ["Revenues"] : segment && /from operations/.test(section) ? ["OperatingIncomeLoss"] : null)
         : CONCEPTS.find(([pattern]) => pattern.test(name.replace(/[()]/g, "")))?.slice(1) as [string, boolean?] | undefined;
       if (kind === "segment" && !mapped) continue;
-      const concept = mapped ? `us-gaap:${mapped[0]}` : `press:${slug(label)}`;
+      // A balance-sheet line that appears under both current and non-current headings (JD's "Unsecured senior notes")
+      // keeps the two apart, or one would replace the other as the same fact.
+      const side = kind === "balance" ? (/^non-current|^noncurrent/.test(section) ? "_non_current" : /^current/.test(section) ? "_current" : "") : "";
+      const concept = mapped ? `us-gaap:${mapped[0]}` : `press:${slug(label)}${side}`;
       const cells = header.columns.map((column, i) => {
         const value = values[i];
         if (column.currency !== (options.reportingCurrency ?? header.columns[0].currency)) return null;

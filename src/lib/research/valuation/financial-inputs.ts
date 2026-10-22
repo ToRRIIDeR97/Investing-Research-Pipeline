@@ -9,7 +9,21 @@ type Row = Record<string, any>;
 
 // First captured alias wins for each period, then the first key matching `pattern` (company-prefixed tags such as
 // meta_NonmarketableEquitySecuritiesCarryingValue). Sums are used only for split lease balances.
-const COLUMNS: { key: string; aliases: string[]; pattern?: RegExp; sum?: string[]; scale: "millions" | "count" }[] = [
+/**
+ * Borrowings the long_term_debt and current_debt aliases miss, summed per period (other_borrowings): short-term
+ * borrowings and commercial paper always; separately tagged notes, bonds and loans only when no long-term debt total
+ * (LongTermDebt, LongTermDebtNoncurrent) is captured for the period, because those totals already include them; and
+ * the face lines of an earnings release (press_ keys), which are separate balance-sheet lines by construction.
+ */
+const ALWAYS_SEPARATE = ["us_gaap_ShortTermBorrowings", "us_gaap_CommercialPaper"];
+const NOTE_COMPONENTS = /^us_gaap_(?:SeniorNotes|NotesPayable|ConvertibleNotesPayable|UnsecuredDebt|SecuredDebt|LongTermLoansPayable|LoansPayable|BondsPayable)(?:Current|Noncurrent)?$/;
+const LONG_TERM_TOTALS = ["us_gaap_LongTermDebt", "us_gaap_LongTermDebtNoncurrent"];
+const RELEASE_DEBT = /^press_(?!total)[a-z0-9_]*(?:senior_notes|notes_payable|convertible_notes|bonds(?:_payable)?|borrowings|bank_loans|loans_payable)(?:_current(?:_portion)?|_non_current)?$/;
+export function otherBorrowingKeys(keys: string[], hasLongTermTotal: boolean) {
+  return keys.filter((key) => ALWAYS_SEPARATE.includes(key) || RELEASE_DEBT.test(key) || (!hasLongTermTotal && NOTE_COMPONENTS.test(key)));
+}
+
+const COLUMNS: { key: string; aliases: string[]; pattern?: RegExp; sum?: string[]; debtLines?: true; scale: "millions" | "count" }[] = [
   { key: "revenue", aliases: ["revenue", "us_gaap_Revenues", "us_gaap_RevenueFromContractWithCustomerExcludingAssessedTax", "ifrs_full_Revenue"], scale: "millions" },
   { key: "cost_of_revenue", aliases: ["us_gaap_CostOfRevenue", "us_gaap_CostOfGoodsAndServicesSold"], scale: "millions" },
   { key: "operating_income", aliases: ["operating_income", "us_gaap_OperatingIncomeLoss", "ifrs_full_ProfitLossFromOperatingActivities"], scale: "millions" },
@@ -23,6 +37,7 @@ const COLUMNS: { key: string; aliases: string[]; pattern?: RegExp; sum?: string[
   { key: "marketable_securities", aliases: ["us_gaap_MarketableSecuritiesCurrent", "us_gaap_ShortTermInvestments", "us_gaap_AvailableForSaleSecuritiesDebtSecuritiesCurrent"], scale: "millions" },
   { key: "long_term_debt", aliases: ["us_gaap_LongTermDebtNoncurrent", "us_gaap_LongTermDebt"], scale: "millions" },
   { key: "current_debt", aliases: ["us_gaap_LongTermDebtCurrent", "us_gaap_DebtCurrent"], scale: "millions" },
+  { key: "other_borrowings", aliases: [], debtLines: true, scale: "millions" },
   { key: "operating_lease_liabilities", aliases: ["us_gaap_OperatingLeaseLiability"], sum: ["us_gaap_OperatingLeaseLiabilityCurrent", "us_gaap_OperatingLeaseLiabilityNoncurrent"], scale: "millions" },
   // IFRS 16 has one lease liability: no operating/finance split, and lease cost sits below operating income.
   { key: "lease_liabilities_ifrs", aliases: ["ifrs_full_LeaseLiabilities"], sum: ["ifrs_full_CurrentLeaseLiabilities", "ifrs_full_NoncurrentLeaseLiabilities"], scale: "millions" },
@@ -115,6 +130,11 @@ export function valuationFinancialInputs(params: {
       const cells = COLUMNS.map((column) => {
         const found = aliasesOf(column).map((key) => values.get(key)?.get(end)).find(Boolean);
         let value: number | null = found ? found.value_numeric : null;
+        if (column.debtLines) {
+          const present = keys.filter((key) => values.get(key)?.has(end));
+          const lines = otherBorrowingKeys(present, LONG_TERM_TOTALS.some((key) => values.get(key)?.has(end)));
+          value = lines.length ? lines.reduce((total, key) => total + values.get(key)!.get(end)!.value_numeric, 0) : null;
+        }
         if (value === null && column.sum) {
           const parts = column.sum.map((key) => values.get(key)?.get(end));
           if (parts.every(Boolean)) value = parts.reduce((total, part) => total + part!.value_numeric, 0);
