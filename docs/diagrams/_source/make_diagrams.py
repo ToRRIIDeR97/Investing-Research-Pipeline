@@ -13,7 +13,7 @@ s = Svg(1100, 700, "Research OS — UML component view (current)",
         "a separate worker claims jobs and runs the 24-stage pipeline, which calls the agent harness, "
         "source discovery and ingestion, backtesting (Python), and export; all state lives in Postgres and ./storage.")
 s.box(30, 60, 220, 70, "Analyst browser", ["src/app/** client pages"], "ui", stereo="actor/UI")
-s.box(310, 50, 260, 90, "Next.js API routes", ["src/app/api/** (53 route files)", "optional token · Host/Origin middleware"], "api", stereo="component")
+s.box(310, 50, 260, 90, "Next.js API routes", ["src/app/api/** (54 route files)", "optional token · Host/Origin middleware"], "api", stereo="component")
 s.box(640, 50, 200, 90, "Run queue", ["src/lib/research/run-queue.ts", "enqueue / claim / lease"], "lib", stereo="component")
 s.box(880, 170, 200, 110, "Research worker", ["src/workers/research-worker.ts", "poll 5s · heartbeat 10s", "lease 5 min, renewed 10s · run lock"], "worker", stereo="process")
 s.box(310, 200, 260, 110, "Workflow orchestrator", ["src/lib/workflow/orchestrator.ts", "advanceStage · gates · resume", "stages.ts · team-plan.ts (DAG)"], "lib", stereo="component")
@@ -21,8 +21,8 @@ s.box(610, 200, 230, 110, "Pipeline runner + team", ["pipeline-runner.ts (parall
 s.box(30, 370, 230, 100, "Agent harness", ["src/lib/agent-harness/**", "runner · providers · registry", "cache.ts (prompt caching)"], "lib", stereo="component")
 s.box(290, 370, 230, 100, "Sources & memory", ["sources/** (discovery, collector)", "memory/** (passages, embeddings,", "graph) · ingestion/** · market-data/**"], "lib", stereo="component")
 s.box(550, 370, 230, 100, "Backtesting & repair", ["backtesting/** (executor, framework)", "research/repair/** (statement", "repair, node sandbox)"], "lib", stereo="component")
-s.box(810, 370, 260, 100, "Reporting & export", ["research/reporting/** (adaptive)", "src/lib/export/** · valuation/**", "agents/staging.ts (promotion)"], "lib", stereo="component")
-s.box(260, 560, 300, 100, "PostgreSQL 16 + pgvector", ["src/db/schema/** · drizzle 0000–0006, 0009–0012", "runs, stages, tasks, jobs, artifacts,", "evidence graph, embeddings, price bars"], "store", stereo="datastore")
+s.box(810, 370, 260, 100, "Reporting & export", ["research/reporting/** (adaptive)", "src/lib/export/** · valuation/**", "lineage/** · monitoring/** · staging"], "lib", stereo="component")
+s.box(260, 560, 300, 100, "PostgreSQL 16 + pgvector", ["src/db/schema/** · drizzle 0000–0006, 0009–0016", "runs, stages, tasks, jobs, artifacts,", "evidence graph, embeddings, price bars"], "store", stereo="datastore")
 s.box(600, 560, 220, 100, "./storage", ["sources/<sha256>.<ext>", "backtests/<run>/ · exports/"], "store", stereo="filesystem")
 s.box(860, 540, 220, 140, "External services", ["LLM + embedding endpoints", "(OpenAI/Anthropic-compatible)", "search endpoint · DuckDuckGo · Bing", "SEC · FRED · Yahoo · Stooq · World Bank", "EIA · FDIC · Coinbase · …"], "ext", stereo="external")
 s.box(30, 560, 190, 100, "Child processes", ["run_backtest.py (sandboxed)", "python3 docling_parser.py", "node --permission (repair)"], "worker", stereo="process")
@@ -90,7 +90,7 @@ def cls(x, y, name, attrs, w=200, kind="plain"):
     return h
 cls(30, 60, "Asset", ["id, symbol, kind", "→ research_profiles 0..1"], kind="ui")
 cls(30, 200, "Instrument / Listing", ["→ market_price_bars *", "→ corporate_actions *"], kind="ui")
-cls(300, 60, "ResearchRun", ["status, run_type", "pipeline_version = 3", "metadata (telemetry)"], kind="api")
+cls(300, 60, "ResearchRun", ["status, run_type", "pipeline_version = 3", "prior_run_id → run 0..1"], kind="api")
 cls(570, 60, "ResearchStage", ["stage_key, order 1..24", "status, validation_result_json"], kind="api")
 cls(840, 60, "ResearchTask", ["status, cost_usd", "output (agent result)"], kind="api")
 cls(300, 220, "ResearchRunJob", ["status queued|running|…", "lease_owner, attempt_count", "max_attempts = 3"], kind="worker")
@@ -462,4 +462,29 @@ for i, (a, b) in enumerate(steps):
     x += 157
 s.line([(411, 134), (411, 165), (255, 165), (255, 134)], "fail → fix", lx=333, ly=160)
 s.save(P("dev-workflow.svg"))
+
+# ---------------------------------------------------------------- research across runs
+s = Svg(1100, 560, "Research across runs: lineage, change log and monitoring",
+        "A new run links to the asset's latest completed or approved run (prior_run_id) and saves a code-built prior_research block that "
+        "analysis and report packets carry in their cached prefix. Before the report, code diffs the run against the prior into "
+        "version_change_log. Separately, npm run monitor:check reads new 10-Q/10-K filings from EDGAR, scores the dashboard and stores "
+        "whether a refresh is due; the asset page shows it and a person decides. No model call, and no run starts on its own.")
+s.box(30, 70, 230, 100, "Run A (completed or approved)", ["documents · question_register", "team_requests · decision_record", "valuation_scenario_set"], "store", stereo="prior run")
+s.box(330, 70, 260, 100, "Run creation", ["run-service.ts · lineage/runs.ts", "prior_run_id: default, explicit or null", "same asset · pipeline v3"], "api", stereo="transaction")
+s.box(660, 70, 400, 100, "prior_research artifact (≤ 10 KB)", ["lineage/prior-research.ts (pure)", "documents, blocked questions, unavailable requests,", "decision, valuation summary, human follow-up"], "lib", stereo="artifact")
+s.box(330, 230, 260, 110, "Analysis + report calls (Run B)", ["prepareResearchCall adds prior_research", "in the cached packet prefix", "absent → packet byte-identical"], "worker", stereo="model packets")
+s.box(660, 230, 400, 110, "version_change_log artifact", ["lineage/change-log.ts (pure, no model): Run B vs Run A", "valuation per case + weighted, drivers, decision,", "thesis; new documents vs method/model change"], "lib", stereo="ai_reviewer start")
+s.box(660, 400, 400, 80, "Report", ["\"Changes since the prior run\" section + UI table"], "ui", stereo="report_document")
+s.box(30, 400, 280, 110, "npm run monitor:check", ["scripts/monitor-check.ts", "monitoring/monitor-check.ts", "monitoring/monitor-score.ts (pure)"], "worker", stereo="script")
+s.box(30, 230, 230, 110, "SEC EDGAR", ["data.sec.gov · www.sec.gov only", "10-Q / 10-K after the cutoff", "untrusted filing HTML"], "ext", stereo="external")
+s.box(350, 420, 260, 90, "asset_monitor_checks", ["refresh_due · reasons · KPI scores", "→ asset page \"Refresh due\""], "store", stereo="table")
+s.line([(260, 120), (330, 120)], "latest run")
+s.line([(590, 120), (660, 120)], "save once")
+s.line([(860, 170), (860, 200), (460, 200), (460, 230)], "read per call", lx=660, ly=194)
+s.line([(590, 285), (660, 285)], "Run B artifacts")
+s.line([(860, 340), (860, 400)], "report input", lx=900, ly=372)
+s.line([(145, 400), (145, 340)], "fetch (host allowlist)", lx=150, ly=372, lanchor="start", dashed=True)
+s.line([(310, 465), (350, 465)], "store")
+s.text(16, 545, "Dashed: reads. A refresh is due on a new 10-Q/10-K, a KPI past its danger line, or a passed next_refresh_at. Paid runs still need a person to create and queue them.", 11, fill="#555")
+s.save(P("research-across-runs.svg"))
 print("ok")

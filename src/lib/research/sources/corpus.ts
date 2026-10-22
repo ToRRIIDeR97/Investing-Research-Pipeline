@@ -863,7 +863,7 @@ async function fetchSecContext(ctx: RunContext) {
   };
 }
 
-function secArchiveUrl(cik: string, accessionNumber: string, primaryDocument: string) {
+export function secArchiveUrl(cik: string, accessionNumber: string, primaryDocument: string) {
   const cikNumber = String(Number(cik));
   const accessionPath = accessionNumber.replace(/-/g, "");
   return `https://www.sec.gov/Archives/edgar/data/${cikNumber}/${accessionPath}/${primaryDocument}`;
@@ -1518,10 +1518,11 @@ async function fetchExorIssuerContext(ctx: RunContext) {
   };
 }
 
-async function resolveSecCik(symbol: string) {
+/** SEC CIK for a ticker from SEC's ticker map. fetchImpl lets a caller (monitor-check) route it through its own guarded fetch. */
+export async function resolveSecCik(symbol: string, fetchImpl: (url: string, init?: RequestInit) => Promise<Response> = fetchCapped) {
   const upper = symbol.toUpperCase();
   const baseSymbol = upper.includes("_TEST") ? upper.split("_TEST")[0] : upper.split("_")[0];
-  const response = await fetchCapped("https://www.sec.gov/files/company_tickers.json", {
+  const response = await fetchImpl("https://www.sec.gov/files/company_tickers.json", {
     headers: { "User-Agent": "ResearchOS/0.1 research-pipeline@example.com" },
   });
   if (!response.ok) {

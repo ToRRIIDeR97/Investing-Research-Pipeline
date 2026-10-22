@@ -3,6 +3,7 @@ import { validateVisual, historySeries, buildVisual } from './visuals';
 export { resolveTable } from "./tables";
 import { createHash } from "node:crypto";
 import { Section, CoverageResult, Question, STANDARD_VERSION, type ReportSection, type CoverageCheck, type ResearchQuestion } from "./contracts";
+import { changeLogMarkdown, type VersionChangeLog } from "../lineage/change-log";
 
 export interface ReportArtifact {
   id: string; artifact_type: string; scope_key: string; artifact_version: number;
@@ -165,6 +166,9 @@ export function createReport(input: ReportInput): ReportDocument {
   }
   lines.push("## Research completeness", "", "| Area | Outcome | Reason |", "| --- | --- | --- |",
     ...coverage.map(c => `| ${cell(c.key)} | ${cell(c.status)} | ${cell(c.rationale)} |`), "");
+  // Code-computed comparison with the prior run; absent (and the report unchanged) for a run with no prior.
+  const changeLog = input.artifacts.find(a => a.artifact_type === "version_change_log");
+  if (changeLog) lines.push(...changeLogMarkdown(changeLog.content_json as VersionChangeLog));
   if (questions.length) lines.push("## Research questions and follow-up", "", ...questions.flatMap(q => [
     `### ${plainMarkdown(q.question)}`, "", `${q.materiality} / ${q.status}. ${plainMarkdown(q.answer)} ${q.evidence_ids.map(citation).join(" ")}`,
     ...(q.follow_up ? ["", `Next evidence needed. ${plainMarkdown(q.follow_up)}`] : []), ""]));

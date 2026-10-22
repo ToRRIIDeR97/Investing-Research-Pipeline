@@ -8,6 +8,7 @@ import { createResearchRunSchema } from "@/lib/api/validation";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { createResearchRunWithStages } from "@/lib/research/run-service";
 import { CURRENT_PIPELINE_VERSION } from "@/lib/research/version";
+import { PriorRunError } from "@/lib/research/lineage/runs";
 
 export async function GET(
   _request: NextRequest,
@@ -55,6 +56,7 @@ export async function POST(
     const run = await createResearchRunWithStages({
       assetId,
       runType: parsed.run_type,
+      priorRunId: parsed.prior_run_id,
       researchQuestion: parsed.research_question ?? null,
       requestedBy: parsed.requested_by ?? null,
       profileId,
@@ -69,6 +71,7 @@ export async function POST(
 
     return createdResponse({ ...run, pipeline_version: CURRENT_PIPELINE_VERSION });
   } catch (error) {
+    if (error instanceof PriorRunError) return handleApiError(new ApiError(error.message, error.code === "PRIOR_RUN_NOT_FOUND" ? 404 : 422, error.code));
     return handleApiError(error);
   }
 }

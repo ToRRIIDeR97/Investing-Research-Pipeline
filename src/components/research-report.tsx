@@ -11,6 +11,7 @@ import { ReportVisual } from './report-visual';
 import styles from './research-report.module.css';
 import {readerSections,readerSectionId} from '@/lib/research/reporting/data-views';
 import {KPIDashboard,ValuationDashboard} from './research-dashboards';
+import {ChangeLogTable} from './report/change-log-table';
 
 type RecordValue=Record<string,any>;
 const names=chapterNames as Record<string,string>;
@@ -115,6 +116,7 @@ export function ResearchReport({document,onBack,financialsHref,liveArtifacts}:{d
         </div>{adjacent}
       </>:active==='sources'?document.evidence.map((e,i)=><details className={styles.source} key={e.id}><summary>[{i+1}] {e.source_title}</summary><p>{date(e.published_at)} · {clean(e.location)}</p><blockquote>{e.quote}</blockquote>{safeUrl(e.url)&&<a href={safeUrl(e.url)!} target="_blank" rel="noreferrer">Open original source</a>}</details>):<>
         {document.questions.map(q=><details key={q.id} className={styles.question} open><summary>{clean(q.question)}</summary><p className={styles.caption}>{label(q.status)} · {label(q.materiality)}</p><p>{clean(q.answer)}{citations(q.evidence_ids)}</p>{q.follow_up&&<p><strong>Next evidence needed. </strong>{clean(q.follow_up)}</p>}</details>)}
+        <ChangeLogTable artifacts={document.artifacts}/>
         <h3>Research coverage</h3><GeneralData title="Research coverage" value={document.coverage.map(c=>({area:label(c.key),outcome:label(c.status),reason:c.rationale}))}/>
       </>}
     </div></div>

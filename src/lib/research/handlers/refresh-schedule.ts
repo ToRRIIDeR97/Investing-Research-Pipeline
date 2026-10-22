@@ -19,9 +19,10 @@ export const refreshScheduleHandler: StageHandler<Record<string, unknown>> = {
 
       const decision = refreshDays
         ? {
-            automatic_refresh: true,
+            // Nothing starts a run on its own: monitor-check reports the refresh as due and a person starts it.
+            automatic_refresh: false,
             refresh_after_days: refreshDays,
-            refresh_reason: `Scheduled refresh for ${runType} research run`,
+            refresh_reason: `Refresh due for ${runType} research run; npm run monitor:check reports it, and a person starts the run`,
             next_refresh_at: new Date(Date.now() + refreshDays * 24 * 60 * 60 * 1000).toISOString(),
           }
         : {

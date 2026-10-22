@@ -27,6 +27,8 @@ import { getStageOutputContract } from "./stage-contracts";
 import { researchPacketForModel } from "./reporting/packet";
 import { FILING_PASSAGE_RULE, FILING_PASSAGE_TASKS, loadFilingPassages } from "./memory/filing-passages";
 import { FinancialAnalytics, analyticsDigest } from "./history/analytics";
+import { PRIOR_RESEARCH_RULE, PRIOR_RESEARCH_STAGES } from "./lineage/prior-research";
+import { loadPriorResearch } from "./lineage/runs";
 import { FRAMING_EXCLUDED_TASKS, FRAMING_RULE } from "./framing";
 export type { ValidationResult };
 
@@ -314,7 +316,8 @@ export async function failV3Task(sql: Sql, taskId: string, error: unknown): Prom
 
 // Run-wide context leads the packet, so calls with the same instructions (report sections, extraction
 // batches, retries) also share the packet's leading bytes and the provider can reuse them from cache.
-const RUN_CONTEXT_KEYS = ["asset", "research_question", "research_framing", "source_cutoff", "profile", "coverage_requirements", "evidence_claims", "filing_passages",
+// prior_research is present only when the run builds on a prior run; without it the packet is unchanged.
+const RUN_CONTEXT_KEYS = ["asset", "research_question", "research_framing", "prior_research", "source_cutoff", "profile", "coverage_requirements", "evidence_claims", "filing_passages",
   "financial_analytics", "financial_statement_summary", "report_facts", "peer_benchmark", "demand_backdrop"];
 
 /** Stages whose calls get the financial_analytics digest in their shared packet prefix. */
@@ -458,6 +461,14 @@ export async function prepareResearchCall(params: ResearchCallParams) {
         ...("specialist_requests" in params.packet ? {} : { requests }), ...(ownArtifacts ? {} : { upstream_artifacts: inputs.artifacts }),
         ...(sourceRequests ? { source_requests: { ...sourceRequests, instructions: sourceRequestRule(sourceRequests.allowed) } } : {}) },
     } };
+  }
+  // What the asset's previous run found, saved once at run creation; it sits in the shared, cached part of the packet.
+  if (PRIOR_RESEARCH_STAGES.has(params.stageKey) && !params.taskType.startsWith("team_") && !("prior_research" in params.packet)) {
+    const prior = await loadPriorResearch(params.sql, params.ctx.runId);
+    if (prior) {
+      params = { ...params, packet: { ...params.packet, prior_research: prior } };
+      addRule(PRIOR_RESEARCH_RULE);
+    }
   }
   if (ANALYTICS_DIGEST_STAGES.has(params.stageKey) && !params.taskType.startsWith("team_") && !("financial_analytics" in params.packet)) {
     const [row] = await params.sql`SELECT id, content_json FROM research_artifacts WHERE research_run_id = ${params.ctx.runId}

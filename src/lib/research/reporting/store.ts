@@ -19,7 +19,7 @@ export function isPointInTimeRun(run: { run_type?: string | null; source_cutoff_
   return new Date(run.created_at).getTime() - new Date(run.source_cutoff_at).getTime() > 24 * 60 * 60 * 1000;
 }
 
-const products = ["agent_brief", "team_requests", "source_requests", "source_review", "research_chat", "financial_statement_set", "market_price_history", "report_outline", "report_section", "report_document", "report_review", "question_register", "synthetic_report", "refresh_schedule", "review_summary", "findings", "quality_score", "recommendations", "review_verdict", "depth_checks"];
+const products = ["agent_brief", "team_requests", "source_requests", "source_review", "research_chat", "financial_statement_set", "market_price_history", "report_outline", "report_section", "report_document", "report_review", "question_register", "synthetic_report", "refresh_schedule", "prior_research", "review_summary", "findings", "quality_score", "recommendations", "review_verdict", "depth_checks"];
 /**
  * The report's upstream artifacts and accepted evidence. Gates that compare input_hash use the defaults; a
  * specialist call that needs only some artifact types passes `types`, and `fingerprint: false` / `evidence: false`
