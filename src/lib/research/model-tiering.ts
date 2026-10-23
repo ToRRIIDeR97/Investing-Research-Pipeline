@@ -15,6 +15,15 @@ type Sql = ReturnType<typeof postgres>;
 /** Stages whose answers run past the 32,768 default (decision_synthesis hit it on Haiku, META 4fae0fb1): 65,536 from the start. */
 export const LONG_OUTPUT_STAGES = new Set(["decision_synthesis", "operating_scenarios"]);
 export const LONG_OUTPUT_TOKENS = 65_536;
+
+/**
+ * Stage efforts that differ from the tier default. operating_scenarios writes three cases x every forecast year of
+ * drivers, numeric assumptions and segment lines (56K output tokens on META 27644c35). At premium's high effort its
+ * hidden thinking shares the same output budget: the first attempt hit the 65,536 cap and the doubled retry spent
+ * 121,702 tokens. Medium keeps the answer inside one 65,536 attempt; a larger first cap would instead let thinking
+ * grow, double the latency against the premium timeout and cost more for the same JSON.
+ */
+export const STAGE_EFFORT_DEFAULTS: Record<string, ExecutionPolicy["effort"]> = { operating_scenarios: "medium" };
 const DEFAULT_OUTPUT_TOKENS = 32_768;
 
 /**
@@ -47,7 +56,7 @@ export type TaskExecution = {
  */
 export function taskExecution(input: { agentName: ResearchAgentName; modelTier: string; stageKey: string }): TaskExecution {
   const resolved = resolveTaskModel({ agentName: input.agentName, tier: input.modelTier, stageKey: input.stageKey });
-  const effort = resolveTaskEffort({ tier: input.modelTier, stageKey: input.stageKey });
+  const effort = resolveTaskEffort({ tier: input.modelTier, stageKey: input.stageKey, stageDefault: STAGE_EFFORT_DEFAULTS[input.stageKey] });
   const policy: Partial<ExecutionPolicy> = {
     ...(effort ? { effort } : {}),
     ...(LONG_OUTPUT_STAGES.has(input.stageKey) ? { maxOutputTokens: LONG_OUTPUT_TOKENS } : {}),
@@ -112,8 +121,8 @@ export async function recordEffectiveRunConfig(sql: Sql, runId: string) {
   if (same) return;
   const history = [...(Array.isArray(row?.config?.history) ? row.config.history : []), ...(prior ? [prior] : [])].slice(-10);
   await sql`UPDATE research_runs SET metadata_json = COALESCE(metadata_json, '{}'::jsonb) || jsonb_build_object('effective_config',
-    COALESCE(metadata_json->'effective_config', '{}'::jsonb) || ${sql.json({ run: config, history } as any)}::jsonb)
-    WHERE id = ${runId}`;
+    COALESCE(metadata_json->'effective_config', '{}'::jsonb) || ${JSON.stringify({ run: config, history })}::text::jsonb)
+    WHERE id = ${String(runId)}::uuid`;
 }
 
 /**
@@ -129,15 +138,19 @@ export async function recordEffectiveTaskConfig(sql: Sql, runId: string, taskTyp
     total_timeout_ms: execution.policy.totalTimeoutMs ?? null, reserve_usd: execution.reserveUsd };
   // One write per run, task type and settings in this process: fan-out calls (source-reader batches, report sections)
   // would otherwise each update the run row before their model call.
-  const memo = `${runId}:${taskType}`, signature = JSON.stringify(entry);
-  if (recordedTaskConfigs.get(memo) === signature) return false;
-  recordedTaskConfigs.set(memo, signature);
+  // Every parameter is sent as text: the entry as a JSON string cast in SQL, never as an object parameter. The
+  // worker logged ERR_INVALID_ARG_TYPE ("Received an instance of Object") from this statement when the object went
+  // through the driver's JSON parameter path, so nothing here relies on it.
+  const type = String(taskType), model = String(execution.model), run = String(runId), json = JSON.stringify(entry);
+  const memo = `${run}:${type}`;
+  if (recordedTaskConfigs.get(memo) === json) return false;
+  recordedTaskConfigs.set(memo, json);
   await sql`UPDATE research_runs SET metadata_json = COALESCE(metadata_json, '{}'::jsonb) || jsonb_build_object('effective_config',
     COALESCE(metadata_json->'effective_config', '{}'::jsonb) || jsonb_build_object('tasks',
-      COALESCE(metadata_json->'effective_config'->'tasks', '{}'::jsonb) || jsonb_build_object(${taskType}::text,
-        ${sql.json(entry as any)}::jsonb || jsonb_build_object('models', (
+      COALESCE(metadata_json->'effective_config'->'tasks', '{}'::jsonb) || jsonb_build_object(${type}::text,
+        ${json}::text::jsonb || jsonb_build_object('models', (
           SELECT COALESCE(jsonb_agg(DISTINCT m), '[]'::jsonb) FROM jsonb_array_elements_text(
-            COALESCE(metadata_json->'effective_config'->'tasks'->${taskType}::text->'models', '[]'::jsonb) || to_jsonb(${execution.model}::text)) m)))))
-    WHERE id = ${runId}`.catch((error) => { recordedTaskConfigs.delete(memo); throw error; });
+            COALESCE(metadata_json->'effective_config'->'tasks'->${type}::text->'models', '[]'::jsonb) || to_jsonb(${model}::text)) m)))))
+    WHERE id = ${run}::uuid`.catch((error) => { recordedTaskConfigs.delete(memo); throw error; });
   return true;
 }

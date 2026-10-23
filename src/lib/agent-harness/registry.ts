@@ -803,13 +803,15 @@ export function resolveTaskModel(input: { agentName: ResearchAgentName; tier?: s
 }
 
 /**
- * Reasoning effort for one task, first match wins: RESEARCH_STAGE_<STAGE_KEY>_EFFORT, RESEARCH_<TIER>_EFFORT,
- * RESEARCH_EFFORT, then the tier default (premium high, mid medium, cheap low). "default" (or "none") at any level
- * sends no effort, leaving the model's own default. Untiered calls send none unless RESEARCH_EFFORT is set.
+ * Reasoning effort for one task, first match wins: RESEARCH_STAGE_<STAGE_KEY>_EFFORT, the stage's code default
+ * (`stageDefault`), RESEARCH_<TIER>_EFFORT, RESEARCH_EFFORT, then the tier default (premium high, mid medium, cheap
+ * low). "default" (or "none") at any level sends no effort, leaving the model's own default. Untiered calls send none
+ * unless RESEARCH_EFFORT is set.
  */
-export function resolveTaskEffort(input: { tier?: string | null; stageKey?: string | null }): (typeof EFFORTS)[number] | undefined {
+export function resolveTaskEffort(input: { tier?: string | null; stageKey?: string | null; stageDefault?: string | null }): (typeof EFFORTS)[number] | undefined {
   const values = [
     input.stageKey ? process.env[`RESEARCH_STAGE_${envKey(input.stageKey)}_EFFORT`] : undefined,
+    input.stageDefault ?? undefined,
     isModelTier(input.tier) ? process.env[`RESEARCH_${envKey(input.tier)}_EFFORT`] : undefined,
     process.env.RESEARCH_EFFORT,
   ];

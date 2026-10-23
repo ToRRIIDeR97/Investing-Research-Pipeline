@@ -505,7 +505,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         const partial = error instanceof ProviderError ? error.details.partial as PassResult | undefined : undefined;
         if ((timeoutReason === "total" || timeoutReason === "inactivity") && partial?.rawText.trim()) {
           try {
-            let candidate = parseStructuredOutput(partial.rawText, keys);
+            let candidate = parseStructuredOutput(partial.rawText, keys, outputSchema);
             let candidateErrors = validateSchema(candidate, effectiveOutputFormat);
             if (candidateErrors.length) {
               const coerced = coerceStructuredOutput(candidate, effectiveOutputFormat);
@@ -531,7 +531,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
       }
       let parsed: unknown;
       try {
-        parsed = parseStructuredOutput(pass.rawText, keys);
+        parsed = parseStructuredOutput(pass.rawText, keys, outputSchema);
         validationErrors = validateSchema(parsed, effectiveOutputFormat);
         if (validationErrors.length) {
           const coerced = coerceStructuredOutput(parsed, effectiveOutputFormat);
@@ -606,7 +606,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
           usage: combineUsage(pass.usage, repair.usage),
         };
         try {
-          parsed = parseStructuredOutput(repair.rawText, keys);
+          parsed = parseStructuredOutput(repair.rawText, keys, outputSchema);
           validationErrors = validateSchema(parsed, effectiveOutputFormat);
           if (validationErrors.length) {
             const coerced = coerceStructuredOutput(parsed, effectiveOutputFormat);

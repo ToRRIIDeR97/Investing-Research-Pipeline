@@ -37,9 +37,11 @@ export type TeamAnswer = {
  * `source_searched`: the collector already searched for this request, so it is never searched again.
  * `rework_stage`: a review finding sent this analysis stage back; code asks for its rerun, and `reworked`
  * records that the rerun was granted, so the request is then answered instead of rerun again.
+ * `reran`: an owner's requires_rerun was granted (automatically or by a reviewer) and its stage recomputed; the
+ * request is then answered by the recomputed artifacts and can never ask for the same re-run again.
  */
 export type TeamRequest = Request & { id: string; response?: TeamAnswer; source_searched?: boolean;
-  rework_stage?: ReworkStage; section_id?: string; reworked?: boolean };
+  rework_stage?: ReworkStage; section_id?: string; reworked?: boolean; reran?: boolean };
 /**
  * `rerun_stages`: analysis stages a re-run reopened; the batch waits for them before asking again.
  * `post_review_round`: the round the report review used. Pre-draft requests may use two rounds; one more is
@@ -364,7 +366,7 @@ export async function rerunRequestStages(tx: Sql, runId: string, batch: RequestB
     requests: batch.requests.map(request => {
       if (!ids.has(request.id)) return request;
       const { response: _, ...asked } = request;
-      return asked.rework_stage ? { ...asked, reworked: true } : asked;
+      return asked.rework_stage ? { ...asked, reworked: true } : { ...asked, reran: true };
     }) });
 }
 
@@ -507,6 +509,8 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
   let changed = false;
   for (const request of batch.requests.filter(r => !r.response)) {
     if (request.rework_stage) { set({ ...request, response: reworkAnswer(request) }); changed = true; continue; }
+    // A granted re-run is answered by the stage's recomputed artifacts, never by another re-run request.
+    if (request.reran) { set({ ...request, response: rerunAnswer(request, await ownedArtifactIds(sql, ctx.runId, request.role)) }); changed = true; continue; }
     const system = systemAnswer(request, facts);
     if (system) { set({ ...request, response: system }); changed = true; continue; }
     if (request.needs_sources && !request.source_searched) {
@@ -589,6 +593,12 @@ export function reworkAnswer(request: TeamRequest): TeamAnswer {
   return request.reworked
     ? { status: "answered", answer: `${request.rework_stage} was rerun for this review finding.`, evidence_ids: [], artifact_ids: [], resolved_by: "system:rework" }
     : { status: "answered", answer: `The review sent ${request.rework_stage} back for rework.`, evidence_ids: [], artifact_ids: [], resolved_by: "system:rework", requires_rerun: true };
+}
+
+/** A request whose re-run was granted: its owner's stage and dependents were recomputed, and those artifacts answer it. */
+export function rerunAnswer(request: TeamRequest, artifactIds: string[]): TeamAnswer {
+  return { status: "answered", evidence_ids: [], artifact_ids: artifactIds, resolved_by: "system:rerun",
+    answer: `${TEAM_ROLES[request.role].stage} and its dependents were rerun for this request; the recomputed artifacts answer it.` };
 }
 
 export function includeUnansweredQuestions(outline: ReportOutline, batch: RequestBatch | null): ReportOutline {

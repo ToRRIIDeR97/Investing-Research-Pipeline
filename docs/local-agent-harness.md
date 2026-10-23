@@ -46,7 +46,9 @@ The model for a task, first match wins:
 
 Fallbacks: a stage model falls back only to `RESEARCH_STAGE_<KEY>_FALLBACK_MODEL`, and a tier model only to `RESEARCH_<TIER>_FALLBACK_MODEL` (none when unset). A stage pinned to one model never inherits its tier's fallback. Other models keep the agent's own fallback rules.
 
-Effort (anthropic-direct only), first match wins: `RESEARCH_STAGE_<KEY>_EFFORT`, `RESEARCH_<TIER>_EFFORT`, `RESEARCH_EFFORT`, then the tier default.
+Effort (anthropic-direct only), first match wins: `RESEARCH_STAGE_<KEY>_EFFORT`, the stage's code default (`STAGE_EFFORT_DEFAULTS` in `src/lib/research/model-tiering.ts`), `RESEARCH_<TIER>_EFFORT`, `RESEARCH_EFFORT`, then the tier default.
+
+- **Stage defaults:** `operating_scenarios` runs at `medium`. At premium's `high` its thinking shares the 65,536-token output cap: on META 27644c35 the first attempt hit the cap and the doubled retry spent 121,702 tokens. Set `RESEARCH_STAGE_OPERATING_SCENARIOS_EFFORT` to change it.
 
 - **Tier defaults:** premium `high`, mid `medium`, cheap `low`.
 - **Values:** `low`, `medium`, `high`, `xhigh` or `max`. `default` sends none, leaving the model's own default (`medium` on Opus 5.5 and Haiku 5.5, `high` on Sonnet 5.5).
@@ -64,7 +66,7 @@ Limits per task:
 Each run records what it ran with in `research_runs.metadata_json.effective_config`:
 
 - `run`: the provider, the base URL's host (never its path or credentials), the all-agents, tier and stage models and efforts, and the horizon, concurrency, evidence, output and timeout settings, plus the git HEAD. It is written when a job starts; a later job with different settings moves the earlier ones to `history`.
-- `tasks.<task_type>`: the agent, tier, model, its source, effort, output cap, timeout, reserve, and every model the task type used. A process writes it once per run and task type, and again only when those settings change, so fan-out calls don't each update the run row.
+- `tasks.<task_type>`: the agent, tier, model, its source, effort, output cap, timeout, reserve, and every model the task type used. A process writes it once per run and task type, and again only when those settings change, so fan-out calls don't each update the run row. Both writes bind only text parameters (the entry as a JSON string cast to `jsonb`).
 
 `model_call_logs.request_metadata_json` also records each attempt's effort, model source and reserve.
 

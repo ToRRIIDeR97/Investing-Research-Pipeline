@@ -92,7 +92,7 @@ export function validateProductOutline(outline:ReportOutline) {
 /** A planned chart is drawn, or a gap says why it is not. */
 export function validateChartPlan(plan: { chart_plan?: string }, section: ReportSection) {
   if (!plan.chart_plan?.trim() || (section.visuals ?? []).some(v => QUANTITATIVE_VISUALS.includes(v.kind)) || section.gaps.some(g => /\bcharts?\b/i.test(g))) return;
-  throw new Error(`section_plan.chart_plan plans a chart ("${plan.chart_plan.trim()}"). Add it as a history, series, ratio, scenarios or valuation_bridge visual from stored data, or state in gaps why the chart is omitted.`);
+  throw new Error(`section_plan.chart_plan plans a chart ("${plan.chart_plan.trim()}"). Add it as a history, series, ratio, scenarios, valuation_bridge or analytics (financial_analytics tables) visual from stored data, or state in gaps why the chart is omitted.`);
 }
 
 export function outputContract(shape: Record<string, z.ZodType>): AgentOutputFormat {

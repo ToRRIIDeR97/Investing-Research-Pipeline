@@ -3,6 +3,7 @@ import type { ReportArtifact, ReportDocument } from './report';
 import { resolveTable } from './tables';
 import { calculateValuationSchedule } from '../valuation/schedules';
 import { withheldValuationReason } from '../valuation/contracts';
+import { columnKind } from '../history/analytics';
 
 const text = z.string().min(1).max(240);
 const observed = { artifact_id:z.string().min(1), path:z.string(), unit:z.string().min(1), currency:z.string(), reporting_basis:z.string(), periodicity:z.string() };
@@ -26,11 +27,14 @@ export const ReportVisual = z.discriminatedUnion('kind', [
   z.object({ kind:z.literal('ratio'), title:text, caption:z.string().max(400), ...observed, numerator:Line, denominator:Line }).strict(),
   z.object({ kind:z.literal('scenarios'), title:text, caption:z.string().max(400), artifact_id:z.string().min(1), metric:z.string().min(1), unit:z.string() }).strict(),
   z.object({ kind:z.literal('valuation_bridge'), title:text, caption:z.string().max(400), artifact_id:z.string().min(1), scenario:z.enum(['bear','base','bull']) }).strict(),
+  // A trend from a financial_analytics table ({columns, rows}, one row per period): each line names a column, and a segment for the segments tables.
+  z.object({ kind:z.literal('analytics'), title:text, caption:z.string().max(400), artifact_id:z.string().min(1), table:z.string().min(1),
+    lines:z.array(z.object({ label:z.string().min(1).max(60), column:z.string().min(1), segment:z.string().nullable() }).strict()).min(1).max(6), stacked:z.boolean() }).strict(),
 ]);
 export type VisualSpec = z.infer<typeof ReportVisual>;
 export type HistoryVisual = Extract<VisualSpec,{kind:'history'}>;
-export type ChartVisual = Extract<VisualSpec,{kind:'series'|'ratio'|'scenarios'|'valuation_bridge'}>;
-export const QUANTITATIVE_VISUALS: string[] = ['history','series','ratio','scenarios','valuation_bridge'];
+export type ChartVisual = Extract<VisualSpec,{kind:'series'|'ratio'|'scenarios'|'valuation_bridge'|'analytics'}>;
+export const QUANTITATIVE_VISUALS: string[] = ['history','series','ratio','scenarios','valuation_bridge','analytics'];
 type ObservedSpec = Extract<VisualSpec,{kind:'history'|'series'|'ratio'}>;
 type Dims = { segment:string|null; geography:string|null };
 const dim = (v:unknown) => v == null || v === '' ? null : String(v);
@@ -198,11 +202,66 @@ function valuationBridge(spec: Extract<VisualSpec,{kind:'valuation_bridge'}>, ar
       `Equity value divided by ${calc.diluted_shares.toLocaleString('en-US',{maximumFractionDigits:1})} million diluted shares gives ${calc.value_per_share.toLocaleString('en-US',{maximumFractionDigits:2})} ${calc.currency} a share today.`] };
 }
 
-/** Every number of a series, ratio, scenario or bridge chart comes from here. */
+const KIND_UNIT: Record<string, string> = { ratio:'%', x:'x', days:'days', shares:'million shares' };
+
+/**
+ * A trend read from a financial_analytics table: the code-computed pack's {columns, rows}, one row per period (and per
+ * segment in the segments tables). Lines must share a unit; ratios and multiples (capex/D&A, FCF/net income) may share
+ * one chart, drawn as multiples. A missing value stays missing.
+ */
+function analyticsSeries(spec: Extract<VisualSpec,{kind:'analytics'}>, artifacts: ReportArtifact[]): BuiltVisual {
+  const artifact = storedArtifact(spec.artifact_id, artifacts, ['financial_analytics']);
+  const table = resolveTable({ title: spec.title, artifact_id: artifact.id, path: spec.table.replace(/^financial_analytics\./, '') }, artifacts) as { columns?: unknown; rows?: unknown };
+  if (!table || !Array.isArray(table.columns) || !Array.isArray(table.rows)) throw new Error(`financial_analytics ${spec.table} is not a {columns, rows} table`);
+  const columns = table.columns as string[];
+  const periodColumn = columns.includes('period') ? 'period' : columns.includes('fiscal_year') ? 'fiscal_year' : null;
+  if (!periodColumn) throw new Error(`financial_analytics ${spec.table} has no period column`);
+  const at = (name: string) => columns.indexOf(name);
+  const segmented = columns.includes('segment');
+  for (const line of spec.lines) {
+    if (at(line.column) < 0 || line.column === periodColumn || line.column === 'segment') throw new Error(`financial_analytics ${spec.table} has no numeric column ${line.column}; its columns are ${columns.join(', ')}`);
+    if (segmented !== Boolean(line.segment)) throw new Error(segmented ? `Name the segment of line ${line.label}: ${spec.table} has one row per segment` : `${spec.table} has no segments; set segment null`);
+  }
+  const ids = spec.lines.map(l => `${l.column}|${l.segment ?? ''}`);
+  if (new Set(ids).size !== ids.length) throw new Error('Duplicate chart series');
+  const kinds = [...new Set(spec.lines.map(l => columnKind(l.column)))];
+  const multiples = kinds.every(k => k === 'ratio' || k === 'x') && kinds.length > 1;
+  if (kinds.length > 1 && !multiples) throw new Error(`Chart lines mix units (${kinds.join(', ')}); chart one unit at a time`);
+  if (spec.stacked && (new Set(spec.lines.map(l => l.column)).size > 1 || !segmented)) throw new Error('A stacked analytics chart stacks the segments of one column');
+  const rows = (table.rows as unknown[][]).filter(Array.isArray);
+  const segmentNames = segmented ? new Set(rows.map(r => String(r[at('segment')]))) : null;
+  for (const line of spec.lines) if (segmentNames && !segmentNames.has(String(line.segment))) throw new Error(`Unknown segment ${line.segment}; segments are ${[...segmentNames].join(', ')}`);
+  const periods = [...new Set(rows.map(r => String(r[at(periodColumn)])))].sort();
+  const value = (period: string, line: (typeof spec.lines)[number]) => {
+    const row = rows.find(r => String(r[at(periodColumn)]) === period && (!segmented || String(r[at('segment')]) === line.segment));
+    const v = row?.[at(line.column)];
+    if (v != null && !finite(v)) throw new Error(`Invalid value in ${spec.table}.${line.column}`);
+    return finite(v) ? v : null;
+  };
+  const kind = multiples ? 'x' : kinds[0];
+  const money = kind === 'money';
+  const currency = (artifact.content_json as { currency?: string | null }).currency ?? null;
+  const unit = money ? `${currency ?? 'currency'} millions` : KIND_UNIT[kind] ?? kind;
+  const scale = kind === 'ratio' ? 100 : 1;
+  const show = (v: number | null, k: string) => v == null ? 'Not available'
+    : k === 'ratio' ? percent(v) : k === 'x' ? `${v.toLocaleString('en-US',{maximumFractionDigits:2})}x`
+    : `${v.toLocaleString('en-US',{maximumFractionDigits:2})} ${money ? unit : KIND_UNIT[k] ?? k}`;
+  const points = periods.map(period => ({ key:period, period,
+    values:spec.lines.map(l => { const v = value(period, l); return v == null ? null : v * scale; }),
+    exact:spec.lines.map(l => show(value(period, l), columnKind(l.column))) }));
+  if (spec.stacked && points.some(p => p.values.some(v => v != null && v < 0))) throw new Error('A stacked chart cannot show negative values');
+  if (observedPeriods(points) < 2) throw new Error('Chart needs at least two observed periods');
+  const labels = spec.lines.map(l => l.label);
+  return { display:spec.stacked ? 'stacked' : 'lines', category:'Period', labels, columns:labels, unit, points,
+    notes:[`From financial_analytics.${spec.table.replace(/^financial_analytics\./, '')}, computed by code from the captured statements${multiples ? '; ratios are drawn as multiples (0.5x = 50%)' : ''}.`] };
+}
+
+/** Every number of a series, ratio, scenario, bridge or analytics chart comes from here. */
 export function buildVisual(visual: ChartVisual, artifacts: ReportArtifact[], cutoff?: string): BuiltVisual {
   if (visual.kind === 'series') return lineSeries(visual, artifacts, cutoff);
   if (visual.kind === 'ratio') return ratioSeries(visual, artifacts, cutoff);
   if (visual.kind === 'scenarios') return scenarioSeries(visual, artifacts);
+  if (visual.kind === 'analytics') return analyticsSeries(visual, artifacts);
   return valuationBridge(visual, artifacts);
 }
 
@@ -230,6 +289,7 @@ export const VISUAL_GUIDELINES = [
   'Use organization for management when sourced names, roles and reporting relationships are available. Supply as_of and people with stable IDs, roles, reports_to and exact evidence_ids. Use reports_to null when the relationship is undisclosed. Do not infer reporting lines or board oversight from seniority. A leadership roster with unknown reporting lines is preferable to an invented hierarchy.',
   'A quantitative chapter (history, business and segments, operating scenarios, valuation) carries the chart named in section_plan.chart_plan when stored data supports it. If it does not, omit the chart and state in gaps which data is missing. Other chapters use a visual only where it explains a material mechanism or pattern better than prose. Maximum two visuals per section. Preserve detailed analysis, counterevidence and sources.',
   'Use series for two to six comparable observation series at one artifact_id/path, unit, currency, reporting_basis and periodicity, each line naming its metric_key, exact segment and geography (null for consolidated) and a short label. Set stacked true only for segments or regions of one metric that add to a whole (a segment mix), never with the consolidated total or negative values. Use ratio for a margin or other ratio: name numerator and denominator series in the same unit and periods; code divides them. Never supply the ratio itself.',
+  'Use analytics for a trend in the code-computed financial_analytics pack: artifact_id of financial_analytics, table naming a {columns, rows} table (quarterly, segments.quarterly, segments.annual, cash_conversion.quarterly, working_capital.quarterly or capital_allocation.quarterly), and one to six lines, each a column of that table with its label and, for the segments tables, the segment name (null otherwise). Lines share a unit; ratios and multiples such as capex_to_da and fcf_to_net_income may share a chart. Set stacked true only for segments of one column that add to a whole. Code reads every value.',
   'Use scenarios to compare bear, base and bull from a stored scenario artifact: metric value_per_share on valuation_scenario_set (value per share today, from the stored method inputs), or on operating_scenario_set a yearly driver (revenue_growth, operating_margin, capex_to_revenue) or a resulting statement line key with its unit (for example revenue in USD millions). Use valuation_bridge with a valuation_scenario_set artifact_id and one scenario; code recalculates discounted cash flows, terminal value, equity bridge and value per share from its stored inputs.',
   'Use process for a sourced causal or business flow, with 1-3 lanes and 2-4 short nodes per lane. Use only the allowed icon names. Each lane needs supporting evidence_ids or artifact_ids. Text, order and arrows must be entailed by those sources; a valid ID alone is not proof. Mark unproven links as relationship hypothesis, not documented, and explain the uncertainty in note.',
   'Use history for one series of observations at an exact artifact_id/path. Select one metric_key, unit, currency, reporting_basis and periodicity from those observations. Never author numbers, points, totals, percentages or chart coordinates. Do not mix segments, currencies, bases or annual/quarterly periods. If comparable observations are insufficient, omit the visual and explain the gap.',
