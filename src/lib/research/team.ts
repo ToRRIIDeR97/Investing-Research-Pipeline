@@ -37,7 +37,7 @@ export type TeamAnswer = {
  * `source_searched`: the collector already searched for this request, so it is never searched again.
  * `rework_stage`: a review finding sent this analysis stage back; code asks for its rerun, and `reworked`
  * records that the rerun was granted, so the request is then answered instead of rerun again.
- * `reran`: an owner's requires_rerun was granted (automatically or by a reviewer) and its stage recomputed; the
+ * `reran`: a reviewer approved an owner's requires_rerun and its stage was recomputed; the
  * request is then answered by the recomputed artifacts and can never ask for the same re-run again.
  */
 export type TeamRequest = Request & { id: string; response?: TeamAnswer; source_searched?: boolean;
@@ -338,10 +338,12 @@ async function writeTeamRequests(tx: Sql, runId: string, batch: RequestBatch) {
 /**
  * The reset an automatic or approved re-run shares: reopen the stages, invalidate their outputs and stale
  * report approval, supersede gaps their owners will re-evaluate, and wait for the analysis stages before the
- * re-run requests are answered again. Runs inside the caller's transaction.
+ * re-run requests are answered again. Runs inside the caller's transaction. After an automatic re-run the owner is
+ * asked again, so a second requires_rerun pauses for a reviewer; after an approved one (`approved`) the requests are
+ * marked `reran` and answered by the recomputed artifacts, so the reviewer is not asked for the same re-run twice.
  */
 export async function rerunRequestStages(tx: Sql, runId: string, batch: RequestBatch,
-  reset: { stages: string[]; request_ids: string[] }, note: string) {
+  reset: { stages: string[]; request_ids: string[] }, note: string, approved = false) {
   const affected = reset.stages;
   const types = [...new Set(affected.flatMap(key => getStageOutputContract(key)?.requiredKeys || [])),
     "report_outline", "report_section", "report_document", "report_review", "question_register"];
@@ -366,7 +368,7 @@ export async function rerunRequestStages(tx: Sql, runId: string, batch: RequestB
     requests: batch.requests.map(request => {
       if (!ids.has(request.id)) return request;
       const { response: _, ...asked } = request;
-      return asked.rework_stage ? { ...asked, reworked: true } : { ...asked, reran: true };
+      return asked.rework_stage ? { ...asked, reworked: true } : approved ? { ...asked, reran: true } : asked;
     }) });
 }
 

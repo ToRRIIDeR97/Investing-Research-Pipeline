@@ -575,7 +575,7 @@ export async function approveRequestReset(
       if (!batch) throw new RequestResetError("The run has no team requests");
       if (input.decision === "rerun") {
         await rerunRequestStages(tx as unknown as Sql, runId, batch, reset,
-          `Superseded: its owning stage was reopened by a re-run approved for team request round ${batch.round}.`);
+          `Superseded: its owning stage was reopened by a re-run approved for team request round ${batch.round}.`, true);
       } else {
         await skipRequestRerun(tx as unknown as Sql, runId, batch, reset.request_ids);
         await tx`UPDATE research_stages SET status = 'running', updated_at = NOW()
