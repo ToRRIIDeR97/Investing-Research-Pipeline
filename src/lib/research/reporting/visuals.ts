@@ -3,7 +3,7 @@ import type { ReportArtifact, ReportDocument } from './report';
 import { resolveTable } from './tables';
 import { calculateValuationSchedule } from '../valuation/schedules';
 import { withheldValuationReason } from '../valuation/contracts';
-import { columnKind } from '../history/analytics';
+import { columnKind } from '../history/column-kind';
 
 const text = z.string().min(1).max(240);
 const observed = { artifact_id:z.string().min(1), path:z.string(), unit:z.string().min(1), currency:z.string(), reporting_basis:z.string(), periodicity:z.string() };

@@ -16,10 +16,12 @@ import { z } from "zod";
 import { BASE_INPUTS, MetricBook, shiftPeriod, type InputValue, type PeriodRef } from "../reporting/metric-catalogue";
 import { sharesAtPeriodEnd } from "@/lib/market-data/price-history";
 import { computeStartPeriod, enumerateQuarters } from "./normalizer";
+import { columnKind, type Kind } from "./column-kind";
+
+export { columnKind };
 
 type Row = Record<string, any>;
 type Num = number | null;
-type Kind = "money" | "ratio" | "days" | "x" | "shares";
 
 const Cell = z.union([z.number(), z.string(), z.boolean(), z.null()]);
 // Columnar tables keep the pack small; report tables render { columns, rows } directly.
@@ -49,16 +51,6 @@ export const FinancialAnalytics = z.object({
 export type FinancialAnalytics = z.infer<typeof FinancialAnalytics>;
 
 const DIGITS: Record<Kind, number> = { money: 1, ratio: 4, days: 1, x: 2, shares: 1 };
-const MONEY = new Set(["revenue", "operating_income", "fcf_ttm", "fcf_after_lease_principal_ttm", "growth_capex_ttm", "nopat_ttm", "invested_capital",
-  "cash", "marketable_securities", "long_term_debt", "net_cash", "buybacks_ttm", "dividends_ttm", "sbc_ttm", "market_cap",
-  "change_in_revenue_ttm", "change_in_nopat_ttm", "change_in_invested_capital", "cumulative_operating_income", "revenue_ttm", "operating_income_ttm"]);
-/** Unit of a pack column; fiscal_year and years round as ratios, which leaves integers unchanged. */
-export function columnKind(column: string): Kind {
-  if (/^(dso|dpo|dio|ccc)$/.test(column)) return "days";
-  if (column === "capex_to_da" || column === "revenue_to_net_ppe") return "x";
-  if (column === "shares" || column === "shares_year_ago") return "shares";
-  return MONEY.has(column) ? "money" : "ratio";
-}
 const round = (value: Num, kind: Kind): Num => value === null || !Number.isFinite(value) ? null : Number(value.toFixed(DIGITS[kind]));
 const label = (p: PeriodRef) => `${p.year}Q${p.quarter}`;
 const div = (a: Num, b: Num): Num => a === null || b === null || b <= 0 ? null : a / b;
