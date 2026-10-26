@@ -568,7 +568,8 @@ export default function RunResearchPage() {
     const request = ++progressRequest.current;
     const current = () => activeRunRef.current === id && progressRequest.current === request;
     try {
-      const [runRes, qualityRes, sourcesRes, tracesRes, modelCallsRes, backtestsRes, jobsRes] =
+      // The run route also returns the latest job and worker health, so /jobs is not polled.
+      const [runRes, qualityRes, sourcesRes, tracesRes, modelCallsRes, backtestsRes] =
         await Promise.all([
           fetch(`/api/research-runs/${id}`),
           fetch(`/api/research-runs/${id}/quality`),
@@ -576,7 +577,6 @@ export default function RunResearchPage() {
           fetch(`/api/research-runs/${id}/agent-traces`),
           fetch(`/api/research-runs/${id}/model-calls`),
           fetch(`/api/research-runs/${id}/backtests`),
-          fetch(`/api/research-runs/${id}/jobs`),
         ]);
 
       if (!runRes.ok) throw new Error("Unable to refresh this run.");
@@ -586,7 +586,6 @@ export default function RunResearchPage() {
       const traces = tracesRes.ok ? await tracesRes.json() : [];
       const modelCalls = modelCallsRes.ok ? await modelCallsRes.json() : [];
       const backtests = backtestsRes.ok ? await backtestsRes.json() : [];
-      const jobsData = jobsRes.ok ? await jobsRes.json() : { latestJob: null, workers: [] };
       const planWaiting = data.stages?.some((stage: any) => stage.stage_key === "research_plan" && stage.status === "waiting_for_human");
       // The page shows only the research plan, and only while it waits for approval.
       const planRes = planWaiting ? await fetch(`/api/research-runs/${id}/artifacts?type=research_plan`) : null;
@@ -604,8 +603,8 @@ export default function RunResearchPage() {
         runId: data.id,
         pipelineVersion: Number(data.pipeline_version || 0),
         status: data.status,
-        latestJob: jobsData.latestJob || data.latest_job || null,
-        workerHealthy: Boolean(data.worker_health?.healthy || (jobsData.workers || []).some((worker: any) => worker.status === "healthy" && !worker.stale)),
+        latestJob: data.latest_job || null,
+        workerHealthy: Boolean(data.worker_health?.healthy),
         sourceRoleCount: Number(data.source_role_count || new Set((data.source_role_coverage || []).map((row: any) => row.source_role)).size),
         budgetLimit: data.budget_limit_usd ? Number(data.budget_limit_usd) : null,
         currentStage: data.stages?.find((s: any) => s.status === "running")?.stage_key || null,

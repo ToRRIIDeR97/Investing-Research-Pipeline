@@ -334,8 +334,9 @@ export async function requeueExpiredResearchRunJobs(): Promise<ResearchRunJob[]>
   }
 }
 
-export async function getLatestResearchRunJob(runId: string): Promise<ResearchRunJob | null> {
-  const sql = database();
+/** Pass `client` to reuse a long-lived pool; without one a client is opened and closed for this call. */
+export async function getLatestResearchRunJob(runId: string, client?: ReturnType<typeof postgres>): Promise<ResearchRunJob | null> {
+  const sql = client ?? database();
   try {
     const rows = await sql`
       SELECT * FROM research_run_jobs
@@ -345,7 +346,7 @@ export async function getLatestResearchRunJob(runId: string): Promise<ResearchRu
     `;
     return asJob(rows[0] as unknown as Record<string, unknown> | undefined);
   } finally {
-    await sql.end();
+    if (!client) await sql.end();
   }
 }
 
@@ -395,8 +396,8 @@ export async function markWorkerStopped(workerId: string): Promise<void> {
   }
 }
 
-export async function getWorkerHealth(): Promise<WorkerHealth[]> {
-  const sql = database();
+export async function getWorkerHealth(client?: ReturnType<typeof postgres>): Promise<WorkerHealth[]> {
+  const sql = client ?? database();
   try {
     const rows = await sql`
       SELECT *, last_seen_at < NOW() - INTERVAL '30 seconds' AS stale
@@ -405,7 +406,7 @@ export async function getWorkerHealth(): Promise<WorkerHealth[]> {
     `;
     return rows as unknown as WorkerHealth[];
   } finally {
-    await sql.end();
+    if (!client) await sql.end();
   }
 }
 

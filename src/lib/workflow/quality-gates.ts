@@ -117,16 +117,18 @@ const KNOWN_REVIEW_STATUSES = new Set([
   "approved_for_position",
 ]);
 
+/** Pass `client` to reuse a long-lived pool; without one a client is opened and closed for this call. */
 export async function evaluateResearchQuality(
-  runId: string
+  runId: string,
+  client?: ReturnType<typeof postgres>
 ): Promise<ResearchQualityGateResult> {
-  const sql = postgres(process.env.DATABASE_URL!);
+  const sql = client ?? postgres(process.env.DATABASE_URL!);
 
   try {
     const data = await loadRunQualityData(sql, runId);
     return evaluateLoadedResearchQuality(data);
   } finally {
-    await sql.end();
+    if (!client) await sql.end();
   }
 }
 
@@ -369,7 +371,7 @@ export async function loadRunQualityData(
     backtests,
     backtestArtifacts,
     unlinkedFactClaims,
-    artifacts,
+    artifactHeads,
   ] = await Promise.all([
     sql`SELECT * FROM research_stages WHERE research_run_id = ${runId} ORDER BY stage_order`,
     // Never input_json (the stored packets). v3 gates read only the latest completed AI review task;
@@ -415,9 +417,22 @@ export async function loadRunQualityData(
         AND ec.review_status != 'rejected'
         AND el.id IS NULL
     `,
-    sql`SELECT artifact_type, status, content_json FROM research_artifacts
+    // Bodies run to megabytes per run and the run page polls these gates. Only the valuation set's body is always
+    // read (for a withheld valuation); the rest are loaded below only when module coverage has to search them.
+    sql`SELECT artifact_type, status,
+        CASE WHEN artifact_type = 'valuation_scenario_set' THEN content_json END AS content_json
+      FROM research_artifacts
       WHERE research_run_id = ${runId} AND status IN ('validated', 'accepted')`,
   ]);
+
+  let artifacts = artifactHeads;
+  if (Number(run.pipeline_version || 1) >= 3) {
+    const modules = requiredAnalysisModules(profile);
+    if (modules.length && modulesUncoveredByName({ evidence, metrics }, modules, analysisOutputs({ run, artifacts, tasks })).length) {
+      artifacts = await sql`SELECT artifact_type, status, content_json FROM research_artifacts
+        WHERE research_run_id = ${runId} AND status IN ('validated', 'accepted')`;
+    }
+  }
 
   return {
     run,
@@ -546,40 +561,56 @@ function isSubstantiveSource(source: Row) {
   return metadata.collection_status !== "candidate_external_source" && metadata.fetch_status !== "failed";
 }
 
+function requiredAnalysisModules(profile: Row | undefined): unknown[] {
+  const requiredModules = jsonArray(profile?.required_modules_json);
+  const completionModules = jsonArray(((profile?.completion_criteria_json || {}) as Row).required_modules);
+  return completionModules.length ? completionModules : requiredModules;
+}
+
+function analysisOutputs(data: Pick<RunQualityData, "run" | "artifacts" | "tasks">): Row[] {
+  return (Number(data.run.pipeline_version || 1) >= 3
+    ? (data.artifacts || []).filter((artifact) => ["validated", "accepted"].includes(artifact.status)).map((artifact): Row => ({ task_type: artifact.artifact_type, output_json: artifact.content_json, status: "completed" }))
+    : data.tasks)
+    .filter((task) => task.status === "completed");
+}
+
+/** Modules that no output name, evidence claim or metric covers. Only these need output bodies. */
+function modulesUncoveredByName(
+  data: Pick<RunQualityData, "evidence" | "metrics">,
+  modules: unknown[],
+  outputs: Row[]
+): unknown[] {
+  const evidenceText = data.evidence.map((claim) => claim.claim_text).join(" ").toLowerCase();
+  const metricsText = data.metrics
+    .map((metric) => [metric.metric_key, metric.display_name, metric.value_text].join(" "))
+    .join(" ")
+    .toLowerCase();
+  return modules.filter((moduleKey) => {
+    const normalized = String(moduleKey).toLowerCase();
+    const tokens = normalized.split(/[_\s-]+/).filter(Boolean);
+    return !outputs.some((task) => `${task.task_key ?? ""} ${task.task_type ?? ""}`.toLowerCase().includes(normalized))
+      && !tokens.some((token) => evidenceText.includes(token) || metricsText.includes(token));
+  });
+}
+
 function addAnalysisCoverage(
   data: RunQualityData,
   errors: string[],
   warnings: string[],
   missingCoverage: MissingCoverageItem[]
 ) {
-  const requiredModules = jsonArray(data.profile?.required_modules_json);
-  const completionCriteria = data.profile?.completion_criteria_json || {};
-  const completionModules = jsonArray((completionCriteria as Row).required_modules);
-  const modules = completionModules.length ? completionModules : requiredModules;
+  const modules = requiredAnalysisModules(data.profile);
 
   if (!modules.length) {
     warnings.push("Profile has no required analysis module list.");
     return;
   }
 
-  const outputs = (Number(data.run.pipeline_version || 1) >= 3
-    ? (data.artifacts || []).filter((artifact) => ["validated", "accepted"].includes(artifact.status)).map((artifact): Row => ({ task_type: artifact.artifact_type, output_json: artifact.content_json, status: "completed" }))
-    : data.tasks)
-    .filter((task) => task.status === "completed");
-  const evidenceText = data.evidence.map((claim) => claim.claim_text).join(" ").toLowerCase();
-  const metricsText = data.metrics
-    .map((metric) => [metric.metric_key, metric.display_name, metric.value_text].join(" "))
-    .join(" ")
-    .toLowerCase();
+  const outputs = analysisOutputs(data);
 
   // Task and artifact names, evidence and metrics are checked first. Output bodies are then serialised one at a
   // time, and only while a module is still uncovered, so a run's artifacts are never held as one string.
-  let uncovered = modules.filter((moduleKey) => {
-    const normalized = String(moduleKey).toLowerCase();
-    const tokens = normalized.split(/[_\s-]+/).filter(Boolean);
-    return !outputs.some((task) => `${task.task_key ?? ""} ${task.task_type ?? ""}`.toLowerCase().includes(normalized))
-      && !tokens.some((token) => evidenceText.includes(token) || metricsText.includes(token));
-  });
+  let uncovered = modulesUncoveredByName(data, modules, outputs);
   for (const task of outputs) {
     if (!uncovered.length) break;
     const text = `${stringifyBrief(task.output_json)} ${stringifyBrief(task.validation_result_json)}`.toLowerCase();

@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { runProgressIsLive } from "@/lib/research/run-polling";
 import {
   Activity,
   AlertTriangle,
@@ -133,6 +134,8 @@ function ViewResearch() {
   const menu = useRef<HTMLDetailsElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const loadVersion = useRef(0);
+  // The run row behind the report on screen. A quiet refresh skips the report (megabytes) while that row is unchanged.
+  const shownRun = useRef<ResearchRecord | null>(null);
   // Slide direction for the tab content: from the side of the newly selected tab.
   const [tabMotion, setTabMotion] = useState<{ tab: TabId; direction?: NavDirection }>({ tab: activeTab });
   if (tabMotion.tab !== activeTab) setTabMotion({ tab: activeTab, direction: tabOrder(activeTab) >= tabOrder(tabMotion.tab) ? "forward" : "back" });
@@ -169,7 +172,14 @@ function ViewResearch() {
       if (targetRunId && !activeRun) throw new Error("Research run not found.");
 
       if (!activeRun) {
+        shownRun.current = null;
         setData({ ...emptyResearchData, asset, runs: sortedRuns });
+        return;
+      }
+      const shown = shownRun.current;
+      if (quiet && shown && shown.id === activeRun.id && shown.status === activeRun.status
+        && String(shown.updated_at) === String(activeRun.updated_at) && !runProgressIsLive(String(activeRun.status))) {
+        setData((current) => ({ ...current, asset, runs: sortedRuns, activeRun }));
         return;
       }
 
@@ -192,6 +202,7 @@ function ViewResearch() {
       const modelCalls = Array.isArray(readModels.model_calls) ? readModels.model_calls : [];
 
       if (version !== loadVersion.current) return;
+      shownRun.current = activeRun;
       setData({
         asset,
         runs: sortedRuns,
