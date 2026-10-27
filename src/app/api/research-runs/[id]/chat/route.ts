@@ -9,7 +9,7 @@ import {z as v4} from 'zod/v4';
 const responseContract=outputContract({answer:v4.string().min(1),evidence_ids:v4.array(v4.string()),proposals:v4.array(v4.object({title:v4.string(),rationale:v4.string(),research_question:v4.string()}))});
 const enabled=()=>process.env.RUN_PAID_RESEARCH==='1'||process.env.RESEARCH_MODEL_PROVIDER==='mock';
 export async function GET(_:NextRequest,{params}:{params:Promise<{id:string}>}){
- const sql=postgres(process.env.DATABASE_URL!);try{const {id}=await params;z.string().uuid().parse(id);const [row]=await sql`SELECT content_json FROM research_artifacts WHERE research_run_id=${id} AND artifact_type='research_chat' ORDER BY artifact_version DESC LIMIT 1`;return successResponse({messages:row?.content_json?.messages??[],enabled:enabled()});}catch(e){return handleApiError(e);}finally{await sql.end();}
+ const sql=postgres(process.env.DATABASE_URL!);try{const {id}=await params;z.string().guid().parse(id);const [row]=await sql`SELECT content_json FROM research_artifacts WHERE research_run_id=${id} AND artifact_type='research_chat' ORDER BY artifact_version DESC LIMIT 1`;return successResponse({messages:row?.content_json?.messages??[],enabled:enabled()});}catch(e){return handleApiError(e);}finally{await sql.end();}
 }
 export async function POST(request:NextRequest,{params}:{params:Promise<{id:string}>}){
  const sql=postgres(process.env.DATABASE_URL!);try{
@@ -17,7 +17,7 @@ export async function POST(request:NextRequest,{params}:{params:Promise<{id:stri
    // so nextUrl.origin refused the app's own http://127.0.0.1 origin.
    const origin=request.headers.get('origin');
    if(origin&&origin!==`${request.nextUrl.protocol}//${request.headers.get('host')}`)throw new ApiError('Cross-origin chat requests are not allowed.',403);
-   const {id}=await params;z.string().uuid().parse(id);const {message}=z.object({message:z.string().trim().min(1).max(4000)}).parse(await request.json());
+   const {id}=await params;z.string().guid().parse(id);const {message}=z.object({message:z.string().trim().min(1).max(4000)}).parse(await request.json());
    if(!enabled())throw new ApiError('AI chat is not enabled for this workspace. Enable paid research with a configured budget, or use the mock provider for testing.',503);
    const ctx=await loadRunContext(sql,id);const state=await getReportState(sql,id);if(!state.document)throw new ApiError('Research must be available before you can ask about it.',409);
    const [prior]=await sql`SELECT content_json,artifact_version FROM research_artifacts WHERE research_run_id=${id} AND artifact_type='research_chat' ORDER BY artifact_version DESC LIMIT 1`;

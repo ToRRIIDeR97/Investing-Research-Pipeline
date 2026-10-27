@@ -16,9 +16,9 @@ export const evidenceClaimPayloadSchema = z.object({
   as_of_date: z.string().optional(),
   confidence: z.number().min(0).max(1).optional(),
   no_source_reason: z.string().optional(),
-  source_document_id: z.string().uuid().optional(),
-  document_chunk_id: z.string().uuid().optional(),
-  extracted_table_id: z.string().uuid().optional(),
+  source_document_id: z.string().guid().optional(),
+  document_chunk_id: z.string().guid().optional(),
+  extracted_table_id: z.string().guid().optional(),
   page_start: z.number().int().optional(),
   page_end: z.number().int().optional(),
   char_start: z.number().int().optional(),
@@ -37,8 +37,8 @@ export const metricObservationPayloadSchema = z.object({
   unit: z.string().optional(),
   currency: z.string().optional(),
   confidence: z.number().min(0).max(1).optional(),
-  source_document_id: z.string().uuid().optional(),
-  evidence_claim_id: z.string().uuid().optional(),
+  source_document_id: z.string().guid().optional(),
+  evidence_claim_id: z.string().guid().optional(),
 });
 
 export const valuationSignalPayloadSchema = z.object({
@@ -61,10 +61,10 @@ export const valuationSignalPayloadSchema = z.object({
   ]),
   cheapness_score: z.number().optional(),
   confidence: z.number().min(0).max(1).optional(),
-  valuation_method_id: z.string().uuid().optional(),
-  metric_definition_id: z.string().uuid().optional(),
-  source_document_id: z.string().uuid().optional(),
-  evidence_claim_id: z.string().uuid().optional(),
+  valuation_method_id: z.string().guid().optional(),
+  metric_definition_id: z.string().guid().optional(),
+  source_document_id: z.string().guid().optional(),
+  evidence_claim_id: z.string().guid().optional(),
 });
 
 const SCHEMA_MAP: Record<string, z.ZodType> = {

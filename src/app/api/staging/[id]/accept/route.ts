@@ -13,7 +13,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const stagingId = z.string().uuid().parse((await params).id);
+    const stagingId = z.string().guid().parse((await params).id);
     const body = await request.json().catch(() => ({}));
 
     if (body.action === "reject") {

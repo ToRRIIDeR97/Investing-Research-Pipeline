@@ -29,13 +29,13 @@ export const artifactValidationResultSchema = z.object({
   checkedAt: z.string().datetime(),
 });
 
-export const artifactContentSchema = z.record(z.unknown()).default({});
+export const artifactContentSchema = z.record(z.string(), z.unknown()).default({});
 
 export const researchArtifactSchema = z.object({
-  id: z.string().uuid(),
-  research_run_id: z.string().uuid(),
-  asset_id: z.string().uuid(),
-  profile_id: z.string().uuid().optional(),
+  id: z.string().guid(),
+  research_run_id: z.string().guid(),
+  asset_id: z.string().guid(),
+  profile_id: z.string().guid().optional(),
   artifact_type: z.string().min(1),
   scope_key: z.string().min(1),
   artifact_version: z.number().int().positive(),
@@ -46,31 +46,31 @@ export const researchArtifactSchema = z.object({
   prompt_version: z.string().min(1),
   validation_result_json: artifactValidationResultSchema,
   created_by: z.string().min(1),
-  supersedes_artifact_id: z.string().uuid().optional(),
+  supersedes_artifact_id: z.string().guid().optional(),
   accepted_at: z.string().datetime().optional(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 });
 
 export const researchArtifactDependencySchema = z.object({
-  id: z.string().uuid(),
-  artifact_id: z.string().uuid(),
-  depends_on_artifact_id: z.string().uuid(),
+  id: z.string().guid(),
+  artifact_id: z.string().guid(),
+  depends_on_artifact_id: z.string().guid(),
   dependency_type: z.enum(["required", "supports"]),
   created_at: z.string().datetime(),
 });
 
 export const researchArtifactClaimLinkSchema = z.object({
-  id: z.string().uuid(),
-  artifact_id: z.string().uuid(),
-  evidence_claim_id: z.string().uuid(),
+  id: z.string().guid(),
+  artifact_id: z.string().guid(),
+  evidence_claim_id: z.string().guid(),
   support_type: z.enum(["supports", "contradicts", "context"]),
   created_at: z.string().datetime(),
 });
 
 export const researchAssumptionSchema = z.object({
-  id: z.string().uuid(),
-  research_run_id: z.string().uuid(),
+  id: z.string().guid(),
+  research_run_id: z.string().guid(),
   assumption_key: z.string().min(1),
   assumption_category: z.string().min(1),
   value_numeric: z.number().optional(),
@@ -87,15 +87,15 @@ export const researchAssumptionSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),
   status: z.enum(["draft", "validated", "accepted", "superseded", "rejected"]),
   assumption_version: z.number().int().positive(),
-  supersedes_assumption_id: z.string().uuid().optional(),
+  supersedes_assumption_id: z.string().guid().optional(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 });
 
 export const researchAssumptionClaimLinkSchema = z.object({
-  id: z.string().uuid(),
-  assumption_id: z.string().uuid(),
-  evidence_claim_id: z.string().uuid(),
+  id: z.string().guid(),
+  assumption_id: z.string().guid(),
+  evidence_claim_id: z.string().guid(),
   support_type: z.enum(["supports", "contradicts", "context"]),
   created_at: z.string().datetime(),
 });

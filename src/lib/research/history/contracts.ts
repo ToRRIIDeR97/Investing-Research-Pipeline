@@ -14,9 +14,9 @@ export const MetricType = z.enum(["reported", "normalized", "calculated", "recon
 export type MetricType = z.infer<typeof MetricType>;
 
 export const HistoricalObservation = z.object({
-  id: z.string().uuid().optional(),
+  id: z.string().guid().optional(),
   metric_key: z.string().min(1),
-  metric_definition_id: z.string().uuid().optional(),
+  metric_definition_id: z.string().guid().optional(),
   value_numeric: z.number().nullable(),
   value_text: z.string().nullable().optional(),
   unit: z.string().nullable().optional(),
@@ -34,11 +34,11 @@ export const HistoricalObservation = z.object({
   metric_type: MetricType,
   restatement_version: z.number().int().default(0),
   formula_or_adjustment: z.string().nullable().optional(),
-  source_document_id: z.string().uuid().nullable().optional(),
-  evidence_claim_id: z.string().uuid().nullable().optional(),
+  source_document_id: z.string().guid().nullable().optional(),
+  evidence_claim_id: z.string().guid().nullable().optional(),
   comparability_status: z.enum(["comparable", "definition_changed", "revised", "estimated", "blocked"]).default("comparable"),
   confidence: z.number().min(0).max(1).default(1),
-  metadata_json: z.record(z.unknown()).default({}),
+  metadata_json: z.record(z.string(), z.unknown()).default({}),
 });
 
 export type HistoricalObservation = z.infer<typeof HistoricalObservation>;
@@ -49,16 +49,16 @@ export const HistoricalCoverageCell = z.object({
   fiscal_quarter: z.number().nullable(),
   present: z.boolean(),
   basis: ReportingBasis,
-  source_document_id: z.string().uuid().nullable().optional(),
-  evidence_claim_id: z.string().uuid().nullable().optional(),
+  source_document_id: z.string().guid().nullable().optional(),
+  evidence_claim_id: z.string().guid().nullable().optional(),
   why_missing: z.string().optional(),
 });
 
 export type HistoricalCoverageCell = z.infer<typeof HistoricalCoverageCell>;
 
 export const HistoricalCoverageMatrix = z.object({
-  asset_id: z.string().uuid(),
-  run_id: z.string().uuid().nullable().optional(),
+  asset_id: z.string().guid(),
+  run_id: z.string().guid().nullable().optional(),
   start_fiscal_year: z.number(),
   start_fiscal_quarter: z.number(),
   end_fiscal_year: z.number(),
@@ -102,8 +102,8 @@ export const ReconciliationIssue = z.object({
 export type ReconciliationIssue = z.infer<typeof ReconciliationIssue>;
 
 export const HistoricalRecord = z.object({
-  asset_id: z.string().uuid(),
-  run_id: z.string().uuid().nullable().optional(),
+  asset_id: z.string().guid(),
+  run_id: z.string().guid().nullable().optional(),
   observations: z.array(HistoricalObservation),
   coverage: HistoricalCoverageMatrix,
   reconciliation_issues: z.array(ReconciliationIssue).default([]),

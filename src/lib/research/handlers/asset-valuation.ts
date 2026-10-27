@@ -7,6 +7,7 @@ import { schema } from "@/db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { z } from "zod/v4";
+import { contractJsonSchema } from "@/lib/research/contract-json-schema";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 import { dominantCurrency, latestSecInstantFact, latestSecQuarterlyFact, secFactSpan } from "../history/sec-companyfacts";
@@ -72,7 +73,7 @@ export function primarySchedules(models: ValuationMethodInput[]): Record<Scenari
 export function equityMethodsFormat(options: { requireDepreciationAddBack: boolean }): AgentOutputFormat {
   return {
     requiredKeys: Object.keys(EquityMethodsOutput.shape),
-    schema: z.toJSONSchema(EquityMethodsOutput, { target: "draft-7", io: "input", reused: "inline" }) as Record<string, unknown>,
+    schema: contractJsonSchema(EquityMethodsOutput, { target: "draft-7", io: "input", reused: "inline" }) as Record<string, unknown>,
     validate(value) {
       const parsed = EquityMethodsOutput.safeParse(value);
       if (!parsed.success) return parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message }));

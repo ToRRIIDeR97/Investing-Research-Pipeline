@@ -19,11 +19,11 @@ const pythonArtifactSchema = z.object({
   title: z.string(),
   storage_path: z.string(),
   mime_type: z.string().nullable().optional(),
-  metadata_json: z.record(z.unknown()).optional().default({}),
+  metadata_json: z.record(z.string(), z.unknown()).optional().default({}),
 });
 
 const pythonResultSchema = z.object({
-  metrics: z.record(z.unknown()),
+  metrics: z.record(z.string(), z.unknown()),
   artifacts: z.array(pythonArtifactSchema),
 });
 

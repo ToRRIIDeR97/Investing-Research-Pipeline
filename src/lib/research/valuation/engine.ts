@@ -6,6 +6,7 @@
  */
 
 import { z } from "zod/v4";
+import { contractJsonSchema } from "@/lib/research/contract-json-schema";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import type { ValuationFinancialInputs } from "./financial-inputs";
 import { calculateValuationSchedule, yearTimes, type ValuationMethodInput } from "./schedules";
@@ -415,7 +416,7 @@ export type ValuationAssumptionsOutput = z.infer<typeof ValuationAssumptions>["v
 export function valuationAssumptionsFormat(riskFreeRate: number | null): AgentOutputFormat {
   return {
     requiredKeys: ["valuation_assumptions"],
-    schema: z.toJSONSchema(ValuationAssumptions, { target: "draft-7", io: "input", reused: "inline" }) as Record<string, unknown>,
+    schema: contractJsonSchema(ValuationAssumptions, { target: "draft-7", io: "input", reused: "inline" }) as Record<string, unknown>,
     validate(value) {
       const parsed = ValuationAssumptions.safeParse(value);
       if (!parsed.success) return parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message }));

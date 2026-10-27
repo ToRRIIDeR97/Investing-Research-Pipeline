@@ -80,7 +80,7 @@ export function requireVersionedMetadata(artifact: ResearchArtifact): Validation
   return errors.length ? fail(errors) : ok();
 }
 
-export function validationResultFromZod(result: z.SafeParseReturnType<unknown, unknown>): ValidationOutcome {
+export function validationResultFromZod(result: z.ZodSafeParseResult<unknown>): ValidationOutcome {
   if (result.success) return ok();
   return fail(
     result.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`)

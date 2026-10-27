@@ -4,6 +4,7 @@
  * and code rejects quotes the report doesn't contain. It runs outside the pipeline and writes no database rows.
  */
 import { z } from "zod/v4";
+import { contractJsonSchema } from "@/lib/research/contract-json-schema";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { RUBRIC_LEVELS, type RubricDimension } from "./rubric";
 import { DEPTH_CHECKS } from "../reporting/depth";
@@ -43,7 +44,7 @@ export function judgeContract(packet: ReturnType<typeof judgePacket>): AgentOutp
   const schema = JudgeScore;
   const text = new Map<string, string>(packet.sections.map((s: Row) => [String(s.id),
     normalize([...s.paragraphs.map((p: Row) => p.text), s.counterevidence, s.implication, ...(s.gaps ?? [])].join(" "))]));
-  return { requiredKeys: Object.keys(schema.shape), schema: z.toJSONSchema(schema, { target: "draft-7", io: "input" }), validate(value) {
+  return { requiredKeys: Object.keys(schema.shape), schema: contractJsonSchema(schema, { target: "draft-7", io: "input" }), validate(value) {
     const parsed = schema.safeParse(value);
     if (!parsed.success) return parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message }));
     if (packet.sections.length && !parsed.data.quotes.length) return [{ path: "quotes", message: "Quote at least one passage your score rests on" }];
