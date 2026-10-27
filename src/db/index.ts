@@ -7,9 +7,17 @@ export { schema };
 const connectionString = process.env.DATABASE_URL!;
 
 // Keep hot reloads from creating a new connection pool for every module update.
-const globalForDb = globalThis as typeof globalThis & { researchDbClient?: ReturnType<typeof postgres> };
+const globalForDb = globalThis as typeof globalThis & {
+  researchDbClient?: ReturnType<typeof postgres>;
+  researchSqlClient?: ReturnType<typeof postgres>;
+};
 const client = globalForDb.researchDbClient ?? postgres(connectionString);
-if (process.env.NODE_ENV !== "production") globalForDb.researchDbClient = client;
+// A long-lived pool for raw queries on hot API paths. Scripts and the worker keep their own clients. It is separate
+// from drizzle's pool because drizzle makes its client return timestamps as raw Postgres text instead of Dates.
+const rawClient = globalForDb.researchSqlClient ?? postgres(connectionString);
+if (process.env.NODE_ENV !== "production") {
+  globalForDb.researchDbClient = client;
+  globalForDb.researchSqlClient = rawClient;
+}
 export const db = drizzle(client, { schema });
-// The same long-lived pool for raw queries on hot API paths. Scripts and the worker keep their own clients.
-export const sqlClient = client;
+export const sqlClient = rawClient;
