@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { pipelineSql } from "@/db/pipeline-sql";
 import { STAGE_OUTPUT_CONTRACTS } from "@/lib/research/stage-contracts";
 import { canonicalResearchKey, contractForProfile, sourceFamiliesPresent } from "@/lib/research/v2-contracts";
 import { withheldValuationReason } from "@/lib/research/valuation/contracts";
@@ -117,19 +118,12 @@ const KNOWN_REVIEW_STATUSES = new Set([
   "approved_for_position",
 ]);
 
-/** Pass `client` to reuse a long-lived pool; without one a client is opened and closed for this call. */
+/** Runs on `client` when given (the API routes pass theirs), otherwise on the pipeline's shared pool. */
 export async function evaluateResearchQuality(
   runId: string,
   client?: ReturnType<typeof postgres>
 ): Promise<ResearchQualityGateResult> {
-  const sql = client ?? postgres(process.env.DATABASE_URL!);
-
-  try {
-    const data = await loadRunQualityData(sql, runId);
-    return evaluateLoadedResearchQuality(data);
-  } finally {
-    if (!client) await sql.end();
-  }
+  return evaluateLoadedResearchQuality(await loadRunQualityData(client ?? pipelineSql(), runId));
 }
 
 /**
