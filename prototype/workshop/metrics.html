@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Financial Metrics</title>
+<link rel="stylesheet" href="base.css">
+<style>
+/* Expanded Financials > Metrics tab. Two variants share one metric engine that computes every
+   value from meta-data.js at load time. Missing inputs stay missing: nothing here is invented. */
+[hidden] { display: none !important; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.muted { color: var(--muted); }
+.ws .tabs button:focus-visible { outline-color: #fff; }
+
+.app-top .bar { justify-content: space-between; }
+.app-top .tick { font-size: 12px; color: var(--muted); }
+.head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 24px; }
+.stmt { display: flex; gap: 22px; border-bottom: 1px solid var(--line); margin: 18px 0 18px; overflow-x: auto; font-size: 13px; scrollbar-width: none; }
+.stmt button { background: none; border: 0; padding: 10px 0; color: var(--secondary); white-space: nowrap; }
+.stmt button[aria-current="page"] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--ink); }
+
+.controls { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: center; }
+.controls .lab { font-size: 12px; color: var(--muted); margin-right: 4px; }
+.search { position: relative; flex: 1 1 200px; max-width: 300px; }
+.search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; stroke: var(--muted); fill: none; stroke-width: 2; }
+.search input { width: 100%; border: 1px solid var(--line-strong); border-radius: 20px; background: var(--surface); padding: 6px 12px 6px 30px; font-size: 13px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 12px; }
+.chips .chip { color: var(--secondary); }
+.chips .chip:hover { background: var(--hover); }
+.chips .chip[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+.chips .chip .n { color: inherit; opacity: .6; }
+.coverage { display: flex; gap: 10px; font-size: 12px; line-height: 1.6; color: var(--body); background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--amber-dot); border-radius: var(--radius); padding: 8px 12px; margin: 0 0 8px; }
+.coverage b { color: var(--ink); font-weight: 600; }
+.summary { font-size: 12px; color: var(--muted); margin: 0 0 18px; }
+.empty { padding: 40px 16px; text-align: center; color: var(--muted); }
+
+/* status badges: dot + text so state is never colour alone */
+.badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 500; border-radius: 20px; padding: 1px 8px; white-space: nowrap; line-height: 1.6; }
+.badge.ok { background: var(--green-bg); color: #2f6a52; }
+.badge.ok::before, .badge.need::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.badge.need { background: var(--amber-bg); color: var(--amber-ink); }
+.dg { color: var(--amber-ink); font-size: 10px; margin-left: 1px; }
+.chg { font-size: 12px; white-space: nowrap; }
+.chg.up { color: var(--green); }
+.chg.down { color: var(--red); }
+.chg.flat { color: var(--muted); }
+.neg { color: var(--red); }
+
+/* ---------- Variant A: grouped tables ---------- */
+.grp { margin-bottom: 12px; overflow: hidden; }
+.grp h2 { margin: 0; font-size: inherit; }
+.grp-h { display: flex; width: 100%; align-items: center; gap: 10px; padding: 12px 16px; background: none; border: 0; text-align: left; }
+.grp-h:hover { background: var(--hover); }
+.grp-h .chev { width: 14px; height: 14px; stroke: var(--muted); fill: none; stroke-width: 2; transition: transform .15s; flex: none; }
+.grp-h[aria-expanded="false"] .chev { transform: rotate(-90deg); }
+.grp-h .gname { font: 400 19px/1.2 var(--serif); color: var(--ink); }
+.grp-h .gmeta { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.tw { position: relative; overflow-x: auto; border-top: 1px solid var(--line); -webkit-overflow-scrolling: touch; }
+.tw table.data th, .tw table.data td { padding: 7px 12px; }
+.tw table.data thead th:first-child { position: sticky; left: 0; z-index: 2; }
+th.mname { position: sticky; left: 0; z-index: 1; background: var(--surface); min-width: 210px; max-width: 260px; text-align: left; white-space: normal; font-weight: 500; color: var(--ink); font-size: 13px; border-top: 1px solid var(--line); box-shadow: 1px 0 0 var(--line); }
+table.data tbody tr:hover th.mname { background: var(--hover); }
+th.mname small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
+th.mname .badge { display: flex; width: max-content; margin-top: 3px; }
+button.cell { position: relative; background: none; border: 0; border-radius: 4px; padding: 2px 5px; margin: -2px -5px; font-variant-numeric: tabular-nums; text-align: right; }
+button.cell:hover { background: var(--select); }
+button.cell.na { color: var(--muted); }
+button.cell .dg { position: absolute; right: -2px; top: 0; }
+button.cell .snap { display: block; font-size: 10px; color: var(--amber-ink); }
+td.need { text-align: left !important; background: var(--amber-bg); }
+td.need button { background: none; border: 0; padding: 0; color: var(--amber-ink); font-size: 12px; text-align: left; white-space: normal; min-width: 220px; }
+td.need button:hover { text-decoration: underline; }
+td.trend svg { display: block; margin-left: auto; }
+td.sel button.cell { background: var(--select); }
+
+/* drawer */
+.scrim { position: fixed; inset: 0; background: rgba(17,17,17,.28); z-index: 60; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); background: var(--surface); border-left: 1px solid var(--line); z-index: 61; overflow-y: auto; padding: 18px 22px 28px; box-shadow: -10px 0 30px rgba(0,0,0,.08); animation: slide .18s ease-out; }
+@keyframes slide { from { transform: translateX(24px); opacity: 0; } }
+.drawer .top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.drawer .x { border: 1px solid var(--line); background: var(--surface); border-radius: 50%; width: 30px; height: 30px; display: grid; place-items: center; flex: none; }
+.drawer .x svg { width: 14px; height: 14px; stroke: var(--ink); stroke-width: 2; fill: none; }
+.drawer .val { font: 400 38px/1.1 var(--serif); letter-spacing: -.8px; margin: 14px 0 4px; }
+.drawer h3 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 22px 0 8px; }
+.drawer p { margin: 0 0 8px; color: var(--body); }
+.inputs { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); }
+.inputs li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; font-size: 13px; }
+.inputs li + li { border-top: 1px solid var(--line); }
+.inputs .nm { color: var(--ink); }
+.inputs .wh { display: block; font-size: 11px; color: var(--muted); }
+.inputs .v { font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
+.inputs .miss .v { color: var(--amber-ink); }
+.conv { margin: 0; padding-left: 18px; color: var(--body); font-size: 13px; }
+.conv li + li { margin-top: 6px; }
+.alert { background: var(--amber-bg); color: var(--amber-ink); border-radius: var(--radius); padding: 10px 12px; font-size: 13px; margin-top: 12px; }
+.alert b { color: var(--amber-ink); }
+.actions { display: flex; gap: 8px; margin-top: 22px; flex-wrap: wrap; }
+
+/* ---------- Variant B: metric cards ---------- */
+.grpB { margin-bottom: 30px; }
+.grpB .gh { display: flex; align-items: baseline; gap: 10px; margin: 0 0 10px; font: 400 22px/1.2 var(--serif); }
+.grpB .gh span { font: 400 12px var(--sans); color: var(--muted); }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.mcard { min-width: 0; transition: border-color .15s; }
+.mcard:hover { border-color: var(--line-strong); }
+.mcard.open { grid-column: 1 / -1; border-color: var(--line-strong); }
+.mhead { display: block; width: 100%; background: none; border: 0; text-align: left; padding: 14px 16px 12px; border-radius: 6px; }
+.mhead .r1 { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.mhead .mn { font-weight: 500; font-size: 13px; color: var(--ink); }
+.mhead .mn small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
+.mhead .big { font: 400 30px/1.1 var(--serif); letter-spacing: -.6px; margin: 10px 0 2px; font-variant-numeric: tabular-nums; }
+.mhead .big.sm { font-size: 24px; }
+.mhead .snapnote { font-size: 11px; color: var(--amber-ink); }
+.mhead .needtxt { margin: 10px 0 2px; font-size: 13px; color: var(--amber-ink); line-height: 1.45; min-height: 38px; }
+.mhead .sub { font-size: 12px; color: var(--muted); min-height: 18px; }
+.mhead .chart { margin-top: 8px; }
+.mhead .chart svg { display: block; width: 100%; height: auto; }
+.mhead .nochart { margin-top: 8px; height: 56px; display: grid; place-items: center; border: 1px dashed var(--line-strong); border-radius: 4px; font-size: 11px; color: var(--muted); }
+.mhead .more { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); margin-top: 6px; }
+.mhead .more svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2; transition: transform .15s; }
+.mhead[aria-expanded="true"] .more svg { transform: rotate(180deg); }
+.mbody { border-top: 1px solid var(--line); padding: 14px 16px 16px; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 18px 28px; }
+.mbody tbody th { text-align: left; font-weight: 400; background: none; color: var(--body); border-top: 1px solid var(--line); font-size: 13px; }
+.mbody h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.mbody .tw { border: 1px solid var(--line); border-radius: var(--radius); }
+.mbody p { margin: 0 0 8px; color: var(--body); font-size: 13px; }
+@media (max-width: 760px) { .mbody { grid-template-columns: minmax(0, 1fr); } }
+
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 9px 16px; border-radius: 20px; font-size: 13px; z-index: 80; max-width: calc(100vw - 32px); box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+
+@media (max-width: 720px) {
+  .app-top .bar { padding: 0 16px; }
+  .app-top .sub { padding: 0 16px; }
+  .ws .row { padding: 10px 16px; }
+  .ws .note { padding: 0 16px 10px; }
+  .search { max-width: none; flex-basis: 100%; }
+  .ws { position: static; }
+  .ws .note { font-size: 12px; }
+  th.mname { min-width: 150px; }
+  .grp-h .gmeta { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="ws">
+  <div class="row">
+    <span class="title">Financial metrics</span>
+    <div class="tabs" role="group" aria-label="Design variant">
+      <button type="button" data-v="A" aria-pressed="true">A · Grouped table</button>
+      <button type="button" data-v="B" aria-pressed="false">B · Metric cards</button>
+    </div>
+    <a href="index.html">← All workshop pages</a>
+  </div>
+  <div class="note" id="wsNote"></div>
+</div>
+
+<header class="app-top">
+  <div class="bar">
+    <span class="logo"><i>K</i>Kintsugi OS</span>
+    <span class="tick">META · run 02c8d48b · cutoff Oct 8, 2026</span>
+  </div>
+  <nav class="sub" aria-label="Asset sections">
+    <b>META</b><span>Overview</span><span>Thesis</span><span class="on" aria-current="page">Financials</span><span>Valuation</span><span>Monitoring</span><span>Sources</span>
+  </nav>
+</header>
+
+<main class="page">
+  <div class="head">
+    <div>
+      <div class="eyebrow">Meta Platforms, Inc. · USD</div>
+      <h1 class="display">Financials</h1>
+    </div>
+  </div>
+
+  <nav class="stmt" aria-label="Statements">
+    <button type="button" data-stmt>All statements</button>
+    <button type="button" data-stmt>Income statement</button>
+    <button type="button" data-stmt>Balance sheet</button>
+    <button type="button" data-stmt>Cash flow</button>
+    <button type="button" aria-current="page">Metrics</button>
+  </nav>
+
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Period type">
+      <button type="button" data-view="q" aria-pressed="true">Quarterly</button>
+      <button type="button" data-view="a" aria-pressed="false">Annual</button>
+    </div>
+    <div class="seg" role="group" aria-label="Period window">
+      <button type="button" data-n="5" aria-pressed="false">Latest 5</button>
+      <button type="button" data-n="8" aria-pressed="true">Latest 8</button>
+    </div>
+    <div class="seg" role="group" aria-label="Data status">
+      <button type="button" data-st="all" aria-pressed="true">All</button>
+      <button type="button" data-st="avail" aria-pressed="false">Available</button>
+      <button type="button" data-st="need" aria-pressed="false">Needs data</button>
+    </div>
+    <label class="search">
+      <span class="sr">Filter metrics</span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input type="search" id="q" placeholder="Filter metrics, e.g. margin, SBC, per share" autocomplete="off">
+    </label>
+  </div>
+  <div class="chips" id="chips" role="group" aria-label="Metric groups"></div>
+
+  <p class="coverage" id="coverage"></p>
+  <p class="summary" id="summary" aria-live="polite"></p>
+
+  <section id="viewA" aria-label="Metrics, grouped tables"></section>
+  <section id="viewB" aria-label="Metrics, cards" hidden></section>
+</main>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drTitle" hidden></aside>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="meta-data.js"></script>
+<script>
+(function () {
+'use strict';
+const D = window.META;
+const PRICE = 719.87;
+const PRICE_TAG = 'at $719.87 (Oct 8, 2026 snapshot)';
+const MINUS = '−';
+const EMP_NEED = 'Needs employee count (10-K Item 1 or a data vendor)';
+
+const LABEL = {
+  revenue: 'Revenue', cost_of_revenue: 'Cost of revenue', rnd: 'Research and development',
+  sales_marketing: 'Sales and marketing', g_and_a: 'General and administrative',
+  operating_income: 'Operating income', pretax_income: 'Income before taxes', income_tax: 'Income tax expense',
+  net_income: 'Net income', diluted_shares: 'Diluted weighted shares', d_and_a: 'Depreciation and amortization',
+  sbc: 'Stock-based compensation', operating_cash_flow: 'Operating cash flow', capex: 'Capital expenditures',
+  dividends_paid: 'Dividends paid', cash: 'Cash and cash equivalents', marketable_securities: 'Marketable securities',
+  total_assets: 'Total assets', current_liabilities: 'Current liabilities', long_term_debt: 'Long-term debt',
+  equity: "Stockholders' equity", buybacks: 'Share repurchases'
+};
+const FLOW = ['revenue', 'cost_of_revenue', 'rnd', 'sales_marketing', 'g_and_a', 'operating_income', 'pretax_income',
+  'income_tax', 'net_income', 'd_and_a', 'sbc', 'operating_cash_flow', 'capex', 'buybacks', 'dividends_paid'];
+
+// ---------- data: copy, then derive a single missing quarter from the fiscal-year total ----------
+function clone(d) {
+  const s = {}, der = {};
+  for (const k in d.series) { s[k] = d.series[k].slice(); der[k] = s[k].map(() => false); }
+  return { periods: d.periods.slice(), s, der };
+}
+const Q = clone(D.quarterly), A = clone(D.annual);
+A.periods.forEach((y, j) => {
+  const idx = Q.periods.map((p, i) => (p.startsWith(y + '-Q') ? i : -1)).filter(i => i >= 0);
+  if (idx.length !== 4) return;
+  FLOW.forEach(k => {
+    if (!Q.s[k] || !A.s[k] || A.s[k][j] == null) return;
+    const miss = idx.filter(i => Q.s[k][i] == null);
+    if (miss.length !== 1) return;
+    Q.s[k][miss[0]] = A.s[k][j] - idx.reduce((a, i) => a + (Q.s[k][i] || 0), 0);
+    Q.der[k][miss[0]] = true;
+  });
+});
+const LASTQ = Q.periods.length - 1;
+const data = v => (v === 'q' ? Q : A);
+function plab(view, i) {
+  const p = data(view).periods[i];
+  if (p == null) return '';
+  return view === 'q' ? p.slice(5) + ' ' + p.slice(0, 4) : 'FY' + p;
+}
+
+// ---------- input resolvers ----------
+function ctx(view, i) {
+  const d = data(view), isQ = view === 'q';
+  const raw = (k, j) => (j < 0 || j >= d.periods.length ? null : d.s[k][j]);
+  const L = j => plab(view, j);
+  return {
+    q(k) {
+      const v = raw(k, i);
+      return { label: LABEL[k], when: L(i), v, unit: k === 'diluted_shares' ? 'shares' : 'm', derived: !!d.der[k][i],
+        miss: v == null ? LABEL[k] + ' (' + L(i) + ')' : null };
+    },
+    ttm(k) {
+      if (!isQ) return this.q(k);
+      const when = 'TTM to ' + L(i);
+      if (i < 3) return { label: LABEL[k], when, v: null, unit: 'm', miss: LABEL[k] + ' for the four quarters to ' + L(i) };
+      let sum = 0, der = false; const gaps = [];
+      for (let j = i - 3; j <= i; j++) {
+        const v = raw(k, j);
+        if (v == null) gaps.push(L(j)); else sum += v;
+        if (d.der[k][j]) der = true;
+      }
+      return { label: LABEL[k], when, v: gaps.length ? null : sum, unit: 'm', derived: der,
+        miss: gaps.length ? LABEL[k] + ' (' + gaps.join(', ') + ')' : null };
+    },
+    bal(k) {
+      const v = raw(k, i);
+      return { label: LABEL[k], when: 'end of ' + L(i), v, unit: 'm', miss: v == null ? LABEL[k] + ' (end of ' + L(i) + ')' : null };
+    },
+    avg(label, parts) {
+      const o = isQ ? i - 4 : i - 1;
+      const at = j => {
+        let s = 0;
+        for (const [k, sg] of parts) { const v = raw(k, j); if (v == null) return { v: null, k }; s += sg * v; }
+        return { v: s };
+      };
+      const c = at(i);
+      if (c.v == null) return { label, when: 'end of ' + L(i), v: null, unit: 'm', miss: LABEL[c.k] + ' (end of ' + L(i) + ')' };
+      const op = at(o);
+      if (op.v == null) {
+        return { label, when: 'end of ' + L(i) + ' only', v: c.v, unit: 'm', closingOnly: true,
+          note: L(o) ? 'Opening balance not captured (' + LABEL[op.k] + ', end of ' + L(o) + '), so the closing balance is used.'
+                     : 'No earlier balance in the data, so the closing balance is used.' };
+      }
+      return { label, when: 'average of end ' + L(o) + ' and end ' + L(i), v: (c.v + op.v) / 2, unit: 'm',
+        detail: fmtIn(op.v, 'm') + ' → ' + fmtIn(c.v, 'm') };
+    }
+  };
+}
+// Valuation inputs: one price snapshot, latest diluted shares and latest balance sheet.
+function vctx() {
+  const qc = ctx('q', LASTQ);
+  return {
+    price: { label: 'Share price', when: 'Oct 8, 2026 snapshot', v: PRICE, unit: 'price' },
+    shares: Object.assign(qc.q('diluted_shares'), { when: plab('q', LASTQ) + ' (latest reported)' }),
+    bal: k => qc.bal(k)
+  };
+}
+
+// ---------- metric catalogue ----------
+const G = [
+  ['margins', 'Margins'], ['returns', 'Returns'], ['pershare', 'Per share'], ['sbc', 'Stock-based compensation'],
+  ['holders', 'Shareholder returns'], ['leverage', 'Leverage'], ['valuation', 'Valuation'], ['yields', 'Yields'],
+  ['employee', 'Per employee']
+];
+const GNAME = Object.fromEntries(G);
+const posNm = (x, what) => (x <= 0 ? what + ' is zero or negative, so this ratio is not meaningful.' : null);
+const IC = [['equity', 1], ['long_term_debt', 1], ['cash', -1], ['marketable_securities', -1]];
+const ICL = 'Invested capital (equity + long-term debt − cash − marketable securities)';
+const mc = (p, s) => p * s;
+
+const M = [
+  // Margins: same-period flows
+  { id: 'gm', g: 'margins', name: 'Gross Margin', fmt: 'pct', good: 1, conv: 'period',
+    formula: 'Gross profit ÷ revenue. Gross profit = revenue − cost of revenue. Meta reports cost of revenue but no gross profit line, so gross profit is computed here.',
+    ins: c => [c.q('revenue'), c.q('cost_of_revenue')], f: (r, x) => (r - x) / r },
+  { id: 'sga', g: 'margins', name: 'SG&A Margin', fmt: 'pct', good: -1, conv: 'period',
+    formula: '(Sales and marketing + general and administrative) ÷ revenue. Research and development is not included.',
+    ins: c => [c.q('sales_marketing'), c.q('g_and_a'), c.q('revenue')], f: (s, g, r) => (s + g) / r },
+  { id: 'om', g: 'margins', name: 'Operating Margin', fmt: 'pct', good: 1, conv: 'period',
+    formula: 'Operating income ÷ revenue.', ins: c => [c.q('operating_income'), c.q('revenue')], f: (o, r) => o / r },
+  { id: 'ebitdam', g: 'margins', name: 'EBITDA Margin', fmt: 'pct', good: 1, conv: 'period',
+    formula: 'EBITDA ÷ revenue. EBITDA = operating income + depreciation and amortization (from the cash flow statement).',
+    ins: c => [c.q('operating_income'), c.q('d_and_a'), c.q('revenue')], f: (o, d, r) => (o + d) / r },
+  { id: 'nm', g: 'margins', name: 'Net Margin', fmt: 'pct', good: 1, conv: 'period',
+    formula: 'Net income ÷ revenue.', ins: c => [c.q('net_income'), c.q('revenue')], f: (n, r) => n / r },
+  { id: 'fcfm', g: 'margins', name: 'Free Cash Flow Margin', fmt: 'pct', good: 1, conv: 'period',
+    formula: 'Free cash flow ÷ revenue. Free cash flow = operating cash flow − capital expenditures.',
+    ins: c => [c.q('operating_cash_flow'), c.q('capex'), c.q('revenue')], f: (o, x, r) => (o - x) / r },
+  { id: 'ocfm', g: 'margins', name: 'Operating Cash Flow Margin', fmt: 'pct', good: 1, conv: 'period',
+    formula: 'Operating cash flow ÷ revenue.', ins: c => [c.q('operating_cash_flow'), c.q('revenue')], f: (o, r) => o / r },
+
+  // Returns: TTM flows over average balances
+  { id: 'roa', g: 'returns', name: 'Return On Assets', fmt: 'pct', good: 1, conv: 'ttm-avg',
+    formula: 'Net income ÷ average total assets.',
+    ins: c => [c.ttm('net_income'), c.avg('Average total assets', [['total_assets', 1]])], f: (n, a) => n / a,
+    nm: (n, a) => posNm(a, 'Total assets') },
+  { id: 'roce', g: 'returns', name: 'Return On Capital Employed', fmt: 'pct', good: 1, conv: 'ttm-avg',
+    formula: 'EBIT ÷ average capital employed. EBIT is taken as operating income. Capital employed = total assets − current liabilities.',
+    ins: c => [c.ttm('operating_income'), c.avg('Capital employed (total assets − current liabilities)', [['total_assets', 1], ['current_liabilities', -1]])],
+    f: (e, k) => e / k, nm: (e, k) => posNm(k, 'Capital employed') },
+  { id: 'roe', g: 'returns', name: 'Return On Equity', fmt: 'pct', good: 1, conv: 'ttm-avg',
+    formula: "Net income ÷ average stockholders' equity.",
+    ins: c => [c.ttm('net_income'), c.avg("Average stockholders' equity", [['equity', 1]])], f: (n, e) => n / e,
+    nm: (n, e) => posNm(e, 'Equity') },
+  { id: 'roic', g: 'returns', name: 'Return On Invested Capital', fmt: 'pct', good: 1, conv: 'ttm-avg',
+    formula: 'NOPAT ÷ average invested capital. NOPAT = operating income × (1 − income tax ÷ income before taxes). Invested capital = equity + long-term debt − cash − marketable securities.',
+    ins: c => [c.ttm('operating_income'), c.ttm('income_tax'), c.ttm('pretax_income'), c.avg(ICL, IC)],
+    f: (o, t, p, k) => (o * (1 - t / p)) / k,
+    nm: (o, t, p, k) => posNm(p, 'Income before taxes') || posNm(k, 'Invested capital') },
+
+  // Per share
+  { id: 'fcfps', g: 'pershare', name: 'Free Cash Flow Per Share', fmt: 'ps', good: 1, conv: 'per-share',
+    formula: '(Operating cash flow − capital expenditures) ÷ diluted weighted shares.',
+    ins: c => [c.q('operating_cash_flow'), c.q('capex'), c.q('diluted_shares')], f: (o, x, s) => (o - x) / s },
+  { id: 'ocfps', g: 'pershare', name: 'Operating Cash Flow Per Share', fmt: 'ps', good: 1, conv: 'per-share',
+    formula: 'Operating cash flow ÷ diluted weighted shares.',
+    ins: c => [c.q('operating_cash_flow'), c.q('diluted_shares')], f: (o, s) => o / s },
+  { id: 'rps', g: 'pershare', name: 'Revenue Per Share', fmt: 'ps', good: 1, conv: 'per-share',
+    formula: 'Revenue ÷ diluted weighted shares.', ins: c => [c.q('revenue'), c.q('diluted_shares')], f: (r, s) => r / s },
+
+  // Stock-based compensation
+  { id: 'sbcfcf', g: 'sbc', name: 'SBC as a % of FCF', fmt: 'pct', good: -1, conv: 'period',
+    formula: 'Stock-based compensation ÷ free cash flow (operating cash flow − capital expenditures).',
+    ins: c => [c.q('sbc'), c.q('operating_cash_flow'), c.q('capex')], f: (s, o, x) => s / (o - x),
+    nm: (s, o, x) => posNm(o - x, 'Free cash flow') },
+  { id: 'sbcocf', g: 'sbc', name: 'SBC as a % of OCF', fmt: 'pct', good: -1, conv: 'period',
+    formula: 'Stock-based compensation ÷ operating cash flow.',
+    ins: c => [c.q('sbc'), c.q('operating_cash_flow')], f: (s, o) => s / o, nm: (s, o) => posNm(o, 'Operating cash flow') },
+  { id: 'sbcrev', g: 'sbc', name: 'SBC as a % of Revenue', fmt: 'pct', good: -1, conv: 'period',
+    formula: 'Stock-based compensation ÷ revenue.', ins: c => [c.q('sbc'), c.q('revenue')], f: (s, r) => s / r },
+
+  // Shareholder returns
+  { id: 'dps', g: 'holders', name: 'Dividends Per Share', sub: 'approx., from cash dividends paid', fmt: 'ps', good: 1, conv: 'dps',
+    formula: 'Cash dividends paid ÷ diluted weighted shares. This approximates the declared dividend per share, which is not captured yet.',
+    ins: c => [c.q('dividends_paid'), c.q('diluted_shares')], f: (d, s) => d / s },
+  { id: 'fcfpay', g: 'holders', name: 'Free Cash Flow Payout Ratio', fmt: 'pct', good: 0, conv: 'period',
+    formula: 'Dividends paid ÷ free cash flow (operating cash flow − capital expenditures). Share repurchases are not included.',
+    ins: c => [c.q('dividends_paid'), c.q('operating_cash_flow'), c.q('capex')], f: (d, o, x) => d / (o - x),
+    nm: (d, o, x) => posNm(o - x, 'Free cash flow') },
+  { id: 'pay', g: 'holders', name: 'Payout Ratio', fmt: 'pct', good: 0, conv: 'period',
+    formula: 'Dividends paid ÷ net income. Share repurchases are not included.',
+    ins: c => [c.q('dividends_paid'), c.q('net_income')], f: (d, n) => d / n, nm: (d, n) => posNm(n, 'Net income') },
+
+  // Leverage
+  { id: 'debitda', g: 'leverage', name: 'Debt to EBITDA Ratio', fmt: 'mult', dp: 2, good: -1, conv: 'ttm-end',
+    formula: 'Long-term debt ÷ EBITDA. EBITDA = operating income + depreciation and amortization.',
+    ins: c => [c.bal('long_term_debt'), c.ttm('operating_income'), c.ttm('d_and_a')], f: (d, o, a) => d / (o + a),
+    nm: (d, o, a) => posNm(o + a, 'EBITDA') },
+
+  // Valuation: price history missing, latest period only
+  { id: 'mcap', g: 'valuation', kind: 'val', name: 'Market Cap', fmt: 'big', good: 0, conv: 'snapshot',
+    formula: 'Share price × diluted weighted shares.', ins: (c, v) => [v.price, v.shares], f: mc },
+  { id: 'ev', g: 'valuation', kind: 'val', name: 'Enterprise Value', fmt: 'big', good: 0, conv: 'snapshot',
+    formula: 'Market cap + long-term debt − cash − marketable securities.',
+    ins: (c, v) => [v.price, v.shares, v.bal('long_term_debt'), v.bal('cash'), v.bal('marketable_securities')],
+    f: (p, s, d, c, m) => p * s + d - c - m },
+  { id: 'ps', g: 'valuation', kind: 'val', name: 'Price to Sales', fmt: 'mult', good: 0, conv: 'snapshot',
+    formula: 'Market cap ÷ revenue.', ins: (c, v) => [v.price, v.shares, c.ttm('revenue')], f: (p, s, r) => mc(p, s) / r,
+    nm: (p, s, r) => posNm(r, 'Revenue') },
+  { id: 'pgp', g: 'valuation', kind: 'val', name: 'Price to Gross Profit', fmt: 'mult', good: 0, conv: 'snapshot',
+    formula: 'Market cap ÷ gross profit (revenue − cost of revenue).',
+    ins: (c, v) => [v.price, v.shares, c.ttm('revenue'), c.ttm('cost_of_revenue')], f: (p, s, r, x) => mc(p, s) / (r - x),
+    nm: (p, s, r, x) => posNm(r - x, 'Gross profit') },
+  { id: 'pocf', g: 'valuation', kind: 'val', name: 'Price to Operating Cash Flow', fmt: 'mult', good: 0, conv: 'snapshot',
+    formula: 'Market cap ÷ operating cash flow.', ins: (c, v) => [v.price, v.shares, c.ttm('operating_cash_flow')],
+    f: (p, s, o) => mc(p, s) / o, nm: (p, s, o) => posNm(o, 'Operating cash flow') },
+  { id: 'pocfx', g: 'valuation', kind: 'val', name: 'Price to Operating Cash Flow Excl. SBC', fmt: 'mult', good: 0, conv: 'snapshot',
+    formula: 'Market cap ÷ (operating cash flow − stock-based compensation). Treats stock pay as a cash cost.',
+    ins: (c, v) => [v.price, v.shares, c.ttm('operating_cash_flow'), c.ttm('sbc')], f: (p, s, o, b) => mc(p, s) / (o - b),
+    nm: (p, s, o, b) => posNm(o - b, 'Operating cash flow excluding SBC') },
+  { id: 'poi', g: 'valuation', kind: 'val', name: 'Price to Operating Income', fmt: 'mult', good: 0, conv: 'snapshot',
+    formula: 'Market cap ÷ operating income.', ins: (c, v) => [v.price, v.shares, c.ttm('operating_income')],
+    f: (p, s, o) => mc(p, s) / o, nm: (p, s, o) => posNm(o, 'Operating income') },
+  { id: 'pe', g: 'valuation', kind: 'val', name: 'Price to Earnings', fmt: 'mult', good: 0, conv: 'snapshot',
+    formula: 'Market cap ÷ net income (equivalent to price ÷ diluted earnings per share).',
+    ins: (c, v) => [v.price, v.shares, c.ttm('net_income')], f: (p, s, n) => mc(p, s) / n, nm: (p, s, n) => posNm(n, 'Net income') },
+  { id: 'pfcf', g: 'valuation', kind: 'val', name: 'Price to Free Cash Flow', fmt: 'mult', good: 0, conv: 'snapshot',
+    formula: 'Market cap ÷ free cash flow (operating cash flow − capital expenditures).',
+    ins: (c, v) => [v.price, v.shares, c.ttm('operating_cash_flow'), c.ttm('capex')], f: (p, s, o, x) => mc(p, s) / (o - x),
+    nm: (p, s, o, x) => posNm(o - x, 'Free cash flow') },
+  { id: 'pfcfx', g: 'valuation', kind: 'val', name: 'Price to Free Cash Flow Excl. SBC', fmt: 'mult', good: 0, conv: 'snapshot',
+    formula: 'Market cap ÷ (free cash flow − stock-based compensation).',
+    ins: (c, v) => [v.price, v.shares, c.ttm('operating_cash_flow'), c.ttm('capex'), c.ttm('sbc')],
+    f: (p, s, o, x, b) => mc(p, s) / (o - x - b), nm: (p, s, o, x, b) => posNm(o - x - b, 'Free cash flow excluding SBC') },
+
+  // Yields
+  { id: 'fcfy', g: 'yields', kind: 'val', name: 'FCF Excl. SBC Yield', fmt: 'pct', good: 0, conv: 'snapshot',
+    formula: '(Free cash flow − stock-based compensation) ÷ market cap.',
+    ins: (c, v) => [v.price, v.shares, c.ttm('operating_cash_flow'), c.ttm('capex'), c.ttm('sbc')],
+    f: (p, s, o, x, b) => (o - x - b) / mc(p, s) },
+  { id: 'ocfy', g: 'yields', kind: 'val', name: 'OCF Excl. SBC Yield', fmt: 'pct', good: 0, conv: 'snapshot',
+    formula: '(Operating cash flow − stock-based compensation) ÷ market cap.',
+    ins: (c, v) => [v.price, v.shares, c.ttm('operating_cash_flow'), c.ttm('sbc')], f: (p, s, o, b) => (o - b) / mc(p, s) },
+
+  // Per employee: no headcount yet
+  { id: 'emp', g: 'employee', kind: 'emp', name: 'Total Employees', fmt: 'count', formula: 'Full-time employees at period end, as disclosed in the 10-K (Item 1, Human Capital).' },
+  { id: 'rpe', g: 'employee', kind: 'emp', name: 'Revenue per Employee', fmt: 'emp', formula: 'Revenue ÷ total employees.' },
+  { id: 'epe', g: 'employee', kind: 'emp', name: 'EBIT per Employee', fmt: 'emp', formula: 'Operating income (EBIT) ÷ total employees.' },
+  { id: 'npe', g: 'employee', kind: 'emp', name: 'Earnings per Employee', fmt: 'emp', formula: 'Net income ÷ total employees.' },
+  { id: 'ocfpe', g: 'employee', kind: 'emp', name: 'Operating Cash Flow per Employee', fmt: 'emp', formula: 'Operating cash flow ÷ total employees.' },
+  { id: 'fcfpe', g: 'employee', kind: 'emp', name: 'Free Cash Flow per Employee', fmt: 'emp', formula: 'Free cash flow ÷ total employees.' }
+];
+const BYID = Object.fromEntries(M.map(m => [m.id, m]));
+
+// ---------- engine ----------
+function calc(m, view, i) {
+  const last = data(view).periods.length - 1;
+  if (m.kind === 'emp') return { st: 'emp' };
+  if (m.kind === 'val' && i !== last) return { st: 'price' };
+  const ins = m.ins(ctx(view, i), m.kind === 'val' ? vctx() : null);
+  const miss = ins.filter(x => x.v == null).map(x => x.miss);
+  if (miss.length) return { st: 'missing', ins, miss };
+  const vals = ins.map(x => x.v);
+  const why = m.nm ? m.nm(...vals) : null;
+  if (why) return { st: 'nm', ins, why };
+  const v = m.f(...vals);
+  if (!isFinite(v)) return { st: 'nm', ins, why: 'The denominator is zero, so this ratio is not meaningful.' };
+  return { st: 'ok', v, ins, snap: m.kind === 'val', derived: ins.some(x => x.derived) };
+}
+const needs = m => !!m.kind;
+const needLabel = m => (m.kind === 'emp' ? 'Needs employee count' : m.kind === 'val' ? 'Needs price history' : '');
+
+// ---------- formatting ----------
+function bigM(a) {
+  if (a >= 1e6) return '$' + (a / 1e6).toFixed(2) + 'T';
+  if (a >= 1e3) return '$' + (a / 1e3).toFixed(1) + 'B';
+  return '$' + a.toFixed(0) + 'M';
+}
+function fmt(v, f, dp) {
+  if (v == null || !isFinite(v)) return '—';
+  const a = Math.abs(v); let s;
+  if (f === 'pct') s = (a * 100).toFixed(1) + '%';
+  else if (f === 'mult') s = a.toFixed(dp == null ? 1 : dp) + '×';
+  else if (f === 'ps') s = '$' + a.toFixed(2);
+  else if (f === 'big') s = bigM(a);
+  else if (f === 'emp') s = '$' + (a / 1e6).toFixed(1) + 'M';
+  else s = Math.round(a).toLocaleString('en-US');
+  if (s === '0.0%' || s === '$0.00' || s === '0.0×') return s;
+  return (v < 0 ? MINUS : '') + s;
+}
+function fmtIn(v, unit) {
+  if (v == null) return 'Not captured';
+  const neg = v < 0 ? MINUS : '', a = Math.abs(v);
+  if (unit === 'price') return '$' + a.toFixed(2);
+  if (unit === 'shares') return neg + Math.round(a).toLocaleString('en-US') + 'M shares';
+  return neg + '$' + Math.round(a).toLocaleString('en-US') + 'M';
+}
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function change(m, view, i) {
+  const j = view === 'q' ? i - 4 : i - 1;
+  if (j < 0) return null;
+  const a = calc(m, view, i), b = calc(m, view, j);
+  if (a.st !== 'ok' || b.st !== 'ok') return null;
+  let d, txt;
+  if (m.fmt === 'pct') { d = (a.v - b.v) * 100; txt = Math.abs(d).toFixed(1) + ' pts'; }
+  else if (m.fmt === 'mult') { d = a.v - b.v; txt = Math.abs(d).toFixed(2) + '×'; }
+  else { if (b.v === 0) return null; d = (a.v - b.v) / Math.abs(b.v) * 100; txt = Math.abs(d).toFixed(1) + '%'; }
+  const flat = Math.abs(d) < 0.05;
+  const tone = flat || !m.good ? 'flat' : (d > 0) === (m.good > 0) ? 'up' : 'down';
+  const arrow = flat ? '' : d > 0 ? '▲ ' : '▼ ';
+  return { txt: arrow + (flat ? '' : d > 0 ? '+' : MINUS) + txt, tone, vs: plab(view, j),
+    word: tone === 'up' ? 'better' : tone === 'down' ? 'worse' : '' };
+}
+
+function windowIdx(view, n) {
+  const len = data(view).periods.length, k = Math.min(n, len);
+  return Array.from({ length: k }, (_, j) => len - k + j);
+}
+
+// ---------- charts ----------
+function spark(vals) {
+  const w = 84, h = 24, pad = 3;
+  const nn = vals.filter(v => v != null);
+  if (nn.length < 2) return '<span class="muted" style="font-size:11px">—</span>';
+  let lo = Math.min(...nn), hi = Math.max(...nn);
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const x = k => pad + k * (w - 2 * pad) / (vals.length - 1);
+  const y = v => pad + (hi - v) / (hi - lo) * (h - 2 * pad);
+  let d = '', pen = false;
+  vals.forEach((v, k) => { if (v == null) { pen = false; return; } d += (pen ? 'L' : 'M') + x(k).toFixed(1) + ' ' + y(v).toFixed(1); pen = true; });
+  const li = vals.length - 1 - [...vals].reverse().findIndex(v => v != null);
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><path d="${d}" fill="none" stroke="var(--chart-1)" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${x(li).toFixed(1)}" cy="${y(vals[li]).toFixed(1)}" r="2.5" fill="var(--chart-1)"/></svg>`;
+}
+function mini(m, view, idxs) {
+  const vals = idxs.map(i => { const r = calc(m, view, i); return r.st === 'ok' ? r.v : null; });
+  const nn = vals.filter(v => v != null);
+  if (nn.length < 2) return '<div class="nochart">Not enough history to chart</div>';
+  const w = 240, h = 64, top = 6, bot = 16, padx = 6;
+  let lo = Math.min(...nn), hi = Math.max(...nn);
+  if (lo > 0 && lo / hi > .6) { /* keep the trend readable rather than forcing zero */ } else lo = Math.min(lo, 0);
+  if (hi === lo) { hi += Math.abs(hi) * .1 || 1; lo -= Math.abs(lo) * .1 || 1; }
+  const x = k => padx + k * (w - 2 * padx) / (vals.length - 1);
+  const y = v => top + (hi - v) / (hi - lo) * (h - top - bot);
+  let d = '', pen = false;
+  vals.forEach((v, k) => { if (v == null) { pen = false; return; } d += (pen ? 'L' : 'M') + x(k).toFixed(1) + ' ' + y(v).toFixed(1); pen = true; });
+  const zero = lo < 0 && hi > 0 ? `<line x1="${padx}" x2="${w - padx}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" stroke="var(--line-strong)" stroke-dasharray="2 3"/>` : '';
+  const base = lo === 0 ? `<line x1="${padx}" x2="${w - padx}" y1="${h - bot}" y2="${h - bot}" stroke="var(--chart-grid)"/>` : '';
+  let dots = '';
+  vals.forEach((v, k) => {
+    const lab = plab(view, idxs[k]) + ': ' + (v == null ? 'unavailable' : fmt(v, m.fmt, m.dp));
+    if (v == null) {
+      dots += `<g><title>${esc(lab)}</title><rect x="${(x(k) - 6).toFixed(1)}" y="${top}" width="12" height="${h - top - bot}" fill="transparent"/><circle cx="${x(k).toFixed(1)}" cy="${h - bot}" r="2" fill="var(--line-strong)"/></g>`;
+    } else {
+      const lastPt = k === vals.length - 1;
+      dots += `<g><title>${esc(lab)}</title><circle cx="${x(k).toFixed(1)}" cy="${y(v).toFixed(1)}" r="10" fill="transparent"/><circle cx="${x(k).toFixed(1)}" cy="${y(v).toFixed(1)}" r="${lastPt ? 4 : 2}" fill="var(--chart-1)" stroke="var(--surface)" stroke-width="${lastPt ? 2 : 0}"/></g>`;
+    }
+  });
+  const t1 = plab(view, idxs[0]), t2 = plab(view, idxs[idxs.length - 1]);
+  return `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(m.name)} trend, ${esc(t1)} to ${esc(t2)}">${base}${zero}<path d="${d}" fill="none" stroke="var(--chart-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${dots}<text x="${padx}" y="${h - 3}" font-size="10" fill="var(--muted)">${esc(t1)}</text><text x="${w - padx}" y="${h - 3}" font-size="10" fill="var(--muted)" text-anchor="end">${esc(t2)}</text></svg>`;
+}
+
+// ---------- conventions ----------
+function conventions(m, view) {
+  const isQ = view === 'q', out = [];
+  switch (m.conv) {
+    case 'period':
+      out.push(isQ ? 'Both inputs cover the same quarter, so no annualizing is needed.' : 'Both inputs are fiscal-year totals.');
+      break;
+    case 'ttm-avg':
+      out.push(isQ ? 'Income items are trailing twelve months (sum of the last four quarters), so the ratio is already annual.'
+                   : 'Income items are fiscal-year totals.');
+      out.push(isQ ? 'Balance items are the average of the balance 12 months earlier and at quarter end. Where the earlier balance was not captured, the quarter-end balance is used.'
+                   : 'Balance items are the average of the opening and closing fiscal-year balances. FY2023 uses the year-end balance because the FY2022 balance sheet is not captured.');
+      if (m.id === 'roic') out.push('The tax rate is the TTM (or fiscal-year) effective rate, so one-off tax items move it. Q3 2025 carried a large tax charge and Q1 2026 a tax benefit.');
+      break;
+    case 'ttm-end':
+      out.push(isQ ? 'Debt at quarter end over trailing-twelve-month EBITDA (sum of the last four quarters).' : 'Debt at fiscal year end over fiscal-year EBITDA.');
+      out.push('Only long-term debt is captured. Short-term debt and lease liabilities are not, so this understates total leverage.');
+      break;
+    case 'per-share': case 'dps':
+      out.push(isQ ? 'Quarter flow over diluted weighted shares for the same quarter. Not annualized.' : 'Fiscal-year flow over fiscal-year diluted weighted shares.');
+      if (isQ) out.push('Q4 share counts come from the 10-K and are not captured yet, so Q4 per-share values are unavailable.');
+      if (m.conv === 'dps') out.push('Uses cash dividends paid, which can differ slightly from dividends declared in the period.');
+      break;
+    case 'snapshot':
+      out.push('Share price history is not captured, so earlier periods have no value. Only the latest period is shown, ' + PRICE_TAG + '.');
+      out.push('Market cap uses the latest reported diluted weighted shares (' + fmtIn(Q.s.diluted_shares[LASTQ], 'shares') + ', ' + plab('q', LASTQ) + '). Enterprise value uses the ' + plab('q', LASTQ) + ' balance sheet.');
+      if (m.id !== 'mcap' && m.id !== 'ev') out.push(isQ ? 'Financials are trailing twelve months to ' + plab('q', LASTQ) + '.' : 'Financials are FY' + A.periods[A.periods.length - 1] + ' totals. The price is from after that year ended.');
+      break;
+  }
+  return out;
+}
+
+// ---------- state ----------
+const S = { variant: 'A', view: 'q', n: 8, q: '', group: 'all', status: 'all', collapsed: new Set(), open: new Set(), sel: null };
+const $ = id => document.getElementById(id);
+
+function filtered() {
+  const q = S.q.trim().toLowerCase();
+  return M.filter(m => (S.group === 'all' || m.g === S.group)
+    && (S.status === 'all' || (S.status === 'need') === needs(m))
+    && (!q || (m.name + ' ' + (m.sub || '') + ' ' + GNAME[m.g]).toLowerCase().includes(q)));
+}
+
+function renderChips() {
+  const q = S.q.trim().toLowerCase();
+  const count = g => M.filter(m => (g === 'all' || m.g === g) && (S.status === 'all' || (S.status === 'need') === needs(m))
+    && (!q || (m.name + ' ' + GNAME[m.g]).toLowerCase().includes(q))).length;
+  $('chips').innerHTML = [['all', 'All groups'], ...G].map(([g, n]) =>
+    `<button type="button" class="chip" data-g="${g}" aria-pressed="${S.group === g}">${esc(n)} <span class="n">${count(g)}</span></button>`).join('');
+}
+
+function renderCoverage() {
+  const isQ = S.view === 'q';
+  $('coverage').innerHTML = `<span aria-hidden="true">ⓘ</span><span><b>Data coverage.</b> Annual history starts FY2022. Older 10-Ks are not fetched yet. `
+    + (isQ ? `Q4 share counts are not captured, so Q4 per-share values show as unavailable. Values marked <span class="dg">†</span> use one quarter derived as the fiscal-year total minus the three reported quarters. `
+           : `The FY2022 balance sheet is not captured, so FY2022 returns and leverage are unavailable. `)
+    + `Share price: one snapshot only, $719.87 on Oct 8, 2026. Employee count: not captured.</span>`;
+}
+
+function render() {
+  renderChips();
+  renderCoverage();
+  const list = filtered();
+  const avail = list.filter(m => !needs(m)).length;
+  $('summary').textContent = `Showing ${list.length} of ${M.length} metrics · ${avail} available · ${list.length - avail} need data`;
+  $('viewA').hidden = S.variant !== 'A';
+  $('viewB').hidden = S.variant !== 'B';
+  const target = S.variant === 'A' ? $('viewA') : $('viewB');
+  if (!list.length) {
+    target.innerHTML = `<div class="card empty">No metrics match “${esc(S.q)}”. <button type="button" class="btn" data-reset>Clear filters</button></div>`;
+    return;
+  }
+  if (S.variant === 'A') renderA(list); else renderB(list);
+}
+
+// ---------- Variant A ----------
+function cellA(m, i) {
+  const r = calc(m, S.view, i), p = plab(S.view, i);
+  let inner, cls = '', say;
+  if (r.st === 'ok') {
+    inner = esc(fmt(r.v, m.fmt, m.dp)) + (r.derived ? '<span class="dg" aria-hidden="true">†</span>' : '') + (r.snap ? '<span class="snap">snapshot</span>' : '');
+    if (r.v < 0) cls = 'neg';
+    say = fmt(r.v, m.fmt, m.dp) + (r.snap ? ', ' + PRICE_TAG : '') + (r.derived ? ', uses a derived quarter' : '');
+  } else if (r.st === 'nm') { inner = 'n/m'; cls = 'na'; say = 'not meaningful'; }
+  else { inner = 'n/a'; cls = 'na'; say = 'unavailable, missing ' + r.miss.join('; '); }
+  const sel = S.sel && S.sel.id === m.id && S.sel.i === i ? ' class="sel"' : '';
+  return `<td${sel}><button type="button" class="cell ${cls}" data-cell="${m.id}" data-i="${i}" aria-label="${esc(m.name + ', ' + p + ': ' + say + '. Show formula and inputs')}">${inner}</button></td>`;
+}
+
+function rowA(m, idxs) {
+  const last = idxs[idxs.length - 1];
+  let cells = '', trend = '<span class="muted" style="font-size:11px">No history</span>', chg = '<span class="chg flat">—</span>';
+  if (m.kind === 'emp') {
+    cells = `<td class="need" colspan="${idxs.length}"><button type="button" data-cell="${m.id}" data-i="${last}">${EMP_NEED}</button></td>`;
+  } else if (m.kind === 'val') {
+    cells = `<td class="need" colspan="${idxs.length - 1}"><button type="button" data-cell="${m.id}" data-i="${idxs[0]}">Needs price history. Latest value shown ${PRICE_TAG} →</button></td>` + cellA(m, last);
+  } else {
+    cells = idxs.map(i => cellA(m, i)).join('');
+    const vals = idxs.map(i => { const r = calc(m, S.view, i); return r.st === 'ok' ? r.v : null; });
+    trend = spark(vals);
+    const c = change(m, S.view, last);
+    if (c) chg = `<span class="chg ${c.tone}" title="vs ${esc(c.vs)}">${esc(c.txt)}${c.word ? `<span class="sr"> (${c.word})</span>` : ''}</span>`;
+  }
+  const badge = needs(m) ? `<span class="badge need">${needLabel(m)}</span>` : '';
+  return `<tr><th scope="row" class="mname">${esc(m.name)}${m.sub ? `<small>${esc(m.sub)}</small>` : ''}${badge}</th>${cells}<td class="trend">${trend}</td><td>${chg}</td></tr>`;
+}
+
+function renderA(list) {
+  const idxs = windowIdx(S.view, S.n);
+  const vsLab = S.view === 'q' ? 'vs year ago' : 'vs prior year';
+  const head = `<thead><tr><th scope="col">Metric</th>${idxs.map(i => `<th scope="col">${plab(S.view, i)}</th>`).join('')}<th scope="col">Trend</th><th scope="col">${vsLab}</th></tr></thead>`;
+  $('viewA').innerHTML = G.filter(([g]) => list.some(m => m.g === g)).map(([g, name]) => {
+    const rows = list.filter(m => m.g === g);
+    const open = !S.collapsed.has(g);
+    const nAvail = rows.filter(m => !needs(m)).length;
+    const meta = nAvail === rows.length ? `${rows.length} metrics` : nAvail === 0 ? `${rows.length} metrics · needs data` : `${rows.length} metrics · ${rows.length - nAvail} need data`;
+    return `<section class="card grp"><h2><button type="button" class="grp-h" data-grp="${g}" aria-expanded="${open}" aria-controls="tb-${g}">
+      <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg><span class="gname">${esc(name)}</span><span class="gmeta">${meta}</span></button></h2>
+      <div class="tw" id="tb-${g}" ${open ? '' : 'hidden'} tabindex="-1"><table class="data">${head}<tbody>${rows.map(m => rowA(m, idxs)).join('')}</tbody></table></div></section>`;
+  }).join('');
+}
+
+// ---------- drawer ----------
+let lastFocus = null;
+function openDrawer(id, i) {
+  const m = BYID[id], view = S.view, r = calc(m, view, i), p = plab(view, i);
+  const last = data(view).periods.length - 1;
+  S.sel = { id, i };
+  let valHtml = '', alert = '';
+  if (r.st === 'ok') {
+    valHtml = `<div class="val num ${r.v < 0 ? 'neg' : ''}">${esc(fmt(r.v, m.fmt, m.dp))}</div>` + (r.snap ? `<div class="snapnote warn" style="font-size:12px">${PRICE_TAG}</div>` : '');
+  } else if (r.st === 'nm') {
+    valHtml = `<div class="val muted">n/m</div>`; alert = `<div class="alert"><b>Not meaningful.</b> ${esc(r.why)}</div>`;
+  } else if (r.st === 'missing') {
+    valHtml = `<div class="val muted">n/a</div>`; alert = `<div class="alert"><b>Unavailable.</b> Missing input: ${esc(r.miss.join('; '))}.</div>`;
+  } else if (r.st === 'price') {
+    const lr = calc(m, view, last);
+    valHtml = `<div class="val muted">—</div>`;
+    alert = `<div class="alert"><b>Needs price history.</b> Only one share price is captured, so this cannot be computed for ${esc(p)}.`
+      + (lr.st === 'ok' ? ` Latest value (${esc(plab(view, last))}): <b>${esc(fmt(lr.v, m.fmt, m.dp))}</b> ${PRICE_TAG}.` : '') + `</div>`;
+  } else if (r.st === 'emp') {
+    valHtml = `<div class="val muted">—</div>`; alert = `<div class="alert"><b>${EMP_NEED}.</b> No period can be computed until headcount is captured.</div>`;
+  }
+  const ins = r.ins || [];
+  const insHtml = ins.length ? `<h3>Inputs for ${esc(r.snap ? p + ' (snapshot)' : p)}</h3><ul class="inputs">${ins.map(x => `<li class="${x.v == null ? 'miss' : ''}"><span><span class="nm">${esc(x.label)}</span><span class="wh">${esc(x.when)}${x.note ? ' · ' + esc(x.note) : ''}${x.detail ? ' · ' + esc(x.detail) : ''}</span></span><span class="v">${esc(fmtIn(x.v, x.unit))}${x.derived ? ' <span class="dg" title="Derived: fiscal-year total minus the three reported quarters">†</span>' : ''}</span></li>`).join('')}</ul>` : '';
+  const conv = conventions(m, view);
+  if (r.derived) conv.push('† One input quarter is derived as the fiscal-year total minus the three reported quarters.');
+  const dr = $('drawer');
+  dr.innerHTML = `<div class="top"><div><div class="eyebrow">${esc(GNAME[m.g])} · ${esc(p)}</div><h2 class="display" id="drTitle" style="font-size:24px;margin:2px 0 0">${esc(m.name)}</h2>${m.sub ? `<div class="eyebrow">${esc(m.sub)}</div>` : ''}</div>
+    <button type="button" class="x" data-close aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>
+    ${valHtml}${alert}
+    <h3>How it's calculated</h3><p>${esc(m.formula)}</p>
+    ${insHtml}
+    ${conv.length ? `<h3>Conventions</h3><ul class="conv">${conv.map(c => `<li>${esc(c)}</li>`).join('')}</ul>` : ''}
+    <div class="actions"><button type="button" class="btn primary" data-chart="${m.id}">Add to chart</button><button type="button" class="btn" data-close>Close</button></div>`;
+  if (!dr.hidden) { render(); return; }
+  lastFocus = document.activeElement;
+  dr.hidden = false; $('scrim').hidden = false;
+  render();
+  dr.querySelector('.x').focus();
+}
+function closeDrawer() {
+  if ($('drawer').hidden) return;
+  $('drawer').hidden = true; $('scrim').hidden = true;
+  const sel = S.sel; S.sel = null; render();
+  const back = sel && document.querySelector(`[data-cell="${sel.id}"][data-i="${sel.i}"]`);
+  (back || lastFocus || document.body).focus();
+}
+
+// ---------- Variant B ----------
+function cardB(m) {
+  const view = S.view, last = data(view).periods.length - 1, r = calc(m, view, last), p = plab(view, last);
+  const open = S.open.has(m.id);
+  const badge = needs(m) ? `<span class="badge need">${needLabel(m)}</span>` : (r.st === 'ok' ? '<span class="badge ok">Available</span>' : '<span class="badge need">Gap this period</span>');
+  let body = '', sub = '', chart = '';
+  if (m.kind === 'emp') {
+    body = `<div class="needtxt">${EMP_NEED}</div>`;
+    sub = 'Nothing to compute until headcount is captured';
+    chart = '<div class="nochart">No history</div>';
+  } else if (m.kind === 'val') {
+    body = r.st === 'ok' ? `<div class="big sm ${r.v < 0 ? 'neg' : ''}">${esc(fmt(r.v, m.fmt, m.dp))}</div><div class="snapnote">${PRICE_TAG}</div>` : `<div class="big sm muted">n/m</div><div class="snapnote">${esc(r.why || '')}</div>`;
+    sub = 'Earlier periods need share price history';
+    chart = '<div class="nochart">No price history to chart</div>';
+  } else {
+    if (r.st === 'ok') body = `<div class="big ${r.v < 0 ? 'neg' : ''}">${esc(fmt(r.v, m.fmt, m.dp))}${r.derived ? '<span class="dg" title="Uses a derived quarter">†</span>' : ''}</div>`;
+    else if (r.st === 'nm') body = `<div class="big muted">n/m</div>`;
+    else body = `<div class="needtxt">Unavailable for ${esc(p)}. Missing ${esc(r.miss.join('; '))}.</div>`;
+    const c = change(m, view, last);
+    sub = c ? `<span class="chg ${c.tone}">${esc(c.txt)}</span> vs ${esc(c.vs)}${c.word ? `<span class="sr"> (${c.word})</span>` : ''}` : `${esc(p)} · no comparison`;
+    chart = `<div class="chart">${mini(m, view, windowIdx(view, 8))}</div>`;
+  }
+  let more = '';
+  if (open) {
+    const idxs = windowIdx(view, S.n);
+    const vals = idxs.map(i => calc(m, view, i));
+    const show = x => x.st === 'ok' ? esc(fmt(x.v, m.fmt, m.dp)) + (x.derived ? '<span class="dg">†</span>' : '') : x.st === 'price' ? '<span class="muted">needs price</span>' : x.st === 'emp' ? '<span class="muted">needs headcount</span>' : x.st === 'nm' ? '<span class="muted">n/m</span>' : '<span class="muted" title="' + esc('Missing ' + (x.miss || []).join('; ')) + '">n/a</span>';
+    const gaps = vals.map((x, k) => x.st === 'missing' ? plab(view, idxs[k]) + ': missing ' + x.miss.join('; ') : null).filter(Boolean);
+    more = `<div class="mbody" id="mb-${m.id}">
+      <div><h4>History</h4><div class="tw"><table class="data"><thead><tr><th scope="col">Period</th><th scope="col">${esc(m.name)}</th></tr></thead>
+      <tbody>${idxs.map((i, k) => `<tr><th scope="row">${plab(view, i)}</th><td class="${vals[k].st === 'ok' && vals[k].v < 0 ? 'neg' : ''}">${show(vals[k])}</td></tr>`).reverse().join('')}</tbody></table></div>
+      ${gaps.length ? `<p class="muted" style="font-size:12px;margin-top:8px">Gaps: ${esc(gaps.join(' · '))}</p>` : ''}</div>
+      <div><h4>How it's calculated</h4><p>${esc(m.formula)}</p>${conventions(m, view).slice(0, 2).map(c => `<p class="muted" style="font-size:12px">${esc(c)}</p>`).join('')}
+      <button type="button" class="btn" data-chart="${m.id}">Add to chart</button></div></div>`;
+  }
+  return `<article class="card mcard${open ? ' open' : ''}"><button type="button" class="mhead" data-card="${m.id}" aria-expanded="${open}" aria-controls="mb-${m.id}">
+    <div class="r1"><span class="mn">${esc(m.name)}${m.sub ? `<small>${esc(m.sub)}</small>` : ''}</span>${badge}</div>
+    ${body}<div class="sub">${sub}</div>${chart}
+    <div class="more"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>${open ? 'Hide history and formula' : 'Show history and formula'}</div></button>${more}</article>`;
+}
+function renderB(list) {
+  $('viewB').innerHTML = G.filter(([g]) => list.some(m => m.g === g)).map(([g, name]) => {
+    const ms = list.filter(m => m.g === g);
+    return `<section class="grpB"><h2 class="gh">${esc(name)} <span>${ms.length} metrics · latest ${plab(S.view, data(S.view).periods.length - 1)}</span></h2><div class="cards">${ms.map(cardB).join('')}</div></section>`;
+  }).join('');
+}
+
+// ---------- toast ----------
+let tt;
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(tt); tt = setTimeout(() => { t.hidden = true; }, 2600);
+}
+
+// ---------- events ----------
+const NOTE = {
+  A: 'Variant A · Grouped table: one collapsible table per group with periods across, a trend line and the year-over-year change. Click any value to see its formula, inputs and conventions.',
+  B: 'Variant B · Metric cards: the latest value first, change vs a year earlier and an 8-period trend. Click a card to open its history table and formula in place.'
+};
+function setPressed(sel, attr, val) {
+  document.querySelectorAll(sel).forEach(b => b.setAttribute('aria-pressed', String(b.dataset[attr] === String(val))));
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('button, [data-close]');
+  if (!t) { if (e.target === $('scrim')) closeDrawer(); return; }
+  const ds = t.dataset;
+  if (ds.v) { S.variant = ds.v; setPressed('.ws .tabs button', 'v', ds.v); $('wsNote').textContent = NOTE[ds.v]; closeDrawer(); render(); }
+  else if (ds.view) { S.view = ds.view; setPressed('[data-view]', 'view', ds.view); closeDrawer(); render(); }
+  else if (ds.n) { S.n = +ds.n; setPressed('[data-n]', 'n', ds.n); render(); }
+  else if (ds.st) { S.status = ds.st; setPressed('[data-st]', 'st', ds.st); render(); }
+  else if (ds.g) { S.group = ds.g; render(); const c = document.querySelector(`[data-g="${ds.g}"]`); if (c) c.focus(); }
+  else if (ds.grp) { S.collapsed.has(ds.grp) ? S.collapsed.delete(ds.grp) : S.collapsed.add(ds.grp); render(); document.querySelector(`[data-grp="${ds.grp}"]`).focus(); }
+  else if (ds.cell) openDrawer(ds.cell, +ds.i);
+  else if ('close' in ds) closeDrawer();
+  else if (ds.chart) toast(`${BYID[ds.chart].name} added to chart (prototype: the chart view is not built).`);
+  else if (ds.card) { S.open.has(ds.card) ? S.open.delete(ds.card) : S.open.add(ds.card); render(); document.querySelector(`[data-card="${ds.card}"]`).focus(); }
+  else if ('stmt' in ds) toast('Prototype: only the Metrics tab is built on this page.');
+  else if ('reset' in ds) { S.q = ''; $('q').value = ''; S.group = 'all'; S.status = 'all'; setPressed('[data-st]', 'st', 'all'); render(); }
+});
+$('scrim').addEventListener('click', closeDrawer);
+$('q').addEventListener('input', e => { S.q = e.target.value; render(); });
+document.addEventListener('keydown', e => {
+  const dr = $('drawer');
+  if (dr.hidden) return;
+  if (e.key === 'Escape') { e.preventDefault(); closeDrawer(); return; }
+  if (e.key === 'Tab') {
+    const f = [...dr.querySelectorAll('button')];
+    if (!f.length) return;
+    const first = f[0], lastEl = f[f.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); lastEl.focus(); }
+    else if (!e.shiftKey && document.activeElement === lastEl) { e.preventDefault(); first.focus(); }
+    else if (!dr.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+  }
+});
+
+$('wsNote').textContent = NOTE.A;
+render();
+window.__metrics = { M, calc, fmt, Q, A }; // for console inspection in the workshop
+})();
+</script>
+</body>
+</html>

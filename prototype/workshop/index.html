@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI Workshop</title>
+<link rel="stylesheet" href="base.css">
+<style>
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin: 28px 0 40px; }
+.tile { display: block; padding: 20px; color: inherit; text-decoration: none; transition: border-color 140ms, background-color 140ms; }
+.tile:hover { border-color: var(--line-strong); background: var(--hover); }
+.tile h3 { margin: 0 0 6px; }
+.tile p { margin: 0; color: var(--muted); font-size: 13px; }
+.tile .vars { margin-top: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+section.notes { max-width: 900px; }
+section.notes h2 { margin-top: 36px; }
+section.notes li { margin: 6px 0; color: var(--body); }
+code { font: 12px var(--mono); background: var(--head-bg); padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="ws"><div class="row"><span class="title">UI workshop</span><span>Prototypes for the Financials, Report and motion changes · META data from run 02c8d48b (Oct 8, 2026)</span></div></div>
+<main class="page">
+  <p class="eyebrow">Research OS · design variants</p>
+  <h1 class="display">UI workshop</h1>
+  <p class="lede">Each page has variants you can switch between in the dark bar at the top. They use real META figures captured by the latest run. Where the data doesn't exist yet, the page says so instead of making numbers up.</p>
+
+  <div class="grid">
+    <a class="card tile" href="charts.html"><h3 class="display">Financial charts</h3><p>Add any line item to a chart, switch chart type, compare series, quarterly or annual.</p><div class="vars"><span class="chip">A · Chart workspace</span><span class="chip">B · Chart from the statement</span><span class="chip">C · Chart board</span></div></a>
+    <a class="card tile" href="metrics.html"><h3 class="display">Financial metrics</h3><p>The full metric list: margins, valuation, returns, SBC, per share, per employee, leverage.</p><div class="vars"><span class="chip">A · Grouped table</span><span class="chip">B · Metric cards</span></div></a>
+    <a class="card tile" href="kpi-monitor.html"><h3 class="display">KPI monitoring</h3><p>Each KPI's quarterly trend against its bear, base and bull thresholds, plus thesis breakers.</p><div class="vars"><span class="chip">A · Trend table</span><span class="chip">B · Band charts</span><span class="chip">C · Watchlist board</span></div></a>
+    <a class="card tile" href="valuation.html"><h3 class="display">Valuation</h3><p>Bear, base and bull values first, a readable DCF per scenario, and assumptions moved into evidence.</p><div class="vars"><span class="chip">A · Verdict first</span><span class="chip">B · Scenario tabs</span><span class="chip">C · Price path</span></div></a>
+    <a class="card tile" href="motion.html"><h3 class="display">Motion</h3><p>Page and control animation systems to choose a baseline from, with replay and slow-motion.</p><div class="vars"><span class="chip">Current</span><span class="chip">A · Quiet</span><span class="chip">B · Directional</span><span class="chip">C · Staggered</span><span class="chip">D · Continuity</span><span class="chip">E · Skeleton</span></div></a>
+  </div>
+
+  <section class="notes">
+    <h2 class="display">What the code review found</h2>
+    <ul>
+      <li><b>Every KPI chart in the report is blank.</b> The KPI items say <code>GAAP as reported</code> / <code>USD millions</code> while the observations say <code>gaap</code> / <code>USD</code>, so the filter in <code>research-dashboards.tsx:20</code> never matches. Segment KPIs also fail because their observations have no segment set.</li>
+      <li><b>The forecast table is a million times too small.</b> <code>research-dashboards.tsx:44</code> divides values that are already in USD millions by 1e6 again ("Base capex 0.12").</li>
+      <li><b>FY2021 is missing</b> because the filing fetch only reads the SEC "recent" filings page. For META that page holds just two 10-Ks, because of heavy Form 4 volume. Older pages (<code>filings.files[]</code>) are never fetched. The full annual history is already in companyfacts, but only quarterly facts are used.</li>
+      <li><b>Gross margin shows "Unavailable"</b> because META doesn't file gross profit and there's no fallback of revenue minus cost of revenue. ROIC is always unavailable because nothing produces NOPAT or invested capital.</li>
+      <li><b>The valuation headline numbers are never displayed:</b> current price, probabilities, scenario values, weighted target and expected returns all exist in the artifacts.</li>
+    </ul>
+    <h2 class="display">Data the new metrics need</h2>
+    <ul>
+      <li><b>Available from filings today:</b> all margins, returns (including ROCE and ROIC), SBC ratios, per-share metrics, payout ratios, and debt to EBITDA. Dividends per share can only be approximated, as dividends paid divided by shares.</li>
+      <li><b>Needs price history:</b> market cap, enterprise value, all price-to-X multiples and the yields. The Yahoo provider and the <code>market_price_bars</code> table exist, but nothing saves META's price history. Each run keeps only a 5-day snapshot.</li>
+      <li><b>Needs employee count:</b> all six per-employee metrics. The headcount isn't in the captured XBRL; it has to come from the 10-K text (Item 1) or a data vendor.</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

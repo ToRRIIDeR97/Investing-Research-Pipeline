@@ -71,7 +71,7 @@
       "asset_slug": "mercado-libre",
       "symbol": "MELI",
       "cutoff": "2026-08-06",
-      "reference": "MercadoLibre_Framework_v3_Full_Initiation_Report.md",
+      "reference": "Research References/MercadoLibre_Framework_v3_Full_Initiation_Report.md",
       "note": "Reference valuation date 2026-08-06, price $1,835. docs/meli-v3-acceptance-rubric.md holds the manual items.",
       "baseline_runs": ["dca55615-62e4-46c3-ab2c-648460c37f56"],
       "probes": []

@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Valuation Variants</title>
+<link rel="stylesheet" href="base.css">
+<style>
+/* Valuation chapter: three design variants on the same META run data. Light theme only
+   (the app has no dark mode). Scenario colour always comes with a text label and a shape. */
+[hidden] { display: none !important; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+a { color: var(--ink); text-underline-offset: 2px; }
+.page { max-width: 1240px; }
+.chap { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 28px; }
+.chap .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.status { display: inline-flex; align-items: center; gap: 6px; background: var(--amber-bg); color: var(--amber-ink); border: 1px solid #ecdcb4; border-radius: 20px; padding: 3px 10px; font-size: 12px; font-weight: 500; }
+.status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--amber-dot); }
+.unit-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+section.blk { margin: 36px 0 0; }
+.blk-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.blk-h h2 { font: 400 24px/1.25 var(--serif); margin: 0; letter-spacing: -.3px; }
+.blk-h p { margin: 0; color: var(--muted); font-size: 13px; }
+.fine { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 8px 0 0; }
+.card { padding: 16px; }
+.hero > *, .build > *, .b-head > *, .b-grid > *, .c-top > *, .c-side > *, .tiles > * { min-width: 0; }
+
+/* scenario identity: colour + glyph + name */
+.sc-bear { --c: var(--bear); } .sc-base { --c: var(--base); } .sc-bull { --c: var(--bull); }
+.scn { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--ink); }
+.scn i { font-style: normal; color: var(--c); font-size: 11px; line-height: 1; }
+.lastp { display: flex; flex-direction: column; gap: 2px; }
+.lastp .v { font: 500 26px/1.15 var(--sans); font-variant-numeric: tabular-nums; letter-spacing: -.5px; }
+.lastp .l { font-size: 12px; color: var(--muted); }
+.chip.unv { color: var(--amber-ink); background: var(--amber-bg); border-color: #ecdcb4; }
+.ret { font-variant-numeric: tabular-nums; font-weight: 500; }
+.callout { border: 1px solid #ecdcb4; background: var(--amber-bg); color: var(--amber-ink); border-radius: 6px; padding: 10px 14px; font-size: 13px; display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline; }
+.callout b { color: #6d4b08; }
+
+/* ---------- A: verdict first ---------- */
+.hero { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 640px) { .hero { grid-template-columns: 1fr 1fr; } .hero .sc-card { grid-column: span 1; } }
+@media (min-width: 1080px) { .hero { grid-template-columns: 1fr 1.15fr 1.15fr 1.15fr 1fr; } }
+.sc-card { border-top: 3px solid var(--c); display: flex; flex-direction: column; gap: 6px; }
+.sc-card .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.sc-card .prob { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sc-card .v { font: 500 30px/1.1 var(--sans); letter-spacing: -.8px; font-variant-numeric: tabular-nums; }
+.sc-card .v small { display: block; font: 400 12px/1.4 var(--sans); letter-spacing: 0; color: var(--muted); margin-top: 2px; }
+.sc-card .story { font-size: 13px; color: var(--body); margin: 2px 0 0; }
+.w-card { background: #f6f6f2; display: flex; flex-direction: column; gap: 6px; }
+.w-card .v { font: 500 30px/1.1 var(--sans); letter-spacing: -.8px; font-variant-numeric: tabular-nums; }
+.kv { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.kv span:first-child { color: var(--muted); }
+.chart { width: 100%; min-height: 40px; }
+.chart svg { display: block; overflow: visible; }
+.chart text { font-family: var(--sans); fill: var(--ink); }
+.chart .mut { fill: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.lg-line { width: 18px; border-top: 2px dashed var(--ink); display: inline-block; }
+.lg-dia { width: 9px; height: 9px; background: var(--ink); transform: rotate(45deg); display: inline-block; }
+.lg-bar { width: 18px; height: 10px; border: 1px solid var(--line-strong); background: var(--chart-fill); display: inline-block; }
+.lg-bar.d { border-style: dashed; background: #fff; }
+
+.build { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 980px) { .build { grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); } }
+.build-h { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 14px 0 10px; }
+.build-h .meta { font-size: 13px; color: var(--muted); }
+
+/* DCF table */
+.tw { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.tw:focus-visible { outline-offset: 0; }
+table.dcf { min-width: 560px; }
+table.dcf tbody th { background: none; color: var(--ink); font-weight: 400; font-size: 13px; text-align: left; border-top: 1px solid var(--line); padding: 8px 12px; white-space: nowrap; }
+table.dcf thead th:first-child { text-align: left; }
+table.dcf .exit { background: #f7f7f3; border-left: 1px solid var(--line); }
+table.dcf thead th.exit { background: #e9eae6; color: var(--ink); }
+table.dcf tr.sub th, table.dcf tr.sub td { color: var(--muted); font-size: 12px; }
+table.dcf tr.sub th { padding-left: 24px; }
+table.dcf tr.em th, table.dcf tr.em td { font-weight: 600; }
+table.dcf tr.tot th, table.dcf tr.tot td { font-weight: 600; border-top: 1px solid var(--line-strong); }
+.bridge { margin: 0; display: grid; gap: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); font-size: 13px; }
+.bridge > div { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); align-items: baseline; }
+.bridge > div:first-child { border-top: 0; }
+.bridge .op { color: var(--muted); font-weight: 600; text-align: center; }
+.bridge dt { color: var(--body); }
+.bridge dt small { color: var(--muted); }
+.bridge dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.bridge .t { background: #f7f7f3; }
+.bridge .t dt, .bridge .t dd { font-weight: 600; color: var(--ink); }
+.bridge .big dd { font-size: 18px; }
+.bridge-h { font-size: 12px; color: var(--muted); margin: 0 0 6px; }
+
+/* disclosure */
+details.disc { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); margin-top: 12px; }
+details.disc > summary { list-style: none; cursor: pointer; padding: 14px 16px; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+details.disc > summary::-webkit-details-marker { display: none; }
+details.disc > summary .t { font: 400 19px/1.3 var(--serif); display: inline-flex; gap: 10px; align-items: baseline; }
+details.disc > summary .t::before { content: "+"; font: 500 15px var(--sans); color: var(--muted); width: 12px; }
+details.disc[open] > summary .t::before { content: "\2212"; }
+details.disc > summary .m { font-size: 12px; color: var(--muted); }
+details.disc > summary:hover { background: var(--hover); }
+.disc-body { padding: 4px 16px 18px; border-top: 1px solid var(--line); }
+.disc-body h4 { font-size: 13px; font-weight: 600; margin: 18px 0 6px; }
+.disc-body ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--body); }
+.disc-body li { margin-bottom: 4px; }
+details.sub { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 4px; }
+details.sub > summary { cursor: pointer; padding: 8px 0; font-weight: 500; }
+.raw { border-left: 3px solid var(--line-strong); background: #f7f7f4; padding: 8px 12px; font-size: 12.5px; color: var(--body); margin: 6px 0; }
+.raw-l { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 12px 0 4px; }
+.raw code, .ids code { font: 11.5px var(--mono); color: var(--secondary); }
+.ids { font-size: 11.5px; color: var(--muted); }
+
+/* assumptions */
+table.asm { min-width: 680px; }
+table.asm tbody th { background: none; color: var(--ink); font-weight: 500; text-align: left; border-top: 1px solid var(--line); padding: 10px 12px 2px; white-space: normal; width: 200px; vertical-align: top; }
+table.asm tbody th small { display: block; font-weight: 400; color: var(--muted); font-size: 11.5px; }
+table.asm tr.v td, table.asm thead th { text-align: left; }
+table.asm tr.v td { padding-bottom: 2px; font-weight: 500; }
+table.asm tr.n td { border-top: 0; white-space: normal; text-align: left; font-size: 12px; color: var(--muted); vertical-align: top; padding-top: 2px; padding-bottom: 12px; line-height: 1.45; width: 25%; }
+table.asm tr.n:hover td, table.asm tr.v:hover td { background: none; }
+.bt { display: inline-block; font-size: 10.5px; font-weight: 500; border: 1px solid var(--line-strong); border-radius: 3px; padding: 0 5px; margin-left: 6px; color: var(--secondary); vertical-align: 1px; }
+.bt.Placeholder { border-style: dashed; color: var(--amber-ink); border-color: #d9be7b; }
+.bt.Run-rate { background: var(--head-bg); }
+
+/* open questions */
+.oq { scroll-margin-top: 110px; border: 1px solid #ecdcb4; background: #fffdf7; border-radius: 6px; padding: 16px 18px; }
+.oq h2 { font: 400 22px/1.25 var(--serif); margin: 0 0 4px; }
+.oq > p { margin: 0 0 10px; color: var(--body); font-size: 13px; }
+.oq ol { margin: 0; padding-left: 20px; font-size: 13.5px; color: var(--body); }
+.oq li { margin-bottom: 8px; }
+.oq li b { color: var(--ink); }
+
+/* ---------- B: scenario tabs ---------- */
+.strip { display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+.strip > div { padding: 10px 16px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 1px; min-width: 120px; flex: 1 1 auto; }
+.strip > div:first-child { border-left: 0; }
+.strip .l { font-size: 12px; color: var(--muted); }
+.strip .v { font-weight: 600; font-variant-numeric: tabular-nums; font-size: 16px; }
+.strip .sc-cell { box-shadow: inset 0 3px 0 var(--c); }
+@media (max-width: 720px) { .strip > div { flex: 1 1 45%; border-left: 0; border-top: 1px solid var(--line); } .strip > div:first-child { flex-basis: 100%; border-top: 0; } }
+.seg-row { display: flex; align-items: center; gap: 12px; margin: 28px 0 0; flex-wrap: wrap; }
+.seg button { display: inline-flex; align-items: center; gap: 6px; }
+.seg button i { font-style: normal; font-size: 10px; color: var(--c); }
+.b-head { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); margin-top: 20px; }
+@media (min-width: 900px) { .b-head { grid-template-columns: 1.3fr 1fr; } }
+.b-head .big { font: 500 40px/1.05 var(--sans); letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+.b-head .sub { color: var(--muted); font-size: 13px; }
+.b-head .story { font-size: 15px; color: var(--body); line-height: 1.6; margin: 10px 0 0; max-width: 620px; }
+.b-head .side { border-left: 3px solid var(--c); padding-left: 14px; display: flex; flex-direction: column; gap: 6px; justify-content: center; }
+.tiles { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; margin-top: 20px; }
+@media (min-width: 900px) { .tiles { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 420px) { .tiles { grid-template-columns: 1fr; } }
+.tile { padding: 14px; display: flex; flex-direction: column; gap: 4px; }
+.tile .l { font-size: 12px; color: var(--muted); }
+.tile .v { font: 500 22px/1.2 var(--sans); font-variant-numeric: tabular-nums; }
+.tile .p { font-size: 12px; color: var(--body); font-variant-numeric: tabular-nums; }
+.tile .d { font-size: 12px; font-weight: 500; color: var(--secondary); font-variant-numeric: tabular-nums; }
+.b-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); margin-top: 20px; align-items: start; }
+@media (min-width: 1040px) { .b-grid { grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); } }
+.card-h { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+
+/* ---------- C: price path ---------- */
+.c-top { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1000px) { .c-top { grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); } }
+.c-side { display: grid; gap: 16px; }
+table.ret-t { min-width: 0; }
+table.ret-t td, table.ret-t th { padding: 8px 10px; }
+table.ret-t tr.wt td, table.ret-t tr.wt th { font-weight: 600; border-top: 1px solid var(--line-strong); }
+table.ret-t tbody th { background: none; text-align: left; font-weight: 500; color: var(--ink); border-top: 1px solid var(--line); padding: 8px 10px; }
+.imp { background: #f6f6f2; }
+.imp p.big { font: 400 19px/1.45 var(--serif); margin: 4px 0 8px; color: var(--ink); }
+details.scn-d { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); margin-top: 10px; border-left: 3px solid var(--c); }
+details.scn-d > summary { list-style: none; cursor: pointer; padding: 12px 16px; display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+details.scn-d > summary::-webkit-details-marker { display: none; }
+details.scn-d > summary::before { content: "+"; color: var(--muted); width: 10px; font-weight: 500; }
+details.scn-d[open] > summary::before { content: "\2212"; }
+details.scn-d > summary .m { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+details.scn-d .in { padding: 0 16px 16px; }
+table.path-t { min-width: 420px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+  .seg button, .ws .tabs button { transition: background-color .15s, color .15s; }
+}
+@media (max-width: 720px) {
+  .ws .row { padding: 10px 16px; gap: 10px; }
+  .ws .note { display: none; }
+  .app-top .sub > * { white-space: nowrap; flex: none; }
+  .app-top .bar { padding: 0 16px; }
+  .app-top .sub { padding: 0 16px; }
+  .sc-card .v, .w-card .v { font-size: 26px; }
+  .b-head .big { font-size: 32px; }
+}
+</style>
+</head>
+<body>
+
+<div class="ws">
+  <div class="row">
+    <span class="title">Valuation</span>
+    <div class="tabs" role="group" aria-label="Design variant">
+      <button type="button" data-v="a" aria-pressed="true">A · Verdict first</button>
+      <button type="button" data-v="b" aria-pressed="false">B · Scenario tabs</button>
+      <button type="button" data-v="c" aria-pressed="false">C · Price path</button>
+    </div>
+    <a href="index.html">All workshop pages</a>
+  </div>
+  <div class="note">Real META data from run 02c8d48b (Oct 8, 2026 cutoff). Headline values are the report's FY2028 scenario values; the tables show its discounted cash flow method. The two disagree and the page says so.</div>
+</div>
+
+<header class="app-top">
+  <div class="bar"><span class="logo"><i>R</i>Research OS</span></div>
+  <nav class="sub" aria-label="Asset sections">
+    <b>Meta Platforms · META</b>
+    <span>Overview</span><span class="on" aria-current="page">Report</span><span>Evidence</span><span>Signals</span><span>Runs</span>
+  </nav>
+</header>
+
+<main class="page" id="main">
+  <div class="chap">
+    <div class="eyebrow">Chapter 6 of 12</div>
+    <div class="row"><h1 class="display">Valuation</h1><span class="status">Valuation not yet closable · conclusion withheld</span></div>
+    <p class="lede" style="margin:6px 0 0">What Meta could be worth in three scenarios, how each figure is calculated, and what is still unresolved.</p>
+    <div class="unit-note">US dollars. Company totals in billions, per-share values in dollars.</div>
+  </div>
+
+  <div id="v-a" data-variant="a"></div>
+  <div id="v-b" data-variant="b" hidden></div>
+  <div id="v-c" data-variant="c" hidden></div>
+</main>
+
+<script src="meta-data.js"></script>
+<script>
+"use strict";
+/* ================= data + formatting (pure, testable in node) ================= */
+const V = window.META.valuation, SS = V.scenario_set;
+const SC = ["bear", "base", "bull"];
+const NAME = { bear: "Bear", base: "Base", bull: "Bull" };
+const GLYPH = { bear: "▼", base: "●", bull: "▲" };
+const PRICE = SS.current_market_price;
+const PRICE_LABEL = "Last price $" + PRICE.toFixed(2) + " · Oct 8, 2026 snapshot";
+const MINUS = "−";
+const nf1 = new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const nf2 = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const nf0 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const sg = (x, s) => (x < 0 ? MINUS : "") + s;
+const fB = m => sg(m, "$" + nf1.format(Math.abs(m) / 1000) + "B");      // USD millions -> $B
+const fPS = x => sg(x, "$" + nf2.format(Math.abs(x)));                   // per share, 2 dp
+const fPct = (x, d = 1) => sg(x, (Math.abs(x) * 100).toFixed(d) + "%");
+const fRet = x => (x > 0 ? "+" : x < 0 ? MINUS : "") + (Math.abs(x) * 100).toFixed(1) + "%";
+const fPts = x => Math.abs(x) < 1e-9 ? "same as base" : (x > 0 ? "+" : MINUS) + (Math.abs(x) * 100).toFixed(1) + " pts vs base";
+const fDF = x => x.toFixed(3);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+/* Plain-English dictionary for schema names. */
+const LABEL = {
+  fcff: "Discounted free cash flow with an exit multiple",
+  fcff_dcf_terminal_multiple: "Discounted free cash flow with an exit multiple",
+  nopat: "after-tax operating profit",
+  nopat_fy2028_after_tax_operating_income: "FY2028 after-tax operating profit",
+  foa_advertising_revenue_growth: "Family of Apps revenue growth",
+  foa_operating_margin: "Family of Apps operating margin",
+  reality_labs_revenue: "Reality Labs revenue",
+  reality_labs_operating_loss: "Reality Labs operating loss",
+  capex_purchases_of_property_and_equipment: "Capital expenditure",
+  eu_dma_regulatory_revenue_haircut: "EU Digital Markets Act revenue impact",
+  equity_bridge: "Net debt adjustment",
+  terminal_value: "Value at end of 2028",
+  consolidated_operating_income: "Operating profit",
+  discount_rate: "Discount rate",
+  operating_model: "operating model",
+  reinvestment_model: "reinvestment model",
+  driver_tree: "driver tree",
+  dividend_per_share: "dividend per share",
+  nav_inputs: "net asset value inputs",
+  fcfe: "Free cash flow to equity",
+  dividend: "Dividend discount",
+  earnings_exit: "Exit on an earnings multiple",
+  book_exit: "Exit on book value",
+  tangible_book_exit: "Exit on tangible book value"
+};
+const plain = key => LABEL[key] || key.replace(/_/g, " ");
+
+const fine2 = v => (Math.round(Math.abs(v) * 10000) % 10 ? 2 : 1);
+const DRIVERS = [
+  ["foa_advertising_revenue_growth", "year over year", v => fPct(v, fine2(v))],
+  ["foa_operating_margin", "share of segment revenue", v => fPct(v, fine2(v))],
+  ["reality_labs_revenue", "for the year", v => fB(v)],
+  ["reality_labs_operating_loss", "for the year", v => fB(Math.abs(v))],
+  ["capex_purchases_of_property_and_equipment", "for the year", v => fB(v)],
+  ["eu_dma_regulatory_revenue_haircut", "revenue reduction", v => (v === 0 ? "$0" : fB(v))]
+];
+
+/* Where an assumption came from, read off the rationale wording. */
+function basis(r) {
+  if (/^Zero placeholder/i.test(r)) return "Placeholder";
+  if (/^Run-rate anchor|^Derived from|run-rate anchor:/i.test(r)) return "Run-rate";
+  return "Analyst";
+}
+/* One readable sentence from an internal rationale. Raw text stays in the Evidence area. */
+function clean(r) {
+  let s = String(r || "");
+  s = s.replace(/\s*\([^()]*\)/g, m => (/driver[_ ]tree|not verified|request-\d|_|unavailable|[0-9a-f]{8}-/i.test(m) ? "" : m));
+  s = s.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "");
+  s = s.replace(/request-\d+(?:-\d+)*/gi, "");
+  s = s.replace(/\s*from the driver tree\b/gi, "").replace(/,?\s*not verified in evidence/gi, "");
+  s = s.replace(/^Run-rate anchor from the (?:operating_model|reinvestment_model):\s*/i, "");
+  s = s.replace(/\bthe (?:operating_model|reinvestment_model)(?: run-rate)? anchor\b/g, "the Q2 2026 run-rate");
+  s = s.replace(/\b[a-z]+(?:_[a-z0-9]+)+\b/g, w => plain(w).toLowerCase());
+  s = s.replace(/\bFoA\b/g, "Family of Apps").replace(/\bcorpus\b/g, "sources").replace(/ x (\d)/g, " × $1");
+  s = s.replace(/(?<![\d.,$])(\d{1,3}(?:,\d{3})+)(?!\d|,\d|%)/g, (m, n) => {
+    const v = +n.replace(/,/g, "");
+    return v >= 1000 && v < 1e7 ? "$" + nf1.format(v / 1000) + "B" : m;
+  });
+  s = s.replace(/(?<![\d.,$\w-])(\d{3})(?!\d|%|[.,]\d)/g, "$$$1M");   // bare USD millions, e.g. 833
+  s = s.replace(/^Analyst assumption[,.]\s*/i, "").replace(/^Zero placeholder,[^.]*\.\s*/i, "");
+  s = s.replace(/\s{2,}/g, " ").replace(/\s+([.,;:])/g, "$1").trim();
+  let first = (s.match(/^.*?[.!?](?=\s+[A-Z(]|$)/) || [s])[0];
+  if (!first || /^Same limitation/i.test(first)) first = "Held at zero until the effect can be quantified.";
+  return first.charAt(0).toUpperCase() + first.slice(1);
+}
+
+/* Per-scenario model: the DCF schedule joined to its operating scenario. */
+const M = {};
+for (const k of SC) {
+  const s = V.method_schedules.find(x => x.scenario_type === k);
+  const op = V.operating_scenarios.find(x => x.scenario_type === k);
+  const years = s.years.slice().sort((a, b) => a.fiscal_year - b.fiscal_year).map(y => {
+    const r = op.resulting_years[String(y.fiscal_year)];
+    const nopat = y.cash_flow + r.capex;        // cash flow = after-tax operating profit - capex
+    return { fy: y.fiscal_year, rev: r.consolidated_revenue, op: r.consolidated_operating_income,
+      margin: r.consolidated_operating_margin, tax: r.consolidated_operating_income - nopat, nopat,
+      capex: r.capex, fcf: y.cash_flow, df: y.discount_factor, pv: y.present_value };
+  });
+  const pvCF = years.reduce((a, y) => a + y.pv, 0);
+  const ev = pvCF + s.terminal_present_value;
+  const equity = ev + s.equity_bridge;
+  const drivers = {};
+  for (const a of op.numeric_assumptions) (drivers[a.driver_key] = drivers[a.driver_key] || {})[a.fiscal_year] = a;
+  M[k] = { k, s, op, years, pvCF, ev, equity, ps: equity / s.diluted_shares, drivers,
+    taxRate: 1 - years[0].nopat / years[0].op,
+    exitDF: s.terminal_present_value / s.terminal_value,
+    exitShare: s.terminal_present_value / ev,
+    anchor: SS["terminal_anchor_" + k], prob: SS["probability_" + k],
+    ret: SS["terminal_anchor_" + k] / PRICE - 1,
+    path: V.price_target_path.filter(p => p.scenario_type === k).sort((a, b) => a.fiscal_year - b.fiscal_year) };
+}
+const ERM = V.expected_return_matrix, RV = V.reverse_valuation;
+const WEIGHTED = SS.weighted_target;
+const DCF_WEIGHTED = SC.reduce((a, k) => a + M[k].prob * M[k].ps, 0);
+const FYS = M.base.years.map(y => y.fy);
+const drv = (k, key, fy) => M[k].drivers[key][fy].value;
+const growthPath = k => FYS.map(fy => fPct(drv(k, "foa_advertising_revenue_growth", fy))).join(" → ");
+
+const STORY = {
+  bear: `Family of Apps growth slows from ${fPct(drv("bear", "foa_advertising_revenue_growth", 2026), 0)} to ${fPct(drv("bear", "foa_advertising_revenue_growth", 2028), 0)} while capex keeps climbing to ${fB(drv("bear", "capex_purchases_of_property_and_equipment", 2028))}.`,
+  base: `Today's run-rate, with Family of Apps growth easing to ${fPct(drv("base", "foa_advertising_revenue_growth", 2028), 0)} and capex reaching ${fB(drv("base", "capex_purchases_of_property_and_equipment", 2028))} by 2028.`,
+  bull: `AI-driven ad gains keep growth at ${fPct(drv("bull", "foa_advertising_revenue_growth", 2028), 0)} in 2028 while capex rises only to ${fB(drv("bull", "capex_purchases_of_property_and_equipment", 2028))}.`
+};
+
+/* ================= shared HTML builders ================= */
+const scn = k => `<span class="scn sc-${k}"><i aria-hidden="true">${GLYPH[k]}</i>${NAME[k]}</span>`;
+const unv = `<span class="chip unv">not verified</span>`;
+
+function dcfTable(k) {
+  const m = M[k], s = m.s, Y = m.years, T = SS.terminal_year;
+  const row = (label, cells, exit = "", cls = "") =>
+    `<tr class="${cls}"><th scope="row">${label}</th>${cells.map(c => `<td>${c}</td>`).join("")}<td class="exit">${exit}</td></tr>`;
+  const blank = Y.map(() => "");
+  return `<div class="tw" role="region" tabindex="0" aria-label="${NAME[k]} case: discounted cash flow table">
+  <table class="data dcf">
+    <caption class="sr">${NAME[k]} case. ${plain(s.method)}. USD billions unless noted.</caption>
+    <thead><tr><th scope="col">USD billions</th>${Y.map(y => `<th scope="col">FY${y.fy}</th>`).join("")}<th scope="col" class="exit">Value at end of ${T}</th></tr></thead>
+    <tbody>
+      ${row("Revenue", Y.map(y => fB(y.rev)))}
+      ${row("Operating profit", Y.map(y => fB(y.op)))}
+      ${row("Operating margin", Y.map(y => fPct(y.margin)), "", "sub")}
+      ${row(`Taxes at ${fPct(m.taxRate)}`, Y.map(y => fB(-y.tax)), "", "sub")}
+      ${row("After-tax operating profit", Y.map(y => fB(y.nopat)), fB(s.terminal.metric_value))}
+      ${row("Capital expenditure", Y.map(y => fB(-y.capex)))}
+      ${row("Exit multiple", blank, s.terminal.multiple + "×", "sub")}
+      ${row("Free cash flow · exit value", Y.map(y => fB(y.fcf)), fB(s.terminal_value), "em")}
+      ${row(`Discount factor at ${fPct(s.discount_rate)}`, Y.map(y => fDF(y.df)), fDF(m.exitDF), "sub")}
+      ${row("Present value", Y.map(y => fB(y.pv)), fB(s.terminal_present_value), "tot")}
+    </tbody>
+  </table></div>
+  <p class="fine">Free cash flow is after-tax operating profit minus capital expenditure. Depreciation isn't added back because the sources have no depreciation schedule, so yearly cash flows are understated and the value at end of ${T} makes up ${fPct(m.exitShare, 0)} of enterprise value.</p>`;
+}
+
+function bridge(k, p) {
+  const m = M[k], s = m.s;
+  const r = (op, dt, dd, cls = "") => `<div class="${cls}"><span class="op" aria-hidden="true">${op}</span><dt>${dt}</dt><dd>${dd}</dd></div>`;
+  return `<p class="bridge-h">From cash flows to value per share</p>
+  <dl class="bridge">
+    ${r("", `Present value of FY${FYS[0]}–${String(FYS[FYS.length - 1]).slice(2)} cash flows`, fB(m.pvCF))}
+    ${r("+", `Present value of value at end of ${SS.terminal_year}`, fB(s.terminal_present_value))}
+    ${r("=", "Enterprise value", fB(m.ev), "t")}
+    ${r(MINUS, "Net debt adjustment <small>(long-term debt only)</small>", fB(Math.abs(s.equity_bridge)))}
+    ${r("=", "Equity value", fB(m.equity), "t")}
+    ${r("÷", "Diluted shares", nf0.format(s.diluted_shares) + "M")}
+    ${r("=", "Value per share today", fPS(m.ps), "t big")}
+  </dl>
+  <p class="fine">Valued at Jun 30, 2026. The ${NAME[k].toLowerCase()} scenario value of ${fPS(m.anchor)} for FY${SS.terminal_year} comes from a separate calculation that doesn't match this one. <a href="#${p}-oq">Why this isn't final</a></p>`;
+}
+
+function openQuestions(p) {
+  const exitMin = Math.min(...SC.map(k => M[k].exitShare));
+  const sameExit = SC.every(k => M[k].s.terminal.multiple === M.base.s.terminal.multiple && M[k].s.discount_rate === M.base.s.discount_rate);
+  return `<section class="oq blk" id="${p}-oq" aria-labelledby="${p}-oq-h">
+  <h2 id="${p}-oq-h">Why this isn't final</h2>
+  <p>The report marks this valuation as not yet closable and withholds a conclusion. Open issues:</p>
+  <ol>
+    <li><b>The headline values and the cash-flow model don't agree.</b> The scenario values (${SC.map(k => fPS(M[k].anchor)).join(" / ")}) are FY${SS.terminal_year} per-share figures. The discounted cash flow model, valued at Jun 30, 2026, gives ${SC.map(k => fPS(M[k].ps)).join(" / ")} (probability-weighted ${fPS(DCF_WEIGHTED)}). The report flags the gap and hasn't reconciled it, so neither set is final.</li>
+    <li><b>Free cash flow is negative in every forecast year</b> in all three cases, because capital expenditure exceeds after-tax operating profit and depreciation isn't added back. The value at end of ${SS.terminal_year} is at least ${fPct(exitMin, 0)} of enterprise value, so the result rests almost entirely on the exit multiple.</li>
+    <li><b>The net debt adjustment subtracts only long-term debt</b> (${fB(Math.abs(M.base.s.equity_bridge))}). Cash, marketable securities and leases aren't in the sources, so equity value is biased low.</li>
+    <li><b>The ${fPct(M.base.s.discount_rate)} discount rate and ${M.base.s.terminal.multiple}× exit multiple are analyst assumptions</b> with no market or peer calibration${sameExit ? ", held the same in every scenario" : ""}. The 25 / 50 / 25 probability weights are analyst assumptions too.</li>
+    <li><b>The EU Digital Markets Act impact is held at zero</b> in every case as a placeholder, not a finding.</li>
+    <li><b>The last price is one unverified snapshot</b> ($${PRICE.toFixed(2)}, Oct 8, 2026). Every return on this page moves with it.</li>
+    <li><b>Share count:</b> ${SS.source_gaps.map(esc).join(" ")}</li>
+  </ol>
+</section>`;
+}
+
+function assumptions(p, initial) {
+  const panels = SC.map(k => {
+    const rows = DRIVERS.map(([key, unit, fmt]) => {
+      const a = M[k].drivers[key];
+      const vals = FYS.map(fy => { const b = basis(a[fy].rationale); return `<td>${fmt(a[fy].value)}<span class="bt ${b}">${b}</span></td>`; }).join("");
+      const notes = FYS.map(fy => `<td>${esc(clean(a[fy].rationale))}</td>`).join("");
+      return `<tr class="v"><th scope="row" rowspan="2">${plain(key)}<small>${unit}</small></th>${vals}</tr><tr class="n">${notes}</tr>`;
+    }).join("");
+    return `<div data-panel="${p}-as" data-k="${k}" ${k === initial ? "" : "hidden"}>
+      <div class="tw" role="region" tabindex="0" aria-label="${NAME[k]} case assumptions by year"><table class="data asm">
+      <caption class="sr">${NAME[k]} case assumptions by fiscal year, with a one-sentence reason under each value</caption>
+      <thead><tr><th scope="col">Driver</th>${FYS.map(fy => `<th scope="col">FY${fy}</th>`).join("")}</tr></thead>
+      <tbody>${rows}</tbody></table></div></div>`;
+  }).join("");
+  return `<details class="disc" id="${p}-as-d"><summary><span class="t">Assumptions by year</span><span class="m">6 drivers × 3 years, per scenario</span></summary>
+  <div class="disc-body">
+    <div class="seg-row" style="margin-top:14px">${segControl(p + "-as", initial, "Scenario for assumptions")}</div>
+    <p class="fine" style="margin-bottom:10px">Run-rate = Q2 2026 quarter × 4, not guidance. Analyst = analyst assumption, not company guidance. Placeholder = held at zero, not a finding. Full notes are under Evidence.</p>
+    ${panels}
+  </div></details>`;
+}
+
+function evidence(p) {
+  const om = (SS.omitted_methods || V.method_schedules.find(s => s.omitted_methods)?.omitted_methods || []);
+  const d = SS.dilution_assumption || {};
+  const per = SC.map(k => {
+    const m = M[k], s = m.s;
+    const asm = DRIVERS.map(([key]) => FYS.map(fy => {
+      const a = m.drivers[key][fy];
+      return `<div class="raw"><b>${plain(key)}, FY${fy}:</b> ${esc(a.rationale)}${a.source_ids.length ? `<div class="ids">Sources: ${a.source_ids.map(id => `<code>${esc(id)}</code>`).join(", ")}</div>` : ""}</div>`;
+    }).join("")).join("");
+    return `<details class="sub sc-${k}"><summary>${scn(k)} case: method and analyst notes</summary>
+      <p style="margin:4px 0 0;font-size:13px">Method: ${plain(s.method)}, ${fPct(s.discount_rate)} discount rate, ${s.terminal.multiple}× FY${SS.terminal_year} after-tax operating profit.</p>
+      <div class="raw-l">Analyst notes (raw)</div>
+      <div class="raw">${esc(s.rationale)}</div>
+      <div class="raw"><b>Cash flow definition:</b> ${esc(s.cash_flow_label)}</div>
+      <div class="raw"><b>Net debt adjustment:</b> ${esc(s.equity_bridge_explanation)}</div>
+      <div class="raw-l">Source notes (raw)</div>
+      ${s.source_notes.map(n => `<div class="raw">${esc(n)}</div>`).join("")}
+      <div class="raw-l">Assumption notes (raw)</div>
+      ${asm}
+    </details>`;
+  }).join("");
+  return `<details class="disc" id="${p}-ev"><summary><span class="t">Evidence &amp; analyst notes</span><span class="m">Sources, methods not used, raw notes</span></summary>
+  <div class="disc-body">
+    <h4>Inputs outside the scenarios</h4>
+    <ul>
+      <li>${PRICE_LABEL}. Not verified, and not used to set any value in the cash-flow model.</li>
+      <li>Diluted shares: ${nf0.format(d.reported_diluted_weighted_average_shares / 1e6)}M, period ending ${esc(d.reported_period_end)}, SEC accession <code>${esc(d.source_accession_number)}</code>. ${esc(d.treatment)}</li>
+      <li>Returns exclude dividends: the sources have no dividend-per-share data.</li>
+    </ul>
+    <h4>Methods considered but not used</h4>
+    <ul>${om.map(o => `<li><b>${plain(o.method)}.</b> ${esc(o.reason.replace(/\b[a-z]+(?:_[a-z0-9]+)+\b/g, w => plain(w)))}</li>`).join("") || "<li>None listed.</li>"}</ul>
+    <h4>Source gaps</h4>
+    <ul>${SS.source_gaps.map(g => `<li>${esc(g)}</li>`).join("")}</ul>
+    ${per}
+  </div></details>`;
+}
+
+function segControl(group, initial, label) {
+  return `<div class="seg" role="group" aria-label="${label}">${SC.map(k =>
+    `<button type="button" class="sc-${k}" data-seg="${group}" data-k="${k}" aria-pressed="${k === initial}"><i aria-hidden="true">${GLYPH[k]}</i>${NAME[k]}</button>`).join("")}</div>`;
+}
+
+/* ================= variant A: verdict first ================= */
+function variantA() {
+  const p = "a";
+  const cards = SC.map(k => { const m = M[k]; return `<div class="card sc-card sc-${k}">
+    <div class="top">${scn(k)}<span class="prob">${fPct(m.prob, 0)} probability</span></div>
+    <div class="v">${fPS(m.anchor)}<small>value per share, FY${SS.terminal_year}</small></div>
+    <div class="ret">${fRet(m.ret)} <span style="color:var(--muted);font-weight:400">vs last price</span></div>
+    <p class="story">${esc(STORY[k])}</p></div>`; }).join("");
+  const builds = SC.map(k => `<div data-panel="a-build" data-k="${k}" ${k === "base" ? "" : "hidden"}>
+    <div class="build-h">${scn(k)}<span class="meta">Value today ${fPS(M[k].ps)} per share · scenario value FY${SS.terminal_year} ${fPS(M[k].anchor)}</span></div>
+    <div class="build"><div>${dcfTable(k)}</div><div>${bridge(k, p)}</div></div></div>`).join("");
+  return `
+  <div class="hero">
+    <div class="card lastp"><span class="l">Last price</span><span class="v">$${PRICE.toFixed(2)}</span><span class="l">Oct 8, 2026 snapshot</span><span>${unv}</span></div>
+    ${cards}
+    <div class="card w-card"><span class="l" style="font-size:12px;color:var(--muted)">Probability-weighted value</span>
+      <span class="v">${fPS(WEIGHTED)}</span>
+      <div class="kv"><span>Expected return</span><span class="ret">${fRet(ERM.probability_weighted_return)}</span></div>
+      <div class="kv"><span>Worst modelled case</span><span class="ret">${fRet(ERM.permanent_loss_limit)}</span></div>
+    </div>
+  </div>
+  <div class="callout" style="margin-top:12px"><b>Conclusion withheld.</b><span>All three scenario values sit below the last price, but the report's cash-flow model gives lower values that it hasn't reconciled. <a href="#a-oq">Why this isn't final</a></span></div>
+
+  <section class="blk" aria-labelledby="a-ff-h">
+    <div class="blk-h"><h2 id="a-ff-h">Value range against the last price</h2><p>Per share, US dollars</p></div>
+    <div class="card"><div class="chart" data-chart="field"></div>
+      <div class="legend"><span><span class="lg-bar"></span>Scenario values, FY${SS.terminal_year}</span><span><span class="lg-bar d"></span>Cash-flow model, valued Jun 30, 2026</span><span><span class="lg-dia"></span>Probability-weighted</span><span><span class="lg-line"></span>${PRICE_LABEL}</span></div>
+    </div>
+  </section>
+
+  <section class="blk" aria-labelledby="a-b-h">
+    <div class="blk-h"><h2 id="a-b-h">How each value is built</h2><p>${plain(M.base.s.method)}</p></div>
+    ${segControl("a-build", "base", "Scenario")}
+    ${builds}
+  </section>
+
+  ${openQuestions(p)}
+  <section class="blk" aria-label="Details">${assumptions(p, "base")}${evidence(p)}</section>`;
+}
+
+/* ================= variant B: scenario tabs ================= */
+function variantB() {
+  const p = "b";
+  const strip = `<div class="strip">
+    <div><span class="l">Last price · Oct 8, 2026 snapshot</span><span class="v">$${PRICE.toFixed(2)}</span><span class="l">not verified</span></div>
+    ${SC.map(k => `<div class="sc-cell sc-${k}"><span class="l">${scn(k)} · ${fPct(M[k].prob, 0)}</span><span class="v">${fPS(M[k].anchor)}</span><span class="l">${fRet(M[k].ret)}</span></div>`).join("")}
+    <div><span class="l">Probability-weighted</span><span class="v">${fPS(WEIGHTED)}</span><span class="l">${fRet(ERM.probability_weighted_return)} expected</span></div>
+  </div>`;
+  const tile = (l, v, path, d) => `<div class="card tile"><span class="l">${l}</span><span class="v">${v}</span><span class="p">${path}</span><span class="d">${d}</span></div>`;
+  const panels = SC.map(k => {
+    const m = M[k], b = M.base, last = m.years[m.years.length - 1], bl = b.years[b.years.length - 1];
+    const g = fy => drv(k, "foa_advertising_revenue_growth", fy);
+    const ref = k === "base";
+    const sameMult = SC.every(x => M[x].s.terminal.multiple === m.s.terminal.multiple);
+    const capD = last.capex - bl.capex;
+    return `<div data-panel="b-scn" data-k="${k}" class="sc-${k}" ${k === "base" ? "" : "hidden"}>
+      <div class="b-head">
+        <div><h2 class="display" style="margin:0">${NAME[k]} case</h2>
+          <p class="story">${esc(STORY[k])}</p></div>
+        <div class="side"><span class="sub">${fPct(m.prob, 0)} probability · value per share, FY${SS.terminal_year}</span>
+          <span class="big">${fPS(m.anchor)}</span>
+          <span class="ret">${fRet(m.ret)} <span style="color:var(--muted);font-weight:400">vs last price</span></span>
+          <span class="sub">Cash-flow model, valued today: ${fPS(m.ps)} · <a href="#b-oq">doesn't match yet</a></span></div>
+      </div>
+      <div class="tiles">
+        ${tile("Family of Apps revenue growth, FY" + last.fy, fPct(g(last.fy)), growthPath(k), ref ? "Reference case" : fPts(g(last.fy) - drv("base", "foa_advertising_revenue_growth", last.fy)))}
+        ${tile("Operating margin, FY" + last.fy, fPct(last.margin), m.years.map(y => fPct(y.margin)).join(" → "), ref ? "Reference case" : fPts(last.margin - bl.margin))}
+        ${tile("Capital expenditure, FY" + last.fy, fB(last.capex), m.years.map(y => fB(y.capex)).join(" → "), ref ? "Reference case" : (capD === 0 ? "same as base" : (capD > 0 ? "+" : MINUS) + fB(Math.abs(capD)) + " vs base"))}
+        ${tile("Exit multiple", m.s.terminal.multiple + "×", "of FY" + SS.terminal_year + " after-tax operating profit (" + fB(m.s.terminal.metric_value) + ")", sameMult ? "Same in every case" : "")}
+      </div>
+      <div class="b-grid">
+        <div><h3 class="card-h">Discounted cash flow, ${NAME[k].toLowerCase()} case</h3>${dcfTable(k)}</div>
+        <div class="card"><h3 class="card-h">From enterprise value to value per share</h3>
+          <div class="chart" data-chart="wf" data-k="${k}"></div>
+          <p class="fine">÷ ${nf0.format(m.s.diluted_shares)}M diluted shares = <b style="color:var(--ink)">${fPS(m.ps)} per share</b>, valued Jun 30, 2026. Net debt adjustment covers long-term debt only.</p>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+  return `${strip}
+  <div class="seg-row">${segControl("b-scn", "base", "Scenario")}<span class="fine" style="margin:0">Deltas compare each case with base.</span></div>
+  ${panels}
+  ${openQuestions(p)}
+  <section class="blk" aria-label="Details">${assumptions(p, "base")}${evidence(p)}</section>`;
+}
+
+/* ================= variant C: price path ================= */
+function variantC() {
+  const p = "c";
+  const retRows = SC.map(k => `<tr><th scope="row">${scn(k)}</th><td>${fPct(M[k].prob, 0)}</td><td>${fPS(M[k].anchor)}</td><td class="ret">${fRet(M[k].ret)}</td></tr>`).join("");
+  const nr = ERM.no_rerating_return, nrSame = Math.abs(nr - ERM.base_return) < 1e-6;
+  const b26 = M.base.years[0], b28 = M.base.years[M.base.years.length - 1];
+  const pathRows = SC.map(k => `<tr><th scope="row" style="background:none;color:var(--ink);font-weight:500;text-align:left;border-top:1px solid var(--line);padding:8px 12px">${scn(k)}</th>${M[k].path.map(r => `<td>${fPS(r.price_target)}</td>`).join("")}<td>${fB(M[k].path[M[k].path.length - 1].operating_metric_value)}</td></tr>`).join("");
+  const details = SC.map(k => `<details class="scn-d sc-${k}" ${k === "base" ? "open" : ""}>
+    <summary>${scn(k)}<span class="m">FY${SS.terminal_year} value ${fPS(M[k].anchor)} · cash-flow model today ${fPS(M[k].ps)}</span></summary>
+    <div class="in"><div class="build"><div>${dcfTable(k)}</div><div>${bridge(k, p)}</div></div></div></details>`).join("");
+  return `
+  <div class="c-top">
+    <div class="card"><div class="blk-h" style="margin-bottom:6px"><h2 style="font:400 22px/1.25 var(--serif);margin:0">Value per share, FY2026 to FY${SS.terminal_year}</h2><p>US dollars</p></div>
+      <div class="chart" data-chart="path"></div>
+      <div class="legend"><span>Shaded: range between bear and bull</span><span><span class="lg-line"></span>${PRICE_LABEL}</span><span>${scn("bear")} ${scn("base")} ${scn("bull")} <span style="border-top:2px dotted var(--ink);width:18px;display:inline-block"></span> Weighted</span></div>
+      <div class="tw" role="region" tabindex="0" aria-label="Value path by year" style="margin-top:14px"><table class="data path-t">
+        <caption class="sr">Per-share value by fiscal year and scenario</caption>
+        <thead><tr><th scope="col">Scenario</th>${FYS.map(fy => `<th scope="col">FY${fy}</th>`).join("")}<th scope="col">Operating profit FY${SS.terminal_year}</th></tr></thead>
+        <tbody>${pathRows}</tbody></table></div>
+    </div>
+    <div class="c-side">
+      <div class="card"><h3 class="card-h">Expected return from the last price</h3>
+        <div class="tw" role="region" tabindex="0" aria-label="Expected returns"><table class="data ret-t">
+          <thead><tr><th scope="col">Case</th><th scope="col">Weight</th><th scope="col">FY${SS.terminal_year}</th><th scope="col">Return</th></tr></thead>
+          <tbody>${retRows}<tr class="wt"><th scope="row">Weighted</th><td>100%</td><td>${fPS(WEIGHTED)}</td><td class="ret">${fRet(ERM.probability_weighted_return)}</td></tr></tbody>
+        </table></div>
+        <div class="kv" style="margin-top:10px"><span>No re-rating return${nrSame ? " (same as base)" : ""}</span><span class="ret">${fRet(nr)}</span></div>
+        <div class="kv"><span>Worst modelled case (bear)</span><span class="ret">${fRet(ERM.permanent_loss_limit)}</span></div>
+        <p class="fine">Against the last price of $${PRICE.toFixed(2)} (Oct 8, 2026 snapshot, not verified). Returns exclude dividends.</p>
+      </div>
+      <div class="card imp"><h3 class="card-h">What the price implies</h3>
+        <p class="big">The current price implies about ${fPct(RV.implied_growth)} annual growth and a ${fPct(RV.implied_margin, 0)} operating margin.</p>
+        <p class="fine" style="margin:0">For comparison, the base case has Family of Apps growth of ${growthPath("base")} and a consolidated operating margin of ${fPct(b26.margin)} to ${fPct(b28.margin)}. The report doesn't state the period or margin definition behind the implied figures, so treat this as a rough cross-check.</p>
+      </div>
+    </div>
+  </div>
+  <div class="callout" style="margin-top:16px"><b>Conclusion withheld.</b><span>Every scenario path ends below the last price, but the cash-flow model below gives lower values that the report hasn't reconciled. <a href="#c-oq">Why this isn't final</a></span></div>
+
+  <section class="blk" aria-labelledby="c-b-h">
+    <div class="blk-h"><h2 id="c-b-h">How each value is built</h2><p>${plain(M.base.s.method)}</p></div>
+    ${details}
+  </section>
+  ${openQuestions(p)}
+  <section class="blk" aria-label="Details">${assumptions(p, "base")}${evidence(p)}</section>`;
+}
+
+/* ================= SVG charts (sized to their container) ================= */
+const NS = "http://www.w3.org/2000/svg";
+const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const tw = (s, px) => s.length * px * 0.56;   // rough text width for collision checks
+
+function svgWrap(W, H, title, desc, body) {
+  const id = "t" + Math.random().toString(36).slice(2, 8);
+  return `<svg xmlns="${NS}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-labelledby="${id}a ${id}b"><title id="${id}a">${title}</title><desc id="${id}b">${desc}</desc>${body}</svg>`;
+}
+
+function drawField(el, W) {
+  const narrow = W < 560, fs = narrow ? 11 : 12;
+  const gut = narrow ? 0 : 190, x0 = gut + 8, x1 = W - 12, lo = 200, hi = 780;
+  const X = v => x0 + (v - lo) / (hi - lo) * (x1 - x0);
+  const rows = [
+    { t: "Scenario values", s: `FY${SS.terminal_year}, stated by the report`, ns: `FY${SS.terminal_year}`, v: SC.map(k => M[k].anchor), w: WEIGHTED, solid: true },
+    { t: "Cash-flow model", s: "valued Jun 30, 2026", ns: "valued today", v: SC.map(k => M[k].ps), w: DCF_WEIGHTED, solid: false }
+  ];
+  const rowH = narrow ? 104 : 84, top = 30, H = top + rows.length * rowH + 26;
+  let b = "";
+  for (let t = 200; t <= 700; t += 100) b += `<line x1="${X(t)}" x2="${X(t)}" y1="${top - 4}" y2="${H - 22}" stroke="${cssv("--chart-grid")}"/><text x="${X(t)}" y="${H - 6}" text-anchor="middle" font-size="11" class="mut">$${t}</text>`;
+  rows.forEach((r, i) => {
+    const y0 = top + i * rowH, by = y0 + (narrow ? 40 : 28), bh = 14;
+    const [vb, vm, vu] = r.v;
+    b += narrow
+      ? `<text x="${x0}" y="${y0 + 12}" font-size="12" font-weight="600">${r.t} <tspan class="mut" font-weight="400">· ${r.ns}</tspan></text>`
+      : `<text x="0" y="${by + 5}" font-size="13" font-weight="600">${r.t}</text><text x="0" y="${by + 21}" font-size="11.5" class="mut">${r.s}</text>`;
+    b += `<rect x="${X(vb)}" y="${by}" width="${X(vu) - X(vb)}" height="${bh}" rx="2" fill="${r.solid ? cssv("--chart-fill") : "#fff"}" stroke="${cssv("--line-strong")}" ${r.solid ? "" : 'stroke-dasharray="4 3"'}/>`;
+    b += `<rect x="${X(vb) - 1.5}" y="${by - 3}" width="3" height="${bh + 6}" fill="${cssv("--bear")}"/><rect x="${X(vu) - 1.5}" y="${by - 3}" width="3" height="${bh + 6}" fill="${cssv("--bull")}"/>`;
+    b += `<rect x="${X(vm) - 1.5}" y="${by - 5}" width="3" height="${bh + 10}" fill="${cssv("--base")}"/>`;
+    const wx = X(r.w), wy = by + bh / 2;
+    b += `<path d="M${wx} ${wy - 6}L${wx + 6} ${wy}L${wx} ${wy + 6}L${wx - 6} ${wy}Z" fill="${cssv("--ink")}" stroke="#fff" stroke-width="1.5"/>`;
+    const fmt = v => narrow ? "$" + Math.round(v) : fPS(v);
+    b += `<text x="${X(vm) + 6}" y="${by - 7}" font-size="${fs}">${GLYPH.base} Base ${fmt(vm)}</text>`;
+    b += `<text x="${wx - 6}" y="${by - 7}" font-size="${fs}" text-anchor="end">Weighted ${fmt(r.w)}</text>`;
+    const lb = `${GLYPH.bear} Bear ${fmt(vb)}`, lu = `Bull ${fmt(vu)} ${GLYPH.bull}`;
+    const clash = X(vb) + tw(lb, fs) + 8 > X(vu) - tw(lu, fs);
+    b += `<text x="${X(vb)}" y="${by + bh + 15}" font-size="${fs}">${lb}</text>`;
+    b += `<text x="${X(vu)}" y="${by + bh + 15 + (clash ? 14 : 0)}" font-size="${fs}" text-anchor="end">${lu}</text>`;
+  });
+  const px = X(PRICE);
+  b += `<line x1="${px}" x2="${px}" y1="${top - 8}" y2="${H - 22}" stroke="${cssv("--ink")}" stroke-width="1.5" stroke-dasharray="5 3"/>`;
+  b += `<text x="${px - 6}" y="${top - 12}" font-size="${fs}" font-weight="600" text-anchor="end">Last price $${PRICE.toFixed(2)}</text>`;
+  el.innerHTML = svgWrap(W, H, "Value range against the last price",
+    `Scenario values for FY${SS.terminal_year}: bear ${fPS(M.bear.anchor)}, base ${fPS(M.base.anchor)}, bull ${fPS(M.bull.anchor)}, weighted ${fPS(WEIGHTED)}. Cash-flow model valued today: bear ${fPS(M.bear.ps)}, base ${fPS(M.base.ps)}, bull ${fPS(M.bull.ps)}. Last price ${PRICE.toFixed(2)} is above every value.`, b);
+}
+
+function marker(k, x, y, c) {
+  if (k === "bear") return `<path d="M${x - 5} ${y - 4}L${x + 5} ${y - 4}L${x} ${y + 5}Z" fill="${c}"/>`;
+  if (k === "bull") return `<path d="M${x - 5} ${y + 4}L${x + 5} ${y + 4}L${x} ${y - 5}Z" fill="${c}"/>`;
+  return `<circle cx="${x}" cy="${y}" r="4.5" fill="${c}"/>`;
+}
+
+function drawPath(el, W) {
+  const narrow = W < 560, fs = narrow ? 11 : 12;
+  const H = narrow ? 270 : 330, L = 44, R = narrow ? 92 : 130, T = 26, B = 30;
+  const lo = 200, hi = 760;
+  const X = i => L + 14 + i * ((W - L - R - 28) / (FYS.length - 1));
+  const Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  let b = "";
+  for (let t = lo; t <= 700; t += 100) b += `<line x1="${L}" x2="${W - R + 6}" y1="${Y(t)}" y2="${Y(t)}" stroke="${cssv("--chart-grid")}"/><text x="${L - 8}" y="${Y(t) + 4}" font-size="11" text-anchor="end" class="mut">$${t}</text>`;
+  FYS.forEach((fy, i) => { b += `<text x="${X(i)}" y="${H - 8}" font-size="11.5" text-anchor="middle" class="mut">FY${fy}</text>`; });
+  const pts = k => M[k].path.map((r, i) => [X(i), Y(r.price_target)]);
+  const cone = pts("bull").concat(pts("bear").reverse()).map(p => p.join(",")).join(" ");
+  b += `<polygon points="${cone}" fill="${cssv("--chart-fill")}" opacity=".9"/>`;
+  const py = Y(PRICE);
+  b += `<line x1="${L}" x2="${W - R + 6}" y1="${py}" y2="${py}" stroke="${cssv("--ink")}" stroke-width="1.5" stroke-dasharray="5 3"/>`;
+  b += `<text x="${L + 4}" y="${py - 7}" font-size="${fs}" font-weight="600">Last price $${PRICE.toFixed(2)}</text>`;
+  const wpath = FYS.map((fy, i) => SC.reduce((a, k) => a + M[k].prob * M[k].path[i].price_target, 0));
+  b += `<polyline points="${wpath.map((v, i) => X(i) + "," + Y(v)).join(" ")}" fill="none" stroke="${cssv("--ink")}" stroke-width="1.5" stroke-dasharray="1.5 3.5" stroke-linecap="round"/>`;
+  const labels = [];
+  SC.forEach(k => {
+    const c = cssv("--" + k), P = pts(k);
+    b += `<polyline points="${P.map(p => p.join(",")).join(" ")}" fill="none" stroke="${c}" stroke-width="2.25" stroke-linejoin="round"/>`;
+    P.forEach(([x, y]) => { b += marker(k, x, y, c); });
+    const v = M[k].anchor;
+    labels.push({ y: P[P.length - 1][1], t: `${GLYPH[k]} ${NAME[k]} ${narrow ? "$" + Math.round(v) : fPS(v)}`, c });
+  });
+  labels.push({ y: Y(WEIGHTED), t: `◆ ${narrow ? "Wtd $" + Math.round(WEIGHTED) : "Weighted " + fPS(WEIGHTED)}`, c: cssv("--ink") });
+  labels.sort((a, b2) => a.y - b2.y);
+  for (let i = 1; i < labels.length; i++) if (labels[i].y - labels[i - 1].y < 15) labels[i].y = labels[i - 1].y + 15;
+  const lx = X(FYS.length - 1) + 12;
+  labels.forEach(l => { b += `<text x="${lx}" y="${l.y + 4}" font-size="${fs}" font-weight="600" fill="${l.c}">${l.t}</text>`; });
+  el.innerHTML = svgWrap(W, H, "Value per share by scenario, FY2026 to FY" + SS.terminal_year,
+    SC.map(k => `${NAME[k]}: ${M[k].path.map(r => "FY" + r.fiscal_year + " " + fPS(r.price_target)).join(", ")}`).join(". ") + `. Last price ${PRICE.toFixed(2)} sits above every path.`, b);
+}
+
+function drawWF(el, W, k) {
+  const m = M[k], s = m.s, narrow = W < 460, fs = narrow ? 10.5 : 11.5;
+  const H = 290, L = 6, R = 6, T = 22, B = 44;
+  const steps = [
+    { l: ["Cash flows", "FY26–28, PV"], a: 0, b: m.pvCF, v: fB(m.pvCF) },
+    { l: ["End-2028", "value, PV"], a: m.pvCF, b: m.ev, v: "+" + fB(s.terminal_present_value) },
+    { l: ["Enterprise", "value"], a: 0, b: m.ev, v: fB(m.ev), tot: 1 },
+    { l: ["Net debt", "adjustment"], a: m.ev, b: m.equity, v: fB(s.equity_bridge) },
+    { l: ["Equity", "value"], a: 0, b: m.equity, v: fB(m.equity), tot: 1 }
+  ];
+  const hi = Math.max(m.ev, s.terminal_present_value) * 1.1, lo = Math.min(0, m.pvCF) - hi * 0.1;
+  const Y = v => T + (hi - v) / (hi - lo) * (H - T - B);
+  const band = (W - L - R) / steps.length, bw = Math.min(64, band * 0.58);
+  const c = cssv("--" + k);
+  let b = `<line x1="${L}" x2="${W - R}" y1="${Y(0)}" y2="${Y(0)}" stroke="${cssv("--line-strong")}"/>`;
+  steps.forEach((st, i) => {
+    const cx = L + band * i + band / 2, top = Math.min(Y(st.a), Y(st.b)), h = Math.max(1.5, Math.abs(Y(st.a) - Y(st.b)));
+    b += st.tot ? `<rect x="${cx - bw / 2}" y="${top}" width="${bw}" height="${h}" fill="${c}" rx="1.5"/>`
+      : `<rect x="${cx - bw / 2}" y="${top}" width="${bw}" height="${h}" fill="#fff" stroke="${cssv("--secondary")}" stroke-width="1.25" rx="1.5"/>`;
+    if (i < steps.length - 1) { const ny = Y(st.b); b += `<line x1="${cx + bw / 2}" x2="${cx + band - bw / 2}" y1="${ny}" y2="${ny}" stroke="${cssv("--muted")}" stroke-dasharray="2 2"/>`; }
+    const down = st.b < st.a && !st.tot;
+    const vy = (st.b < 0 && st.a <= 0) ? Y(st.b) + 14 : (down ? top - 6 : top - 6);
+    b += `<text x="${cx}" y="${vy}" font-size="${fs}" font-weight="600" text-anchor="middle">${st.v}</text>`;
+    b += `<text x="${cx}" y="${H - 24}" font-size="${fs}" text-anchor="middle" class="mut">${st.l[0]}</text><text x="${cx}" y="${H - 10}" font-size="${fs}" text-anchor="middle" class="mut">${st.l[1]}</text>`;
+  });
+  el.innerHTML = svgWrap(W, H, `${NAME[k]} case: from cash flows to equity value`,
+    `Present value of FY2026 to FY2028 cash flows ${fB(m.pvCF)}, plus present value of end-2028 value ${fB(s.terminal_present_value)}, equals enterprise value ${fB(m.ev)}. Less net debt adjustment ${fB(Math.abs(s.equity_bridge))} gives equity value ${fB(m.equity)}, or ${fPS(m.ps)} per share.`, b);
+}
+
+/* ================= wiring ================= */
+if (typeof document !== "undefined" && document.getElementById) {
+  document.getElementById("v-a").innerHTML = variantA();
+  document.getElementById("v-b").innerHTML = variantB();
+  document.getElementById("v-c").innerHTML = variantC();
+
+  const DRAW = { field: drawField, path: drawPath, wf: drawWF };
+  const draw = el => { const w = Math.floor(el.clientWidth); if (w > 0 && w !== +el.dataset.w) { el.dataset.w = w; DRAW[el.dataset.chart](el, w, el.dataset.k); } };
+  const ro = "ResizeObserver" in window ? new ResizeObserver(es => es.forEach(e => draw(e.target))) : null;
+  document.querySelectorAll("[data-chart]").forEach(el => { ro ? ro.observe(el) : draw(el); });
+  if (!ro) window.addEventListener("resize", () => document.querySelectorAll("[data-chart]").forEach(draw));
+
+  const showVariant = v => {
+    if (!/^[abc]$/.test(v)) v = "a";
+    document.querySelectorAll(".ws .tabs button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === v)));
+    document.querySelectorAll("[data-variant]").forEach(d => { d.hidden = d.dataset.variant !== v; });
+    document.querySelectorAll("[data-variant]:not([hidden]) [data-chart]").forEach(draw);
+  };
+  document.addEventListener("click", e => {
+    const vb = e.target.closest(".ws .tabs button");
+    if (vb) { showVariant(vb.dataset.v); try { history.replaceState(null, "", "#" + vb.dataset.v); } catch (_) {} return; }
+    const sb = e.target.closest("button[data-seg]");
+    if (sb) {
+      const g = sb.dataset.seg;
+      document.querySelectorAll(`button[data-seg="${g}"]`).forEach(b => b.setAttribute("aria-pressed", String(b === sb)));
+      document.querySelectorAll(`[data-panel="${g}"]`).forEach(pn => { pn.hidden = pn.dataset.k !== sb.dataset.k; });
+      document.querySelectorAll(`[data-panel="${g}"]:not([hidden]) [data-chart]`).forEach(draw);
+      return;
+    }
+    const a = e.target.closest('a[href$="-oq"]');
+    if (a) { const t = document.querySelector(a.getAttribute("href")); if (t) { e.preventDefault(); t.scrollIntoView({ block: "start" }); t.setAttribute("tabindex", "-1"); t.focus({ preventScroll: true }); } }
+  });
+  window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if (/^[abc]$/.test(h)) showVariant(h); });
+  showVariant((location.hash || "#a").slice(1));
+}
+</script>
+</body>
+</html>

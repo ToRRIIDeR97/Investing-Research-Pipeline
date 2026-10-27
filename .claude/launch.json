@@ -4,14 +4,51 @@
     {
       "name": "research-os",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["--env-file=.env", "scripts/dev-with-db.cjs"],
+      "runtimeArgs": [
+        "--env-file=.env",
+        "scripts/dev-with-db.cjs"
+      ],
       "port": 3000
     },
     {
       "name": "research-os-local",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "dev", "-H", "127.0.0.1", "-p", "3002"],
+      "runtimeArgs": [
+        "next",
+        "dev",
+        "-H",
+        "127.0.0.1",
+        "-p",
+        "3002"
+      ],
       "port": 3002
+    },
+    {
+      "name": "research-os-3100",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "next",
+        "dev",
+        "--hostname",
+        "127.0.0.1",
+        "--port",
+        "3100"
+      ],
+      "port": 3100
+    },
+    {
+      "name": "ui-workshop",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4410",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "prototype/workshop"
+      ],
+      "port": 4410
     }
   ]
 }
