@@ -11,3 +11,5 @@ const globalForDb = globalThis as typeof globalThis & { researchDbClient?: Retur
 const client = globalForDb.researchDbClient ?? postgres(connectionString);
 if (process.env.NODE_ENV !== "production") globalForDb.researchDbClient = client;
 export const db = drizzle(client, { schema });
+// The same long-lived pool for raw queries on hot API paths. Scripts and the worker keep their own clients.
+export const sqlClient = client;

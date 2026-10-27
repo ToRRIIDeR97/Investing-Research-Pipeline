@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { db } from "@/db";
+import { db, sqlClient } from "@/db";
 import { research_runs, research_stages, research_tasks } from "@/db/schema/workflow";
 import { handleApiError, successResponse, ApiError } from "@/lib/api/errors";
 import { eq, asc } from "drizzle-orm";
@@ -50,8 +50,8 @@ export async function GET(
       .orderBy(asc(research_tasks.created_at));
 
     const [latestJob, workers, roleCoverage] = await Promise.all([
-      getLatestResearchRunJob(id),
-      getWorkerHealth(),
+      getLatestResearchRunJob(id, sqlClient),
+      getWorkerHealth(sqlClient),
       db.select().from(source_role_coverage).where(eq(source_role_coverage.research_run_id, id)),
     ]);
 

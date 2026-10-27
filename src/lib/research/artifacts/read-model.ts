@@ -98,8 +98,9 @@ export async function getResearchRunArtifacts(runId: string, artifactType?: stri
   }
 }
 
-export async function getResearchRunReport(runId: string) {
-  const sql = postgres(process.env.DATABASE_URL!);
+/** Pass `client` to reuse a long-lived pool; without one a client is opened and closed for this call. */
+export async function getResearchRunReport(runId: string, client?: ReturnType<typeof postgres>) {
+  const sql = client ?? postgres(process.env.DATABASE_URL!);
   try {
     const run = await loadRun(sql, runId);
     if (!run) return null;
@@ -206,6 +207,6 @@ export async function getResearchRunReport(runId: string) {
       refresh_schedule: artifacts.find((artifact) => artifact.type === "refresh_schedule") || null,
     };
   } finally {
-    await sql.end();
+    if (!client) await sql.end();
   }
 }
