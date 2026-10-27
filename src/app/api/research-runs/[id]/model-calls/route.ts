@@ -5,15 +5,30 @@ import { recordModelCall } from "@/lib/agents/model-calls";
 import { handleApiError, successResponse, createdResponse, ApiError } from "@/lib/api/errors";
 import { eq, desc } from "drizzle-orm";
 
+// The fields the run page lists. Request and response metadata are most of a row's size.
+const summaryFields = {
+  id: model_call_logs.id,
+  agent_name: model_call_logs.agent_name,
+  model_provider: model_call_logs.model_provider,
+  model_name: model_call_logs.model_name,
+  model_tier: model_call_logs.model_tier,
+  status: model_call_logs.status,
+  cost_usd: model_call_logs.cost_usd,
+  latency_ms: model_call_logs.latency_ms,
+  created_at: model_call_logs.created_at,
+  error_message: model_call_logs.error_message,
+};
+
+// `?summary=1` returns only summaryFields; the run page polls it.
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id: runId } = await params;
+    const summary = request.nextUrl.searchParams.get("summary") === "1";
 
-    const logs = await db
-      .select()
+    const logs = await (summary ? db.select(summaryFields) : db.select())
       .from(model_call_logs)
       .where(eq(model_call_logs.research_run_id, runId))
       .orderBy(desc(model_call_logs.created_at));

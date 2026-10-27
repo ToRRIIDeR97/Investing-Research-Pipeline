@@ -575,8 +575,8 @@ export default function RunResearchPage() {
           fetch(`/api/research-runs/${id}/quality`),
           fetch(`/api/research-runs/${id}/sources`),
           fetch(`/api/research-runs/${id}/agent-traces`),
-          fetch(`/api/research-runs/${id}/model-calls`),
-          fetch(`/api/research-runs/${id}/backtests`),
+          fetch(`/api/research-runs/${id}/model-calls?summary=1`),
+          fetch(`/api/research-runs/${id}/backtests?summary=1`),
         ]);
 
       if (!runRes.ok) throw new Error("Unable to refresh this run.");
