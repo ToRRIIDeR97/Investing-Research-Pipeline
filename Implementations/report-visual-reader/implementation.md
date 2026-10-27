@@ -21,10 +21,10 @@ The selected target is `exec-6efa4b95-ddf1-483e-b9e9-edfcebe172cc.png`. Reuse th
 2. Extend the optional visual contract and reuse report validation, artifact resolution and existing presentation logic.
 3. Integrate the actual report reader and authored SoFi trial with source mapping.
 4. Run `npx tsx --test Implementations/report-visual-reader/acceptance/*.test.ts Implementations/report-visual-reader/verification/*.test.ts`, `npx tsc --noEmit`, and the unit suite. Recheck the adaptive report tests because hashing and contracts change.
-5. Browser-check the live existing report; record image comparison and interaction results in `design-qa.md` and the task review. No approval submission, DB mutation, worker start or research regeneration is needed.
+5. Browser-check the live existing report; record image comparison and interaction results in `design-qa.md` (this folder) and the task review. No approval submission, DB mutation, worker start or research regeneration is needed.
 
 ## Baseline and completion
 
 Completed 26 September 2026. All three initial acceptance checks failed before implementation (the old contract discarded visuals, did not validate references and did not hash them). Both corrected boundary tests then failed because malformed visuals were accepted. After implementation, all eight acceptance/verification checks pass.
 
-Type checking passes. The unit suite reports 190 passed, zero failed and three database-dependent skips. The targeted visual/adaptive-report run reports 27 passed, zero failed and one database-dependent skip. Browser evidence covers AC-1, AC-2, AC-5 and AC-6 at desktop and phone widths. See `review.md` for the local trial and `../../design-qa.md` for the visual review. No paid model calls or database changes were made.
+Type checking passes. The unit suite reports 190 passed, zero failed and three database-dependent skips. The targeted visual/adaptive-report run reports 27 passed, zero failed and one database-dependent skip. Browser evidence covers AC-1, AC-2, AC-5 and AC-6 at desktop and phone widths. See `review.md` for the local trial and `design-qa.md` for the visual review. No paid model calls or database changes were made.

@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Agent Loop Variants</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: mirrors /assets/[id]/view exactly (white header band, 1600px container, white
+   rounded-lg cards on the off-white page). Each variant renders the same page with the live
+   run surfaced in a different place. Single light theme on purpose: the app has no dark mode. */
+:root {
+  --page: #fbfbf9;
+  --white: #ffffff;
+  --s50: #f8fafc; --s100: #f1f5f9; --s200: #e2e8f0; --s300: #cbd5e1; --s400: #94a3b8;
+  --s500: #64748b; --s600: #475569; --s700: #334155; --s950: #020617;
+  --am50: #fffbeb; --am200: #fde68a; --am300: #fcd34d; --am500: #f59e0b; --am700: #b45309; --am800: #92400e; --am900: #78350f;
+  --em50: #ecfdf5; --em200: #a7f3d0; --em500: #10b981; --em700: #047857;
+  --sky50: #f0f9ff; --sky200: #bae6fd; --sky500: #0ea5e9; --sky700: #0369a1; --sky900: #0c4a6e;
+  --ro50: #fff1f2; --ro200: #fecdd3; --ro700: #be123c;
+  --shadow: 0 1px 3px rgba(0,0,0,.1), 0 1px 2px -1px rgba(0,0,0,.1);
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--page); color: var(--s950); font: 14px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+svg.i { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+svg.i.s16 { width: 16px; height: 16px; }
+.mono { font-family: var(--mono); }
+.num { font-variant-numeric: tabular-nums; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--sky500); outline-offset: 2px; }
+
+/* ---------- workshop bar (not part of the app) ---------- */
+.ws { background: var(--s950); color: #fff; padding: 10px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10; }
+.ws b { font-size: 13px; }
+.ws .hint { font-size: 12px; color: var(--s400); }
+.ws nav { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
+.ws nav button { background: transparent; border: 1px solid rgba(255,255,255,.18); color: #e2e8f0; border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 600; }
+.ws nav button[aria-selected="true"] { background: #fff; color: var(--s950); border-color: #fff; }
+
+/* ---------- app chrome ---------- */
+header.app { background: var(--white); border-bottom: 1px solid var(--s200); }
+.container { max-width: 1600px; margin: 0 auto; padding-inline: 20px; }
+@media (min-width: 1024px) { .container { padding-inline: 32px; } }
+.hwrap { display: flex; flex-direction: column; gap: 20px; padding-block: 20px; }
+.back { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: var(--s500); margin-bottom: 12px; }
+.titlerow { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+h1 { font-size: 24px; line-height: 1.25; font-weight: 700; letter-spacing: -.02em; margin: 0; }
+.meta { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px 20px; font-size: 12px; color: var(--s500); }
+.top { display: flex; flex-direction: column; gap: 16px; }
+@media (min-width: 1024px) { .top { flex-direction: row; align-items: flex-start; justify-content: space-between; } }
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+@media (min-width: 640px) { .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 1024px) { .stats { min-width: 520px; } }
+.stat { background: var(--white); border: 1px solid var(--s200); border-radius: 8px; padding: 12px 16px; box-shadow: var(--shadow); }
+.stat .l { font-size: 12px; font-weight: 600; color: var(--s500); }
+.stat .v { margin-top: 4px; font-size: 18px; font-weight: 700; }
+.runrow { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; border-top: 1px solid var(--s100); padding-top: 12px; font-size: 12px; color: var(--s500); }
+.runrow .sel { margin-left: 8px; border: 1px solid var(--s200); border-radius: 6px; padding: 6px 8px; font: 12px var(--mono); color: var(--s700); background: var(--white); }
+.banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--am200); background: var(--am50); border-radius: 8px; padding: 12px 16px; font-size: 12px; color: var(--am900); }
+.banner b { display: block; }
+.banner span { color: var(--am800); }
+.btn { display: inline-flex; align-items: center; gap: 6px; flex: none; border: 1px solid var(--am300); background: var(--white); color: var(--am900); border-radius: 6px; padding: 8px 12px; font-size: 12px; font-weight: 700; text-decoration: none; }
+.btn.slate { border-color: var(--s200); color: var(--s950); }
+.btn.dark { background: var(--s950); color: #fff; border-color: var(--s950); }
+.tabsrow { display: flex; flex-direction: column; gap: 12px; }
+@media (min-width: 1024px) { .tabsrow { flex-direction: row; align-items: center; justify-content: space-between; } }
+.tabs { display: flex; overflow-x: auto; border: 1px solid var(--s200); background: var(--s50); border-radius: 8px; padding: 4px; }
+.tab { display: flex; align-items: center; gap: 8px; flex: none; border: 0; background: transparent; border-radius: 6px; padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--s500); }
+.tab.on { background: var(--white); color: var(--s950); box-shadow: var(--shadow); }
+.tab .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--am500); }
+.search { position: relative; min-width: 0; }
+@media (min-width: 1024px) { .search { width: 360px; } }
+.search input { width: 100%; height: 40px; border: 1px solid var(--s200); border-radius: 8px; padding: 0 12px 0 36px; font: 14px var(--sans); color: var(--s950); background: var(--white); }
+.search svg { position: absolute; left: 12px; top: 13px; color: var(--s400); }
+main.app { padding-block: 24px 48px; display: flex; flex-direction: column; gap: 20px; }
+
+/* ---------- shared components ---------- */
+.pill { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; border: 1px solid; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+.pill.sm { font-size: 11px; padding: 2px 8px; }
+.pill.amber { border-color: var(--am200); background: var(--am50); color: var(--am700); }
+.pill.emerald { border-color: var(--em200); background: var(--em50); color: var(--em700); }
+.pill.sky { border-color: var(--sky200); background: var(--sky50); color: var(--sky700); }
+.pill.slate { border-color: var(--s200); background: var(--s50); color: var(--s500); }
+.pill.rose { border-color: var(--ro200); background: var(--ro50); color: var(--ro700); }
+.live { width: 7px; height: 7px; border-radius: 50%; background: var(--am500); flex: none; animation: live 1.6s ease-out infinite; }
+@keyframes live { 0% { box-shadow: 0 0 0 0 rgba(245,158,11,.55); } 100% { box-shadow: 0 0 0 7px rgba(245,158,11,0); } }
+.card { background: var(--white); border: 1px solid var(--s200); border-radius: 8px; padding: 20px; box-shadow: var(--shadow); min-width: 0; }
+.ch { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; }
+.ch .t { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ch .ico { width: 28px; height: 28px; border-radius: 6px; background: var(--s100); color: var(--s700); display: grid; place-items: center; flex: none; }
+.ch h2 { margin: 0; font-size: 14px; font-weight: 700; }
+.chip { border-radius: 999px; background: var(--s100); padding: 4px 10px; font-size: 12px; font-weight: 600; color: var(--s600); white-space: nowrap; }
+.panel { border: 1px solid var(--s200); border-radius: 8px; padding: 16px; background: var(--white); min-width: 0; }
+.plabel { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--s500); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.panel p { margin: 0; font-size: 14px; line-height: 1.65; color: var(--s700); }
+.muted { color: var(--s500); }
+.xs { font-size: 12px; }
+.ghost { display: grid; gap: 10px; }
+.ghost i { display: block; height: 10px; border-radius: 4px; background: var(--s100); }
+.grid2 { display: grid; gap: 20px; }
+@media (min-width: 1280px) { .grid2.b { grid-template-columns: 1.3fr .7fr; } .grid2.c { grid-template-columns: .75fr 1.25fr; } }
+.tbl { margin-top: 16px; overflow-x: auto; border: 1px solid var(--s200); border-radius: 8px; }
+table { min-width: 100%; border-collapse: collapse; font-size: 14px; text-align: left; }
+thead { background: var(--s50); }
+th { white-space: nowrap; padding: 12px 16px; font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--s500); border-bottom: 1px solid var(--s200); }
+td { padding: 12px 16px; color: var(--s700); border-bottom: 1px solid var(--s100); vertical-align: top; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td .tt { font-weight: 600; color: var(--s950); }
+td .ts { font-size: 12px; color: var(--s500); }
+tr.inflight td { background: var(--am50); }
+.bar { position: relative; height: 6px; background: var(--s100); border-radius: 999px; overflow: hidden; }
+.bar b { position: absolute; inset: 0 auto 0 0; background: var(--am500); border-radius: 999px; }
+.bar i { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--s400); }
+@media (prefers-reduced-motion: reduce) { .live, .caret { animation: none !important; } }
+
+/* ---------- A ---------- */
+.livecard { background: var(--white); border: 1px solid var(--am200); border-radius: 8px; box-shadow: var(--shadow); display: grid; }
+@media (min-width: 1024px) { .livecard { grid-template-columns: minmax(0, 1fr) 300px; } }
+.livecard .main { padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.livecard .side { padding: 16px; border-top: 1px solid var(--s100); display: grid; gap: 10px; align-content: start; }
+@media (min-width: 1024px) { .livecard .side { border-top: 0; border-left: 1px solid var(--s100); } }
+.segs { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 3px; }
+.segs i { height: 8px; border-radius: 2px; background: var(--s200); }
+.segs i.d { background: var(--em500); }
+.segs i.r { background: var(--am500); }
+.phases { display: grid; grid-template-columns: 4fr 3fr 4fr 4fr 4fr 5fr; gap: 3px; font-size: 11px; color: var(--s400); font-weight: 600; }
+.nowrow { display: grid; grid-template-columns: minmax(0, 1fr) 160px auto; gap: 6px 14px; align-items: center; }
+@media (max-width: 640px) { .nowrow { grid-template-columns: 1fr; } }
+.nowrow .who { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.nowrow .who b { font-size: 13px; }
+.nowrow .who span { font: 12px var(--mono); color: var(--s500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nowrow .time { font: 12px var(--mono); color: var(--s600); white-space: nowrap; }
+.kv { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.kv span { color: var(--s500); }
+.kv b { font-weight: 600; }
+
+/* ---------- B ---------- */
+.gantt-scroll { overflow-x: auto; margin-top: 16px; }
+.gantt { min-width: 720px; }
+.gantt svg { display: block; width: 100%; height: auto; }
+.gtip { margin-top: 10px; font-size: 12px; color: var(--s500); min-height: 18px; }
+.gtip b { color: var(--s950); }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; font-size: 12px; color: var(--s500); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 14px; height: 8px; border-radius: 2px; display: inline-block; }
+.flight { display: grid; gap: 12px; margin-top: 16px; }
+.flight .panel { padding: 14px; display: grid; gap: 8px; }
+
+/* ---------- C ---------- */
+.sesslist { margin-top: 16px; border: 1px solid var(--s200); border-radius: 8px; overflow: hidden; }
+.sess { display: grid; gap: 2px; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--s100); background: var(--white); padding: 12px 16px; }
+.sess:last-child { border-bottom: 0; }
+.sess:hover { background: var(--s50); }
+.sess.on { background: var(--s50); box-shadow: inset 3px 0 0 var(--s950); }
+.sess .r1 { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.sess .r1 b { font-size: 14px; }
+.sess .r2 { font-size: 12px; color: var(--s500); }
+.sessgroup { padding: 8px 16px; background: var(--s50); font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--s500); border-bottom: 1px solid var(--s200); }
+.steps { margin-top: 16px; display: grid; gap: 12px; }
+.step.run { border-color: var(--am200); }
+.step.bad { border-color: var(--ro200); }
+.stepn { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; background: var(--s100); color: var(--s600); }
+.step.ok .stepn { background: var(--em50); color: var(--em700); }
+.step.run .stepn { background: var(--am50); color: var(--am700); }
+.step.bad .stepn { background: var(--ro50); color: var(--ro700); }
+.plabel .when { margin-left: auto; font: 400 12px var(--mono); text-transform: none; color: var(--s400); }
+.code { margin-top: 8px; background: var(--s50); border: 1px solid var(--s100); border-radius: 6px; padding: 10px 12px; font: 12px/1.6 var(--mono); color: var(--s700); overflow-x: auto; white-space: pre; }
+.caret { display: inline-block; width: 7px; height: 15px; background: var(--am500); vertical-align: -2px; margin-left: 2px; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.meter { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px 18px; font: 12px var(--mono); color: var(--s500); }
+.meter b { color: var(--s950); }
+
+/* ---------- D ---------- */
+.passes { margin-top: 16px; display: grid; gap: 0; }
+.pass { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 16px; padding-block: 14px; border-bottom: 1px solid var(--s100); }
+.pass:last-child { border-bottom: 0; }
+.pass .pl b { display: block; font-size: 13px; }
+.pass .pl span { font-size: 12px; color: var(--s500); }
+.phaserow { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 900px) { .phaserow { grid-template-columns: repeat(3, minmax(0, 1fr)); } .pass { grid-template-columns: 1fr; } }
+.phase { border: 1px solid var(--s200); border-radius: 8px; padding: 10px; min-width: 0; background: var(--white); }
+.phase.d { background: var(--em50); border-color: var(--em200); }
+.phase.r { background: var(--am50); border-color: var(--am200); }
+.phase.p { background: var(--s50); }
+.phase .n { font-size: 12px; font-weight: 700; display: flex; justify-content: space-between; gap: 6px; }
+.phase .n span { font-weight: 600; color: var(--s500); }
+.phase .st { margin-top: 6px; display: flex; gap: 3px; }
+.phase .st i { height: 5px; flex: 1; border-radius: 2px; background: var(--s200); }
+.phase.d .st i, .phase .st i.d { background: var(--em500); }
+.phase .st i.r { background: var(--am500); }
+.phase .sub { margin-top: 6px; font-size: 11px; color: var(--s500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.verdict { margin: 4px 0 4px 108px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; border: 1px dashed var(--ro200); background: var(--ro50); border-radius: 8px; padding: 10px 14px; font-size: 13px; color: var(--ro700); }
+@media (max-width: 900px) { .verdict { margin-left: 0; } }
+.verdict b { color: var(--s950); }
+
+/* ---------- workshop notes (not part of the app) ---------- */
+.notes { border: 1px dashed var(--s300); border-radius: 8px; padding: 14px 16px; background: transparent; display: grid; gap: 10px; }
+.notes .h { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--s500); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.notes .cols { display: grid; gap: 12px 24px; }
+@media (min-width: 900px) { .notes .cols { grid-template-columns: 1fr 1fr; } }
+.notes ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--s600); }
+.notes li { margin-bottom: 3px; }
+.notes code { font: 12px var(--mono); color: var(--s950); }
+</style>
+</head>
+<body>
+
+<div class="ws">
+  <b>Live run · design variants</b>
+  <span class="hint">Mock of /assets/[id]/view with real data from SoFi run dd02bb41. Timers are simulated.</span>
+  <nav role="tablist" aria-label="Variant">
+    <button role="tab" data-v="a" aria-selected="true">A · Header strip</button>
+    <button role="tab" data-v="b" aria-selected="false">B · Live run tab</button>
+    <button role="tab" data-v="c" aria-selected="false">C · Agents tab</button>
+    <button role="tab" data-v="d" aria-selected="false">D · Research loop card</button>
+  </nav>
+</div>
+
+<header class="app">
+  <div class="container hwrap">
+    <div class="top">
+      <div>
+        <a class="back" href="#"><svg class="i" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>Asset</a>
+        <div class="titlerow">
+          <h1>SoFi Technologies, Inc.</h1>
+          <span class="pill amber" id="statuspill">running</span>
+        </div>
+        <div class="meta"><span>equity</span><span>Financial Services</span><span>USD</span><span>Run dd02bb41</span><span>10/2/2026</span></div>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="l">Evidence</div><div class="v num">37</div></div>
+        <div class="stat"><div class="l">Metrics</div><div class="v num">335</div></div>
+        <div class="stat"><div class="l">Signals</div><div class="v num">2</div></div>
+        <div class="stat"><div class="l">Stages</div><div class="v num">7/24</div></div>
+      </div>
+    </div>
+
+    <div id="slotA"></div>
+
+    <div class="runrow">
+      <label>Run <span class="sel">dd02bb41 · v3 · running · 10/2/2026 ▾</span></label>
+      <span>Pipeline v3</span>
+      <span class="pill emerald sm">incomplete sections</span>
+    </div>
+    <div class="banner">
+      <div><b>Automated research preview — no human investment decision recorded.</b><span>The parsed evidence, metrics, scenarios, and thesis are reviewable, but this is not position-ready.</span></div>
+      <a class="btn" href="#">Open review queue</a>
+    </div>
+    <div class="tabsrow">
+      <div class="tabs" id="tabs"></div>
+      <div class="search"><svg class="i s16" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input id="q" type="text" placeholder="Search report rows" aria-label="Search report rows"></div>
+    </div>
+  </div>
+</header>
+
+<main class="app container" id="main"></main>
+
+<script>
+// ===== real data, SoFi run dd02bb41 (SGT) =====
+const T = s => { const [h, m, x] = s.split(":").map(Number); return h * 3600 + m * 60 + x; };
+const STAGES = ["intake","asset_identity","archetype_composition","research_plan","source_discovery","source_ingestion","evidence_extraction","historical_record","company_genesis","historical_diagnosis","business_process_analysis","moat_analysis","operating_model","operating_scenarios","asset_valuation","indicator_design","strategy_design","backtest_execution","backtest_review","decision_synthesis","ai_reviewer","human_review","export","refresh_schedule"];
+const PHASES = [["Setup",0,4],["Sources",4,7],["History",7,11],["Analysis",11,15],["Strategy",15,19],["Decision",19,24]];
+// pass 1: 16:07:55 → ai_reviewer done 16:41:45; pass 2 restarted at source_discovery
+const P1 = { intake:["16:07:55","16:07:55"], asset_identity:["16:07:55","16:07:56"], archetype_composition:["16:07:56","16:07:56"], research_plan:["16:07:57","16:11:57"],
+  source_discovery:["16:11:57","16:15:54"], source_ingestion:["16:15:54","16:17:26"], evidence_extraction:["16:17:26","16:22:14"], historical_record:["16:22:15","16:25:11"],
+  company_genesis:["16:22:15","16:25:11"], historical_diagnosis:["16:25:11","16:26:59"], business_process_analysis:["16:25:11","16:26:59"], moat_analysis:["16:26:59","16:29:05"],
+  operating_model:["16:29:05","16:33:08"], operating_scenarios:["16:33:08","16:36:48"], asset_valuation:["16:36:48","16:38:26"], indicator_design:["16:38:26","16:38:28"],
+  strategy_design:["16:38:28","16:38:28"], backtest_execution:["16:38:28","16:38:29"], backtest_review:["16:38:29","16:38:30"], decision_synthesis:["16:38:30","16:40:23"], ai_reviewer:["16:40:23","16:41:45"] };
+const P2 = { source_discovery:["16:41:45","16:44:38"], source_ingestion:["16:44:38","16:44:38"], evidence_extraction:["16:44:39","16:48:30"], historical_record:["16:48:30",null], company_genesis:["16:48:30",null] };
+const CALLS = [ // stage, agent, in, out, cost, latency ms, finished
+  ["source_discovery","source-discovery-agent",3219,2121,.000373,11227,"16:12:44"],["source_discovery","source-discovery-agent",3832,5338,.000714,25678,"16:14:15"],["source_discovery","source-discovery-agent",4539,6524,.000868,30607,"16:15:54"],
+  ["evidence_extraction","source-reader",7720,10128,.001358,41735,"16:18:12"],["evidence_extraction","source-reader",3970,5932,.00074,24957,"16:18:37"],["evidence_extraction","source-reader",4090,9080,.001061,38013,"16:19:15"],
+  ["evidence_extraction","source-reader",4504,7820,.000955,30421,"16:19:45"],["evidence_extraction","source-reader",8265,17366,.00204,68111,"16:20:53"],["evidence_extraction","source-reader",1767,7831,.00082,34480,"16:21:28"],
+  ["evidence_extraction","source-reader",5356,11246,.001358,45646,"16:22:14"],["historical_record","metric-normalizer",12585,30107,.00364,113953,"16:24:09"],["company_genesis","asset-analyst",47381,47460,.006384,176297,"16:25:11"],
+  ["business_process_analysis","asset-analyst",29465,23741,.003847,107749,"16:26:59"],["moat_analysis","asset-analyst",61479,29843,.004871,125308,"16:29:05"],["operating_model","asset-analyst",174471,57512,.010586,242075,"16:33:07"],
+  ["operating_scenarios","asset-analyst",55740,57910,.007501,219896,"16:36:48"],["asset_valuation","valuation-analyst",48071,26233,.005027,96330,"16:38:26"],["decision_synthesis","asset-analyst",211928,28449,.008862,114412,"16:40:23"],
+  ["ai_reviewer","export-writer",633872,15967,.019138,81194,"16:41:45"],
+  ["source_discovery","source-discovery-agent",5005,6536,.000869,31125,"16:42:39"],["source_discovery","source-discovery-agent",12898,5902,.000947,28425,"16:43:17"],["source_discovery","source-discovery-agent",6438,7518,.001039,35387,"16:44:38"],
+  ["evidence_extraction","source-reader",4600,7506,.000911,30005,"16:45:14"],["evidence_extraction","source-reader",5144,10427,.001242,41167,"16:45:56"],["evidence_extraction","source-reader",4510,8202,.000988,35007,"16:46:31"],
+  ["evidence_extraction","source-reader",6074,8170,.001063,32252,"16:47:04"],["evidence_extraction","source-reader",5402,7521,.000884,30917,"16:47:35"],["evidence_extraction","source-reader",3804,7174,.00085,28270,"16:48:03"],
+  ["evidence_extraction","source-reader",5370,6096,.000751,26681,"16:48:30"]
+];
+const LIVE = [ // two stages running in parallel right now
+  { stage: "historical_record", agent: "metric-normalizer", typical: 114, max: 114 },
+  { stage: "company_genesis", agent: "asset-analyst", typical: 176, max: 242 },
+];
+const RUN_START = T("16:07:55"), LIVE_START = T("16:48:30");
+let elapsed = 52;
+
+const h = k => k.replace(/_/g, " ");
+const H = k => h(k).replace(/^ai /, "AI ").replace(/^./, c => c.toUpperCase());
+const mmss = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const dur = s => s >= 60 ? `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s` : `${Math.round(s)}s`;
+const money = c => "$" + c.toFixed(4);
+const totalCost = () => CALLS.reduce((a, c) => a + c[4], 0);
+
+// lucide icon paths
+const ICON = {
+  report: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/>',
+  overview: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
+  evidence: '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
+  metrics: '<path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+  valuation: '<circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/>',
+  thesis: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  backtests: '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+  sources: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/>',
+  activity: '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
+  bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  repeat: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  receipt: '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/>',
+  terminal: '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>',
+  book: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
+  arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+};
+const ic = (k, cls = "i") => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
+const cardHead = (icon, title, chip) => `<div class="ch"><div class="t"><span class="ico">${ic(icon, "i s16")}</span><h2>${title}</h2></div>${chip ? `<span class="chip">${chip}</span>` : ""}</div>`;
+
+const BASE_TABS = [["report","Report"],["overview","Overview"],["evidence","Evidence"],["metrics","Metrics"],["valuation","Valuation"],["thesis","Thesis"],["backtests","Backtests"],["sources","Sources"]];
+function renderTabs(extra, active) {
+  const list = extra ? [...BASE_TABS, extra] : BASE_TABS;
+  document.getElementById("tabs").innerHTML = list.map(([k, l, live]) =>
+    `<button class="tab ${k === active ? "on" : ""}" type="button">${ic(k in ICON ? k : "report")}${l}${live ? '<span class="dot" aria-label="live"></span>' : ""}</button>`).join("");
+}
+
+// ---------- report body (shared, abbreviated) ----------
+const reportBody = `
+  <section class="card">${cardHead("book", "Canonical decision", "1")}
+    <p style="margin:8px 0 0;font-size:15px;line-height:1.6;color:var(--s950)">SoFi is a deposit-funded lender with GAAP profitability and expanding fee revenue, but the accepted terminal FCFE DCF values the equity far below the $15.84 market price: base $3.99, bear $1.53 and bull $9.38 per share, producing terminal returns of -74.8%, -90.3% and -40.8% by FY2027.</p>
+    <div class="xs muted" style="margin-top:8px">Run status: running · Pipeline: v3 · from pass 1</div>
+  </section>
+  <section class="card">${cardHead("book", "Company genesis", "1")}
+    <div class="panel" style="margin-top:12px"><div class="plabel">Why the company started</div><p>Not documented. No supplied evidence claim states the problem SoFi's founders set out to solve. The only product-level evidence is an accounting classification of fiscal 2022 loan products…</p></div>
+  </section>`;
+
+// ---------- notes ----------
+function notes(effort, needs, build) {
+  return `<div class="notes"><div class="h"><span>Design notes, not part of the app</span><span>${effort}</span></div>
+    <div class="cols"><div><div class="plabel" style="margin-bottom:4px">Data</div><ul>${needs.map(n => `<li>${n}</li>`).join("")}</ul></div>
+    <div><div class="plabel" style="margin-bottom:4px">Build</div><ul>${build.map(n => `<li>${n}</li>`).join("")}</ul></div></div></div>`;
+}
+
+// ================= A · header strip =================
+function liveRowsHTML() {
+  return LIVE.map(l => {
+    const pct = Math.min(100, elapsed / l.max * 100), typ = l.typical / l.max * 100;
+    return `<div class="nowrow">
+      <div class="who"><span class="live"></span><b>${H(l.stage)}</b><span>${l.agent} · deepseek-v4-flash</span></div>
+      <div class="bar" title="Elapsed vs. pass 1 duration"><b style="width:${pct}%"></b><i style="left:${typ}%"></i></div>
+      <div class="time num">${mmss(elapsed)} <span class="muted">/ ~${mmss(l.typical)}</span></div></div>`;
+  }).join("");
+}
+function viewA() {
+  const segs = STAGES.map((s, i) => `<i class="${i < 7 ? "d" : (i === 7 || i === 8) ? "r" : ""}" title="${h(s)}"></i>`).join("");
+  document.getElementById("slotA").innerHTML = `
+    <div class="livecard">
+      <div class="main">
+        <div class="ch" style="min-height:0"><div class="t" style="gap:10px"><span class="live"></span><b style="font-size:14px">Research running</b><span class="pill sky sm">${ic("repeat")}Pass 2 · sent back after AI review</span></div>
+          <a class="btn slate" href="#">Open live run ${ic("arrow")}</a></div>
+        <div><div class="segs" aria-label="Stage 8 of 24">${segs}</div>
+          <div class="phases" style="margin-top:4px">${PHASES.map(p => `<span>${p[0]}</span>`).join("")}</div></div>
+        <div id="a-live" style="display:grid;gap:8px">${liveRowsHTML()}</div>
+      </div>
+      <div class="side">
+        <div class="kv"><span>Elapsed</span><b class="num" id="a-el"></b></div>
+        <div class="kv"><span>Model calls</span><b class="num">${CALLS.length} · 0 failed</b></div>
+        <div class="kv"><span>Cost so far</span><b class="num">${money(totalCost())}</b></div>
+        <div class="kv"><span>Worker</span><b><span class="pill emerald sm">healthy · <span id="a-hb">3s</span></span></b></div>
+      </div>
+    </div>`;
+  renderTabs(null, "report");
+  document.getElementById("main").innerHTML = reportBody + notes("Effort: about half a day", [
+    "Stages, active tasks, cost, worker health: <code>GET /research-runs/[id]</code> already returns them.",
+    "Typical duration: pass 1 latency for the same stage, or p50 of <code>model_call_logs.latency_ms</code> per agent.",
+    "Accurate timers need a call-start record. Today only the stage <code>started_at</code> is known."],
+    ["Shows only while the run is <code>running</code>; the card disappears when it finishes.",
+     "Poll every 5 s on the view page. The page currently loads once and never refreshes.",
+     "“Open live run” goes to variant B or C, or to the existing <code>/run</code> page."]);
+}
+function tickA() {
+  const el = document.getElementById("a-live"); if (!el) return;
+  el.innerHTML = liveRowsHTML();
+  document.getElementById("a-el").textContent = dur(LIVE_START - RUN_START + elapsed);
+  document.getElementById("a-hb").textContent = (elapsed % 9 + 1) + "s";
+}
+
+// ================= B · live run tab =================
+const NS = "http://www.w3.org/2000/svg";
+const sv = (n, a = {}, t) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); if (t != null) e.textContent = t; return e; };
+function drawGantt() {
+  const host = document.getElementById("gantt"); if (!host) return;
+  const W = 1000, LW = 180, RH = 17, TOP = 24, rows = STAGES.length, HH = TOP + rows * RH + 6;
+  const t0 = RUN_START, t1 = LIVE_START + Math.max(elapsed, 30) + 200;
+  const x = t => LW + (t - t0) / (t1 - t0) * (W - LW - 8);
+  const svg = sv("svg", { viewBox: `0 0 ${W} ${HH}`, role: "img", "aria-label": "Stage timeline with model calls" });
+  for (let m = 0; m <= (t1 - t0) / 60; m += 5) {
+    const tt = t0 + m * 60, xx = x(tt);
+    svg.appendChild(sv("line", { x1: xx, x2: xx, y1: TOP - 6, y2: HH, stroke: "#f1f5f9" }));
+    svg.appendChild(sv("text", { x: xx, y: 12, "text-anchor": "middle", fill: "#94a3b8", "font-size": 10, "font-family": "ui-monospace, Menlo, monospace" }, `${Math.floor(tt / 3600)}:${String(Math.floor(tt % 3600 / 60)).padStart(2, "0")}`));
+  }
+  // pass boundary
+  const bx = x(T("16:41:45"));
+  svg.appendChild(sv("rect", { x: bx, y: TOP - 6, width: W - bx, height: HH - TOP + 6, fill: "#f0f9ff", opacity: .6 }));
+  svg.appendChild(sv("text", { x: bx + 4, y: TOP + 2, fill: "#0369a1", "font-size": 10, "font-weight": 600, "font-family": "Inter, sans-serif" }, "pass 2"));
+  STAGES.forEach((s, i) => {
+    const y = TOP + i * RH, live = P2[s] && !P2[s][1];
+    svg.appendChild(sv("text", { x: LW - 10, y: y + 12, "text-anchor": "end", fill: live ? "#020617" : (P1[s] ? "#334155" : "#94a3b8"), "font-size": 11, "font-weight": live ? 700 : 500, "font-family": "Inter, sans-serif" }, H(s)));
+    [[P1[s], 1], [P2[s], 2]].forEach(([span, pass]) => {
+      if (!span) return;
+      const a = T(span[0]), b = span[1] ? T(span[1]) : LIVE_START + elapsed;
+      svg.appendChild(sv("rect", { x: x(a), y: y + 3, width: Math.max(3, x(b) - x(a)), height: RH - 6, rx: 2, fill: span[1] ? "#e2e8f0" : "#fef3c7", stroke: span[1] ? "none" : "#fcd34d" }));
+    });
+  });
+  const tip = document.getElementById("gtip");
+  CALLS.forEach(c => {
+    const end = T(c[6]), st = end - c[5] / 1000, y = TOP + STAGES.indexOf(c[0]) * RH;
+    const r = sv("rect", { x: x(st), y: y + 6, width: Math.max(2, x(end) - x(st)), height: RH - 12, rx: 1, fill: "#334155", tabindex: 0, style: "cursor:pointer" });
+    const show = () => { tip.innerHTML = `<b>${H(c[0])}</b> · ${c[1]} · ${dur(c[5] / 1000)} · ${c[2].toLocaleString()} in / ${c[3].toLocaleString()} out · ${money(c[4])} · finished ${c[6]}`; };
+    r.addEventListener("mouseenter", show); r.addEventListener("focus", show);
+    svg.appendChild(r);
+  });
+  LIVE.forEach(l => { const y = TOP + STAGES.indexOf(l.stage) * RH; svg.appendChild(sv("rect", { x: x(LIVE_START), y: y + 6, width: x(LIVE_START + elapsed) - x(LIVE_START), height: RH - 12, rx: 1, fill: "#f59e0b" })); });
+  const nx = x(LIVE_START + elapsed);
+  svg.appendChild(sv("line", { x1: nx, x2: nx, y1: TOP - 6, y2: HH, stroke: "#f59e0b", "stroke-dasharray": "3 3" }));
+  host.replaceChildren(svg);
+}
+function flightHTML() {
+  return LIVE.map(l => `<div class="panel">
+    <div class="plabel" style="margin:0"><span class="live"></span>${h(l.stage)}<span class="when">${mmss(elapsed)}</span></div>
+    <div class="xs muted mono">${l.agent} · deepseek-v4-flash</div>
+    <div class="bar"><b style="width:${Math.min(100, elapsed / l.max * 100)}%"></b><i style="left:${l.typical / l.max * 100}%"></i></div>
+    <div class="xs muted">Pass 1 took ${dur(l.typical)} for this stage</div></div>`).join("");
+}
+function viewB() {
+  document.getElementById("slotA").innerHTML = "";
+  renderTabs(["activity", "Live run", true], "activity");
+  const rows = [...CALLS].reverse().slice(0, 8).map(c => `<tr><td><div class="tt">${H(c[0])}</div><div class="ts">${c[1]}</div></td><td class="num">${dur(c[5] / 1000)}</td><td class="num">${c[2].toLocaleString()} / ${c[3].toLocaleString()}</td><td class="num">${money(c[4])}</td><td class="num mono xs">${c[6]}</td><td><span class="pill emerald sm">success</span></td></tr>`).join("");
+  const live = LIVE.map(l => `<tr class="inflight"><td><div class="tt">${H(l.stage)}</div><div class="ts">${l.agent}</div></td><td class="num b-el">${mmss(elapsed)}</td><td class="muted">—</td><td class="muted">—</td><td class="mono xs muted">in flight</td><td><span class="pill amber sm"><span class="live"></span>running</span></td></tr>`).join("");
+  document.getElementById("main").innerHTML = `
+    <div class="grid2 b">
+      <section class="card">${cardHead("clock", "Run timeline", "Pass 2 · 8 of 24")}
+        <div class="gantt-scroll"><div class="gantt" id="gantt"></div></div>
+        <div class="legend"><span><i style="background:#e2e8f0"></i>Stage</span><span><i style="background:#334155"></i>Model call, length = duration</span><span><i style="background:#f59e0b"></i>In flight</span><span><i style="background:#f0f9ff;border:1px solid #bae6fd"></i>Second pass</span></div>
+        <div class="gtip" id="gtip">Hover a call for details. Longest: <b>Operating model</b>, 4m 02s, 174,471 in / 57,512 out, $0.0106.</div>
+      </section>
+      <aside style="display:grid;gap:20px;align-content:start;min-width:0">
+        <section class="card">${cardHead("activity", "In flight", "2")}<div class="flight" id="flight">${flightHTML()}</div></section>
+        <section class="card">${cardHead("receipt", "Run cost", money(totalCost()))}
+          <div style="display:grid;gap:8px;margin-top:12px">
+            <div class="kv"><span>Pass 1 · 19 calls</span><b class="num">${money(CALLS.slice(0, 19).reduce((a, c) => a + c[4], 0))}</b></div>
+            <div class="kv"><span>Pass 2 · ${CALLS.length - 19} calls so far</span><b class="num">${money(CALLS.slice(19).reduce((a, c) => a + c[4], 0))}</b></div>
+            <div class="kv"><span>Most expensive call</span><b class="num">AI reviewer · $0.0191</b></div>
+          </div></section>
+      </aside>
+    </div>
+    <section class="card">${cardHead("receipt", "Model calls", CALLS.length + 2)}
+      <div class="tbl"><table><thead><tr><th>Stage</th><th>Duration</th><th>Tokens in / out</th><th>Cost</th><th>Finished</th><th>Status</th></tr></thead><tbody id="b-rows">${live}${rows}</tbody></table></div>
+    </section>` + notes("Effort: about a day", [
+    "<code>research_stages</code> start and finish times, and <code>model_call_logs</code> with stage, duration and tokens. All of this exists today.",
+    "In-flight rows need a <code>model_call_logs</code> row written as <code>running</code> before each request and updated afterwards.",
+    "Some pass 1 calls are tagged to the wrong stage, so the logged <code>stage_id</code> needs a fix."],
+    ["New “Live run” tab on the view page, with an amber dot while the run is active.",
+     "SVG timeline in the app's slate palette, or Recharts, which the app already uses.",
+     "Also works afterwards as a record of where time and money went in finished or failed runs."]);
+  drawGantt();
+}
+function tickB() {
+  if (!document.getElementById("gantt")) return;
+  drawGantt();
+  document.getElementById("flight").innerHTML = flightHTML();
+  document.querySelectorAll(".b-el").forEach(e => e.textContent = mmss(elapsed));
+}
+
+// ================= C · agents tab =================
+let sel = "genesis";
+const SESS = {
+  genesis: { group: "Running", stage: "company_genesis", agent: "asset-analyst", pill: "amber", label: "running" },
+  hist: { group: "Running", stage: "historical_record", agent: "metric-normalizer", pill: "amber", label: "running" },
+  reader: { group: "Pass 2 · finished", stage: "evidence_extraction", agent: "source-reader × 7", pill: "emerald", label: "7 done", meta: "3m 51s · $0.0067" },
+  disc: { group: "Pass 2 · finished", stage: "source_discovery", agent: "source-discovery-agent × 3", pill: "emerald", label: "3 done", meta: "2m 53s · $0.0029" },
+  review: { group: "Pass 1", stage: "ai_reviewer", agent: "export-writer", pill: "rose", label: "sent back", meta: "1m 21s · $0.0191" },
+};
+function sessListHTML() {
+  let g = "", out = "";
+  for (const [id, s] of Object.entries(SESS)) {
+    if (s.group !== g) { g = s.group; out += `<div class="sessgroup">${g}</div>`; }
+    const meta = s.meta || `<span class="c-el">${mmss(elapsed)}</span> elapsed`;
+    out += `<button class="sess ${id === sel ? "on" : ""}" data-s="${id}" type="button"><span class="r1"><b>${H(s.stage)}</b><span class="pill ${s.pill} sm">${s.pill === "amber" ? '<span class="live"></span>' : ""}${s.label}</span></span><span class="r2 mono">${s.agent} · ${meta}</span></button>`;
+  }
+  return out;
+}
+function stepsHTML() {
+  if (sel === "review") return `
+    <div class="panel step ok"><div class="plabel"><span class="stepn">1</span>Context<span class="when">16:40:23</span></div><p>Full pass 1 package: all artifacts, 37 evidence claims, valuation and backtests. 633,872 input tokens, the largest call in the run.</p></div>
+    <div class="panel step ok"><div class="plabel"><span class="stepn">2</span>Model turn<span class="when">1m 21s · 15,967 out</span></div><p>Reviewer checked every section against the quality gates.</p></div>
+    <div class="panel step bad"><div class="plabel"><span class="stepn">!</span>Verdict · needs more work<span class="when">16:41:45</span></div>
+      <div class="code">evidence depth: 37 claims, full initiation report requires 40
+source gap: share_price_close period could not be verified
+source gap: fdic_insured_institutions_roa period could not be verified</div></div>
+    <div class="panel step"><div class="plabel"><span class="stepn">→</span>Loop back</div><p>Run reopened at <b>Source discovery</b> to look for more evidence. Pass 2 started 16:41:45.</p></div>`;
+  if (sel === "genesis" || sel === "hist") {
+    const out = Math.round(elapsed * (sel === "genesis" ? 270 : 264));
+    const text = sel === "genesis"
+      ? "Founder identity and motivation. The pass 2 corpus adds SoFi's 2011 Stanford alumni-lending origin from the S-4 merger proxy, which replaces the SPAC-sponsor proxy used in pass 1"
+      : "Normalizing deposits, net interest margin and member counts across FY2021–FY2025 10-K filings; reconciling the adjusted EPS share-count change between FY2024 and FY2025";
+    return `
+    <div class="panel step ok"><div class="plabel"><span class="stepn">1</span>Context<span class="when">16:48:30</span></div><p>${sel === "genesis" ? "Evidence from pass 2 (49 sources), pass 1 company genesis artifact for comparison, archetype: consumer fintech bank." : "335 metric observations, 49 sources, period alignment rules for a bank holding company."}</p></div>
+    <div class="panel step ok"><div class="plabel"><span class="stepn">2</span>Contract<span class="when">${sel === "genesis" ? "genesis/contracts.ts" : "history/contracts.ts"}</span></div><p>Required fields, evidence IDs must resolve to claims, one repair attempt allowed.</p></div>
+    <div class="panel step run"><div class="plabel"><span class="stepn">3</span>Model turn 1 · streaming<span class="when">${mmss(elapsed)}</span></div>
+      <p style="color:var(--s950)">…${text}<span class="caret"></span></p>
+      <div class="meter"><span>out <b>${out.toLocaleString()}</b> tok</span><span><b>${Math.round(out / elapsed)}</b> tok/s</span><span>est. <b>${money(0.0012 + out * 1.3e-7)}</b></span><span>pass 1 took <b>${dur(sel === "genesis" ? 176 : 114)}</b></span></div></div>
+    <div class="panel step"><div class="plabel"><span class="stepn">4</span>Validate</div><p class="muted">Waiting for output.</p></div>
+    <div class="panel step"><div class="plabel"><span class="stepn">5</span>Save artifact and advance</div><p class="muted">Unlocks Historical diagnosis and Business process analysis.</p></div>`;
+  }
+  const c = sel === "reader";
+  return `
+    <div class="panel step ok"><div class="plabel"><span class="stepn">1</span>${c ? "7 parallel source reads" : "3 search rounds"}<span class="when">${c ? "16:44:39 – 16:48:30" : "16:41:45 – 16:44:38"}</span></div><p>${c ? "Each reader got one source chunk batch and returned candidate claims." : "Role-driven discovery: primary filings, peer companies, industry context."}</p></div>
+    <div class="panel step ok"><div class="plabel"><span class="stepn">2</span>Tool call · read_source<span class="when">example</span></div><div class="code">read_source({ document_id: "2e95af70…", pages: [41, 58] })
+→ 14 chunks, 9,812 chars</div></div>
+    <div class="panel step ok"><div class="plabel"><span class="stepn">3</span>Validated</div><p>All outputs passed on the first try. No repairs.</p></div>`;
+}
+function viewC() {
+  document.getElementById("slotA").innerHTML = "";
+  renderTabs(["bot", "Agents", true], "bot");
+  const s = SESS[sel];
+  document.getElementById("main").innerHTML = `
+    <div class="grid2 c">
+      <section class="card">${cardHead("bot", "Agent sessions", "13")}<div class="sesslist" id="sesslist">${sessListHTML()}</div></section>
+      <section class="card">${cardHead("terminal", `${H(s.stage)} · ${s.agent}`, s.label)}<div class="steps" id="steps">${stepsHTML()}</div></section>
+    </div>` + notes("Effort: 2–3 days", [
+    "<code>agent_sessions</code>, <code>agent_session_events</code> and <code>agent_traces</code> exist, but have 0 rows for this run. The worker runs from a scratch copy of the code, so it isn't saving them.",
+    "Streaming progress needs a new throttled <code>response.delta</code> event (token count and the last ~200 characters every 1–2 s) and a <code>validation.result</code> event.",
+    "New route: <code>GET /research-runs/[id]/sessions/[sid]/events?after=seq</code>."],
+    ["Same two-column layout as the Overview tab; steps reuse the labelled panel style from the report.",
+     "Change in <code>agent-harness/runner.ts</code> to emit delta events while streaming.",
+     "The step text and streamed output shown here are illustrative."]);
+  bindC();
+}
+function bindC() {
+  document.querySelectorAll(".sess").forEach(b => b.addEventListener("click", () => { sel = b.dataset.s; viewC(); }));
+}
+function tickC() {
+  if (!document.getElementById("steps")) return;
+  document.querySelectorAll(".c-el").forEach(e => e.textContent = mmss(elapsed));
+  if (SESS[sel].pill === "amber") document.getElementById("steps").innerHTML = stepsHTML();
+}
+
+// ================= D · research loop card =================
+function phaseHTML(pass) {
+  return PHASES.map(([name, a, b]) => {
+    const keys = STAGES.slice(a, b);
+    const src = pass === 1 ? P1 : P2;
+    const st = keys.map(k => pass === 1 ? (P1[k] ? "d" : "") : (P2[k] ? (P2[k][1] ? "d" : "r") : ""));
+    const done = st.filter(x => x === "d").length, run = st.includes("r");
+    const cls = done === keys.length ? "d" : run ? "r" : (pass === 2 && a < 4) ? "p" : "";
+    let sub;
+    if (pass === 2 && a < 4) sub = "kept from pass 1";
+    else if (run) sub = keys.filter((k, i) => st[i] === "r").map(h).join(" + ");
+    else if (done === keys.length) { const s0 = T(src[keys[0]][0]), s1 = T(src[keys[keys.length - 1]][1]); sub = dur(Math.max(1, s1 - s0)); }
+    else if (pass === 1 && done) sub = `${done} of ${keys.length}; rest not reached`;
+    else sub = "waiting";
+    const bars = pass === 2 && a < 4 ? keys.map(() => '<i style="background:#cbd5e1"></i>').join("") : st.map(x => `<i class="${x}"></i>`).join("");
+    return `<div class="phase ${cls}"><div class="n">${name}<span>${pass === 2 && a < 4 ? "—" : `${done}/${keys.length}`}</span></div><div class="st">${bars}</div><div class="sub">${run ? '<span class="live" style="display:inline-block;margin-right:6px"></span>' : ""}${sub}</div></div>`;
+  }).join("");
+}
+function viewD() {
+  document.getElementById("slotA").innerHTML = "";
+  renderTabs(null, "report");
+  document.getElementById("main").innerHTML = `
+    <section class="card">${cardHead("repeat", "Research loop", "Pass 2 running")}
+      <div class="passes">
+        <div class="pass"><div class="pl"><b>Pass 1</b><span>16:07 – 16:41<br>19 calls · ${money(CALLS.slice(0, 19).reduce((a, c) => a + c[4], 0))}</span></div><div class="phaserow">${phaseHTML(1)}</div></div>
+        <div class="verdict">${ic("repeat")}<span><b>AI reviewer sent it back</b> · evidence depth 37 of 40 required, plus 61 open source gaps</span><span class="mono xs" style="margin-left:auto">16:41:45 → reopened at Source discovery</span></div>
+        <div class="pass"><div class="pl"><b>Pass 2</b><span>since 16:41 · <span id="d-el"></span><br>${CALLS.length - 19} calls · ${money(CALLS.slice(19).reduce((a, c) => a + c[4], 0))}</span></div><div class="phaserow" id="d-p2">${phaseHTML(2)}</div></div>
+      </div>
+    </section>` + reportBody + notes("Effort: about a day for the card; the verdict line needs one backend field", [
+    "Pass boundaries can be worked out from <code>model_call_logs</code> and repeated stage start times. A stored <code>pass_number</code> on stages would be cleaner.",
+    "Why the run looped back is shown here from the quality-gate blockers. That's my reading of it; the real reason should be saved on the job or run when a pass is reopened."],
+    ["Card sits at the top of the Report tab, above Canonical decision, so the report says which pass its sections came from.",
+     "Stages grouped into six phases keep it readable; the existing stage list stays on <code>/run</code>.",
+     "Fits well with A: the strip says what's happening now, this card shows how the run got here."]);
+}
+function tickD() {
+  const p = document.getElementById("d-p2"); if (!p) return;
+  document.getElementById("d-el").textContent = dur(LIVE_START - T("16:41:45") + elapsed);
+}
+
+// ================= switcher =================
+const VIEWS = { a: viewA, b: viewB, c: viewC, d: viewD };
+let cur = "a";
+function show(v) {
+  cur = v;
+  document.querySelectorAll(".ws nav button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.v === v)));
+  VIEWS[v]();
+  try { localStorage.setItem("liveRunVariant", v); } catch (e) {}
+}
+document.querySelectorAll(".ws nav button").forEach(b => b.addEventListener("click", () => show(b.dataset.v)));
+try { const v = localStorage.getItem("liveRunVariant"); if (v && VIEWS[v]) cur = v; } catch (e) {}
+show(cur); tickA(); tickD();
+const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+setInterval(() => { elapsed++; tickA(); tickB(); tickC(); tickD(); }, reduce ? 5000 : 1000);
+</script>
+</body>
+</html>

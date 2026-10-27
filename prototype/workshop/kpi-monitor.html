@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>KPI Monitoring Variants</title>
+<link rel="stylesheet" href="base.css">
+<style>
+/* Workshop prototype: three ways to show chapter 11 (monitoring thresholds and thesis breakers).
+   Data comes from meta-data.js (window.META). Light theme only, like the app. */
+[hidden] { display: none !important; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+
+.chapter { margin: 0 0 22px; }
+.chapter .lede { margin: 6px 0 10px; font-size: 15px; }
+.chapter .meta { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 12px; color: var(--muted); }
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 0 0 12px; }
+.toolbar .fill { flex: 1; }
+.hint { font-size: 12px; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--secondary); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.sw { display: inline-grid; place-items: center; min-width: 18px; height: 16px; border-radius: 3px; font-size: 10px; padding: 0 3px; border: 1px solid var(--line); }
+
+/* zone tints (never color alone: each carries a glyph and screen-reader text) */
+.z-bear { background: var(--red-bg); }
+.z-near { background: var(--amber-bg); }
+.z-bull { background: var(--green-bg); }
+.z-base { background: var(--surface); }
+.zm { display: inline-block; width: 12px; margin-left: 3px; font-size: 10px; text-align: center; }
+.z-bear .zm, .zm.bear { color: var(--red-ink); }
+.z-near .zm, .zm.near { color: var(--amber-ink); }
+.z-bull .zm, .zm.bull { color: var(--green); }
+
+.pill { display: inline-flex; align-items: center; gap: 5px; border-radius: 20px; padding: 2px 9px; font-size: 12px; font-weight: 500; white-space: nowrap; border: 1px solid transparent; }
+.pill.bear { background: var(--red-bg); color: var(--red-ink); border-color: #ecd0cc; }
+.pill.near { background: var(--amber-bg); color: var(--amber-ink); border-color: #efe0bb; }
+.pill.base { background: var(--head-bg); color: var(--secondary); border-color: var(--line); }
+.pill.bull { background: var(--green-bg); color: #2f6f55; border-color: #cfe3d7; }
+.pill.none { background: transparent; color: var(--muted); border-color: var(--line); }
+.pill.trig { background: var(--red-bg); color: var(--red-ink); border-color: #ecd0cc; }
+.pill.watch { background: var(--amber-bg); color: var(--amber-ink); border-color: #efe0bb; }
+.pill.clear { background: var(--green-bg); color: #2f6f55; border-color: #cfe3d7; }
+.pill.cant { background: var(--head-bg); color: var(--secondary); border-color: var(--line); }
+
+.chg { white-space: nowrap; }
+.chg.good { color: var(--green); }
+.chg.bad { color: var(--red-ink); }
+
+/* table */
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); -webkit-overflow-scrolling: touch; }
+table.data.kpi { min-width: 100%; }
+table.data.kpi th.sticky, table.data.kpi td.sticky { position: sticky; left: 0; z-index: 2; background: var(--surface); box-shadow: 1px 0 0 var(--line); }
+table.data.kpi thead th.sticky { background: var(--head-bg); z-index: 3; }
+table.data.kpi tbody tr.krow:hover th.sticky { background: var(--hover); }
+table.data.kpi th.sep, table.data.kpi td.sep { border-left: 1px solid var(--line-strong); }
+table.data.kpi tbody th[scope="row"] { font-weight: 400; text-align: left; padding: 8px 12px; border-top: 1px solid var(--line); min-width: 210px; max-width: 260px; white-space: normal; }
+table.data.kpi tr.grp th { background: var(--page); color: var(--ink); text-align: left; font-size: 12px; font-weight: 600; letter-spacing: .02em; padding: 14px 12px 6px; border-top: 1px solid var(--line); }
+table.data.kpi tr.grp td { background: var(--page); border-top: 1px solid var(--line); }
+table.data.kpi tr.krow { cursor: pointer; }
+table.data.kpi tr.krow.open th, table.data.kpi tr.krow.open td { border-bottom: 0; }
+table.data.kpi td.nohist { text-align: left; color: var(--muted); font-style: italic; font-size: 12px; background: repeating-linear-gradient(135deg, transparent 0 6px, #f4f5f3 6px 7px); }
+table.data.kpi td.thr { color: var(--secondary); }
+table.data.kpi td.thr.bear-c { color: var(--red-ink); }
+table.data.kpi td.thr.bull-c { color: #2f6f55; }
+table.data.kpi tr.detail td { white-space: normal; text-align: left; background: #fcfcfa; padding: 0; }
+.rowbtn { border: 0; background: transparent; padding: 0; text-align: left; display: inline-flex; gap: 6px; align-items: baseline; font-weight: 500; color: var(--ink); }
+.chev { display: inline-block; width: 10px; color: var(--muted); font-size: 10px; transition: transform .15s ease; }
+[aria-expanded="true"] > .chev { transform: rotate(90deg); }
+.dir { display: block; font-size: 11px; color: var(--muted); margin-left: 16px; }
+.detail-in { position: sticky; left: 0; max-width: min(860px, calc(100vw - 40px)); padding: 12px 16px 16px 28px; display: grid; gap: 10px; }
+.detail-in dl { margin: 0; display: grid; grid-template-columns: 170px 1fr; gap: 6px 16px; font-size: 13px; }
+.detail-in dt { color: var(--muted); }
+.detail-in dd { margin: 0; color: var(--body); }
+@media (max-width: 600px) { .detail-in dl { grid-template-columns: 1fr; gap: 2px; } .detail-in dd { margin-bottom: 8px; } }
+.foot { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+#tip { position: fixed; z-index: 100; max-width: 340px; background: #1b1d21; color: #f1f1ee; font-size: 12px; line-height: 1.45; padding: 8px 10px; border-radius: 5px; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+
+/* variant B */
+.bands { display: grid; gap: 10px; }
+.brow { padding: 14px 16px; display: grid; grid-template-columns: 220px minmax(0, 1fr) 250px; gap: 16px 22px; align-items: start; }
+.brow .nm { font-weight: 500; }
+.brow .val { font: 400 26px/1.15 var(--serif); margin: 4px 0 6px; letter-spacing: -.3px; }
+.brow .val small { font: 400 12px var(--sans); color: var(--muted); margin-left: 4px; letter-spacing: 0; }
+.brow .dir2 { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.brow svg { width: 100%; height: auto; display: block; }
+.brow .nohist-note { font-size: 12px; color: var(--muted); font-style: italic; margin-top: 4px; }
+.mini { width: 100%; }
+.mini td, .mini th { padding: 4px 6px !important; }
+.brow .more { grid-column: 1 / -1; }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--secondary); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; }
+.linkbtn:hover { color: var(--ink); }
+.hist { margin-top: 10px; }
+@media (max-width: 980px) { .brow { grid-template-columns: 1fr 1fr; } .brow .chartcell { grid-column: 1 / -1; grid-row: 2; } }
+@media (max-width: 560px) { .brow { grid-template-columns: 1fr; } .brow .chartcell { grid-row: auto; } }
+
+/* variant C */
+.summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; }
+.summary .chip { cursor: pointer; font-size: 13px; padding: 5px 12px; }
+.summary .chip[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+.summary .chip b { font-weight: 600; }
+.section-h { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin: 26px 0 10px; }
+.section-h h2 { margin: 0; }
+.blist { display: grid; gap: 0; padding: 0; margin: 0; list-style: none; }
+.bitem { display: grid; grid-template-columns: 150px minmax(0, 1fr) 300px; gap: 10px 20px; padding: 14px 16px; border-top: 1px solid var(--line); }
+.bitem:first-child { border-top: 0; }
+.bitem .bname { font-weight: 500; margin-bottom: 2px; }
+.bitem .bthr { color: var(--body); font-size: 13px; }
+.bitem .beval { font-size: 12px; color: var(--secondary); margin-top: 6px; }
+.bitem .trend { font-size: 12px; color: var(--secondary); }
+.bitem .trend svg { width: 100%; max-width: 300px; height: auto; display: block; margin-bottom: 4px; }
+.bitem .trend .vals { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.bitem .conseq { grid-column: 2 / -1; }
+.bitem .conseq p { margin: 6px 0 0; font-size: 13px; color: var(--body); max-width: 760px; }
+@media (max-width: 900px) { .bitem { grid-template-columns: 1fr; } .bitem .conseq { grid-column: auto; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+}
+@media (max-width: 720px) {
+  .ws .row { padding: 10px 16px; }
+  .ws .note { padding: 0 16px 10px; }
+  .app-top .bar { padding: 0 16px; }
+  .app-top .sub { padding: 0 16px; }
+  table.data.kpi tbody th[scope="row"] { min-width: 150px; max-width: 170px; }
+}
+</style>
+</head>
+<body>
+
+<div class="ws">
+  <div class="row">
+    <span class="title">KPI monitoring</span>
+    <div class="tabs" role="group" aria-label="Design variant">
+      <button type="button" data-v="a" aria-pressed="true">A · Trend table</button>
+      <button type="button" data-v="b" aria-pressed="false">B · Band charts</button>
+      <button type="button" data-v="c" aria-pressed="false">C · Watchlist board</button>
+    </div>
+    <a href="index.html">All workshop pages</a>
+  </div>
+  <div class="note" id="wsnote"></div>
+</div>
+
+<header class="app-top">
+  <div class="bar"><span class="logo"><i>R</i>Research OS</span></div>
+  <nav class="sub" aria-label="Asset sections">
+    <b>Meta Platforms · META</b>
+    <span class="on" aria-current="page">Report</span><span>Overview</span><span>Evidence</span><span>Metrics</span><span>Valuation</span><span>Thesis</span><span>Backtests</span><span>Sources</span>
+  </nav>
+</header>
+
+<main class="page">
+  <header class="chapter">
+    <div class="eyebrow">Chapter 11 of 12</div>
+    <h1 class="display">Monitoring thresholds and thesis breakers</h1>
+    <p class="lede">Twelve quarterly KPIs measured against today's bear, base and bull thresholds, and seven conditions that would break the thesis.</p>
+    <div class="meta"><span>Data through Q2 '26 (Form 10-Q, filed 30 Jul 2026)</span><span>All values in USD millions</span><span>Thresholds set Oct 2026, applied to history for context</span></div>
+  </header>
+  <div id="view"></div>
+</main>
+
+<div id="tip" role="tooltip" hidden></div>
+
+<script src="meta-data.js"></script>
+<script>
+// ===== LOGIC START (pure functions; verified in node) =====
+const M = window.META;
+const Q = M.quarterly;
+const P = Q.periods;
+
+const SERIES_KEY = {
+  total_revenue: "revenue",
+  income_from_operations_gaap: "operating_income",
+  net_income: "net_income",
+  operating_cash_flow: "operating_cash_flow",
+  us_gaap_PaymentsToAcquirePropertyPlantAndEquipment: "capex",
+  us_gaap_CostOfRevenue: "cost_of_revenue",
+  us_gaap_ResearchAndDevelopmentExpense: "rnd",
+};
+const FCF_KEY = "free_cash_flow_company_defined_non_gaap";
+// Segment KPIs: no captured history. Q2 2026 values from the 10-Q segment note.
+const SEGMENT_CURRENT = {
+  family_of_apps_revenue: 60370,
+  family_of_apps_income_from_operations_gaap: 23394,
+  reality_labs_revenue: 431,
+  reality_labs_income_from_operations_gaap: -4619,
+};
+const NAME = {
+  total_revenue: "Total revenue",
+  family_of_apps_revenue: "Family of Apps revenue",
+  reality_labs_revenue: "Reality Labs revenue",
+  income_from_operations_gaap: "Operating income",
+  family_of_apps_income_from_operations_gaap: "Family of Apps operating income",
+  reality_labs_income_from_operations_gaap: "Reality Labs operating income (loss)",
+  net_income: "Net income",
+  operating_cash_flow: "Operating cash flow",
+  us_gaap_PaymentsToAcquirePropertyPlantAndEquipment: "Capex",
+  [FCF_KEY]: "Free cash flow (OCF − capex)",
+  us_gaap_CostOfRevenue: "Cost of revenue",
+  us_gaap_ResearchAndDevelopmentExpense: "R&D expense",
+};
+// Plain-English source notes where the stored text describes an extraction gap.
+const SOURCE_OVERRIDE = {
+  family_of_apps_income_from_operations_gaap: "Q2 2026 value (23,394) taken from the Form 10-Q segment note. The research run captured this segment only up to Q1 2026, so no history is shown.",
+  reality_labs_income_from_operations_gaap: "Q2 2026 loss (−4,619) taken from the Form 10-Q segment note. The research run captured this segment only up to Q1 2026, so no history is shown.",
+  [FCF_KEY]: "Computed here as operating cash flow minus capex from the captured cash-flow series. The company's own figure also subtracts finance-lease principal payments, so it can differ (Q2 2026 company figure: 784).",
+};
+const DEF_SUFFIX = {
+  [FCF_KEY]: " Shown here as operating cash flow minus capex, which may differ slightly from the company's definition.",
+};
+const PILLARS = ["Revenue and demand", "Costs and margins", "Reinvestment", "Cash conversion", "Earnings quality"];
+function pillarOf(node) {
+  const s = String(node || "");
+  if (/^(Demand|Value delivery)/i.test(s)) return "Revenue and demand";
+  if (/^Cost structure/i.test(s)) return "Costs and margins";
+  if (/^Reinvestment/i.test(s)) return "Reinvestment";
+  if (/^Cash conversion/i.test(s)) return "Cash conversion";
+  if (/^Earnings/i.test(s)) return "Earnings quality";
+  return s || "Other";
+}
+
+// "60,000 to 61,600", "-5,000 to -3,500", "−5,000 to −3,500" -> [lo, hi]
+function parseRange(s) {
+  const t = String(s == null ? "" : s).replace(/−/g, "-");
+  const m = t.match(/-?\d[\d,]*(?:\.\d+)?/g) || [];
+  const n = m.map(x => Number(x.replace(/,/g, ""))).filter(Number.isFinite);
+  if (n.length < 2) return null;
+  return [Math.min(n[0], n[1]), Math.max(n[0], n[1])];
+}
+
+function seriesFor(metricKey) {
+  if (metricKey === FCF_KEY) {
+    const o = Q.series.operating_cash_flow, c = Q.series.capex;
+    return P.map((_, i) => (o[i] != null && c[i] != null ? o[i] - c[i] : null));
+  }
+  const s = SERIES_KEY[metricKey];
+  return s ? Q.series[s].map(v => (v == null ? null : v)) : null;
+}
+
+function buildKpi(k, i) {
+  const series = seriesFor(k.metric_key);
+  const bear = Number(k.bear_threshold), bull = Number(k.bull_threshold);
+  let latest = null, latestIdx = -1;
+  if (series) {
+    for (let j = series.length - 1; j >= 0; j--) if (series[j] != null) { latest = series[j]; latestIdx = j; break; }
+  } else {
+    latest = k.current_level != null ? k.current_level : (SEGMENT_CURRENT[k.metric_key] ?? null);
+    latestIdx = latest != null ? P.length - 1 : -1;
+  }
+  return {
+    i, key: k.metric_key,
+    name: NAME[k.metric_key] || k.kpi,
+    reportName: k.kpi,
+    pillar: pillarOf(k.process_node),
+    pillarFull: k.process_node,
+    segment: k.segment,
+    definition: k.definition + (DEF_SUFFIX[k.metric_key] || ""),
+    affects: k.model_input_affected,
+    source: SOURCE_OVERRIDE[k.metric_key] || k.source_role,
+    basis: k.reporting_basis,
+    freq: k.reporting_frequency,
+    bear, bull,
+    range: parseRange(k.base_range),
+    higherBetter: bull > bear,
+    series,
+    hasHistory: !!series,
+    latest, latestIdx,
+  };
+}
+
+// Zones: bear (at/worse than bear), bull (at/better than bull), near (within 5% of bear, on the
+// bear side of the base midpoint), base otherwise. "none" when there is no value.
+function zoneOf(v, k) {
+  if (v == null || !Number.isFinite(v)) return "none";
+  const hb = k.higherBetter;
+  if (hb ? v <= k.bear : v >= k.bear) return "bear";
+  if (hb ? v >= k.bull : v <= k.bull) return "bull";
+  const mid = k.range ? (k.range[0] + k.range[1]) / 2 : (k.bear + k.bull) / 2;
+  const bearSide = hb ? v < mid : v > mid;
+  const tol = 0.05 * (Math.abs(k.bear) || Math.abs(k.bull - k.bear));
+  if (bearSide && Math.abs(v - k.bear) <= tol) return "near";
+  return "base";
+}
+const inRange = (v, k) => v != null && k.range && v >= k.range[0] && v <= k.range[1];
+
+function change(cur, prev) {
+  if (cur == null || prev == null) return null;
+  if (prev > 0) return { pct: (cur - prev) / prev * 100, d: cur - prev };
+  return { pct: null, d: cur - prev }; // negative or zero base: show the absolute change
+}
+function qoq(k, idx = k.latestIdx) { return k.series && idx > 0 ? change(k.series[idx], k.series[idx - 1]) : null; }
+function yoy(k, idx = k.latestIdx) { return k.series && idx > 3 ? change(k.series[idx], k.series[idx - 4]) : null; }
+
+// Thesis breakers: each mapped by reading its threshold text. Watching = within 10% of the trigger.
+const WATCH = 0.10;
+function headroom(v, trig, dir) { // dir "below": triggers when v < trig; "above": when v > trig
+  const h = dir === "below" ? (v - trig) / Math.abs(trig) : (trig - v) / Math.abs(trig);
+  return h;
+}
+function evalBreakers(kpis, breakers) {
+  const by = key => kpis.find(k => k.key === key);
+  const opi = by("income_from_operations_gaap"), rev = by("total_revenue"), capex = by("us_gaap_PaymentsToAcquirePropertyPlantAndEquipment");
+  const fcf = by(FCF_KEY), rl = by("reality_labs_income_from_operations_gaap");
+  const pct = h => (h * 100).toFixed(1) + "%";
+  const rules = [
+    { test: /property and equipment above/i, run: () => {
+        const n = capex.latestIdx, c2 = [capex.series[n - 1], capex.series[n]], f = fcf.series[n];
+        const above = c2.filter(v => v > 33000).length;
+        const h = headroom(capex.latest, 33000, "above");
+        const status = above === 2 && f < 0 ? "trig" : (above > 0 || f < 0 || h < WATCH) ? "watch" : "clear";
+        return { status, kpis: [capex, fcf], trig: [33000, 0],
+          eval: `Capex ${fmt(capex.latest)} vs trigger 33,000 (${pct(h)} below it); ${above} of the last 2 quarters above. Free cash flow ${fmt(f)} (OCF − capex), ${f < 0 ? "below" : "above"} zero; the company-defined figure is 784.` };
+      } },
+    { test: /income from operations below/i, run: () => {
+        const h = headroom(opi.latest, 16900, "below");
+        return { status: opi.latest < 16900 ? "trig" : h < WATCH ? "watch" : "clear", kpis: [opi], trig: [16900],
+          eval: `Operating income ${fmt(opi.latest)} vs trigger 16,900 (${pct(h)} above it). Change on the prior quarter: ${fmtPct(qoq(opi).pct)}.` };
+      } },
+    { test: /total revenue below/i, run: () => {
+        const h = headroom(rev.latest, 60000, "below");
+        return { status: rev.latest < 60000 ? "trig" : h < WATCH ? "watch" : "clear", kpis: [rev], trig: [60000],
+          eval: `Total revenue ${fmt(rev.latest)} vs trigger 60,000 (${pct(h)} above it).`,
+          partial: "Can't evaluate the Family of Apps growth part: needs Family of Apps revenue for Q2 '25 (segment history not captured)." };
+      } },
+    { test: /Reality Labs operating loss beyond/i, run: () => {
+        const h = headroom(rl.latest, -5000, "below");
+        return { status: rl.latest < -5000 ? "trig" : h < WATCH ? "watch" : "clear", kpis: [rl], trig: [-5000],
+          eval: `Q2 '26 loss ${fmt(rl.latest)} vs trigger −5,000 (${fmt(rl.latest + 5000)} of headroom, ${pct(h)}). Only one quarter available.` };
+      } },
+    { test: /EU revenue reduction|FTC/i, run: () => ({ status: "cant", kpis: [],
+        eval: "Can't evaluate: needs a filing review for a quantified EU revenue reduction or an FTC data-use remedy. This is not a numeric series." }) },
+    { test: /valuation-date close/i, run: () => ({ status: "cant", kpis: [],
+        eval: `Can't evaluate: needs a verified valuation-date closing price. The unverified reference price of ${M.valuation.scenario_set.current_market_price.toFixed(2)} USD is above the 520 trigger.` }) },
+    { test: /without reconciling/i, run: () => ({ status: "cant", kpis: [],
+        eval: "Can't evaluate: needs the final valuation's per-share values reconciled to the terminal anchors (a review step, not a data series)." }) },
+  ];
+  return breakers.map(b => {
+    const r = rules.find(x => x.test.test(b.threshold));
+    const res = r ? r.run() : { status: "cant", kpis: [], eval: "Can't evaluate: no data mapped to this condition." };
+    return Object.assign({ name: b.name, threshold: b.threshold, consequence: b.model_consequence }, res);
+  });
+}
+
+// formatting: plain numbers in USD millions, minus sign for negatives
+function fmt(v) {
+  if (v == null || !Number.isFinite(v)) return "—";
+  const s = Math.abs(Math.round(v)).toLocaleString("en-US");
+  return v < 0 && Math.round(v) !== 0 ? "−" + s : s;
+}
+function fmtSigned(v) { return v > 0 ? "+" + fmt(v) : fmt(v); }
+function fmtPct(p) {
+  if (p == null) return "—";
+  const a = Math.abs(p).toFixed(1);
+  return (p > 0 ? "+" : p < 0 ? "−" : "") + a + "%";
+}
+const qLabel = p => { const [y, q] = p.split("-"); return `${q} '${y.slice(2)}`; };
+const ZONE = {
+  bear: { label: "Bear zone", short: "Bear", mark: "✕" },
+  near: { label: "Near bear", short: "Near bear", mark: "!" },
+  base: { label: "Base range", short: "Base", mark: "" },
+  bull: { label: "Bull zone", short: "Bull", mark: "✓" },
+  none: { label: "No data", short: "No data", mark: "" },
+};
+const BSTAT = {
+  trig: { label: "Triggered", mark: "✕", rank: 0 },
+  watch: { label: "Watching", mark: "!", rank: 1 },
+  clear: { label: "Clear", mark: "✓", rank: 2 },
+  cant: { label: "Can't evaluate", mark: "?", rank: 3 },
+};
+const KPIS = M.kpis.map(buildKpi);
+const BREAKERS = evalBreakers(KPIS, M.breakers);
+// ===== LOGIC END =====
+
+// ===== rendering =====
+const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const view = document.getElementById("view");
+const state = { v: "a", nA: 8, nB: 8, filter: "all", openA: new Set(), openC: new Set(), openHist: new Set(), openConseq: new Set() };
+const dirText = k => k.higherBetter ? "Higher is better" : "Lower is better";
+const pill = z => `<span class="pill ${z}">${ZONE[z].mark ? `<span aria-hidden="true">${ZONE[z].mark}</span>` : ""}${ZONE[z].label}</span>`;
+const bpill = s => `<span class="pill ${s}"><span aria-hidden="true">${BSTAT[s].mark}</span>${BSTAT[s].label}</span>`;
+function chgHTML(c, k) {
+  if (!c) return '<span class="muted">—</span>';
+  if (c.d === 0) return '<span class="chg">→ 0.0%</span>';
+  const up = c.d > 0, good = up === k.higherBetter;
+  const txt = c.pct != null ? fmtPct(c.pct) : fmtSigned(c.d);
+  return `<span class="chg ${good ? "good" : "bad"}"><span aria-hidden="true">${up ? "↑" : "↓"}</span> ${txt}<span class="sr">, ${good ? "improving" : "worsening"}</span></span>`;
+}
+const windowIdx = n => { const N = n === "all" ? P.length : Math.min(n, P.length); return P.map((_, i) => i).slice(P.length - N); };
+const directionSentence = k => k.higherBetter
+  ? `Higher is better. Bear at or below ${fmt(k.bear)}, bull at or above ${fmt(k.bull)}.`
+  : `Lower is better. Bear at or above ${fmt(k.bear)}, bull at or below ${fmt(k.bull)}.`;
+const rangeText = k => k.range ? `${fmt(k.range[0])} to ${fmt(k.range[1])}` : "—";
+
+function cellHTML(v, k) {
+  const z = zoneOf(v, k);
+  if (z === "none") return `<td class="muted"><span aria-hidden="true">—</span><span class="sr">not reported</span></td>`;
+  return `<td class="z-${z}">${fmt(v)}<span class="zm" aria-hidden="true">${ZONE[z].mark}</span><span class="sr"> (${ZONE[z].label})</span></td>`;
+}
+
+function detailHTML(k) {
+  const outside = [];
+  if (k.range && (k.higherBetter ? k.bear < k.range[0] : k.bear > k.range[1])) outside.push(`The bear threshold (${fmt(k.bear)}) sits outside the base range; values between them count as base.`);
+  return `<div class="detail-in"><dl>
+    <dt>Definition</dt><dd>${esc(k.definition)}</dd>
+    <dt>What it affects in the model</dt><dd>${esc(k.affects)}</dd>
+    <dt>Thresholds</dt><dd>${directionSentence(k)} Base range ${rangeText(k)}.${outside.length ? " " + outside.join(" ") : ""}</dd>
+    <dt>Source</dt><dd>${esc(k.source)}</dd>
+    <dt>Reporting</dt><dd>${esc(k.basis)} · ${esc(k.freq)}</dd>
+    <dt>Thesis pillar</dt><dd>${esc(k.pillarFull)}</dd>
+    <dt>Shown in the report as</dt><dd>${esc(k.reportName)}</dd>
+  </dl></div>`;
+}
+
+// shared KPI table (variant A, and compact in C)
+function kpiTable(opts) {
+  const { n, rows, id, open, showPeriodsLabel = true } = opts;
+  const idx = windowIdx(n);
+  const cols = 1 + idx.length + 6;
+  let h = `<div class="tablewrap"><table class="data kpi" id="${id}"><caption class="sr">KPIs by thesis pillar, last ${idx.length} quarters, in USD millions, against bear, base and bull thresholds</caption><thead><tr>
+    <th class="sticky" scope="col">KPI</th>
+    ${idx.map(i => `<th scope="col">${qLabel(P[i])}</th>`).join("")}
+    <th scope="col" class="sep">Bear</th><th scope="col">Base range</th><th scope="col">Bull</th>
+    <th scope="col" class="sep" style="text-align:left">Status (latest)</th><th scope="col">QoQ</th><th scope="col">YoY</th>
+  </tr></thead><tbody>`;
+  for (const pil of PILLARS) {
+    const list = rows.filter(k => k.pillar === pil);
+    if (!list.length) continue;
+    h += `<tr class="grp"><th class="sticky" scope="rowgroup">${esc(pil)}</th><td colspan="${cols - 1}"></td></tr>`;
+    for (const k of list) {
+      const isOpen = open.has(k.i), did = `${id}-d${k.i}`;
+      let qcells;
+      if (k.hasHistory) qcells = idx.map(i => cellHTML(k.series[i], k)).join("");
+      else {
+        const lastIsLatest = idx[idx.length - 1] === k.latestIdx;
+        qcells = (idx.length > 1 ? `<td class="nohist" colspan="${idx.length - 1}">Segment history not captured yet</td>` : "")
+          + (lastIsLatest ? cellHTML(k.latest, k) : `<td class="muted">—</td>`);
+      }
+      const z = zoneOf(k.latest, k);
+      h += `<tr class="krow${isOpen ? " open" : ""}" data-k="${k.i}">
+        <th scope="row" class="sticky"><button type="button" class="rowbtn" aria-expanded="${isOpen}" aria-controls="${did}"><span class="chev" aria-hidden="true">▸</span><span>${esc(k.name)}</span></button><span class="dir">${dirText(k)}</span></th>
+        ${qcells}
+        <td class="sep thr bear-c">${fmt(k.bear)}</td><td class="thr">${rangeText(k)}</td><td class="thr bull-c">${fmt(k.bull)}</td>
+        <td class="sep" style="text-align:left">${pill(z)}</td>
+        <td>${chgHTML(qoq(k), k)}</td><td>${chgHTML(yoy(k), k)}</td>
+      </tr>
+      <tr class="detail" id="${did}"${isOpen ? "" : " hidden"}><td colspan="${cols}">${detailHTML(k)}</td></tr>`;
+    }
+  }
+  if (!rows.length) h += `<tr><td colspan="${cols}" style="text-align:left" class="muted">No KPIs match this filter.</td></tr>`;
+  h += `</tbody></table></div>`;
+  return h;
+}
+
+const LEGEND = `<div class="legend" aria-label="Legend">
+  <span><span class="sw z-bear"><span class="zm bear" aria-hidden="true">✕</span></span>At or worse than bear</span>
+  <span><span class="sw z-near"><span class="zm near" aria-hidden="true">!</span></span>Within 5% of bear</span>
+  <span><span class="sw z-base"></span>Base</span>
+  <span><span class="sw z-bull"><span class="zm bull" aria-hidden="true">✓</span></span>At or better than bull</span>
+</div>`;
+
+function seg(name, current, options, label) {
+  return `<div class="seg" role="group" aria-label="${label}">${options.map(([v, t]) =>
+    `<button type="button" data-seg="${name}" data-val="${v}" aria-pressed="${String(current) === String(v)}">${t}</button>`).join("")}</div>`;
+}
+
+// ---- Variant A ----
+function viewA() {
+  return `<div class="toolbar">
+      ${seg("nA", state.nA, [[4, "4 quarters"], [8, "8 quarters"], ["all", "All 14"]], "Quarters shown")}
+      <span class="hint">USD millions. Hover a row for its definition; select it for details.</span>
+      <span class="fill"></span>${LEGEND}
+    </div>
+    ${kpiTable({ n: state.nA, rows: KPIS, id: "ta", open: state.openA })}
+    <p class="foot">Thresholds set Oct 2026, applied to history for context: older quarters will often sit in a bear or bull zone simply because the business was smaller. QoQ and YoY compare the latest reported quarter. Free cash flow is operating cash flow minus capex and may differ slightly from the company's definition.</p>`;
+}
+
+// ---- Variant B ----
+function scaleY(vals, H, top, bottom) {
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.1 || 1;
+  lo -= pad; hi += pad;
+  const y = v => top + (hi - v) / (hi - lo) * (H - top - bottom);
+  return { y, lo, hi };
+}
+function bandsSVG(k, y, x0, x1, lo, hi) {
+  const rect = (a, b, fill) => {
+    const ya = y(Math.min(Math.max(a, lo), hi)), yb = y(Math.min(Math.max(b, lo), hi));
+    const t = Math.min(ya, yb), hgt = Math.abs(ya - yb);
+    return hgt > 0 ? `<rect x="${x0}" y="${t.toFixed(1)}" width="${x1 - x0}" height="${hgt.toFixed(1)}" style="fill:${fill}"/>` : "";
+  };
+  let s = "";
+  if (k.range) s += rect(k.range[0], k.range[1], "var(--head-bg)");
+  s += k.higherBetter ? rect(lo, k.bear, "var(--red-bg)") + rect(k.bull, hi, "var(--green-bg)")
+                      : rect(k.bear, hi, "var(--red-bg)") + rect(lo, k.bull, "var(--green-bg)");
+  return s;
+}
+function thresholdLines(k, y, x0, x1, W) {
+  let yb = y(k.bear), yu = y(k.bull);
+  let lb = yb, lu = yu;
+  if (Math.abs(lb - lu) < 12) { const m = (lb + lu) / 2; if (lb > lu) { lb = m + 6; lu = m - 6; } else { lb = m - 6; lu = m + 6; } }
+  return `<line x1="${x0}" x2="${x1}" y1="${yb.toFixed(1)}" y2="${yb.toFixed(1)}" stroke-dasharray="4 3" style="stroke:var(--bear)"/>
+    <line x1="${x0}" x2="${x1}" y1="${yu.toFixed(1)}" y2="${yu.toFixed(1)}" stroke-dasharray="4 3" style="stroke:var(--bull)"/>
+    <text x="${x1 + 6}" y="${(lb + 3.5).toFixed(1)}" font-size="10" style="fill:var(--red-ink)">Bear ${fmt(k.bear)}</text>
+    <text x="${x1 + 6}" y="${(lu + 3.5).toFixed(1)}" font-size="10" style="fill:#2f6f55">Bull ${fmt(k.bull)}</text>`;
+}
+const ZFILL = { bear: "var(--bear)", near: "var(--amber-dot)", base: "var(--base)", bull: "var(--bull)", none: "var(--muted)" };
+
+function chartSVG(k, n) {
+  const W = 560, H = 160, L = 8, R = 92, T = 12, B = 22;
+  const idx = windowIdx(n), vals = idx.map(i => k.series[i]);
+  const all = vals.filter(v => v != null).concat([k.bear, k.bull], k.range || []);
+  const { y, lo, hi } = scaleY(all, H, T, B);
+  const x0 = L, x1 = W - R, step = (x1 - x0 - 16) / Math.max(1, idx.length - 1);
+  const x = j => x0 + 8 + j * step;
+  let path = "", pen = false;
+  vals.forEach((v, j) => { if (v == null) { pen = false; return; } path += `${pen ? "L" : "M"}${x(j).toFixed(1)},${y(v).toFixed(1)}`; pen = true; });
+  const every = idx.length <= 8 ? 1 : idx.length <= 14 ? 2 : 3;
+  const labels = idx.map((i, j) => (j % every === (idx.length - 1) % every) ? `<text x="${x(j).toFixed(1)}" y="${H - 6}" font-size="10" text-anchor="middle" style="fill:var(--muted)">${qLabel(P[i])}</text>` : "").join("");
+  const dots = vals.map((v, j) => v == null ? "" : `<circle cx="${x(j).toFixed(1)}" cy="${y(v).toFixed(1)}" r="${j === vals.length - 1 ? 4 : 2.6}" style="fill:${ZFILL[zoneOf(v, k)]};stroke:#fff;stroke-width:1"/>`).join("");
+  const gaps = vals.map((v, j) => v == null ? `<text x="${x(j).toFixed(1)}" y="${H - B - 4}" font-size="9" text-anchor="middle" style="fill:var(--muted)">n/a</text>` : "").join("");
+  const lastV = vals[vals.length - 1];
+  const z = zoneOf(k.latest, k);
+  const aria = `${k.name}, ${qLabel(P[idx[0]])} to ${qLabel(P[idx[idx.length - 1]])}. Latest ${fmt(k.latest)} USD millions, ${ZONE[z].label.toLowerCase()}. Bear ${fmt(k.bear)}, base range ${rangeText(k)}, bull ${fmt(k.bull)}. ${dirText(k)}.`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(aria)}">
+    ${bandsSVG(k, y, x0, x1, lo, hi)}
+    ${thresholdLines(k, y, x0, x1, W)}
+    <path d="${path}" fill="none" stroke-width="1.8" stroke-linejoin="round" style="stroke:var(--ink)"/>
+    ${dots}${gaps}${labels}
+    ${lastV != null ? `<text x="${x(vals.length - 1).toFixed(1)}" y="${(y(lastV) - 9).toFixed(1)}" font-size="11" font-weight="600" text-anchor="end" style="fill:var(--ink)">${fmt(lastV)}</text>` : ""}
+  </svg>`;
+}
+function gaugeSVG(k) {
+  const W = 560, H = 70, L = 8, R = 8;
+  const vals = [k.bear, k.bull, ...(k.range || [])].concat(k.latest != null ? [k.latest] : []);
+  let lo = Math.min(...vals), hi = Math.max(...vals); const pad = (hi - lo) * 0.15 || 1; lo -= pad; hi += pad;
+  const x = v => L + (v - lo) / (hi - lo) * (W - L - R);
+  const band = (a, b, fill) => { const xa = x(Math.max(Math.min(a, b), lo)), xb = x(Math.min(Math.max(a, b), hi)); return `<rect x="${xa.toFixed(1)}" y="18" width="${Math.max(0, xb - xa).toFixed(1)}" height="18" style="fill:${fill}"/>`; };
+  let s = k.range ? band(k.range[0], k.range[1], "var(--head-bg)") : "";
+  s += k.higherBetter ? band(lo, k.bear, "var(--red-bg)") + band(k.bull, hi, "var(--green-bg)") : band(k.bear, hi, "var(--red-bg)") + band(lo, k.bull, "var(--green-bg)");
+  const tick = (v, col, lab, anchor) => `<line x1="${x(v).toFixed(1)}" x2="${x(v).toFixed(1)}" y1="14" y2="40" stroke-dasharray="3 2" style="stroke:${col}"/><text x="${x(v).toFixed(1)}" y="54" font-size="10" text-anchor="${anchor}" style="fill:${col}">${lab}</text>`;
+  const bearAnchor = (k.higherBetter ? "end" : "start"), bullAnchor = (k.higherBetter ? "start" : "end");
+  s += tick(k.bear, "var(--red-ink)", `Bear ${fmt(k.bear)}`, bearAnchor) + tick(k.bull, "#2f6f55", `Bull ${fmt(k.bull)}`, bullAnchor);
+  if (k.latest != null) s += `<path d="M${x(k.latest).toFixed(1)},14 l-5,-8 h10 z" style="fill:var(--ink)"/><line x1="${x(k.latest).toFixed(1)}" x2="${x(k.latest).toFixed(1)}" y1="14" y2="40" stroke-width="2" style="stroke:var(--ink)"/>`;
+  const aria = `${k.name}: Q2 '26 ${fmt(k.latest)} USD millions, ${ZONE[zoneOf(k.latest, k)].label.toLowerCase()}. Bear ${fmt(k.bear)}, base range ${rangeText(k)}, bull ${fmt(k.bull)}. No earlier quarters captured.`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(aria)}">${s}</svg>`;
+}
+function histTable(k) {
+  const rows = P.map((p, i) => i).reverse().filter(i => k.series[i] != null || i >= P.length - 8);
+  return `<div class="tablewrap hist"><table class="data"><caption class="sr">${esc(k.name)} full history, USD millions</caption><thead><tr><th scope="col">Quarter</th><th scope="col">Value</th><th scope="col">QoQ</th><th scope="col">YoY</th><th scope="col" style="text-align:left">Zone</th></tr></thead><tbody>
+    ${rows.map(i => { const v = k.series[i], z = zoneOf(v, k); return `<tr><td>${qLabel(P[i])}</td><td>${fmt(v)}</td><td>${chgHTML(qoq(k, i), k)}</td><td>${chgHTML(yoy(k, i), k)}</td><td style="text-align:left">${v == null ? '<span class="muted">Not reported</span>' : pill(z)}</td></tr>`; }).join("")}
+  </tbody></table></div>`;
+}
+function viewB() {
+  const rows = PILLARS.flatMap(p => KPIS.filter(k => k.pillar === p));
+  return `<div class="toolbar">
+      ${seg("nB", state.nB, [[8, "8 quarters"], [14, "14 quarters"]], "Quarters charted")}
+      <span class="hint">USD millions. Shaded bands: red = bear zone, grey = base range, green = bull zone.</span>
+    </div>
+    <div class="bands">${rows.map(k => {
+      const z = zoneOf(k.latest, k), open = state.openHist.has(k.i), hid = `hist-${k.i}`;
+      const last4 = k.hasHistory ? windowIdx(4).reverse() : [];
+      return `<section class="card brow" aria-label="${esc(k.name)}">
+        <div>
+          <div class="eyebrow">${esc(k.pillar)}</div>
+          <div class="nm">${esc(k.name)}</div>
+          <div class="val num">${fmt(k.latest)}<small>Q2 '26</small></div>
+          ${pill(z)}
+          <div class="dir2">${dirText(k)} · base ${rangeText(k)}</div>
+        </div>
+        <div class="chartcell">${k.hasHistory ? chartSVG(k, state.nB) : gaugeSVG(k) + `<div class="nohist-note">Segment history not captured yet. Showing Q2 '26 only.</div>`}</div>
+        <div>${k.hasHistory ? `<table class="data mini"><caption class="sr">Last four quarters</caption><thead><tr><th scope="col">Quarter</th><th scope="col">Value</th><th scope="col">QoQ</th></tr></thead><tbody>
+            ${last4.map(i => `<tr><td>${qLabel(P[i])}</td>${cellHTML(k.series[i], k).replace("<td", '<td style="text-align:right"')}<td>${chgHTML(qoq(k, i), k)}</td></tr>`).join("")}
+          </tbody></table>` : `<p class="small muted" style="margin:0">QoQ and YoY need earlier quarters for this segment.</p>`}</div>
+        <div class="more">
+          <button type="button" class="linkbtn" data-hist="${k.i}" aria-expanded="${open}" aria-controls="${hid}">${open ? "Hide details" : k.hasHistory ? "Show full history and definition" : "Show definition"}</button>
+          <div id="${hid}"${open ? "" : " hidden"}>${k.hasHistory ? histTable(k) : ""}<div class="card" style="margin-top:10px;background:#fcfcfa">${detailHTML(k)}</div></div>
+        </div>
+      </section>`;
+    }).join("")}</div>
+    <p class="foot">Thresholds set Oct 2026, applied to history for context. Gaps marked n/a are quarters the filings did not report on a discrete basis.</p>`;
+}
+
+// ---- Variant C ----
+function sparkSVG(k, trig, n = 8) {
+  const W = 300, H = 46, L = 4, R = 4, T = 6, B = 6;
+  if (!k.hasHistory) {
+    return "";
+  }
+  const idx = windowIdx(n), vals = idx.map(i => k.series[i]);
+  const { y } = scaleY(vals.filter(v => v != null).concat([trig]), H, T, B);
+  const step = (W - L - R) / Math.max(1, idx.length - 1), x = j => L + j * step;
+  let path = "", pen = false;
+  vals.forEach((v, j) => { if (v == null) { pen = false; return; } path += `${pen ? "L" : "M"}${x(j).toFixed(1)},${y(v).toFixed(1)}`; pen = true; });
+  const last = vals.length - 1;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(k.name)}, last ${idx.length} quarters, against the trigger of ${fmt(trig)}">
+    <line x1="0" x2="${W}" y1="${y(trig).toFixed(1)}" y2="${y(trig).toFixed(1)}" stroke-dasharray="4 3" style="stroke:var(--bear)"/>
+    <path d="${path}" fill="none" stroke-width="1.6" style="stroke:var(--ink)"/>
+    ${vals[last] != null ? `<circle cx="${x(last).toFixed(1)}" cy="${y(vals[last]).toFixed(1)}" r="3.2" style="fill:var(--ink)"/>` : ""}
+  </svg>`;
+}
+function trendHTML(b) {
+  if (!b.kpis.length) return `<div class="trend muted">No KPI series for this condition.</div>`;
+  return `<div class="trend">${b.kpis.map((k, j) => {
+    const trig = b.trig[j];
+    const vals = k.hasHistory
+      ? windowIdx(4).map(i => `<span>${qLabel(P[i])} <b class="num">${fmt(k.series[i])}</b></span>`).join("")
+      : `<span>Q2 '26 <b class="num">${fmt(k.latest)}</b></span><span class="muted">Segment history not captured yet</span>`;
+    return `<div style="margin-bottom:8px"><div class="small" style="color:var(--ink)">${esc(k.name)} <span class="muted">· trigger ${fmt(trig)} (dashed)</span></div>${sparkSVG(k, trig)}<div class="vals">${vals}</div></div>`;
+  }).join("")}</div>`;
+}
+function zoneCounts() {
+  const c = { base: 0, near: 0, bear: 0, bull: 0, none: 0, nohist: 0 };
+  KPIS.forEach(k => { c[zoneOf(k.latest, k)]++; if (!k.hasHistory) c.nohist++; });
+  return c;
+}
+function viewC() {
+  const c = zoneCounts();
+  const chips = [["all", `All <b>${KPIS.length}</b>`], ["base", `<b>${c.base}</b> in base range`], ["near", `<span aria-hidden="true">!</span> <b>${c.near}</b> near bear`],
+    ["bear", `<span aria-hidden="true">✕</span> <b>${c.bear}</b> breached`], ["bull", `<span aria-hidden="true">✓</span> <b>${c.bull}</b> in bull zone`], ["nohist", `<b>${c.nohist}</b> no history`]];
+  const rows = KPIS.filter(k => state.filter === "all" ? true : state.filter === "nohist" ? !k.hasHistory : zoneOf(k.latest, k) === state.filter);
+  const sorted = BREAKERS.map((b, i) => Object.assign({ i }, b)).sort((a, b) => BSTAT[a.status].rank - BSTAT[b.status].rank || a.i - b.i);
+  const bc = s => BREAKERS.filter(b => b.status === s).length;
+  return `<div class="summary" role="group" aria-label="Filter KPIs by latest status">${chips.map(([v, t]) =>
+      `<button type="button" class="chip" data-filter="${v}" aria-pressed="${state.filter === v}">${t}</button>`).join("")}</div>
+
+    <div class="section-h"><h2 class="display">Thesis breakers</h2>
+      <span class="hint">${bc("trig")} triggered · ${bc("watch")} watching · ${bc("clear")} clear · ${bc("cant")} can't evaluate. Watching means within 10% of the trigger.</span></div>
+    <ul class="blist card">${sorted.map(b => {
+      const open = state.openConseq.has(b.i), cid = `conseq-${b.i}`;
+      return `<li class="bitem">
+        <div>${bpill(b.status)}</div>
+        <div>
+          <div class="bname">${esc(b.name)}</div>
+          <div class="bthr">${esc(b.threshold)}</div>
+          <div class="beval">${esc(b.eval)}${b.partial ? `<br>${esc(b.partial)}` : ""}</div>
+        </div>
+        ${trendHTML(b)}
+        <div class="conseq">
+          <button type="button" class="linkbtn" data-conseq="${b.i}" aria-expanded="${open}" aria-controls="${cid}">What happens if triggered</button>
+          <p id="${cid}"${open ? "" : " hidden"}>${esc(b.consequence)}</p>
+        </div>
+      </li>`;
+    }).join("")}</ul>
+
+    <div class="section-h"><h2 class="display">KPIs</h2><span class="hint">Last 4 quarters, USD millions. ${state.filter === "all" ? "Showing all." : `Filtered: ${rows.length} of ${KPIS.length}.`}</span></div>
+    <div class="toolbar">${LEGEND}</div>
+    ${kpiTable({ n: 4, rows, id: "tc", open: state.openC })}
+    <p class="foot">Thresholds set Oct 2026, applied to history for context. Free cash flow is operating cash flow minus capex and may differ slightly from the company's definition.</p>`;
+}
+
+const NOTES = {
+  a: "A · One table: KPIs grouped by thesis pillar, quarters across, thresholds and status on the right. Select a row for definition, model impact and source.",
+  b: "B · One row per KPI: the line against shaded bear, base and bull bands, plus the last four quarters. Segment KPIs show where Q2 '26 sits on the bands.",
+  c: "C · Status summary as filters, the seven thesis breakers evaluated against the data, then a compact KPI table.",
+};
+function render() {
+  document.querySelectorAll(".ws .tabs button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === state.v)));
+  document.getElementById("wsnote").textContent = NOTES[state.v];
+  view.innerHTML = state.v === "a" ? viewA() : state.v === "b" ? viewB() : viewC();
+}
+
+// ---- events ----
+document.querySelector(".ws .tabs").addEventListener("click", e => {
+  const b = e.target.closest("button[data-v]"); if (!b) return;
+  state.v = b.dataset.v; try { history.replaceState(null, "", "#" + state.v); } catch (_) {}
+  hideTip(); render();
+});
+view.addEventListener("click", e => {
+  const s = e.target.closest("button[data-seg]");
+  if (s) { state[s.dataset.seg] = s.dataset.val === "all" ? "all" : Number(s.dataset.val); render(); return; }
+  const f = e.target.closest("button[data-filter]");
+  if (f) { state.filter = f.dataset.filter; render(); return; }
+  const hb = e.target.closest("button[data-hist]");
+  if (hb) { toggleSet(state.openHist, +hb.dataset.hist); render(); focusSel(`button[data-hist="${hb.dataset.hist}"]`); return; }
+  const cb = e.target.closest("button[data-conseq]");
+  if (cb) {
+    const i = +cb.dataset.conseq, open = toggleSet(state.openConseq, i);
+    cb.setAttribute("aria-expanded", String(open)); document.getElementById(cb.getAttribute("aria-controls")).hidden = !open; return;
+  }
+  const row = e.target.closest("tr.krow");
+  if (row) {
+    const table = row.closest("table"), set = table.id === "tc" ? state.openC : state.openA;
+    const open = toggleSet(set, +row.dataset.k);
+    row.classList.toggle("open", open);
+    const btn = row.querySelector(".rowbtn"); btn.setAttribute("aria-expanded", String(open));
+    document.getElementById(btn.getAttribute("aria-controls")).hidden = !open;
+  }
+});
+function toggleSet(set, v) { if (set.has(v)) { set.delete(v); return false; } set.add(v); return true; }
+function focusSel(sel) { const el = view.querySelector(sel); if (el) el.focus(); }
+
+// definition tooltip on row hover / focus
+const tip = document.getElementById("tip");
+function showTip(row, px, py) {
+  const k = KPIS[+row.dataset.k]; if (!k) return;
+  tip.textContent = k.definition; tip.hidden = false;
+  const r = tip.getBoundingClientRect();
+  let x = px + 14, y = py + 16;
+  if (x + r.width > innerWidth - 8) x = Math.max(8, innerWidth - r.width - 8);
+  if (y + r.height > innerHeight - 8) y = py - r.height - 12;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+function hideTip() { tip.hidden = true; }
+view.addEventListener("mousemove", e => {
+  const row = e.target.closest("tr.krow");
+  if (row && matchMedia("(hover: hover)").matches) showTip(row, e.clientX, e.clientY); else hideTip();
+});
+view.addEventListener("mouseleave", hideTip);
+view.addEventListener("focusin", e => {
+  const row = e.target.closest("tr.krow");
+  if (row) { const r = e.target.getBoundingClientRect(); showTip(row, r.left, r.bottom - 10); } else hideTip();
+});
+view.addEventListener("focusout", hideTip);
+addEventListener("scroll", hideTip, { passive: true });
+document.addEventListener("keydown", e => { if (e.key === "Escape") hideTip(); });
+
+const h0 = (location.hash || "").slice(1);
+if (["a", "b", "c"].includes(h0)) state.v = h0;
+render();
+</script>
+</body>
+</html>

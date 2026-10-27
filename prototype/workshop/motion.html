@@ -1,0 +1,963 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Motion Variants</title>
+<link rel="stylesheet" href="base.css">
+<style>
+/* Motion playground. One mock of the app (sub-nav + 4 pages), six motion systems applied to it.
+   Every duration in JS and CSS is multiplied by --ts (the time-scale slider). html.rm = reduced
+   motion (starts from prefers-reduced-motion, can be toggled to preview the fallback). */
+:root { --ts: 1; --glide: 0ms; --glide-ease: cubic-bezier(.2,0,0,1); }
+[hidden] { display: none !important; }
+body { overflow-x: hidden; }
+
+/* ---------- workshop bar ---------- */
+.ws .row { padding-block: 10px 6px; }
+.ws .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 0 24px 8px; color: #c9cbd0; }
+.ws .ctl label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.ws .ctl button { background: #fff; color: #111; border: 0; border-radius: 4px; padding: 4px 12px; font-weight: 500; }
+.ws .ctl input[type=range] { width: 120px; accent-color: #fff; }
+.ws .ctl output { font-variant-numeric: tabular-nums; min-width: 3.2em; color: #fff; }
+.ws .ctl .os { color: #8d9097; font-size: 12px; }
+.ws .note { margin: 0; }
+.ws .note b { color: #fff; font-weight: 500; }
+.ws .back { margin-left: auto; }
+@media (max-width: 720px) {
+  .ws { position: static; }
+  .ws .row, .ws .ctl, .ws .note { padding-inline: 16px; }
+}
+
+.wrap { max-width: 1240px; margin: 0 auto; padding: 20px 24px 60px; display: grid; gap: 16px; }
+@media (max-width: 720px) { .wrap { padding: 16px 16px 48px; } }
+
+/* ---------- spec card (workshop, not app) ---------- */
+.spec { padding: 16px 18px; }
+.spec-h { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 6px 24px; }
+.spec-h h3 { margin: 2px 0 0; }
+.spec .fits { margin: 0; max-width: 560px; color: var(--body); }
+.spec .intent { margin: 8px 0 12px; color: var(--body); max-width: 860px; }
+.spec .tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 5px; }
+.spec table.data th, .spec table.data td { text-align: left; }
+.spec table.data td.w { white-space: normal; min-width: 220px; color: var(--body); }
+.spec code { font: 12px var(--mono); color: var(--secondary); }
+.spec .red { margin: 10px 0 0; color: var(--body); padding: 6px 10px; border-radius: 4px; }
+html.rm .spec .red { background: var(--amber-bg); color: var(--amber-ink); }
+.spec .try { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+
+/* ---------- mock app frame ---------- */
+.frame { border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; background: var(--page); }
+.app-top .bar .links { display: flex; gap: 20px; margin-left: auto; font-size: 13px; color: var(--secondary); }
+.app-top .sub { position: relative; }
+.app-top .sub button { background: none; border: 0; padding: 12px 0; color: var(--secondary); font-size: 13px; white-space: nowrap; }
+.app-top .sub button:hover { color: var(--ink); }
+.app-top .sub button.on { color: var(--ink); box-shadow: none; }
+.ink { position: absolute; left: 0; bottom: 0; width: 100px; height: 2px; background: var(--ink); transform-origin: 0 0;
+  transition: transform calc(var(--glide) * var(--ts)) var(--glide-ease); pointer-events: none; }
+@media (max-width: 720px) {
+  .app-top .bar, .app-top .sub { padding-inline: 16px; }
+  .app-top .sub { gap: 18px; }
+}
+@media (max-width: 520px) { .app-top .bar .links { display: none; } }
+
+.frame .page { padding-bottom: 48px; }
+.stage { display: grid; align-items: start; margin: 0 -8px; padding: 0 8px 4px; overflow-x: hidden; overflow-x: clip; min-height: 520px; }
+.stage > article { grid-area: 1 / 1; min-width: 0; }
+.stage > article.leaving { pointer-events: none; }
+
+/* Current app micro-interactions (globals.css), time-scaled. */
+.frame button, .frame summary { transition: background-color calc(140ms * var(--ts)) ease-out, color calc(140ms * var(--ts)) ease-out,
+  border-color calc(140ms * var(--ts)) ease-out, transform calc(100ms * var(--ts)) ease-out; }
+.frame button:not(:disabled):active { transform: scale(.98); }
+body:not([data-v="0"]) table.data td { transition: background-color calc(120ms * var(--ts)) ease-out; }
+html.rm .frame *, html.rm .frame *::after { transition: none !important; }
+
+/* ---------- page content ---------- */
+article header { margin-bottom: 14px; }
+.lede { margin: 0 0 16px; }
+.krow { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 20px 0 22px; max-width: 900px; }
+.kgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.kc { display: block; width: 100%; text-align: left; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; }
+button.kc:hover { border-color: var(--line-strong); }
+.kc > span { display: block; }
+.kc .l { font-size: 12px; color: var(--muted); }
+.kc .val { font: 400 24px/1.25 var(--serif); color: var(--ink); margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
+.kc .d { font-size: 12px; color: var(--muted); }
+.kc .chip { margin-top: 8px; }
+.kc svg { display: block; width: 100%; height: auto; margin-top: 10px; }
+.spark { fill: none; stroke: var(--chart-1); stroke-width: 1.5; stroke-linejoin: round; }
+
+.fin-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 16px; }
+.seg { position: relative; display: inline-grid; grid-template-columns: 1fr 1fr; }
+.seg button { position: relative; z-index: 1; }
+.seg button[aria-pressed="true"] { background: transparent; box-shadow: none; }
+.seg .thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 4px); border-radius: 20px; background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0,0,0,.08); transition: transform calc(var(--glide) * var(--ts)) var(--glide-ease); }
+.seg[data-p="a"] .thumb { transform: translateX(calc(100% + 2px)); }
+.fin-data { display: grid; gap: 16px; }
+@media (min-width: 1000px) { .fin-data { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start; } }
+.tcard, .ccard { position: relative; overflow: hidden; }
+.tcard .tbl { overflow-x: auto; }
+table.fin td, table.fin th { position: relative; }
+.ghost { position: absolute; inset: 0; padding: inherit; pointer-events: none; }
+.ccard { padding: 14px 16px 10px; }
+.ch-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.ch-head .lg { display: inline-flex; gap: 12px; }
+.ch-head .lg i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; }
+.chart { display: block; width: 100%; height: auto; }
+.chart .bar { fill: #cfd4db; }
+.chart .line { fill: none; stroke: var(--chart-2); stroke-width: 2; stroke-linejoin: round; }
+.chart .pt { fill: var(--surface); stroke: var(--chart-2); stroke-width: 2; }
+.chart .gl { stroke: var(--chart-grid); }
+.chart text { font: 11px var(--sans); fill: var(--muted); }
+
+details.brk { margin-top: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; max-width: 900px; }
+details.brk summary { list-style: none; display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; font-weight: 500; }
+details.brk summary::-webkit-details-marker { display: none; }
+details.brk summary .n { color: var(--muted); font-weight: 400; }
+details.brk summary .chev { margin-left: auto; width: 14px; height: 14px; fill: none; stroke: var(--secondary); stroke-width: 2;
+  transition: transform calc(var(--glide) * var(--ts)) var(--glide-ease); }
+details.brk.x summary .chev { transform: rotate(180deg); }
+.dbody { padding: 0 16px 8px; }
+.dbody ul { list-style: none; margin: 0; padding: 0; }
+.dbody li { border-top: 1px solid var(--line); padding: 10px 0; }
+.dbody li span { display: block; font-size: 12px; color: var(--muted); }
+
+/* ---------- KPI detail panel ---------- */
+dialog.panel { border: 1px solid var(--line); border-radius: 8px; padding: 0; width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 48px);
+  background: var(--surface); color: var(--ink); box-shadow: 0 12px 32px rgba(0,0,0,.12); transform-origin: 0 0; overflow: auto; }
+dialog.panel::backdrop { background: rgba(24,24,24,.22); }
+.pbody { padding: 18px 20px 20px; }
+.phead { display: flex; justify-content: space-between; gap: 12px; }
+.phead .x { border: 0; background: transparent; font-size: 22px; line-height: 1; padding: 2px 6px; color: var(--secondary); border-radius: 4px; align-self: start; }
+.phead .x:hover { background: var(--hover); }
+.pval { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 6px 0 14px; }
+.pval .big { font: 400 32px/1.1 var(--serif); }
+.band .trk { position: relative; height: 8px; border-radius: 4px; background: var(--head-bg); }
+.band .rng { position: absolute; top: 0; bottom: 0; background: #d9dfd9; border-radius: 4px; }
+.band .cur { position: absolute; top: -4px; width: 2px; height: 16px; background: var(--ink); }
+.band p { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.bigsp { display: block; width: 100%; height: auto; margin-top: 14px; }
+.bigsp .th { stroke-dasharray: 4 4; stroke-width: 1; }
+.bigsp text { font: 11px var(--sans); fill: var(--muted); }
+.pdef { color: var(--body); margin: 12px 0 6px; }
+.psrc { color: var(--muted); font-size: 12px; margin: 0; }
+
+/* ---------- skeleton (variant E) ---------- */
+.sk { position: relative; overflow: hidden; background: #ecede9; border-radius: 4px; }
+.sk::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.65), transparent); animation: shimmer calc(1200ms * var(--ts)) linear infinite; }
+@keyframes shimmer { to { transform: translateX(100%); } }
+html.rm .sk::after { display: none; }
+.skg { display: grid; gap: 10px; margin-bottom: 18px; }
+.skov { position: absolute; inset: 0; z-index: 2; background: var(--surface); padding: 14px 16px; display: grid; align-content: start; gap: 12px; }
+</style>
+</head>
+<body data-v="0">
+
+<div class="ws">
+  <div class="row">
+    <span class="title">Motion</span>
+    <div class="tabs" id="vt"></div>
+    <a class="back" href="index.html">&larr; Workshop index</a>
+  </div>
+  <div class="ctl">
+    <button type="button" id="replay">Replay</button>
+    <label>Time scale <input type="range" id="speed" min="0.5" max="3" step="0.25" value="1"> <output id="speedv">1&times;</output></label>
+    <label><input type="checkbox" id="rm"> Simulate reduced motion</label>
+    <span class="os" id="os"></span>
+  </div>
+  <p class="note" id="note"></p>
+</div>
+
+<div class="wrap">
+  <section class="card spec" id="spec" aria-live="polite"></section>
+
+  <div class="frame">
+    <div class="app-top">
+      <div class="bar">
+        <span class="logo"><i>R</i> Research OS</span>
+        <span class="links"><span>Assets</span><span>Runs</span><span>Settings</span></span>
+      </div>
+      <nav class="sub" id="sub" aria-label="Asset sections">
+        <b>META</b>
+        <button type="button" data-tab="0">Overview</button>
+        <button type="button" data-tab="1">Report</button>
+        <button type="button" data-tab="2">Financials</button>
+        <button type="button" data-tab="3">KPI Dashboard</button>
+        <span class="ink" id="ink"></span>
+      </nav>
+    </div>
+    <main class="page"><div class="stage" id="stage"></div></main>
+  </div>
+</div>
+
+<dialog class="panel" id="panel" aria-label="KPI detail"></dialog>
+
+<script src="meta-data.js"></script>
+<script>
+"use strict";
+// =====================================================================================
+// Shared helpers
+// =====================================================================================
+const M = window.META;
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmt = v => v == null ? "—" : Math.round(v).toLocaleString("en-US");
+const pct = v => (v * 100).toFixed(1) + "%";
+const spct = v => (v >= 0 ? "+" : "−") + pct(Math.abs(v));
+const usd = v => "$" + v.toFixed(2);
+const per = p => p.includes("-Q") ? p.slice(5) + " " + p.slice(0, 4) : p;   // "2026-Q2" -> "Q2 2026"
+
+const S = {
+  v: "0", page: 2, prevPage: 1, dir: 1, period: "q", ts: 1, gen: 0, dgen: 0,
+  reduced: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+};
+const T = ms => ms * S.ts;
+const sleep = ms => new Promise(r => setTimeout(r, T(ms)));
+const fin = a => a.finished.catch(() => {});
+const tick = el => { const g = el._g = (el._g || 0) + 1; return () => el._g === g; };
+const cancelAll = el => el.getAnimations().forEach(a => a.cancel());
+
+// Easing tokens (CSS strings for WAAPI, control points for JS tweens).
+const E = {
+  std: "cubic-bezier(.2,0,0,1)",      // standard: fast start, long settle
+  in: "cubic-bezier(0,0,.2,1)",       // decelerate (entering)
+  out: "cubic-bezier(.4,0,1,1)",      // accelerate (leaving)
+  emph: "cubic-bezier(0,0,0,1)",      // emphasized decelerate
+  exit: "cubic-bezier(.3,0,1,1)",     // emphasized accelerate
+  move: "cubic-bezier(.4,0,.2,1)",    // move on screen (morph, draw)
+};
+const BZ = { std: [.2, 0, 0, 1], move: [.4, 0, .2, 1] };
+function bez(x1, y1, x2, y2) {
+  const f = (a, b, t) => 3 * a * t * (1 - t) * (1 - t) + 3 * b * t * t * (1 - t) + t * t * t;
+  return x => {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    let lo = 0, hi = 1, t = x;
+    for (let i = 0; i < 24; i++) { t = (lo + hi) / 2; if (f(x1, x2, t) < x) lo = t; else hi = t; }
+    return f(y1, y2, t);
+  };
+}
+// rAF tween for things WAAPI can't interpolate (number text, SVG path data).
+function tween(ms, curve, fn) {
+  return new Promise(res => {
+    const d = T(ms);
+    if (d <= 0 || S.reduced) { fn(1); return res(); }
+    const ease = bez(...curve), t0 = performance.now();
+    const step = now => { const p = Math.min(1, (now - t0) / d); fn(ease(p)); p < 1 ? requestAnimationFrame(step) : res(); };
+    requestAnimationFrame(step);
+  });
+}
+// WAAPI shorthand, time-scaled.
+function A(el, kf, ms, easing, delay = 0, fill = "backwards") {
+  return el.animate(kf, { duration: T(ms), delay: T(delay), easing, fill });
+}
+const FADE_IN = [{ opacity: 0 }, { opacity: 1 }];
+const FADE_OUT = [{ opacity: 1 }, { opacity: 0 }];
+const RISE7 = [{ opacity: 0, transform: "translateY(7px)" }, { opacity: 1, transform: "none" }];
+function backdrop(dlg, ms, from = 0, to = 1) {
+  try { dlg.animate([{ opacity: from }, { opacity: to }], { duration: T(ms), pseudoElement: "::backdrop", fill: to ? "backwards" : "forwards" }); } catch (e) { /* older engines */ }
+}
+function flipFrom(r0, r1) {
+  return `translate(${r0.left - r1.left}px,${r0.top - r1.top}px) scale(${r0.width / r1.width},${r0.height / r1.height})`;
+}
+
+// =====================================================================================
+// Data (real META numbers, USD millions)
+// =====================================================================================
+const Q = M.quarterly.series, QP = M.quarterly.periods, N = QP.length - 1, Y = N - 4;
+const ROWS = [["revenue", "Revenue"], ["cost_of_revenue", "Cost of revenue"], ["rnd", "Research and development"],
+  ["operating_income", "Operating income"], ["net_income", "Net income"], ["operating_cash_flow", "Operating cash flow"]];
+function finData(p) {
+  if (p === "q") {
+    const idx = [N - 4, N - 3, N - 2, N - 1, N];
+    return { cols: idx.map(i => per(QP[i])), short: idx.map(i => QP[i].slice(5) + " ’" + QP[i].slice(2, 4)),
+      rows: ROWS.map(([k, l]) => ({ key: k, label: l, vals: idx.map(i => Q[k][i]) })) };
+  }
+  const ttm = k => [N - 3, N - 2, N - 1, N].reduce((s, i) => s + Q[k][i], 0);
+  return { cols: [...M.annual.periods.map(y => "FY" + y), "TTM " + per(QP[N])], short: [...M.annual.periods, "TTM"],
+    rows: ROWS.map(([k, l]) => ({ key: k, label: l, vals: [...M.annual.series[k], ttm(k)] })) };
+}
+const KC = [
+  ["revenue", "Revenue", "total_revenue"], ["operating_income", "Operating income", "income_from_operations_gaap"],
+  ["net_income", "Net income", "net_income"], ["operating_cash_flow", "Operating cash flow", "operating_cash_flow"],
+  ["capex", "Capex", "us_gaap_PaymentsToAcquirePropertyPlantAndEquipment"], ["rnd", "R&D", "us_gaap_ResearchAndDevelopmentExpense"],
+].map(([key, label, mk]) => ({ key, label, k: M.kpis.find(k => k.metric_key === mk) }));
+function band(k) {
+  const v = k.current_level, lo = Math.min(k.bear_threshold, k.bull_threshold), hi = Math.max(k.bear_threshold, k.bull_threshold);
+  const inv = k.bear_threshold > k.bull_threshold;   // cost KPIs: higher is worse
+  if (v < lo) return inv ? ["Bull side", "var(--green)"] : ["Bear side", "var(--red)"];
+  if (v > hi) return inv ? ["Bear side", "var(--red)"] : ["Bull side", "var(--green)"];
+  return ["Base range", "var(--muted)"];
+}
+const yoy = k => Q[k][N] / Q[k][Y] - 1;
+const VAL = M.valuation.scenario_set;
+
+// =====================================================================================
+// Page templates. Every top-level block carries data-r: C staggers them, D fades or FLIPs them.
+// data-share marks cards that exist on more than one page (D morphs them across pages).
+// =====================================================================================
+function sparkPath(vals, w, h, lo, hi, pad = 3) {
+  let d = "", pen = false;
+  vals.forEach((v, i) => {
+    if (v == null) { pen = false; return; }
+    const x = pad + i * (w - 2 * pad) / (vals.length - 1), y = pad + (1 - (v - lo) / ((hi - lo) || 1)) * (h - 2 * pad);
+    d += (pen ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1); pen = true;
+  });
+  return d;
+}
+function spark(key) {
+  const vals = Q[key], nn = vals.filter(v => v != null);
+  return `<svg viewBox="0 0 240 40" aria-hidden="true"><path class="spark" d="${sparkPath(vals, 240, 40, Math.min(...nn), Math.max(...nn))}"/></svg>`;
+}
+function kcard(c, withSpark) {
+  const [st, col] = band(c.k), ch = yoy(c.key);
+  return `<button type="button" class="kc" data-r data-share="${c.key}" data-kpi="${c.key}">
+    <span class="l">${esc(c.label)} · ${per(QP[N])}</span>
+    <span class="val">${fmt(c.k.current_level)}</span>
+    <span class="d"><span class="${ch >= 0 ? "pos" : "neg"}">${spct(ch)}</span> vs ${per(QP[Y])}</span>
+    ${withSpark ? `<span class="chip"><i class="dot" style="background:${col}"></i>${st} · ${esc(c.k.base_range)}</span>${spark(c.key)}` : ""}
+  </button>`;
+}
+
+function pageOverview() {
+  const up = VAL.weighted_target / VAL.current_market_price - 1;
+  return `<header data-r><div class="eyebrow">${esc(M.asset.ticker)} · Research run 02c8d48b · data cutoff 2026-10-08</div>
+      <h1 class="display">${esc(M.asset.name)}</h1></header>
+    <p class="lede" data-r>The probability-weighted target is ${usd(VAL.weighted_target)} against a market price of ${usd(VAL.current_market_price)}
+      (${spct(up)}). Scenario weights are ${pct(VAL.probability_bear)} bear, ${pct(VAL.probability_base)} base and ${pct(VAL.probability_bull)} bull.</p>
+    <div class="krow">
+      <div class="kc" data-r><span class="l">Market price</span><span class="val">${usd(VAL.current_market_price)}</span><span class="d">Reference price</span></div>
+      <div class="kc" data-r><span class="l">Weighted target · ${VAL.terminal_year}</span><span class="val">${usd(VAL.weighted_target)}</span><span class="d"><span class="neg">${spct(up)}</span> vs price</span></div>
+      <div class="kc" data-r><span class="l">Scenario anchors</span><span class="val">${usd(VAL.terminal_anchor_base)}</span><span class="d">Bear ${usd(VAL.terminal_anchor_bear)} · Bull ${usd(VAL.terminal_anchor_bull)}</span></div>
+    </div>`;
+}
+function pageReport() {
+  const capOcf = Q.capex[N] / Q.operating_cash_flow[N], capOcfY = Q.capex[Y] / Q.operating_cash_flow[Y];
+  return `<header data-r><div class="eyebrow">Report · Reinvestment and cash conversion</div>
+      <h2 class="display">Reinvestment is outrunning operating leverage</h2></header>
+    <p class="lede" data-r>Revenue was ${fmt(Q.revenue[N])} in ${per(QP[N])}, ${spct(yoy("revenue"))} on ${per(QP[Y])}. Operating income moved
+      ${spct(yoy("operating_income"))} to ${fmt(Q.operating_income[N])} over the same year, as research and development rose ${spct(yoy("rnd"))} to ${fmt(Q.rnd[N])}.</p>
+    <div class="krow">${KC.slice(0, 4).map(c => kcard(c, false)).join("")}</div>
+    <p class="lede" data-r>Capex reached ${fmt(Q.capex[N])} in the quarter, ${pct(capOcf)} of the ${fmt(Q.operating_cash_flow[N])} generated from operations.
+      A year earlier the same ratio was ${pct(capOcfY)}.</p>
+    <p class="lede" data-r>At ${usd(VAL.current_market_price)} the shares sit above every ${VAL.terminal_year} scenario anchor: bear ${usd(VAL.terminal_anchor_bear)},
+      base ${usd(VAL.terminal_anchor_base)}, bull ${usd(VAL.terminal_anchor_bull)}.</p>`;
+}
+function pageFinancials() {
+  const p = S.period;
+  return `<header class="fin-head" data-r>
+      <div><div class="eyebrow">Income and cash flow · USD millions</div><h2 class="display">Financials</h2></div>
+      <div class="seg" data-p="${p}" role="group" aria-label="Period"><span class="thumb"></span>
+        <button type="button" data-period="q" aria-pressed="${p === "q"}">Quarterly</button>
+        <button type="button" data-period="a" aria-pressed="${p === "a"}">Annual</button></div>
+    </header>
+    <div class="fin-data">
+      <div class="card tcard" data-r><div class="tbl"><table class="data fin">
+        <thead><tr><th>USD millions</th>${"<th><span class=\"v\"></span></th>".repeat(5)}</tr></thead>
+        <tbody>${ROWS.map(r => `<tr><td>${r[1]}</td>${"<td><span class=\"v\"></span></td>".repeat(5)}</tr>`).join("")}</tbody>
+      </table></div></div>
+      <div class="card ccard" data-r>
+        <div class="ch-head"><span>Revenue and operating income</span>
+          <span class="lg"><span><i style="background:#cfd4db"></i>Revenue</span><span><i style="background:var(--chart-2);height:2px;vertical-align:3px"></i>Operating income</span></span></div>
+        ${chartSVG()}
+      </div>
+    </div>`;
+}
+function pageKpi() {
+  return `<header data-r><div class="eyebrow">Monitoring · ${M.kpis.length} KPIs tracked, 6 shown</div><h2 class="display">KPI Dashboard</h2></header>
+    <div class="kgrid">${KC.map(c => kcard(c, true)).join("")}</div>
+    <details class="brk" data-r><summary>Thesis breakers <span class="n">${M.breakers.length}</span>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
+      <div class="dbody"><ul>${M.breakers.map(b => `<li>${esc(b.name)}<span>${esc(b.threshold)}</span></li>`).join("")}</ul></div></details>`;
+}
+const PAGES = [pageOverview, pageReport, pageFinancials, pageKpi];
+
+function skeleton(i) {
+  const L = (w, h = 12) => `<div class="sk" style="width:${w};height:${h}px"></div>`;
+  const head = `<div class="skg">${L("180px", 10)}${L("min(420px,80%)", 30)}</div>`;
+  const para = `<div class="skg">${L("100%")}${L("94%")}${L("70%")}</div>`;
+  const cards = (n, h) => `<div class="${n > 4 ? "kgrid" : "krow"}">${`<div class="kc">${L("55%", 10)}<div style="height:8px"></div>${L("45%", 22)}<div style="height:8px"></div>${L("70%", 10)}${h ? `<div style="height:12px"></div>${L("100%", h)}` : ""}</div>`.repeat(n)}</div>`;
+  const rows = n => `<div class="card" style="padding:14px 16px;display:grid;gap:14px">${L("100%", 14)}${Array.from({ length: n }, () => L("100%")).join("")}</div>`;
+  const body = [
+    () => head + para + cards(3),
+    () => head + para + cards(4) + para,
+    () => `<div class="fin-head">${head}${L("190px", 34)}</div><div class="fin-data">${rows(6)}<div class="card" style="padding:14px 16px">${L("100%", 180)}</div></div>`,
+    () => head + cards(6, 40) + `<div style="margin-top:20px">${L("min(900px,100%)", 46)}</div>`,
+  ][i]();
+  const a = document.createElement("article");
+  a.className = "leaving"; a.setAttribute("aria-busy", "true"); a.setAttribute("aria-label", "Loading");
+  a.innerHTML = body;
+  return a;
+}
+
+// =====================================================================================
+// Financials table + chart (persistent DOM so C and D can animate values in place)
+// =====================================================================================
+const cellsOf = tbl => $$("tbody .v", tbl);
+function crossfadeText(el, text, ms) {
+  const cell = el.parentElement;
+  $$(".ghost", cell).forEach(g => g.remove());
+  cancelAll(el);
+  if (el.textContent === text) return;
+  const g = document.createElement("span");
+  g.className = "ghost"; g.setAttribute("aria-hidden", "true"); g.textContent = el.textContent;
+  cell.append(g);
+  el.textContent = text;
+  fin(A(g, FADE_OUT, ms, E.std, 0, "forwards")).then(() => g.remove());
+  A(el, FADE_IN, ms, E.std);
+}
+function setHead(tbl, d, fade) {
+  $$("thead .v", tbl).forEach((el, i) => fade ? crossfadeText(el, d.cols[i], 180) : (el.textContent = d.cols[i]));
+}
+function setCells(tbl, d, fade) {
+  tick(tbl);   // stops a running count-up
+  cellsOf(tbl).forEach((el, k) => {
+    const v = d.rows[(k / 5) | 0].vals[k % 5];
+    fade ? crossfadeText(el, fmt(v), 180) : (el.textContent = fmt(v));
+  });
+}
+function countTo(tbl, from, to, ms) {
+  const live = tick(tbl), cells = cellsOf(tbl);
+  tween(ms, BZ.std, p => {
+    if (!live()) return;
+    cells.forEach((el, k) => { const a = from.rows[(k / 5) | 0].vals[k % 5], b = to.rows[(k / 5) | 0].vals[k % 5]; el.textContent = fmt(a + (b - a) * p); });
+  });
+}
+
+const CH = { W: 520, H: 214, L: 46, R: 10, T: 10, B: 186 };   // B = baseline y
+CH.slot = (CH.W - CH.L - CH.R) / 5; CH.bw = 38; CH.ph = CH.B - CH.T;
+function chartSVG() {
+  const xs = [0, 1, 2, 3, 4].map(i => CH.L + i * CH.slot + CH.slot / 2);
+  return `<svg class="chart" viewBox="0 0 ${CH.W} ${CH.H}" role="img" aria-label="Revenue bars with operating income line">
+    <g>${[0, .5, 1].map(f => `<line class="gl" x1="${CH.L}" x2="${CH.W - CH.R}" y1="${CH.B - f * CH.ph}" y2="${CH.B - f * CH.ph}"/>`).join("")}</g>
+    <g class="yl">${[0, .5, 1].map(f => `<text x="${CH.L - 8}" y="${CH.B - f * CH.ph + 4}" text-anchor="end"></text>`).join("")}</g>
+    <g>${xs.map(() => `<rect class="bar" x="0" y="-1" width="${CH.bw}" height="1"/>`).join("")}</g>
+    <path class="line"/>
+    <g>${xs.map(() => `<circle class="pt" r="3.5"/>`).join("")}</g>
+    <g class="xl">${xs.map(x => `<text x="${x}" y="${CH.H - 8}" text-anchor="middle"></text>`).join("")}</g>
+  </svg>`;
+}
+function geom(d) {
+  const rev = d.rows[0].vals, oi = d.rows[3].vals;
+  const m = Math.max(...rev) * 1.08, p = 10 ** Math.floor(Math.log10(m)), max = Math.ceil(m / p * 2) / 2 * p;
+  const cx = i => CH.L + i * CH.slot + CH.slot / 2;
+  return { max, labels: d.short,
+    bars: rev.map((v, i) => ({ x: cx(i) - CH.bw / 2, h: v / max * CH.ph })),
+    pts: oi.map((v, i) => [cx(i), CH.B - v / max * CH.ph]) };
+}
+const barT = b => `translate(${b.x}px,${CH.B}px) scale(1,${b.h})`;
+function setLine(svg, pts) {
+  $(".line", svg).setAttribute("d", "M" + pts.map(p => p[0].toFixed(1) + " " + p[1].toFixed(1)).join("L"));
+  $$(".pt", svg).forEach((c, i) => { c.style.transform = `translate(${pts[i][0]}px,${pts[i][1]}px)`; });
+}
+function drawLine(path, ms, delay) {
+  const len = path.getTotalLength();
+  path.style.strokeDasharray = len + "px";
+  fin(A(path, [{ strokeDashoffset: len + "px" }, { strokeDashoffset: "0px" }], ms, E.move, delay)).then(() => { path.style.strokeDasharray = ""; });
+}
+// mode: "instant" | "draw" (C: grow + draw in) | "morph" (D: move from the previous geometry)
+function drawChart(svg, d, mode = "instant", delay = 0) {
+  const g = geom(d), old = svg._geo, live = tick(svg);
+  svg._geo = g; svg._d = d;
+  const bars = $$(".bar", svg), pts = $$(".pt", svg), line = $(".line", svg);
+  [...bars, ...pts, line, ...$$("text", svg)].forEach(cancelAll);
+  line.style.strokeDasharray = "";
+  const ylab = [0, .5, 1].map(f => f ? Math.round(g.max * f / 1000) + "k" : "0");
+  $$(".yl text", svg).forEach((t, i) => { const fresh = t.textContent !== ylab[i]; t.textContent = ylab[i]; if (fresh && mode === "morph" && !S.reduced) A(t, FADE_IN, 200, E.std); });
+  $$(".xl text", svg).forEach((t, i) => { const fresh = t.textContent !== g.labels[i]; t.textContent = g.labels[i]; if (fresh && mode === "morph" && !S.reduced) A(t, FADE_IN, 200, E.std); });
+  bars.forEach((r, i) => { r.style.transform = barT(g.bars[i]); });
+  if (mode === "morph" && old && !S.reduced) {
+    bars.forEach((r, i) => A(r, [{ transform: barT(old.bars[i]) }, { transform: barT(g.bars[i]) }], 360, E.move));
+    tween(360, BZ.move, p => { if (live()) setLine(svg, old.pts.map((a, i) => [a[0] + (g.pts[i][0] - a[0]) * p, a[1] + (g.pts[i][1] - a[1]) * p])); });
+    return;
+  }
+  setLine(svg, g.pts);
+  if (mode === "draw" && !S.reduced) {
+    bars.forEach((r, i) => A(r, [{ transform: `translate(${g.bars[i].x}px,${CH.B}px) scale(1,0)` }, { transform: barT(g.bars[i]) }], 400, E.std, delay + i * 25));
+    drawLine(line, 600, delay + 150);
+    pts.forEach((p, i) => A(p, FADE_IN, 160, E.std, delay + 150 + 600 * i / (pts.length - 1)));
+  }
+}
+
+// =====================================================================================
+// KPI detail panel content
+// =====================================================================================
+function panelHTML(c) {
+  const k = c.k, [st, col] = band(k), vals = Q[c.key], nn = vals.filter(v => v != null);
+  const lo0 = Math.min(k.bear_threshold, k.bull_threshold, k.current_level), hi0 = Math.max(k.bear_threshold, k.bull_threshold, k.current_level);
+  const pad = (hi0 - lo0) * .15 || 1, lo = lo0 - pad, hi = hi0 + pad, at = v => ((v - lo) / (hi - lo) * 100).toFixed(1) + "%";
+  const bLo = Math.min(k.bear_threshold, k.bull_threshold), bHi = Math.max(k.bear_threshold, k.bull_threshold);
+  const sLo = Math.min(...nn, k.bear_threshold, k.bull_threshold), sHi = Math.max(...nn, k.bear_threshold, k.bull_threshold);
+  const yAt = v => 4 + (1 - (v - sLo) / (sHi - sLo)) * 112;
+  return `<div class="pbody">
+    <div class="phead" data-r><div><div class="eyebrow">KPI · ${per(QP[N])} · ${esc(k.reporting_basis)}</div><h3 class="display">${esc(k.kpi)}</h3></div>
+      <button type="button" class="x" data-close aria-label="Close">&times;</button></div>
+    <div class="pval" data-r><span class="big num">${fmt(k.current_level)}</span><span class="chip"><i class="dot" style="background:${col}"></i>${st}</span></div>
+    <div class="band" data-r><div class="trk"><span class="rng" style="left:${at(bLo)};width:calc(${at(bHi)} - ${at(bLo)})"></span><span class="cur" style="left:${at(k.current_level)}"></span></div>
+      <p>Bear ${fmt(k.bear_threshold)} · Base ${esc(k.base_range)} · Bull ${fmt(k.bull_threshold)}</p></div>
+    <svg class="bigsp" viewBox="0 0 480 140" data-r aria-label="${esc(c.label)} by quarter">
+      <line class="th" x1="0" x2="480" y1="${yAt(k.bear_threshold)}" y2="${yAt(k.bear_threshold)}" stroke="var(--bear)"/>
+      <line class="th" x1="0" x2="480" y1="${yAt(k.bull_threshold)}" y2="${yAt(k.bull_threshold)}" stroke="var(--bull)"/>
+      <path class="spark" d="${sparkPath(vals, 480, 120, sLo, sHi, 4)}"/>
+      <text x="2" y="136">${per(QP[0])}</text><text x="478" y="136" text-anchor="end">${per(QP[N])}</text></svg>
+    <p class="pdef" data-r>${esc(k.definition)}</p>
+    <p class="psrc" data-r>${esc(k.source_role)}</p>
+  </div>`;
+}
+
+// =====================================================================================
+// Shared motion building blocks
+// =====================================================================================
+// C: blocks in sequence, rows cascade, charts and sparklines draw in.
+function revealBlocks(root, base = 0) {
+  $$("[data-r]", root).forEach((b, i) => {
+    const d = base + Math.min(i, 8) * 50;
+    A(b, [{ opacity: 0, transform: "translateY(4px) scale(.995)" }, { opacity: 1, transform: "none" }], 220, E.std, d);
+    $$("tbody tr", b).forEach((tr, j) => A(tr, FADE_IN, 180, E.std, d + 60 + j * 30));
+    $$("svg.chart", b).forEach(svg => drawChart(svg, svg._d, "draw", d));
+    $$("path.spark", b).forEach(p => drawLine(p, 500, d + 80));
+  });
+}
+function fadeThrough(old, nu, outMs, inMs, delay) {
+  fin(A(old, FADE_OUT, outMs, E.out, 0, "forwards")).then(() => old.remove());
+  A(nu, FADE_IN, inMs, E.in, delay);
+}
+async function detailsFade(d, open) {
+  const b = $(".dbody", d), live = tick(d);
+  cancelAll(b);
+  if (open) { d.open = true; A(b, FADE_IN, 140, E.in); return; }
+  await fin(A(b, FADE_OUT, 90, E.out, 0, "forwards"));
+  if (!live()) return;
+  d.open = false; cancelAll(b);
+}
+async function panelFadeOut(dlg, ms = 100) {
+  backdrop(dlg, ms, 1, 0);
+  await fin(A(dlg, FADE_OUT, ms, E.out, 0, "forwards"));
+}
+
+// =====================================================================================
+// Variants. Each: spec (shown on the page) + page / data / details / panelIn / panelOut.
+// =====================================================================================
+const V = {
+  // ---------------------------------------------------------------- 0 · Current
+  "0": {
+    label: "0 · Current", glide: 0,
+    intent: "Today's app. Every article, dialog and opened disclosure fades in while rising 7px. Tab underline and segmented control jump; Quarterly/Annual values swap with no motion.",
+    short: "enter 180ms ease-out, rise 7px · buttons 140ms · press .98",
+    tokens: [
+      ["Page enter (whole article)", "180ms", "ease-out", "opacity 0→1, translateY 7px→0"],
+      ["Dialog, opened disclosure", "180ms", "ease-out", "same rise"],
+      ["Button colour", "140ms", "ease-out", "background, colour"],
+      ["Button press", "100ms", "ease-out", "scale .98"],
+      ["Tab underline, segment thumb", "0ms", "none", "jumps"],
+      ["Quarterly ↔ Annual", "0ms", "none", "values replaced"],
+    ],
+    reduced: "Everything instant (globals.css sets animation and transition durations to .01ms).",
+    fits: "Reference only. One rise on every page, dialog and disclosure is what reads as repetitive.",
+    page({ old, nu }) { old.remove(); A(nu, RISE7, 180, "ease-out"); },
+    data(c) { c.apply(); },
+    details(d, open) { d.open = open; if (open) A($(".dbody", d), RISE7, 180, "ease-out"); },
+    panelIn(dlg) { A(dlg, RISE7, 180, "ease-out"); },
+    panelOut: null,
+  },
+
+  // ---------------------------------------------------------------- A · Quiet
+  A: {
+    label: "A · Quiet", glide: 200,
+    intent: "Calm and document-like. Pages crossfade with no movement. Only the indicators move: the tab underline and the segment thumb glide to the new position.",
+    short: "out 90ms / in 150ms opacity · glide 200ms cubic-bezier(.2,0,0,1)",
+    tokens: [
+      ["Page out", "90ms", E.out, "opacity 1→0"],
+      ["Page in", "150ms, +60ms", E.in, "opacity 0→1 (overlaps the exit)"],
+      ["Tab underline, segment thumb", "200ms", E.std, "translateX / scaleX glide"],
+      ["Table row hover", "120ms", "ease-out", "background"],
+      ["Quarterly ↔ Annual", "70ms + 120ms", `${E.out} / ${E.in}`, "table and chart fade out, swap, fade in"],
+      ["Dialog", "140ms in / 100ms out", `${E.in} / ${E.out}`, "opacity, backdrop"],
+      ["Disclosure", "140ms in / 90ms out", `${E.in} / ${E.out}`, "content opacity; height snaps"],
+    ],
+    reduced: "Pages and dialog fade 100ms linear; glides, data swaps and disclosures are instant.",
+    fits: "Baseline for page changes everywhere, especially the report reader.",
+    page({ old, nu }) { fadeThrough(old, nu, 90, 150, 60); },
+    async data(c) {
+      cancelAll(c.wrap);
+      await fin(A(c.wrap, FADE_OUT, 70, E.out, 0, "forwards"));
+      if (!c.live()) return;
+      c.apply(); cancelAll(c.wrap); A(c.wrap, FADE_IN, 120, E.in);
+    },
+    details: detailsFade,
+    panelIn(dlg) { A(dlg, FADE_IN, 140, E.in); backdrop(dlg, 140); },
+    panelOut: dlg => panelFadeOut(dlg),
+  },
+
+  // ---------------------------------------------------------------- B · Directional
+  B: {
+    label: "B · Directional (shared axis)", glide: 240,
+    intent: "Spatial. Content slides 20px in the direction of the tab you moved to, while the outgoing page exits the opposite way. Quarterly ↔ Annual uses the same axis at 12px.",
+    short: "exit 120ms / enter 240ms, 20px · glide 240ms",
+    tokens: [
+      ["Page exit", "120ms", E.exit, "translateX 0→∓20px, opacity →0"],
+      ["Page enter", "240ms, +60ms", E.emph, "translateX ±20px→0, opacity 0→1"],
+      ["Tab underline, segment thumb", "240ms", E.std, "glide"],
+      ["Quarterly ↔ Annual", "100ms + 200ms", `${E.exit} / ${E.emph}`, "table and chart shift 12px toward the chosen side"],
+      ["Dialog", "240ms in / 120ms out", `${E.emph} / ${E.exit}`, "translateX 24px→0 + opacity"],
+      ["Disclosure", "140ms in / 90ms out", `${E.in} / ${E.out}`, "same as A"],
+    ],
+    reduced: "Fade 100ms with no horizontal movement; data swaps and disclosures instant.",
+    fits: "Ordered sequences: report chapter prev/next, run stages. Too busy for top-level tabs.",
+    page({ old, nu, dir }) {
+      fin(A(old, [{ opacity: 1, transform: "none" }, { opacity: 0, transform: `translateX(${-20 * dir}px)` }], 120, E.exit, 0, "forwards")).then(() => old.remove());
+      A(nu, [{ opacity: 0, transform: `translateX(${20 * dir}px)` }, { opacity: 1, transform: "none" }], 240, E.emph, 60);
+    },
+    async data(c) {
+      cancelAll(c.wrap);
+      await fin(A(c.wrap, [{ opacity: 1, transform: "none" }, { opacity: 0, transform: `translateX(${-12 * c.dir}px)` }], 100, E.exit, 0, "forwards"));
+      if (!c.live()) return;
+      c.apply(); cancelAll(c.wrap);
+      A(c.wrap, [{ opacity: 0, transform: `translateX(${12 * c.dir}px)` }, { opacity: 1, transform: "none" }], 200, E.emph);
+    },
+    details: detailsFade,
+    panelIn(dlg) { A(dlg, [{ opacity: 0, transform: "translateX(24px)" }, { opacity: 1, transform: "none" }], 240, E.emph); backdrop(dlg, 240); },
+    panelOut(dlg) {
+      backdrop(dlg, 120, 1, 0);
+      return fin(A(dlg, [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateX(24px)" }], 120, E.exit, 0, "forwards"));
+    },
+  },
+
+  // ---------------------------------------------------------------- C · Staggered
+  C: {
+    label: "C · Staggered reveal", glide: 200,
+    intent: "Presentational. Blocks arrive in reading order, table rows cascade, the chart line draws and bars grow from the baseline. Switching Quarterly/Annual counts each number from its old value to the new one.",
+    short: "block 220ms, stagger 50ms, rise 4px, scale .995 · line 600ms · count 500ms",
+    tokens: [
+      ["Content blocks", "220ms, 50ms stagger (max 8)", E.std, "opacity, translateY 4px, scale .995→1"],
+      ["Table rows", "180ms, 30ms stagger", E.std, "opacity"],
+      ["Chart line", "600ms, +150ms", E.move, "stroke-dashoffset draw"],
+      ["Chart bars", "400ms, 25ms stagger", E.std, "scaleY from baseline"],
+      ["Sparklines", "500ms", E.move, "stroke-dashoffset draw"],
+      ["Quarterly ↔ Annual", "500ms", E.std, "numbers count old→new; chart redraws"],
+      ["Outgoing page", "80ms", E.out, "opacity"],
+      ["Dialog", "160ms + 40ms stagger", E.std, "panel fade, inner blocks staggered"],
+      ["Disclosure", "200ms, 40ms stagger", E.std, "list items rise 4px"],
+    ],
+    reduced: "Everything appears at once; page and dialog fade 100ms; numbers jump to final values.",
+    fits: "A dashboard's first load (KPI Dashboard), once per session. Too slow for repeat visits or reading.",
+    page({ old, nu }) {
+      fin(A(old, FADE_OUT, 80, E.out, 0, "forwards")).then(() => old.remove());
+      revealBlocks(nu, 60);
+    },
+    data(c) { setHead(c.tbl, c.to); countTo(c.tbl, c.from, c.to, 500); drawChart(c.svg, c.to, "draw"); },
+    async details(d, open) {
+      if (!open) return detailsFade(d, false);
+      tick(d); d.open = true;
+      $$("li", d).forEach((li, i) => A(li, [{ opacity: 0, transform: "translateY(4px)" }, { opacity: 1, transform: "none" }], 200, E.std, Math.min(i, 8) * 40));
+    },
+    panelIn(dlg) {
+      A(dlg, FADE_IN, 160, E.std); backdrop(dlg, 160);
+      $$("[data-r]", dlg).forEach((b, i) => A(b, [{ opacity: 0, transform: "translateY(4px)" }, { opacity: 1, transform: "none" }], 220, E.std, 40 + i * 40));
+      $$("path.spark", dlg).forEach(p => drawLine(p, 500, 120));
+    },
+    panelOut: dlg => panelFadeOut(dlg),
+  },
+
+  // ---------------------------------------------------------------- D · Continuity
+  D: {
+    label: "D · Continuity (morph)", glide: 220,
+    intent: "Things that persist keep their identity. Shared cards travel between Report and KPI Dashboard, table cells crossfade in place, chart bars and points morph to new positions, a KPI card grows into its detail panel, disclosures animate height. Only new content fades in.",
+    short: "FLIP 320ms · cells 180ms · chart morph 360ms · card→panel 300ms · height 240ms",
+    tokens: [
+      ["Shared cards across pages", "320ms", E.std, "FLIP: translate + scale from the old rect"],
+      ["Other blocks", "90ms out / 150ms in", `${E.out} / ${E.in}`, "opacity only"],
+      ["Table cells", "180ms", E.std, "crossfade in place (old and new text overlap)"],
+      ["Chart bars and line", "360ms", E.move, "bars scaleY/translate, line points interpolate"],
+      ["KPI card → panel", "300ms in / 240ms out", E.std, "FLIP from the card rect, content fades in after 120ms"],
+      ["Disclosure", "240ms", E.std, "height (the one non-transform property) + content fade"],
+      ["Tab underline, segment thumb", "220ms", E.std, "glide"],
+    ],
+    reduced: "Values swap instantly; panel and page fade 100ms; no morphing, travel or height animation.",
+    fits: "In-place data changes: Financials period toggle, KPI detail panel, disclosures.",
+    page({ old, nu }) {
+      const rects = new Map($$("[data-share]", old).map(e => [e.dataset.share, e]));
+      fin(A(old, FADE_OUT, 90, E.out, 0, "forwards")).then(() => old.remove());
+      $$("[data-r]", nu).forEach(b => {
+        const src = b.dataset.share && rects.get(b.dataset.share);
+        if (!src) { A(b, FADE_IN, 150, E.in, 60); return; }
+        const r0 = src.getBoundingClientRect();
+        src.style.visibility = "hidden";
+        A(b, [{ transform: flipFrom(r0, b.getBoundingClientRect()) }, { transform: "none" }], 320, E.std);
+        b.style.transformOrigin = "0 0";
+      });
+    },
+    data(c) { setHead(c.tbl, c.to, true); setCells(c.tbl, c.to, true); drawChart(c.svg, c.to, "morph"); },
+    async details(d, open) {
+      const b = $(".dbody", d), live = tick(d);
+      const h0 = d.getBoundingClientRect().height;
+      cancelAll(d); cancelAll(b);
+      d.open = true; const hOpen = d.getBoundingClientRect().height;
+      d.open = false; const hClosed = d.getBoundingClientRect().height;
+      d.open = true; d.style.overflow = "hidden";
+      if (open) A(b, FADE_IN, 160, E.in, 60); else A(b, FADE_OUT, 120, E.out, 0, "forwards");
+      await fin(A(d, [{ height: h0 + "px" }, { height: (open ? hOpen : hClosed) + "px" }], 240, E.std, 0, "forwards"));
+      if (!live()) return;
+      d.open = open; d.style.overflow = ""; cancelAll(d); cancelAll(b);
+    },
+    panelIn(dlg, card) {
+      const r0 = card.getBoundingClientRect(), r1 = dlg.getBoundingClientRect();
+      card.style.opacity = "0";
+      A(dlg, [{ transform: flipFrom(r0, r1) }, { transform: "none" }], 300, E.std);
+      A($(".pbody", dlg), FADE_IN, 160, E.in, 120);
+      backdrop(dlg, 300);
+    },
+    panelOut(dlg, card) {
+      cancelAll(dlg);
+      const r1 = dlg.getBoundingClientRect(), r0 = card.getBoundingClientRect();
+      A($(".pbody", dlg), FADE_OUT, 80, E.out, 0, "forwards");
+      backdrop(dlg, 240, 1, 0);
+      return fin(A(dlg, [{ transform: "none" }, { transform: flipFrom(r0, r1) }], 240, E.std, 40, "forwards"));
+    },
+  },
+
+  // ---------------------------------------------------------------- E · Skeleton
+  E: {
+    label: "E · Skeleton to content", glide: 0,
+    intent: "For slow data. A page or panel shows its layout as a shimmering skeleton for a simulated 300ms load, then crossfades to the real content. Indicators jump so the navigation itself feels instant.",
+    short: "skeleton ≥300ms · shimmer 1200ms linear · crossfade 150ms ease-out",
+    tokens: [
+      ["Skeleton", "≥300ms (simulated load)", "none", "page layout in grey blocks"],
+      ["Shimmer", "1200ms loop", "linear", "highlight translateX −100%→100%"],
+      ["Content", "150ms", "ease-out", "crossfade skeleton → content"],
+      ["Quarterly ↔ Annual", "300ms + 150ms", "ease-out", "table and chart skeleton, then fade"],
+      ["Dialog", "300ms + 150ms", "ease-out", "panel opens on a skeleton, content fades in"],
+      ["Tab underline, segment thumb", "0ms", "none", "jumps"],
+    ],
+    reduced: "Skeleton stays but does not shimmer; content swaps in without a fade; data toggles and dialog are instant or 100ms fade.",
+    fits: "Only where data really takes >300ms (live run, provider fetches). Never add a fake delay to fast pages.",
+    async page({ old, nu, st, live }) {
+      old.remove();
+      nu.hidden = true;
+      const sk = skeleton(+nu.dataset.page);
+      st.insertBefore(sk, nu);
+      await sleep(300);
+      if (!live()) return;
+      nu.hidden = false;
+      if (S.reduced) { sk.remove(); return; }
+      A(nu, FADE_IN, 150, "ease-out");
+      fin(A(sk, FADE_OUT, 150, "ease-out", 0, "forwards")).then(() => sk.remove());
+    },
+    async data(c) {
+      const cards = [...c.wrap.children];
+      cards.forEach(x => $$(".skov", x).forEach(o => o.remove()));
+      const ovs = cards.map(card => {
+        const o = document.createElement("div");
+        o.className = "skov";
+        o.innerHTML = Array.from({ length: 7 }, (_, i) => `<div class="sk" style="height:${i ? 12 : 14}px;width:${i % 3 ? 100 : 82}%"></div>`).join("");
+        card.append(o); return o;
+      });
+      await sleep(300);
+      if (!c.live()) return;
+      c.apply();
+      ovs.forEach(o => fin(A(o, FADE_OUT, 150, "ease-out", 0, "forwards")).then(() => o.remove()));
+    },
+    details: detailsFade,
+    async panelIn(dlg) {
+      const g = dlg._g, b = $(".pbody", dlg);
+      b.hidden = true;
+      const sk = document.createElement("div");
+      sk.className = "pbody"; sk.style.cssText = "display:grid;gap:12px";
+      sk.innerHTML = `<div class="sk" style="width:40%;height:10px"></div><div class="sk" style="width:70%;height:24px"></div><div class="sk" style="width:30%;height:30px"></div><div class="sk" style="height:8px"></div><div class="sk" style="height:110px"></div><div class="sk" style="height:12px"></div><div class="sk" style="width:80%;height:12px"></div>`;
+      dlg.append(sk);
+      backdrop(dlg, 150);
+      await sleep(300);
+      if (dlg._g !== g) return;
+      sk.remove(); b.hidden = false;
+      A(b, FADE_IN, 150, "ease-out");
+    },
+    panelOut: dlg => panelFadeOut(dlg),
+  },
+};
+
+// Reduced-motion fallback (instant, or opacity-only ≤100ms). E keeps its own page() because the
+// skeleton is information (loading), not decoration.
+const RED = {
+  page({ old, nu }) { old.remove(); if (S.v !== "0") A(nu, FADE_IN, 100, "linear"); },
+  data(c) { c.apply(); },
+  details(d, open) { tick(d); d.open = open; },
+  panelIn(dlg) { if (S.v !== "0") { A(dlg, FADE_IN, 100, "linear"); backdrop(dlg, 100); } },
+};
+
+// =====================================================================================
+// Navigation engine
+// =====================================================================================
+const stage = $("#stage"), ink = $("#ink"), panel = $("#panel");
+
+function build(i) {
+  const a = document.createElement("article");
+  a.dataset.page = i;
+  a.innerHTML = PAGES[i]();
+  const tbl = $("table.fin", a), svg = $("svg.chart", a);
+  if (tbl) { const d = finData(S.period); setHead(tbl, d); setCells(tbl, d); drawChart(svg, d); }
+  return a;
+}
+function placeInk(animate) {
+  const b = $(`#sub [data-tab="${S.page}"]`);
+  if (!animate) ink.style.transition = "none";
+  ink.style.transform = `translateX(${b.offsetLeft}px) scaleX(${b.offsetWidth / 100})`;
+  if (!animate) { void ink.offsetWidth; ink.style.transition = ""; }
+}
+function setTabs(animate) {
+  $$("#sub [data-tab]").forEach(b => {
+    const on = +b.dataset.tab === S.page;
+    b.classList.toggle("on", on);
+    on ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current");
+  });
+  placeInk(animate);
+}
+function go(to, instant) {
+  $$(".leaving", stage).forEach(e => e.remove());
+  const old = $("article", stage), from = S.page, gen = ++S.gen;
+  const dir = Math.sign(to - from) || S.dir || 1;
+  S.dir = dir;
+  if (to !== from) S.prevPage = from;
+  S.page = to;
+  setTabs(!instant);
+  const nu = build(to);
+  if (!old || instant) { stage.replaceChildren(nu); return; }
+  old.getAnimations({ subtree: true }).forEach(a => a.cancel());
+  old.classList.add("leaving"); old.inert = true; old.setAttribute("aria-hidden", "true");
+  stage.append(nu);
+  const ctx = { old, nu, dir, st: stage, live: () => S.gen === gen };
+  (S.reduced && S.v !== "E" ? RED.page : V[S.v].page)(ctx);
+}
+// Replay = render the previous page instantly, then run the real transition to the current one.
+function replay() {
+  closePanelNow();
+  const to = S.page;
+  let from = S.prevPage;
+  if (from == null || from === to) from = to > 0 ? to - 1 : 1;
+  S.gen++;
+  S.page = from;
+  stage.replaceChildren(build(from));
+  setTabs(false);
+  go(to);
+}
+function setPeriod(p) {
+  if (p === S.period) return;
+  const art = $("article:not(.leaving)", stage), seg = art && $(".seg", art);
+  if (!seg) return;
+  const from = finData(S.period), to = finData(p), g = ++S.dgen;
+  S.period = p;
+  seg.dataset.p = p;
+  $$("[data-period]", seg).forEach(b => b.setAttribute("aria-pressed", String(b.dataset.period === p)));
+  const tbl = $("table.fin", art), svg = $("svg.chart", art);
+  const ctx = { from, to, dir: p === "a" ? 1 : -1, tbl, svg, wrap: $(".fin-data", art), live: () => S.dgen === g,
+    apply() { setHead(tbl, to); setCells(tbl, to); drawChart(svg, to); } };
+  (S.reduced ? RED : V[S.v]).data(ctx);
+}
+
+// ---------- panel ----------
+let panelCard = null;
+function openPanel(card) {
+  const c = KC.find(x => x.key === card.dataset.kpi);
+  panel.innerHTML = panelHTML(c);
+  panelCard = card;
+  panel._g = (panel._g || 0) + 1;
+  panel.showModal();
+  (S.reduced ? RED : V[S.v]).panelIn(panel, card);
+}
+async function closePanel() {
+  if (!panel.open) return;
+  const g = panel._g = (panel._g || 0) + 1, out = !S.reduced && V[S.v].panelOut;
+  if (out) await out(panel, panelCard);
+  if (panel._g !== g) return;
+  closePanelNow();
+}
+function closePanelNow() {
+  if (panel.open) panel.close();
+  panel.getAnimations({ subtree: true }).forEach(a => a.cancel());
+  if (panelCard) { panelCard.style.opacity = ""; if (panelCard.isConnected) panelCard.focus({ preventScroll: true }); panelCard = null; }
+}
+
+// ---------- events ----------
+$("#sub").addEventListener("click", e => {
+  const b = e.target.closest("[data-tab]");
+  if (b && +b.dataset.tab !== S.page) go(+b.dataset.tab);
+});
+stage.addEventListener("click", e => {
+  const sum = e.target.closest("summary");
+  if (sum) {
+    e.preventDefault();
+    const d = sum.parentElement, open = !d.classList.contains("x");
+    d.classList.toggle("x", open);
+    (S.reduced ? RED : V[S.v]).details(d, open);
+    return;
+  }
+  const per = e.target.closest("[data-period]");
+  if (per) return setPeriod(per.dataset.period);
+  const card = e.target.closest("button[data-kpi]");
+  if (card) openPanel(card);
+});
+panel.addEventListener("click", e => { if (e.target === panel || e.target.closest("[data-close]")) closePanel(); });
+panel.addEventListener("cancel", e => { e.preventDefault(); closePanel(); });
+window.addEventListener("resize", () => placeInk(false));
+if (document.fonts) document.fonts.ready.then(() => placeInk(false));
+
+// =====================================================================================
+// Workshop controls
+// =====================================================================================
+const ORDER = ["0", "A", "B", "C", "D", "E"];
+$("#vt").innerHTML = ORDER.map(k => `<button type="button" data-v="${k}" aria-pressed="false">${V[k].label.replace(" (shared axis)", "").replace(" (morph)", "").replace(" reveal", "").replace(" to content", "")}</button>`).join("");
+
+function applyGlide() {
+  const root = document.documentElement.style;
+  root.setProperty("--glide", (S.reduced ? 0 : V[S.v].glide) + "ms");
+  root.setProperty("--ts", S.ts);
+  document.documentElement.classList.toggle("rm", S.reduced);
+}
+function renderSpec() {
+  const v = V[S.v];
+  $("#spec").innerHTML = `<div class="spec-h"><div><div class="eyebrow">Variant spec</div><h3 class="display">${v.label}</h3></div>
+      <p class="fits"><b>Fits:</b> ${v.fits}</p></div>
+    <p class="intent">${v.intent}</p>
+    <div class="tbl"><table class="data"><thead><tr><th>Element</th><th>Duration</th><th>Easing</th><th>What moves</th></tr></thead>
+      <tbody>${v.tokens.map(t => `<tr><td>${t[0]}</td><td class="num">${t[1]}</td><td><code>${t[2]}</code></td><td class="w">${t[3]}</td></tr>`).join("")}</tbody></table></div>
+    <p class="red"><b>Reduced motion${S.reduced ? " (active)" : ""}:</b> ${v.reduced}</p>
+    <p class="try">Try: switch the sub-nav tabs (Report ↔ KPI Dashboard shows shared cards) · Quarterly / Annual on Financials · click a KPI card · open Thesis breakers · Replay.</p>`;
+  $("#note").innerHTML = `<b>${v.label}.</b> ${v.short}${S.reduced ? " · reduced-motion fallback active" : ""}${S.ts !== 1 ? ` · time ×${S.ts}` : ""}`;
+}
+function applyVariant(v, run = true) {
+  S.v = v;
+  document.body.dataset.v = v;
+  $$("#vt button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.v === v)));
+  try { localStorage.setItem("motionVariant", v); } catch (e) { /* storage blocked */ }
+  applyGlide(); renderSpec();
+  if (run) replay();
+}
+$("#vt").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) applyVariant(b.dataset.v); });
+$("#replay").addEventListener("click", replay);
+$("#speed").addEventListener("input", e => {
+  S.ts = +e.target.value;
+  $("#speedv").textContent = S.ts + "×";
+  applyGlide(); renderSpec();
+});
+function setReduced(on) {
+  S.reduced = on;
+  $("#rm").checked = on;
+  applyGlide(); renderSpec();
+}
+$("#rm").addEventListener("change", e => setReduced(e.target.checked));
+const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+$("#os").textContent = mq.matches ? "(your OS asks for reduced motion)" : "";
+mq.addEventListener?.("change", e => { $("#os").textContent = e.matches ? "(your OS asks for reduced motion)" : ""; setReduced(e.matches); });
+
+// ---------- boot ----------
+let saved = null;
+try { saved = localStorage.getItem("motionVariant"); } catch (e) { /* storage blocked */ }
+$("#rm").checked = S.reduced;
+applyVariant(V[saved] ? saved : "0", false);
+go(S.page, true);
+</script>
+</body>
+</html>
