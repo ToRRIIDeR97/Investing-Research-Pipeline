@@ -12,9 +12,11 @@ if (!process.env.DATABASE_URL && existsSync(".env.local")) {
   if (line) process.env.DATABASE_URL = line.slice("DATABASE_URL=".length).trim().replace(/^['"]|['"]$/g, "");
 }
 
-// The run route uses the app's shared client; close it so the test process can exit.
+// The run route uses the app's shared clients; close them so the test process can exit.
 after(async () => {
-  if (!skip) await (await import("../src/db")).db.$client.end();
+  if (skip) return;
+  const { db, sqlClient } = await import("../src/db");
+  await Promise.all([db.$client.end(), sqlClient.end()]);
 });
 
 const packet = { packet: { filler: "x".repeat(10_000) }, prompt: "y".repeat(10_000) };
