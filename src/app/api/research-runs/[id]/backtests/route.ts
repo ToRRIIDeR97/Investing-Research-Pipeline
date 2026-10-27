@@ -12,8 +12,9 @@ import { ZodError } from "zod";
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+// `?summary=1` returns only the list fields (see BACKTEST_SUMMARY_FIELDS); the run page polls it.
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -33,7 +34,9 @@ export async function GET(
       throw new ApiError("Research run not found", 404, "NOT_FOUND");
     }
 
-    const backtests = await listBacktestsForRun(runId);
+    const backtests = request.nextUrl.searchParams.get("summary") === "1"
+      ? await listBacktestsForRun(runId, { summary: true })
+      : await listBacktestsForRun(runId);
 
     return successResponse(backtests);
   } catch (error) {

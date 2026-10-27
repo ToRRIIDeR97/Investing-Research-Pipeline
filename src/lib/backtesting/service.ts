@@ -164,11 +164,17 @@ export async function createBacktestRequest(
   }
 }
 
-export async function listBacktestsForRun(runId: string): Promise<BacktestRunRecord[]> {
+/** The fields a run list shows. A summary leaves out parameters, assumptions and results. */
+export const BACKTEST_SUMMARY_FIELDS = ["id", "status", "strategy_name", "strategy_prompt", "symbol", "benchmark_symbol", "error_message", "created_at"] as const;
+export type BacktestRunSummary = Pick<BacktestRunRecord, (typeof BACKTEST_SUMMARY_FIELDS)[number]>;
+
+export async function listBacktestsForRun(runId: string): Promise<BacktestRunRecord[]>;
+export async function listBacktestsForRun(runId: string, options: { summary: true }): Promise<BacktestRunSummary[]>;
+export async function listBacktestsForRun(runId: string, options: { summary?: boolean } = {}): Promise<BacktestRunRecord[] | BacktestRunSummary[]> {
   const sql = postgres(process.env.DATABASE_URL!);
   try {
     const rows = await sql`
-      SELECT *
+      SELECT ${options.summary ? sql(BACKTEST_SUMMARY_FIELDS as unknown as string[]) : sql`*`}
       FROM backtest_runs
       WHERE research_run_id = ${runId}
       ORDER BY created_at DESC
