@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { runProgressIsLive } from "@/lib/research/run-polling";
@@ -138,7 +138,8 @@ function ViewResearch() {
   const loadVersion = useRef(0);
   // The run row behind the report on screen. A quiet refresh skips the report (megabytes) while that row is unchanged.
   const shownRun = useRef<ResearchRecord | null>(null);
-  // Whether the report on screen is the full one. It is kept until the run or its row changes.
+  // Whether the report on screen is the full one. A quiet refresh keeps it while the run row is unchanged; once the
+  // row changes, a refresh fetches what the current view needs, so Overview drops back to the summary.
   const shownFull = useRef(false);
   // The interval's loadResearch is from an earlier render, so it reads the current tab here.
   const activeTabRef = useRef(activeTab);
@@ -159,7 +160,8 @@ function ViewResearch() {
     return () => window.clearInterval(timer);
   }, [assetId, requestedRunId]);
 
-  async function loadResearch(quiet = false) {
+  // Reads only the route, refs and state setters, so it changes only with the asset or the requested run.
+  const loadResearch = useCallback(async (quiet = false) => {
     const version = ++loadVersion.current;
     if (!quiet) setLoading(true);
     setError(null);
@@ -185,7 +187,7 @@ function ViewResearch() {
         return;
       }
       const shown = shownRun.current;
-      const full = fullReportTabs.includes(activeTabRef.current) || (shownFull.current && shown?.id === activeRun.id);
+      const full = fullReportTabs.includes(activeTabRef.current);
       if (quiet && shown && shown.id === activeRun.id && shown.status === activeRun.status && (shownFull.current || !full)
         && String(shown.updated_at) === String(activeRun.updated_at) && !runProgressIsLive(String(activeRun.status))) {
         setData((current) => ({ ...current, asset, runs: sortedRuns, activeRun }));
@@ -238,13 +240,13 @@ function ViewResearch() {
     } finally {
       if (version === loadVersion.current) setLoading(false);
     }
-  }
+  }, [assetId, requestedRunId]);
 
   // The Report, Financials and KPI views need the full report; the page opened with the summary loads it on first use.
   const needsFullReport = Boolean(data.report?.summary) && fullReportTabs.includes(activeTab);
   useEffect(() => {
     if (needsFullReport && !loading && !error) void loadResearch();
-  }, [needsFullReport, loading, error]);
+  }, [needsFullReport, loading, error, loadResearch]);
 
   const filtered = useMemo(() => filterResearch(data, searchQuery), [data, searchQuery]);
   const content = (type: string) => {
