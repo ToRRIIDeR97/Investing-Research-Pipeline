@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { pipelineSql } from "@/db/pipeline-sql";
 import { getStageOutputContract, validateArtifactContent } from "@/lib/research/stage-contracts";
 import { STAGE_CONFIG_MAP, getStageConfig } from "./stages";
 import { evaluateResearchQuality, VALUATION_WITHHELD_KEY } from "./quality-gates";
@@ -28,261 +29,256 @@ export async function validateStageCompletion(
   if (stageKey !== "ai_reviewer" && getStageOutputContract(stageKey)) {
     return validateStageArtifacts(runId, stageKey);
   }
-  const sql = postgres(process.env.DATABASE_URL!);
+  const sql = pipelineSql();
   const errors: string[] = [];
   const warnings: string[] = [];
-
-  try {
-    const config = getStageConfig(stageKey);
-    if (!config) {
-      return {
-        valid: false,
-        errors: [`Unknown stage key: ${stageKey}`],
-        warnings: [],
-        checkedAt: new Date().toISOString(),
-      };
-    }
-
-    // Fetch the run to know asset_id and profile
-    const runs = await sql`
-      SELECT id, asset_id, run_type, profile_id
-      FROM research_runs
-      WHERE id = ${runId}
-    `;
-    if (runs.length === 0) {
-      return {
-        valid: false,
-        errors: [`Research run not found: ${runId}`],
-        warnings: [],
-        checkedAt: new Date().toISOString(),
-      };
-    }
-    const run = runs[0];
-
-    // Stage-specific output checks
-    for (const output of config.requiredOutputs) {
-      switch (output) {
-        case "profile_assignment": {
-          const rows = await sql`
-            SELECT id FROM asset_profile_assignments
-            WHERE asset_id = ${run.asset_id}
-              AND (research_run_id = ${runId} OR research_run_id IS NULL)
-              AND status = 'active'
-            LIMIT 1
-          `;
-          if (rows.length === 0) {
-            errors.push("No active profile assignment found for asset");
-          }
-          break;
-        }
-
-        case "research_plan_json": {
-          const rows = await sql`
-            SELECT stage_key, completion_criteria_json
-            FROM research_stages
-            WHERE research_run_id = ${runId} AND stage_key = 'research_plan'
-          `;
-          if (rows.length === 0 || !rows[0].completion_criteria_json) {
-            errors.push("Research plan JSON not found in stage completion criteria");
-          }
-          break;
-        }
-
-        case "source_inventory": {
-          const rows = await sql`
-            SELECT COUNT(DISTINCT sd.id) as cnt
-            FROM source_documents sd
-            LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
-            WHERE sd.research_run_id = ${runId} OR rrs.research_run_id = ${runId}
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No source documents ingested for this run");
-          }
-          break;
-        }
-
-        case "source_gaps": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM source_gaps
-            WHERE research_run_id = ${runId}
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            warnings.push(
-              "No source gaps recorded — this may indicate gaps were not assessed"
-            );
-          }
-          break;
-        }
-
-        case "parsed_documents": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM document_parses dp
-            JOIN source_documents sd ON dp.source_document_id = sd.id
-            LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
-            WHERE (sd.research_run_id = ${runId} OR rrs.research_run_id = ${runId})
-              AND dp.status = 'completed'
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No completed document parses for this run");
-          }
-          break;
-        }
-
-        case "evidence_claims": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM evidence_claims
-            WHERE research_run_id = ${runId}
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No evidence claims extracted for this run");
-          }
-          break;
-        }
-
-        case "metric_observations": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM metric_observations
-            WHERE research_run_id = ${runId}
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No metric observations recorded for this run");
-          }
-          const invalidMarketMetrics = await sql`
-            SELECT md.metric_key, mo.value_numeric
-            FROM metric_observations mo
-            JOIN metric_definitions md ON md.id = mo.metric_definition_id
-            WHERE mo.research_run_id = ${runId}
-              AND mo.review_status = 'accepted'
-              AND md.metric_key IN ('market_price', 'market_cap')
-              AND (mo.value_numeric IS NULL OR mo.value_numeric::numeric <= 0)
-          `;
-          for (const metric of invalidMarketMetrics) {
-            errors.push(`Accepted ${metric.metric_key} must be positive; received ${metric.value_numeric ?? "null"}`);
-          }
-          break;
-        }
-
-        case "analysis_sections": {
-          // Analysis sections stored as tasks with task_type = 'analysis'
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM research_tasks
-            WHERE research_run_id = ${runId}
-              AND task_type = 'analysis'
-              AND status = 'completed'
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No completed analysis tasks for this run");
-          }
-          break;
-        }
-
-        case "valuation_signals": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM valuation_signals
-            WHERE research_run_id = ${runId}
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No valuation signals generated for this run");
-          }
-          break;
-        }
-
-        case "scenarios": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM scenarios
-            WHERE research_run_id = ${runId}
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No scenarios generated for this run");
-          }
-          break;
-        }
-
-        case "thesis": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM theses
-            WHERE research_run_id = ${runId}
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No thesis created for this run");
-          }
-          break;
-        }
-
-        case "risks": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM risks
-            WHERE research_run_id = ${runId}
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No risks documented for this run");
-          }
-          break;
-        }
-
-        case "catalysts": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM catalysts
-            WHERE research_run_id = ${runId}
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No catalysts documented for this run");
-          }
-          break;
-        }
-
-        case "review_findings": {
-          const rows = await sql`
-            SELECT output_json FROM research_tasks
-            WHERE research_run_id = ${runId}
-              AND task_type = 'ai_review'
-              AND status = 'completed'
-          `;
-          if (rows.length === 0) {
-            errors.push("AI reviewer has not produced review findings");
-          }
-          break;
-        }
-
-        case "backtest_results": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM backtest_runs
-            WHERE research_run_id = ${runId}
-              AND status = 'completed'
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No completed backtest results found for this run");
-          }
-          break;
-        }
-
-        case "export_artifact": {
-          const rows = await sql`
-            SELECT COUNT(*) as cnt FROM exports
-            WHERE research_run_id = ${runId}
-          `;
-          if (Number(rows[0].cnt) === 0) {
-            errors.push("No export artifact generated for this run");
-          }
-          break;
-        }
-
-        default:
-          warnings.push(`No validation rule registered for output: ${output}`);
-      }
-    }
-
-    const result: ValidationResult = {
-      valid: errors.length === 0,
-      errors,
-      warnings,
+  const config = getStageConfig(stageKey);
+  if (!config) {
+    return {
+      valid: false,
+      errors: [`Unknown stage key: ${stageKey}`],
+      warnings: [],
       checkedAt: new Date().toISOString(),
     };
-
-    return result;
-  } finally {
-    await sql.end();
   }
+
+  // Fetch the run to know asset_id and profile
+  const runs = await sql`
+    SELECT id, asset_id, run_type, profile_id
+    FROM research_runs
+    WHERE id = ${runId}
+  `;
+  if (runs.length === 0) {
+    return {
+      valid: false,
+      errors: [`Research run not found: ${runId}`],
+      warnings: [],
+      checkedAt: new Date().toISOString(),
+    };
+  }
+  const run = runs[0];
+
+  // Stage-specific output checks
+  for (const output of config.requiredOutputs) {
+    switch (output) {
+      case "profile_assignment": {
+        const rows = await sql`
+          SELECT id FROM asset_profile_assignments
+          WHERE asset_id = ${run.asset_id}
+            AND (research_run_id = ${runId} OR research_run_id IS NULL)
+            AND status = 'active'
+          LIMIT 1
+        `;
+        if (rows.length === 0) {
+          errors.push("No active profile assignment found for asset");
+        }
+        break;
+      }
+
+      case "research_plan_json": {
+        const rows = await sql`
+          SELECT stage_key, completion_criteria_json
+          FROM research_stages
+          WHERE research_run_id = ${runId} AND stage_key = 'research_plan'
+        `;
+        if (rows.length === 0 || !rows[0].completion_criteria_json) {
+          errors.push("Research plan JSON not found in stage completion criteria");
+        }
+        break;
+      }
+
+      case "source_inventory": {
+        const rows = await sql`
+          SELECT COUNT(DISTINCT sd.id) as cnt
+          FROM source_documents sd
+          LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
+          WHERE sd.research_run_id = ${runId} OR rrs.research_run_id = ${runId}
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          errors.push("No source documents ingested for this run");
+        }
+        break;
+      }
+
+      case "source_gaps": {
+        const rows = await sql`
+          SELECT COUNT(*) as cnt FROM source_gaps
+          WHERE research_run_id = ${runId}
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          warnings.push(
+            "No source gaps recorded — this may indicate gaps were not assessed"
+          );
+        }
+        break;
+      }
+
+      case "parsed_documents": {
+        const rows = await sql`
+          SELECT COUNT(*) as cnt FROM document_parses dp
+          JOIN source_documents sd ON dp.source_document_id = sd.id
+          LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
+          WHERE (sd.research_run_id = ${runId} OR rrs.research_run_id = ${runId})
+            AND dp.status = 'completed'
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          errors.push("No completed document parses for this run");
+        }
+        break;
+      }
+
+      case "evidence_claims": {
+        const rows = await sql`
+          SELECT COUNT(*) as cnt FROM evidence_claims
+          WHERE research_run_id = ${runId}
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          errors.push("No evidence claims extracted for this run");
+        }
+        break;
+      }
+
+      case "metric_observations": {
+        const rows = await sql`
+          SELECT COUNT(*) as cnt FROM metric_observations
+          WHERE research_run_id = ${runId}
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          errors.push("No metric observations recorded for this run");
+        }
+        const invalidMarketMetrics = await sql`
+          SELECT md.metric_key, mo.value_numeric
+          FROM metric_observations mo
+          JOIN metric_definitions md ON md.id = mo.metric_definition_id
+          WHERE mo.research_run_id = ${runId}
+            AND mo.review_status = 'accepted'
+            AND md.metric_key IN ('market_price', 'market_cap')
+            AND (mo.value_numeric IS NULL OR mo.value_numeric::numeric <= 0)
+        `;
+        for (const metric of invalidMarketMetrics) {
+          errors.push(`Accepted ${metric.metric_key} must be positive; received ${metric.value_numeric ?? "null"}`);
+        }
+        break;
+      }
+
+      case "analysis_sections": {
+        // Analysis sections stored as tasks with task_type = 'analysis'
+        const rows = await sql`
+          SELECT COUNT(*) as cnt FROM research_tasks
+          WHERE research_run_id = ${runId}
+            AND task_type = 'analysis'
+            AND status = 'completed'
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          errors.push("No completed analysis tasks for this run");
+        }
+        break;
+      }
+
+      case "valuation_signals": {
+        const rows = await sql`
+          SELECT COUNT(*) as cnt FROM valuation_signals
+          WHERE research_run_id = ${runId}
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          errors.push("No valuation signals generated for this run");
+        }
+        break;
+      }
+
+      case "scenarios": {
+        const rows = await sql`
+          SELECT COUNT(*) as cnt FROM scenarios
+          WHERE research_run_id = ${runId}
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          errors.push("No scenarios generated for this run");
+        }
+        break;
+      }
+
+      case "thesis": {
+        const rows = await sql`
+          SELECT COUNT(*) as cnt FROM theses
+          WHERE research_run_id = ${runId}
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          errors.push("No thesis created for this run");
+        }
+        break;
+      }
+
+      case "risks": {
+        const rows = await sql`
+          SELECT COUNT(*) as cnt FROM risks
+          WHERE research_run_id = ${runId}
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          errors.push("No risks documented for this run");
+        }
+        break;
+      }
+
+      case "catalysts": {
+        const rows = await sql`
+          SELECT COUNT(*) as cnt FROM catalysts
+          WHERE research_run_id = ${runId}
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          errors.push("No catalysts documented for this run");
+        }
+        break;
+      }
+
+      case "review_findings": {
+        const rows = await sql`
+          SELECT output_json FROM research_tasks
+          WHERE research_run_id = ${runId}
+            AND task_type = 'ai_review'
+            AND status = 'completed'
+        `;
+        if (rows.length === 0) {
+          errors.push("AI reviewer has not produced review findings");
+        }
+        break;
+      }
+
+      case "backtest_results": {
+        const rows = await sql`
+          SELECT COUNT(*) as cnt FROM backtest_runs
+          WHERE research_run_id = ${runId}
+            AND status = 'completed'
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          errors.push("No completed backtest results found for this run");
+        }
+        break;
+      }
+
+      case "export_artifact": {
+        const rows = await sql`
+          SELECT COUNT(*) as cnt FROM exports
+          WHERE research_run_id = ${runId}
+        `;
+        if (Number(rows[0].cnt) === 0) {
+          errors.push("No export artifact generated for this run");
+        }
+        break;
+      }
+
+      default:
+        warnings.push(`No validation rule registered for output: ${output}`);
+    }
+  }
+
+  const result: ValidationResult = {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    checkedAt: new Date().toISOString(),
+  };
+
+  return result;
 }
 
 /**
@@ -858,23 +854,21 @@ export async function validateStageArtifacts(runId: string, stageKey: string): P
   const errors: string[] = [];
   const warnings: string[] = [];
   if (!contract) return { valid: false, errors: [`Unknown artifact stage: ${stageKey}`], warnings, checkedAt: new Date().toISOString() };
-  const sql = postgres(process.env.DATABASE_URL!);
-  try {
-    const rows = await sql`
-      SELECT artifact_type, content_json FROM research_artifacts
-      WHERE research_run_id = ${runId} AND status IN ('validated', 'accepted')
-        AND artifact_type = ANY(${contract.requiredKeys}::text[])
-    `;
-    for (const key of contract.requiredKeys) {
-      const artifacts = rows.filter((row) => row.artifact_type === key);
-      if (!artifacts.length) errors.push(`Missing validated artifact: ${key}`);
-      for (const artifact of artifacts) {
-        const validation = validateArtifactContent(key, artifact.content_json);
-        errors.push(...validation.errors.map((error) => `${key}: ${error}`));
-        warnings.push(...validation.warnings);
-      }
+  const sql = pipelineSql();
+  const rows = await sql`
+    SELECT artifact_type, content_json FROM research_artifacts
+    WHERE research_run_id = ${runId} AND status IN ('validated', 'accepted')
+      AND artifact_type = ANY(${contract.requiredKeys}::text[])
+  `;
+  for (const key of contract.requiredKeys) {
+    const artifacts = rows.filter((row) => row.artifact_type === key);
+    if (!artifacts.length) errors.push(`Missing validated artifact: ${key}`);
+    for (const artifact of artifacts) {
+      const validation = validateArtifactContent(key, artifact.content_json);
+      errors.push(...validation.errors.map((error) => `${key}: ${error}`));
+      warnings.push(...validation.warnings);
     }
+  }
 
-    return { valid: errors.length === 0, errors, warnings, checkedAt: new Date().toISOString() };
-  } finally { await sql.end(); }
+  return { valid: errors.length === 0, errors, warnings, checkedAt: new Date().toISOString() };
 }
