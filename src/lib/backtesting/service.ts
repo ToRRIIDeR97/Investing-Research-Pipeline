@@ -8,7 +8,7 @@ export const createBacktestRequestSchema = z.object({
   start_date: z.string().date().optional(),
   end_date: z.string().date().optional(),
   initial_capital: z.coerce.number().positive().optional().default(100000),
-  params: z.record(z.unknown()).optional().default({}),
+  params: z.record(z.string(), z.unknown()).optional().default({}),
 });
 
 export type CreateBacktestRequestInput = z.infer<typeof createBacktestRequestSchema>;

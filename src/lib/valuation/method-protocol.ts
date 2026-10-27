@@ -36,7 +36,7 @@ const methodInputSchema = z.object({
   value: finiteNumber.optional(),
   unit: z.string().min(1).max(48),
   currency: z.string().min(1).max(12).optional(),
-  evidence_claim_ids: z.array(z.string().uuid()).max(32).default([]),
+  evidence_claim_ids: z.array(z.string().guid()).max(32).default([]),
   rationale: z.string().max(1_000).optional(),
 }).strict();
 

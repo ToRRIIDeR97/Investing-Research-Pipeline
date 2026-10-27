@@ -35,10 +35,10 @@ export const createResearchRunSchema = z.object({
     "full_initiation_report",
   ]),
   // Omitted: link the asset's latest completed or approved run. null: start fresh. An id: that run of the same asset.
-  prior_run_id: z.string().uuid().nullable().optional(),
+  prior_run_id: z.string().guid().nullable().optional(),
   research_question: z.string().max(5000).optional(),
   requested_by: z.string().max(200).optional(),
-  profile_id: z.string().uuid().optional(),
+  profile_id: z.string().guid().optional(),
   budget_limit_usd: z.number().positive().optional(),
   forecast_years: z.number().int().min(3).max(10).optional(),
   source_cutoff_at: z.string().datetime().optional(),
@@ -74,15 +74,15 @@ export const evidenceClaimSchema = z.object({
   confidence: z.number().min(0).max(1).optional(),
   generated_by: z.string().min(1).max(200),
   no_source_reason: z.string().max(2000).optional(),
-  source_document_id: z.string().uuid().optional(),
-  document_chunk_id: z.string().uuid().optional(),
-  extracted_table_id: z.string().uuid().optional(),
+  source_document_id: z.string().guid().optional(),
+  document_chunk_id: z.string().guid().optional(),
+  extracted_table_id: z.string().guid().optional(),
 });
 
 export const stageOutputSchema = z.object({
   target_table: z.string().min(1),
   output_schema_key: z.string().min(1),
   output_schema_version: z.number().int().positive(),
-  payload_json: z.record(z.unknown()),
+  payload_json: z.record(z.string(), z.unknown()),
   created_by_agent: z.string().min(1),
 });

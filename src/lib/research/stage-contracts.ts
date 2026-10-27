@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { contractJsonSchema } from "@/lib/research/contract-json-schema";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { CompanyGenesis, FounderProfile, StrategicHistoryTimeline, StrategicDNA } from "./genesis/contracts";
 import { HistoricalDiagnosisArtifact, validateHistoricalDiagnosis } from "./diagnosis/contracts";
@@ -45,7 +46,7 @@ function artifactContract(shape: Record<string, z.ZodType>): AgentOutputFormat {
   const output = z.object(shape);
   return {
     requiredKeys: Object.keys(shape),
-    schema: z.toJSONSchema(output, { target: "draft-7", io: "input", reused: "inline" }),
+    schema: contractJsonSchema(output, { target: "draft-7", io: "input", reused: "inline" }),
     validate(value) {
       const parsed = output.safeParse(value);
       if (!parsed.success) return parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message }));
@@ -110,7 +111,7 @@ const reviewer = z.object({
 });
 export const AI_REVIEWER_CONTRACT: AgentOutputFormat = {
   requiredKeys: Object.keys(reviewer.shape),
-  schema: z.toJSONSchema(reviewer, { target: "draft-7", io: "input" }),
+  schema: contractJsonSchema(reviewer, { target: "draft-7", io: "input" }),
   validate(value) {
     const parsed = reviewer.safeParse(value);
     if (!parsed.success) return parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message }));

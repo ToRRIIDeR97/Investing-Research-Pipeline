@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { contractJsonSchema } from "@/lib/research/contract-json-schema";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { ReportVisual, QUANTITATIVE_VISUALS } from './visuals';
 
@@ -97,7 +98,7 @@ export function validateChartPlan(plan: { chart_plan?: string }, section: Report
 
 export function outputContract(shape: Record<string, z.ZodType>): AgentOutputFormat {
   const schema = z.object(shape);
-  return { requiredKeys: Object.keys(shape), schema: z.toJSONSchema(schema, { target: "draft-7", io: "input" }),
+  return { requiredKeys: Object.keys(shape), schema: contractJsonSchema(schema, { target: "draft-7", io: "input" }),
     validate(value) { const parsed = schema.safeParse(value); return parsed.success ? [] :
       parsed.error.issues.map(issue => ({ path: issue.path.join("."), message: issue.message })); } };
 }

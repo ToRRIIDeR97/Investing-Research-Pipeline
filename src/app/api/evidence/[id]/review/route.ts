@@ -14,7 +14,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = z.string().uuid().parse((await params).id);
+    const id = z.string().guid().parse((await params).id);
     const { review_status } = reviewSchema.parse(await request.json().catch(() => ({})));
 
     const [updated] = await db

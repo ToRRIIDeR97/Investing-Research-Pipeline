@@ -5,6 +5,7 @@
  * hypothesis until the human approves the plan; the approved framing then rides in every analysis packet.
  */
 import { z } from "zod/v4";
+import { contractJsonSchema } from "@/lib/research/contract-json-schema";
 import { businessArchetypes, archetypeOverlays } from "./archetypes/registry";
 import { composeProfile } from "./archetypes/compose";
 import { kpiArchetypes } from "./memory/needs";
@@ -31,7 +32,7 @@ export type ResearchFraming = z.infer<typeof ResearchFraming>;
 
 export function framingContract() {
   const schema = z.object({ framing: ResearchFraming });
-  return { requiredKeys: ["framing"], schema: z.toJSONSchema(schema, { target: "draft-7", io: "input" }),
+  return { requiredKeys: ["framing"], schema: contractJsonSchema(schema, { target: "draft-7", io: "input" }),
     validate(value: unknown) {
       const parsed = schema.safeParse(value);
       if (!parsed.success) return parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message }));

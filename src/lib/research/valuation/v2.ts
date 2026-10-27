@@ -13,6 +13,7 @@
 import { calculateValuationSchedule, yearTimes, type ValuationMethodInput } from "./schedules";
 import { SCENARIOS, assembleValuation, buildScenarioStatements, solve, type Scenario, type StatementYear, type YearlyDriver } from "./engine";
 import { z } from "zod/v4";
+import { contractJsonSchema } from "@/lib/research/contract-json-schema";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { tableRows, type FinancialAnalytics } from "../history/analytics";
 
@@ -634,7 +635,7 @@ export type ValuationSetsOutput = z.infer<typeof ValuationSetsOutput>["valuation
 export function valuationSetsFormat(riskFree: Num, defaults: ValuationSet[]): AgentOutputFormat {
   return {
     requiredKeys: ["valuation_assumptions"],
-    schema: z.toJSONSchema(ValuationSetsOutput, { target: "draft-7", io: "input", reused: "inline" }) as Record<string, unknown>,
+    schema: contractJsonSchema(ValuationSetsOutput, { target: "draft-7", io: "input", reused: "inline" }) as Record<string, unknown>,
     validate(value) {
       const parsed = ValuationSetsOutput.safeParse(value);
       if (!parsed.success) return parsed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message }));
