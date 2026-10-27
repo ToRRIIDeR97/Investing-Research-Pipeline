@@ -74,23 +74,32 @@ async function discoverPage(body: string, mimeType: string) {
   return { sources, elapsed: performance.now() - started };
 }
 
-// The backtracking and DOM blowups these pages target took seconds to minutes per MB. A page that takes over 1 s
-// (a slow machine, or test files running in parallel) is timed again, and if the better 1 MB run still takes over
-// 1 s it must scale linearly: under 10x the best of two runs on its first quarter (linear work measures ~4x and
-// up to ~8.5x on an oversubscribed machine; quadratic work gives ~16x).
-const LINEAR_SCALING_LIMIT = 10;
+// The backtracking and DOM blowups these pages target took seconds to minutes per MB, so every page must scale
+// linearly: its 1 MB time stays under 25x its first 125 KB (the best of two runs, floored at 20 ms so millisecond
+// noise can't inflate the ratio). Linear work measures ~8x idle and up to ~19x with four copies of the pages parsed
+// in parallel on four cores; a quadratic scan in stripHtml that made the old flat budget fail by 37% measured 32-49x.
+// A page over a limit is timed once more at both sizes, since contention spikes are random. 5 s is a loose ceiling.
+const SMALL_PAGE_BYTES = MB / 8;
+const SMALL_PAGE_FLOOR_MS = 20;
+const LINEAR_SCALING_LIMIT = 25;
+const PAGE_CEILING_MS = 5_000;
 
-test("a 1 MB adversarial page is processed in under 1 s, or in linear time", async () => {
+test("a 1 MB adversarial page is processed in linear time", async () => {
   for (const [name, body] of Object.entries(hostilePages)) {
     const mimeType = name.endsWith("XML") ? "application/xml" : "text/html";
+    const time = async (page: string) => (await discoverPage(page, mimeType)).elapsed;
+    const smallPage = body.slice(0, SMALL_PAGE_BYTES);
     const { sources, elapsed } = await discoverPage(body, mimeType);
-    const large = elapsed < 1_000 ? elapsed : Math.min(elapsed, (await discoverPage(body, mimeType)).elapsed);
-    if (large >= 1_000) {
-      const quarter = body.slice(0, MB / 4);
-      const small = Math.min((await discoverPage(quarter, mimeType)).elapsed, (await discoverPage(quarter, mimeType)).elapsed);
-      assert.ok(large / small < LINEAR_SCALING_LIMIT,
-        `${name}: ${Math.round(large)} ms for 1 MB, ${Math.round(small)} ms for 250 KB (${(large / small).toFixed(1)}x)`);
+    let large = elapsed;
+    let small = Math.min(await time(smallPage), await time(smallPage));
+    const ratio = () => large / Math.max(small, SMALL_PAGE_FLOOR_MS);
+    if (ratio() >= LINEAR_SCALING_LIMIT || large >= PAGE_CEILING_MS) {
+      large = Math.min(large, await time(body));
+      small = Math.min(small, await time(smallPage));
     }
+    const timing = `${Math.round(large)} ms for 1 MB, ${Math.round(small)} ms for 125 KB (${ratio().toFixed(1)}x)`;
+    assert.ok(large < PAGE_CEILING_MS, `${name}: ${timing}`);
+    assert.ok(ratio() < LINEAR_SCALING_LIMIT, `${name}: ${timing}`);
     if (name.startsWith("relevant")) {
       const history = sources.find((source) => source.metadata.source_role === "founder_and_company_history");
       assert.ok(history, name);
