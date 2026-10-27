@@ -18,7 +18,14 @@ export interface ResearchArtifactReadModel {
   accepted_at: string | Date | null;
   created_at: string | Date;
   updated_at: string | Date;
+  /** Set in a summary report when the body was left out; it is empty, not missing. */
+  content_omitted?: boolean;
 }
+
+// Artifact bodies over this stored (compressed) size are left out of a summary report.
+const SUMMARY_BODY_LIMIT_BYTES = 64 * 1024;
+// Bodies the report view's overview and summary read are always sent, whatever their size.
+const SUMMARY_BODY_TYPES = ["investment_thesis", "risk_register", "annual_price_target_path", "company_genesis", "founder_profile"];
 
 function objectValue(value: unknown): Record<string, unknown> {
   let current = value;
@@ -56,6 +63,7 @@ function normalizeArtifact(row: Record<string, unknown>): ResearchArtifactReadMo
     accepted_at: (row.accepted_at as string | Date | null) || null,
     created_at: row.created_at as string | Date,
     updated_at: row.updated_at as string | Date,
+    ...(row.content_omitted ? { content_omitted: true } : {}),
   };
 }
 
@@ -98,19 +106,44 @@ export async function getResearchRunArtifacts(runId: string, artifactType?: stri
   }
 }
 
-/** Pass `client` to reuse a long-lived pool; without one a client is opened and closed for this call. */
-export async function getResearchRunReport(runId: string, client?: ReturnType<typeof postgres>) {
+/**
+ * Pass `client` to reuse a long-lived pool; without one a client is opened and closed for this call.
+ * `summary` leaves out large artifact bodies (marked `content_omitted`) and the report document's artifact copies
+ * (`report_document.artifacts`), so a page can show its overview first and load the full report when a view needs it.
+ */
+export async function getResearchRunReport(
+  runId: string,
+  client?: ReturnType<typeof postgres>,
+  options: { summary?: boolean } = {}
+) {
   const sql = client ?? postgres(process.env.DATABASE_URL!);
   try {
     const run = await loadRun(sql, runId);
     if (!run) return null;
+    const omitBody = sql`artifact_type <> 'report_document' AND artifact_type <> ALL(${SUMMARY_BODY_TYPES})
+      AND pg_column_size(content_json) > ${SUMMARY_BODY_LIMIT_BYTES}`;
     const [artifactRows, evidence, metrics, valuationSignals, scenarios, backtests, sources, roleCoverage, modelCalls, exports, reviews, theses, risks, catalysts, stageRows] = await Promise.all([
-      sql`
-        SELECT DISTINCT ON (artifact_type, scope_key) *
-        FROM research_artifacts
-        WHERE research_run_id = ${runId} AND status <> 'superseded'
-        ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC
-      `,
+      options.summary
+        ? sql`
+          SELECT DISTINCT ON (artifact_type, scope_key)
+            id, artifact_type, scope_key, artifact_version, status, schema_version, validator_version, prompt_version,
+            validation_result_json, created_by, supersedes_artifact_id, accepted_at, created_at, updated_at,
+            CASE
+              WHEN artifact_type = 'report_document' AND jsonb_typeof(content_json) = 'object' THEN content_json - 'artifacts'
+              WHEN ${omitBody} THEN NULL
+              ELSE content_json
+            END AS content_json,
+            (${omitBody}) AS content_omitted
+          FROM research_artifacts
+          WHERE research_run_id = ${runId} AND status <> 'superseded'
+          ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC
+        `
+        : sql`
+          SELECT DISTINCT ON (artifact_type, scope_key) *
+          FROM research_artifacts
+          WHERE research_run_id = ${runId} AND status <> 'superseded'
+          ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC
+        `,
       sql`SELECT * FROM evidence_claims WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
       sql`SELECT * FROM metric_observations WHERE research_run_id = ${runId} ORDER BY period_end DESC NULLS LAST, created_at DESC`,
       sql`SELECT * FROM valuation_signals WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
@@ -172,6 +205,7 @@ export async function getResearchRunReport(runId: string, client?: ReturnType<ty
       .map((section) => ({ type: section.type, label: section.label, status: "incomplete" }));
 
     return {
+      summary: Boolean(options.summary),
       run: run,
       asset: {
         id: run.asset_id,
