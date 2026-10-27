@@ -2,7 +2,7 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { NextRequest } from "next/server";
 
@@ -131,5 +131,40 @@ test("the artifacts route honours ?type= and sends each body once; the report se
     const serialised = JSON.stringify(report);
     assert.equal(serialised.split("m".repeat(1000)).length - 1, 1, "the report markdown is sent once");
     assert.equal(serialised.split("t".repeat(1000)).length - 1, 1, "an artifact body is sent once");
+  } finally { await f.cleanup(); await sql.end(); }
+});
+
+test("a summary report leaves out large bodies and the report document's artifact copies", { skip }, async () => {
+  const { getResearchRunReport } = await import("../src/lib/research/artifacts/read-model");
+  const sql = postgres(process.env.DATABASE_URL!);
+  const f = await fixture(sql, 3);
+  try {
+    const artifact = (type: string, content: unknown) => sql`INSERT INTO research_artifacts
+      (research_run_id, asset_id, artifact_type, scope_key, status, content_json, validation_result_json, created_by)
+      VALUES (${f.runId}, ${f.assetId}, ${type}, 'run', 'validated', ${sql.json(content as any)}, ${sql.json({ ok: true })}, 'test')`;
+    // Random hex barely compresses, so these bodies stay over the stored-size limit.
+    const large = () => randomBytes(100_000).toString("hex");
+    await artifact("financial_statement_set", { tables: [large()] });
+    await artifact("investment_thesis", { thesis: large() });
+    await artifact("research_plan", { research_question: "Plan question" });
+    await artifact("report_document", { title: "Report", evidence: [{ id: "e1" }], artifacts: [{ id: "a1", content_json: { tables: [large()] } }] });
+
+    const summary = await getResearchRunReport(f.runId, undefined, { summary: true });
+    assert.ok(summary);
+    assert.equal(summary.summary, true);
+    const byType = Object.fromEntries(summary.artifacts.map((a) => [a.type, a]));
+    assert.equal(byType.financial_statement_set.content_omitted, true);
+    assert.deepEqual(byType.financial_statement_set.content_json, {});
+    assert.equal(byType.investment_thesis.content_omitted, undefined, "the overview's own types are always sent");
+    assert.equal(String(byType.investment_thesis.content_json.thesis).length, 200_000);
+    assert.deepEqual(byType.research_plan.content_json, { research_question: "Plan question" });
+    assert.deepEqual(summary.report_document, { title: "Report", evidence: [{ id: "e1" }] });
+
+    const full = await getResearchRunReport(f.runId);
+    assert.ok(full);
+    assert.equal(full.summary, false);
+    assert.equal(full.artifacts.some((a) => a.content_omitted), false);
+    assert.equal((full.report_document?.artifacts as unknown[] | undefined)?.length, 1);
+    assert.equal(String(full.artifacts.find((a) => a.type === "financial_statement_set")?.content_json.tables).length, 200_000);
   } finally { await f.cleanup(); await sql.end(); }
 });

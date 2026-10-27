@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { runProgressIsLive } from "@/lib/research/run-polling";
@@ -105,6 +105,8 @@ const tabLabels: Partial<Record<TabId, string>> = { thesis: "Report", financials
 const tabLabel = (tab: TabId) => tabLabels[tab] ?? tab.charAt(0).toUpperCase() + tab.slice(1);
 // Position in the asset nav. Views opened from the Overview menu sit between Overview and Report.
 const tabOrder = (tab: TabId) => { const index = (navViews as readonly TabId[]).indexOf(tab); return index >= 0 ? index : 0.5; };
+// Views that read large artifact bodies or the report document's artifacts. The others render from the summary report.
+const fullReportTabs: readonly TabId[] = ["thesis", "financials", "kpis"];
 
 const signalColors: Record<string, string> = {
   very_cheap: "#3d7664",
@@ -136,6 +138,12 @@ function ViewResearch() {
   const loadVersion = useRef(0);
   // The run row behind the report on screen. A quiet refresh skips the report (megabytes) while that row is unchanged.
   const shownRun = useRef<ResearchRecord | null>(null);
+  // Whether the report on screen is the full one. A quiet refresh keeps it while the run row is unchanged; once the
+  // row changes, a refresh fetches what the current view needs, so Overview drops back to the summary.
+  const shownFull = useRef(false);
+  // The interval's loadResearch is from an earlier render, so it reads the current tab here.
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
   // Slide direction for the tab content: from the side of the newly selected tab.
   const [tabMotion, setTabMotion] = useState<{ tab: TabId; direction?: NavDirection }>({ tab: activeTab });
   if (tabMotion.tab !== activeTab) setTabMotion({ tab: activeTab, direction: tabOrder(activeTab) >= tabOrder(tabMotion.tab) ? "forward" : "back" });
@@ -152,7 +160,8 @@ function ViewResearch() {
     return () => window.clearInterval(timer);
   }, [assetId, requestedRunId]);
 
-  async function loadResearch(quiet = false) {
+  // Reads only the route, refs and state setters, so it changes only with the asset or the requested run.
+  const loadResearch = useCallback(async (quiet = false) => {
     const version = ++loadVersion.current;
     if (!quiet) setLoading(true);
     setError(null);
@@ -173,11 +182,13 @@ function ViewResearch() {
 
       if (!activeRun) {
         shownRun.current = null;
+        shownFull.current = false;
         setData({ ...emptyResearchData, asset, runs: sortedRuns });
         return;
       }
       const shown = shownRun.current;
-      if (quiet && shown && shown.id === activeRun.id && shown.status === activeRun.status
+      const full = fullReportTabs.includes(activeTabRef.current);
+      if (quiet && shown && shown.id === activeRun.id && shown.status === activeRun.status && (shownFull.current || !full)
         && String(shown.updated_at) === String(activeRun.updated_at) && !runProgressIsLive(String(activeRun.status))) {
         setData((current) => ({ ...current, asset, runs: sortedRuns, activeRun }));
         return;
@@ -186,7 +197,7 @@ function ViewResearch() {
       const runId = activeRun.id;
       const [runDetail, report] = await Promise.all([
         fetchJson<ResearchRecord | null>(`/api/research-runs/${runId}`, null),
-        fetchJson<ResearchRecord | null>(`/api/research-runs/${runId}/report`, null),
+        fetchJson<ResearchRecord | null>(`/api/research-runs/${runId}/report${full ? "" : "?summary=1"}`, null),
       ]);
       const readModels = report?.read_models ?? {};
       const artifacts = Array.isArray(report?.artifacts) ? report.artifacts : [];
@@ -203,6 +214,7 @@ function ViewResearch() {
 
       if (version !== loadVersion.current) return;
       shownRun.current = activeRun;
+      shownFull.current = full;
       setData({
         asset,
         runs: sortedRuns,
@@ -228,7 +240,13 @@ function ViewResearch() {
     } finally {
       if (version === loadVersion.current) setLoading(false);
     }
-  }
+  }, [assetId, requestedRunId]);
+
+  // The Report, Financials and KPI views need the full report; the page opened with the summary loads it on first use.
+  const needsFullReport = Boolean(data.report?.summary) && fullReportTabs.includes(activeTab);
+  useEffect(() => {
+    if (needsFullReport && !loading && !error) void loadResearch();
+  }, [needsFullReport, loading, error, loadResearch]);
 
   const filtered = useMemo(() => filterResearch(data, searchQuery), [data, searchQuery]);
   const content = (type: string) => {
@@ -261,7 +279,7 @@ function ViewResearch() {
     return `/assets/${assetId}/view?${query}`;
   }
 
-  if (loading || (!error && data.asset && (data.asset.id !== assetId || (requestedRunId && data.activeRun?.id !== requestedRunId)))) return <div className={styles.message} role="status"><RefreshCw size={18} className="animate-spin" />Loading research…</div>;
+  if (loading || (!error && needsFullReport) || (!error && data.asset && (data.asset.id !== assetId || (requestedRunId && data.activeRun?.id !== requestedRunId)))) return <div className={styles.message} role="status"><RefreshCw size={18} className="animate-spin" />Loading research…</div>;
   if (error || !data.asset) return <div className={styles.message} role="alert">{error ?? "Asset not found."}<button onClick={()=>void loadResearch()}>Try again</button></div>;
 
   const navigation = <div className={styles.assetNavigation}>
