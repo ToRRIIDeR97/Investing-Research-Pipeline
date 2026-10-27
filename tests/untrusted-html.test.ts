@@ -60,20 +60,46 @@ async function withDiscoveryEnv<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-test("a 1 MB adversarial page is processed in under 1 s", async () => {
+async function discoverPage(body: string, mimeType: string) {
+  const fetchMock = (async (input: string | URL | Request) => String(input).startsWith("https://search.example/api")
+    ? new Response(JSON.stringify({ results: [{ url: "https://acme.example/history", title: "Acme history" }] }),
+      { headers: { "content-type": "application/json" } })
+    : new Response(body, { headers: { "content-type": mimeType } })) as typeof fetch;
+  const started = performance.now();
+  const sources = await withDiscoveryEnv(() => discoverRoleSources({
+    assetName: "Acme Company", symbol: "ACME", seedUrls: ["https://acme.example/investors"],
+  }, ["founder_and_company_history", "company_investor_relations"], fetchMock));
+  // Research memory later splits what discovery stored into blocks.
+  for (const source of sources) contentBlocks(source.content, source.mimeType);
+  return { sources, elapsed: performance.now() - started };
+}
+
+// The backtracking and DOM blowups these pages target took seconds to minutes per MB, so every page must scale
+// linearly: its 1 MB time stays under 25x its first 125 KB (the best of two runs, floored at 20 ms so millisecond
+// noise can't inflate the ratio). Linear work measures ~8x idle and up to ~19x with four copies of the pages parsed
+// in parallel on four cores; a quadratic scan in stripHtml that made the old flat budget fail by 37% measured 32-49x.
+// A page over a limit is timed once more at both sizes, since contention spikes are random. 5 s is a loose ceiling.
+const SMALL_PAGE_BYTES = MB / 8;
+const SMALL_PAGE_FLOOR_MS = 20;
+const LINEAR_SCALING_LIMIT = 25;
+const PAGE_CEILING_MS = 5_000;
+
+test("a 1 MB adversarial page is processed in linear time", async () => {
   for (const [name, body] of Object.entries(hostilePages)) {
-    const fetchMock = (async (input: string | URL | Request) => String(input).startsWith("https://search.example/api")
-      ? new Response(JSON.stringify({ results: [{ url: "https://acme.example/history", title: "Acme history" }] }),
-        { headers: { "content-type": "application/json" } })
-      : new Response(body, { headers: { "content-type": name.endsWith("XML") ? "application/xml" : "text/html" } })) as typeof fetch;
-    const started = performance.now();
-    const sources = await withDiscoveryEnv(() => discoverRoleSources({
-      assetName: "Acme Company", symbol: "ACME", seedUrls: ["https://acme.example/investors"],
-    }, ["founder_and_company_history", "company_investor_relations"], fetchMock));
-    // Research memory later splits what discovery stored into blocks.
-    for (const source of sources) contentBlocks(source.content, source.mimeType);
-    const elapsed = performance.now() - started;
-    assert.ok(elapsed < 1_000, `${name}: ${Math.round(elapsed)} ms`);
+    const mimeType = name.endsWith("XML") ? "application/xml" : "text/html";
+    const time = async (page: string) => (await discoverPage(page, mimeType)).elapsed;
+    const smallPage = body.slice(0, SMALL_PAGE_BYTES);
+    const { sources, elapsed } = await discoverPage(body, mimeType);
+    let large = elapsed;
+    let small = Math.min(await time(smallPage), await time(smallPage));
+    const ratio = () => large / Math.max(small, SMALL_PAGE_FLOOR_MS);
+    if (ratio() >= LINEAR_SCALING_LIMIT || large >= PAGE_CEILING_MS) {
+      large = Math.min(large, await time(body));
+      small = Math.min(small, await time(smallPage));
+    }
+    const timing = `${Math.round(large)} ms for 1 MB, ${Math.round(small)} ms for 125 KB (${ratio().toFixed(1)}x)`;
+    assert.ok(large < PAGE_CEILING_MS, `${name}: ${timing}`);
+    assert.ok(ratio() < LINEAR_SCALING_LIMIT, `${name}: ${timing}`);
     if (name.startsWith("relevant")) {
       const history = sources.find((source) => source.metadata.source_role === "founder_and_company_history");
       assert.ok(history, name);

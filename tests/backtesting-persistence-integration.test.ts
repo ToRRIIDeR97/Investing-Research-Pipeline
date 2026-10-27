@@ -14,20 +14,29 @@ describe("SOFI framework backtest persistence", { skip: !runIntegration }, () =>
   it("persists 10+ indicators, 50 completed combinations, artifacts, and a passing review gate", async () => {
     const sql = postgres(process.env.DATABASE_URL!);
     const runId = crypto.randomUUID();
+    // The test brings its own SoFi-like asset (financials profile, SOFI listing) and removes it afterwards, so it
+    // needs no seeded SoFi and never touches a real one. The slug is unique; tests that insert 'sofi' still can.
+    const assetId = crypto.randomUUID();
+    const instrumentId = crypto.randomUUID();
     const priorTestMode = process.env.RESEARCH_TEST_MODE;
     process.env.RESEARCH_TEST_MODE = "1";
     try {
-      const [asset] = await sql`
-        SELECT a.id, a.primary_profile_id, rp.version AS profile_version
-        FROM assets a
-        JOIN research_profiles rp ON rp.id = a.primary_profile_id
-        LEFT JOIN instruments i ON i.asset_id = a.id
-        LEFT JOIN listings l ON l.instrument_id = i.id AND l.active_to IS NULL
-        WHERE LOWER(a.slug) = 'sofi' OR UPPER(l.symbol) = 'SOFI'
-        ORDER BY l.is_primary DESC NULLS LAST
-        LIMIT 1
+      const [profile] = await sql`SELECT id, version FROM research_profiles WHERE profile_key = 'financials' LIMIT 1`;
+      assert.ok(profile, "The financials research profile must be seeded (npm run db:seed).");
+      await sql`
+        INSERT INTO assets (id, canonical_name, slug, primary_profile_id, status, asset_kind, base_currency)
+        VALUES (${assetId}, 'SoFi Technologies, Inc. (Backtest test)', ${`sofi-backtest-${assetId.slice(0, 8)}`},
+          ${profile.id}, 'active', 'equity', 'USD')
       `;
-      assert.ok(asset, "SOFI must be seeded before running this integration test.");
+      await sql`
+        INSERT INTO instruments (id, asset_id, name, instrument_type)
+        VALUES (${instrumentId}, ${assetId}, 'SoFi common stock (Backtest test)', 'equity')
+      `;
+      await sql`
+        INSERT INTO listings (instrument_id, exchange, symbol, is_primary)
+        VALUES (${instrumentId}, 'NASDAQ', 'SOFI', true)
+      `;
+      const asset = { id: assetId, primary_profile_id: profile.id, profile_version: profile.version };
       const cutoff = "2024-10-30T00:00:00Z";
       await sql`
         INSERT INTO research_runs (
@@ -99,6 +108,9 @@ describe("SOFI framework backtest persistence", { skip: !runIntegration }, () =>
       await sql`DELETE FROM research_artifacts WHERE research_run_id = ${runId}`.catch(() => undefined);
       await sql`DELETE FROM research_stages WHERE research_run_id = ${runId}`.catch(() => undefined);
       await sql`DELETE FROM research_runs WHERE id = ${runId}`.catch(() => undefined);
+      await sql`DELETE FROM listings WHERE instrument_id = ${instrumentId}`.catch(() => undefined);
+      await sql`DELETE FROM instruments WHERE id = ${instrumentId}`.catch(() => undefined);
+      await sql`DELETE FROM assets WHERE id = ${assetId}`.catch(() => undefined);
       await sql.end();
       if (priorTestMode == null) delete process.env.RESEARCH_TEST_MODE;
       else process.env.RESEARCH_TEST_MODE = priorTestMode;
