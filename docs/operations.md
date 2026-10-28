@@ -68,21 +68,21 @@ npm run store:import    # import the checked-out store only
 npm run store:export    # export to the store folder only; no git
 ```
 
-`store:sync -- --no-push` commits without pushing. `--store <dir>` uses another folder.
+`store:sync -- --no-push` commits without pushing. `--store <dir>` uses another folder. `--allow-public` skips the visibility check below; use it only for a remote you have checked yourself.
 
 What one sync does:
 
-1. Refuses to start while a research worker is polling this database (a heartbeat in the last 30 s). Stop the worker first.
+1. Refuses to start while a research worker is polling this database (a heartbeat in the last 30 s). Stop the worker first. Unless `--no-push` is given, it also refuses unless `gh repo view <origin url> --json visibility` reports `PRIVATE`. A public or internal remote, a missing or logged-out `gh`, or any other failure stops the sync before anything is exported or committed. The store holds every synced table and storage file, so it must never reach a public repository.
 2. Adds the worktree on first use: it checks out `origin/research-store` if it exists, or creates the branch.
 3. Resets the folder to `origin/research-store`. The store is derived from the database, so an unpushed local commit is safe to drop: the export in step 5 writes those rows again.
-4. Imports the store in one transaction, in foreign-key order, reading it a line at a time and inserting in batches (a row that points at another row of its table goes in after it). A failure changes nothing. Each row is merged three ways against this machine's last export, kept in `storage/.research-store-base.<database>.json`:
+4. Imports the store in one transaction, in foreign-key order, reading it a line at a time and inserting in batches (a row that points at another row of its table goes in after it). A failure changes nothing. First it applies the store's tombstones (`tombstones/<table>.txt`, `<id> <row hash>` per line), children first: a local row is deleted when it still matches the deleted version or this machine's last pushed version. A row changed here is kept, and so is one a local row still points at; both are printed, and the next export writes them back, which lifts the tombstone. Then each store row is merged three ways against this machine's last pushed export, kept in `storage/.research-store-base.<database>.json`:
    - changed only in the store: the store's row is taken;
    - changed only here: this machine's row is kept;
    - changed on both machines: the newer `updated_at` wins, and a table without `updated_at` keeps this machine's row. Each such row is printed;
-   - deleted here and unchanged in the store: it stays deleted.
-   A store row whose unique key (an asset slug, a file hash, a seeded definition) matches a different local row is treated as that row, and its id is rewritten to the local id wherever it appears. Files the store has and this machine lacks are copied into `storage/`. A file that differs is kept as it is here and reported. Import skips and reports any store file outside `files/storage/<dir>/`, any symlink, and any file whose target folder resolves outside `storage/<dir>`.
-5. Exports every table except `research_run_jobs` and `research_worker_heartbeats` to `tables/<table>/<first two id characters>.jsonl` (256 shards per table), one `to_jsonb` row per line, sorted by id. Rows stream through a cursor, so only one shard is in memory at a time. If a shard would pass 95 MB, export stops with an error before writing it, rather than letting GitHub reject the push. It mirrors every `storage/...` path a row names into `files/`. It copies only regular files whose real path stays inside their `storage/<dir>`, skips and reports symlinks and files over 95 MB (GitHub's limit), and writes `manifest.json` with each table's columns.
-6. Commits and pushes if anything changed.
+   - deleted here and unchanged in the store: it stays deleted. A store row that points at a row deleted here (a foreign key) is left out and printed, instead of failing the import.
+   When both machines accepted a different row for the same accepted-only unique key (`research_artifacts` per run, type and scope; `research_assumptions` per run and key), the later `accepted_at` (else `updated_at`) stays `accepted` and the other becomes `superseded`. Each such row is printed. A store row whose unique key (an asset slug, a file hash, a seeded definition) matches a different local row is treated as that row, and its id is rewritten to the local id wherever it appears. Files the store has and this machine lacks are copied into `storage/`. A file that differs is kept as it is here and reported. Import skips and reports any store file outside `files/storage/<dir>/`, any symlink, and any file whose target folder resolves outside `storage/<dir>`.
+5. Exports every table except `research_run_jobs` and `research_worker_heartbeats` to `tables/<table>/<first two id characters>.jsonl` (256 shards per table), one `to_jsonb` row per line, sorted by id. Rows stream through a cursor, so only one shard is in memory at a time. If a shard would pass 95 MB, export stops with an error before writing it, rather than letting GitHub reject the push. It mirrors every `storage/...` path a row names into `files/`. It copies only regular files whose real path stays inside their `storage/<dir>`, skips and reports symlinks and files over 95 MB (GitHub's limit), and writes `manifest.json` with each table's columns. It rewrites `tombstones/`: the store's earlier tombstones plus every row in this machine's base that is gone here, minus any row this machine has.
+6. Commits and pushes if anything changed. The base is written only after the push succeeds, or when the store already matches `origin/research-store`. A failed push, `--no-push` and `store:export` leave it unchanged, so the next sync can't mistake the branch's older rows for newer ones.
 
 Import refuses a store whose tables or columns differ from this database. Run `npm run db:migrate` on both machines, on the same code, before syncing.
 
@@ -90,12 +90,12 @@ Rules and limits:
 
 - Imported runs never start on their own, because the job queue isn't synced. Resume one from the UI on the machine that should run it.
 - Work on a given run on one machine at a time. When both machines change the same row, one version wins and the other is lost.
-- Deletions don't propagate. A row deleted on one machine comes back from the other machine's next export.
+- Deletions propagate through tombstones once the deleting machine has pushed. Tombstones are never pruned, so `tombstones/` only grows. A machine running code from before tombstones ignores them and exports its copy again, which brings the row back.
 - Two machines syncing at the same moment race on the push. The second push fails; run `store:sync` again.
 - Stores written before the switch to two-character shards still import. The first export after the switch rewrites every table file once, so that sync pushes a large commit.
 - A shard refused for size needs finer sharding (`shardOf` in `src/lib/maintenance/research-store.ts`) before sync works again. A failed export leaves the store folder half-written; the next sync resets it to the branch.
 
-To set up a new machine: install Postgres, create an empty database, point `DATABASE_URL` at it, run `npm run db:migrate`, then `npm run store:sync`. Skip `npm run db:seed`, since the store already holds the seeded rows.
+To set up a new machine: install Postgres, create an empty database, point `DATABASE_URL` at it, run `npm run db:migrate`, then `npm run store:sync`. Skip `npm run db:seed`, since the store already holds the seeded rows. Running it anyway is harmless: the seed reuses existing profiles, methods, assets, instruments, listings and assignments by their natural keys instead of adding copies.
 
 ## Monitoring check
 

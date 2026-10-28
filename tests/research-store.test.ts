@@ -3,7 +3,7 @@ import assert from "node:assert";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { decideRow, fileLines, importFiles, mirrorFiles, orderTables, parentFirst, rowHash, shardWriter, storeShards } from "@/lib/maintenance/research-store";
+import { acceptedWinner, decideRow, decideTombstone, fileLines, importFiles, isAcceptedPredicate, mirrorFiles, nextTombstones, orderTables, parentFirst, readTombstones, rowHash, shardWriter, storeShards, storeVisibilityError, writeTombstones } from "@/lib/maintenance/research-store";
 
 const store = '{"id":"a","v":2}';
 const h = rowHash;
@@ -182,5 +182,58 @@ describe("research store table shards", () => {
       assert.deepEqual(shardFiles.get("runs")?.map(f => f.slice(-8)), ["0a.jsonl"]);
       assert.deepEqual(skipped.map(s => s.path), ["tables/runs/0b.jsonl"]);
     } finally { t.done(); }
+  });
+});
+
+describe("research store tombstones", () => {
+  it("records rows pushed before and deleted since, keeps earlier tombstones, and lifts any for rows present here", () => {
+    const next = nextTombstones({ previous: { old: "h0", back: "h1" }, base: { gone: "h2", kept: "h3" }, local: { kept: "h3", back: "h9" } });
+    assert.deepEqual(next, { old: "h0", gone: "h2" });
+  });
+  it("deletes a local row only when this machine hasn't changed it", () => {
+    assert.equal(decideTombstone({ local: "a", tomb: "a" }), "delete");
+    assert.equal(decideTombstone({ local: "b", tomb: "a", base: "b" }), "delete");
+    assert.equal(decideTombstone({ local: "c", tomb: "a", base: "b" }), "keep");
+    assert.equal(decideTombstone({ tomb: "a" }), "absent");
+  });
+  it("round-trips through tombstones/<table>.txt", async () => {
+    const t = scratch();
+    try {
+      assert.equal(await writeTombstones(t.root, { runs: { b: "h2", a: "h1" }, empty: {} }), 2);
+      assert.equal(readFileSync(join(t.root, "tombstones", "runs.txt"), "utf8"), "a h1\nb h2\n");
+      assert.ok(!existsSync(join(t.root, "tombstones", "empty.txt")));
+      assert.deepEqual(await readTombstones(t.root), { runs: { a: "h1", b: "h2" } });
+    } finally { t.done(); }
+  });
+  it("skips a linked tombstone file", async () => {
+    const t = scratch();
+    try {
+      await writeTombstones(t.root, { runs: { a: "h1", b: "h2" } });
+      t.put("outside.txt", "x h\n");
+      t.link("tombstones/linked.txt", join(t.root, "outside.txt"));
+      assert.deepEqual(await readTombstones(t.root), { runs: { a: "h1", b: "h2" } });
+    } finally { t.done(); }
+  });
+});
+
+describe("research store accepted-row conflicts", () => {
+  it("recognises only the accepted-status partial index", () => {
+    assert.ok(isAcceptedPredicate("(status = 'accepted'::text)"));
+    assert.ok(!isAcceptedPredicate("((job_type = 'pipeline'::text) AND (status = ANY (ARRAY['queued'::text])))"));
+    assert.ok(!isAcceptedPredicate("(active_to IS NULL)"));
+  });
+  it("keeps the later acceptance, and the store row on a tie", () => {
+    assert.equal(acceptedWinner({ accepted_at: "2026-10-02T00:00:00Z" }, { accepted_at: "2026-10-01T00:00:00Z" }), "store");
+    assert.equal(acceptedWinner({ accepted_at: "2026-10-01T00:00:00Z" }, { accepted_at: "2026-10-02T00:00:00Z" }), "local");
+    assert.equal(acceptedWinner({ updated_at: "2026-10-01T00:00:00Z" }, { updated_at: "2026-10-01T00:00:00Z" }), "store");
+  });
+});
+
+describe("research store push guard", () => {
+  it("allows only a remote GitHub reports as private", () => {
+    assert.equal(storeVisibilityError("PRIVATE\n", "origin"), null);
+    assert.match(storeVisibilityError("PUBLIC", "origin")!, /origin is public.*--allow-public/);
+    assert.match(storeVisibilityError("INTERNAL", "origin")!, /is internal/);
+    assert.match(storeVisibilityError(null, "origin")!, /could not confirm/);
   });
 });
