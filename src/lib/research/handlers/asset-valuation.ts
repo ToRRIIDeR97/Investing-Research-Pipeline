@@ -151,7 +151,7 @@ export const equityMethodsPrompt = (p: Record<string, unknown>) => exactJsonProm
   extraRules: [
     "Use the valuation specialist's team_context.brief and the business specialist's accepted assumptions. Identify the supplied operating scenario and numeric assumption behind each cash-flow driver in source_notes. Do not silently change the business assumptions; flag missing inputs for specialist follow-up.",
     "Follow output_schema exactly, including every nested required field and primitive type.",
-    `Supply method_inputs for economically appropriate equity methods, each with Bear, Base and Bull annual schedules over the same fiscal years. Choose FCFE, dividend, earnings exit, book or tangible-book exit for financial firms; do not treat bank operating cash flow as FCFF. Use cash amounts in financial_inputs.currency millions and diluted ordinary shares in millions; the application converts to the price currency and per listed (depositary) share. Terminal multiples use total earnings or equity, never per-share inputs, and are at most ${MAX_TERMINAL_MULTIPLE}. Rates are decimals; a cost of equity must exceed risk_free_rate.rate, and perpetuity growth must be at least ${MIN_TERMINAL_SPREAD * 100}pt below it. Equity methods use equity_bridge 0.`,
+    `Supply method_inputs for economically appropriate equity methods, each with Bear, Base and Bull annual schedules over the same fiscal years. Choose FCFE, dividend, earnings exit, book or tangible-book exit for financial firms; do not treat bank operating cash flow as FCFF. Use cash amounts in millions of financial_inputs.currency (of the market price's currency when financial_inputs is null) and diluted ordinary shares in millions; the application converts to the price currency and per listed (depositary) share. Terminal multiples use total earnings or equity, never per-share inputs, and are at most ${MAX_TERMINAL_MULTIPLE}. Rates are decimals; a cost of equity must exceed risk_free_rate.rate, and perpetuity growth must be at least ${MIN_TERMINAL_SPREAD * 100}pt below it. Equity methods use equity_bridge 0.`,
     `The application computes discount factors, terminal values, the yearly value per share, the scenario anchors, the weighted target and the returns from the first method in the order ${METHOD_ORDER.join(", ")}; other methods are cross-checks. Explain unsupported methods in omitted_methods; never fabricate data to fill a schedule.`,
     "Use financial_inputs (captured quarterly and annual revenue, costs, tax, D&A, SBC, operating cash flow, capex, cash, marketable securities, debt, leases, diluted shares, headcount, period-end closes and market caps), the operating scenarios, accepted historical metrics and the current market price. Check financial_inputs.columns and not_captured before listing a gap; never call a supplied input absent.",
     "For fcfe, give every year a build: starting_profit (net income), depreciation_amortization added back, capital_expenditures as a positive amount that is subtracted, change_in_net_working_capital, and other_adjustments (net borrowing; stock-based compensation when treated as a cash cost). cash_flow must equal the build.",
@@ -503,15 +503,21 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         SELECT 1 FROM research_run_sources rrs JOIN source_documents sd ON sd.id = rrs.source_document_id
         WHERE rrs.research_run_id = ${ctx.runId} AND sd.metadata_json->>'form' IN ('20-F', '20-F/A', '40-F', '40-F/A')
         LIMIT 1`;
-      const conversion = currencyConversion({ statementCurrency, priceCurrency, depositaryRatio: instrument ? Number(instrument.depositary_ratio) : null,
+      const depositaryRatio = instrument ? Number(instrument.depositary_ratio) : null;
+      const conversion = currencyConversion({ statementCurrency, priceCurrency, depositaryRatio,
         fx: fxValue && series ? { series: series.series, perUsd: series.perUsd, ...fxValue } : null, depositaryListing: Boolean(depositary) });
+      // Equity methods can be built without captured statements (from accepted metrics); the schedules are then
+      // written in the price currency, so only the depositary ratio applies.
+      const equityCurrency = statementCurrency ?? priceCurrency ?? currency;
+      const equityConversion = statementCurrency ? conversion
+        : currencyConversion({ statementCurrency: equityCurrency, priceCurrency: equityCurrency, depositaryRatio, fx: null, depositaryListing: Boolean(depositary) });
 
       if (priceWithheld) {
         // A historical run is never valued against a later market; nothing a model could judge would change that.
         output = withheldValuation(`Market price unavailable: ${priceWithheld}.`, horizon, currency);
-      } else if (equityMethods && conversion.missing.length) {
+      } else if (equityMethods && equityConversion.missing.length) {
         // Nothing a model could judge is missing here; withhold without a call and name each input.
-        output = withheldValuation(`Valuation inputs are missing: ${conversion.missing.join("; ")}.`, horizon, priceCurrency || currency);
+        output = withheldValuation(`Valuation inputs are missing: ${equityConversion.missing.join("; ")}.`, horizon, priceCurrency || currency);
       } else if (equityMethods) {
         // Banks: the model builds FCFE, dividend or book schedules; code assembles the path from the primary method.
         const metricRows = await sql`
@@ -524,7 +530,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
           LIMIT 80
         `;
         const outputFormat = equityMethodsFormat({ requireDepreciationAddBack, riskFree: riskFree?.rate ?? null,
-          referenceSharesMillions: dilutedMillions, largestCapturedAmount: largestCapturedAmount(financialInputs), statementCurrency });
+          referenceSharesMillions: dilutedMillions, largestCapturedAmount: largestCapturedAmount(financialInputs), statementCurrency: equityCurrency });
         const packet = {
           asset,
           required_lenses: requiredLenses,
@@ -556,13 +562,13 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         } else {
           // Raise ordinary shares to the reported count, then convert to the price currency per listed share.
           const models: ValuationMethodInput[] = set.method_inputs.map((model: ValuationMethodInput) => convertMethodInput(
-            dilutedMillions && dilutedMillions > model.diluted_shares ? { ...model, diluted_shares: dilutedMillions } : model, conversion));
+            dilutedMillions && dilutedMillions > model.diluted_shares ? { ...model, diluted_shares: dilutedMillions } : model, equityConversion));
           const primary = primarySchedules(models)!;
           const assembled = assembleValuation({ schedules: primary, probabilities, marketPrice, currency: primary.base.currency,
             marketPriceCurrency: priceCurrency, fiscalYearEnd });
           output = {
             valuation_scenario_set: { ...assembled.valuation_scenario_set, method_inputs: models, omitted_methods: set.omitted_methods, risk_free_rate: riskFreeRate,
-              cost_of_capital_inputs: costOfCapital, currency_conversion: conversion },
+              cost_of_capital_inputs: costOfCapital, currency_conversion: equityConversion },
             annual_price_target_path: assembled.annual_price_target_path,
             reverse_valuation: answer.reverse_valuation,
           };
