@@ -30,6 +30,8 @@ export interface ParsedTable {
   confidence?: number;
 }
 
+const CHUNK_INSERT_BATCH = 200;
+
 /**
  * Store parsed results (chunks, tables) in the database.
  */
@@ -43,65 +45,61 @@ export async function storeParseResults(params: {
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
-    // Create document_parse record
-    const parseRows = await sql`
-      INSERT INTO document_parses (
-        source_document_id, parser_name, parser_version,
-        status, warnings_json, output_storage_path, completed_at
-      ) VALUES (
-        ${params.sourceDocumentId},
-        ${params.parserName},
-        ${params.parserVersion},
-        'completed',
-        ${sql.json(params.parseResult.warnings)},
-        ${params.storagePath || null},
-        NOW()
-      )
-      RETURNING id
-    `;
-    const parseId = parseRows[0].id;
-
-    // Store chunks
-    for (const chunk of params.parseResult.chunks) {
-      await sql`
-        INSERT INTO document_chunks (
-          source_document_id, document_parse_id, chunk_index,
-          section_title, page_start, page_end, char_start, char_end,
-          text, token_count
+    // One transaction, completed last: a failed chunk insert leaves no parse behind, so a retry parses again.
+    const parseId = await sql.begin(async (tx) => {
+      const [parse] = await tx`
+        INSERT INTO document_parses (
+          source_document_id, parser_name, parser_version,
+          status, warnings_json, output_storage_path
         ) VALUES (
           ${params.sourceDocumentId},
-          ${parseId},
-          ${chunk.chunkIndex},
-          ${chunk.sectionTitle || null},
-          ${chunk.pageStart || null},
-          ${chunk.pageEnd || null},
-          ${chunk.charStart ?? null},
-          ${chunk.charEnd ?? null},
-          ${chunk.text},
-          ${chunk.tokenCount || null}
+          ${params.parserName},
+          ${params.parserVersion},
+          'running',
+          ${tx.json(params.parseResult.warnings)},
+          ${params.storagePath || null}
         )
+        RETURNING id
       `;
-    }
+      // PostgreSQL text rejects NUL.
+      const rows = params.parseResult.chunks.map((chunk) => ({
+        source_document_id: params.sourceDocumentId,
+        document_parse_id: parse.id,
+        chunk_index: chunk.chunkIndex,
+        section_title: chunk.sectionTitle || null,
+        page_start: chunk.pageStart || null,
+        page_end: chunk.pageEnd || null,
+        char_start: chunk.charStart ?? null,
+        char_end: chunk.charEnd ?? null,
+        text: chunk.text.replace(/\u0000/g, ""),
+        token_count: chunk.tokenCount || null,
+      }));
+      for (let start = 0; start < rows.length; start += CHUNK_INSERT_BATCH) {
+        await tx`INSERT INTO document_chunks ${tx(rows.slice(start, start + CHUNK_INSERT_BATCH), "source_document_id",
+          "document_parse_id", "chunk_index", "section_title", "page_start", "page_end", "char_start", "char_end", "text", "token_count")}`;
+      }
 
-    // Store tables
-    for (const table of params.parseResult.tables) {
-      await sql`
-        INSERT INTO extracted_tables (
-          source_document_id, document_parse_id, table_index,
-          page_start, page_end, table_title,
-          table_json, confidence
-        ) VALUES (
-          ${params.sourceDocumentId},
-          ${parseId},
-          ${table.tableIndex},
-          ${table.pageStart || null},
-          ${table.pageEnd || null},
-          ${table.title || null},
-          ${sql.json(table.tableJson as any)},
-          ${table.confidence || null}
-        )
-      `;
-    }
+      for (const table of params.parseResult.tables) {
+        await tx`
+          INSERT INTO extracted_tables (
+            source_document_id, document_parse_id, table_index,
+            page_start, page_end, table_title,
+            table_json, confidence
+          ) VALUES (
+            ${params.sourceDocumentId},
+            ${parse.id},
+            ${table.tableIndex},
+            ${table.pageStart || null},
+            ${table.pageEnd || null},
+            ${table.title || null},
+            ${tx.json(table.tableJson as any)},
+            ${table.confidence || null}
+          )
+        `;
+      }
+      await tx`UPDATE document_parses SET status = 'completed', completed_at = NOW() WHERE id = ${parse.id}`;
+      return String(parse.id);
+    });
 
     return {
       parseId,
@@ -139,13 +137,26 @@ export async function invokeDoclingParser(filePath: string): Promise<ParseResult
   }
 }
 
+/** A file the fallback can't read as text (PDF, xlsx, docx, any other binary): it needs Docling. */
+export class UnparseableUploadError extends Error {}
+
 /**
- * Basic text extraction fallback when Docling is not available.
+ * Basic text extraction fallback when Docling is not available. Only UTF-8 text without NUL bytes is
+ * accepted; binary content read as UTF-8 would be stored as garbage evidence or rejected by PostgreSQL.
  */
-async function basicTextExtraction(filePath: string): Promise<ParseResult> {
+export async function basicTextExtraction(filePath: string): Promise<ParseResult> {
   const { readFile } = await import("fs/promises");
 
-  const content = await readFile(filePath, "utf-8");
+  const bytes = await readFile(filePath);
+  let content: string | null = null;
+  try {
+    content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    // Not valid UTF-8.
+  }
+  if (content === null || content.includes("\u0000")) {
+    throw new UnparseableUploadError("This file is binary (for example PDF, xlsx or docx) and needs the Docling parser, which is unavailable");
+  }
 
   // Split into chunks of ~2000 characters
   const chunkSize = 2000;

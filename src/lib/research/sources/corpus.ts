@@ -7,7 +7,8 @@ import { canonicalMetricPlan, normalizeSourceGap, positiveFiniteNumber, selectLa
 import { ensureDocumentIndexed, evidenceNeeds, rolePassageCounts, evidencePassageBudget, FOUNDER_NEED_KEYS, getEmbeddingProvider, indexDocumentContent, openingPassages, recordContradictions,
   retrievePassages, runDocuments, type RetrievedPassage } from "@/lib/research/memory";
 import { getAgentConfig } from "@/lib/agent-harness/registry";
-import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
+import { discoverRoleSources, type SearchFailure } from "@/lib/research/sources/role-discovery";
+import { classifyFetchFailure } from "@/lib/research/sources/retrieval-log";
 import { fetchCapped } from "@/lib/net";
 import { isResultsRelease } from "@/lib/research/history/press-release";
 import { dominantCurrency, reportingTaxonomy } from "@/lib/research/history/sec-companyfacts";
@@ -67,6 +68,11 @@ export interface StoredSourceCorpus {
 
 function textValue(value: unknown, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+/** PostgreSQL jsonb rejects U+0000; model text can carry it. */
+export function withoutNul<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value), (_key, item) => typeof item === "string" ? item.replace(/\u0000/g, "") : item);
 }
 
 function nullableText(value: unknown) {
@@ -683,10 +689,15 @@ export function irHostsFromText(text: string): string[] {
 /**
  * IR seeds from the newest stored earnings exhibit of this asset (SEC submissions often carry no website). The first
  * run of an asset has none stored yet; later runs seed discovery with the issuer's own IR site ahead of aggregators.
+ * A shared document keeps the asset of the run that stored it first (GOOG and GOOGL file under one CIK), so the
+ * asset is also matched through the runs linked to it.
  */
 async function storedIrSeedUrls(sql: Sql, assetId: string): Promise<string[]> {
   const rows = await sql`SELECT string_agg(dc.text, ' ' ORDER BY dc.chunk_index) AS text FROM document_chunks dc
-    WHERE dc.source_document_id = (SELECT sd.id FROM source_documents sd WHERE sd.asset_id = ${assetId} AND sd.source_type = 'sec_filing_8-k'
+    WHERE dc.source_document_id = (SELECT sd.id FROM source_documents sd
+      WHERE (sd.asset_id = ${assetId} OR EXISTS (SELECT 1 FROM research_run_sources rrs JOIN research_runs rr ON rr.id = rrs.research_run_id
+        WHERE rrs.source_document_id = sd.id AND rr.asset_id = ${assetId}))
+      AND sd.source_type = 'sec_filing_8-k'
       AND sd.url ~* 'ex(hibit)?-?99' ORDER BY sd.published_at DESC NULLS LAST, sd.created_at DESC LIMIT 1)`;
   return irHostsFromText(String(rows[0]?.text ?? "")).map((host) => `https://${host}/`);
 }
@@ -712,7 +723,8 @@ function submissionRows(block: Record<string, any> | undefined): SecFiling[] {
  * back to `earliestDate`. Rows are returned newest first without duplicate accessions.
  */
 export async function loadSubmissionFilings(
-  submissions: Record<string, any>, earliestDate: string, cutoffDate: string, fetchImpl: typeof fetch = fetch,
+  submissions: Record<string, any>, earliestDate: string, cutoffDate: string,
+  fetchImpl: (url: string, init?: RequestInit) => Promise<Response> = fetchCapped,
 ): Promise<SecFiling[]> {
   const rows = submissionRows(submissions.filings?.recent);
   const oldest = () => rows.reduce((min, row) => {
@@ -999,12 +1011,23 @@ export async function storedSecFiling(sql: Sql, url: string): Promise<string | n
   return null;
 }
 
-export async function fetchSecFilingPayloads(sql: Sql, ctx: RunContext, secContext: Record<string, unknown>): Promise<SourcePayload[]> {
+/**
+ * Filing payloads, in filing order. With onPayload each one is handed over as soon as it is read and none are
+ * returned, so only one filing body (up to 64 MB) is held at a time.
+ */
+export async function fetchSecFilingPayloads(sql: Sql, ctx: RunContext, secContext: Record<string, unknown>,
+  onPayload?: (payload: SourcePayload) => Promise<void>): Promise<SourcePayload[]> {
   const cik = textValue(secContext.cik);
   if (!cik) return [];
 
   const filings = arrayValue(secContext.recentFilings);
   const payloads: SourcePayload[] = [];
+  const emit = async (...items: SourcePayload[]) => {
+    for (const item of items) {
+      if (onPayload) await onPayload(item);
+      else payloads.push(item);
+    }
+  };
   for (const filing of filings) {
     const accessionNumber = textValue(filing.accessionNumber);
     const primaryDocument = textValue(filing.primaryDocument);
@@ -1018,7 +1041,7 @@ export async function fetchSecFilingPayloads(sql: Sql, ctx: RunContext, secConte
       },
     ];
     if (textValue(filing.form).toUpperCase() === "6-K") {
-      payloads.push(...await foreignResultsPayloads(sql, ctx, cik, filing));
+      await emit(...await foreignResultsPayloads(sql, ctx, cik, filing));
       continue;
     }
     if (textValue(filing.form).toUpperCase() === "8-K") {
@@ -1038,19 +1061,19 @@ export async function fetchSecFilingPayloads(sql: Sql, ctx: RunContext, secConte
     const url = secArchiveUrl(cik, accessionNumber, documentInfo.document);
     const stored = await storedSecFiling(sql, url);
     if (stored !== null) {
-      payloads.push(filingSourcePayload(ctx, cik, documentFiling, stored));
+      await emit(filingSourcePayload(ctx, cik, documentFiling, stored));
       continue;
     }
+    // Emitted after the try, so a storage error from onPayload is not recorded as a download failure.
+    let payload: SourcePayload;
     try {
-      let content = "";
       if (process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock" || process.env.RESEARCH_TEST_MODE === "1") {
-        content = "Mock SEC filing content";
+        payload = filingSourcePayload(ctx, cik, documentFiling, "Mock SEC filing content");
       } else {
         const response = await fetchCapped(url, {
           headers: { "User-Agent": "ResearchOS/0.1 research-pipeline@example.com" },
         });
-        if (!response.ok) {
-          payloads.push({
+        payload = response.ok ? filingSourcePayload(ctx, cik, documentFiling, await response.text()) : {
             sourceType: `sec_filing_${textValue(filing.form, "unknown").toLowerCase().replace(/\s+/g, "_")}`,
             title: `${ctx.assetName} ${textValue(filing.form, "SEC filing")} ${documentInfo.attachmentType} download failed`,
             publisher: "SEC EDGAR",
@@ -1062,14 +1085,10 @@ export async function fetchSecFilingPayloads(sql: Sql, ctx: RunContext, secConte
             periodEnd: textValue(filing.reportDate, "") || null,
             metadata: { system_generated: true, source: "sec_edgar_filing", fetch_status: "failed", status_code: response.status, filing: documentFiling },
             chunkTitle: "SEC filing download failure",
-          });
-          continue;
-        }
-        content = await response.text();
+          };
       }
-      payloads.push(filingSourcePayload(ctx, cik, documentFiling, content));
     } catch {
-      payloads.push({
+      payload = ({
         sourceType: `sec_filing_${textValue(filing.form, "unknown").toLowerCase().replace(/\s+/g, "_")}`,
         title: `${ctx.assetName} ${textValue(filing.form, "SEC filing")} ${documentInfo.attachmentType} ${textValue(filing.reportDate, "")}`.trim(),
         publisher: "SEC EDGAR",
@@ -1083,6 +1102,7 @@ export async function fetchSecFilingPayloads(sql: Sql, ctx: RunContext, secConte
         chunkTitle: "SEC filing metadata",
       });
     }
+    await emit(payload);
     }
   }
   return payloads;
@@ -1613,6 +1633,19 @@ export async function resolveSecCik(symbol: string, fetchImpl: (url: string, ini
   return String(match.cik_str).padStart(10, "0");
 }
 
+const SOURCE_CHUNK_CHARS = 9000;
+const SOURCE_CHUNK_INSERT_BATCH = 200;
+
+/** Fixed slices of a stored payload; valuation locates SEC facts by these offsets in the stored file. */
+export function sourcePayloadChunks(content: string) {
+  const chunks: { chunk_index: number; char_start: number; char_end: number; text: string; token_count: number }[] = [];
+  for (let start = 0; start < content.length; start += SOURCE_CHUNK_CHARS) {
+    const end = Math.min(content.length, start + SOURCE_CHUNK_CHARS);
+    chunks.push({ chunk_index: chunks.length, char_start: start, char_end: end, text: content.slice(start, end), token_count: Math.ceil((end - start) / 4) });
+  }
+  return chunks;
+}
+
 async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayload): Promise<StoredSource> {
   const content = payload.content;
   const hash = createHash("sha256").update(content).digest("hex");
@@ -1639,7 +1672,7 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
     )
     ON CONFLICT (file_hash) DO UPDATE
     SET retrieved_at = NOW()
-    RETURNING id, source_type, title, url, metadata_json
+    RETURNING id
   `;
   const sourceId = rows[0].id as string;
 
@@ -1654,44 +1687,39 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
     ON CONFLICT (research_run_id, source_document_id) DO NOTHING
   `;
 
-  const parseRows = await sql`
-    INSERT INTO document_parses (
-      source_document_id, parser_name, parser_version,
-      status, warnings_json, output_storage_path, completed_at
-    ) VALUES (
-      ${sourceId}, 'system-source-payload', '2', 'completed',
-      ${sql.json([])}, ${storagePath}, NOW()
-    )
-    ON CONFLICT (source_document_id, parser_name, parser_version, parse_config_json) DO UPDATE
-    SET status = 'completed', completed_at = NOW()
-    RETURNING id
-  `;
-  const parseId = parseRows[0].id as string;
-
-  const existingChunks = await sql`
-    SELECT id FROM document_chunks
-    WHERE source_document_id = ${sourceId} AND document_parse_id = ${parseId}
-    ORDER BY chunk_index ASC
-  `;
-  let chunkId = existingChunks[0]?.id as string | undefined;
-  if (!chunkId) {
-    const chunkSize = 9000;
-    for (let start = 0, chunkIndex = 0; start < content.length; start += chunkSize, chunkIndex += 1) {
-      const end = Math.min(content.length, start + chunkSize);
-      const chunkRows = await sql`
-        INSERT INTO document_chunks (
-          source_document_id, document_parse_id, chunk_index, section_title,
-          char_start, char_end, text, token_count, metadata_json
-        ) VALUES (
-          ${sourceId}, ${parseId}, ${chunkIndex}, ${payload.chunkTitle},
-          ${start}, ${end}, ${content.slice(start, end)}, ${Math.ceil((end - start) / 4)},
-          ${sql.json({ system_generated: true, source_payload: true })}
-        )
-        RETURNING id
-      `;
-      if (!chunkId) chunkId = chunkRows[0].id as string;
+  // The parse and its chunks are written together under a per-document lock, so a crash or a concurrent run
+  // never leaves a partial chunk set that later runs would take as complete. Chunks go in batches: the
+  // companyfacts context alone is thousands of 9,000-character chunks.
+  const { parseId, chunkId } = await sql.begin(async (tx) => {
+    await tx`SELECT pg_advisory_xact_lock(hashtext(${`source-payload:${sourceId}`}))`;
+    const [parse] = await tx`
+      INSERT INTO document_parses (
+        source_document_id, parser_name, parser_version,
+        status, warnings_json, output_storage_path, completed_at
+      ) VALUES (
+        ${sourceId}, 'system-source-payload', '2', 'completed',
+        ${tx.json([])}, ${storagePath}, NOW()
+      )
+      ON CONFLICT (source_document_id, parser_name, parser_version, parse_config_json) DO UPDATE
+      SET status = 'completed', completed_at = NOW()
+      RETURNING id
+    `;
+    const parseId = String(parse.id);
+    const [first] = await tx`SELECT id FROM document_chunks WHERE document_parse_id = ${parseId} ORDER BY chunk_index ASC LIMIT 1`;
+    if (first) return { parseId, chunkId: String(first.id) };
+    const rows = sourcePayloadChunks(content).map((chunk) => ({
+      source_document_id: sourceId, document_parse_id: parseId, section_title: payload.chunkTitle,
+      ...chunk, metadata_json: tx.json({ system_generated: true, source_payload: true }),
+    }));
+    let chunkId: string | undefined;
+    for (let start = 0; start < rows.length; start += SOURCE_CHUNK_INSERT_BATCH) {
+      const inserted = await tx`INSERT INTO document_chunks ${tx(rows.slice(start, start + SOURCE_CHUNK_INSERT_BATCH), "source_document_id",
+        "document_parse_id", "chunk_index", "section_title", "char_start", "char_end", "text", "token_count", "metadata_json")}
+        RETURNING id, chunk_index`;
+      chunkId ??= inserted.find((row) => Number(row.chunk_index) === 0)?.id as string | undefined;
     }
-  }
+    return { parseId, chunkId };
+  });
 
   // Passages for retrieval sit next to the raw chunks, which valuation reads verbatim. The companyfacts
   // context is read only from its raw payload, so it gets no passages.
@@ -1701,14 +1729,16 @@ async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayl
     console.warn(`Research memory indexing deferred for ${sourceId}: ${error instanceof Error ? error.message : String(error)}`);
   }
 
+  // The shared row keeps the first run's type, role and asset; this run's view is the payload it fetched,
+  // which research_run_sources.discovery_metadata_json also records.
   return {
     sourceId,
     parseId,
     chunkId: chunkId || "",
-    title: String(rows[0].title),
-    sourceType: String(rows[0].source_type),
-    url: rows[0].url ? String(rows[0].url) : undefined,
-    metadata: objectValue(rows[0].metadata_json),
+    title: payload.title,
+    sourceType: payload.sourceType,
+    url: payload.url || undefined,
+    metadata: payload.metadata,
   };
 }
 
@@ -1754,6 +1784,7 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
   const marketCutoff = ctx.marketDataCutoffAt ? new Date(ctx.marketDataCutoffAt) : null;
   const testMode = process.env.RESEARCH_ACCEPTANCE_PROVIDER === "mock" || process.env.RESEARCH_TEST_MODE === "1";
   const fxPayload = await fxSourcePayload(ctx, textValue(context.reportingCurrency, "USD"));
+  const searchFailures: SearchFailure[] = [];
   const [marketPayload, priceHistory, benchmarkPriceHistory, macroPayload, industryPayload, discoveredRolePayloads] = await Promise.all([
     marketSourcePayload(ctx),
     syncAssetPriceHistory(sql, { assetId: ctx.assetId, assetName: ctx.assetName, symbol: ctx.symbol, cutoffAt: marketCutoff }),
@@ -1766,6 +1797,7 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
       cutoffAt: ctx.marketDataCutoffAt,
       seedUrls,
       roleSeedUrls,
+      searchFailures,
     }, discoveryRoles),
   ]);
   const basePayload: SourcePayload = {
@@ -1781,7 +1813,11 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
     chunkTitle: "SEC API context",
   };
 
-  const filingPayloads = await fetchSecFilingPayloads(sql, ctx, context);
+  const stored: StoredSource[] = [await storeSourcePayload(sql, ctx, basePayload)];
+  // Each filing is stored as soon as it is read, so one filing body is in memory at a time.
+  await fetchSecFilingPayloads(sql, ctx, context, async (payload) => {
+    stored.push(await storeSourcePayload(sql, ctx, payload));
+  });
   const supplementalPayloads: SourcePayload[] = arrayValue(context.supplementalSources).map((source) => ({
     sourceType: textValue(source.sourceType, "profile_context"),
     title: textValue(source.title, `${ctx.assetName} profile source`),
@@ -1799,8 +1835,6 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
   // and must never satisfy source-depth quality gates.
   const externalCandidates = externalSourcePayloads(ctx);
   const payloads = [
-    basePayload,
-    ...filingPayloads,
     ...supplementalPayloads,
     ...discoveredRolePayloads,
     ...(marketPayload ? [marketPayload] : []),
@@ -1808,9 +1842,16 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
     ...(fxPayload ? [fxPayload] : []),
     ...(industryPayload ? [industryPayload] : []),
   ];
-  const stored: StoredSource[] = [];
   for (const payload of payloads) {
     stored.push(await storeSourcePayload(sql, ctx, payload));
+  }
+  // A failed web search loses only its query. The role it served stays uncovered, so role coverage records the
+  // gap; the attempt row says why.
+  for (const failure of searchFailures) {
+    const { status, reason } = classifyFetchFailure(new Error(failure.error));
+    await sql`INSERT INTO source_retrieval_attempts (research_run_id, source_role, attempt_status, failure_reason, attempt_metadata_json)
+      VALUES (${ctx.runId}, ${failure.role}, ${status}, ${`search_${reason}`},
+        ${sql.json({ query: failure.query, error: failure.error.slice(0, 500) })})`;
   }
   for (const attachment of stored.filter(
     (source) => textValue(source.metadata?.attachmentType) === "earnings_exhibit"
@@ -2119,7 +2160,7 @@ export async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string
         VALUES (${metricKey}, ${textValue(obs.display_name || obs.metric_name || metricKey, metricKey)},
           ${textValue(obs.metric_category, "financial")}, ${textValue(obs.unit_type, "number")},
           ${textValue(obs.unit || obs.default_unit, "") || null}, ${textValue(obs.currency || obs.default_currency, "USD")},
-          ${textValue(obs.description, "Reconciled metric")}, ARRAY[${ctx.profileKey}], ${tx.unsafe(`'${JSON.stringify({ system_generated: true }).replace(/'/g, "''")}'::jsonb`)})
+          ${textValue(obs.description, "Reconciled metric")}, ARRAY[${ctx.profileKey}], ${tx.json({ system_generated: true })})
         ON CONFLICT (metric_key) DO UPDATE SET updated_at = NOW() RETURNING id
       `;
       const periodStart = periodStartValue ? new Date(periodStartValue).toISOString().slice(0, 10) : null;
@@ -2149,7 +2190,7 @@ export async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string
             ${availableAt}, ${valueNumeric}, ${textValue(obs.value_text, "") || null},
             ${unit || null}, ${currency}, ${textValue(obs.source, "metric-reconciler")}, ${observationSourceId},
             ${claim?.id || null}, ${numberValue(obs.confidence, 0.7).toString()}, 'accepted',
-            ${tx.unsafe(`'${JSON.stringify({ system_generated: true, reconciliation: "canonical_revision", supersedes_observation_ids: existing.map((row) => String(row.id)), agent_output: obs } as any).replace(/'/g, "''")}'::jsonb`)})
+            ${tx.json(withoutNul({ system_generated: true, reconciliation: "canonical_revision", supersedes_observation_ids: existing.map((row) => String(row.id)), agent_output: obs }) as any)})
           RETURNING id
         `;
         canonicalId = String(inserted[0].id);
@@ -2157,14 +2198,14 @@ export async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string
         await tx`
           UPDATE metric_observations SET review_status = 'accepted',
             metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
-              || ${tx.unsafe(`'${JSON.stringify({ reconciliation: "canonical_promoted", reconciled_at: new Date().toISOString() }).replace(/'/g, "''")}'::jsonb`)}
+              || ${tx.json({ reconciliation: "canonical_promoted", reconciled_at: new Date().toISOString() })}
           WHERE id = ${canonicalId}
         `;
       }
       await tx`
         UPDATE metric_observations SET review_status = 'rejected',
           metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
-            || ${tx.unsafe(`'${JSON.stringify({ reconciliation: "superseded_conflict", canonical_observation_id: canonicalId, reconciled_at: new Date().toISOString() }).replace(/'/g, "''")}'::jsonb`)}
+            || ${tx.json({ reconciliation: "superseded_conflict", canonical_observation_id: canonicalId ?? null, reconciled_at: new Date().toISOString() })}
         WHERE research_run_id = ${ctx.runId} AND metric_definition_id = ${metricRows[0].id}
           AND COALESCE(period_start::text, '') = ${periodStart || ''} AND COALESCE(period_end::text, '') = ${periodEnd}
           AND COALESCE(unit, '') = ${unit} AND COALESCE(currency, '') = ${currency}
