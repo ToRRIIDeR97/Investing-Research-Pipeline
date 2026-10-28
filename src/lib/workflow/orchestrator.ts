@@ -691,8 +691,12 @@ export async function startNextStage(
     SELECT stage_key, failure_reason FROM research_stages
     WHERE research_run_id = ${runId} AND status = 'failed'
   `;
-  // Exhausted skip_and_continue stages are recorded as skipped, so any failed stage left here blocks the run.
-  const [requiredFailure] = failures;
+  // Exhausted skip_and_continue stages are now recorded as skipped. Rows written before that change stay `failed` with a
+  // "Failed after" reason; those still let independent branches run, and block only their dependents and the human gate.
+  const requiredFailure = failures.find((stage) =>
+    getStageConfig(stage.stage_key)?.failureState === "fail_run" ||
+    !String(stage.failure_reason).startsWith("Failed after")
+  );
   if (requiredFailure) {
     await failRun(runId, `Run contains a failed stage (${requiredFailure.stage_key}): ${requiredFailure.failure_reason}`, "needs_more_work");
     return undefined;

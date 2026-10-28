@@ -397,7 +397,7 @@ export async function loadRunQualityData(
       WHERE mo.research_run_id = ${runId}
       ORDER BY mo.created_at DESC
     `,
-    sql`SELECT lens_family, signal, current_value_text, metadata_json FROM valuation_signals WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT lens_family, signal_name, signal, current_value_text, metadata_json FROM valuation_signals WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT scenario_type, value_anchor, valuation_model_run_id FROM scenarios WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM source_gaps WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM review_decisions WHERE research_run_id = ${runId} ORDER BY reviewed_at DESC`,
@@ -427,7 +427,7 @@ export async function loadRunQualityData(
   let artifacts = artifactHeads;
   if (Number(run.pipeline_version || 1) >= 3) {
     const modules = requiredAnalysisModules(profile);
-    if (modules.length && modulesUncoveredByName({ evidence, metrics }, modules, analysisOutputs({ run, artifacts, tasks })).length) {
+    if (modules.length && modulesUncoveredByName({ evidence, metrics, signals }, modules, analysisOutputs({ run, artifacts, tasks })).length) {
       artifacts = await sql`SELECT artifact_type, status, content_json FROM research_artifacts
         WHERE research_run_id = ${runId} AND status IN ('validated', 'accepted')`;
     }
@@ -573,9 +573,9 @@ function analysisOutputs(data: Pick<RunQualityData, "run" | "artifacts" | "tasks
     .filter((task) => task.status === "completed");
 }
 
-/** Modules that no output name, evidence claim or metric covers. Only these need output bodies. */
+/** Modules that no output name, evidence claim, metric or valuation signal covers. Only these need output bodies. */
 function modulesUncoveredByName(
-  data: Pick<RunQualityData, "evidence" | "metrics">,
+  data: Pick<RunQualityData, "evidence" | "metrics" | "signals">,
   modules: unknown[],
   outputs: Row[]
 ): unknown[] {
@@ -584,6 +584,8 @@ function modulesUncoveredByName(
   const texts = [
     ...data.evidence.map((claim) => claim.claim_text),
     ...data.metrics.map((metric) => [metric.metric_key, metric.display_name, metric.value_text].join(" ")),
+    // A valuation signal is valuation work under its lens: lens "residual_income" covers "residual_income_valuation".
+    ...data.signals.map((signal) => [signal.lens_family, "valuation", signal.signal_name].join(" ")),
   ].map(wordSet);
   return modules.filter((moduleKey) => {
     const normalized = String(moduleKey).toLowerCase();
