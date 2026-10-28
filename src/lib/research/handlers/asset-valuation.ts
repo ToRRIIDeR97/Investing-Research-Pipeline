@@ -294,7 +294,8 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       // Captured statements and period-end prices, reduced to a compact table.
       const capturedRows = await sql`
         SELECT artifact_type, content_json->'observations' AS observations, content_json->'cross_check' AS cross_check,
-          content_json->'beta' AS beta, content_json ? 'quarter_coverage' AS foreign_issuer
+          content_json->'beta' AS beta, content_json ? 'quarter_coverage' AS foreign_issuer,
+          content_json->'depositary_ratio'->'value' AS depositary_ratio
         FROM research_artifacts
         WHERE research_run_id = ${ctx.runId}
           AND artifact_type IN ('financial_statement_set', 'market_price_history')
@@ -494,6 +495,9 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         GROUP BY sd.id, sd.retrieved_at, dp.id ORDER BY sd.retrieved_at DESC LIMIT 1
       ` : [];
       const fxValue = fxDoc?.csv && series ? latestFredValue(String(fxDoc.csv), cutoff.toISOString()) : null;
+      // This run's filings carry the ratio as of its cutoff; the instrument's value can come from a newer run.
+      const runDepositaryRatio = Number(captured("financial_statement_set")?.depositary_ratio) > 0
+        ? Number(captured("financial_statement_set")!.depositary_ratio) : null;
       const [instrument] = await sql`SELECT depositary_ratio FROM instruments WHERE asset_id = ${ctx.assetId} AND depositary_ratio IS NOT NULL ORDER BY created_at LIMIT 1`;
       // A depositary listing (an ADS/ADR instrument, or a 20-F/40-F filer) needs its ratio even in one currency.
       const [depositary] = await sql`
@@ -503,7 +507,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         SELECT 1 FROM research_run_sources rrs JOIN source_documents sd ON sd.id = rrs.source_document_id
         WHERE rrs.research_run_id = ${ctx.runId} AND sd.metadata_json->>'form' IN ('20-F', '20-F/A', '40-F', '40-F/A')
         LIMIT 1`;
-      const conversion = currencyConversion({ statementCurrency, priceCurrency, depositaryRatio: instrument ? Number(instrument.depositary_ratio) : null,
+      const conversion = currencyConversion({ statementCurrency, priceCurrency, depositaryRatio: runDepositaryRatio ?? (instrument ? Number(instrument.depositary_ratio) : null),
         fx: fxValue && series ? { series: series.series, perUsd: series.perUsd, ...fxValue } : null, depositaryListing: Boolean(depositary) });
 
       if (priceWithheld) {
