@@ -11,6 +11,10 @@ const INDEXES: Record<string, { table: string; columns: string }> = {
   evidence_links_claim_idx: { table: "evidence_links", columns: "(evidence_claim_id)" },
   source_locations_chunk_idx: { table: "source_locations", columns: "(document_chunk_id)" },
   source_locations_source_document_idx: { table: "source_locations", columns: "(source_document_id)" },
+  source_documents_research_run_idx: { table: "source_documents", columns: "(research_run_id)" },
+  source_documents_url_idx: { table: "source_documents", columns: "(url)" },
+  source_documents_asset_idx: { table: "source_documents", columns: "(asset_id)" },
+  research_runs_asset_status_idx: { table: "research_runs", columns: "(asset_id, status)" },
 };
 
 test("chunk, claim, link and location lookups by their foreign keys have indexes the planner can use", { skip }, async () => {

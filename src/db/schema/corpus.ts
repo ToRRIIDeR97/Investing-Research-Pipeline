@@ -43,7 +43,12 @@ export const source_documents = pgTable(
     metadata_json: jsonb("metadata_json").notNull().default({}),
     created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [unique("source_documents_file_hash_unique").on(table.file_hash)]
+  (table) => [
+    unique("source_documents_file_hash_unique").on(table.file_hash),
+    index("source_documents_research_run_idx").on(table.research_run_id),
+    index("source_documents_url_idx").on(table.url),
+    index("source_documents_asset_idx").on(table.asset_id),
+  ]
 );
 
 // A raw document may support many research runs. The legacy research_run_id on

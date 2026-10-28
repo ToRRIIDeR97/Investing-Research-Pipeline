@@ -17,7 +17,7 @@ Research OS creates evidence-backed investment research for an asset. PostgreSQL
 | Backtesting and repair | Framework backtests for stage 18. Python backtest tasks run model-written code in an OS sandbox (`sandbox.ts`: no network, writes only to the backtest directory; prices are fetched first, outside it). The statement-repair module runs in a Node sandbox | `src/lib/backtesting/**`, `python/backtesting/**`, `src/lib/research/repair/**` |
 | Reporting and export | Adaptive report sections, report snapshot, memo and research-package export | `src/lib/research/reporting/**`, `src/lib/export/**`, `src/lib/valuation/**` |
 | Lineage and monitoring | `prior_research` and `version_change_log` across runs; `npm run monitor:check` scores new filings and marks a refresh due | `src/lib/research/lineage/**`, `src/lib/research/monitoring/**`, `scripts/monitor-check.ts` |
-| Database | 17 schema modules, registered once in `src/db/schemas.ts` for the app client and the migrator; migrations `0000`–`0006` and `0009`–`0016` | `src/db/schema/**`, `src/db/schemas.ts`, `drizzle/` |
+| Database | 17 schema modules, registered once in `src/db/schemas.ts` for the app client and the migrator; migrations `0000`–`0006` and `0009`–`0017` | `src/db/schema/**`, `src/db/schemas.ts`, `drizzle/` |
 
 Deeper views are in [architecture.md](architecture.md): deployment, class, the run activity, the state machines and the sequence.
 
