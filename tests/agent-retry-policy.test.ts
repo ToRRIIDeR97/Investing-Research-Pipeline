@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ProviderError, ResearchAgentRunError } from "../src/lib/agent-harness/errors";
-import { runResearchAgent } from "../src/lib/agent-harness/runner";
+import { FULL_TASK_REPAIR_CHARS, runResearchAgent } from "../src/lib/agent-harness/runner";
 import { AnthropicCompatibleProvider } from "../src/lib/agent-harness/providers/anthropic-compatible";
 import { OpenAICompatibleProvider } from "../src/lib/agent-harness/providers/openai-compatible";
 import type { ModelEvent, ModelProvider, ModelRequest } from "../src/lib/agent-harness/types";
@@ -164,17 +164,18 @@ test("a prose answer that repair cannot fix is retried once, not on every attemp
   });
 });
 
-test("every repair prompt truncates the previous output", async () => {
+test("a full-task repair prompt bounds the previous output and keeps its head and tail", async () => {
   const outputFormat = { requiredKeys: ["answer"], schema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] } };
   const provider = new ScriptedProvider((_request, call) => call === 1
-    ? textResponse(`prose ${"y".repeat(50_000)}`)
+    ? textResponse(`prose ${"y".repeat(FULL_TASK_REPAIR_CHARS)} late-field-123`)
     : textResponse(JSON.stringify({ answer: "ok" })));
   await runResearchAgent({ agentName: "asset-classifier", title: "truncate", taskPacket: {}, provider, outputFormat: outputFormat as any,
     policy: { maxAttempts: 1, maxRepairAttempts: 1 } });
   assert.equal(provider.calls, 2);
   const repair = provider.requests[1].prompt;
   assert.ok(repair.includes("Previous response: prose "));
-  assert.ok(!repair.includes("y".repeat(12_000)), "the previous output is cut to 12,000 characters");
+  assert.ok(repair.includes("late-field-123"), "the tail of a long answer survives");
+  assert.ok(/characters omitted/.test(repair) && !repair.includes("y".repeat(FULL_TASK_REPAIR_CHARS)), "the middle is cut");
 });
 
 test("an empty model setting fails fast instead of spinning", async () => {

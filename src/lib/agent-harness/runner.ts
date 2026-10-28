@@ -41,6 +41,16 @@ export function outputLimitFor(limit: number | undefined, model: string, configu
   return Math.min(limit, Math.max(configured ?? 0, numberEnv("RESEARCH_UNKNOWN_MODEL_OUTPUT_CAP", 65_536)));
 }
 
+/** Previous output a full-task repair keeps: whole answers fit, a 1 MB runaway does not. */
+export const FULL_TASK_REPAIR_CHARS = 100_000;
+
+/** The text when it fits; otherwise its head and tail, so fields late in a long answer survive repair. */
+function boundedExcerpt(text: string, limit: number) {
+  if (text.length <= limit) return text;
+  const half = Math.floor(limit / 2);
+  return `${text.slice(0, half)}\n[... ${text.length - 2 * half} characters omitted ...]\n${text.slice(-half)}`;
+}
+
 const MAX_RETRY_DELAY_MS = 60_000;
 
 const DEFAULT_POLICY: ExecutionPolicy = {
@@ -589,7 +599,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
           "Required output schema:",
           JSON.stringify(effectiveOutputFormat.schema || effectiveOutputFormat),
           "",
-          `Previous response: ${pass.rawText.slice(0, 12_000)}`,
+          `Previous response: ${boundedExcerpt(pass.rawText, input.outputFormat ? FULL_TASK_REPAIR_CHARS : 12_000)}`,
         ].join("\n\n");
         // A full-task repair repeats the generation request and appends the repair, so the
         // provider can serve the repeated task and evidence from its cache (the shared part
