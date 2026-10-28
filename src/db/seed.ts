@@ -423,11 +423,10 @@ async function seed(): Promise<void> {
   const profileIdByKeyVersion: Record<string, string> = {};
 
   for (const p of profiles) {
-    const id = crypto.randomUUID();
     const profileKey = `${p.profile_key}_v${p.version}`;
-    profileIdByKeyVersion[profileKey] = id;
 
-    await sql`
+    // A rerun (or a store-imported database) already has the row: RETURNING gives its id, not a fresh one.
+    const [{ id }] = await sql`
       INSERT INTO research_profiles (
         id, profile_key, name, version, status, asset_kinds,
         description, required_modules_json, optional_modules_json,
@@ -435,7 +434,7 @@ async function seed(): Promise<void> {
         required_scenario_drivers_json, completion_criteria_json,
         validator_config_json, created_at, updated_at
       ) VALUES (
-        ${id},
+        ${crypto.randomUUID()},
         ${p.profile_key},
         ${p.name},
         ${p.version},
@@ -452,8 +451,10 @@ async function seed(): Promise<void> {
         NOW(),
         NOW()
       )
-      ON CONFLICT (profile_key, version) DO NOTHING
+      ON CONFLICT (profile_key, version) DO UPDATE SET profile_key = EXCLUDED.profile_key
+      RETURNING id
     `;
+    profileIdByKeyVersion[profileKey] = id;
 
     console.log(`   ${p.profile_key} v${p.version} -> ${id}`);
   }
@@ -462,16 +463,14 @@ async function seed(): Promise<void> {
   console.log("\n[2/5] Seeding valuation_methods …");
 
   for (const m of methods) {
-    const id = crypto.randomUUID();
-
-    await sql`
+    const [{ id }] = await sql`
       INSERT INTO valuation_methods (
         id, method_key, name, method_family, description,
         applicable_profile_keys, forbidden_profile_keys,
         requires_code, requires_market_data, metadata_json,
         created_at, updated_at
       ) VALUES (
-        ${id},
+        ${crypto.randomUUID()},
         ${m.method_key},
         ${m.name},
         ${m.method_family},
@@ -484,7 +483,8 @@ async function seed(): Promise<void> {
         NOW(),
         NOW()
       )
-      ON CONFLICT (method_key) DO NOTHING
+      ON CONFLICT (method_key) DO UPDATE SET method_key = EXCLUDED.method_key
+      RETURNING id
     `;
 
     console.log(`   ${m.method_key} (${m.method_family}) -> ${id}`);
@@ -496,16 +496,13 @@ async function seed(): Promise<void> {
   const assetIdBySlug: Record<string, string> = {};
 
   for (const a of assets) {
-    const id = crypto.randomUUID();
-    assetIdBySlug[a.slug] = id;
-
-    await sql`
+    const [{ id }] = await sql`
       INSERT INTO assets (
         id, canonical_name, slug, asset_kind, base_currency,
         home_country, sector, industry, description, status,
         created_at, updated_at
       ) VALUES (
-        ${id},
+        ${crypto.randomUUID()},
         ${a.canonical_name},
         ${a.slug},
         ${a.asset_kind},
@@ -518,8 +515,10 @@ async function seed(): Promise<void> {
         NOW(),
         NOW()
       )
-      ON CONFLICT (slug) DO NOTHING
+      ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
+      RETURNING id
     `;
+    assetIdBySlug[a.slug] = id;
 
     console.log(`   ${a.canonical_name} (${a.slug}) -> ${id}`);
   }
@@ -546,13 +545,16 @@ async function seed(): Promise<void> {
         UPDATE assets SET primary_profile_id = ${profileId} WHERE id = ${assetId}
       `;
 
-      // Create asset_profile_assignments record
+      // Create asset_profile_assignments record (once: the table has no unique key to conflict on)
+      const [assignment] = await sql`
+        SELECT id FROM asset_profile_assignments WHERE asset_id = ${assetId} AND profile_id = ${profileId} LIMIT 1
+      `;
       await sql`
         INSERT INTO asset_profile_assignments (
           id, asset_id, profile_id, assignment_reason,
           assigned_by, status, created_at
         ) VALUES (
-          ${crypto.randomUUID()},
+          ${assignment?.id ?? crypto.randomUUID()},
           ${assetId},
           ${profileId},
           'Initial seed assignment',
@@ -560,7 +562,7 @@ async function seed(): Promise<void> {
           'active',
           NOW()
         )
-        ON CONFLICT DO NOTHING
+        ON CONFLICT (id) DO NOTHING
       `;
 
       console.log(`   ${link.assetSlug} -> ${link.profileKey}`);
@@ -570,8 +572,12 @@ async function seed(): Promise<void> {
   // ── 4. Instruments ────────────────────────────────────────────────
   console.log("\n[4/5] Seeding instruments …");
 
-  const aaplInstrumentId = crypto.randomUUID();
-  const btcInstrumentId = crypto.randomUUID();
+  // Instruments and listings have no natural unique key, so a rerun reuses the rows it finds instead of adding copies.
+  const existingId = async (rows: Promise<Array<{ id: string }>>) => (await rows)[0]?.id ?? crypto.randomUUID();
+  const aaplInstrumentId = await existingId(sql`SELECT id FROM instruments
+    WHERE asset_id = ${assetIdBySlug["apple"]} AND instrument_type = 'common_stock' LIMIT 1`);
+  const btcInstrumentId = await existingId(sql`SELECT id FROM instruments
+    WHERE asset_id = ${assetIdBySlug["bitcoin"]} AND instrument_type = 'crypto' LIMIT 1`);
 
   await sql`
     INSERT INTO instruments (
@@ -613,7 +619,9 @@ async function seed(): Promise<void> {
   console.log("\n[5/5] Seeding listings …");
 
   // AAPL on NASDAQ
-  const aaplNasdaqId = crypto.randomUUID();
+  const listingId = (instrumentId: string, symbol: string, exchange: string) => existingId(sql`SELECT id FROM listings
+    WHERE instrument_id = ${instrumentId} AND symbol = ${symbol} AND exchange = ${exchange} LIMIT 1`);
+  const aaplNasdaqId = await listingId(aaplInstrumentId, "AAPL", "NASDAQ");
   await sql`
     INSERT INTO listings (
       id, instrument_id, symbol, exchange, mic, currency,
@@ -635,7 +643,7 @@ async function seed(): Promise<void> {
   console.log(`   AAPL / NASDAQ (primary) -> ${aaplNasdaqId}`);
 
   // BTC on Coinbase
-  const btcCoinbaseId = crypto.randomUUID();
+  const btcCoinbaseId = await listingId(btcInstrumentId, "BTC", "Coinbase");
   await sql`
     INSERT INTO listings (
       id, instrument_id, symbol, exchange, mic, currency,
@@ -657,7 +665,7 @@ async function seed(): Promise<void> {
   console.log(`   BTC / Coinbase (primary) -> ${btcCoinbaseId}`);
 
   // BTC on Binance
-  const btcBinanceId = crypto.randomUUID();
+  const btcBinanceId = await listingId(btcInstrumentId, "BTC", "Binance");
   await sql`
     INSERT INTO listings (
       id, instrument_id, symbol, exchange, mic, currency,

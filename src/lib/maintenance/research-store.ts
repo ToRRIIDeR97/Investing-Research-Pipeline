@@ -23,13 +23,22 @@ const STORAGE_PATH = /"(storage\/[^"\\]+)"/g;
 /** Per table, the hash of each row as of this machine's last export. Lets import tell who changed a row. */
 export type StoreBase = Record<string, Record<string, string>>;
 
-export interface TableInfo { name: string; columns: string[]; types: string[]; hasUpdatedAt: boolean; uniqueKeys: string[][]; selfKeys: string[] }
+/** Per table, id -> hash of the row as last pushed by the machine that deleted it. */
+export type Tombstones = Record<string, Record<string, string>>;
+
+export interface TableInfo {
+  name: string; columns: string[]; types: string[]; idType: string; hasUpdatedAt: boolean; uniqueKeys: string[][]; selfKeys: string[];
+  /** Unique keys that bind only rows with status 'accepted' (the current artifact or assumption per run and key). */
+  acceptedKeys: string[][];
+  /** Single-column foreign keys to other tables. */
+  foreignKeys: Array<{ column: string; table: string }>;
+}
 
 export type Decision = "insert" | "update" | "keep" | "same" | "remap";
-export interface Conflict { table: string; id: string; kept: "local" | "store" }
+export interface Conflict { table: string; id: string; kept: "local" | "store"; reason?: string }
 export interface SkippedFile { path: string; reason: string }
-export interface ImportResult { inserted: number; updated: number; remapped: number; conflicts: Conflict[]; filesCopied: number; fileConflicts: string[]; skippedFiles: SkippedFile[] }
-export interface ExportResult { tables: number; rows: number; files: number; skippedFiles: SkippedFile[]; base: StoreBase }
+export interface ImportResult { inserted: number; updated: number; remapped: number; deleted: number; conflicts: Conflict[]; filesCopied: number; fileConflicts: string[]; skippedFiles: SkippedFile[] }
+export interface ExportResult { tables: number; rows: number; files: number; tombstones: number; skippedFiles: SkippedFile[]; base: StoreBase }
 
 export const rowHash = (line: string) => createHash("sha1").update(line).digest("hex").slice(0, 16);
 /** 256 shards per table. Stores written with one-character shards still import: import reads every *.jsonl. */
@@ -55,6 +64,51 @@ export function decideRow(input: { line: string; local?: string; base?: string; 
   const localTime = input.localUpdatedAt ? Date.parse(input.localUpdatedAt) : NaN;
   if (storeTime > localTime) return { decision: "update", conflict: "store" };
   return { decision: "keep", conflict: "local" };
+}
+
+/**
+ * A store tombstone deletes the local row only when this machine hasn't changed it: it still matches the version the
+ * other machine deleted, or the version this machine last pushed. A row changed here is kept, and the next export
+ * writes it back, which lifts the tombstone.
+ */
+export function decideTombstone(input: { local?: string; tomb: string; base?: string }): "delete" | "keep" | "absent" {
+  if (input.local === undefined) return "absent";
+  return input.local === input.tomb || input.local === input.base ? "delete" : "keep";
+}
+
+/**
+ * One table's tombstones after an export: the ones the store already had, plus rows this machine pushed before
+ * (they are in its base) and has since deleted, minus any row this machine has now.
+ */
+export function nextTombstones(input: { previous?: Record<string, string>; base?: Record<string, string>; local: Record<string, unknown> }): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const source of [input.previous ?? {}, input.base ?? {}]) {
+    for (const [id, hash] of Object.entries(source)) if (!Object.hasOwn(input.local, id)) out[id] = hash;
+  }
+  return out;
+}
+
+/** True for a partial unique index that binds only accepted rows, the one shape import knows how to settle. */
+export const isAcceptedPredicate = (predicate: string) => /^\(*status = 'accepted'::text\)*$/.test(predicate.trim());
+
+/**
+ * Two machines accepted different rows for the same run and key. The later acceptance (accepted_at, else updated_at)
+ * stays accepted and the other is superseded. A tie goes to the store row.
+ */
+export function acceptedWinner(store: { accepted_at?: unknown; updated_at?: unknown }, local: { accepted_at?: unknown; updated_at?: unknown }): "store" | "local" {
+  const time = (r: { accepted_at?: unknown; updated_at?: unknown }) => Date.parse(String(r.accepted_at ?? r.updated_at ?? ""));
+  return time(local) > time(store) ? "local" : "store";
+}
+
+/**
+ * Refuses a push unless GitHub reports the store's remote as private. `visibility` is `gh repo view --json visibility`
+ * output, or null when it could not be read. Returns the reason to refuse, or null.
+ */
+export function storeVisibilityError(visibility: string | null | undefined, remote: string): string | null {
+  const v = (visibility ?? "").trim().toUpperCase();
+  if (v === "PRIVATE") return null;
+  if (!v) return `Refusing to push: could not confirm that ${remote} is private (gh repo view failed). Install and log in to the GitHub CLI, or pass --allow-public to push anyway.`;
+  return `Refusing to push: ${remote} is ${v.toLowerCase()}, and the store holds every synced table and storage file. Make the repository private, or pass --allow-public to push anyway.`;
 }
 
 /** Tables in foreign-key order (parents first). Self-references are loaded in one statement, so they don't count. */
@@ -85,6 +139,13 @@ export async function describeTables(sql: Sql): Promise<TableInfo[]> {
   const selfKeys = await sql`SELECT c.conrelid::regclass::text AS t, a.attname::text AS col FROM pg_constraint c
     JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
     WHERE c.contype = 'f' AND c.conrelid = c.confrelid AND c.connamespace = 'public'::regnamespace`;
+  const foreignKeys = await sql`SELECT c.conrelid::regclass::text AS t, c.confrelid::regclass::text AS "to", a.attname::text AS col FROM pg_constraint c
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+    WHERE c.contype = 'f' AND c.conrelid <> c.confrelid AND cardinality(c.conkey) = 1 AND c.connamespace = 'public'::regnamespace`;
+  const partial = await sql`SELECT c.relname::text AS t, pg_get_expr(i.indpred, i.indrelid) AS pred, ARRAY(SELECT a.attname::text FROM unnest(i.indkey) WITH ORDINALITY k(n, o)
+      JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.n ORDER BY k.o) AS cols
+    FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid
+    WHERE c.relnamespace = 'public'::regnamespace AND i.indisunique AND i.indexprs IS NULL AND i.indpred IS NOT NULL`;
   // Partial and expression indexes only bind some rows, so they can't identify a row on their own.
   const uniques = await sql`SELECT c.relname::text AS t, ARRAY(SELECT a.attname::text FROM unnest(i.indkey) WITH ORDINALITY k(n, o)
       JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.n ORDER BY k.o) AS cols
@@ -95,9 +156,12 @@ export async function describeTables(sql: Sql): Promise<TableInfo[]> {
     const own = columns.filter(r => r.t === t);
     const cols = own.map(r => String(r.c));
     if (!cols.includes("id")) throw new Error(`${t} has no id column; the store keys rows by id`);
-    info.set(t, { name: t, columns: cols, types: own.map(r => `${r.c} ${r.type}`), hasUpdatedAt: cols.includes("updated_at"),
+    info.set(t, { name: t, columns: cols, types: own.map(r => `${r.c} ${r.type}`), idType: String(own.find(r => r.c === "id")!.type),
+      hasUpdatedAt: cols.includes("updated_at"),
       uniqueKeys: uniques.filter(u => u.t === t).map(u => u.cols as string[]),
-      selfKeys: selfKeys.filter(k => k.t === t).map(k => String(k.col)) });
+      selfKeys: selfKeys.filter(k => k.t === t).map(k => String(k.col)),
+      acceptedKeys: cols.includes("status") ? partial.filter(u => u.t === t && isAcceptedPredicate(String(u.pred))).map(u => u.cols as string[]) : [],
+      foreignKeys: foreignKeys.filter(k => k.t === t && tables.includes(String(k.to))).map(k => ({ column: String(k.col), table: String(k.to) })) });
   }
   return orderTables(tables, edges).map(t => info.get(t)!);
 }
@@ -119,19 +183,27 @@ async function* localRows(sql: Sql, table: string): AsyncGenerator<{ id: string;
   }
 }
 
+type AcceptedRow = { id: string; accepted_at?: unknown; updated_at?: unknown };
+
 /** Per local row, its hash, plus updated_at and unique-key values when the table has them. Holds no whole rows. */
 async function localIndex(sql: Sql, table: TableInfo) {
   const hashes = new Map<string, string>();
   const updatedAt = new Map<string, string | null>();
   const byUnique = table.uniqueKeys.map(cols => ({ cols, index: new Map<string, string>() }));
+  const byAccepted = table.acceptedKeys.map(cols => ({ cols, index: new Map<string, AcceptedRow>() }));
   for await (const r of localRows(sql, table.name)) {
     hashes.set(r.id, rowHash(r.line));
-    if (!byUnique.length && !table.hasUpdatedAt) continue;
+    if (!byUnique.length && !byAccepted.length && !table.hasUpdatedAt) continue;
     const row = JSON.parse(r.line);
     if (table.hasUpdatedAt) updatedAt.set(r.id, row.updated_at ?? null);
     for (const u of byUnique) { const key = uniqueValue(row, u.cols); if (key) u.index.set(key, r.id); }
+    if (row.status !== "accepted") continue;
+    for (const u of byAccepted) {
+      const key = uniqueValue(row, u.cols);
+      if (key) u.index.set(key, { id: r.id, accepted_at: row.accepted_at, updated_at: row.updated_at });
+    }
   }
-  return { hashes, updatedAt, byUnique };
+  return { hashes, updatedAt, byUnique, byAccepted };
 }
 
 /** Non-empty lines of a file. The next chunk is read only once these lines are consumed (readline queues 1,024). */
@@ -172,7 +244,7 @@ async function listFiles(dir: string, skipped: string[] = []): Promise<string[]>
 /** Removes links a pushed store could plant to redirect export's writes out of the store folder. */
 async function dropStoreLinks(storeDir: string) {
   const links: string[] = [];
-  for (const name of ["tables", "files"]) await listFiles(join(storeDir, name), links);
+  for (const name of ["tables", "files", "tombstones"]) await listFiles(join(storeDir, name), links);
   for (const link of [...links, join(storeDir, "manifest.json"), join(storeDir, ".gitattributes")]) await rm(link, { recursive: true, force: true });
 }
 
@@ -217,10 +289,47 @@ async function sameFile(a: string, b: string): Promise<boolean> {
 
 const posix = (path: string) => path.split(sep).join("/");
 
-export async function exportStore(sql: Sql, options: { storeDir: string; projectRoot: string; maxFileBytes?: number }): Promise<ExportResult> {
+/** The store's tombstones: tombstones/<table>.txt, one "<id> <hash>" per line. Links are skipped, not followed. */
+export async function readTombstones(storeDir: string): Promise<Tombstones> {
+  const dir = join(resolve(storeDir), "tombstones");
+  const out: Tombstones = {};
+  for (const file of await listFiles(dir)) {
+    const name = relative(dir, file);
+    if (name.includes(sep) || !name.endsWith(".txt")) continue;
+    const table: Record<string, string> = out[name.slice(0, -4)] = {};
+    for await (const line of fileLines(file)) {
+      const [id, hash] = line.split(" ");
+      if (id && hash) table[id] = hash;
+    }
+  }
+  return out;
+}
+
+/** Rewrites tombstones/ from scratch, one sorted file per table that has any. Returns how many it wrote. */
+export async function writeTombstones(storeDir: string, tombstones: Tombstones) {
+  const dir = join(resolve(storeDir), "tombstones");
+  await rm(dir, { recursive: true, force: true });
+  let count = 0;
+  for (const [table, ids] of Object.entries(tombstones)) {
+    const lines = Object.keys(ids).sort().map(id => `${id} ${ids[id]}`);
+    if (!lines.length) continue;
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, `${table}.txt`), lines.join("\n") + "\n");
+    count += lines.length;
+  }
+  return count;
+}
+
+/**
+ * Writes this database over the store folder. `base` is the base from this machine's last pushed export: rows in it
+ * that are gone here become tombstones, so the deletion reaches the other machines instead of coming back.
+ */
+export async function exportStore(sql: Sql, options: { storeDir: string; projectRoot: string; base?: StoreBase; maxFileBytes?: number }): Promise<ExportResult> {
   const storeDir = resolve(options.storeDir);
   const tables = await describeTables(sql);
   await dropStoreLinks(storeDir);
+  const previousTombstones = await readTombstones(storeDir);
+  const tombstones: Tombstones = {};
   const base: StoreBase = {};
   const referenced = new Set<string>();
   let rows = 0;
@@ -237,7 +346,9 @@ export async function exportStore(sql: Sql, options: { storeDir: string; project
       rows += 1;
     }
     await shards.close();
+    tombstones[table.name] = nextTombstones({ previous: previousTombstones[table.name], base: options.base?.[table.name], local: hashes });
   }
+  const tombstoneCount = await writeTombstones(storeDir, tombstones);
   // Tables that no longer exist here leave no stale directory behind.
   const names = new Set(tables.map(t => t.name));
   for (const entry of await readdir(join(storeDir, "tables"))) if (!names.has(entry)) await rm(join(storeDir, "tables", entry), { recursive: true, force: true });
@@ -248,7 +359,7 @@ export async function exportStore(sql: Sql, options: { storeDir: string; project
   await writeFile(join(storeDir, ".gitattributes"), "* -text\n");
   const manifest = { format: STORE_FORMAT, excludedTables: [...EXCLUDED_TABLES], schema: schemaOf(tables) };
   await writeFile(join(storeDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
-  return { tables: tables.length, rows, files: mirrored.files, skippedFiles: mirrored.skipped, base };
+  return { tables: tables.length, rows, files: mirrored.files, tombstones: tombstoneCount, skippedFiles: mirrored.skipped, base };
 }
 
 /**
@@ -382,10 +493,59 @@ function uniqueValue(row: Record<string, unknown>, cols: string[]): string | nul
   return values.some(v => v === null || v === undefined) ? null : JSON.stringify(values);
 }
 
+const DELETE_BATCH = 5000;
+
 /**
- * Merges the store into the local database in one transaction, so a failure changes nothing. Rows are upserted in
- * foreign-key order. A store row whose unique key (an asset slug, a file hash, a seeded definition) matches a
- * different local row is taken to be that row: its id is rewritten to the local id everywhere it appears.
+ * Applies the store's tombstones, children first. A row changed here since it was deleted elsewhere is kept. A delete
+ * that a local row still depends on (a foreign key) is kept too, row by row, instead of aborting the import.
+ * Returns the deleted ids per table.
+ */
+async function applyTombstones(tx: postgres.TransactionSql, tables: TableInfo[], tombstones: Tombstones, base: StoreBase, result: ImportResult) {
+  const deleted = new Map<string, Set<string>>();
+  for (const table of [...tables].reverse()) {
+    const tombs = tombstones[table.name] ?? {};
+    const ids = Object.keys(tombs);
+    const gone = new Set<string>();
+    deleted.set(table.name, gone);
+    const match = `id IN (SELECT jsonb_array_elements_text($1::text::jsonb)::"${table.idType}")`;
+    const remove = (q: postgres.TransactionSql, list: string[]) => q.unsafe(`DELETE FROM "${table.name}" WHERE ${match}`, [JSON.stringify(list)]);
+    for (let at = 0; at < ids.length; at += DELETE_BATCH) {
+      const chunk = ids.slice(at, at + DELETE_BATCH);
+      const rows = await tx.unsafe(`SELECT id::text AS id, to_jsonb(t)::text AS line FROM "${table.name}" t WHERE ${match}`, [JSON.stringify(chunk)]);
+      const doomed: string[] = [];
+      for (const r of rows) {
+        const id = String(r.id);
+        const decision = decideTombstone({ local: rowHash(String(r.line)), tomb: tombs[id], base: base[table.name]?.[id] });
+        if (decision === "delete") doomed.push(id);
+        else result.conflicts.push({ table: table.name, id, kept: "local", reason: "deleted on the other machine, changed here" });
+      }
+      if (!doomed.length) continue;
+      try {
+        await tx.savepoint(sp => remove(sp, doomed));
+        for (const id of doomed) gone.add(id);
+      } catch {
+        for (const id of doomed) {
+          try {
+            await tx.savepoint(sp => remove(sp, [id]));
+            gone.add(id);
+          } catch {
+            result.conflicts.push({ table: table.name, id, kept: "local", reason: "deleted on the other machine, still referenced here" });
+          }
+        }
+      }
+    }
+    result.deleted += gone.size;
+  }
+  return deleted;
+}
+
+/**
+ * Merges the store into the local database in one transaction, so a failure changes nothing. Tombstones are applied
+ * first, then rows are upserted in foreign-key order. A store row whose unique key (an asset slug, a file hash, a
+ * seeded definition) matches a different local row is taken to be that row: its id is rewritten to the local id
+ * everywhere it appears. When both machines accepted a row for the same accepted-only unique key, the later
+ * acceptance stays accepted and the other becomes superseded. A store row that points at a row deleted here is left
+ * out and reported.
  */
 export async function importStore(sql: Sql, options: { storeDir: string; projectRoot: string; base: StoreBase }): Promise<ImportResult> {
   const storeDir = resolve(options.storeDir);
@@ -398,14 +558,19 @@ export async function importStore(sql: Sql, options: { storeDir: string; project
   if (differing.length) {
     throw new Error(`Schema mismatch in ${differing.join(", ")}. Bring both machines to the same code and run npm run db:migrate first.`);
   }
-  const result: ImportResult = { inserted: 0, updated: 0, remapped: 0, conflicts: [], filesCopied: 0, fileConflicts: [], skippedFiles: [] };
+  const result: ImportResult = { inserted: 0, updated: 0, remapped: 0, deleted: 0, conflicts: [], filesCopied: 0, fileConflicts: [], skippedFiles: [] };
+  const tombstones = await readTombstones(storeDir);
   const remap = new Map<string, string>();
 
   const { shardFiles, skipped } = await storeShards(storeDir);
   result.skippedFiles.push(...skipped);
 
   await sql.begin(async tx => {
+    // Rows absent here because this machine deleted them: a store row that points at one is left out.
+    const deletedHere = await applyTombstones(tx, tables, tombstones, options.base, result);
     for (const table of tables) {
+      const gone = deletedHere.get(table.name) ?? new Set<string>();
+      deletedHere.set(table.name, gone);
       const files = shardFiles.get(table.name);
       if (!files) continue;
       // Ids matched in earlier tables; matches found in this table apply from the next one on.
@@ -417,6 +582,8 @@ export async function importStore(sql: Sql, options: { storeDir: string; project
       const here = await localIndex(tx as unknown as Sql, table);
       const base = options.base[table.name] || {};
       const assignments = table.columns.filter(c => c !== "id").map(c => `"${c}" = EXCLUDED."${c}"`).join(", ");
+      // Accepted local rows demoted only to let a store row in, restored after the table's last insert.
+      const restore: Array<{ demote: string; promote: string }> = [];
       let accepted: string[] = [];
       let acceptedBytes = 0;
       const flush = async () => {
@@ -446,14 +613,39 @@ export async function importStore(sql: Sql, options: { storeDir: string; project
         const { decision, conflict } = decideRow({ line, local, base: base[id],
           storeUpdatedAt: row.updated_at ?? null, localUpdatedAt: here.updatedAt.get(id) ?? null });
         if (conflict) result.conflicts.push({ table: table.name, id, kept: conflict });
+        if (decision === "keep" && local === undefined) gone.add(id);
+        if (decision !== "insert" && decision !== "update") continue;
+        const parent = table.foreignKeys.find(k => typeof row[k.column] === "string" && deletedHere.get(k.table)?.has(row[k.column]));
+        if (parent) {
+          gone.add(id);
+          result.conflicts.push({ table: table.name, id, kept: "local", reason: `points at ${parent.table} ${row[parent.column]}, deleted here` });
+          continue;
+        }
+        if (row.status === "accepted") {
+          for (const u of here.byAccepted) {
+            const key = uniqueValue(row, u.cols);
+            const current = key ? u.index.get(key) : undefined;
+            if (!key || !current || current.id === id) continue;
+            const winner = acceptedWinner(row, current);
+            // Demote the local row whoever wins: the insert would hit the unique index otherwise.
+            await tx.unsafe(`UPDATE "${table.name}" SET status = 'superseded'${winner === "store" && table.hasUpdatedAt ? ", updated_at = NOW()" : ""} WHERE id = $1`, [current.id]);
+            if (winner === "local") restore.push({ demote: id, promote: current.id });
+            else u.index.set(key, { id, accepted_at: row.accepted_at, updated_at: row.updated_at });
+            result.conflicts.push({ table: table.name, id, kept: winner, reason: "both machines accepted a row for the same key" });
+          }
+        }
         if (decision === "insert") result.inserted += 1;
         if (decision === "update") result.updated += 1;
-        if (decision === "insert" || decision === "update") await accept(order.add(row, line));
+        await accept(order.add(row, line));
       }
       const { ordered, leftover } = order.rest();
       await accept(ordered);
       await accept(leftover, false);
       await flush();
+      for (const r of restore) {
+        await tx.unsafe(`UPDATE "${table.name}" SET status = 'superseded'${table.hasUpdatedAt ? ", updated_at = NOW()" : ""} WHERE id = $1`, [r.demote]);
+        await tx.unsafe(`UPDATE "${table.name}" SET status = 'accepted' WHERE id = $1`, [r.promote]);
+      }
     }
   });
 
