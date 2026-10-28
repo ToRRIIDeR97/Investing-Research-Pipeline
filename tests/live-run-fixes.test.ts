@@ -61,7 +61,8 @@ test("output-limit escalation stops at RESEARCH_MAX_OUTPUT_TOKENS_CEILING", asyn
     const provider = new Scripted(request => reasoningOnly(request));
     await assert.rejects(() => runResearchAgent({ agentName: "asset-classifier", title: "ceiling", taskPacket: {}, provider,
       policy: { maxAttempts: 3, maxOutputTokens: 1_000, retryBaseDelayMs: 1 } }));
-    assert.deepEqual(provider.requests.map(r => r.maxTokens), [1_000, 1_500, 1_500]);
+    // A third attempt at 1,500 would repeat the second request, so escalation stops there.
+    assert.deepEqual(provider.requests.map(r => r.maxTokens), [1_000, 1_500]);
   } finally {
     if (prior === undefined) delete process.env.RESEARCH_MAX_OUTPUT_TOKENS_CEILING;
     else process.env.RESEARCH_MAX_OUTPUT_TOKENS_CEILING = prior;

@@ -29,6 +29,18 @@ export function modelOutputCap(model: string): number | undefined {
   return undefined;
 }
 
+/**
+ * The output limit an attempt sends. Documented caps clamp every limit. A model without one keeps its
+ * configured limit but escalates no further than RESEARCH_UNKNOWN_MODEL_OUTPUT_CAP (65,536), so a provider
+ * is not sent a max_tokens it would reject.
+ */
+export function outputLimitFor(limit: number | undefined, model: string, configured: number | undefined) {
+  if (limit === undefined) return undefined;
+  const cap = modelOutputCap(model);
+  if (cap !== undefined) return Math.min(limit, cap);
+  return Math.min(limit, Math.max(configured ?? 0, numberEnv("RESEARCH_UNKNOWN_MODEL_OUTPUT_CAP", 65_536)));
+}
+
 const MAX_RETRY_DELAY_MS = 60_000;
 
 const DEFAULT_POLICY: ExecutionPolicy = {
@@ -123,6 +135,10 @@ function modelCandidates(agentName: ResearchAgentName, maxAttempts: number, prov
   const models = [primary, fallback ? normalizeModelEnvValue(fallback) : null]
     .filter((model): model is string => Boolean(model))
     .filter((model, index, all) => all.indexOf(model) === index);
+  // An empty list would spin the loop below forever (for example RESEARCH_ALL_AGENTS_MODEL=opencode-go/).
+  if (!models.length) {
+    throw new ProviderError(`No model configured for agent ${agentName}: the model and fallback settings are empty after normalization`, "invalid_request");
+  }
   const attempts: string[] = [];
   while (attempts.length < maxAttempts) {
     for (const model of models) {
@@ -462,6 +478,8 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
   const originalPromptBytes = Buffer.byteLength(promptText, "utf8");
   const cacheScope = input.cacheScope || `agent:${input.agentName}`;
   let outputLimit = policy.maxOutputTokens;
+  // Largest limit each model has used up; resending that model at no larger a limit would be the same paid request.
+  const exhaustedLimits = new Map<string, number>();
 
   for (let index = 0; index < candidates.length; index += 1) {
     const attemptNumber = index + 1;
@@ -469,8 +487,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
     const fallback = model !== primaryModel;
     const modelAttempt = candidates.slice(0, index + 1).filter((candidate) => candidate === model).length;
     const compactedFallback = fallback ? compactFallback(input) : { request: input, compacted: false };
-    const cap = modelOutputCap(model);
-    const attemptOutputLimit = outputLimit !== undefined && cap !== undefined ? Math.min(outputLimit, cap) : outputLimit;
+    const attemptOutputLimit = outputLimitFor(outputLimit, model, policy.maxOutputTokens);
     const currentInput = compactedFallback.request;
     const attemptPrompt = compactedFallback.compacted ? buildTaskPrompt(currentInput, config) : promptText;
     const attemptPromptBytes = Buffer.byteLength(attemptPrompt, "utf8");
@@ -572,7 +589,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
           "Required output schema:",
           JSON.stringify(effectiveOutputFormat.schema || effectiveOutputFormat),
           "",
-          `Previous response: ${input.outputFormat ? pass.rawText : pass.rawText.slice(0, 12_000)}`,
+          `Previous response: ${pass.rawText.slice(0, 12_000)}`,
         ].join("\n\n");
         // A full-task repair repeats the generation request and appends the repair, so the
         // provider can serve the repeated task and evidence from its cache (the shared part
@@ -689,14 +706,25 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
       attempts.push(record);
       await input.hooks?.onAttemptComplete?.(record);
       // A pass that spent its whole limit, or was cut off by it, gets twice the limit next time, up to the ceiling.
+      let retry = retryable(errorCategory);
       if (errorCategory === "output_exhausted" && attemptOutputLimit !== undefined) {
         outputLimit = Math.min(attemptOutputLimit * 2, Math.max(attemptOutputLimit, outputTokenCeiling()));
+        exhaustedLimits.set(model, Math.max(exhaustedLimits.get(model) ?? 0, attemptOutputLimit));
+        // Stop once the next attempt would resend a model at a limit it has already used up (its cap or the ceiling).
+        const next = candidates[index + 1];
+        const used = next === undefined ? undefined : exhaustedLimits.get(next);
+        if (used !== undefined && (outputLimitFor(outputLimit, next, policy.maxOutputTokens) ?? Infinity) <= used) retry = false;
       }
+      // A reply with no JSON that repair could not fix is retried once; a model that keeps answering in prose
+      // would otherwise pay for generation and repair on every attempt.
+      const proseAfterRepair = (attempt: AgentAttempt) => attempt.errorCategory === "malformed_stream" && attempt.repairAttempted
+        && Boolean(attempt.errorMessage?.startsWith("Structured output validation failed"));
+      if (proseAfterRepair(record) && attempts.filter(proseAfterRepair).length > 1) retry = false;
       const exhausted = (kind: HarnessErrorCategory, message: string) => new ResearchAgentRunError(
         `Agent attempts exhausted: ${message}`, aggregateUsage(attempts, { provider: provider.id, model, promptVersion: config.promptVersion }),
         { attempts, error_type: kind, raw_response_excerpt: record.rawResponseExcerpt }, attempts
       );
-      if (!retryable(errorCategory) || index === candidates.length - 1) throw exhausted(errorCategory, record.errorMessage || "");
+      if (!retry || index === candidates.length - 1) throw exhausted(errorCategory, record.errorMessage || "");
       // Overload, 5xx and rate limits wait longer than a dropped connection; a retry-after is honoured as sent.
       const retryAfter = failure instanceof ProviderError ? Number(failure.details.retryAfter) : 0;
       const overloaded = errorCategory === "server_error" || errorCategory === "rate_limit";
