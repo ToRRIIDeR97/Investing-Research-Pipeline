@@ -1851,7 +1851,7 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
     const { status, reason } = classifyFetchFailure(new Error(failure.error));
     await sql`INSERT INTO source_retrieval_attempts (research_run_id, source_role, attempt_status, failure_reason, attempt_metadata_json)
       VALUES (${ctx.runId}, ${failure.role}, ${status}, ${`search_${reason}`},
-        ${sql.json({ query: failure.query, error: failure.error.slice(0, 500) })})`;
+        ${JSON.stringify({ query: failure.query, error: failure.error.slice(0, 500) })}::text::jsonb)`;
   }
   for (const attachment of stored.filter(
     (source) => textValue(source.metadata?.attachmentType) === "earnings_exhibit"
@@ -2160,7 +2160,7 @@ export async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string
         VALUES (${metricKey}, ${textValue(obs.display_name || obs.metric_name || metricKey, metricKey)},
           ${textValue(obs.metric_category, "financial")}, ${textValue(obs.unit_type, "number")},
           ${textValue(obs.unit || obs.default_unit, "") || null}, ${textValue(obs.currency || obs.default_currency, "USD")},
-          ${textValue(obs.description, "Reconciled metric")}, ARRAY[${ctx.profileKey}], ${tx.json({ system_generated: true })})
+          ${textValue(obs.description, "Reconciled metric")}, ARRAY[${ctx.profileKey}], ${JSON.stringify({ system_generated: true })}::text::jsonb)
         ON CONFLICT (metric_key) DO UPDATE SET updated_at = NOW() RETURNING id
       `;
       const periodStart = periodStartValue ? new Date(periodStartValue).toISOString().slice(0, 10) : null;
@@ -2190,7 +2190,7 @@ export async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string
             ${availableAt}, ${valueNumeric}, ${textValue(obs.value_text, "") || null},
             ${unit || null}, ${currency}, ${textValue(obs.source, "metric-reconciler")}, ${observationSourceId},
             ${claim?.id || null}, ${numberValue(obs.confidence, 0.7).toString()}, 'accepted',
-            ${tx.json(withoutNul({ system_generated: true, reconciliation: "canonical_revision", supersedes_observation_ids: existing.map((row) => String(row.id)), agent_output: obs }) as any)})
+            ${JSON.stringify(withoutNul({ system_generated: true, reconciliation: "canonical_revision", supersedes_observation_ids: existing.map((row) => String(row.id)), agent_output: obs }))}::text::jsonb)
           RETURNING id
         `;
         canonicalId = String(inserted[0].id);
@@ -2198,14 +2198,14 @@ export async function persistMetrics(sql: Sql, ctx: RunContext, sourceId: string
         await tx`
           UPDATE metric_observations SET review_status = 'accepted',
             metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
-              || ${tx.json({ reconciliation: "canonical_promoted", reconciled_at: new Date().toISOString() })}
+              || ${JSON.stringify({ reconciliation: "canonical_promoted", reconciled_at: new Date().toISOString() })}::text::jsonb
           WHERE id = ${canonicalId}
         `;
       }
       await tx`
         UPDATE metric_observations SET review_status = 'rejected',
           metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
-            || ${tx.json({ reconciliation: "superseded_conflict", canonical_observation_id: canonicalId ?? null, reconciled_at: new Date().toISOString() })}
+            || ${JSON.stringify({ reconciliation: "superseded_conflict", canonical_observation_id: canonicalId ?? null, reconciled_at: new Date().toISOString() })}::text::jsonb
         WHERE research_run_id = ${ctx.runId} AND metric_definition_id = ${metricRows[0].id}
           AND COALESCE(period_start::text, '') = ${periodStart || ''} AND COALESCE(period_end::text, '') = ${periodEnd}
           AND COALESCE(unit, '') = ${unit} AND COALESCE(currency, '') = ${currency}
