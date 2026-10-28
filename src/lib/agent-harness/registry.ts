@@ -258,7 +258,7 @@ export const AGENT_CONFIGS: Record<ResearchAgentName, ResearchAgentConfig> = {
         asset_hypothesis: objectValue,
         run_type: {
           type: "string",
-          enum: ["full_research", "quick_scan", "thesis_investigation", "backtest_only", "refresh"],
+          enum: ["full_research", "quick_scan", "thesis_investigation", "refresh"],
         },
         required_modules: stringArray,
         source_strategy: objectArray,
