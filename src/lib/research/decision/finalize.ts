@@ -17,7 +17,25 @@ export interface DecisionFinalizeInputs {
   dilutionCovered: boolean; // the terminal projection covers the reported diluted shares
   /** Base-case return to the terminal year if today's EV/NOPAT holds (valuation cross_checks); null when not computed. */
   noReratingReturn?: number | null;
+  /** ISO currency of marketPrice; the linkage shows "$" only for USD. */
+  priceCurrency?: string | null;
 }
+
+/**
+ * True when the terminal projection's share count covers the reported diluted count, compared like with like: the
+ * projection counts listed shares (ADS for a depositary listing), the reported count is ordinary shares, so listed
+ * shares are multiplied by the depositary ratio. Without a reported count there is nothing to check against, and the
+ * returns stay unavailable.
+ */
+export function dilutionCovered(input: { listedSharesMillions: number; depositaryRatio?: number | null; reportedDilutedShares: number }): boolean {
+  const reported = Number(input.reportedDilutedShares), listed = Number(input.listedSharesMillions);
+  if (!(reported > 0) || !(listed > 0)) return false;
+  const ratio = Number(input.depositaryRatio) > 0 ? Number(input.depositaryRatio) : 1;
+  return listed * ratio * 1e6 >= reported - Math.max(1, reported * 1e-6);
+}
+
+const money = (value: number, currency?: string | null) =>
+  !currency || currency === "USD" ? `$${value.toFixed(2)}` : `${currency} ${value.toFixed(2)}`;
 
 export interface DecisionAdjustments {
   dropped_citation_ids: string[];
@@ -108,7 +126,10 @@ export function finalizeDecisionOutput(raw: unknown, inputs: DecisionFinalizeInp
   const year = inputs.valuation.terminalYear;
   const returns = !withheld && inputs.terminalReturns && inputs.dilutionCovered ? inputs.terminalReturns : null;
   const p = inputs.probabilities;
-  const weighted = returns && p
+  // Negative weights would put the weighted return outside the bear-bull range; such weights give none.
+  const weightsValid = p !== null && [p.probability_bear, p.probability_base, p.probability_bull].every((w) => Number.isFinite(Number(w)) && Number(w) >= 0)
+    && Math.abs(Number(p.probability_bear) + Number(p.probability_base) + Number(p.probability_bull) - 1) <= 0.001;
+  const weighted = returns && p && weightsValid
     ? Number(p.probability_bear) * returns.bear + Number(p.probability_base) * returns.base + Number(p.probability_bull) * returns.bull
     : NaN;
   const weightedReturn = Number.isFinite(weighted) ? Number(weighted.toFixed(6)) : null;
@@ -124,7 +145,7 @@ export function finalizeDecisionOutput(raw: unknown, inputs: DecisionFinalizeInp
       thesis.expected_return_linkage =
         `Fiscal ${year} diluted-share price targets imply bear ${pct(returns.bear)}, base ${pct(returns.base)}, ` +
         `and bull ${pct(returns.bull)} total returns` +
-        (inputs.marketPrice != null ? ` from $${inputs.marketPrice.toFixed(2)}` : "") +
+        (inputs.marketPrice != null ? ` from ${money(inputs.marketPrice, inputs.priceCurrency)}` : "") +
         (p && weightedReturn != null ? `; operating scenario weights ${[p.probability_bear, p.probability_base, p.probability_bull]
           .map((w) => (Number(w) * 100).toFixed(0)).join("/")} produce ${pct(weightedReturn)}` : "") +
         ". Future share issuance beyond the reported diluted count remains a source gap.";

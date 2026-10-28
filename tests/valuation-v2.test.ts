@@ -5,8 +5,8 @@ import assert from "node:assert/strict";
 import { calculateValuationSchedule } from "../src/lib/research/valuation/schedules";
 import { buildScenarioStatements, forecastYears, valuationPricePath, type StatementYear } from "../src/lib/research/valuation/engine";
 import {
-  buildFcffValuation, currencyConversion, defaultValuationSets, driverSchedule, fadeYears, latestFredValue, lossSegments, ronicDefault,
-  terminalEquivalentMultiple, validateValuationSets, valuationTiming, type ValuationSet,
+  MIN_TERMINAL_SPREAD, buildFcffValuation, convertMethodInput, convertSegmentDrivers, currencyConversion, defaultValuationSets, driverSchedule,
+  fadeYears, latestFredValue, lossSegments, reverseValuationV2, ronicDefault, terminalEquivalentMultiple, validateValuationSets, valuationTiming, type ValuationSet,
 } from "../src/lib/research/valuation/v2";
 
 const close = (actual: number | null, expected: number, tolerance = 1e-6) =>
@@ -173,4 +173,63 @@ test("loss-making segments are valued as a persistent or fading loss stream, and
   const off = lossSegments({ drivers: segmentDrivers.map((d) => ({ ...d, segment_operating_income: [{ segment: "Core", operating_income: 1 }] })), statements: s, schedule, set: set() });
   assert.equal(off.segments_reconciled, false);
   assert.equal(lossSegments({ drivers: [], statements: s, schedule, set: set() }).available, false);
+});
+
+test("segment operating income is converted at the statements' FX rate before reconciling (#104)", () => {
+  const fx = 1 / 7;
+  const native = statements();
+  const converted = buildScenarioStatements({ baseRevenue: 1000 * fx, baseYear: 2025, ratios, drivers: drivers(0.08, 0.25) });
+  const segmentDrivers = native.map((year) => ({ fiscal_year: year.fiscal_year, segment_operating_income: [
+    { segment: "Core", operating_income: year.operating_income + 40 }, { segment: "Labs", operating_income: -40 }] }));
+  const out = buildFcffValuation({ statements: { bear: converted, base: converted, bull: converted }, sets: defaultValuationSets({ capm: 0.09, riskFree: 0.04, ronic: 0.2 }),
+    probabilities: { probability_bear: 0.25, probability_base: 0.5, probability_bull: 0.25 }, price: 50, currency: "USD",
+    common, timing: null, pack: null, fx, capm: 0.09, riskFree: 0.04, historyRoic: 0.2, segmentDrivers });
+  assert.equal(out.additions.segments_reconciled, true);
+  assert.equal(convertSegmentDrivers(segmentDrivers, 1), segmentDrivers);
+  close(convertSegmentDrivers(segmentDrivers, fx)![0].segment_operating_income![1].operating_income, -40 * fx);
+});
+
+test("terminal growth must sit at least 1pt below the discount rate, and the defaults keep that spread in order (#121)", () => {
+  for (const [capm, rf] of [[0.0425, 0.042], [0.03, 0.0275], [0.095, 0.02]]) {
+    const defaults = defaultValuationSets({ capm, riskFree: rf, ronic: 0.18 });
+    assert.deepEqual(validateValuationSets(defaults, defaults, rf), [], `capm ${capm}, rf ${rf}`);
+    for (const d of defaults) assert.ok(d.discount_rate - d.terminal_growth >= MIN_TERMINAL_SPREAD - 1e-9);
+  }
+  const defaults = defaultValuationSets({ capm: 0.0425, riskFree: 0.042, ronic: 0.18 });
+  const thin = defaults.map((d) => ({ ...d, discount_rate: 0.0425, terminal_growth: d.set === "conservative" ? 0.02 : 0.042 }));
+  assert.match(validateValuationSets(thin, defaults, 0.042).map((e) => e.message).join(" "), /base terminal_growth 0.042 must be at least 1pt below/);
+});
+
+test("the uniform reverse solves keep each year's working-capital and D&A ratios (#135)", () => {
+  const s = buildScenarioStatements({ baseRevenue: 1000, baseYear: 2025, ratios: { ...ratios, ppe: { opening_net_ppe: 500, depreciation_rate: 0.1, as_of: "2025-12-31" } },
+    drivers: drivers(0.08, 0.25).map((d) => ({ ...d, nwc_to_revenue_change: 0.3 })) });
+  const price = calculateValuationSchedule(driverSchedule(s, "base", set(), common)).value_per_share;
+  const reverse = reverseValuationV2({ statements: s, set: set(), common, price }, []);
+  close(reverse.implied_growth, 0.08, 1e-4);
+  close(reverse.implied_margin, 0.25, 1e-4);
+});
+
+test("a TTM growth base counts only the part of the first year still ahead of the valuation date (#135)", () => {
+  const timing = { valuation_date: "2026-10-01", first_year_fraction: 0.25, first_year_reported_cash_flow: 0, reported_basis: "none" as const };
+  const reverse = reverseValuationV2({ statements: statements(), set: set(), common: { ...common, timing }, price: 400 }, [{ basis: "nopat", label: "TTM", amount: 100 }]);
+  let pv = 0;
+  for (let t = 0; t < 10; t += 1) pv += (t === 0 ? 100 * 0.25 : 100) / 1.09 ** (0.25 + t);
+  const tv = (100 * 1.025) / (0.09 - 0.025);
+  close(reverse.implied_fcf_growth_10y[0].flat_value_per_share!, (pv + tv / 1.09 ** 9.25 + 50) / 10, 1e-3);
+});
+
+test("equity-method schedules convert like the FCFF path: amounts at the FX rate, shares per listed share (#103)", () => {
+  const model = { method: "fcfe" as const, method_name: "FCFE", scenario_type: "base" as const, rationale: "x", currency: "CNY", cash_flow_label: "FCFE",
+    discount_rate: 0.1, equity_bridge: 0, equity_bridge_explanation: "Equity cash flow", diluted_shares: 200, source_notes: ["x"],
+    years: [2026, 2027].map((fiscal_year) => ({ fiscal_year, cash_flow: 70, build: { starting_profit: 70, depreciation_amortization: 7, capital_expenditures: 7, change_in_net_working_capital: 0, other_adjustments: 0 } })),
+    terminal: { type: "multiple" as const, metric: "net_income", metric_value: 70, multiple: 10 } };
+  const conversion = currencyConversion({ statementCurrency: "CNY", priceCurrency: "USD", depositaryRatio: 2,
+    fx: { series: "DEXCHUS", perUsd: true, value: 7, observation_date: "2026-10-01" } });
+  const out = convertMethodInput(model, conversion);
+  assert.equal(out.currency, "USD");
+  assert.equal(out.diluted_shares, 100);
+  close(out.years[0].build!.starting_profit, 10);
+  close(calculateValuationSchedule(out).value_per_share, calculateValuationSchedule(model).value_per_share / 7 * 2, 1e-6);
+  const same = currencyConversion({ statementCurrency: "USD", priceCurrency: "USD", depositaryRatio: null, fx: null });
+  assert.equal(convertMethodInput({ ...model, currency: "USD" }, same).diluted_shares, 200);
 });

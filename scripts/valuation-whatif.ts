@@ -51,6 +51,9 @@ function analyticsPack(stored: Row | null, set: Row | null, record: Row | null, 
     endFiscalYear: end.fiscal_year, endFiscalQuarter: end.fiscal_quarter }));
 }
 
+/** Price-currency units per statement-currency unit the stage stored (1 for one currency or a pre-conversion run). */
+const storedFx = (v: Row | null) => Number(v?.currency_conversion?.fx_rate) > 0 ? Number(v!.currency_conversion.fx_rate) : 1;
+
 /** Everything buildFcffValuation needs, rebuilt from the stored inputs as the stage would build it. */
 function rebuild(data: Awaited<ReturnType<typeof load>>) {
   const v = data.valuation, priceSource = v?.current_market_price_source ?? {};
@@ -64,9 +67,14 @@ function rebuild(data: Awaited<ReturnType<typeof load>>) {
   const horizon: number[] = (data.scenarios?.forecast_horizon?.years ?? []).map(Number);
   const baseRevenue = ratios.base_year?.revenue;
   if (!baseRevenue || !horizon.length) throw new Error("No base-year revenue or stored forecast horizon.");
-  const firstYear = operatingModelFirstYear(data.model, baseRevenue);
+  // Statement-currency amounts are converted at the stored rate, as the stage does; the stored shares are already per listed share.
+  const fx = storedFx(v);
+  const scaledRatios = { ...ratios, ppe: ratios.ppe ? { ...ratios.ppe, opening_net_ppe: ratios.ppe.opening_net_ppe * fx } : null,
+    invested_capital: ratios.invested_capital == null ? null : ratios.invested_capital * fx };
+  const pinned = operatingModelFirstYear(data.model, baseRevenue);
+  const firstYear = pinned ? { revenue: pinned.revenue * fx, operating_income: pinned.operating_income * fx } : null;
   const drivers = (scenario: Scenario) => (data.scenarios?.scenarios ?? []).find((s: Row) => s.scenario_type === scenario)?.yearly_drivers ?? [];
-  const statements = Object.fromEntries(SCENARIOS.map((scenario) => [scenario, buildScenarioStatements({ baseRevenue, baseYear: horizon[0] - 1, ratios,
+  const statements = Object.fromEntries(SCENARIOS.map((scenario) => [scenario, buildScenarioStatements({ baseRevenue: baseRevenue * fx, baseYear: horizon[0] - 1, ratios: scaledRatios,
     drivers: drivers(scenario).filter((d: Row) => horizon.includes(d.fiscal_year)), firstYear: scenario === "base" ? firstYear : null })])) as Record<Scenario, StatementYear[]>;
   const bridge = equityBridge(fi);
   const pack = analyticsPack(data.analytics, data.statements, data.record, data.market);
@@ -77,16 +85,16 @@ function rebuild(data: Awaited<ReturnType<typeof load>>) {
   const capm = costOfCapital?.capm_cost_of_equity?.rate ?? null, riskFree = v.risk_free_rate?.rate ?? null;
   const rate = defaultValuationSets({ capm, riskFree, ronic: 0.1 })[1].discount_rate;
   const ronic = ronicDefault({ historyRoic, baseStatements: statements.base, discountRate: rate });
-  const at = (row: unknown[], key: string) => { const i = fi!.columns.indexOf(key); return i >= 0 && typeof row[i] === "number" ? row[i] as number : null; };
+  const at = (row: unknown[], key: string) => { const i = fi!.columns.indexOf(key); return i >= 0 && typeof row[i] === "number" ? row[i] as number * fx : null; };
   const fyEnd = String([...(fi?.annual ?? [])].reverse().find((row) => Number(row[1]) === horizon[0] - 1)?.[0] ?? "").slice(5) || "12-31";
   const timing = valuationTiming({ valuationDate: cutoff.toISOString().slice(0, 10), firstYearEnd: `${horizon[0]}-${fyEnd}`, taxRate: ratios.tax_rate,
     reportedQuarters: (fi?.quarterly ?? []).filter((row) => Number(row[1]) === horizon[0]).map((row) => ({ period_end: String(row[0]),
       operating_income: at(row, "operating_income"), depreciation_amortization: at(row, "depreciation_amortization"), capital_expenditures: at(row, "capital_expenditures") })) });
   return {
-    statements, sets: defaultValuationSets({ capm, riskFree, ronic: ronic.ronic }), ronic, price, timing, pack, capm, riskFree, historyRoic,
+    statements, sets: defaultValuationSets({ capm, riskFree, ronic: ronic.ronic }), ronic, price, timing, pack, capm, riskFree, historyRoic, fx,
     cost_of_capital: { capm: costOfCapital?.capm_cost_of_equity ?? null, gaps: costOfCapital?.gaps ?? [], recomputed: !v.cost_of_capital_inputs },
     currency: base.currency, fiscalYearEnd: fyEnd, probabilities: v, segmentDrivers: drivers("base") as SegmentDriver[],
-    common: { bridge: bridge?.amount ?? 0, shares: base.diluted_shares, currency: base.currency, sourceNotes: ["What-if rebuild; no model call."],
+    common: { bridge: (bridge?.amount ?? 0) * fx, shares: base.diluted_shares, currency: base.currency, sourceNotes: ["What-if rebuild; no model call."],
       bridgeExplanation: bridge ? `Rebuilt bridge at ${bridge.period_end}: ${JSON.stringify(bridge.components)}; operating leases excluded.` : "No bridge items." },
     bridge,
   };
@@ -114,14 +122,14 @@ async function main() {
       riskFree: v.risk_free_rate?.rate ?? null, historyRoic: v.ronic_default?.history_roic ?? null, currency: base.currency, fiscalYearEnd: undefined,
       probabilities: v, segmentDrivers: ((data.scenarios?.scenarios ?? []).find((s: Row) => s.scenario_type === "base")?.yearly_drivers ?? []) as SegmentDriver[],
       common: { bridge: base.equity_bridge, shares: base.diluted_shares, currency: base.currency, sourceNotes: ["What-if; no model call."], bridgeExplanation: base.equity_bridge_explanation },
-      ronic: v.ronic_default ?? null, bridge: v.equity_bridge_detail ?? null };
+      ronic: v.ronic_default ?? null, bridge: v.equity_bridge_detail ?? null, fx: storedFx(v) };
   })() : rebuild(data);
   const key = (option("--set") ?? "base") as ValuationSetKey;
   if (!VALUATION_SETS.includes(key)) throw new Error(`--set must be one of ${VALUATION_SETS.join(", ")}`);
   const overrides = Object.fromEntries(Object.entries({ discount_rate: number("--discount-rate"), terminal_growth: number("--terminal-growth"),
     ronic: number("--ronic"), fade_years: number("--fade-years") }).filter(([, value]) => value !== undefined));
   const sets = inputs.sets.map((set) => set.set === key ? { ...set, ...overrides, rationale: `${set.rationale} What-if: ${JSON.stringify(overrides)}.` } : set);
-  const built = buildFcffValuation({ ...inputs, sets, fx: 1, fiscalYearEnd: inputs.fiscalYearEnd });
+  const built = buildFcffValuation({ ...inputs, sets, fiscalYearEnd: inputs.fiscalYearEnd });
   const set$ = built.assembled.valuation_scenario_set as Row;
   const result = {
     run: runId, mode: stored ? "stored v2 inputs" : "rebuilt from stored inputs, code-default sets", overrides: { set: key, ...overrides },

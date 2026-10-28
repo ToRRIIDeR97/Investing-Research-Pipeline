@@ -39,6 +39,8 @@ const median = (values: number[]) => {
   return sorted.length ? (sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2) : null;
 };
 export const DEFAULT_FADE_YEARS = 5;
+/** Minimum discount rate minus terminal growth: near zero, the terminal value (divided by r - g) explodes. */
+export const MIN_TERMINAL_SPREAD = 0.01;
 
 // ---------------------------------------------------------------- schedules
 
@@ -129,15 +131,17 @@ export function ronicDefault(input: { historyRoic: Num; baseStatements: Statemen
 /**
  * Code-prepared sets: the base discount rate is the CAPM cost of equity (used as the FCFF rate; label it when debt is
  * material), conservative +1pt and aggressive -1pt. Terminal growth is 2.5% capped at the risk-free rate, +/-0.5pt
- * (aggressive also capped at the risk-free rate). RONIC is the default for all three.
+ * (aggressive also capped at the risk-free rate). RONIC is the default for all three. Every rate is at least the
+ * risk-free rate + 0.5pt and the highest set growth + MIN_TERMINAL_SPREAD, so the order of the rates holds.
  */
 export function defaultValuationSets(input: { capm: Num; riskFree: Num; ronic: number; fadeYears?: number }): ValuationSet[] {
   const rf = finite(input.riskFree) ? input.riskFree : null;
   const base = finite(input.capm) ? input.capm : rf !== null ? rf + 0.05 : 0.09;
   const g = Math.min(0.025, rf ?? 0.025);
   const fade = input.fadeYears ?? DEFAULT_FADE_YEARS;
-  const rate = (value: number) => Number(Math.max(value, (rf ?? 0) + 0.005).toFixed(4));
   const growth = (value: number) => Number(Math.min(value, rf ?? value).toFixed(4));
+  const floor = Math.max((rf ?? 0) + 0.005, growth(g + 0.005) + MIN_TERMINAL_SPREAD);
+  const rate = (value: number) => Number(Math.max(value, floor).toFixed(4));
   const source = finite(input.capm) ? "CAPM cost of equity" : rf !== null ? "risk-free rate + 5pt (no CAPM inputs)" : "9% default (no CAPM or risk-free rate)";
   return [
     { set: "conservative", discount_rate: rate(base + 0.01), terminal_growth: growth(g - 0.005), ronic: input.ronic, fade_years: fade,
@@ -161,7 +165,7 @@ export function validateValuationSets(sets: ValuationSet[], defaults: ValuationS
   sets.forEach((set, i) => {
     const path = `valuation_assumptions.sets.${i}`;
     if (riskFree !== null && set.discount_rate <= riskFree) errors.push({ path: `${path}.discount_rate`, message: `${set.set} discount_rate ${set.discount_rate} must exceed the risk-free rate ${riskFree} (FRED DGS10).` });
-    if (set.terminal_growth >= set.discount_rate) errors.push({ path: `${path}.terminal_growth`, message: `${set.set} terminal_growth must be below its discount_rate.` });
+    if (set.discount_rate - set.terminal_growth < MIN_TERMINAL_SPREAD - 1e-9) errors.push({ path: `${path}.terminal_growth`, message: `${set.set} terminal_growth ${set.terminal_growth} must be at least ${MIN_TERMINAL_SPREAD * 100}pt below its discount_rate ${set.discount_rate}: the terminal value divides by r - g.` });
     if (set.ronic <= set.terminal_growth) errors.push({ path: `${path}.ronic`, message: `${set.set} ronic ${set.ronic} must exceed terminal_growth ${set.terminal_growth}: at or below it, growth costs all of NOPAT and the terminal value is zero or negative.` });
     if (riskFree !== null && set.terminal_growth > riskFree + 1e-9) errors.push({ path: `${path}.terminal_growth`, message: `${set.set} terminal_growth ${set.terminal_growth} must not exceed the risk-free rate ${riskFree}: no business outgrows the economy forever.` });
     const fallback = defaults.find((d) => d.set === set.set);
@@ -269,6 +273,24 @@ export function currencyConversion(input: {
   };
 }
 
+/**
+ * A model-built schedule (equity methods) in the statement currency per ordinary share, converted like the FCFF path:
+ * cash flows, their builds and a multiple terminal's metric are amounts (x fx_rate); diluted shares are ordinary shares
+ * (/ depositary_ratio), so the value is per listed share in the price currency.
+ */
+export function convertMethodInput(model: ValuationMethodInput, conversion: { fx_rate: number; depositary_ratio: number; price_currency: string | null }): ValuationMethodInput {
+  const fx = conversion.fx_rate, ratio = conversion.depositary_ratio > 0 ? conversion.depositary_ratio : 1;
+  if (fx === 1 && ratio === 1 && (!conversion.price_currency || conversion.price_currency === model.currency)) return model;
+  const scale = (build: NonNullable<ValuationMethodInput["years"][number]["build"]>) => Object.fromEntries(
+    Object.entries(build).map(([key, value]) => [key, value * fx])) as typeof build;
+  return {
+    ...model, currency: conversion.price_currency ?? model.currency, diluted_shares: model.diluted_shares / ratio,
+    years: model.years.map((year) => ({ ...year, cash_flow: year.cash_flow * fx, ...(year.build ? { build: scale(year.build) } : {}) })),
+    terminal: model.terminal.type === "perpetuity" ? model.terminal : { ...model.terminal, metric_value: model.terminal.metric_value * fx },
+    equity_bridge: model.equity_bridge * fx,
+  };
+}
+
 // ---------------------------------------------------------------- reverse valuation
 
 type ReverseContext = { statements: StatementYear[]; set: ValuationSet; common: ScheduleCommon; price: number };
@@ -306,19 +328,27 @@ export function reverseValuationV2(ctx: ReverseContext, bases: GrowthBase[]) {
   const lastNopat = statements.at(-1)!.nopat;
   const value = (s: ValuationSet, st = statements) => valueToday(driverSchedule(st, "base", s, common));
   const r = set.discount_rate, times = yearTimes(schedule);
+  // The first year counts only the part still ahead of the valuation date (times[0] of a year), as the equity bridge
+  // already holds the cash reported to date; later years count in full.
   const tenYear = (base: number, x: number) => {
     let pv = 0, flow = base;
-    for (let t = 0; t < 10; t += 1) { flow *= 1 + x; pv += flow / (1 + r) ** (times[0] + t); }
+    for (let t = 0; t < 10; t += 1) { flow *= 1 + x; pv += (t === 0 ? flow * Math.min(1, times[0]) : flow) / (1 + r) ** (times[0] + t); }
     const tv = (flow * (1 + set.terminal_growth)) / (r - set.terminal_growth);
     return (pv + tv / (1 + r) ** (times[0] + 9) + common.bridge) / common.shares;
   };
+  // Each year keeps its own capex, D&A and working-capital ratios (ΔNWC per unit of revenue change), so only the
+  // solved driver moves.
+  const baseRevenue = statements[0].revenue / (1 + statements[0].revenue_growth);
   const uniform = (override: Partial<YearlyDriver>) => (x: number) => {
-    const drivers = statements.map((year) => ({ fiscal_year: year.fiscal_year, revenue_growth: year.revenue_growth, operating_margin: year.operating_margin,
-      capex_to_revenue: year.capital_expenditures / year.revenue, tax_rate: year.tax_rate,
-      ...(override.operating_margin !== undefined ? { operating_margin: x } : {}), ...(override.revenue_growth !== undefined ? { revenue_growth: x } : {}) }));
-    const base = statements[0].revenue / (1 + statements[0].revenue_growth);
-    return value(set, buildScenarioStatements({ baseRevenue: base, baseYear: statements[0].fiscal_year - 1,
-      ratios: { da_to_revenue: statements[0].depreciation_amortization / statements[0].revenue, capex_to_revenue: null, tax_rate: statements[0].tax_rate }, drivers }));
+    const drivers = statements.map((year, i) => {
+      const revenueChange = year.revenue - (i === 0 ? baseRevenue : statements[i - 1].revenue);
+      return { fiscal_year: year.fiscal_year, revenue_growth: year.revenue_growth, operating_margin: year.operating_margin,
+        capex_to_revenue: year.capital_expenditures / year.revenue, da_to_revenue: year.depreciation_amortization / year.revenue, tax_rate: year.tax_rate,
+        nwc_to_revenue_change: revenueChange !== 0 ? year.change_in_net_working_capital / revenueChange : 0,
+        ...(override.operating_margin !== undefined ? { operating_margin: x } : {}), ...(override.revenue_growth !== undefined ? { revenue_growth: x } : {}) };
+    });
+    return value(set, buildScenarioStatements({ baseRevenue, baseYear: statements[0].fiscal_year - 1,
+      ratios: { da_to_revenue: null, capex_to_revenue: null, tax_rate: statements[0].tax_rate }, drivers }));
   };
   return {
     artifact_type: "reverse_valuation" as const, method: "fcff", market_price: price, valuation_set: set.set,
@@ -551,6 +581,14 @@ export function lossSegments(input: { drivers: SegmentDriver[] | null | undefine
   };
 }
 
+/** Segment operating income converted into the price currency at the statements' FX rate. */
+export function convertSegmentDrivers(drivers: SegmentDriver[] | null | undefined, fx: number): SegmentDriver[] | null | undefined {
+  if (!drivers || fx === 1) return drivers;
+  return drivers.map((driver) => Array.isArray(driver.segment_operating_income)
+    ? { ...driver, segment_operating_income: driver.segment_operating_income.map((part) => ({ ...part, operating_income: part.operating_income * fx })) }
+    : driver);
+}
+
 // ---------------------------------------------------------------- assembly
 
 export type FcffValuationInput = {
@@ -592,7 +630,8 @@ export function buildFcffValuation(input: FcffValuationInput) {
   const sanity = sanityFlags({ schedules, statements: input.statements, set: b, common: common("base"), price: input.price, weightedToday,
     capm: input.capm, riskFree: input.riskFree, historyRoic: input.historyRoic, checks });
   const stress = stressCases({ bear: input.statements.bear, conservative: set("conservative"), common: common("bear"), price: input.price });
-  const segments = lossSegments({ drivers: input.segmentDrivers, statements: input.statements.base, schedule: schedules.base, set: b });
+  // Segment drivers are in the statement currency, like the pack: convert them before reconciling with the converted statements.
+  const segments = lossSegments({ drivers: convertSegmentDrivers(input.segmentDrivers, input.fx), statements: input.statements.base, schedule: schedules.base, set: b });
   const reverse = reverseValuationV2({ statements: input.statements.base, set: b, common: common("base"), price: input.price }, growthBases(input.pack, input.fx));
   return {
     schedules, assembled, reverse, lenses,
