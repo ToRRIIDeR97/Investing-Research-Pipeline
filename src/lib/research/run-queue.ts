@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { CURRENT_PIPELINE_VERSION } from "./version";
-import { resumeResearchRun } from "@/lib/workflow/orchestrator";
+import { failRun, resumeResearchRun } from "@/lib/workflow/orchestrator";
+import { pipelineSql } from "@/db/pipeline-sql";
 
 export const RESEARCH_RUN_JOB_TYPE = "pipeline" as const;
 export const DEFAULT_RESEARCH_RUN_LEASE_MS = 5 * 60 * 1000;
@@ -49,11 +50,12 @@ export class ResearchRunQueueError extends Error {
   }
 }
 
+// The worker calls these every few seconds, so they share the pipeline pool instead of opening a client per call.
 function database() {
   if (!process.env.DATABASE_URL) {
     throw new ResearchRunQueueError("DATABASE_URL is required", 500, "DATABASE_NOT_CONFIGURED");
   }
-  return postgres(process.env.DATABASE_URL);
+  return pipelineSql();
 }
 
 function asJob(row: Record<string, unknown> | undefined): ResearchRunJob | null {
@@ -68,76 +70,72 @@ export async function enqueueResearchRun(
 ): Promise<ResearchRunJob> {
   await resumeResearchRun(runId);
   const sql = database();
-  try {
-    const result = await sql.begin(async (tx) => {
-      const runs = await tx`
-        SELECT id, status, pipeline_version
-        FROM research_runs
-        WHERE id = ${runId}
-        FOR UPDATE
-      `;
-      const run = runs[0];
-      if (!run) {
-        throw new ResearchRunQueueError("Research run not found", 404, "NOT_FOUND");
-      }
-      if (Number(run.pipeline_version) !== CURRENT_PIPELINE_VERSION) {
-        throw new ResearchRunQueueError(
-          `Only pipeline_version ${CURRENT_PIPELINE_VERSION} runs can be queued`,
-          422,
-          "UNSUPPORTED_PIPELINE_VERSION"
-        );
-      }
-      if (["completed", "cancelled"].includes(String(run.status))) {
-        throw new ResearchRunQueueError(
-          `Run cannot be queued from status ${run.status}`,
-          422,
-          "INVALID_RUN_STATUS"
-        );
-      }
+  const result = await sql.begin(async (tx) => {
+    const runs = await tx`
+      SELECT id, status, pipeline_version
+      FROM research_runs
+      WHERE id = ${runId}
+      FOR UPDATE
+    `;
+    const run = runs[0];
+    if (!run) {
+      throw new ResearchRunQueueError("Research run not found", 404, "NOT_FOUND");
+    }
+    if (Number(run.pipeline_version) !== CURRENT_PIPELINE_VERSION) {
+      throw new ResearchRunQueueError(
+        `Only pipeline_version ${CURRENT_PIPELINE_VERSION} runs can be queued`,
+        422,
+        "UNSUPPORTED_PIPELINE_VERSION"
+      );
+    }
+    if (["completed", "cancelled"].includes(String(run.status))) {
+      throw new ResearchRunQueueError(
+        `Run cannot be queued from status ${run.status}`,
+        422,
+        "INVALID_RUN_STATUS"
+      );
+    }
 
-      const active = await tx`
-        SELECT * FROM research_run_jobs
-        WHERE research_run_id = ${runId}
-          AND job_type = ${RESEARCH_RUN_JOB_TYPE}
-          AND status IN ('queued', 'running')
-        ORDER BY created_at DESC
-        LIMIT 1
-      `;
-      if (active[0]) return active[0];
+    const active = await tx`
+      SELECT * FROM research_run_jobs
+      WHERE research_run_id = ${runId}
+        AND job_type = ${RESEARCH_RUN_JOB_TYPE}
+        AND status IN ('queued', 'running')
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    if (active[0]) return active[0];
 
-      const inserted = await tx`
-        INSERT INTO research_run_jobs (
-          id, research_run_id, job_type, status, requested_by, max_attempts,
-          queued_at, created_at, updated_at
-        ) VALUES (
-          ${randomUUID()}, ${runId}, ${RESEARCH_RUN_JOB_TYPE}, 'queued',
-          ${requestedBy || "user"}, ${options.maxAttempts ?? 3}, NOW(), NOW(), NOW()
-        )
-        ON CONFLICT (research_run_id)
-          WHERE job_type = 'pipeline' AND status IN ('queued', 'running')
-        DO NOTHING
-        RETURNING *
-      `;
-      if (inserted[0]) return inserted[0];
+    const inserted = await tx`
+      INSERT INTO research_run_jobs (
+        id, research_run_id, job_type, status, requested_by, max_attempts,
+        queued_at, created_at, updated_at
+      ) VALUES (
+        ${randomUUID()}, ${runId}, ${RESEARCH_RUN_JOB_TYPE}, 'queued',
+        ${requestedBy || "user"}, ${options.maxAttempts ?? 3}, NOW(), NOW(), NOW()
+      )
+      ON CONFLICT (research_run_id)
+        WHERE job_type = 'pipeline' AND status IN ('queued', 'running')
+      DO NOTHING
+      RETURNING *
+    `;
+    if (inserted[0]) return inserted[0];
 
-      // Another request won the partial unique-index race.
-      const winner = await tx`
-        SELECT * FROM research_run_jobs
-        WHERE research_run_id = ${runId}
-          AND job_type = ${RESEARCH_RUN_JOB_TYPE}
-          AND status IN ('queued', 'running')
-        ORDER BY created_at DESC
-        LIMIT 1
-      `;
-      if (!winner[0]) {
-        throw new ResearchRunQueueError("Unable to enqueue research run", 409, "QUEUE_RACE");
-      }
-      return winner[0];
-    });
-    return asJob(result as unknown as Record<string, unknown>)!;
-  } finally {
-    await sql.end();
-  }
+    // Another request won the partial unique-index race.
+    const winner = await tx`
+      SELECT * FROM research_run_jobs
+      WHERE research_run_id = ${runId}
+        AND job_type = ${RESEARCH_RUN_JOB_TYPE}
+        AND status IN ('queued', 'running')
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    if (!winner[0]) {
+      throw new ResearchRunQueueError("Unable to enqueue research run", 409, "QUEUE_RACE");
+    }
+    return winner[0];
+  });
+  return asJob(result as unknown as Record<string, unknown>)!;
 }
 
 /**
@@ -150,37 +148,33 @@ export async function claimNextResearchRun(
   options: { runId?: string } = {}
 ): Promise<ResearchRunJob | null> {
   const sql = database();
-  try {
-    const result = await sql.begin(async (tx) => {
-      const jobs = await tx`
-        SELECT * FROM research_run_jobs
-        WHERE job_type = ${RESEARCH_RUN_JOB_TYPE}
-          AND status = 'queued'
-          AND (lease_expires_at IS NULL OR lease_expires_at < NOW())
-          AND (${options.runId ?? null}::uuid IS NULL OR research_run_id = ${options.runId ?? null}::uuid)
-        ORDER BY queued_at ASC, created_at ASC
-        LIMIT 1
-        FOR UPDATE SKIP LOCKED
-      `;
-      if (!jobs[0]) return null;
-      const claimed = await tx`
-        UPDATE research_run_jobs
-        SET status = 'running',
-            lease_owner = ${leaseOwner},
-            lease_expires_at = NOW() + ${leaseMs} * INTERVAL '1 millisecond',
-            attempt_count = attempt_count + 1,
-            started_at = COALESCE(started_at, NOW()),
-            failure_reason = NULL,
-            updated_at = NOW()
-        WHERE id = ${jobs[0].id}
-        RETURNING *
-      `;
-      return claimed[0] || null;
-    });
-    return asJob((result || undefined) as unknown as Record<string, unknown> | undefined);
-  } finally {
-    await sql.end();
-  }
+  const result = await sql.begin(async (tx) => {
+    const jobs = await tx`
+      SELECT * FROM research_run_jobs
+      WHERE job_type = ${RESEARCH_RUN_JOB_TYPE}
+        AND status = 'queued'
+        AND (lease_expires_at IS NULL OR lease_expires_at < NOW())
+        AND (${options.runId ?? null}::uuid IS NULL OR research_run_id = ${options.runId ?? null}::uuid)
+      ORDER BY queued_at ASC, created_at ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    `;
+    if (!jobs[0]) return null;
+    const claimed = await tx`
+      UPDATE research_run_jobs
+      SET status = 'running',
+          lease_owner = ${leaseOwner},
+          lease_expires_at = NOW() + ${leaseMs} * INTERVAL '1 millisecond',
+          attempt_count = attempt_count + 1,
+          started_at = COALESCE(started_at, NOW()),
+          failure_reason = NULL,
+          updated_at = NOW()
+      WHERE id = ${jobs[0].id}
+      RETURNING *
+    `;
+    return claimed[0] || null;
+  });
+  return asJob((result || undefined) as unknown as Record<string, unknown> | undefined);
 }
 
 export async function renewResearchRunLease(
@@ -189,17 +183,13 @@ export async function renewResearchRunLease(
   leaseMs = DEFAULT_RESEARCH_RUN_LEASE_MS
 ): Promise<ResearchRunJob | null> {
   const sql = database();
-  try {
-    const rows = await sql`
-      UPDATE research_run_jobs
-      SET lease_expires_at = NOW() + ${leaseMs} * INTERVAL '1 millisecond', updated_at = NOW()
-      WHERE id = ${jobId} AND status = 'running' AND lease_owner = ${leaseOwner}
-      RETURNING *
-    `;
-    return asJob(rows[0] as unknown as Record<string, unknown> | undefined);
-  } finally {
-    await sql.end();
-  }
+  const rows = await sql`
+    UPDATE research_run_jobs
+    SET lease_expires_at = NOW() + ${leaseMs} * INTERVAL '1 millisecond', updated_at = NOW()
+    WHERE id = ${jobId} AND status = 'running' AND lease_owner = ${leaseOwner}
+    RETURNING *
+  `;
+  return asJob(rows[0] as unknown as Record<string, unknown> | undefined);
 }
 
 export async function completeResearchRunJob(
@@ -208,21 +198,17 @@ export async function completeResearchRunJob(
   result: Record<string, unknown>
 ): Promise<ResearchRunJob | null> {
   const sql = database();
-  try {
-    const rows = await sql`
-      UPDATE research_run_jobs
-      SET status = 'completed', result_json = ${sql.json(result as any)},
-          lease_owner = NULL, lease_expires_at = NULL,
-          completed_at = NOW(), updated_at = NOW()
-      WHERE id = ${jobId} AND status = 'running' AND lease_owner = ${leaseOwner}
-      RETURNING *
-    `;
-    if (rows[0]) return asJob(rows[0] as unknown as Record<string, unknown>);
-    const existing = await sql`SELECT * FROM research_run_jobs WHERE id = ${jobId} LIMIT 1`;
-    return asJob(existing[0] as unknown as Record<string, unknown> | undefined);
-  } finally {
-    await sql.end();
-  }
+  const rows = await sql`
+    UPDATE research_run_jobs
+    SET status = 'completed', result_json = ${sql.json(result as any)},
+        lease_owner = NULL, lease_expires_at = NULL,
+        completed_at = NOW(), updated_at = NOW()
+    WHERE id = ${jobId} AND status = 'running' AND lease_owner = ${leaseOwner}
+    RETURNING *
+  `;
+  if (rows[0]) return asJob(rows[0] as unknown as Record<string, unknown>);
+  const existing = await sql`SELECT * FROM research_run_jobs WHERE id = ${jobId} LIMIT 1`;
+  return asJob(existing[0] as unknown as Record<string, unknown> | undefined);
 }
 
 export async function failResearchRunJob(
@@ -231,21 +217,17 @@ export async function failResearchRunJob(
   failureReason: string
 ): Promise<ResearchRunJob | null> {
   const sql = database();
-  try {
-    const rows = await sql`
-      UPDATE research_run_jobs
-      SET status = 'failed', failure_reason = ${failureReason.slice(0, 4000)},
-          lease_owner = NULL, lease_expires_at = NULL,
-          completed_at = NOW(), updated_at = NOW()
-      WHERE id = ${jobId} AND status = 'running' AND lease_owner = ${leaseOwner}
-      RETURNING *
-    `;
-    if (rows[0]) return asJob(rows[0] as unknown as Record<string, unknown>);
-    const existing = await sql`SELECT * FROM research_run_jobs WHERE id = ${jobId} LIMIT 1`;
-    return asJob(existing[0] as unknown as Record<string, unknown> | undefined);
-  } finally {
-    await sql.end();
-  }
+  const rows = await sql`
+    UPDATE research_run_jobs
+    SET status = 'failed', failure_reason = ${failureReason.slice(0, 4000)},
+        lease_owner = NULL, lease_expires_at = NULL,
+        completed_at = NOW(), updated_at = NOW()
+    WHERE id = ${jobId} AND status = 'running' AND lease_owner = ${leaseOwner}
+    RETURNING *
+  `;
+  if (rows[0]) return asJob(rows[0] as unknown as Record<string, unknown>);
+  const existing = await sql`SELECT * FROM research_run_jobs WHERE id = ${jobId} LIMIT 1`;
+  return asJob(existing[0] as unknown as Record<string, unknown> | undefined);
 }
 
 /**
@@ -259,109 +241,121 @@ export async function releaseResearchRunJob(
   delayMs = 0
 ): Promise<ResearchRunJob | null> {
   const sql = database();
-  try {
-    const rows = await sql`
-      UPDATE research_run_jobs
-      SET status = 'queued', lease_owner = NULL,
-          lease_expires_at = CASE WHEN ${delayMs} > 0 THEN NOW() + ${delayMs} * INTERVAL '1 millisecond' ELSE NULL END,
-          attempt_count = GREATEST(attempt_count - 1, 0), failure_reason = ${reason.slice(0, 4000)}, updated_at = NOW()
-      WHERE id = ${jobId} AND status = 'running' AND lease_owner = ${leaseOwner}
-      RETURNING *
-    `;
-    return asJob(rows[0] as unknown as Record<string, unknown> | undefined);
-  } finally {
-    await sql.end();
-  }
+  const rows = await sql`
+    UPDATE research_run_jobs
+    SET status = 'queued', lease_owner = NULL,
+        lease_expires_at = CASE WHEN ${delayMs} > 0 THEN NOW() + ${delayMs} * INTERVAL '1 millisecond' ELSE NULL END,
+        attempt_count = GREATEST(attempt_count - 1, 0), failure_reason = ${reason.slice(0, 4000)}, updated_at = NOW()
+    WHERE id = ${jobId} AND status = 'running' AND lease_owner = ${leaseOwner}
+    RETURNING *
+  `;
+  return asJob(rows[0] as unknown as Record<string, unknown> | undefined);
 }
+
+/** Jobs reconcile may add to a run after its last other enqueue; past this the run stops for review instead. */
+export const MAX_RECONCILE_JOBS_PER_RUN = 2;
 
 /**
  * Queue a job for each running v3 run that was queued before but has had no job activity for a minute:
  * an approval whose enqueue failed, or a job that failed or exhausted its leases outside the pipeline.
- * The one-active-job index makes this safe beside enqueueResearchRun.
+ * A run that already had MAX_RECONCILE_JOBS_PER_RUN such jobs is failed as needs_more_work, so a run that keeps
+ * crashing its worker is not retried (and billed) forever. The one-active-job index makes this safe beside
+ * enqueueResearchRun.
  */
 export async function reconcileOrphanedResearchRuns(options: { runId?: string } = {}): Promise<string[]> {
   const sql = database();
-  try {
-    const rows = await sql`
-      INSERT INTO research_run_jobs (research_run_id, job_type, status, requested_by, max_attempts, queued_at, created_at, updated_at)
-      SELECT rr.id, ${RESEARCH_RUN_JOB_TYPE}, 'queued', 'worker:reconcile', 3, NOW(), NOW(), NOW()
-      FROM research_runs rr
-      WHERE rr.status = 'running' AND rr.pipeline_version = ${CURRENT_PIPELINE_VERSION}
-        AND rr.updated_at < NOW() - INTERVAL '60 seconds'
-        AND (${options.runId ?? null}::uuid IS NULL OR rr.id = ${options.runId ?? null}::uuid)
-        AND EXISTS (SELECT 1 FROM research_run_jobs j WHERE j.research_run_id = rr.id AND j.job_type = ${RESEARCH_RUN_JOB_TYPE})
-        AND NOT EXISTS (SELECT 1 FROM research_run_jobs j WHERE j.research_run_id = rr.id AND j.job_type = ${RESEARCH_RUN_JOB_TYPE}
-          AND (j.status IN ('queued', 'running') OR j.updated_at > NOW() - INTERVAL '60 seconds'))
-      ON CONFLICT (research_run_id) WHERE job_type = 'pipeline' AND status IN ('queued', 'running') DO NOTHING
-      RETURNING research_run_id
-    `;
-    return rows.map((row) => String(row.research_run_id));
-  } finally {
-    await sql.end();
+  const orphans = await sql`
+    SELECT rr.id, (
+      SELECT count(*) FROM research_run_jobs j
+      WHERE j.research_run_id = rr.id AND j.job_type = ${RESEARCH_RUN_JOB_TYPE} AND j.requested_by = 'worker:reconcile'
+        AND j.created_at > COALESCE((SELECT max(k.created_at) FROM research_run_jobs k
+          WHERE k.research_run_id = rr.id AND k.job_type = ${RESEARCH_RUN_JOB_TYPE}
+            AND k.requested_by IS DISTINCT FROM 'worker:reconcile'), '-infinity')
+    ) AS reconciled
+    FROM research_runs rr
+    WHERE rr.status = 'running' AND rr.pipeline_version = ${CURRENT_PIPELINE_VERSION}
+      AND rr.updated_at < NOW() - INTERVAL '60 seconds'
+      AND (${options.runId ?? null}::uuid IS NULL OR rr.id = ${options.runId ?? null}::uuid)
+      AND EXISTS (SELECT 1 FROM research_run_jobs j WHERE j.research_run_id = rr.id AND j.job_type = ${RESEARCH_RUN_JOB_TYPE})
+      AND NOT EXISTS (SELECT 1 FROM research_run_jobs j WHERE j.research_run_id = rr.id AND j.job_type = ${RESEARCH_RUN_JOB_TYPE}
+        AND (j.status IN ('queued', 'running') OR j.updated_at > NOW() - INTERVAL '60 seconds'))
+  `;
+  const requeue: string[] = [];
+  for (const orphan of orphans) {
+    if (Number(orphan.reconciled) < MAX_RECONCILE_JOBS_PER_RUN) requeue.push(String(orphan.id));
+    else await failRun(String(orphan.id), `Stopped after ${MAX_RECONCILE_JOBS_PER_RUN} automatic requeues; its jobs keep failing outside the pipeline`, "needs_more_work")
+      .catch((error) => console.error(`could not stop run ${orphan.id} after its automatic requeues:`, error));
   }
+  if (!requeue.length) return [];
+  const rows = await sql`
+    INSERT INTO research_run_jobs (research_run_id, job_type, status, requested_by, max_attempts, queued_at, created_at, updated_at)
+    SELECT rr.id, ${RESEARCH_RUN_JOB_TYPE}, 'queued', 'worker:reconcile', 3, NOW(), NOW(), NOW()
+    FROM research_runs rr
+    WHERE rr.id = ANY(${requeue}::uuid[]) AND rr.status = 'running'
+    ON CONFLICT (research_run_id) WHERE job_type = 'pipeline' AND status IN ('queued', 'running') DO NOTHING
+    RETURNING research_run_id
+  `;
+  return rows.map((row) => String(row.research_run_id));
 }
 
-/** Requeue expired leases, or terminally fail jobs that exhausted attempts. */
+/**
+ * Requeue expired leases, or terminally fail jobs that exhausted attempts. A run whose job exhausted its attempts
+ * is failed as needs_more_work, so the reconcile step does not give it a fresh job.
+ */
 export async function requeueExpiredResearchRunJobs(): Promise<ResearchRunJob[]> {
   const sql = database();
-  try {
-    const rows = await sql`
-      WITH expired AS (
-        SELECT id,
-          CASE WHEN attempt_count < max_attempts THEN 'queued' ELSE 'failed' END AS next_status
-        FROM research_run_jobs
-        WHERE job_type = ${RESEARCH_RUN_JOB_TYPE}
-          AND status = 'running'
-          AND lease_expires_at IS NOT NULL
-          AND lease_expires_at < NOW()
-        FOR UPDATE SKIP LOCKED
-      )
-      UPDATE research_run_jobs jobs
-      SET status = expired.next_status,
-          lease_owner = NULL,
-          lease_expires_at = NULL,
-          failure_reason = CASE WHEN expired.next_status = 'failed'
-            THEN 'Lease expired after maximum attempts' ELSE 'Lease expired; job requeued' END,
-          completed_at = CASE WHEN expired.next_status = 'failed' THEN NOW() ELSE NULL END,
-          updated_at = NOW()
-      FROM expired
-      WHERE jobs.id = expired.id
-      RETURNING jobs.*
-    `;
-    return rows as unknown as ResearchRunJob[];
-  } finally {
-    await sql.end();
+  const rows = await sql`
+    WITH expired AS (
+      SELECT id,
+        CASE WHEN attempt_count < max_attempts THEN 'queued' ELSE 'failed' END AS next_status
+      FROM research_run_jobs
+      WHERE job_type = ${RESEARCH_RUN_JOB_TYPE}
+        AND status = 'running'
+        AND lease_expires_at IS NOT NULL
+        AND lease_expires_at < NOW()
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE research_run_jobs jobs
+    SET status = expired.next_status,
+        lease_owner = NULL,
+        lease_expires_at = NULL,
+        failure_reason = CASE WHEN expired.next_status = 'failed'
+          THEN 'Lease expired after maximum attempts' ELSE 'Lease expired; job requeued' END,
+        completed_at = CASE WHEN expired.next_status = 'failed' THEN NOW() ELSE NULL END,
+        updated_at = NOW()
+    FROM expired
+    WHERE jobs.id = expired.id
+    RETURNING jobs.*
+  `;
+  for (const job of rows) {
+    if (job.status !== "failed") continue;
+    // A failure here leaves the run to the reconcile cap.
+    await failRun(String(job.research_run_id), "Worker lease expired after maximum attempts", "needs_more_work")
+      .catch((error) => console.error(`could not stop run ${job.research_run_id} after its job exhausted attempts:`, error));
   }
+  return rows as unknown as ResearchRunJob[];
 }
 
-/** Pass `client` to reuse a long-lived pool; without one a client is opened and closed for this call. */
+/** `client` runs the query on the caller's pool instead of the shared one. */
 export async function getLatestResearchRunJob(runId: string, client?: ReturnType<typeof postgres>): Promise<ResearchRunJob | null> {
   const sql = client ?? database();
-  try {
-    const rows = await sql`
-      SELECT * FROM research_run_jobs
-      WHERE research_run_id = ${runId} AND job_type = ${RESEARCH_RUN_JOB_TYPE}
-      ORDER BY created_at DESC
-      LIMIT 1
-    `;
-    return asJob(rows[0] as unknown as Record<string, unknown> | undefined);
-  } finally {
-    if (!client) await sql.end();
-  }
+  const rows = await sql`
+    SELECT * FROM research_run_jobs
+    WHERE research_run_id = ${runId} AND job_type = ${RESEARCH_RUN_JOB_TYPE}
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  return asJob(rows[0] as unknown as Record<string, unknown> | undefined);
 }
 
 export async function listResearchRunJobs(runId: string): Promise<ResearchRunJob[]> {
   const sql = database();
-  try {
-    const rows = await sql`
-      SELECT * FROM research_run_jobs
-      WHERE research_run_id = ${runId} AND job_type = ${RESEARCH_RUN_JOB_TYPE}
-      ORDER BY created_at DESC
-    `;
-    return rows as unknown as ResearchRunJob[];
-  } finally {
-    await sql.end();
-  }
+  const rows = await sql`
+    SELECT * FROM research_run_jobs
+    WHERE research_run_id = ${runId} AND job_type = ${RESEARCH_RUN_JOB_TYPE}
+    ORDER BY created_at DESC
+  `;
+  return rows as unknown as ResearchRunJob[];
 }
 
 export async function recordWorkerHeartbeat(
@@ -369,57 +363,41 @@ export async function recordWorkerHeartbeat(
   metadata: Record<string, unknown> = {}
 ): Promise<void> {
   const sql = database();
-  try {
-    await sql`
-      INSERT INTO research_worker_heartbeats
-        (worker_id, status, last_seen_at, started_at, stopped_at, metadata_json, updated_at)
-      VALUES (${workerId}, 'healthy', NOW(), NOW(), NULL, ${sql.json(metadata as any)}, NOW())
-      ON CONFLICT (worker_id) DO UPDATE SET
-        status = 'healthy', last_seen_at = NOW(), stopped_at = NULL,
-        metadata_json = EXCLUDED.metadata_json, updated_at = NOW()
-    `;
-  } finally {
-    await sql.end();
-  }
+  await sql`
+    INSERT INTO research_worker_heartbeats
+      (worker_id, status, last_seen_at, started_at, stopped_at, metadata_json, updated_at)
+    VALUES (${workerId}, 'healthy', NOW(), NOW(), NULL, ${sql.json(metadata as any)}, NOW())
+    ON CONFLICT (worker_id) DO UPDATE SET
+      status = 'healthy', last_seen_at = NOW(), stopped_at = NULL,
+      metadata_json = EXCLUDED.metadata_json, updated_at = NOW()
+  `;
 }
 
 export async function markWorkerStopped(workerId: string): Promise<void> {
   const sql = database();
-  try {
-    await sql`
-      UPDATE research_worker_heartbeats
-      SET status = 'stopped', stopped_at = NOW(), updated_at = NOW()
-      WHERE worker_id = ${workerId}
-    `;
-  } finally {
-    await sql.end();
-  }
+  await sql`
+    UPDATE research_worker_heartbeats
+    SET status = 'stopped', stopped_at = NOW(), updated_at = NOW()
+    WHERE worker_id = ${workerId}
+  `;
 }
 
 export async function getWorkerHealth(client?: ReturnType<typeof postgres>): Promise<WorkerHealth[]> {
   const sql = client ?? database();
-  try {
-    const rows = await sql`
-      SELECT *, last_seen_at < NOW() - INTERVAL '30 seconds' AS stale
-      FROM research_worker_heartbeats
-      ORDER BY last_seen_at DESC
-    `;
-    return rows as unknown as WorkerHealth[];
-  } finally {
-    if (!client) await sql.end();
-  }
+  const rows = await sql`
+    SELECT *, last_seen_at < NOW() - INTERVAL '30 seconds' AS stale
+    FROM research_worker_heartbeats
+    ORDER BY last_seen_at DESC
+  `;
+  return rows as unknown as WorkerHealth[];
 }
 
 export async function hasHealthyResearchWorker(): Promise<boolean> {
   const sql = database();
-  try {
-    const rows = await sql`
-      SELECT 1 FROM research_worker_heartbeats
-      WHERE status = 'healthy' AND last_seen_at >= NOW() - INTERVAL '30 seconds'
-      LIMIT 1
-    `;
-    return Boolean(rows[0]);
-  } finally {
-    await sql.end();
-  }
+  const rows = await sql`
+    SELECT 1 FROM research_worker_heartbeats
+    WHERE status = 'healthy' AND last_seen_at >= NOW() - INTERVAL '30 seconds'
+    LIMIT 1
+  `;
+  return Boolean(rows[0]);
 }
