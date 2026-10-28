@@ -8,7 +8,7 @@ import { getAllStagesForRun } from "@/lib/workflow/stages";
 import { STANDARD_VERSION, COVERAGE, RESEARCH_DOCTRINE } from "../reporting/contracts";
 import { TEAM_ROLES, STAGE_DEPENDENCIES, STAGE_OWNERS } from "../team-plan";
 import { forecastYears } from "../valuation/engine";
-import { callResearchAgent, exactJsonPrompt, loadRunContext, persistV3Composition, type Sql } from "../run-context";
+import { callResearchAgent, exactJsonPrompt, loadRunContext, persistV3Composition, stripNul, type Sql } from "../run-context";
 import { FRAMING_RULES, framingContract, mergeFramingArchetypes, type ResearchFraming } from "../framing";
 import { businessArchetypes, archetypeOverlays } from "../archetypes/registry";
 
@@ -123,7 +123,7 @@ export const researchPlanHandler: StageHandler<unknown> = {
       const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}`;
       const metadata = (run?.metadata_json || {}) as Record<string, any>;
       const feedback: PlanFeedback[] = Array.isArray(metadata.research_plan_feedback) ? metadata.research_plan_feedback : [];
-      const framing = await draftFraming(sql as unknown as Sql, ctx, feedback);
+      const framing = stripNul(await draftFraming(sql as unknown as Sql, ctx, feedback));
       // The framing may add archetypes unless the run was created with them or the reviewer chose them.
       let planCtx = ctx;
       const merged = ["request", "reviewer"].includes(String(metadata.v3_archetypes_source))
@@ -149,14 +149,14 @@ export const researchPlanHandler: StageHandler<unknown> = {
         created_by: "system-research-os",
       });
 
-      const completionCriteria = JSON.stringify({
+      const completionCriteria = stripNul({
         requiredOutputs: ["research_plan_json"],
         plan_artifact_id: artifact.id,
         research_plan: plan,
-      }).replace(/'/g, "''");
+      });
       await sql`
         UPDATE research_stages
-        SET completion_criteria_json = ${sql.unsafe(`'${completionCriteria}'::jsonb`)}, updated_at = NOW()
+        SET completion_criteria_json = ${sql.json(completionCriteria as any)}, updated_at = NOW()
         WHERE research_run_id = ${ctx.runId} AND stage_key = 'research_plan'
       `;
       return { status: "success", artifactId: artifact.id, researchPlan: plan };

@@ -37,7 +37,7 @@ export async function createResearchRunWithStages(input: CreateResearchRunInput)
           ${input.assetId}, ${input.runType}, 'pending', ${input.researchQuestion},
           ${input.requestedBy}, ${input.profileId}, ${input.profileVersion},
           ${input.budgetLimitUsd === null ? null : String(input.budgetLimitUsd)}, ${input.forecastYears ?? null},
-          ${input.sourceCutoffAt}, ${input.marketDataCutoffAt},
+          COALESCE(${input.sourceCutoffAt}::timestamptz, NOW()), ${input.marketDataCutoffAt},
           ${CURRENT_PIPELINE_VERSION}, '{}'::jsonb, ${priorRunId}, NOW(), NOW()
         )
         RETURNING *

@@ -2,7 +2,7 @@
  * Composable archetype composition logic for Research OS v3.
  */
 
-import { businessArchetypes, archetypeOverlays, getArchetype, getOverlay } from "./registry";
+import { businessArchetypes, archetypeOverlays, getArchetype, getOverlay, isDefaultValuationRule } from "./registry";
 import type {
   ComposedProfile,
   ArchetypeCompositionError,
@@ -90,10 +90,16 @@ export function composeProfile(
     }
   }
 
-  // Valuation method conflicts
-  const methodRules: ValuationMethodRule[] = [];
-  for (const a of resolvedArchetypes) methodRules.push(...a.valuation_methods);
-  for (const o of resolvedOverlays) methodRules.push(...o.valuation_methods);
+  // Valuation method conflicts. A specific archetype's explicit rule for a method (one that differs from the shared
+  // defaults, e.g. holding_company requiring sotp or etf_fund forbidding dcf) overrides operating_company_core's rule,
+  // so core + holding_company composes instead of conflicting on sotp. Two specific archetypes can still conflict.
+  const explicitMethods = new Set(resolvedArchetypes.filter((a) => a.key !== "operating_company_core")
+    .flatMap((a) => a.valuation_methods).filter((r) => !isDefaultValuationRule(r)).map((r) => r.method));
+  const methodRules: ValuationMethodRule[] = [
+    ...resolvedArchetypes.flatMap((a) => a.key === "operating_company_core"
+      ? a.valuation_methods.filter((r) => !explicitMethods.has(r.method)) : a.valuation_methods),
+    ...resolvedOverlays.flatMap((o) => o.valuation_methods),
+  ];
   const methodsByKey = new Map<string, ValuationMethodRule[]>();
   for (const m of methodRules) {
     if (!methodsByKey.has(m.method)) methodsByKey.set(m.method, []);
@@ -129,12 +135,10 @@ export function composeProfile(
     [...resolvedArchetypes.flatMap((a) => a.required_process_nodes), ...resolvedOverlays.flatMap((o) => o.required_process_nodes)],
     "node_key"
   );
-  const valuation_methods = dedupeByKey<ValuationMethodRule>(
-    [...resolvedArchetypes.flatMap((a) => a.valuation_methods), ...resolvedOverlays.flatMap((o) => o.valuation_methods)],
-    "method"
-  ).map((rule) => rule.method === "nav" && archetypeKeys.includes("bank")
-    ? { ...rule, allowed: true, required: true, rationale: "Bank valuation uses tangible book value" }
-    : rule);
+  const valuation_methods = dedupeByKey<ValuationMethodRule>(methodRules, "method")
+    .map((rule) => rule.method === "nav" && archetypeKeys.includes("bank")
+      ? { ...rule, allowed: true, required: true, rationale: "Bank valuation uses tangible book value" }
+      : rule);
   const required_scenario_drivers = dedupeByKey<ScenarioDriverRequirement>(
     [...resolvedArchetypes.flatMap((a) => a.required_scenario_drivers), ...resolvedOverlays.flatMap((o) => o.required_scenario_drivers)],
     "driver_key"

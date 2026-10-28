@@ -109,11 +109,11 @@ npm run monitor:check -- meta-platforms sofi   # only these asset slugs
 For each asset's latest `completed` pipeline-v3 run, it:
 
 1. Takes the SEC CIK from the run's stored EDGAR filing URLs, or looks up the listing symbol in SEC's ticker map.
-2. Reads `https://data.sec.gov/submissions/CIK<cik>.json` and lists the 10-Q and 10-K filings filed after the run's source cutoff. Only `data.sec.gov` and `www.sec.gov` are fetched, over HTTPS and without redirects.
+2. Reads `https://data.sec.gov/submissions/CIK<cik>.json` and lists the 10-Q, 10-K, 20-F and 40-F filings (and their amendments) filed after the run's source cutoff, and the 6-Ks whose cover names a results release (the newest 12 6-K covers are read; a 6-K is listed but not parsed). Only `data.sec.gov` and `www.sec.gov` are fetched, over HTTPS and without redirects.
 3. Parses the newest four with the deterministic filing parser, reusing a stored copy of the filing when one exists.
 4. Scores the run's monitoring dashboard on the new quarter. An item with no reading in the new filings is `not_checkable`.
 5. Stores the result: `refresh_due` or `current`, `skipped` (no CIK) or `failed` (the error is kept in the reasons). One asset's failure doesn't stop the others.
 
-A refresh is due when a new 10-Q or 10-K exists, a KPI is past its danger line, or the run's `refresh_schedule.next_refresh_at` has passed. To act on it, start a new run of the asset from the UI or with `POST /api/assets/<id>/research-runs`. The new run links to the last completed run by default, and queuing it is a separate, explicit step. To schedule the check, run the command from cron or launchd. It needs only `DATABASE_URL`, which it reads from `.env.local` when the variable isn't set. Rows accumulate, and nothing prunes them. They are deleted with their asset.
+A refresh is due when a new periodic filing or 6-K results release exists, a KPI is past its danger line, or the run's `refresh_schedule.next_refresh_at` has passed. To act on it, start a new run of the asset from the UI or with `POST /api/assets/<id>/research-runs`. The new run links to the last completed run by default, and queuing it is a separate, explicit step. To schedule the check, run the command from cron or launchd. It needs only `DATABASE_URL`, which it reads from `.env.local` when the variable isn't set. Rows accumulate, and nothing prunes them. They are deleted with their asset.
 
 Recovery: a `failed` row usually means the SEC was unreachable or rate-limited it. Run the command again later. SEC asks for a descriptive User-Agent, and the script sends the same placeholder as the pipeline (AR-SEC-6).

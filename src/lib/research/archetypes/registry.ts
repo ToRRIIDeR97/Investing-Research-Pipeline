@@ -71,6 +71,10 @@ const commonArtifacts = (overrides: Partial<Record<string, { required?: boolean;
   }));
 };
 
+/** The default method rules every archetype starts from; an archetype's rule that differs from these is an explicit choice. */
+export const isDefaultValuationRule = (rule: { method: string; allowed: boolean; required: boolean }) =>
+  commonValuationMethods().some((m) => m.method === rule.method && m.allowed === rule.allowed && m.required === rule.required);
+
 const commonValuationMethods = (overrides: Partial<Record<string, { allowed?: boolean; required?: boolean; rationale?: string }>> = {}) => {
   const methods = [
     { method: "dcf", allowed: true, required: true, rationale: "Intrinsic cash-flow value" },

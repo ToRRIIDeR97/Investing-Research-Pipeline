@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert";
 import { diagnoseMetric, buildHistoricalDiagnosis } from "@/lib/research/diagnosis/diagnosis";
+import { diagnosisObservations } from "@/lib/research/handlers/historical-diagnosis";
 import { validateHistoricalDiagnosis } from "@/lib/research/diagnosis/contracts";
 import type { HistoricalObservation } from "@/lib/research/history/contracts";
 
@@ -135,5 +136,27 @@ describe("historical diagnosis", () => {
     const result = validateHistoricalDiagnosis(artifact);
     assert.equal(result.valid, false);
     assert.ok(result.errors.some((e) => e.includes("causal process node")));
+  });
+});
+
+describe("diagnosis series from the historical record", () => {
+  const row = (extra: Record<string, unknown>) => ({ metric_key: "revenue", periodicity: "quarterly", fiscal_year: 2026, fiscal_quarter: 1,
+    value_numeric: 100, currency: "CNY", reporting_basis: "gaap", restatement_version: 0, ...extra });
+  it("keeps one currency and basis per metric and one value per fiscal quarter", () => {
+    const series = diagnosisObservations([
+      row({ period_start: "2026-01-01" }),
+      row({ value_numeric: 400 }), // an undated row on the same quarter (possibly an annual total) loses to the dated one
+      row({ fiscal_quarter: 2, value_numeric: 110 }),
+      row({ fiscal_quarter: 3, value_numeric: 15, currency: "USD" }), // a minority currency is left out
+      row({ fiscal_quarter: 4, value_numeric: 120, segment: "Cloud" }),
+      row({ fiscal_quarter: 4, value_numeric: 130, available_at: "2027-02-01" }), // not public by the cutoff
+      row({ periodicity: "annual", fiscal_quarter: null, value_numeric: 500 }),
+    ], "2026-12-31");
+    assert.deepEqual(series.map((o) => [o.fiscal_quarter, o.value_numeric, o.currency]), [[1, 100, "CNY"], [2, 110, "CNY"]]);
+    assert.equal(series[0].reporting_basis, "gaap");
+  });
+  it("prefers the latest restatement of a quarter", () => {
+    const series = diagnosisObservations([row({ value_numeric: 100 }), row({ value_numeric: 105, restatement_version: 1 })], "2026-12-31");
+    assert.deepEqual(series.map((o) => o.value_numeric), [105]);
   });
 });

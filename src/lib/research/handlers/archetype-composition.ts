@@ -3,6 +3,7 @@ import { makeValidationResult } from "../run-context";
 import { persistV3Composition } from "../run-context";
 import postgres from "postgres";
 import { classificationArchetypes } from "../framing";
+import { validateCompositionForRun } from "../archetypes/compose";
 
 export const archetypeCompositionHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "archetype_composition",
@@ -44,6 +45,10 @@ export const archetypeCompositionHandler: StageHandler<Record<string, unknown>> 
       const errors: string[] = [];
       if (!Array.isArray(archetypes) || archetypes.length === 0) {
         errors.push("No archetypes composed/persisted for this run");
+      } else {
+        // A set that does not compose leaves every later stage without a profile; fail here instead.
+        const overlays = Array.isArray(metadata?.v3_overlays) ? metadata.v3_overlays : [];
+        for (const error of validateCompositionForRun(archetypes.map(String), overlays.map(String))) errors.push(error.message);
       }
       return makeValidationResult(errors);
     } catch (e: any) {
