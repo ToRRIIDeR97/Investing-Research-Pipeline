@@ -8,7 +8,7 @@ import { getAllStagesForRun } from "@/lib/workflow/stages";
 import { STANDARD_VERSION, COVERAGE, RESEARCH_DOCTRINE } from "../reporting/contracts";
 import { TEAM_ROLES, STAGE_DEPENDENCIES, STAGE_OWNERS } from "../team-plan";
 import { forecastYears } from "../valuation/engine";
-import { callResearchAgent, exactJsonPrompt, loadRunContext, persistV3Composition, stripNul, type Sql } from "../run-context";
+import { callResearchAgent, exactJsonPrompt, loadRunContext, jsonbText, persistV3Composition, stripNul, type Sql } from "../run-context";
 import { FRAMING_RULES, framingContract, mergeFramingArchetypes, type ResearchFraming } from "../framing";
 import { businessArchetypes, archetypeOverlays } from "../archetypes/registry";
 
@@ -130,7 +130,7 @@ export const researchPlanHandler: StageHandler<unknown> = {
         ? null : mergeFramingArchetypes({ archetypes: ctx.archetypeKeys, overlays: ctx.overlayKeys }, framing, ctx.assetId);
       if (merged) {
         await persistV3Composition(sql as unknown as Sql, ctx.runId, merged.archetypes, merged.overlays);
-        await sql`UPDATE research_runs SET metadata_json = coalesce(metadata_json, '{}'::jsonb) || ${sql.json({ v3_archetypes_source: "framing" })} WHERE id = ${ctx.runId}`;
+        await sql`UPDATE research_runs SET metadata_json = coalesce(metadata_json, '{}'::jsonb) || ${jsonbText({ v3_archetypes_source: "framing" })}::text::jsonb WHERE id = ${ctx.runId}`;
         planCtx = { ...(await loadRunContext(sql as unknown as Sql, ctx.runId)), signal: ctx.signal };
       }
       const plan = buildResearchPlan(planCtx, { framing, feedback });
@@ -156,7 +156,7 @@ export const researchPlanHandler: StageHandler<unknown> = {
       });
       await sql`
         UPDATE research_stages
-        SET completion_criteria_json = ${sql.json(completionCriteria as any)}, updated_at = NOW()
+        SET completion_criteria_json = ${jsonbText(completionCriteria)}::text::jsonb, updated_at = NOW()
         WHERE research_run_id = ${ctx.runId} AND stage_key = 'research_plan'
       `;
       return { status: "success", artifactId: artifact.id, researchPlan: plan };

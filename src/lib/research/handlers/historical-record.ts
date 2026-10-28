@@ -1,6 +1,6 @@
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
 import { makeValidationResult } from "../run-context";
-import { callResearchAgent, exactJsonPrompt } from "../run-context";
+import { callResearchAgent, exactJsonPrompt, jsonbText } from "../run-context";
 import {
   loadAcceptedEvidencePacket,
   persistMetrics,
@@ -119,7 +119,7 @@ export async function writeDepositaryRatio(sql: ReturnType<typeof postgres>, ass
   }
   if (!target || !depositaryRatioReplaces(target, ratio, options.asOf)) return null;
   await sql`UPDATE instruments SET depositary_ratio = ${ratio},
-    contract_specs_json = COALESCE(contract_specs_json, '{}'::jsonb) || ${sql.json(options.asOf ? { depositary_ratio_as_of: options.asOf } : {})},
+    contract_specs_json = COALESCE(contract_specs_json, '{}'::jsonb) || ${jsonbText(options.asOf ? { depositary_ratio_as_of: options.asOf } : {})}::text::jsonb,
     updated_at = NOW() WHERE id = ${target.id}`;
   return String(target.id);
 }

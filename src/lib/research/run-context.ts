@@ -215,10 +215,19 @@ export async function persistV3Composition(
   await sql`
     UPDATE research_runs
     SET metadata_json = coalesce(metadata_json, '{}'::jsonb)
-                         || ${sql.json(stripNul({ v3_archetypes: archetypes, v3_overlays: overlays }))},
+                         || ${jsonbText({ v3_archetypes: archetypes, v3_overlays: overlays })}::text::jsonb,
         updated_at = NOW()
     WHERE id = ${runId}
   `;
+}
+
+/**
+ * A JSON value as a text parameter for a `${...}::text::jsonb` cast, with NULs stripped. sql.json() fails on a client
+ * drizzle() has wrapped (it makes the json/jsonb serializers pass values through), and a bare jsonb parameter would be
+ * encoded twice on a plain client; a text parameter works on both.
+ */
+export function jsonbText(value: unknown): string {
+  return JSON.stringify(stripNul(value));
 }
 
 /** Drop NUL characters from every string in a JSON value; Postgres text and jsonb reject them. */
