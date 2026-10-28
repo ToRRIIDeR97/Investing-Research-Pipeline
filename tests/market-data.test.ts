@@ -6,6 +6,8 @@ import {
 } from "@/lib/market-data/providers/mock";
 import { parseBars } from "@/lib/market-data/providers/yahoo";
 import { MarketDataError } from "@/lib/market-data/provider";
+import { fetchedRange, windowCovered } from "@/lib/market-data/service";
+import { fcfYieldBand, peBand } from "@/lib/valuation/signal-generator";
 import type { YahooChartResult } from "@/lib/market-data/providers/yahoo";
 
 describe("market data provider", () => {
@@ -101,6 +103,67 @@ describe("market data provider", () => {
   it("C4-T9: Unit tests run without network using mock adapter", async () => {
     const quote = await provider.getQuote("MELI");
     assert.ok(quote.price > 0);
+  });
+});
+
+describe("history coverage (#133)", () => {
+  const d = (day: string) => new Date(`${day}T00:00:00Z`);
+  const start = d("2020-10-28");
+
+  it("accepts a late first bar only when a fetch already spanned the window start", () => {
+    // Listed in June 2021, after the six-year window starts.
+    assert.equal(windowCovered(start, d("2021-06-01"), [], []), false);
+    assert.equal(windowCovered(start, d("2021-06-01"), [], [{ start: d("2020-10-20"), end: d("2026-10-20") }]), true);
+    // An incremental fetch from near the end proves nothing about the start.
+    assert.equal(windowCovered(start, d("2021-06-01"), [], [{ start: d("2026-10-15"), end: d("2026-10-20") }]), false);
+    assert.equal(windowCovered(start, d("2020-10-30"), [], []), true);
+    assert.equal(windowCovered(start, null, [], [{ start, end: d("2026-10-20") }]), false);
+  });
+
+  it("accepts a gap of more than a week only when a fetch spanned it", () => {
+    const gap = [{ from: d("2023-03-01"), to: d("2023-03-20") }];
+    assert.equal(windowCovered(start, d("2020-10-29"), gap, []), false);
+    assert.equal(windowCovered(start, d("2020-10-29"), gap, [{ start: d("2020-10-20"), end: d("2026-10-20") }]), true);
+  });
+
+  it("reads fetch ranges from logged daily-history parameters", () => {
+    assert.deepEqual(fetchedRange({ start: "2020-10-20T00:00:00.000Z", end: "2026-10-20T00:00:00.000Z", interval: "1d" }),
+      [{ start: d("2020-10-20"), end: d("2026-10-20") }]);
+    assert.deepEqual(fetchedRange({ start: "2020-10-20", end: "2026-10-20", interval: "1wk" }), []);
+    assert.deepEqual(fetchedRange({}), []);
+  });
+});
+
+describe("valuation signal bands (#135)", () => {
+  it("does not call a loss-making or missing P/E cheap", () => {
+    assert.equal(peBand(-12).signal, "inconclusive");
+    assert.equal(peBand(Number.NaN).signal, "inconclusive");
+    assert.equal(peBand(12).signal, "cheap");
+    assert.equal(peBand(40).signal, "very_expensive");
+  });
+
+  it("reads FCF yield as a fraction", () => {
+    assert.equal(fcfYieldBand(0.06).signal, "cheap");
+    assert.equal(fcfYieldBand(0.02).signal, "expensive");
+    assert.equal(fcfYieldBand(9).signal, "very_cheap"); // legacy percent value
+    assert.equal(fcfYieldBand(Number.NaN).signal, "inconclusive");
+  });
+});
+
+describe("Yahoo point-in-time quote (#135)", () => {
+  it("returns the last close public by asOf, not the live price", async () => {
+    const open = (day: string) => Date.parse(`${day}T13:30:00Z`) / 1000;
+    const body = JSON.stringify({ chart: { error: null, result: [{
+      meta: { currency: "USD", symbol: "MELI", exchangeName: "NMS", instrumentType: "EQUITY", firstTradeDate: 0, regularMarketTime: 0,
+        gmtoffset: -14400, timezone: "EDT", exchangeTimezoneName: "America/New_York", regularMarketPrice: 999, chartPreviousClose: 1 },
+      timestamp: [open("2026-10-07"), open("2026-10-08")],
+      indicators: { quote: [{ open: [10, 11], high: [10, 11], low: [10, 11], close: [10, 11], volume: [1, 1] }] },
+    }] } });
+    const { createYahooMarketDataProvider } = await import("@/lib/market-data/providers/yahoo");
+    const yahoo = createYahooMarketDataProvider((async () => new Response(body, { status: 200 })) as typeof fetch);
+    // At 18:00 UTC on 8 October that session is still open.
+    const quote = await yahoo.getQuote("MELI", new Date("2026-10-08T18:00:00Z"));
+    assert.deepEqual([quote.price, quote.asOf.toISOString()], [10, "2026-10-07T00:00:00.000Z"]);
   });
 });
 

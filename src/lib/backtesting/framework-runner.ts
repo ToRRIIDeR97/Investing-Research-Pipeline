@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { createYahooMarketDataProvider } from "@/lib/market-data/providers/yahoo";
-import { timedFetch } from "@/lib/market-data/price-history";
+import { normalizeDailyBars, timedFetch } from "@/lib/market-data/price-history";
 import { deterministicBars } from "@/lib/market-data/providers/mock";
 import type { PriceBar } from "@/lib/market-data/provider";
 import type { ResearchRunContext } from "@/lib/research/run-context";
@@ -51,7 +51,8 @@ export async function loadFrameworkMarketDataset(
     primaryBenchmark: "QQQ",
     sectorBenchmark: "XLF",
     broadBenchmark: "SPY",
-  }
+  },
+  fetchImpl: typeof fetch = timedFetch
 ): Promise<MarketDataset> {
   const end = ctx.marketDataCutoffAt || ctx.cutoffAt || new Date();
   const start = new Date(end);
@@ -76,9 +77,11 @@ export async function loadFrameworkMarketDataset(
   }
 
   // Each series gets a 20 s timeout and one retry: one throttled benchmark should not end the run.
-  const yahoo = createYahooMarketDataProvider(timedFetch);
+  // Only bars whose close was public by the cutoff are kept, as for stored bars (#101).
+  const yahoo = createYahooMarketDataProvider(fetchImpl);
   const history = (symbol: string) => yahoo.getPriceHistory(symbol, start, end, "1d")
-    .catch(() => yahoo.getPriceHistory(symbol, start, end, "1d"));
+    .catch(() => yahoo.getPriceHistory(symbol, start, end, "1d"))
+    .then((bars) => normalizeDailyBars(bars, end));
   const [asset, ...benchmarks] = await Promise.all([history(ctx.symbol), ...benchmarkConfig.symbols.map(history)]);
   return {
     symbol: ctx.symbol,

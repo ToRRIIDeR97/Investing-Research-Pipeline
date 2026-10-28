@@ -5,6 +5,33 @@ import postgres from "postgres";
 // Asset-profile-aware valuation signal generation.
 // ============================================================
 
+type Sql = ReturnType<typeof postgres> | postgres.TransactionSql;
+type Band = { signal: string; cheapness: number | null };
+
+const INCONCLUSIVE: Band = { signal: "inconclusive", cheapness: null };
+
+/** P/E band. A loss (P/E <= 0) or a missing value says nothing about cheapness (#135). */
+export function peBand(pe: number): Band {
+  if (!Number.isFinite(pe) || pe <= 0) return INCONCLUSIVE;
+  if (pe < 15) return { signal: "cheap", cheapness: 75 };
+  if (pe < 20) return { signal: "neutral", cheapness: 50 };
+  if (pe < 30) return { signal: "expensive", cheapness: 25 };
+  return { signal: "very_expensive", cheapness: 10 };
+}
+
+/**
+ * FCF-yield band. Yields are stored as fractions (0.05 = 5%, as in reporting/facts); a value above 1
+ * is taken as a percent, since a free-cash-flow yield over 100% is not plausible (#135).
+ */
+export function fcfYieldBand(value: number): Band {
+  if (!Number.isFinite(value)) return INCONCLUSIVE;
+  const fraction = Math.abs(value) > 1 ? value / 100 : value;
+  if (fraction > 0.08) return { signal: "very_cheap", cheapness: 90 };
+  if (fraction > 0.05) return { signal: "cheap", cheapness: 70 };
+  if (fraction > 0.03) return { signal: "neutral", cheapness: 50 };
+  return { signal: "expensive", cheapness: 25 };
+}
+
 interface SignalInput {
   assetId: string;
   runId: string;
@@ -19,58 +46,70 @@ interface SignalInput {
 export async function generateValuationSignals(
   input: SignalInput
 ): Promise<{ signalCount: number; signals: Record<string, unknown>[] }> {
-  const sql = postgres(process.env.DATABASE_URL!);
+  const client = postgres(process.env.DATABASE_URL!);
 
   try {
-    // Get valuation methods applicable to this profile
-    const methods = await sql`
-      SELECT * FROM valuation_methods
-      WHERE ${input.profileKey} = ANY(applicable_profile_keys)
-    `;
+    // One transaction, and a rerun replaces this generator's earlier signals (#135).
+    return await client.begin(async (sql) => {
+      // Get valuation methods applicable to this profile
+      const methods = await sql`
+        SELECT * FROM valuation_methods
+        WHERE ${input.profileKey} = ANY(applicable_profile_keys)
+      `;
 
-    // Get metric observations for this asset/run
-    const observations = await sql`
-      SELECT mo.*, md.metric_key, md.display_name, md.metric_category
-      FROM metric_observations mo
-      JOIN metric_definitions md ON mo.metric_definition_id = md.id
-      WHERE mo.asset_id = ${input.assetId}
-        AND mo.research_run_id = ${input.runId}
-        AND mo.review_status != 'rejected'
-    `;
+      // Get metric observations for this asset/run
+      const observations = await sql`
+        SELECT mo.*, md.metric_key, md.display_name, md.metric_category
+        FROM metric_observations mo
+        JOIN metric_definitions md ON mo.metric_definition_id = md.id
+        WHERE mo.asset_id = ${input.assetId}
+          AND mo.research_run_id = ${input.runId}
+          AND mo.review_status != 'rejected'
+        ORDER BY md.metric_key, mo.as_of_date DESC NULLS LAST, mo.period_end DESC NULLS LAST,
+          mo.available_at DESC NULLS LAST, mo.id
+      `;
 
-    const signals: Record<string, unknown>[] = [];
+      const signals: Record<string, unknown>[] = [];
 
-    // Generate signals based on profile type
-    switch (input.profileKey) {
-      case "operating_company":
-        signals.push(
-          ...(await generateOperatingCompanySignals(sql, input, observations, methods))
-        );
-        break;
-      case "bitcoin":
-        signals.push(
-          ...(await generateBitcoinSignals(sql, input, observations, methods))
-        );
-        break;
-      case "financials":
-        signals.push(
-          ...(await generateFinancialsSignals(sql, input, observations, methods))
-        );
-        break;
-      default:
-        signals.push(
-          ...(await generateGenericSignals(sql, input, observations, methods))
-        );
-    }
+      // Generate signals based on profile type
+      switch (input.profileKey) {
+        case "operating_company":
+          signals.push(
+            ...(await generateOperatingCompanySignals(sql, input, observations, methods))
+          );
+          break;
+        case "bitcoin":
+          signals.push(
+            ...(await generateBitcoinSignals(sql, input, observations, methods))
+          );
+          break;
+        case "financials":
+          signals.push(
+            ...(await generateFinancialsSignals(sql, input, observations, methods))
+          );
+          break;
+        default:
+          signals.push(
+            ...(await generateGenericSignals(sql, input, observations, methods))
+          );
+      }
 
-    return { signalCount: signals.length, signals };
+      const keys = [...new Set(signals.map((row) => String(row.signal_key)))];
+      const ids = signals.map((row) => String(row.id));
+      if (keys.length) await sql`
+        DELETE FROM valuation_signals
+        WHERE research_run_id = ${input.runId} AND signal_key = ANY(${keys}::text[]) AND id <> ALL(${ids}::uuid[])
+      `;
+
+      return { signalCount: signals.length, signals };
+    }) as { signalCount: number; signals: Record<string, unknown>[] };
   } finally {
-    await sql.end();
+    await client.end();
   }
 }
 
 async function generateOperatingCompanySignals(
-  sql: ReturnType<typeof postgres>,
+  sql: Sql,
   input: SignalInput,
   observations: any[],
   methods: any[]
@@ -81,13 +120,7 @@ async function generateOperatingCompanySignals(
   const peObs = observations.find((o) => o.metric_key === "pe_ratio");
   if (peObs) {
     const peMethod = methods.find((m) => m.method_key === "pe_multiple");
-    const pe = parseFloat(peObs.value_numeric);
-    let signal = "neutral";
-    let cheapness = 50;
-    if (pe < 15) { signal = "cheap"; cheapness = 75; }
-    else if (pe < 20) { signal = "neutral"; cheapness = 50; }
-    else if (pe < 30) { signal = "expensive"; cheapness = 25; }
-    else { signal = "very_expensive"; cheapness = 10; }
+    const { signal, cheapness } = peBand(parseFloat(peObs.value_numeric));
 
     const inserted = await sql`
       INSERT INTO valuation_signals (
@@ -112,13 +145,7 @@ async function generateOperatingCompanySignals(
   // FCF Yield signal
   const fcfYieldObs = observations.find((o) => o.metric_key === "fcf_yield");
   if (fcfYieldObs) {
-    const fcfYield = parseFloat(fcfYieldObs.value_numeric);
-    let signal = "neutral";
-    let cheapness = 50;
-    if (fcfYield > 8) { signal = "very_cheap"; cheapness = 90; }
-    else if (fcfYield > 5) { signal = "cheap"; cheapness = 70; }
-    else if (fcfYield > 3) { signal = "neutral"; cheapness = 50; }
-    else { signal = "expensive"; cheapness = 25; }
+    const { signal, cheapness } = fcfYieldBand(parseFloat(fcfYieldObs.value_numeric));
 
     const inserted = await sql`
       INSERT INTO valuation_signals (
@@ -161,7 +188,7 @@ async function generateOperatingCompanySignals(
 }
 
 async function generateBitcoinSignals(
-  sql: ReturnType<typeof postgres>,
+  sql: Sql,
   input: SignalInput,
   observations: any[],
   methods: any[]
@@ -173,8 +200,9 @@ async function generateBitcoinSignals(
   if (mvrvObs) {
     const mvrv = parseFloat(mvrvObs.value_numeric);
     let signal = "neutral";
-    let cheapness = 50;
-    if (mvrv < 1.0) { signal = "very_cheap"; cheapness = 95; }
+    let cheapness: number | null = 50;
+    if (!Number.isFinite(mvrv)) ({ signal, cheapness } = INCONCLUSIVE);
+    else if (mvrv < 1.0) { signal = "very_cheap"; cheapness = 95; }
     else if (mvrv < 1.5) { signal = "cheap"; cheapness = 75; }
     else if (mvrv < 2.5) { signal = "neutral"; cheapness = 50; }
     else if (mvrv < 3.5) { signal = "expensive"; cheapness = 25; }
@@ -203,8 +231,9 @@ async function generateBitcoinSignals(
   if (drawdownObs) {
     const drawdown = Math.abs(parseFloat(drawdownObs.value_numeric));
     let signal = "neutral";
-    let cheapness = 50;
-    if (drawdown > 60) { signal = "very_cheap"; cheapness = 90; }
+    let cheapness: number | null = 50;
+    if (!Number.isFinite(drawdown)) ({ signal, cheapness } = INCONCLUSIVE);
+    else if (drawdown > 60) { signal = "very_cheap"; cheapness = 90; }
     else if (drawdown > 40) { signal = "cheap"; cheapness = 70; }
     else if (drawdown > 20) { signal = "neutral"; cheapness = 50; }
     else if (drawdown > 10) { signal = "expensive"; cheapness = 30; }
@@ -252,7 +281,7 @@ async function generateBitcoinSignals(
 }
 
 async function generateFinancialsSignals(
-  sql: ReturnType<typeof postgres>,
+  sql: Sql,
   input: SignalInput,
   observations: any[],
   methods: any[]
@@ -264,8 +293,9 @@ async function generateFinancialsSignals(
   if (ptbvObs) {
     const ptbv = parseFloat(ptbvObs.value_numeric);
     let signal = "neutral";
-    let cheapness = 50;
-    if (ptbv < 1.0) { signal = "very_cheap"; cheapness = 90; }
+    let cheapness: number | null = 50;
+    if (!Number.isFinite(ptbv) || ptbv <= 0) ({ signal, cheapness } = INCONCLUSIVE);
+    else if (ptbv < 1.0) { signal = "very_cheap"; cheapness = 90; }
     else if (ptbv < 1.5) { signal = "cheap"; cheapness = 70; }
     else if (ptbv < 2.0) { signal = "neutral"; cheapness = 50; }
     else { signal = "expensive"; cheapness = 25; }
@@ -312,7 +342,7 @@ async function generateFinancialsSignals(
 }
 
 async function generateGenericSignals(
-  sql: ReturnType<typeof postgres>,
+  sql: Sql,
   input: SignalInput,
   observations: any[],
   methods: any[]
