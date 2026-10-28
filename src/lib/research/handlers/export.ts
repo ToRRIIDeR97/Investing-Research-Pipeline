@@ -267,12 +267,14 @@ export const exportHandler: StageHandler<Record<string, unknown>> = {
 
       // Keep the durable export index in sync with the report artifact. The
       // index is the compatibility/read-model surface used by workflow gates
-      // and downstream package builders.
+      // and downstream package builders. Only the pipeline's own row is
+      // touched: memos a user exported share the export type (#115).
       await sql`
         UPDATE exports SET storage_path = ${result.storagePath},
           content_hash = ${result.contentHash}, generated_at = NOW(),
           metadata_json = ${JSON.stringify({ exportId: result.exportId, pipelineVersion: CURRENT_PIPELINE_VERSION })}::jsonb
         WHERE research_run_id = ${ctx.runId} AND export_type = 'markdown_memo'
+          AND generated_by = 'system-research-os'
       `;
       await sql`
         INSERT INTO exports (
@@ -286,6 +288,7 @@ export const exportHandler: StageHandler<Record<string, unknown>> = {
         WHERE NOT EXISTS (
           SELECT 1 FROM exports
           WHERE research_run_id = ${ctx.runId} AND export_type = 'markdown_memo'
+            AND generated_by = 'system-research-os'
         )
       `;
 

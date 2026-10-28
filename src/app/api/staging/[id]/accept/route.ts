@@ -14,13 +14,17 @@ export async function POST(
 ) {
   try {
     const stagingId = z.string().guid().parse((await params).id);
-    const body = await request.json().catch(() => ({}));
+    const body = (await request.json().catch(() => null)) ?? {};
 
     if (body.action === "reject") {
       if (!body.reason) {
         throw new ApiError("Rejection reason is required", 400);
       }
-      await rejectStagedOutput(stagingId, body.reason);
+      const outcome = await rejectStagedOutput(stagingId, String(body.reason));
+      if (outcome === "not_found") throw new ApiError("Staged output not found", 404, "NOT_FOUND");
+      if (outcome === "not_rejectable") {
+        throw new ApiError("Only a staged output that is not yet accepted or rejected can be rejected", 409, "NOT_REJECTABLE");
+      }
       return successResponse({ rejected: true, stagingId });
     }
 

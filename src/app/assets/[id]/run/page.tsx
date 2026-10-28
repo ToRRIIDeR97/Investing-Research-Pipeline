@@ -7,6 +7,11 @@ import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import ui from "@/components/research-ui.module.css";
 import { FramingEditor, type FramingEdits } from "@/components/framing-editor";
 import { pollTick, runProgressIsLive } from "@/lib/research/run-polling";
+import { safeUrl } from "@/lib/research/reporting/presentation.mjs";
+import { listRows } from "@/lib/research/reporting/data-views";
+
+// The run page lists at most this many agent traces and model calls, newest first (#130).
+const THEATER_ROW_LIMIT = 200;
 
 interface Message {
   role: "user" | "assistant" | "system";
@@ -574,8 +579,8 @@ export default function RunResearchPage() {
           fetch(`/api/research-runs/${id}`),
           fetch(`/api/research-runs/${id}/quality`),
           fetch(`/api/research-runs/${id}/sources`),
-          fetch(`/api/research-runs/${id}/agent-traces`),
-          fetch(`/api/research-runs/${id}/model-calls?summary=1`),
+          fetch(`/api/research-runs/${id}/agent-traces?summary=1&limit=${THEATER_ROW_LIMIT}`),
+          fetch(`/api/research-runs/${id}/model-calls?summary=1&limit=${THEATER_ROW_LIMIT}`),
           fetch(`/api/research-runs/${id}/backtests?summary=1`),
         ]);
 
@@ -641,8 +646,8 @@ export default function RunResearchPage() {
 
       setTheater({
         sources: Array.isArray(sources) ? sources : [],
-        traces: Array.isArray(traces) ? traces : [],
-        modelCalls: Array.isArray(modelCalls) ? modelCalls : [],
+        traces: listRows<AgentTrace>(traces).slice(0, THEATER_ROW_LIMIT),
+        modelCalls: listRows<ModelCall>(modelCalls).slice(0, THEATER_ROW_LIMIT),
         backtests: Array.isArray(backtests) ? backtests : [],
       });
       setQuality(qualityData);
@@ -823,7 +828,7 @@ export default function RunResearchPage() {
     </> : null}
     {runId && progress && <>
       <details className={ui.section}><summary>Sources <span className={ui.muted}>{theater.sources.length}</span></summary><div className={ui.sectionBody}>
-        {theater.sources.length ? theater.sources.map((source) => <div key={source.id} className={ui.row}><div><div className={ui.rowTitle}>{source.url ? <a href={source.url} target="_blank" rel="noreferrer" className="underline underline-offset-4">{source.title}</a> : source.title}</div><p className={ui.rowMeta}>{[humanize(source.source_type), source.publisher].filter(Boolean).join(" · ")}</p></div></div>) : <p>No sources attached.</p>}
+        {theater.sources.length ? theater.sources.map((source) => <div key={source.id} className={ui.row}><div><div className={ui.rowTitle}>{safeUrl(source.url) ? <a href={safeUrl(source.url)!} target="_blank" rel="noreferrer" className="underline underline-offset-4">{source.title}</a> : source.title}</div><p className={ui.rowMeta}>{[humanize(source.source_type), source.publisher].filter(Boolean).join(" · ")}</p></div></div>) : <p>No sources attached.</p>}
         <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" aria-label="Upload source file" />
         <div className={ui.actions}><button className={ui.secondary} onClick={() => fileInputRef.current?.click()} disabled={isUploading}>{isUploading ? "Attaching…" : "Attach file"}</button><button className={ui.textLink} onClick={() => setShowLinkInput(!showLinkInput)} disabled={isUploading}>Attach link</button></div>
         {showLinkInput && <form className="mt-6" onSubmit={(event) => { event.preventDefault(); handleLinkAttach(); }}><label className={ui.field}>Source URL<input type="url" value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} required disabled={isUploading} /></label><div className={ui.actions}><button type="button" className={ui.textLink} onClick={() => { setShowLinkInput(false); setLinkUrl(""); }}>Cancel</button><button className={ui.primary} disabled={isUploading || !linkUrl.trim()}>Attach source</button></div></form>}

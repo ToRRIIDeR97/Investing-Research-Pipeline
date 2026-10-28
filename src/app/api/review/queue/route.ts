@@ -32,7 +32,14 @@ export async function GET(request: NextRequest) {
           hs.status as human_review_status
         FROM research_runs rr
         JOIN assets a ON rr.asset_id = a.id
-        LEFT JOIN review_decisions rd ON rd.research_run_id = rr.id
+        -- Only the latest decision, so a run with several decisions is listed once (#135).
+        LEFT JOIN LATERAL (
+          SELECT id, status, conviction, priority, reviewed_at
+          FROM review_decisions
+          WHERE research_run_id = rr.id
+          ORDER BY reviewed_at DESC, created_at DESC
+          LIMIT 1
+        ) rd ON TRUE
         JOIN research_stages hs
           ON hs.research_run_id = rr.id
          AND hs.stage_key = 'human_review'

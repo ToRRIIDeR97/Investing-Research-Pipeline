@@ -257,3 +257,22 @@ test('Yearly value per share comes from the annual price-target path, per scenar
   // No price-target artifact: the table is hidden.
   assert.ok(valuationSummary(valuationArtifacts())!.calculations.every(c => c.priceTargets === null));
 });
+
+test('the view page keeps the run it shows and stops polling a finished run (#130)', async () => {
+  const { listRows, pickShownRun, runIsTerminal } = await import('../src/lib/research/reporting/data-views');
+  const runs = [{ id: 'new' }, { id: 'old' }];
+  assert.equal(pickShownRun(runs, null, null)?.id, 'new');
+  assert.equal(pickShownRun(runs, null, 'old')?.id, 'old', 'a newer run started elsewhere does not replace the shown one');
+  assert.equal(pickShownRun(runs, null, 'gone')?.id, 'new');
+  assert.equal(pickShownRun(runs, 'old', 'new')?.id, 'old');
+  assert.equal(pickShownRun(runs, 'missing', null), undefined);
+  assert.equal(pickShownRun([], null, null), null);
+  for (const status of ['completed', 'cancelled']) assert.equal(runIsTerminal(status), true, status);
+  for (const status of ['running', 'waiting_for_human', 'needs_more_work', 'pending', undefined]) assert.equal(runIsTerminal(status), false, String(status));
+  // The run page reads model calls as a bare array today and as a paged object if the route returns one.
+  assert.deepEqual(listRows([{ id: 1 }]), [{ id: 1 }]);
+  assert.deepEqual(listRows({ items: [{ id: 2 }], next: 'x' }), [{ id: 2 }]);
+  assert.deepEqual(listRows({ rows: [{ id: 3 }] }), [{ id: 3 }]);
+  assert.deepEqual(listRows(null), []);
+  assert.deepEqual(listRows({ error: 'nope' }), []);
+});

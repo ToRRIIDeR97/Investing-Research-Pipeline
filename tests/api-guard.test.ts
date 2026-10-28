@@ -94,6 +94,29 @@ test("chat accepts the app's own origin when it is served from 127.0.0.1 (#8)", 
   }
 });
 
+test("cancel accepts the app's own origin when it is served from 127.0.0.1 (#123)", async () => {
+  const { POST } = await import("../src/app/api/research-runs/[id]/cancel/route");
+  const runId = crypto.randomUUID();
+  const params = { params: Promise.resolve({ id: runId }) };
+  const cancelFrom = (origin: string) => new NextRequest(`http://127.0.0.1:3000/api/research-runs/${runId}/cancel`, {
+    method: "POST", body: "{}", headers: { host: "127.0.0.1:3000", origin, "content-type": "application/json" },
+  });
+  assert.equal((await POST(cancelFrom("https://unrelated.example"), params)).status, 403);
+  assert.equal((await POST(cancelFrom("http://localhost:3000"), params)).status, 403);
+  // Past the origin check the route opens the database; a closed port makes that fail with 500, not 403.
+  const saved = process.env.DATABASE_URL;
+  process.env.DATABASE_URL = "postgres://nobody@127.0.0.1:1/none";
+  const error = console.error;
+  console.error = () => {};
+  try {
+    assert.equal((await POST(cancelFrom("http://127.0.0.1:3000"), params)).status, 500);
+  } finally {
+    console.error = error;
+    if (saved === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = saved;
+  }
+});
+
 test("no page can be framed (S1)", async () => {
   const rules = await nextConfig.headers!();
   const headers = Object.fromEntries(rules.find((rule) => rule.source === "/:path*")!.headers.map((header) => [header.key, header.value]));

@@ -159,7 +159,7 @@ export function FinancialStatements({observations, sources, evidence, isTest,fil
       {selected.map((row,index)=>{
         const claim = evidence.find(e=>e.id===row.evidence_claim_id);
         const source = sources.find(s=>s.id===(row.source_document_id??claim?.source_document_id));
-        const url = safeUrl(row.metadata_json?.source_url || claim?.url || source?.source_url || source?.url);
+        const url = [row.metadata_json?.source_url, claim?.url, source?.source_url, source?.url].map(safeUrl).find(Boolean) ?? null;
         return <section key={index}><h3>{row.metadata_json?.statement_label||label(row.metric_key)}{selected.length>1?` · Observation ${index+1}`:''}</h3>
           <p className={styles.exact}>{number(row.value_numeric,12)} {row.unit}</p>{row.value_text&&<p>{row.value_text}</p>}
           {row.formula_or_adjustment&&<p>{row.formula_or_adjustment}</p>}{row.metadata_json?.missing_reason&&<p>{row.metadata_json.missing_reason}</p>}
