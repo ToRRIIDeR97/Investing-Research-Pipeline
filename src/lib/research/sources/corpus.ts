@@ -1805,7 +1805,9 @@ export async function storeSourceCorpus(sql: Sql, ctx: RunContext, secContext: u
     title: `${ctx.assetName} primary source context`,
     publisher,
     url: "https://data.sec.gov/",
-    content: JSON.stringify(secContext, null, 2),
+    // Compact: companyfacts runs to tens of MB, and indentation roughly doubles the file and its chunk rows.
+    // secFactSpan finds facts in either form, so chunk links still resolve.
+    content: JSON.stringify(secContext),
     mimeType: "application/json",
     qualityScore: "0.95",
     // The SIC code selects the run's headline KPIs (`kpiArchetypes`).
