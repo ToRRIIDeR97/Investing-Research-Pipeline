@@ -40,7 +40,7 @@ Labels in the views: *unverified* means the relationship wasn't proven from sour
 
 Model calls have no tool execution. [local-agent-harness.md](local-agent-harness.md) covers the configuration.
 
-**Drill-down: stages** (`src/lib/workflow/stages.ts`; dependencies in `src/lib/research/team-plan.ts:41`). Run-type skips are set at creation through `skipForRunTypes`. Stages 16–19 are skipped for `quick_scan`. Stages 1–15, 20 and 24 are skipped for `backtest_only`.
+**Drill-down: stages** (`src/lib/workflow/stages.ts`; dependencies in `src/lib/research/team-plan.ts:41`). Run-type skips are set at creation through `skipForRunTypes`. Stages 16–19 are skipped for `quick_scan`. New `backtest_only` runs are refused by `createResearchRunSchema` because that type skipped both human gates and could never meet the completion criteria; its `skipForRunTypes` entries remain only for historical rows.
 
 | # | Stage | failureState | Retries | # | Stage | failureState | Retries |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -56,6 +56,8 @@ Model calls have no tool execution. [local-agent-harness.md](local-agent-harness
 | 10 | historical_diagnosis | skip_and_continue | 2 | 22 | human_review **(gate)** | pause_for_human | 0 |
 | 11 | business_process_analysis | skip_and_continue | 2 | 23 | export | skip_and_continue | 2 |
 | 12 | moat_analysis | skip_and_continue | 2 | 24 | refresh_schedule | skip_and_continue | 1 |
+
+`failureState` applies when a stage's retries are exhausted, or at once when it exceeds its stage budget. `fail_run` fails the run. `pause_for_human` waits for a reviewer. `skip_and_continue` marks the stage `skipped` and keeps the reason in `failure_reason`, so its dependents and the human-review gate are not blocked; a dependent that needs its output fails through its own validation. Any stage left `failed` stops the run as `needs_more_work`. A skipped export or refresh schedule leaves the completion criteria unmet, so `completeRun` ends the run `needs_more_work`.
 
 Handlers are registered in the `STAGE_HANDLERS` map (`src/lib/research/handlers/index.ts`).
 

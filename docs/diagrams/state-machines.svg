@@ -111,7 +111,7 @@
 <text x="760" y="640" font-size="11" font-weight="normal" text-anchor="start" fill="#555">resume: failed (or left running) → running; later → pending</text>
 <text x="290" y="700" font-size="11" font-weight="normal" text-anchor="start" fill="#555">resume: an open gate, or human_review, stays waiting_for_human</text>
 <text x="290" y="715" font-size="11" font-weight="normal" text-anchor="start" fill="#555">backtest withheld: backtest_review pending → skipped</text>
-<text x="760" y="655" font-size="11" font-weight="normal" text-anchor="start" fill="#555">skip_and_continue: failed, run continues</text>
+<text x="760" y="655" font-size="11" font-weight="normal" text-anchor="start" fill="#555">skip_and_continue: skipped, run continues</text>
 <text x="760" y="670" font-size="11" font-weight="normal" text-anchor="start" fill="#555">max_retries per stage: 0–3 (stages.ts)</text>
 <text x="760" y="685" font-size="11" font-weight="normal" text-anchor="start" fill="#555">owner requires_rerun: stage + dependents → pending</text>
 <text x="760" y="700" font-size="11" font-weight="normal" text-anchor="start" fill="#555">(auto once ≤ 6 analysis stages, else approved);</text>

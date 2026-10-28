@@ -32,6 +32,50 @@ export async function persistReviewArtifacts(sql: ReturnType<typeof postgres>,
   }
 }
 
+/** The pre-report review: one model call over every validated artifact. */
+async function legacyReview(sql: ReturnType<typeof postgres>, ctx: ResearchRunContext): Promise<Record<string, unknown>> {
+  const artifacts = await sql`
+    SELECT artifact_type, content_json
+    FROM research_artifacts
+    WHERE research_run_id = ${ctx.runId}
+      AND status IN ('validated', 'accepted')
+      AND artifact_type NOT IN ('review_summary', 'findings', 'quality_score', 'recommendations', 'review_verdict', 'depth_checks')
+    ORDER BY artifact_type
+  `;
+  const packet = {
+    asset: {
+      runId: ctx.runId,
+      assetId: ctx.assetId,
+      assetName: ctx.assetName,
+      symbol: ctx.symbol,
+      profileKey: ctx.profileKey,
+    },
+    artifacts: Object.fromEntries(
+      artifacts.map((artifact) => [artifact.artifact_type, artifact.content_json])
+    ),
+    depth_checks: DEPTH_CHECKS.map(({ id, label, ask, critical }) => ({ id, label, ask, decision_critical: critical })),
+  };
+  const taskKey = "research-reviewer:review";
+
+  const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
+    agentName: "research-reviewer",
+    requiredKeys: AI_REVIEWER_CONTRACT.requiredKeys,
+    packet: p,
+    extraRules: [
+      "Perform a comprehensive review checking consistency and rules compliance across all generated artifacts.",
+      "Judge the current artifacts in this packet; do not repeat findings from an earlier review.",
+      "Verify that the backtest executed at least 50 thesis-distinct combinations, ranked a top 10, reviewed at least five weak or failed combinations, used shifted signals and transaction costs, and disclosed proxy-data limitations.",
+      DEPTH_CHECK_RULE,
+    ],
+  });
+  return callResearchAgent<Record<string, unknown>>({
+    sql, ctx, stageKey: "ai_reviewer", taskKey,
+    taskType: "ai_review", agentName: "research-reviewer", modelTier: "cheap",
+    packet, promptFactory,
+    outputFormat: AI_REVIEWER_CONTRACT,
+  });
+}
+
 export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "ai_reviewer",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
@@ -39,51 +83,15 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
     try {
       // What changed since the prior run, computed by code before the report is written; nothing without a prior.
       await saveVersionChangeLog(sql, ctx);
-      const artifacts = await sql`
-        SELECT artifact_type, content_json
-        FROM research_artifacts
-        WHERE research_run_id = ${ctx.runId}
-          AND status IN ('validated', 'accepted')
-          AND artifact_type NOT IN ('review_summary', 'findings', 'quality_score', 'recommendations', 'review_verdict', 'depth_checks')
-        ORDER BY artifact_type
+      // An adaptive plan reviews through the report runtime, which loads its own inputs; only the legacy path needs every body.
+      const plans = await sql`
+        SELECT content_json->'report_standard' AS report_standard FROM research_artifacts
+        WHERE research_run_id = ${ctx.runId} AND artifact_type = 'research_plan' AND status IN ('validated', 'accepted')
       `;
-      const packet = {
-        asset: {
-          runId: ctx.runId,
-          assetId: ctx.assetId,
-          assetName: ctx.assetName,
-          symbol: ctx.symbol,
-          profileKey: ctx.profileKey,
-        },
-        artifacts: Object.fromEntries(
-          artifacts.map((artifact) => [artifact.artifact_type, artifact.content_json])
-        ),
-        depth_checks: DEPTH_CHECKS.map(({ id, label, ask, critical }) => ({ id, label, ask, decision_critical: critical })),
-      };
-      const taskKey = "research-reviewer:review";
-
-      const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
-        agentName: "research-reviewer",
-        requiredKeys: AI_REVIEWER_CONTRACT.requiredKeys,
-        packet: p,
-        extraRules: [
-          "Perform a comprehensive review checking consistency and rules compliance across all generated artifacts.",
-          "Judge the current artifacts in this packet; do not repeat findings from an earlier review.",
-          "Verify that the backtest executed at least 50 thesis-distinct combinations, ranked a top 10, reviewed at least five weak or failed combinations, used shifted signals and transaction costs, and disclosed proxy-data limitations.",
-          DEPTH_CHECK_RULE,
-        ],
-      });
-
-      const adaptive = artifacts.some(artifact => artifact.artifact_type === "research_plan" && artifact.content_json?.report_standard);
-      const output = adaptive ? (await draftAndReviewReport(sql, ctx)).review : await callResearchAgent<Record<string, unknown>>({
-        sql, ctx, stageKey: "ai_reviewer", taskKey,
-        taskType: "ai_review", agentName: "research-reviewer", modelTier: "cheap",
-        packet, promptFactory,
-        outputFormat: AI_REVIEWER_CONTRACT,
-      });
-
+      const output = plans.some((plan) => plan.report_standard)
+        ? (await draftAndReviewReport(sql, ctx)).review
+        : await legacyReview(sql, ctx);
       await persistReviewArtifacts(sql, ctx, output);
-
       return output;
     } finally {
       await sql.end();
