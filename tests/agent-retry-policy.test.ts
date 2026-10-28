@@ -133,6 +133,61 @@ test("the escalated output limit stays within the Claude model's documented cap"
   });
 });
 
+test("output escalation stops once the model's cap is reached instead of resending the same request", async () => {
+  await withEnv({ RESEARCH_ALL_AGENTS_MODEL: "claude-opus-5-5" }, async () => {
+    const provider = new ScriptedProvider((request) => textResponse('{"selected_profile_key":"op', "max_tokens", request.maxTokens),
+      "direct-anthropic-compatible");
+    await assert.rejects(runResearchAgent({ agentName: "asset-classifier", title: "cap stop", taskPacket: {}, provider,
+      policy: { maxAttempts: 4, retryBaseDelayMs: 1, maxOutputTokens: 32_768 } }),
+    (error: any) => error instanceof ResearchAgentRunError && error.responseMetadata.error_type === "output_exhausted");
+    assert.deepEqual(provider.requests.map((request) => request.maxTokens), [32_768, 65_536, 128_000]);
+  });
+});
+
+test("a model without a documented cap escalates no further than RESEARCH_UNKNOWN_MODEL_OUTPUT_CAP", async () => {
+  await withEnv({ RESEARCH_ALL_AGENTS_MODEL: "some-open-model", RESEARCH_UNKNOWN_MODEL_OUTPUT_CAP: undefined }, async () => {
+    const provider = new ScriptedProvider((request) => textResponse('{"selected_profile_key":"op', "length", request.maxTokens));
+    await assert.rejects(runResearchAgent({ agentName: "asset-classifier", title: "unknown cap", taskPacket: {}, provider,
+      policy: { maxAttempts: 4, retryBaseDelayMs: 1, maxOutputTokens: 32_768 } }));
+    assert.deepEqual(provider.requests.map((request) => request.maxTokens), [32_768, 65_536]);
+  });
+});
+
+test("a prose answer that repair cannot fix is retried once, not on every attempt", async () => {
+  await withEnv({ RESEARCH_ALL_AGENTS_MODEL: "prose-model" }, async () => {
+    const provider = new ScriptedProvider(() => textResponse("I cannot produce JSON for this request."));
+    await assert.rejects(runResearchAgent({ agentName: "asset-classifier", title: "prose", taskPacket: {}, provider,
+      policy: { maxAttempts: 4, retryBaseDelayMs: 1, maxRepairAttempts: 1 } }),
+    (error: any) => error instanceof ResearchAgentRunError && error.attempts.length === 2
+      && error.attempts.every((attempt: any) => attempt.errorCategory === "malformed_stream" && attempt.repairAttempted));
+    assert.equal(provider.calls, 4, "two attempts of generation plus repair");
+  });
+});
+
+test("every repair prompt truncates the previous output", async () => {
+  const outputFormat = { requiredKeys: ["answer"], schema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] } };
+  const provider = new ScriptedProvider((_request, call) => call === 1
+    ? textResponse(`prose ${"y".repeat(50_000)}`)
+    : textResponse(JSON.stringify({ answer: "ok" })));
+  await runResearchAgent({ agentName: "asset-classifier", title: "truncate", taskPacket: {}, provider, outputFormat: outputFormat as any,
+    policy: { maxAttempts: 1, maxRepairAttempts: 1 } });
+  assert.equal(provider.calls, 2);
+  const repair = provider.requests[1].prompt;
+  assert.ok(repair.includes("Previous response: prose "));
+  assert.ok(!repair.includes("y".repeat(12_000)), "the previous output is cut to 12,000 characters");
+});
+
+test("an empty model setting fails fast instead of spinning", async () => {
+  await withEnv({ RESEARCH_ALL_AGENTS_MODEL: "opencode-go/" }, async () => {
+    const provider = new ScriptedProvider(() => textResponse(JSON.stringify(classifierOutput)));
+    await assert.rejects(runResearchAgent({ agentName: "asset-classifier", title: "empty", taskPacket: {}, provider }),
+      (error: any) => error instanceof ProviderError && error.category === "invalid_request" && /No model configured/.test(error.message));
+    await assert.rejects(runResearchAgent({ agentName: "asset-classifier", title: "empty task", taskPacket: {}, provider,
+      model: "''", fallbackModel: null }), /No model configured/);
+    assert.equal(provider.calls, 0);
+  });
+});
+
 test("built-in OpenCode fallback models are not sent to the Anthropic API", async () => {
   await withEnv({ RESEARCH_SOURCE_READER_FALLBACK_MODEL: undefined, RESEARCH_ALL_AGENTS_MODEL: undefined }, async () => {
     const run = async (providerId: string) => {
