@@ -13,8 +13,10 @@ export async function POST(
 ) {
   try {
     const { id: runId } = await params;
+    // Compared with the Host header, as src/proxy.ts and the chat route do: NextURL rewrites 127.0.0.1 to
+    // localhost, so nextUrl.origin refused the app's own http://127.0.0.1 origin (#123).
     const origin = request.headers.get("origin");
-    if (origin && origin !== request.nextUrl.origin) throw new ApiError("Cross-origin requests are not allowed", 403, "FORBIDDEN");
+    if (origin && origin !== `${request.nextUrl.protocol}//${request.headers.get("host")}`) throw new ApiError("Cross-origin requests are not allowed", 403, "FORBIDDEN");
     const body = await request.json().catch(() => ({}));
     const result = await cancelRun(runId, String(body.actor || "user"));
     if (!result) throw new ApiError("Research run not found", 404, "NOT_FOUND");

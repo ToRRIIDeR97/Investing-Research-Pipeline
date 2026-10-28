@@ -1609,10 +1609,11 @@ function backtestArtifactsCsv(artifacts: Row[]) {
 
 async function copyBacktestArtifacts(data: ResearchPackageData, absoluteDir: string) {
   const copied: Array<{ source_path: string; package_path: string }> = [];
-  const appendFiles: Record<string, string[]> = {
+  const appendFiles: Record<string, Array<{ backtestRunId: string; content: string }>> = {
     "data/backtest_outputs/equity_curves.csv": [],
     "data/backtest_outputs/trade_log.csv": [],
   };
+  const usedNames = new Set<string>();
 
   for (const artifact of data.backtestArtifacts) {
     const sourcePath = await storedBacktestFile(artifact.storage_path || "");
@@ -1622,14 +1623,14 @@ async function copyBacktestArtifacts(data: ResearchPackageData, absoluteDir: str
     const artifactType = String(artifact.artifact_type || "").toLowerCase();
     if (artifactType === "equity_curve" || basename === "equity_curve.csv") {
       const content = await readTextIfExists(sourcePath);
-      if (content) appendFiles["data/backtest_outputs/equity_curves.csv"].push(prefixCsvRows(content, artifact.backtest_run_id));
+      if (content) appendFiles["data/backtest_outputs/equity_curves.csv"].push({ backtestRunId: artifact.backtest_run_id, content });
     }
     if (artifactType === "trades" || basename === "trades.csv") {
       const content = await readTextIfExists(sourcePath);
-      if (content) appendFiles["data/backtest_outputs/trade_log.csv"].push(prefixCsvRows(content, artifact.backtest_run_id));
+      if (content) appendFiles["data/backtest_outputs/trade_log.csv"].push({ backtestRunId: artifact.backtest_run_id, content });
     }
     if (["metrics", "backtest_code", "runner_log"].includes(artifactType)) {
-      const packagePath = `data/backtest_outputs/artifacts/${safeSlug(artifact.backtest_run_id || "backtest")}_${safeSlug(artifact.title || artifactType)}`;
+      const packagePath = `data/backtest_outputs/artifacts/${backtestArtifactFileName(artifact, usedNames)}`;
       const targetPath = join(absoluteDir, packagePath);
       await mkdir(join(absoluteDir, "data", "backtest_outputs", "artifacts"), { recursive: true });
       try {
@@ -1643,7 +1644,7 @@ async function copyBacktestArtifacts(data: ResearchPackageData, absoluteDir: str
 
   for (const [relativePath, chunks] of Object.entries(appendFiles)) {
     if (!chunks.length) continue;
-    await writeFile(join(absoluteDir, relativePath), chunks.join("\n"), "utf8");
+    await writeFile(join(absoluteDir, relativePath), mergeBacktestCsvs(chunks), "utf8");
     copied.push({ source_path: "merged_backtest_artifacts", package_path: relativePath });
   }
 
@@ -1672,11 +1673,63 @@ async function readTextIfExists(path: string) {
   }
 }
 
-function prefixCsvRows(content: string, backtestRunId: string) {
-  const lines = content.trim().split(/\r?\n/).filter(Boolean);
-  if (!lines.length) return "";
-  const [header, ...rows] = lines;
-  return [`backtest_run_id,${header}`, ...rows.map((row) => `${csvEscape(backtestRunId)},${row}`)].join("\n");
+/**
+ * One CSV from several backtests' CSV files: a single header (the union of their columns, in
+ * first-seen order, after backtest_run_id) and every cell re-escaped with csvEscape, since the
+ * files are written by the backtest run folder, which sandboxed model code can also write (#135).
+ */
+export function mergeBacktestCsvs(files: Array<{ backtestRunId: string; content: string }>) {
+  const columns: string[] = [];
+  const rows: Array<Record<string, string>> = [];
+  for (const file of files) {
+    const [header, ...records] = parseCsv(file.content);
+    if (!header) continue;
+    for (const column of header) if (!columns.includes(column)) columns.push(column);
+    for (const record of records) {
+      rows.push({ ...Object.fromEntries(header.map((column, i) => [column, record[i] ?? ""])), backtest_run_id: file.backtestRunId });
+    }
+  }
+  const header = ["backtest_run_id", ...columns.filter((column) => column !== "backtest_run_id")];
+  return csv([header, ...rows.map((row) => header.map((column) => row[column] ?? ""))]);
+}
+
+/** RFC 4180 fields: quoted cells may hold commas, doubled quotes and line breaks. Blank lines are dropped. */
+function parseCsv(content: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [], field = "", quoted = false;
+  const endRow = () => {
+    row.push(field);
+    if (row.length > 1 || row[0] !== "") rows.push(row);
+    row = [];
+    field = "";
+  };
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i];
+    if (quoted) {
+      if (char === '"' && content[i + 1] === '"') { field += '"'; i++; }
+      else if (char === '"') quoted = false;
+      else field += char;
+    } else if (char === '"') quoted = true;
+    else if (char === ",") { row.push(field); field = ""; }
+    else if (char === "\n") endRow();
+    else if (char !== "\r") field += char;
+  }
+  if (field !== "" || row.length) endRow();
+  return rows;
+}
+
+/**
+ * A unique package file name for a copied backtest artifact that keeps the stored file's extension
+ * (#135): slugging "metrics.json" alone gave "metrics_json", and two artifacts could share a name.
+ */
+export function backtestArtifactFileName(artifact: Row, used: Set<string>) {
+  const ext = /\.([A-Za-z0-9]{1,8})$/.exec(String(artifact.storage_path || artifact.title || ""))?.[1]?.toLowerCase();
+  const title = String(artifact.title || artifact.artifact_type || "artifact").replace(/\.[A-Za-z0-9]{1,8}$/, "");
+  const stem = `${safeSlug(artifact.backtest_run_id || "backtest")}_${safeSlug(title) || "artifact"}`;
+  let name = ext ? `${stem}.${ext}` : stem;
+  for (let n = 2; used.has(name); n++) name = ext ? `${stem}_${n}.${ext}` : `${stem}_${n}`;
+  used.add(name);
+  return name;
 }
 
 function csv(rows: Array<Array<unknown>>) {

@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { db } from "@/db";
 import { research_runs, research_tasks, research_stages } from "@/db/schema/workflow";
 import { handleApiError, createdResponse, ApiError } from "@/lib/api/errors";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 export async function POST(
   request: NextRequest,
@@ -30,7 +30,7 @@ export async function POST(
       );
     }
 
-    const body = await request.json();
+    const body = (await request.json().catch(() => null)) ?? {};
     const { task_key, task_type, agent_name, input_json, priority, stage_id } = body as {
       task_key?: string;
       task_type?: string;
@@ -46,7 +46,17 @@ export async function POST(
 
     // Resolve stage_id — use provided value or fall back to the first stage of the run
     let resolvedStageId = stage_id;
-    if (!resolvedStageId) {
+    if (resolvedStageId) {
+      // A stage of another run would attach this task to that run's stage (#135).
+      const [stage] = typeof resolvedStageId === "string" && /^[0-9a-f-]{36}$/i.test(resolvedStageId)
+        ? await db
+          .select({ id: research_stages.id })
+          .from(research_stages)
+          .where(and(eq(research_stages.id, resolvedStageId), eq(research_stages.research_run_id, runId)))
+          .limit(1)
+        : [];
+      if (!stage) throw new ApiError("stage_id is not a stage of this run", 400, "INVALID_STAGE");
+    } else {
       const [stage] = await db
         .select({ id: research_stages.id })
         .from(research_stages)

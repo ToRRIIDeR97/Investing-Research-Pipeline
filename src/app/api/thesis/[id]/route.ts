@@ -4,20 +4,25 @@ import { theses } from "@/db/schema/thesis";
 import { handleApiError, successResponse, ApiError } from "@/lib/api/errors";
 import { eq } from "drizzle-orm";
 
+// The API has no accounts, so a status change records the reviewer as such; a body's reviewed_by is ignored (#13, #135).
+const UNAUTHENTICATED_REVIEWER = "api:unauthenticated";
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new ApiError("A JSON object body is required", 400, "VALIDATION_ERROR");
+    }
 
     const allowedFields = [
       "one_sentence_thesis",
       "why_now",
       "market_missing",
       "status",
-      "reviewed_by",
     ] as const;
 
     const updates: Record<string, unknown> = {};
@@ -31,6 +36,10 @@ export async function PATCH(
       throw new ApiError("No valid fields to update", 400, "VALIDATION_ERROR");
     }
 
+    if ("status" in updates) {
+      updates.reviewed_by = UNAUTHENTICATED_REVIEWER;
+      updates.reviewed_at = new Date();
+    }
     updates.updated_at = new Date();
 
     const [updated] = await db
