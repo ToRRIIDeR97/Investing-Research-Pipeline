@@ -56,11 +56,6 @@ def parse_date(value: str | None) -> datetime | None:
     return parsed
 
 
-def date_only(value: str | None) -> str | None:
-    parsed = parse_date(value)
-    return parsed.date().isoformat() if parsed else None
-
-
 def rel_path(path: Path, storage_root: Path) -> str:
     """Repository-relative path (storage/backtests/...). Never uses the cwd, which the sandbox can't read."""
     return os.path.relpath(path, storage_root.parent.parent).replace(os.sep, "/")
@@ -97,14 +92,24 @@ def normalize_prices(frame: "pd.DataFrame", symbol: str) -> "pd.DataFrame":
     return frame.dropna(how="all")
 
 
+def last_public_close_day(market_data_cutoff_at: str | None) -> str | None:
+    """Last trading day whose close was public by the cutoff instant (#101).
+
+    Matches the rest of the system: a daily close counts as public from the next UTC
+    midnight, so the cutoff day's own close is excluded until the day is over.
+    """
+    cutoff = parse_date(market_data_cutoff_at)
+    return (cutoff - timedelta(days=1)).date().isoformat() if cutoff else None
+
+
 def download_prices(
     symbol: str,
     start_date: str,
     end_date: str | None,
     market_data_cutoff_at: str | None,
 ) -> "pd.DataFrame":
-    cutoff_date = date_only(market_data_cutoff_at)
-    effective_end = end_date or cutoff_date or datetime.utcnow().date().isoformat()
+    cutoff_date = last_public_close_day(market_data_cutoff_at)
+    effective_end = end_date or cutoff_date or last_public_close_day(datetime.utcnow().isoformat())
     if cutoff_date and effective_end > cutoff_date:
         effective_end = cutoff_date
 
@@ -129,8 +134,8 @@ def download_prices(
         max_date = prices.index.max().date().isoformat()
         if max_date > cutoff_date:
             raise ValueError(
-                f"Market data for {symbol} extends beyond cutoff "
-                f"{cutoff_date}: max date {max_date}"
+                f"Market data for {symbol} extends beyond the last close public "
+                f"by the cutoff ({cutoff_date}): max date {max_date}"
             )
 
     return prices

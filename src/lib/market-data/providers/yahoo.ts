@@ -66,8 +66,21 @@ export function createYahooMarketDataProvider(fetchImpl: typeof fetch = timedFet
   return {
     getName: () => "yahoo",
     async getQuote(symbol: string, asOf?: Date): Promise<MarketQuote> {
-      const range = asOf ? determineRange(asOf) : "5d";
-      const url = buildChartUrl(symbol, range, "1d");
+      if (asOf) {
+        // Point in time: the last close public by asOf (from the next UTC midnight after its
+        // exchange-local trading day), never the live price (#135).
+        const period1 = Math.floor((asOf.getTime() - 14 * DAY_MS) / 1000);
+        const url = `${YAHOO_BASE_URL}/${encodeURIComponent(symbol)}?period1=${period1}&period2=${Math.ceil(asOf.getTime() / 1000)}&interval=1d&includeAdjustedClose=true`;
+        const result = await fetchYahoo(url, fetchImpl);
+        const bar = parseBars(result, metaTimezone(result))
+          .map((item) => ({ item, day: Date.parse(`${exchangeDay(item.trading_date, item.exchange_timezone)}T00:00:00Z`) }))
+          .filter(({ day }) => day + DAY_MS <= asOf.getTime())
+          .sort((a, b) => a.day - b.day)
+          .at(-1);
+        if (!bar) throw new MarketDataError(`Yahoo has no close for ${symbol} public by ${asOf.toISOString()}`, "yahoo", "not_found");
+        return { symbol: result.meta.symbol, price: bar.item.close, currency: result.meta.currency, volume: bar.item.volume, asOf: new Date(bar.day) };
+      }
+      const url = buildChartUrl(symbol, "5d", "1d");
       const result = await fetchYahoo(url, fetchImpl);
       const meta = result.meta;
       const price = meta.regularMarketPrice ?? meta.chartPreviousClose ?? meta.previousClose ?? 0;
@@ -79,7 +92,7 @@ export function createYahooMarketDataProvider(fetchImpl: typeof fetch = timedFet
         volume: meta.regularMarketVolume,
         week52High: meta.fiftyTwoWeekHigh,
         week52Low: meta.fiftyTwoWeekLow,
-        asOf: asOf ? dateAtOrBefore(asOf, result) : new Date(meta.regularMarketTime * 1000),
+        asOf: new Date(meta.regularMarketTime * 1000),
       };
     },
     async getPriceHistory(
@@ -150,15 +163,16 @@ function buildChartUrl(symbol: string, range: string, interval: string): string 
   return `${YAHOO_BASE_URL}/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}&includeAdjustedClose=true`;
 }
 
-function determineRange(asOf: Date): string {
-  const now = Date.now();
-  const diff = now - asOf.getTime();
-  if (diff < 7 * 24 * 60 * 60 * 1000) return "5d";
-  if (diff < 30 * 24 * 60 * 60 * 1000) return "1mo";
-  if (diff < 90 * 24 * 60 * 60 * 1000) return "3mo";
-  if (diff < 365 * 24 * 60 * 60 * 1000) return "1y";
-  if (diff < 2 * 365 * 24 * 60 * 60 * 1000) return "2y";
-  return "5y";
+const DAY_MS = 86_400_000;
+
+/** Exchange-local calendar day (YYYY-MM-DD), as in price-history's `exchangeDay` (not imported: that module imports this one). */
+function exchangeDay(date: Date, timeZone?: string): string {
+  try {
+    if (timeZone) return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+  } catch {
+    // Unknown zone: fall back to UTC.
+  }
+  return date.toISOString().slice(0, 10);
 }
 
 function metaTimezone(result: YahooChartResult): string | undefined {
@@ -193,19 +207,6 @@ function parseBars(result: YahooChartResult, timezone?: string): PriceBar[] {
     });
   }
   return bars;
-}
-
-function dateAtOrBefore(target: Date, result: YahooChartResult): Date {
-  const timestamps = result.timestamp ?? [];
-  if (timestamps.length === 0) return target;
-  let best = new Date(timestamps[0] * 1000);
-  for (const ts of timestamps) {
-    const d = new Date(ts * 1000);
-    if (d.getTime() <= target.getTime() && d.getTime() > best.getTime()) {
-      best = d;
-    }
-  }
-  return best;
 }
 
 async function fetchYahoo(url: string, fetchImpl: typeof fetch): Promise<YahooChartResult> {

@@ -332,7 +332,8 @@ export function runFrameworkBacktest(
     const drawdown = drawdownSeries(equity);
     const full = performanceSummary(strategyReturns, positions, normalized.dates);
     const inSample = performanceSummary(strategyReturns.slice(0, splitIndex), positions.slice(0, splitIndex), normalized.dates.slice(0, splitIndex));
-    const outOfSample = performanceSummary(strategyReturns.slice(splitIndex), positions.slice(splitIndex), normalized.dates.slice(splitIndex));
+    // A position already open at the split is carried in, not a new out-of-sample trade.
+    const outOfSample = performanceSummary(strategyReturns.slice(splitIndex), positions.slice(splitIndex), normalized.dates.slice(splitIndex), positions[splitIndex - 1]);
     const benchmarkOos = performanceSummary(assetReturns.slice(splitIndex), assetReturns.slice(splitIndex).map(() => 1), normalized.dates.slice(splitIndex));
     const benchmarkRelative = full.total_return - buyHold.total_return;
     const oosExcess = outOfSample.total_return - benchmarkOos.total_return;
@@ -354,7 +355,8 @@ export function runFrameworkBacktest(
       0.05 -
       penalty;
     const status =
-      full.max_drawdown < -0.5 || full.number_of_trades < 2 || finalScore < 0 ? "Rejected" :
+      // Rejection is part of selection, so it uses in-sample data only, like the score.
+      inSample.max_drawdown < -0.5 || inSample.number_of_trades < 2 || finalScore < 0 ? "Rejected" :
       finalScore >= 0.65 && outOfSample.total_return > 0 ? "Robust" :
       finalScore >= 0.35 ? "Promising" :
       finalScore >= 0.15 ? "Needs review" : "Weak";
@@ -458,20 +460,27 @@ type NormalizedDataset = {
   broadBenchmark: string;
 };
 
+/**
+ * One price basis per series: adjusted closes when every bar has one, otherwise raw closes. Mixing
+ * the two in one series would turn a dividend or split adjustment into a fake return.
+ */
+function closeSeries(bars: PriceBar[]): Map<string, number> {
+  const adjusted = bars.length > 0 && bars.every((bar) => bar.adjusted_close != null && Number.isFinite(Number(bar.adjusted_close)));
+  return new Map(bars.map((bar) => [dateKey(bar.trading_date), Number(adjusted ? bar.adjusted_close : bar.close)]));
+}
+
 function normalizeDataset(dataset: MarketDataset): NormalizedDataset {
   const assetMap = new Map(dataset.asset.map((bar) => [dateKey(bar.trading_date), bar]));
+  const assetCloses = closeSeries(dataset.asset);
   const benchmarkMaps = Object.fromEntries(
-    Object.entries(dataset.benchmarks).map(([symbol, bars]) => [
-      symbol,
-      new Map(bars.map((bar) => [dateKey(bar.trading_date), Number(bar.adjusted_close ?? bar.close)])),
-    ])
+    Object.entries(dataset.benchmarks).map(([symbol, bars]) => [symbol, closeSeries(bars)])
   );
   const dates = [...assetMap.keys()].sort().filter((date) =>
     Object.values(benchmarkMaps).every((map) => map.has(date))
   );
   return {
     dates,
-    asset: dates.map((date) => Number(assetMap.get(date)!.adjusted_close ?? assetMap.get(date)!.close)),
+    asset: dates.map((date) => assetCloses.get(date)!),
     volume: dates.map((date) => Number(assetMap.get(date)!.volume || 0)),
     benchmarks: Object.fromEntries(Object.entries(benchmarkMaps).map(([symbol, map]) => [symbol, dates.map((date) => map.get(date)!)])),
     primaryBenchmark: dataset.primaryBenchmark,
@@ -539,7 +548,8 @@ function buildSignal(indicators: Record<string, Array<number | null>>, combinati
   });
 }
 
-function performanceSummary(stream: number[], positions: number[], dates: string[]): PerformanceMetrics {
+/** Exported for tests. */
+export function performanceSummary(stream: number[], positions: number[], dates: string[], priorPosition = 0): PerformanceMetrics {
   if (!stream.length) return emptyMetrics();
   const equity = cumulativeEquity(stream);
   const years = Math.max(stream.length / 252, 1 / 252);
@@ -547,13 +557,13 @@ function performanceSummary(stream: number[], positions: number[], dates: string
   const cagr = Math.pow(Math.max(equity[equity.length - 1], 1e-9), 1 / years) - 1;
   const volatility = standardDeviation(stream) * Math.sqrt(252);
   const avg = mean(stream);
-  const downside = stream.filter((value) => value < 0);
-  const downsideVol = standardDeviation(downside) * Math.sqrt(252);
+  // Downside deviation: root mean square of min(r, 0) over every observation.
+  const downsideVol = Math.sqrt(mean(stream.map((value) => Math.min(value, 0) ** 2))) * Math.sqrt(252);
   const sharpe = volatility ? avg * 252 / volatility : 0;
   const sortino = downsideVol ? avg * 252 / downsideVol : 0;
   const drawdown = drawdownSeries(equity);
   const maxDrawdown = Math.min(...drawdown);
-  const changes = positions.map((position, index) => Math.abs(position - (index ? positions[index - 1] : 0)));
+  const changes = positions.map((position, index) => Math.abs(position - (index ? positions[index - 1] : priorPosition)));
   const activeReturns = stream.filter((value) => value !== 0);
   const wins = activeReturns.filter((value) => value > 0);
   const losses = activeReturns.filter((value) => value < 0);
@@ -674,8 +684,9 @@ function cumulativeEquity(stream: number[]): number[] {
   });
 }
 
+/** Drawdown from the running high, starting at the initial capital (1), so a first-day loss counts. */
 function drawdownSeries(equity: number[]): number[] {
-  let high = -Infinity;
+  let high = 1;
   return equity.map((value) => {
     high = Math.max(high, value);
     return finite(value / high - 1);

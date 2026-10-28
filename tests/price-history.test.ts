@@ -5,7 +5,7 @@ import { fetchStooqCloses, parseStooqCsv, stooqSymbol } from "@/lib/market-data/
 import { priceBarRows } from "@/lib/market-data/service";
 import {
   closeOnOrBefore, closeOnSplitBasis, crossCheckClose, exchangeDay, normalizeDailyBars,
-  periodEndMarketObservations, sharesAtPeriodEnd, valuationPriceFromBars, type StoredBar,
+  periodEndMarketObservations, sharesAtPeriodEnd, splitBasisDay, unverifiedDetails, valuationPriceFromBars, type StoredBar,
 } from "@/lib/market-data/price-history";
 import { marketMetrics, researchObservations } from "@/lib/research/reporting/data-views";
 
@@ -204,6 +204,26 @@ describe("price history: period-end closes and market cap", () => {
     const cap = rows.find((r) => r.metric_key === "market_cap")!;
     assert.equal(price.value_numeric, 877.3);
     assert.equal(cap.value_numeric, Math.round(87.73 * 24_000_000_000));
+  });
+
+  it("treats a series fetched on the ex-date before the open as pre-split (#120)", () => {
+    // NVDA 10:1, ex-date 10 June 2024; Yahoo stamps the event at the 13:30 UTC open.
+    const splits = [{ ex_day: "2024-06-10", ratio: 10, ex_at: "2024-06-10T13:30:00.000Z" }];
+    const early = splitBasisDay(new Date("2024-06-10T05:00:00Z"), splits, "America/New_York");
+    assert.equal(early, "2024-06-09");
+    // A close fetched before the open is already on the traded basis: not multiplied again.
+    assert.equal(closeOnSplitBasis(1200, "2024-06-07", early, "2024-06-07", splits), 1200);
+    const late = splitBasisDay(new Date("2024-06-10T15:00:00Z"), splits, "America/New_York");
+    assert.equal(late, "2024-06-10");
+    assert.equal(closeOnSplitBasis(120, "2024-06-07", late, "2024-06-07", splits), 1200);
+    // The basis day is exchange-local: 02:00 UTC on 11 June is still 10 June in New York.
+    assert.equal(splitBasisDay(new Date("2024-06-11T02:00:00Z"), [], "America/New_York"), "2024-06-10");
+  });
+
+  it("stops asking Stooq for days it lacks, but retries days after its last row (#133)", () => {
+    const now = new Date("2026-10-10T12:00:00Z");
+    assert.equal(unverifiedDetails("2026-10-05", "2026-10-08", "u", now)?.reference_missing_at, now.toISOString());
+    assert.equal(unverifiedDetails("2026-10-09", "2026-10-08", "u", now), null);
   });
 
   it("surfaces market rows in the Financials metrics view", () => {
