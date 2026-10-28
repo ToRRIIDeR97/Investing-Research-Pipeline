@@ -311,10 +311,14 @@ export function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQua
   const blockingMissingCoverage = missingCoverage.filter(
     (item) => item.requiredForCompletion && ["high", "critical"].includes(item.severity)
   );
+  // Only required high/critical gaps (and errors) block; the rest stay in missingCoverage and are reported as warnings.
+  for (const item of missingCoverage) {
+    if (!blockingMissingCoverage.includes(item) && !errors.includes(item.description) && !warnings.includes(item.description)) {
+      warnings.push(item.description);
+    }
+  }
   const hasFailures = errors.length > 0 || blockingMissingCoverage.length > 0;
-  const status: ResearchQualityGateResult["status"] = hasFailures || missingCoverage.length > 0
-    ? "needs_more_work"
-    : "pass";
+  const status: ResearchQualityGateResult["status"] = hasFailures ? "needs_more_work" : "pass";
   const actionReadiness = actionReadinessFor(data, threshold, status);
 
   return {
@@ -367,7 +371,8 @@ export async function loadRunQualityData(
     unlinkedFactClaims,
     artifactHeads,
   ] = await Promise.all([
-    sql`SELECT * FROM research_stages WHERE research_run_id = ${runId} ORDER BY stage_order`,
+    // Only the columns the gates read: these tables carry large JSON bodies that the gates never use.
+    sql`SELECT stage_key, status FROM research_stages WHERE research_run_id = ${runId} ORDER BY stage_order`,
     // Never input_json (the stored packets). v3 gates read only the latest completed AI review task;
     // earlier pipelines also match analysis modules against task outputs.
     Number(run.pipeline_version || 1) >= 3
@@ -384,24 +389,24 @@ export async function loadRunQualityData(
       WHERE sd.research_run_id = ${runId} OR rrs.research_run_id = ${runId}
       ORDER BY sd.created_at DESC
     `,
-    sql`SELECT * FROM evidence_claims WHERE research_run_id = ${runId} AND review_status != 'rejected' ORDER BY created_at DESC`,
+    sql`SELECT id, claim_text FROM evidence_claims WHERE research_run_id = ${runId} AND review_status != 'rejected' ORDER BY created_at DESC`,
     sql`
-      SELECT mo.*, md.metric_key, md.display_name AS metric_display_name
+      SELECT mo.value_text, mo.review_status, md.metric_key, md.display_name
       FROM metric_observations mo
       JOIN metric_definitions md ON md.id = mo.metric_definition_id
       WHERE mo.research_run_id = ${runId}
       ORDER BY mo.created_at DESC
     `,
-    sql`SELECT * FROM valuation_signals WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
-    sql`SELECT * FROM scenarios WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT lens_family, signal, current_value_text, metadata_json FROM valuation_signals WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT scenario_type, value_anchor, valuation_model_run_id FROM scenarios WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM source_gaps WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM review_decisions WHERE research_run_id = ${runId} ORDER BY reviewed_at DESC`,
     sql`SELECT * FROM analysis_sections WHERE research_run_id = ${runId} ORDER BY module_key`,
     sql`SELECT * FROM valuation_model_runs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM indicator_definitions WHERE research_run_id = ${runId} ORDER BY indicator_key`,
     sql`SELECT * FROM strategy_combinations WHERE research_run_id = ${runId} ORDER BY combination_key`,
-    sql`SELECT * FROM backtest_runs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
-    sql`SELECT * FROM backtest_artifacts WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT id, metrics_json FROM backtest_runs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT id FROM backtest_artifacts WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`
       SELECT COUNT(*) AS cnt
       FROM evidence_claims ec
@@ -574,16 +579,17 @@ function modulesUncoveredByName(
   modules: unknown[],
   outputs: Row[]
 ): unknown[] {
-  const evidenceText = data.evidence.map((claim) => claim.claim_text).join(" ").toLowerCase();
-  const metricsText = data.metrics
-    .map((metric) => [metric.metric_key, metric.display_name, metric.value_text].join(" "))
-    .join(" ")
-    .toLowerCase();
+  // One word set per claim and per metric: a module counts as covered only when a single claim or metric names
+  // every word of its key ("net_debt" needs "net" and "debt", so "internet" or "net income" do not cover it).
+  const texts = [
+    ...data.evidence.map((claim) => claim.claim_text),
+    ...data.metrics.map((metric) => [metric.metric_key, metric.display_name, metric.value_text].join(" ")),
+  ].map(wordSet);
   return modules.filter((moduleKey) => {
     const normalized = String(moduleKey).toLowerCase();
-    const tokens = normalized.split(/[_\s-]+/).filter(Boolean);
+    const tokens = [...wordSet(normalized)];
     return !outputs.some((task) => `${task.task_key ?? ""} ${task.task_type ?? ""}`.toLowerCase().includes(normalized))
-      && !tokens.some((token) => evidenceText.includes(token) || metricsText.includes(token));
+      && !(tokens.length && texts.some((words) => tokens.every((token) => words.has(token))));
   });
 }
 
@@ -715,8 +721,7 @@ function addAiReviewCoverage(
     return;
   }
 
-  const output = normalizeReviewOutput(reviewTask.output_json);
-  const passFail = String(output.pass_fail || output.passFail || output.status || output.review_verdict || "").toLowerCase();
+  const passFail = reviewVerdict(reviewTask.output_json);
 
   if (!passFail) {
     const description = "AI review output has no parsed verdict.";
@@ -735,12 +740,13 @@ function addAiReviewCoverage(
     warnings.push("AI review outcome is conditional_pass.");
   }
 
-  if (passFail === "needs_more_work" || passFail === "fail" || passFail === "failed") {
+  // Fail closed: anything other than an explicit pass or conditional_pass blocks.
+  if (!PASSING_REVIEW_VERDICTS.has(passFail)) {
     const description = `AI review outcome is ${passFail}.`;
     errors.push(description);
     missingCoverage.push({
       key: "ai_review_outcome",
-      severity: passFail === "fail" || passFail === "failed" ? "critical" : "high",
+      severity: passFail === "needs_more_work" ? "high" : "critical",
       area: "AI review",
       description,
       requiredForCompletion: true,
@@ -800,9 +806,7 @@ function actionReadinessFor(
   const decision = String(data.reviewDecisions[0]?.status || "").toLowerCase();
   const baseReadiness = (decision === "approved_for_tracking" || decision === "watchlist") ? "review_ready" : "investment_ready";
   const reviewTask = data.tasks.find((task) => task.task_type === "ai_review" && task.status === "completed");
-  const reviewOutput = normalizeReviewOutput(reviewTask?.output_json);
-  const reviewVerdict = String(reviewOutput.pass_fail || reviewOutput.passFail || reviewOutput.status || reviewOutput.review_verdict || "").toLowerCase();
-  if (reviewVerdict === "conditional_pass" && baseReadiness === "investment_ready") return "review_ready";
+  if (reviewVerdict(reviewTask?.output_json) === "conditional_pass" && baseReadiness === "investment_ready") return "review_ready";
 
   const metadata = typeof data.run.metadata_json === "string"
     ? JSON.parse(data.run.metadata_json)
@@ -832,6 +836,10 @@ function numericLike(value: unknown) {
   return Number.isFinite(Number(value));
 }
 
+function wordSet(text: unknown): Set<string> {
+  return new Set(String(text ?? "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+}
+
 function jsonArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [];
 }
@@ -850,12 +858,26 @@ function normalizeReviewOutput(output: unknown): Row {
   if (!output) return {};
   if (typeof output === "string") {
     try {
-      return JSON.parse(output);
+      const parsed = JSON.parse(output);
+      return parsed && typeof parsed === "object" ? parsed : {};
     } catch {
-      return { status: output };
+      return {};
     }
   }
-  return output as Row;
+  return typeof output === "object" ? output as Row : {};
+}
+
+const PASSING_REVIEW_VERDICTS = new Set(["pass", "conditional_pass"]);
+
+/**
+ * The AI review verdict, trimmed and lower-cased. review_verdict is canonical (the v3 contract); pass_fail is read
+ * only when it is absent, for reviews from earlier pipelines. Other fields such as status are never read, so a stray
+ * value cannot mask the verdict. Returns "" when there is none.
+ */
+export function reviewVerdict(output: unknown): string {
+  const review = normalizeReviewOutput(output);
+  const verdict = review.review_verdict !== undefined ? review.review_verdict : review.pass_fail;
+  return typeof verdict === "string" ? verdict.trim().toLowerCase() : "";
 }
 
 function isOpenGap(gap: Row) {

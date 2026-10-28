@@ -110,9 +110,21 @@ export async function claimNextTask(): Promise<ResearchTask | null> {
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
-    // Use SELECT ... FOR UPDATE SKIP LOCKED for safe concurrent access
+    // One statement: the row lock taken by FOR UPDATE SKIP LOCKED is held until the claim is written,
+    // so two workers can never claim the same task.
     const rows = await sql`
-      SELECT
+      UPDATE research_tasks
+      SET status = 'running',
+          started_at = NOW(),
+          updated_at = NOW()
+      WHERE id = (
+        SELECT id FROM research_tasks
+        WHERE status = 'pending'
+        ORDER BY priority DESC, created_at ASC
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING
         id, research_run_id, stage_id, task_key, task_type,
         agent_name, status, priority,
         input_json, output_json,
@@ -120,32 +132,9 @@ export async function claimNextTask(): Promise<ResearchTask | null> {
         retry_count, cost_usd, idempotency_key,
         started_at, completed_at, failure_reason,
         created_at, updated_at
-      FROM research_tasks
-      WHERE status = 'pending'
-      ORDER BY priority DESC, created_at ASC
-      LIMIT 1
-      FOR UPDATE SKIP LOCKED
     `;
 
-    if (rows.length === 0) {
-      return null;
-    }
-
-    const taskId = rows[0].id;
-
-    await sql`
-      UPDATE research_tasks
-      SET status = 'running',
-          started_at = NOW(),
-          updated_at = NOW()
-      WHERE id = ${taskId}
-    `;
-
-    // Return the updated task
-    const task = rows[0] as ResearchTask;
-    task.status = "running";
-    task.started_at = new Date().toISOString();
-    return task;
+    return rows.length ? (rows[0] as ResearchTask) : null;
   } finally {
     await sql.end();
   }

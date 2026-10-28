@@ -11,7 +11,7 @@ import { getStageOutputContract } from "@/lib/research/stage-contracts";
 import { FOUNDER_GAP_ERROR } from "@/lib/research/handlers/evidence-extraction";
 import { getTeamRequests, rerunRequestStages, skipRequestRerun } from "@/lib/research/team";
 import { STAGE_CONFIGS, STAGE_CONFIG_MAP, getAllStagesForRun, getApplicableStages, getStageConfig } from "./stages";
-import { evaluateResearchQuality } from "./quality-gates";
+import { evaluateResearchQuality, type ResearchQualityGateResult } from "./quality-gates";
 import {
   validateStageCompletion,
   validateSourceLinks,
@@ -231,10 +231,10 @@ export async function advanceStage(
         await failRun(runId, `Stage "${currentStage.stage_key}" exceeded budget: $${spent.toFixed(2)} > $${limit.toFixed(2)}`);
         return { success: false, action: "fail_run", error: "Budget exceeded" };
       } else {
-        // Skip and continue
+        // Skip and continue: the stage is skipped (reason kept) so its dependents and the human gate can proceed.
         await sql`
           UPDATE research_stages
-          SET status = 'failed',
+          SET status = 'skipped',
               failure_reason = ${`Budget exceeded: $${spent.toFixed(2)} > $${limit.toFixed(2)}`},
               completed_at = NOW(),
               updated_at = NOW()
@@ -253,23 +253,26 @@ export async function advanceStage(
     validation = await validateStageCompletion(runId, currentStage.stage_key);
   }
   if (validation.valid && config?.validationRules && config.validationRules.length > 0) {
+    // The quality data is loaded at most once per stage validation, however many rules read it.
+    let loadedQuality: Promise<ResearchQualityGateResult> | undefined;
+    const quality = () => (loadedQuality ??= evaluateResearchQuality(runId));
     for (const rule of config.validationRules) {
       let ruleResult: ValidationResult;
       switch (rule) {
         case "source_validation":
-          ruleResult = await validateSourceDepth(runId);
+          ruleResult = await validateSourceDepth(runId, await quality());
           break;
         case "analysis_coverage_validation":
-          ruleResult = await validateAnalysisCoverage(runId);
+          ruleResult = await validateAnalysisCoverage(runId, await quality());
           break;
         case "valuation_depth_validation":
-          ruleResult = await validateValuationDepth(runId);
+          ruleResult = await validateValuationDepth(runId, await quality());
           break;
         case "review_outcome_validation":
-          ruleResult = await validateReviewOutcome(runId);
+          ruleResult = await validateReviewOutcome(runId, await quality());
           break;
         case "human_review_validation":
-          ruleResult = await validateHumanReviewOutcome(runId);
+          ruleResult = await validateHumanReviewOutcome(runId, await quality());
           break;
         case "source_link_validation":
           ruleResult = await validateSourceLinks(runId);
@@ -358,10 +361,10 @@ export async function advanceStage(
       await pauseForHumanReview(runId, `Stage "${currentStage.stage_key}" needs human input: ${validation.errors.join("; ")}`);
       return { success: true, action: "pause_for_human" };
     } else {
-      // skip_and_continue
+      // skip_and_continue: skipped, not failed, so dependents and the human gate are not blocked.
       await sql`
         UPDATE research_stages
-        SET status = 'failed',
+        SET status = 'skipped',
             failure_reason = ${`Failed after ${maxRetries} retries: ${validation.errors.join("; ")}`},
             validation_result_json = ${sql.json(validation as any)},
             completed_at = NOW(),
@@ -688,10 +691,8 @@ export async function startNextStage(
     SELECT stage_key, failure_reason FROM research_stages
     WHERE research_run_id = ${runId} AND status = 'failed'
   `;
-  const requiredFailure = failures.find((stage) =>
-    getStageConfig(stage.stage_key)?.failureState === "fail_run" ||
-    !String(stage.failure_reason).startsWith("Failed after")
-  );
+  // Exhausted skip_and_continue stages are recorded as skipped, so any failed stage left here blocks the run.
+  const [requiredFailure] = failures;
   if (requiredFailure) {
     await failRun(runId, `Run contains a failed stage (${requiredFailure.stage_key}): ${requiredFailure.failure_reason}`, "needs_more_work");
     return undefined;
@@ -746,7 +747,7 @@ export async function startNextStage(
       LIMIT 1
     `;
     if (!depStage[0] || depStage[0].status !== "completed") {
-      await failRun(runId, "Asset valuation requires completed operating_scenarios stage.");
+      await failRun(runId, "Asset valuation requires completed operating_scenarios stage.", "needs_more_work");
       return undefined;
     }
   }
@@ -1026,18 +1027,14 @@ export async function completeRun(runId: string): Promise<void> {
     const validation = await validateCompletionCriteria(runId);
     const quality = await evaluateResearchQuality(runId);
 
-    if (!validation.valid) {
-      throw new Error(
-        `Cannot complete run — completion criteria not met: ${validation.errors.join("; ")}`
-      );
-    }
-
-    if (quality.status !== "pass") {
+    // A skipped export or refresh schedule (skip_and_continue) leaves the criteria unmet: the run stops for more work.
+    if (!validation.valid || quality.status !== "pass") {
       await sql`
         UPDATE research_runs
         SET status = 'needs_more_work',
             completed_at = NOW(),
             updated_at = NOW(),
+            failure_reason = ${validation.valid ? null : `Completion criteria not met: ${validation.errors.join("; ")}`},
             metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
               completion_validation: validation as any,
               quality_gate: quality as any,
