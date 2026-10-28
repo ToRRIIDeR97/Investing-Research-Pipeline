@@ -191,6 +191,12 @@ describe("workflow orchestration and quality gates (Component 13)", () => {
     assert.deepEqual(gaps(["Net debt fell to $2bn", "Unit economics improved"]), []);
     assert.deepEqual(gaps(["Net revenue rose", "Debt was refinanced"]), ["analysis_net_debt", "analysis_unit_economics"],
       "words split across claims do not cover a module");
+    const signalled = evaluateQualityGates({
+      run: { run_type: "deep_dive", pipeline_version: 3 },
+      profile: { required_modules_json: ["residual_income_valuation"] },
+      signals: [{ lens_family: "residual_income", signal_name: "Price / Tangible Book Value", signal: "neutral" }],
+    }).missingCoverage.filter((item) => item.area === "analysis coverage");
+    assert.deepEqual(signalled, [], "a valuation signal covers its lens's valuation module");
   });
 
   it("only required high or critical gaps block the quality gate; the rest are warnings (#111)", () => {
