@@ -180,7 +180,7 @@ Retries:
 - Server errors and rate limits wait `RESEARCH_OVERLOAD_RETRY_DELAY_MS` (5 s) before the second attempt, doubling after that; other retries wait `RESEARCH_RETRY_BASE_DELAY_MS`, doubling. A `retry-after` header sets the wait instead. Waits are capped at 60 s and end early when the run is aborted.
 - A reply cut off at its output limit (`max_tokens` or `length`) that doesn't parse isn't repaired: the next attempt regenerates with twice the limit. Claude models are capped at 128,000 output tokens (64,000 for Claude Haiku 4.5). Other models keep their configured limit but escalate no further than `RESEARCH_UNKNOWN_MODEL_OUTPUT_CAP` (65,536). Escalation stops, and the call fails, when the next attempt would resend a model at a limit it has already used up.
 - A reply with no JSON that repair can't fix (`malformed_stream` after repair) is retried once, not on every attempt.
-- Repair prompts carry at most the first 12,000 characters of the previous output.
+- Repair prompts bound the previous output: 12,000 characters, or 100,000 for a full-task repair (a task with its own output format). A longer output keeps its head and tail, so fields late in the answer survive repair.
 - Authentication, quota, invalid requests, context limits and schema failures after repair aren't retried.
 - The built-in fallback models (`deepseek-v4-pro`, `qwen3.7-plus`) are OpenCode Go model IDs, so `anthropic-direct` doesn't use them. A `RESEARCH_<AGENT>_FALLBACK_MODEL` you set still applies.
 
