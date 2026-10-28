@@ -7,7 +7,7 @@ import test from "node:test";
 import postgres from "postgres";
 import { NextRequest } from "next/server";
 import { isSourceUrl, MAX_UPLOAD_BYTES, storedExtension } from "../src/lib/ingestion/upload";
-import { invokeDoclingParser } from "../src/lib/ingestion/parser";
+import { basicTextExtraction, invokeDoclingParser, UnparseableUploadError } from "../src/lib/ingestion/parser";
 
 function loadLocalEnv() {
   if (!existsSync(".env.local")) return;
@@ -51,12 +51,31 @@ test("Docling parsing runs without blocking the event loop (#24)", async () => {
   }
 });
 
+test("without Docling, only UTF-8 text is parsed; a binary upload is refused, not stored as garbage (#125)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "research-os-upload-"));
+  try {
+    const text = join(dir, "notes.txt");
+    await writeFile(text, `Revenue grew — ${"x".repeat(2500)}`);
+    const parsed = await basicTextExtraction(text);
+    assert.equal(parsed.chunks.length, 2);
+    assert.match(parsed.chunks[0].text, /^Revenue grew —/);
+    for (const [name, bytes] of [["report.pdf", Buffer.from("%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj", "latin1")],
+      ["model.xlsx", Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x06, 0x00])], ["nul.txt", Buffer.from("text\u0000more")]] as const) {
+      await writeFile(join(dir, name), bytes);
+      await assert.rejects(basicTextExtraction(join(dir, name)), UnparseableUploadError, name);
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("the ingest route refuses oversized or unsized bodies and invalid urls before storing anything (#20, #24)", { skip: process.env.RUN_DB_INTEGRATION !== "1" }, async () => {
   loadLocalEnv();
   const { POST } = await import("../src/app/api/research-runs/[id]/sources/ingest/route");
   const { db } = await import("../src/db");
   const sql = postgres(process.env.DATABASE_URL!);
   const runId = crypto.randomUUID();
+  const secondRunId = crypto.randomUUID();
   const ingest = (form: FormData, length?: number) => POST(new NextRequest(`http://localhost/api/research-runs/${runId}/sources/ingest`, {
     method: "POST", body: form, ...(length === undefined ? {} : { headers: { "content-length": String(length) } }),
   }), { params: Promise.resolve({ id: runId }) });
@@ -75,10 +94,22 @@ test("the ingest route refuses oversized or unsized bodies and invalid urls befo
 
     const created = await ingest(urlForm("https://acme.example/report"), 400);
     assert.equal(created.status, 201);
-    assert.equal((await created.json()).url, "https://acme.example/report");
+    const document = await created.json();
+    assert.equal(document.url, "https://acme.example/report");
+
+    // The same source uploaded to a second run is linked to that run too (#124).
+    await sql`INSERT INTO research_runs (id, asset_id, run_type, status, pipeline_version) VALUES (${secondRunId}, ${asset.id}, 'deep_dive', 'running', 3)`;
+    const again = await POST(new NextRequest(`http://localhost/api/research-runs/${secondRunId}/sources/ingest`, {
+      method: "POST", body: urlForm("https://acme.example/report"), headers: { "content-length": "400" },
+    }), { params: Promise.resolve({ id: secondRunId }) });
+    assert.equal(again.status, 201);
+    assert.equal((await again.json()).id, document.id);
+    const links = await sql`SELECT research_run_id FROM research_run_sources WHERE source_document_id = ${document.id} ORDER BY created_at`;
+    assert.deepEqual(links.map((row) => String(row.research_run_id)), [runId, secondRunId]);
   } finally {
+    await sql`DELETE FROM research_run_sources WHERE research_run_id IN (${runId}, ${secondRunId})`;
     await sql`DELETE FROM source_documents WHERE research_run_id = ${runId}`;
-    await sql`DELETE FROM research_runs WHERE id = ${runId}`;
+    await sql`DELETE FROM research_runs WHERE id IN (${runId}, ${secondRunId})`;
     await sql.end();
     await (db as unknown as { $client: { end: () => Promise<void> } }).$client.end();
   }

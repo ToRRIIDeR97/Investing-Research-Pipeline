@@ -186,18 +186,20 @@ export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = 
       };
 
       // 2. Fetch Stored Sources for this run from DB
-      // One row per document; its passages come from the research memory.
+      // One row per document; its passages come from the research memory. A document another run stored first
+      // keeps that run's metadata, so the role is read from this run's link when it carries one.
       const sourceRows = await sql`
         SELECT DISTINCT ON (sd.id) sd.id as "sourceId", dp.id as "parseId", dc.id as "chunkId",
                sd.source_type as "sourceType", sd.title, sd.publisher, sd.url,
                sd.published_at as "publishedAt", sd.period_end as "periodEnd",
                sd.created_at as "createdAt",
-               sd.metadata_json as metadata
+               CASE WHEN jsonb_typeof(rrs.discovery_metadata_json) = 'object' AND rrs.discovery_metadata_json <> '{}'::jsonb
+                 THEN rrs.discovery_metadata_json ELSE sd.metadata_json END as metadata
         FROM source_documents sd
         JOIN document_parses dp ON dp.source_document_id = sd.id AND dp.status = 'completed'
         JOIN document_chunks dc ON dc.source_document_id = sd.id AND dc.document_parse_id = dp.id
-        LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
-        WHERE sd.research_run_id = ${ctx.runId} OR rrs.research_run_id = ${ctx.runId}
+        LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id AND rrs.research_run_id = ${ctx.runId}
+        WHERE sd.research_run_id = ${ctx.runId} OR rrs.id IS NOT NULL
         ORDER BY sd.id, dc.chunk_index
       `;
       const excludedSourceIds = [...new Set(sourceRows.filter((row) => {

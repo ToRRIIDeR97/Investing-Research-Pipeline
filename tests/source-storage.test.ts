@@ -6,7 +6,7 @@ import postgres from "postgres";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fetchSecFilingPayloads, storeDiscoveredSources, storedSecFiling } from "../src/lib/research/sources/corpus";
+import { fetchSecFilingPayloads, sourcePayloadChunks, storeDiscoveredSources, storedSecFiling, withoutNul } from "../src/lib/research/sources/corpus";
 
 const skip = process.env.RUN_DB_INTEGRATION !== "1";
 if (!process.env.DATABASE_URL && existsSync(".env.local")) {
@@ -44,6 +44,20 @@ async function fixture(sql: postgres.Sql) {
 const payload = (content: string, url: string, mimeType = "text/html") => ({
   sourceType: "sec_filing_10-k", title: "Storage Fixture Co 10-K", publisher: "SEC EDGAR", url, content, mimeType,
   qualityScore: "0.98", publishedAt: "2026-02-01", periodEnd: "2025-12-31", metadata: { system_generated: true, source: "sec_edgar_filing" }, chunkTitle: "10-K",
+});
+
+test("a payload is cut into fixed 9,000-character chunks whose offsets index the stored file (#132)", () => {
+  const content = "a".repeat(9000) + "b".repeat(9000) + "c".repeat(5);
+  const chunks = sourcePayloadChunks(content);
+  assert.deepEqual(chunks.map(chunk => [chunk.chunk_index, chunk.char_start, chunk.char_end, chunk.token_count]),
+    [[0, 0, 9000, 2250], [1, 9000, 18000, 2250], [2, 18000, 18005, 2]]);
+  assert.equal(chunks.map(chunk => chunk.text).join(""), content);
+  assert.deepEqual(sourcePayloadChunks(""), []);
+});
+
+test("model text written to jsonb loses NUL characters, which PostgreSQL rejects (#128)", () => {
+  assert.deepEqual(withoutNul({ label: "Rev\u0000enue", nested: [{ note: "it's \u0000" }], value: 3 }),
+    { label: "Revenue", nested: [{ note: "it's " }], value: 3 });
 });
 
 test("a stored source is not rewritten, re-parsed or returned with its body when stored again", { skip }, async () => {

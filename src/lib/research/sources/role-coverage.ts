@@ -73,14 +73,18 @@ export function mapToSourceRole(
   return null;
 }
 
-export type CoverageSource = Pick<StoredSource, "sourceId" | "sourceType" | "title" | "url" | "metadata">;
+export type CoverageSource =Pick<StoredSource, "sourceId" | "sourceType" | "title" | "url" | "metadata">;
 
 /**
  * Documents fetched by earlier discovery passes stay linked to the run. A replay's web search can
  * return different results, so coverage is rebuilt from both the new and the already linked documents.
+ * A document another run stored first keeps that run's metadata, so the role comes from this run's link
+ * (uploads link with empty metadata and keep the document's own).
  */
 export async function withLinkedRunSources(sql: Sql, runId: string, current: CoverageSource[]): Promise<CoverageSource[]> {
-  const rows = await sql`SELECT d.id, d.source_type, d.title, d.url, d.metadata_json
+  const rows = await sql`SELECT d.id, d.source_type, d.title, d.url,
+      CASE WHEN jsonb_typeof(r.discovery_metadata_json) = 'object' AND r.discovery_metadata_json <> '{}'::jsonb
+        THEN r.discovery_metadata_json ELSE d.metadata_json END AS metadata_json
     FROM source_documents d JOIN research_run_sources r ON r.source_document_id = d.id
     WHERE r.research_run_id = ${runId} ORDER BY r.created_at, d.id`;
   const seen = new Set(current.map(source => source.sourceId));
