@@ -19,7 +19,11 @@ export type RoleDiscoveryContext = {
   roleQueries?: Partial<Record<SourceRole, string[]>>;
   /** Search only roleQueries: skip seed sites and the generic per-role queries. */
   requestedOnly?: boolean;
+  /** Searches that failed (timeout, reset, unreadable answer). Discovery records them here and goes on. */
+  searchFailures?: SearchFailure[];
 };
+
+export type SearchFailure = { role: SourceRole; query: string; error: string };
 
 export type DiscoveredRoleSource = {
   sourceType: string;
@@ -202,6 +206,8 @@ export async function discoverRoleSources(
     return [];
   }
   if (process.env.RESEARCH_WEB_DISCOVERY_ENABLED === "0") return [];
+  // A misconfigured endpoint fails the stage; a failed search below only loses that query.
+  searchEndpoint();
 
   const maxPerRole = positiveInteger(process.env.RESEARCH_WEB_DISCOVERY_MAX_PER_ROLE, 2);
   const maxRoles = positiveInteger(process.env.RESEARCH_WEB_DISCOVERY_MAX_ROLES, 8);
@@ -238,7 +244,13 @@ export async function discoverRoleSources(
     let requestedEnd = 0;
     for (const query of queries) {
       if (!requested.includes(query) && candidates.length >= maxPerRole * 3) break;
-      const found = await searchWeb(query, fetchImpl);
+      let found: SearchCandidate[];
+      try {
+        found = await searchWeb(query, fetchImpl);
+      } catch (error) {
+        context.searchFailures?.push({ role, query, error: error instanceof Error ? error.message : String(error) });
+        continue;
+      }
       if (requested.includes(query)) {
         candidates.splice(requestedEnd, 0, ...found);
         requestedEnd += found.length;
@@ -328,20 +340,26 @@ function isIssuerSeedSite(sourceUrl: string, seedUrls: string[]): boolean {
   }
 }
 
-async function searchWeb(query: string, fetchImpl: typeof fetch): Promise<SearchCandidate[]> {
+/** The configured search API, or null for DuckDuckGo. The key travels in headers, so never in cleartext (#22). */
+function searchEndpoint(): URL | null {
   const endpoint = process.env.RESEARCH_WEB_SEARCH_ENDPOINT;
+  if (!endpoint) return null;
+  const url = new URL(endpoint);
+  if (url.protocol !== "https:") throw new Error("RESEARCH_WEB_SEARCH_ENDPOINT must use HTTPS");
+  return url;
+}
+
+async function searchWeb(query: string, fetchImpl: typeof fetch): Promise<SearchCandidate[]> {
+  const endpoint = searchEndpoint();
   if (endpoint) {
-    const url = new URL(endpoint);
-    // The key travels in headers, so never in cleartext (#22).
-    if (url.protocol !== "https:") throw new Error("RESEARCH_WEB_SEARCH_ENDPOINT must use HTTPS");
-    url.searchParams.set("q", query);
+    endpoint.searchParams.set("q", query);
     const headers: Record<string, string> = { Accept: "application/json" };
     const apiKey = process.env.RESEARCH_WEB_SEARCH_API_KEY;
     if (apiKey) {
       headers.Authorization = `Bearer ${apiKey}`;
       headers["Ocp-Apim-Subscription-Key"] = apiKey;
     }
-    const response = await safeFetch(url.toString(), fetchImpl, headers);
+    const response = await safeFetch(endpoint.toString(), fetchImpl, headers);
     if (!response.ok) return [];
     const payload = JSON.parse(new TextDecoder().decode(await readCapped(response, 1_000_000)));
     return parseSearchPayload(payload, query);
@@ -532,7 +550,11 @@ async function extractPdfText(bytes: Uint8Array): Promise<string> {
     await writeFile(path, bytes);
     const { stdout } = await execFileAsync("pdftotext", ["-layout", path, "-"], {
       timeout: 20_000,
-      maxBuffer: 2_000_000,
+      maxBuffer: 4_000_000,
+    }).catch((error: NodeJS.ErrnoException & { stdout?: string }) => {
+      // A long PDF is truncated like a long page: Node stops pdftotext at maxBuffer and keeps what it read.
+      if (error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" && error.stdout) return { stdout: error.stdout };
+      throw error;
     });
     return stdout.slice(0, 1_000_000);
   } finally {
@@ -617,11 +639,11 @@ function isAcceptableSourceUrl(value: string): boolean {
   return !SEARCH_HOSTS.some((searchHost) => hostname === searchHost || hostname.endsWith(`.${searchHost}`));
 }
 
-function unwrapDuckDuckGoUrl(value: string): string {
+/** searchParams already decodes uddg; decoding twice would turn a target's own %2F or %26 into / or &. */
+export function unwrapDuckDuckGoUrl(value: string): string {
   try {
     const url = new URL(value);
-    const target = url.searchParams.get("uddg");
-    return target ? decodeURIComponent(target) : value;
+    return url.searchParams.get("uddg") || value;
   } catch {
     return value;
   }

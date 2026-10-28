@@ -1,7 +1,9 @@
 import { NextRequest } from "next/server";
 import { approveResearchPlan } from "@/lib/workflow/orchestrator";
-import { handleApiError, successResponse } from "@/lib/api/errors";
+import { ApiError, handleApiError, successResponse } from "@/lib/api/errors";
 import { enqueueResearchRun } from "@/lib/research/run-queue";
+
+const UNAUTHENTICATED_REVIEWER = "api:unauthenticated";
 
 /**
  * POST /api/research-runs/:id/approve-plan
@@ -16,8 +18,13 @@ export async function POST(
 ) {
   try {
     const { id: runId } = await params;
+    // An empty body approves the plan as drafted; a body that is JSON but not an object (null, a list) is refused.
     const body = await request.json().catch(() => ({}));
-    const approvedBy = body.approved_by || "user";
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new ApiError("The request body must be a JSON object", 400, "VALIDATION_ERROR");
+    }
+    // The API has no accounts, so the approver is recorded as such; a body's approved_by is ignored (#13, #135).
+    const approvedBy = UNAUTHENTICATED_REVIEWER;
     const forecastYears = body.forecast_years === undefined || body.forecast_years === null ? undefined : Number(body.forecast_years);
     const result = await approveResearchPlan(runId, approvedBy, { framing: body.framing, archetypes: body.archetypes, overlays: body.overlays, forecastYears });
     if (result.success) {

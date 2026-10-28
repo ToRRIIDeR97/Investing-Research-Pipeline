@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  assembleValuation, buildFcffSchedule, buildScenarioStatements, equityBridge, forecastHorizon, historyRatios,
+  MAX_BRIDGE_ITEM_AGE_DAYS, assembleValuation, buildFcffSchedule, buildScenarioStatements, equityBridge, forecastHorizon, historyRatios,
   impliedOperatingMargin, latestRiskFreeRate, valuationAssumptionsFormat,
 } from "../src/lib/research/valuation/engine";
+import { equityMethodBoundErrors, largestCapturedAmount } from "../src/lib/research/handlers/asset-valuation";
 import { valuationFinancialInputs } from "../src/lib/research/valuation/financial-inputs";
 import { validateAnnualPriceTargetPath } from "../src/lib/research/valuation/validation";
 import { validateArtifactContent } from "../src/lib/research/stage-contracts";
@@ -55,6 +56,59 @@ test("bank FCFE schedules are assembled by code: anchors are the terminal-year v
   for (const [type, content] of Object.entries(out)) assert.equal(validateArtifactContent(type, content).valid, true, type);
   assert.throws(() => assembleValuation({ schedules: { bear: fcfe("bear", 50), base: fcfe("base", 100), bull: { ...fcfe("bull", 1), years: [{ fiscal_year: 2026, cash_flow: 1 }] } },
     probabilities: {}, marketPrice: 10, currency: "USD" }), /bull schedule covers FY2026/);
+});
+
+const fcfeSchedule = (scenario_type: string, cash: number, extra: Record<string, unknown> = {}) => ({
+  method: "fcfe", method_name: "FCFE", scenario_type, rationale: "Fixture", currency: "USD", cash_flow_label: "FCFE", discount_rate: 0.1,
+  years: [2026, 2027].map((fiscal_year) => ({ fiscal_year, cash_flow: cash })), terminal: { type: "perpetuity", growth_rate: 0.02 },
+  equity_bridge: 0, equity_bridge_explanation: "Equity cash flow", diluted_shares: 100, source_notes: ["Fixture"], ...extra,
+}) as any;
+
+test("negative scenario weights give no weighted target, and the market price keeps its own currency (#121, #103)", () => {
+  const schedules = { bear: fcfeSchedule("bear", 50), base: fcfeSchedule("base", 100), bull: fcfeSchedule("bull", 150) };
+  const out = assembleValuation({ schedules, probabilities: { probability_bear: -0.1, probability_base: 0.6, probability_bull: 0.5 }, marketPrice: 10, currency: "USD" });
+  assert.equal("weighted_target" in out.valuation_scenario_set, false);
+  const mismatch = assembleValuation({ schedules, probabilities: {}, marketPrice: 10, currency: "INR", marketPriceCurrency: "USD" });
+  assert.equal(mismatch.annual_price_target_path.market_price_currency, "USD");
+  assert.match(validateAnnualPriceTargetPath(mismatch.annual_price_target_path).errors.join(" "), /differs from market price currency/);
+});
+
+test("a bridge item older than the age limit is left out and named as stale (#135)", () => {
+  const m = 1e6;
+  const fi = valuationFinancialInputs({ statementObservations: [
+    obs("revenue", "2024-12-31", 100 * m), obs("us_gaap_LongTermDebtNoncurrent", "2024-12-31", 30 * m),
+    obs("us_gaap_CashAndCashEquivalentsAtCarryingValue", "2026-06-30", 50 * m, "quarterly"),
+  ], cutoff: new Date("2026-10-10") });
+  const bridge = equityBridge(fi)!;
+  assert.ok(MAX_BRIDGE_ITEM_AGE_DAYS < 546);
+  assert.equal(bridge.amount, 50);
+  assert.deepEqual(bridge.stale, { long_term_debt: "2024-12-31" });
+  assert.ok(bridge.missing.includes("long_term_debt"));
+});
+
+test("model equity schedules must beat the risk-free rate and stay within unit bounds (#103)", () => {
+  const ok = [fcfeSchedule("base", 100)];
+  const options = { riskFree: 0.04, referenceSharesMillions: 100, largestCapturedAmount: 500, statementCurrency: "USD" };
+  assert.deepEqual(equityMethodBoundErrors(ok, options), []);
+  const messages = (models: any[]) => equityMethodBoundErrors(models, options).map((e) => e.message).join(" ");
+  assert.match(messages([fcfeSchedule("base", 100, { discount_rate: 0.035 })]), /must exceed the risk-free rate/);
+  assert.match(messages([fcfeSchedule("base", 100, { terminal: { type: "perpetuity", growth_rate: 0.095 } })]), /at least 1pt below/);
+  assert.match(messages([fcfeSchedule("base", 100, { terminal: { type: "multiple", metric: "net_income", metric_value: 100, multiple: 250 } })]), /terminal multiple 250 exceeds/);
+  assert.match(messages([fcfeSchedule("base", 100, { diluted_shares: 100e6 })]), /not in millions/);
+  assert.match(messages([fcfeSchedule("base", 100e6)]), /give amounts in millions/);
+  assert.match(messages([fcfeSchedule("base", 100, { currency: "INR" })]), /must be financial_inputs.currency USD/);
+  assert.equal(largestCapturedAmount({ columns: ["period_end", "fiscal_year", "revenue", "diluted_shares"], quarterly: [["2026-06-30", 2026, -700, 9000]], annual: [] }), 700);
+});
+
+test("LongTermDebt (which includes current maturities) is net of LongTermDebtCurrent, so the bridge does not count them twice (#135)", () => {
+  const m = 1e6;
+  const fi = valuationFinancialInputs({ statementObservations: [
+    obs("revenue", "2025-12-31", 100 * m), obs("us_gaap_CashAndCashEquivalentsAtCarryingValue", "2025-12-31", 50 * m),
+    obs("us_gaap_LongTermDebt", "2025-12-31", 40 * m), obs("us_gaap_LongTermDebtCurrent", "2025-12-31", 10 * m),
+  ], cutoff: new Date("2026-10-10") })!;
+  const bridge = equityBridge(fi)!;
+  assert.deepEqual([bridge.components.long_term_debt, bridge.components.current_debt], [30, 10]);
+  assert.equal(bridge.amount, 10);
 });
 
 test("an unreachable market price gives no implied margin, and the format rejects duplicate scenarios", () => {

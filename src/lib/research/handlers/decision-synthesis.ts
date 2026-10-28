@@ -10,7 +10,7 @@ import { v2RunContext } from "../sources/role-coverage";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 import { withheldValuationReason } from "../valuation/contracts";
 import {
-  DECISION_GAP_OWNER, decisionOutputFormat, finalizeDecisionOutput, stripCodeOwnedFields, type DecisionFinalizeInputs,
+  DECISION_GAP_OWNER, decisionOutputFormat, dilutionCovered, finalizeDecisionOutput, stripCodeOwnedFields, type DecisionFinalizeInputs,
 } from "../decision/finalize";
 import { fillMonitoringLevels } from "../decision/monitoring-levels";
 import { FinancialAnalytics } from "../history/analytics";
@@ -244,8 +244,13 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
         probabilities: ["bear", "base", "bull"].every((t) => Number.isFinite(weights[`probability_${t}`]))
           ? { probability_bear: weights.probability_bear, probability_base: weights.probability_base, probability_bull: weights.probability_bull }
           : null,
-        dilutionCovered: Boolean(terminalReturnInputs && terminalReturnInputs.reported_diluted_shares > 0
-          && terminalReturnInputs.diluted_shares_millions * 1e6 >= terminalReturnInputs.reported_diluted_shares - 1),
+        // The projection counts listed shares (ADS for a depositary listing); the reported count is ordinary shares.
+        dilutionCovered: Boolean(terminalReturnInputs) && dilutionCovered({
+          listedSharesMillions: terminalReturnInputs!.diluted_shares_millions,
+          depositaryRatio: Number(acceptedValuation.valuation_scenario_set?.currency_conversion?.depositary_ratio) || null,
+          reportedDilutedShares: terminalReturnInputs!.reported_diluted_shares,
+        }),
+        priceCurrency: acceptedValuation.annual_price_target_path?.market_price_currency ?? null,
         noReratingReturn: Number.isFinite(acceptedValuation.valuation_scenario_set?.cross_checks?.no_rerating?.base?.return)
           ? Number(acceptedValuation.valuation_scenario_set.cross_checks.no_rerating.base.return) : null,
       };

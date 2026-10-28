@@ -2,7 +2,7 @@ import postgres from "postgres";
 import { pipelineSql } from "@/db/pipeline-sql";
 import { getStageOutputContract, validateArtifactContent } from "@/lib/research/stage-contracts";
 import { STAGE_CONFIG_MAP, getStageConfig } from "./stages";
-import { evaluateResearchQuality, VALUATION_WITHHELD_KEY } from "./quality-gates";
+import { evaluateResearchQuality, VALUATION_WITHHELD_KEY, type ResearchQualityGateResult } from "./quality-gates";
 
 // ============================================================
 // Validators — deterministic checks on stage / run completion.
@@ -340,9 +340,10 @@ export async function validateSourceLinks(
 }
 
 export async function validateSourceDepth(
-  runId: string
+  runId: string,
+  loaded?: ResearchQualityGateResult
 ): Promise<ValidationResult> {
-  const quality = await evaluateResearchQuality(runId);
+  const quality = loaded ?? await evaluateResearchQuality(runId);
   const sourceItems = quality.missingCoverage.filter(
     (item) =>
       item.area.includes("source") ||
@@ -373,9 +374,10 @@ export async function validateSourceDepth(
 }
 
 export async function validateAnalysisCoverage(
-  runId: string
+  runId: string,
+  loaded?: ResearchQualityGateResult
 ): Promise<ValidationResult> {
-  const quality = await evaluateResearchQuality(runId);
+  const quality = loaded ?? await evaluateResearchQuality(runId);
   const analysisItems = quality.missingCoverage.filter(
     (item) => item.area === "analysis coverage"
   );
@@ -393,9 +395,10 @@ export async function validateAnalysisCoverage(
 }
 
 export async function validateValuationDepth(
-  runId: string
+  runId: string,
+  loaded?: ResearchQualityGateResult
 ): Promise<ValidationResult> {
-  const quality = await evaluateResearchQuality(runId);
+  const quality = loaded ?? await evaluateResearchQuality(runId);
   // A withheld valuation passes this stage as a warning; the completion gate still reports it.
   const valuationItems = quality.missingCoverage.filter(
     (item) => item.area === "valuation depth" || item.area === "valuation anchors" || item.area === "valuation artifact"
@@ -417,9 +420,10 @@ export async function validateValuationDepth(
 }
 
 export async function validateReviewOutcome(
-  runId: string
+  runId: string,
+  loaded?: ResearchQualityGateResult
 ): Promise<ValidationResult> {
-  const quality = await evaluateResearchQuality(runId);
+  const quality = loaded ?? await evaluateResearchQuality(runId);
   const reviewItems = reviewCoverageItems(quality.missingCoverage, "AI review");
 
   return {
@@ -437,8 +441,8 @@ export async function validateReviewOutcome(
   };
 }
 
-export async function validateHumanReviewOutcome(runId: string): Promise<ValidationResult> {
-  const quality = await evaluateResearchQuality(runId);
+export async function validateHumanReviewOutcome(runId: string, loaded?: ResearchQualityGateResult): Promise<ValidationResult> {
+  const quality = loaded ?? await evaluateResearchQuality(runId);
   const reviewItems = reviewCoverageItems(quality.missingCoverage, "human review");
   return {
     valid: reviewItems.filter((item) => item.requiredForCompletion).length === 0,

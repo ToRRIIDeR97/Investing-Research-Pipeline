@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { decisionOutputFormat, finalizeDecisionOutput, stripCodeOwnedFields, type DecisionFinalizeInputs } from "@/lib/research/decision/finalize";
+import { decisionOutputFormat, dilutionCovered, finalizeDecisionOutput, stripCodeOwnedFields, type DecisionFinalizeInputs } from "@/lib/research/decision/finalize";
 import { validateArtifactContent } from "@/lib/research/stage-contracts";
 import { generateMarkdownReport } from "@/lib/export/report-generator";
 
@@ -97,6 +97,30 @@ describe("decision finalize step", () => {
     assert.equal(output.investment_thesis.valuation_accepted_first, true);
     assert.equal(output.investment_thesis.expected_return_linkage, "Model linkage.");
     assert.equal(validateArtifactContent("expected_return_matrix", matrix).valid, true);
+  });
+
+  it("compares listed ADS shares with the ordinary reported count through the depositary ratio (#100)", () => {
+    // 8 ordinary shares per ADS: 125 million ADS cover 1,000 million reported ordinary shares.
+    assert.equal(dilutionCovered({ listedSharesMillions: 125, depositaryRatio: 8, reportedDilutedShares: 1e9 }), true);
+    assert.equal(dilutionCovered({ listedSharesMillions: 125, depositaryRatio: null, reportedDilutedShares: 1e9 }), false);
+    assert.equal(dilutionCovered({ listedSharesMillions: 1000, reportedDilutedShares: 1e9 }), true);
+    assert.equal(dilutionCovered({ listedSharesMillions: 999, reportedDilutedShares: 1e9 }), false);
+    // Without a reported count there is nothing to check against: returns stay unavailable.
+    assert.equal(dilutionCovered({ listedSharesMillions: 125, depositaryRatio: 8, reportedDilutedShares: Number.NaN }), false);
+  });
+
+  it("gives no weighted return for negative scenario weights (#121)", () => {
+    const { output } = finalizeDecisionOutput(answer(), inputs({ probabilities: { probability_bear: -0.1, probability_base: 0.6, probability_bull: 0.5 } }));
+    assert.equal(output.expected_return_matrix.probability_weighted_return, null);
+    assert.equal(output.expected_return_matrix.base_return, 0.1);
+    assert.doesNotMatch(output.investment_thesis.expected_return_linkage, /weights/);
+  });
+
+  it("names the price currency instead of assuming dollars", () => {
+    const linkage = (priceCurrency?: string) => finalizeDecisionOutput(answer(), inputs({ priceCurrency })).output.investment_thesis.expected_return_linkage;
+    assert.match(linkage("HKD"), /from HKD 50\.00/);
+    assert.match(linkage("USD"), /from \$50\.00/);
+    assert.match(linkage(), /from \$50\.00/);
   });
 
   it("states returns without weights when no scenario probabilities exist", () => {

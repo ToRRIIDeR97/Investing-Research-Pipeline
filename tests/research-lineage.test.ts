@@ -205,6 +205,29 @@ test("monitor-check finds the 10-Q filed after the cutoff, captures it from a fi
   assert.deepEqual([quiet.status, quiet.filings.length, calls.length], ["current", 0, 1]);
 });
 
+test("monitor-check watches a foreign issuer's 20-F and 6-K results releases, not its other 6-Ks", async () => {
+  const foreign = { filings: { recent: {
+    form: ["6-K", "6-K", "20-F", "8-K"], filingDate: ["2026-10-30", "2026-10-20", "2026-09-15", "2026-09-01"],
+    accessionNumber: ["0000000001-26-000013", "0000000001-26-000012", "0000000001-26-000011", "0000000001-26-000010"],
+    reportDate: ["", "", "2025-12-31", ""], primaryDocument: ["results.htm", "notice.htm", "annual.htm", "8k.htm"],
+    primaryDocDescription: ["", "", "", ""], items: ["", "", "", ""] } } };
+  const pages: Record<string, string> = {
+    "results.htm": "<p>EXHIBIT INDEX</p><p>Exhibit 99.1 Press Release: Example Ltd. Announces Third Quarter 2026 Unaudited Financial Results</p>",
+    "notice.htm": "<p>EXHIBIT INDEX</p><p>Exhibit 99.1 Announcement of Annual General Meeting</p>",
+    "annual.htm": "<p>Annual report</p>",
+  };
+  const fixtureFetch = (async (url: string | URL | Request) => {
+    if (String(url).endsWith("CIK0000000001.json")) return new Response(JSON.stringify(foreign));
+    const page = pages[String(url).split("/").pop()!];
+    return page ? new Response(page) : new Response("not found", { status: 404 });
+  }) as typeof fetch;
+  const sql = (async (strings: TemplateStringsArray) => /FROM source_documents|FROM research_artifacts/.test(strings.join("?")) ? [] : Promise.reject(new Error("Unexpected query"))) as unknown as Sql;
+  const result = await checkAsset(sql, { asset_id: id(5), slug: "example", symbol: "EXM", run_id: id(1), source_cutoff_at: "2026-08-01T00:00:00.000Z", cik: "0000000001" },
+    { fetch: fixtureFetch, now: new Date("2026-11-01T00:00:00Z") });
+  assert.deepEqual(result.filings.map(f => [f.form, f.filing_date]), [["6-K", "2026-10-30"], ["20-F", "2026-09-15"]]);
+  assert.equal(result.status, "refresh_due");
+});
+
 // ---------------------------------------------------------------- valuation v2 artifacts
 // The artifact is built by the real v2 engine and assembled the way handlers/asset-valuation.ts stores it.
 const v2Ratios = { da_to_revenue: 0.05, capex_to_revenue: 0.06, tax_rate: 0.2 };

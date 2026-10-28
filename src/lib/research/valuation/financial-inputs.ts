@@ -132,8 +132,13 @@ export function valuationFinancialInputs(params: {
     return periods.map((end) => {
       const fiscal = COLUMNS.flatMap((c) => c.aliases).map((key) => values.get(key)?.get(end)).find(Boolean);
       const cells = COLUMNS.map((column) => {
-        const found = aliasesOf(column).map((key) => values.get(key)?.get(end)).find(Boolean);
+        const foundKey = aliasesOf(column).find((key) => values.get(key)?.has(end));
+        const found = foundKey ? values.get(foundKey)!.get(end) : undefined;
         let value: number | null = found ? found.value_numeric : null;
+        // LongTermDebt is the total including current maturities, which current_debt takes from LongTermDebtCurrent:
+        // keep only the noncurrent part so the bridge does not subtract them twice.
+        const currentMaturities = values.get("us_gaap_LongTermDebtCurrent")?.get(end);
+        if (value !== null && foundKey === "us_gaap_LongTermDebt" && column.key === "long_term_debt" && currentMaturities) value -= currentMaturities.value_numeric;
         if (column.debtLines && params.foreignIssuer) {
           const present = keys.filter((key) => values.get(key)?.has(end));
           const lines = otherBorrowingKeys(present, LONG_TERM_TOTALS.some((key) => values.get(key)?.has(end)));

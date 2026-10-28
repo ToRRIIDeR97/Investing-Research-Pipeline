@@ -1,14 +1,14 @@
 import { NextRequest } from "next/server";
 import { db } from "@/db";
 import { research_runs } from "@/db/schema/workflow";
-import { source_documents } from "@/db/schema/corpus";
+import { research_run_sources, source_documents } from "@/db/schema/corpus";
 import { handleApiError, createdResponse, ApiError } from "@/lib/api/errors";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { document_parses } from "@/db/schema/corpus";
-import { invokeDoclingParser, storeParseResults } from "@/lib/ingestion/parser";
+import { invokeDoclingParser, storeParseResults, UnparseableUploadError } from "@/lib/ingestion/parser";
 import { isSourceUrl, MAX_UPLOAD_BYTES, storedExtension } from "@/lib/ingestion/upload";
 
 export async function POST(
@@ -65,6 +65,7 @@ export async function POST(
             .set({ research_run_id: runId })
             .where(eq(source_documents.id, existingUrl.id));
         }
+        await linkToRun(runId, existingUrl.id);
         await parseSourceIfNeeded(existingUrl.id, existingUrl.storage_path);
         return createdResponse(existingUrl);
       }
@@ -86,6 +87,7 @@ export async function POST(
         })
         .returning();
 
+      await linkToRun(runId, sourceDoc.id);
       return createdResponse(sourceDoc);
     }
 
@@ -131,6 +133,8 @@ export async function POST(
           .set({ research_run_id: runId })
           .where(eq(source_documents.id, existing.id));
       }
+      // Another run may hold the document; this run sees it through its own link.
+      await linkToRun(runId, existing.id);
       await parseSourceIfNeeded(existing.id, existing.storage_path);
       return createdResponse(existing);
     }
@@ -153,12 +157,23 @@ export async function POST(
       })
       .returning();
 
+    await linkToRun(runId, sourceDoc.id);
     await parseSourceIfNeeded(sourceDoc.id, sourceDoc.storage_path);
 
     return createdResponse(sourceDoc);
   } catch (error) {
+    if (error instanceof UnparseableUploadError) {
+      return handleApiError(new ApiError(error.message, 422, "UNPARSEABLE_UPLOAD"));
+    }
     return handleApiError(error);
   }
+}
+
+async function linkToRun(runId: string, sourceDocumentId: string) {
+  await db
+    .insert(research_run_sources)
+    .values({ research_run_id: runId, source_document_id: sourceDocumentId, role: "uploaded_source" })
+    .onConflictDoNothing();
 }
 
 async function parseSourceIfNeeded(sourceDocumentId: string, storagePath: string) {
@@ -166,10 +181,11 @@ async function parseSourceIfNeeded(sourceDocumentId: string, storagePath: string
     return null;
   }
 
+  // Only a completed parse counts; a failed one is retried by the next upload.
   const [existingParse] = await db
     .select({ id: document_parses.id })
     .from(document_parses)
-    .where(eq(document_parses.source_document_id, sourceDocumentId))
+    .where(and(eq(document_parses.source_document_id, sourceDocumentId), eq(document_parses.status, "completed")))
     .limit(1);
 
   if (existingParse) {

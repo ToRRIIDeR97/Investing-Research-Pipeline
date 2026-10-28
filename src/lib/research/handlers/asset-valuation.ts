@@ -19,11 +19,11 @@ import { costOfCapitalInputs } from "../valuation/cost-of-capital";
 import { hasDepreciationInputs, valuationFinancialInputs } from "../valuation/financial-inputs";
 import { ReverseValuation, withheldValuationReason } from "../valuation/contracts";
 import {
-  SCENARIOS, assembleValuation, buildScenarioStatements, equityBridge, forecastHorizon, forecastYears, historyRatios,
+  MAX_BRIDGE_ITEM_AGE_DAYS, SCENARIOS, assembleValuation, buildScenarioStatements, equityBridge, forecastHorizon, forecastYears, historyRatios,
   latestRiskFreeRate, operatingModelFirstYear, valuationReadiness, type Scenario, type YearlyDriver,
 } from "../valuation/engine";
 import {
-  buildFcffValuation, currencyConversion, defaultValuationSets, depreciationWarnings, fxSeriesFor, latestFredValue, ronicDefault,
+  MIN_TERMINAL_SPREAD, buildFcffValuation, convertMethodInput, currencyConversion, defaultValuationSets, depreciationWarnings, fxSeriesFor, latestFredValue, ronicDefault,
   valuationSetsFormat, valuationTiming, type LensValue, type SegmentDriver, type ValuationSet, type ValuationSetsOutput,
 } from "../valuation/v2";
 import { FinancialAnalytics, tableRows } from "../history/analytics";
@@ -39,7 +39,7 @@ export const valuationPrompt = (p: Record<string, unknown>) => exactJsonPrompt({
   extraRules: [
     "The application builds each operating case's statements and FCFF from the operating scenarios' yearly_drivers (shown in scenario_statements), appends fade years in which growth moves to the terminal rate and reinvestment = growth / RONIC x NOPAT, and values the terminal as NOPAT x (1 + g) x (1 - g / RONIC) / (r - g). It values every case under every valuation set, and computes the anchors, weights, returns, reverse valuation, multiples and stress cases. Supply only valuation_assumptions.",
     "valuation_assumptions.sets holds exactly three sets, conservative, base and aggressive, each with discount_rate, terminal_growth, ronic, fade_years and rationale. default_valuation_sets holds the code-prepared sets: start from them. Valuation sets are separate from operating cases; never make a set pessimistic or optimistic about the business itself.",
-    "discount_rate is a decimal cost of capital for free cash flow to the firm and must exceed risk_free_rate.rate; conservative >= base >= aggressive. terminal_growth must be below the discount rate and must not exceed risk_free_rate.rate; conservative <= base <= aggressive.",
+    "discount_rate is a decimal cost of capital for free cash flow to the firm and must exceed risk_free_rate.rate; conservative >= base >= aggressive. terminal_growth must be at least 1pt (0.01) below the discount rate and must not exceed risk_free_rate.rate; conservative <= base <= aggressive.",
     COST_OF_CAPITAL_RULE,
     "ronic is the return on new invested capital after the forecast. ronic_default gives the code default and its basis (history ROIC and the base case's explicit incremental ROIC). Keep it unless the evidence says otherwise; any ronic more than 0.5pt from the default needs ronic_rationale.",
     "Use the valuation specialist's team_context.brief. Do not return statements, schedules or per-share values and do not change the scenario drivers; note any disagreement with them in source_notes.",
@@ -70,7 +70,53 @@ export function primarySchedules(models: ValuationMethodInput[]): Record<Scenari
   return null;
 }
 
-export function equityMethodsFormat(options: { requireDepreciationAddBack: boolean }): AgentOutputFormat {
+/** Upper bounds on model-written equity schedules: a terminal multiple, and shares in millions (one trillion shares). */
+export const MAX_TERMINAL_MULTIPLE = 100;
+export const MAX_DILUTED_SHARES_MILLIONS = 1e6;
+/** diluted_shares above this multiple of the reported count, or amounts above this multiple of the largest captured one, are a unit slip. */
+const MAX_SHARES_TO_REPORTED = 3;
+const MAX_AMOUNT_TO_CAPTURED = 50;
+
+/** Bounds and rate checks for model-built equity schedules, one message per problem. */
+export function equityMethodBoundErrors(models: ValuationMethodInput[], options: {
+  riskFree?: number | null; referenceSharesMillions?: number | null; largestCapturedAmount?: number | null; statementCurrency?: string | null;
+}): { path: string; message: string }[] {
+  const errors: { path: string; message: string }[] = [];
+  const ref = Number(options.referenceSharesMillions) > 0 ? Number(options.referenceSharesMillions) : null;
+  const amountLimit = Number(options.largestCapturedAmount) > 0 ? Number(options.largestCapturedAmount) * MAX_AMOUNT_TO_CAPTURED : null;
+  models.forEach((model, m) => {
+    const path = `valuation_scenario_set.method_inputs.${m}`, label = `${model.method} ${model.scenario_type}`;
+    if (options.statementCurrency && model.currency !== options.statementCurrency) errors.push({ path: `${path}.currency`,
+      message: `${label} currency ${model.currency} must be financial_inputs.currency ${options.statementCurrency}; the application converts to the price currency.` });
+    if (options.riskFree != null && model.discount_rate <= options.riskFree) errors.push({ path: `${path}.discount_rate`,
+      message: `${label} cost of equity ${model.discount_rate} must exceed the risk-free rate ${options.riskFree} (FRED DGS10).` });
+    if (model.terminal.type === "perpetuity" && model.discount_rate - model.terminal.growth_rate < MIN_TERMINAL_SPREAD - 1e-9) errors.push({ path: `${path}.terminal.growth_rate`,
+      message: `${label} terminal growth ${model.terminal.growth_rate} must be at least ${MIN_TERMINAL_SPREAD * 100}pt below the discount rate ${model.discount_rate}.` });
+    if (model.terminal.type === "multiple" && model.terminal.multiple > MAX_TERMINAL_MULTIPLE) errors.push({ path: `${path}.terminal.multiple`,
+      message: `${label} terminal multiple ${model.terminal.multiple} exceeds ${MAX_TERMINAL_MULTIPLE}; use total earnings or equity, not per-share inputs.` });
+    if (model.diluted_shares > MAX_DILUTED_SHARES_MILLIONS || (ref !== null && model.diluted_shares > ref * MAX_SHARES_TO_REPORTED)) errors.push({ path: `${path}.diluted_shares`,
+      message: `${label} diluted_shares ${model.diluted_shares} is not in millions${ref !== null ? ` (the reported diluted count is ${ref} million)` : ""}.` });
+    if (amountLimit !== null) {
+      const amounts = [...model.years.map((year) => year.cash_flow), ...(model.terminal.type === "multiple" ? [model.terminal.metric_value] : [])];
+      if (amounts.some((amount) => Math.abs(amount) > amountLimit)) errors.push({ path, message: `${label} cash flows or terminal metric_value exceed ${MAX_AMOUNT_TO_CAPTURED}x the largest captured amount (${options.largestCapturedAmount} million); give amounts in millions.` });
+    }
+  });
+  return errors;
+}
+
+/** The largest absolute currency amount in financial_inputs (millions), for the unit check on model schedules. */
+export function largestCapturedAmount(fi: { columns: string[]; quarterly: unknown[][]; annual: unknown[][] } | null): number | null {
+  if (!fi) return null;
+  const skip = new Set(["period_end", "fiscal_year", "fiscal_quarter", "diluted_shares", "employees", "period_end_close", "market_cap", "price_verified"]);
+  const at = fi.columns.map((column, i) => (skip.has(column) ? -1 : i)).filter((i) => i >= 0);
+  const values = [...fi.quarterly, ...fi.annual].flatMap((row) => at.map((i) => row[i])).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  return values.length ? Math.max(...values.map(Math.abs)) : null;
+}
+
+export function equityMethodsFormat(options: {
+  requireDepreciationAddBack: boolean; riskFree?: number | null; referenceSharesMillions?: number | null;
+  largestCapturedAmount?: number | null; statementCurrency?: string | null;
+}): AgentOutputFormat {
   return {
     requiredKeys: Object.keys(EquityMethodsOutput.shape),
     schema: contractJsonSchema(EquityMethodsOutput, { target: "draft-7", io: "input", reused: "inline" }) as Record<string, unknown>,
@@ -81,7 +127,10 @@ export function equityMethodsFormat(options: { requireDepreciationAddBack: boole
       if (set.valuation_status === "withheld") {
         return set.withheld_reason?.trim() ? [] : [{ path: "valuation_scenario_set.withheld_reason", message: "Name the missing packet inputs when the valuation is withheld." }];
       }
-      const errors = options.requireDepreciationAddBack ? cashFlowBuildErrors(set.method_inputs) : [];
+      const errors = [
+        ...(options.requireDepreciationAddBack ? cashFlowBuildErrors(set.method_inputs) : []),
+        ...equityMethodBoundErrors(set.method_inputs, options),
+      ];
       try {
         validateMethodInputs(set.method_inputs);
         const primary = primarySchedules(set.method_inputs);
@@ -102,7 +151,7 @@ export const equityMethodsPrompt = (p: Record<string, unknown>) => exactJsonProm
   extraRules: [
     "Use the valuation specialist's team_context.brief and the business specialist's accepted assumptions. Identify the supplied operating scenario and numeric assumption behind each cash-flow driver in source_notes. Do not silently change the business assumptions; flag missing inputs for specialist follow-up.",
     "Follow output_schema exactly, including every nested required field and primitive type.",
-    "Supply method_inputs for economically appropriate equity methods, each with Bear, Base and Bull annual schedules over the same fiscal years. Choose FCFE, dividend, earnings exit, book or tangible-book exit for financial firms; do not treat bank operating cash flow as FCFF. Use cash amounts and diluted shares in millions. Terminal multiples use total earnings or equity, never per-share inputs. Rates are decimals; a cost of equity must exceed risk_free_rate.rate. Equity methods use equity_bridge 0.",
+    `Supply method_inputs for economically appropriate equity methods, each with Bear, Base and Bull annual schedules over the same fiscal years. Choose FCFE, dividend, earnings exit, book or tangible-book exit for financial firms; do not treat bank operating cash flow as FCFF. Use cash amounts in millions of financial_inputs.currency (of the market price's currency when financial_inputs is null) and diluted ordinary shares in millions; the application converts to the price currency and per listed (depositary) share. Terminal multiples use total earnings or equity, never per-share inputs, and are at most ${MAX_TERMINAL_MULTIPLE}. Rates are decimals; a cost of equity must exceed risk_free_rate.rate, and perpetuity growth must be at least ${MIN_TERMINAL_SPREAD * 100}pt below it. Equity methods use equity_bridge 0.`,
     `The application computes discount factors, terminal values, the yearly value per share, the scenario anchors, the weighted target and the returns from the first method in the order ${METHOD_ORDER.join(", ")}; other methods are cross-checks. Explain unsupported methods in omitted_methods; never fabricate data to fill a schedule.`,
     "Use financial_inputs (captured quarterly and annual revenue, costs, tax, D&A, SBC, operating cash flow, capex, cash, marketable securities, debt, leases, diluted shares, headcount, period-end closes and market caps), the operating scenarios, accepted historical metrics and the current market price. Check financial_inputs.columns and not_captured before listing a gap; never call a supplied input absent.",
     "For fcfe, give every year a build: starting_profit (net income), depreciation_amortization added back, capital_expenditures as a positive amount that is subtracted, change_in_net_working_capital, and other_adjustments (net borrowing; stock-based compensation when treated as a cash cost). cash_flow must equal the build.",
@@ -182,8 +231,8 @@ export async function persistValuationSignals(sql: ReturnType<typeof postgres>,
       SET signal_name = ${sig.signal_name}, lens_family = ${sig.lens_family},
           current_value_text = ${sig.current_value_text || null},
           comparison_range_json = ${sql.json((sig.comparison_range_json || {}) as any)},
-          signal = ${sig.signal}, cheapness_score = ${sig.cheapness_score || null},
-          confidence = ${sig.confidence || null}, review_status = 'accepted'
+          signal = ${sig.signal}, cheapness_score = ${sig.cheapness_score ?? null},
+          confidence = ${sig.confidence ?? null}, review_status = 'accepted'
       WHERE research_run_id = ${ctx.runId} AND signal_key = ${sig.signal_key}
     `;
     if (updated.count > 0) continue;
@@ -195,7 +244,7 @@ export async function persistValuationSignals(sql: ReturnType<typeof postgres>,
       SELECT
         ${ctx.assetId}, ${ctx.runId}, ${ctx.profileId}, ${sig.signal_key}, ${sig.signal_name}, ${sig.lens_family},
         ${sig.current_value_text || null}, ${sql.json((sig.comparison_range_json || {}) as any)},
-        ${sig.signal}, ${sig.cheapness_score || null}, ${sig.confidence || null}, 'accepted'
+        ${sig.signal}, ${sig.cheapness_score ?? null}, ${sig.confidence ?? null}, 'accepted'
       WHERE NOT EXISTS (
         SELECT 1 FROM valuation_signals
         WHERE research_run_id = ${ctx.runId} AND signal_key = ${sig.signal_key}
@@ -245,7 +294,8 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       // Captured statements and period-end prices, reduced to a compact table.
       const capturedRows = await sql`
         SELECT artifact_type, content_json->'observations' AS observations, content_json->'cross_check' AS cross_check,
-          content_json->'beta' AS beta, content_json ? 'quarter_coverage' AS foreign_issuer
+          content_json->'beta' AS beta, content_json ? 'quarter_coverage' AS foreign_issuer,
+          content_json->'depositary_ratio'->'value' AS depositary_ratio
         FROM research_artifacts
         WHERE research_run_id = ${ctx.runId}
           AND artifact_type IN ('financial_statement_set', 'market_price_history')
@@ -411,9 +461,10 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
 
       // Shares are an input, never model-written: reported diluted shares, else the latest captured diluted count.
       const sharesAt = financialInputs?.columns.indexOf("diluted_shares") ?? -1;
-      const capturedShares = sharesAt < 0 ? null : [...financialInputs!.annual, ...financialInputs!.quarterly]
+      const capturedSharesRow = sharesAt < 0 ? undefined : [...financialInputs!.annual, ...financialInputs!.quarterly]
         .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
-        .map((row) => row[sharesAt]).filter((value): value is number => typeof value === "number" && value > 0).at(-1) ?? null;
+        .filter((row) => typeof row[sharesAt] === "number" && (row[sharesAt] as number) > 0).at(-1);
+      const capturedShares = capturedSharesRow ? capturedSharesRow[sharesAt] as number : null;
       const dilutedMillions = reportedDilutedShares && reportedDilutedShares.value > 0 ? reportedDilutedShares.value / 1e6 : capturedShares;
       const marketPrice = Number(valuationPrice?.price ?? snapshot.fallbackPrice);
       const currency = financialInputs?.currency || String(valuationPrice?.currency || marketSnapshot.currency || "USD");
@@ -429,10 +480,48 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       let output: Record<string, any>;
       // Code-computed lens values (FCFF path); other paths keep one signal per lens.
       let lenses: LensValue[] | null = null;
+      // Statements in one currency and a price in another need an FX rate and the depositary ratio, or the valuation is
+      // withheld. Both paths (FCFF and equity methods) convert with it.
+      const priceCurrency = valuationPrice?.currency ? String(valuationPrice.currency) : marketSnapshot.currency ? String(marketSnapshot.currency) : null;
+      const statementCurrency = financialInputs?.currency ?? null;
+      const series = statementCurrency && priceCurrency && statementCurrency !== priceCurrency ? fxSeriesFor(statementCurrency, priceCurrency) : null;
+      const [fxDoc] = series ? await sql`
+        SELECT string_agg(dc.text, '' ORDER BY dc.chunk_index) AS csv
+        FROM research_run_sources rrs
+        JOIN source_documents sd ON sd.id = rrs.source_document_id
+        JOIN document_parses dp ON dp.source_document_id = sd.id AND dp.parser_name <> 'research-memory'
+        JOIN document_chunks dc ON dc.document_parse_id = dp.id
+        WHERE rrs.research_run_id = ${ctx.runId} AND sd.metadata_json->>'series_id' = ${series.series}
+        GROUP BY sd.id, sd.retrieved_at, dp.id ORDER BY sd.retrieved_at DESC LIMIT 1
+      ` : [];
+      const fxValue = fxDoc?.csv && series ? latestFredValue(String(fxDoc.csv), cutoff.toISOString()) : null;
+      // This run's filings carry the ratio as of its cutoff; the instrument's value can come from a newer run.
+      const runDepositaryRatio = Number(captured("financial_statement_set")?.depositary_ratio) > 0
+        ? Number(captured("financial_statement_set")!.depositary_ratio) : null;
+      const [instrument] = await sql`SELECT depositary_ratio FROM instruments WHERE asset_id = ${ctx.assetId} AND depositary_ratio IS NOT NULL ORDER BY created_at LIMIT 1`;
+      // A depositary listing (an ADS/ADR instrument, or a 20-F/40-F filer) needs its ratio even in one currency.
+      const [depositary] = await sql`
+        SELECT 1 FROM instruments WHERE asset_id = ${ctx.assetId}
+          AND (lower(instrument_type) IN ('ads', 'adr', 'depositary_receipt', 'depositary_share') OR name ~* '\\m(ADS|ADR)\\M|depositary')
+        UNION ALL
+        SELECT 1 FROM research_run_sources rrs JOIN source_documents sd ON sd.id = rrs.source_document_id
+        WHERE rrs.research_run_id = ${ctx.runId} AND sd.metadata_json->>'form' IN ('20-F', '20-F/A', '40-F', '40-F/A')
+        LIMIT 1`;
+      const depositaryRatio = runDepositaryRatio ?? (instrument ? Number(instrument.depositary_ratio) : null);
+      const conversion = currencyConversion({ statementCurrency, priceCurrency, depositaryRatio,
+        fx: fxValue && series ? { series: series.series, perUsd: series.perUsd, ...fxValue } : null, depositaryListing: Boolean(depositary) });
+      // Equity methods can be built without captured statements (from accepted metrics); the schedules are then
+      // written in the price currency, so only the depositary ratio applies.
+      const equityCurrency = statementCurrency ?? priceCurrency ?? currency;
+      const equityConversion = statementCurrency ? conversion
+        : currencyConversion({ statementCurrency: equityCurrency, priceCurrency: equityCurrency, depositaryRatio, fx: null, depositaryListing: Boolean(depositary) });
 
       if (priceWithheld) {
         // A historical run is never valued against a later market; nothing a model could judge would change that.
         output = withheldValuation(`Market price unavailable: ${priceWithheld}.`, horizon, currency);
+      } else if (equityMethods && equityConversion.missing.length) {
+        // Nothing a model could judge is missing here; withhold without a call and name each input.
+        output = withheldValuation(`Valuation inputs are missing: ${equityConversion.missing.join("; ")}.`, horizon, priceCurrency || currency);
       } else if (equityMethods) {
         // Banks: the model builds FCFE, dividend or book schedules; code assembles the path from the primary method.
         const metricRows = await sql`
@@ -444,7 +533,8 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
           ORDER BY mo.period_end DESC NULLS LAST, md.metric_key
           LIMIT 80
         `;
-        const outputFormat = equityMethodsFormat({ requireDepreciationAddBack });
+        const outputFormat = equityMethodsFormat({ requireDepreciationAddBack, riskFree: riskFree?.rate ?? null,
+          referenceSharesMillions: dilutedMillions, largestCapturedAmount: largestCapturedAmount(financialInputs), statementCurrency: equityCurrency });
         const packet = {
           asset,
           required_lenses: requiredLenses,
@@ -474,13 +564,15 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
         if (set.valuation_status === "withheld") {
           output = withheldValuation(String(set.withheld_reason).trim(), horizon, currency);
         } else {
-          const models: ValuationMethodInput[] = set.method_inputs.map((model: ValuationMethodInput) =>
-            dilutedMillions && dilutedMillions > model.diluted_shares ? { ...model, diluted_shares: dilutedMillions } : model);
+          // Raise ordinary shares to the reported count, then convert to the price currency per listed share.
+          const models: ValuationMethodInput[] = set.method_inputs.map((model: ValuationMethodInput) => convertMethodInput(
+            dilutedMillions && dilutedMillions > model.diluted_shares ? { ...model, diluted_shares: dilutedMillions } : model, equityConversion));
           const primary = primarySchedules(models)!;
-          const assembled = assembleValuation({ schedules: primary, probabilities, marketPrice, currency: primary.base.currency, fiscalYearEnd });
+          const assembled = assembleValuation({ schedules: primary, probabilities, marketPrice, currency: primary.base.currency,
+            marketPriceCurrency: priceCurrency, fiscalYearEnd });
           output = {
             valuation_scenario_set: { ...assembled.valuation_scenario_set, method_inputs: models, omitted_methods: set.omitted_methods, risk_free_rate: riskFreeRate,
-              cost_of_capital_inputs: costOfCapital },
+              cost_of_capital_inputs: costOfCapital, currency_conversion: equityConversion },
             annual_price_target_path: assembled.annual_price_target_path,
             reverse_valuation: answer.reverse_valuation,
           };
@@ -490,31 +582,6 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
           scenarioList.find((entry) => entry.scenario_type === scenario)?.yearly_drivers])) as Record<Scenario, YearlyDriver[] | undefined>;
         const baseRevenue = ratios.base_year?.revenue ?? null;
         const readiness = valuationReadiness({ drivers, horizon, dilutedSharesMillions: dilutedMillions, marketPrice, baseRevenue });
-        // Statements in one currency and a price in another need an FX rate and the depositary ratio, or the valuation is withheld.
-        const priceCurrency = valuationPrice?.currency ? String(valuationPrice.currency) : marketSnapshot.currency ? String(marketSnapshot.currency) : null;
-        const statementCurrency = financialInputs?.currency ?? null;
-        const series = statementCurrency && priceCurrency && statementCurrency !== priceCurrency ? fxSeriesFor(statementCurrency, priceCurrency) : null;
-        const [fxDoc] = series ? await sql`
-          SELECT string_agg(dc.text, '' ORDER BY dc.chunk_index) AS csv
-          FROM research_run_sources rrs
-          JOIN source_documents sd ON sd.id = rrs.source_document_id
-          JOIN document_parses dp ON dp.source_document_id = sd.id AND dp.parser_name <> 'research-memory'
-          JOIN document_chunks dc ON dc.document_parse_id = dp.id
-          WHERE rrs.research_run_id = ${ctx.runId} AND sd.metadata_json->>'series_id' = ${series.series}
-          GROUP BY sd.id, sd.retrieved_at, dp.id ORDER BY sd.retrieved_at DESC LIMIT 1
-        ` : [];
-        const fxValue = fxDoc?.csv && series ? latestFredValue(String(fxDoc.csv), cutoff.toISOString()) : null;
-        const [instrument] = await sql`SELECT depositary_ratio FROM instruments WHERE asset_id = ${ctx.assetId} AND depositary_ratio IS NOT NULL ORDER BY created_at LIMIT 1`;
-        // A depositary listing (an ADS/ADR instrument, or a 20-F/40-F filer) needs its ratio even in one currency.
-        const [depositary] = await sql`
-          SELECT 1 FROM instruments WHERE asset_id = ${ctx.assetId}
-            AND (lower(instrument_type) IN ('ads', 'adr', 'depositary_receipt', 'depositary_share') OR name ~* '\\m(ADS|ADR)\\M|depositary')
-          UNION ALL
-          SELECT 1 FROM research_run_sources rrs JOIN source_documents sd ON sd.id = rrs.source_document_id
-          WHERE rrs.research_run_id = ${ctx.runId} AND sd.metadata_json->>'form' IN ('20-F', '20-F/A', '40-F', '40-F/A')
-          LIMIT 1`;
-        const conversion = currencyConversion({ statementCurrency, priceCurrency, depositaryRatio: instrument ? Number(instrument.depositary_ratio) : null,
-          fx: fxValue && series ? { series: series.series, perUsd: series.perUsd, ...fxValue } : null, depositaryListing: Boolean(depositary) });
         if (!readiness.ready || conversion.missing.length) {
           // Nothing a model could judge is missing here; withhold without a call and name each input.
           output = withheldValuation(`Valuation inputs are missing: ${[...readiness.missing, ...conversion.missing].join("; ")}.`, horizon, priceCurrency || currency);
@@ -610,6 +677,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
               depreciation_warnings: depreciationWarnings(statements),
               source_gaps: [
                 ...(bridge?.missing.length ? [`Equity bridge items not captured: ${bridge.missing.join(", ")}.`] : bridge ? [] : ["No balance-sheet items were captured for the equity bridge."]),
+                ...(bridge?.stale ? [`Equity bridge items left out as stale (latest value more than ${MAX_BRIDGE_ITEM_AGE_DAYS} days before ${bridge.period_end}): ${Object.entries(bridge.stale).map(([key, period]) => `${key} (${period})`).join(", ")}.`] : []),
                 ...(ratios.tax_rate_source === "statutory_default" ? ["No captured tax history; NOPAT uses the 21% statutory rate."] : []),
                 ...(riskFree ? [] : ["No FRED DGS10 observation was available by the cutoff; discount rates are unchecked against a risk-free rate."]),
                 ...(pack ? [] : ["No financial_analytics pack: own-history multiples, the multiple and cash-flow lenses and the FCF-growth reverse valuation are not computed."]),
@@ -640,6 +708,14 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
           reported_period_end: reportedDilutedShares.end,
           source_accession_number: reportedDilutedShares.accession_number,
           treatment: "Reported diluted shares are the minimum forecast denominator; further issuance is an unquantified source gap.",
+        };
+      } else if (capturedShares && capturedSharesRow) {
+        // No quarterly SEC fact (a 20-F filer, say): the latest captured diluted count is the denominator, so it is the count to cover.
+        scenarioSet.dilution_assumption = {
+          reported_diluted_weighted_average_shares: Math.round(capturedShares * 1e6),
+          reported_period_end: String(capturedSharesRow[0]),
+          source: "financial_inputs",
+          treatment: "No quarterly SEC diluted-share fact; the latest captured diluted count (financial_inputs) is the minimum forecast denominator. Further issuance is an unquantified source gap.",
         };
       }
       if (!withheldReason) {

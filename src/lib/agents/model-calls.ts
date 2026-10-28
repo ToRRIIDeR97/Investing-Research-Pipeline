@@ -137,6 +137,10 @@ export async function recordModelCall(input: RecordModelCallInput): Promise<stri
   if (input.modelTier === "premium" && !input.escalationReason) {
     throw new Error("Premium model calls require escalationReason");
   }
+  // A negative cost would lower the spend checkBudget sums; NaN would be stored as 'NaN' and skip the run total.
+  if (input.costUsd !== undefined && !(Number.isFinite(input.costUsd) && input.costUsd >= 0)) {
+    throw new Error(`Model call cost must be a finite number of at least 0, got ${input.costUsd}`);
+  }
 
   const sql = pipelineSql();
 

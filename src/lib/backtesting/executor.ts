@@ -58,6 +58,12 @@ function dateOnly(value: string | Date | null | undefined) {
   return value ? String(value).slice(0, 10) : value;
 }
 
+function cutoffInstant(value: string | Date | null | undefined) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function paramsObject(value: unknown) {
   if (!value) return {};
   if (typeof value === "string") {
@@ -282,7 +288,8 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
           benchmark_symbol: backtest.benchmark_symbol,
           start_date: dateOnly(backtest.start_date),
           end_date: dateOnly(backtest.end_date),
-          market_data_cutoff_at: dateOnly(backtest.market_data_cutoff_at),
+          // The instant, not its date: the runner keeps only closes public by then (#101).
+          market_data_cutoff_at: cutoffInstant(backtest.market_data_cutoff_at),
           initial_capital: Number(backtest.initial_capital || 100000),
           params: paramsObject(backtest.params_json),
           strategy_path: join(workDir, relative(artifactDir, strategyPath)),

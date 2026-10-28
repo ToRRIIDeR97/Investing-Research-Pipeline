@@ -138,7 +138,9 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
     const briefs = teamBriefScheduler(ctx => prepareResearchTeam(sql, ctx));
     try {
       if (run.status === "pending") await startRun(runId);
-      for (let iteration = 0; iteration < 192; iteration += 1) {
+      for (let iteration = 0; ; iteration += 1) {
+        // Checked here, not in the loop condition: a `continue` on the last pass must not leave the run running.
+        if (iteration >= 192) throw new Error("Pipeline exceeded 192 stage iterations");
         if (signal?.aborted) throw new ResearchRunInterrupted("Research run interrupted");
         const [state] = await sql`SELECT status FROM research_runs WHERE id = ${runId}`;
         if (state.status !== "running") break;
@@ -223,7 +225,6 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
         }
         if (loopError) throw loopError;
         if (stop) break;
-        if (iteration === 191) throw new Error("Pipeline exceeded 192 stage iterations");
       }
     } catch (error) {
       if (signal?.aborted) {
@@ -249,7 +250,9 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
     return { runId, status: result.status, completedStages: Number(result.completed),
       totalStages: Number(result.total), notes, failure_reason: result.failure_reason };
   } finally {
-    if (locked) await lease`SELECT pg_advisory_unlock(hashtextextended(${`research-run:${runId}`}, 0))`;
+    // An unlock failure must not replace the run's result or skip sql.end(), which drops the session lock anyway.
+    if (locked) await lease`SELECT pg_advisory_unlock(hashtextextended(${`research-run:${runId}`}, 0))`
+      .catch((error) => console.warn(`advisory unlock failed for run ${runId}; closing the connection releases it:`, error));
     lease.release();
     // Bounded: a stalled connection must not keep the worker from closing the job (seen in run dd02bb41).
     await sql.end({ timeout: 5 });

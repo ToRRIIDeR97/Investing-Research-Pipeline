@@ -37,6 +37,10 @@ test("the diluted-share fact is located by its offset even when it straddles a c
   // The located object is the diluted-share fact, not the identical basic-and-diluted fact before it.
   assert.ok(span.start > text.indexOf('"WeightedAverageNumberOfDilutedSharesOutstanding":'));
   assert.deepEqual(JSON.parse(text.slice(span.start, span.end)), companyFacts.facts["us-gaap"].WeightedAverageNumberOfDilutedSharesOutstanding.units.shares[1]);
+  // The context file is now stored compact (#132); the span search finds the same fact there.
+  const compact = JSON.stringify({ companyFacts });
+  const compactSpan = secFactSpan(compact, "WeightedAverageNumberOfDilutedSharesOutstanding", fact)!;
+  assert.deepEqual(JSON.parse(compact.slice(compactSpan.start, compactSpan.end)), companyFacts.facts["us-gaap"].WeightedAverageNumberOfDilutedSharesOutstanding.units.shares[1]);
 
   // Fixed slices with a boundary inside the fact: no single chunk holds start, end, val and accn.
   const size = 60, boundary = span.start + 40;

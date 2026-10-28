@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import postgres from "postgres";
-import { handleApiError, successResponse } from "@/lib/api/errors";
+import { ApiError, handleApiError, successResponse } from "@/lib/api/errors";
 
 /**
  * GET /api/search
@@ -18,7 +18,6 @@ import { handleApiError, successResponse } from "@/lib/api/errors";
  */
 export async function GET(request: NextRequest) {
   try {
-    const sql = postgres(process.env.DATABASE_URL!);
     const url = new URL(request.url);
 
     const query = url.searchParams.get("q");
@@ -26,8 +25,17 @@ export async function GET(request: NextRequest) {
     const sourceType = url.searchParams.get("source_type");
     const researchRunId = url.searchParams.get("research_run_id");
     const claimCategory = url.searchParams.get("claim_category");
-    const confidenceMin = url.searchParams.get("confidence_min");
-    const limit = Math.min(parseInt(url.searchParams.get("limit") || "20"), 100);
+    // Checked here, so a bad value is a 400 rather than a database error (#135).
+    const confidenceText = url.searchParams.get("confidence_min");
+    const confidenceMin = confidenceText ? Number(confidenceText) : null;
+    if (confidenceMin !== null && !(confidenceMin >= 0 && confidenceMin <= 1)) {
+      throw new ApiError("confidence_min must be a number from 0 to 1", 400, "VALIDATION_ERROR");
+    }
+    const limitText = url.searchParams.get("limit");
+    const limit = limitText ? Number(limitText) : 20;
+    if (!Number.isInteger(limit) || limit < 1) throw new ApiError("limit must be a positive whole number", 400, "VALIDATION_ERROR");
+    const cappedLimit = Math.min(limit, 100);
+    const sql = postgres(process.env.DATABASE_URL!);
 
     try {
       // If we have a text query, search document_chunks using FTS
@@ -51,7 +59,7 @@ export async function GET(request: NextRequest) {
             ${sourceType ? sql`AND sd.source_type = ${sourceType}` : sql``}
             ${researchRunId ? sql`AND sd.research_run_id = ${researchRunId}` : sql``}
           ORDER BY rank DESC
-          LIMIT ${limit}
+          LIMIT ${cappedLimit}
         `;
 
         return successResponse({
@@ -80,9 +88,9 @@ export async function GET(request: NextRequest) {
           WHERE ec.claim_category = ${claimCategory}
             ${assetId ? sql`AND ec.asset_id = ${assetId}` : sql``}
             ${researchRunId ? sql`AND ec.research_run_id = ${researchRunId}` : sql``}
-            ${confidenceMin ? sql`AND ec.confidence >= ${confidenceMin}` : sql``}
+            ${confidenceMin !== null ? sql`AND ec.confidence >= ${confidenceMin}` : sql``}
           ORDER BY ec.confidence DESC NULLS LAST, ec.created_at DESC
-          LIMIT ${limit}
+          LIMIT ${cappedLimit}
         `;
 
         return successResponse({

@@ -96,6 +96,33 @@ test("a rejection naming maxLength is a schema fallback, and a second rejection 
   });
 });
 
+test("a 400 about another output_config field is not a schema rejection", async () => {
+  const schema = schemaFor("effort_case");
+  await withFetch((index) => index === 0 ? { status: 400, text: errorText("output_config.effort: unexpected value") } : { text: sse("{}") }, async (bodies) => {
+    const error = await collect(direct().stream(request(schema), signal())).catch((caught: unknown) => caught);
+    assert.ok(error instanceof ProviderError && error.category === "invalid_request", String(error));
+    assert.equal(bodies.length, 1, "no resend without the schema");
+    await collect(direct().stream(request(schema), signal()));
+    assert.ok(bodies[1].output_config, "the schema is not remembered as rejected");
+  });
+});
+
+test("a schema is remembered as rejected only when the request without it is accepted", async () => {
+  const schema = schemaFor("unconfirmed_case");
+  await withFetch((index) => index < 2 ? { status: 400, text: errorText("output_config.format.schema: invalid") } : { text: sse("{}") }, async (bodies) => {
+    await collect(direct().stream(request(schema), signal())).catch(() => undefined);
+    assert.equal(bodies.length, 2);
+    await collect(direct().stream(request(schema), signal()));
+    assert.ok(bodies[2].output_config, "a failed resend does not disable the schema");
+  });
+  await withFetch((index) => index === 0 ? { status: 400, text: errorText("output_config.format.schema: invalid") } : { text: sse("{}") }, async (bodies) => {
+    await collect(direct().stream(request(schemaFor("confirmed_case")), signal()));
+    await collect(direct().stream(request(schemaFor("confirmed_case")), signal()));
+    assert.equal(bodies.length, 3);
+    assert.equal("output_config" in bodies[2], false, "a confirmed rejection is not sent again");
+  });
+});
+
 test("no output_config without the option, for non-Claude models, or through OpenCode Go minimax", async () => {
   const schema = schemaFor("scope_case");
   await withFetch(() => ({ text: sse("{}") }), async (bodies) => {

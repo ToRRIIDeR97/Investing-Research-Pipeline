@@ -26,12 +26,12 @@ export const createAssetSchema = z.object({
 
 // valuation_refresh and source_update are no longer created: they ran all 24 stages on lower evidence targets.
 // A refresh is a new run of the original type linked through prior_run_id. Historical rows stay readable.
+// backtest_only is no longer created either: it skipped both human gates and could never meet the completion criteria.
 export const createResearchRunSchema = z.object({
   run_type: z.enum([
     "quick_scan",
     "deep_dive",
     "thesis_investigation",
-    "backtest_only",
     "full_initiation_report",
   ]),
   // Omitted: link the asset's latest completed or approved run. null: start fresh. An id: that run of the same asset.

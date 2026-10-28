@@ -5,7 +5,6 @@
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import type {
   MarketDataProvider,
-  MarketQuote,
   PriceBar,
   CorporateActionEvent,
   InstrumentMetadata,
@@ -46,35 +45,6 @@ export function createMarketDataService(config: MarketDataServiceConfig) {
         .where(eq(instruments.asset_id, assetId))
         .limit(1);
       return instrument?.id ?? null;
-    },
-
-    async getQuote(
-      instrumentId: string,
-      symbol: string,
-      asOf?: Date
-    ): Promise<{ quote: MarketQuote; fromProvider: boolean }> {
-      const cached = asOf ? await findCachedQuoteAtOrBefore(instrumentId, asOf) : null;
-      if (cached) {
-        return {
-          quote: {
-            symbol,
-            price: Number(cached.close),
-            currency: cached.currency,
-            asOf: cached.trading_date,
-          },
-          fromProvider: false,
-        };
-      }
-      const fetchStart = Date.now();
-      let quote: MarketQuote;
-      try {
-        quote = await defaultProvider.getQuote(symbol, asOf);
-      } catch (err) {
-        await logFetch(instrumentId, symbol, "quote", "failed", undefined, err);
-        throw err;
-      }
-      await logFetch(instrumentId, symbol, "quote", "success", Date.now() - fetchStart);
-      return { quote, fromProvider: true };
     },
 
     async getPriceHistory(
@@ -155,8 +125,10 @@ export function createMarketDataService(config: MarketDataServiceConfig) {
 
     /**
      * Backfill [start, end] once, then fetch only from shortly before the latest stored bar in it.
-     * Coverage is judged inside the window: a window with a gap of more than a week (left by
-     * runs with other cutoffs) is fetched again in full. `normalize` maps provider bars to stored
+     * Coverage is judged inside the window: a window that starts more than a week late or has a
+     * gap of more than a week (left by runs with other cutoffs) is fetched again in full, unless a
+     * successful fetch that spanned it logged the same absence in the provider's own series (a
+     * listing after the window start, a trading halt): each fetch logs its first bar and its gaps. `normalize` maps provider bars to stored
      * bars (trading day, availability) and drops bars that are not final yet; stored rows are
      * never overwritten.
      */
@@ -179,6 +151,7 @@ export function createMarketDataService(config: MarketDataServiceConfig) {
       const windowBars = db
         .select({
           trading_date: market_price_bars.trading_date,
+          prev_date: sql<Date | null>`lag(${market_price_bars.trading_date}) over (order by ${market_price_bars.trading_date})`.as("prev_date"),
           gap_days: sql<number>`extract(epoch from ${market_price_bars.trading_date} - lag(${market_price_bars.trading_date}) over (order by ${market_price_bars.trading_date})) / 86400`.as("gap_days"),
         })
         .from(market_price_bars)
@@ -188,15 +161,32 @@ export function createMarketDataService(config: MarketDataServiceConfig) {
         .select({
           first: sql<Date | null>`min(${windowBars.trading_date})`,
           last: sql<Date | null>`max(${windowBars.trading_date})`,
-          maxGap: sql<number | null>`max(${windowBars.gap_days})`,
         })
         .from(windowBars);
+      const gaps = (await db
+        .select({ from: windowBars.prev_date, to: windowBars.trading_date })
+        .from(windowBars)
+        .where(sql`${windowBars.gap_days} > 7`))
+        .map((gap) => ({ from: new Date(gap.from!), to: new Date(gap.to) }));
       const day = 24 * 60 * 60 * 1000;
       const first = range?.first ? new Date(range.first) : null;
       const last = range?.last ? new Date(range.last) : null;
       const storedAfter = latest !== null && new Date(latest).getTime() > end.getTime();
-      // Allow a week of holidays at the start of the window and between bars before treating it as uncovered.
-      const covered = first !== null && first.getTime() <= start.getTime() + 7 * day && Number(range?.maxGap ?? 0) <= 7;
+      // Only a window that starts late or has gaps needs the fetch log to show they are the provider's own (#133).
+      const needsProof = first !== null && (first.getTime() > start.getTime() + 7 * day || gaps.length > 0);
+      const fetched = needsProof
+        ? (await db
+          .select({ params: market_data_fetches.request_params_json })
+          .from(market_data_fetches)
+          .where(and(
+            eq(market_data_fetches.instrument_id, instrumentId),
+            eq(market_data_fetches.provider, providerName),
+            eq(market_data_fetches.provider_symbol, symbol),
+            eq(market_data_fetches.request_type, "history"),
+            eq(market_data_fetches.status, "success")
+          ))).flatMap(({ params }) => fetchedRange(params))
+        : [];
+      const covered = windowCovered(start, first, gaps, fetched);
       const coversEnd = last !== null && (last.getTime() + day >= end.getTime() || (storedAfter && end.getTime() - last.getTime() <= 7 * day));
       if (covered && coversEnd) return { fetchedFrom: null, storedBars: 0 };
       const fetchedFrom = covered && last ? new Date(Math.max(start.getTime(), last.getTime() - 5 * day)) : start;
@@ -208,8 +198,9 @@ export function createMarketDataService(config: MarketDataServiceConfig) {
         await logFetch(instrumentId, symbol, "history", "failed", undefined, err, { start: fetchedFrom, end, interval: "1d" });
         throw err;
       }
-      await logFetch(instrumentId, symbol, "history", "success", Date.now() - fetchStart, undefined, { start: fetchedFrom, end, interval: "1d", bars: bars.length });
       const normalized = normalize(bars);
+      await logFetch(instrumentId, symbol, "history", "success", Date.now() - fetchStart, undefined,
+        { start: fetchedFrom, end, interval: "1d", bars: bars.length, ...seriesShape(normalized) });
       await persistPriceBars(instrumentId, symbol, normalized);
       return { fetchedFrom, storedBars: normalized.length };
     },
@@ -238,29 +229,7 @@ export function createMarketDataService(config: MarketDataServiceConfig) {
       await persistCorporateActions(instrumentId, symbol, fresh);
       return fresh;
     },
-
-    async getPriceAtCutoff(instrumentId: string, symbol: string, cutoff: Date): Promise<PriceBar | null> {
-      const { bars } = await this.getPriceHistory(instrumentId, symbol, new Date(cutoff.getTime() - 30 * 24 * 60 * 60 * 1000), cutoff, "1d");
-      const valid = bars.filter((b) => b.trading_date.getTime() <= cutoff.getTime());
-      return valid.length > 0 ? valid[valid.length - 1] : null;
-    },
   };
-
-  async function findCachedQuoteAtOrBefore(instrumentId: string, asOf: Date) {
-    const [row] = await db
-      .select()
-      .from(market_price_bars)
-      .where(
-        and(
-          eq(market_price_bars.instrument_id, instrumentId),
-          eq(market_price_bars.provider, providerName),
-          lte(market_price_bars.trading_date, asOf)
-        )
-      )
-      .orderBy(desc(market_price_bars.trading_date))
-      .limit(1);
-    return row ?? null;
-  }
 
   async function persistPriceBars(instrumentId: string, symbol: string, bars: PriceBar[]) {
     if (bars.length === 0) return;
@@ -371,4 +340,47 @@ export function priceBarRows(instrumentId: string, provider: string, symbol: str
     available_at: b.available_at ?? b.trading_date,
     retrieved_at: retrievedAt,
   }));
+}
+
+const WEEK = 7 * 24 * 60 * 60 * 1000;
+
+type DateRange = { start: Date; end: Date; first: Date | null; gaps: Array<{ from: Date; to: Date }> };
+
+/** What a fetch returned: its first bar and its gaps of more than a week, logged with the fetch (#133). */
+export function seriesShape(bars: PriceBar[]): { first_bar: string | null; gaps: Array<{ from: string; to: string }> } {
+  const days = bars.map((bar) => bar.trading_date.getTime()).sort((a, b) => a - b);
+  const gaps = days.slice(1).flatMap((day, index) => day - days[index] > WEEK
+    ? [{ from: new Date(days[index]).toISOString(), to: new Date(day).toISOString() }] : []);
+  return { first_bar: days.length ? new Date(days[0]).toISOString() : null, gaps };
+}
+
+/** A logged successful daily-history fetch: its range and the shape of what it returned. */
+export function fetchedRange(params: unknown): DateRange[] {
+  const value = (params ?? {}) as Record<string, unknown>;
+  if (value.interval !== undefined && value.interval !== "1d") return [];
+  const date = (raw: unknown) => {
+    const parsed = typeof raw === "string" ? new Date(raw) : null;
+    return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+  };
+  const start = date(value.start), end = date(value.end);
+  if (!start || !end) return [];
+  const gaps = (Array.isArray(value.gaps) ? value.gaps : []).flatMap((gap: any) => {
+    const from = date(gap?.from), to = date(gap?.to);
+    return from && to ? [{ from, to }] : [];
+  });
+  return [{ start, end, first: date(value.first_bar), gaps }];
+}
+
+/**
+ * Whether stored bars cover the window from its start. A late first bar or a gap of more than a
+ * week counts as covered only when a fetch that spanned it saw the same absence in the provider's
+ * series: bars missing from storage alone are fetched again (#133).
+ */
+export function windowCovered(start: Date, first: Date | null, gaps: Array<{ from: Date; to: Date }>, fetched: DateRange[]): boolean {
+  if (first === null) return false;
+  const lateStart = first.getTime() > start.getTime() + WEEK;
+  const listed = fetched.some((range) => range.start.getTime() <= start.getTime() + WEEK && range.first?.getTime() === first.getTime());
+  const genuine = (gap: { from: Date; to: Date }) => fetched.some((range) => range.gaps.some((seen) =>
+    seen.from.getTime() <= gap.from.getTime() && seen.to.getTime() >= gap.to.getTime()));
+  return (!lateStart || listed) && gaps.every(genuine);
 }

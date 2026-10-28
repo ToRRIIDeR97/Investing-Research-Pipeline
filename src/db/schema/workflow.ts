@@ -43,7 +43,10 @@ export const research_runs = pgTable("research_runs", {
   prior_run_id: uuid("prior_run_id").references((): AnyPgColumn => research_runs.id, { onDelete: "set null" }),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [index("research_runs_prior_run_idx").on(table.prior_run_id)]);
+}, (table) => [
+  index("research_runs_prior_run_idx").on(table.prior_run_id),
+  index("research_runs_asset_status_idx").on(table.asset_id, table.status),
+]);
 
 // ============================================================
 // research_stages — §27.6

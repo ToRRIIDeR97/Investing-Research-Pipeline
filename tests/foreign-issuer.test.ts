@@ -9,6 +9,7 @@ import { isResultsCover, selectResearchFilings, fxSourcePayload, MAX_FOREIGN_UPD
 import { equityBridge } from "../src/lib/research/valuation/engine";
 import { valuationFinancialInputs, otherBorrowingKeys } from "../src/lib/research/valuation/financial-inputs";
 import { currencyConversion } from "../src/lib/research/valuation/v2";
+import { depositaryRatioReplaces } from "../src/lib/research/handlers/historical-record";
 
 const dir = new URL("./fixtures/jd/", import.meta.url);
 const read = (name: string) => readFileSync(new URL(name, dir), "utf8");
@@ -149,4 +150,14 @@ test("a CNY reporter with a stored FX rate and ADS ratio is valued, not withheld
     assert.deepEqual(fetched, ["https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXCHUS"]);
     assert.equal(await fxSourcePayload({} as any, "USD", fake), null, "no FX document for a USD reporter");
   } finally { if (previous !== undefined) process.env.RESEARCH_ACCEPTANCE_PROVIDER = previous; }
+});
+
+test("a captured ADS ratio fills an empty one and corrects one this stage wrote, never a manual one or from an older cutoff", () => {
+  assert.equal(depositaryRatioReplaces({ depositary_ratio: null }, 8, "2020-01-01T00:00:00.000Z"), true);
+  const written = { depositary_ratio: "1", contract_specs_json: { depositary_ratio_as_of: "2018-06-30T00:00:00.000Z" } };
+  assert.equal(depositaryRatioReplaces(written, 8, "2020-01-01T00:00:00.000Z"), true, "a newer filing corrects it");
+  assert.equal(depositaryRatioReplaces(written, 8, "2017-01-01T00:00:00.000Z"), false, "an older-cutoff run does not revert it");
+  assert.equal(depositaryRatioReplaces(written, 1, "2020-01-01T00:00:00.000Z"), false, "same value: nothing to write");
+  assert.equal(depositaryRatioReplaces({ depositary_ratio: "2", contract_specs_json: {} }, 8, "2020-01-01T00:00:00.000Z"), false, "a manual ratio is kept");
+  assert.equal(depositaryRatioReplaces(written, 8), false, "no as-of date: only an empty ratio is filled");
 });

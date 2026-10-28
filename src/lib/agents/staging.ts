@@ -73,8 +73,41 @@ const SCHEMA_MAP: Record<string, z.ZodType> = {
   valuation_signal: valuationSignalPayloadSchema,
 };
 
+export const STAGED_SCHEMA_KEYS = Object.keys(SCHEMA_MAP);
+
 /**
- * Stage an agent output for validation.
+ * Every check a staged output must pass before it can be accepted: the payload schema and, for an
+ * evidence claim that isn't an assumption, a source location or a no_source_reason (#122).
+ * Returns null for a schema key with no payload schema, which acceptance couldn't promote.
+ */
+export function stagedOutputErrors(outputSchemaKey: string, payload: unknown): string[] | null {
+  const schema = Object.hasOwn(SCHEMA_MAP, outputSchemaKey) ? SCHEMA_MAP[outputSchemaKey] : undefined;
+  if (!schema) return null;
+  const result = schema.safeParse(payload);
+  if (!result.success) return result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
+  const claim = payload as Record<string, unknown>;
+  if (
+    outputSchemaKey === "evidence_claim" &&
+    claim.claim_category !== "assumption" &&
+    !claim.document_chunk_id &&
+    !claim.extracted_table_id &&
+    !claim.source_document_id &&
+    !claim.no_source_reason
+  ) {
+    return ["Non-assumption claims require a source location (document, chunk, or table) or no_source_reason"];
+  }
+  return [];
+}
+
+export class UnknownSchemaKeyError extends Error {
+  constructor(public schemaKey: string) {
+    super(`Unknown output_schema_key "${schemaKey}". Expected one of: ${STAGED_SCHEMA_KEYS.join(", ")}`);
+    this.name = "UnknownSchemaKeyError";
+  }
+}
+
+/**
+ * Stage an agent output, validated with the same checks validateStagedOutput applies.
  */
 export async function stageOutput(params: {
   runId: string;
@@ -86,20 +119,12 @@ export async function stageOutput(params: {
   payload: Record<string, unknown>;
   createdByAgent: string;
 }): Promise<{ stagingId: string; validationStatus: string; errors: string[] }> {
+  // Checked before connecting, so a caller can answer 400 without touching the database.
+  const errors = stagedOutputErrors(params.outputSchemaKey, params.payload);
+  if (!errors) throw new UnknownSchemaKeyError(params.outputSchemaKey);
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
-    // Validate against schema
-    const schema = SCHEMA_MAP[params.outputSchemaKey];
-    const errors: string[] = [];
-
-    if (schema) {
-      const result = schema.safeParse(params.payload);
-      if (!result.success) {
-        errors.push(...result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`));
-      }
-    }
-
     const validationStatus = errors.length === 0 ? "valid" : "invalid";
 
     const rows = await sql`
@@ -142,23 +167,8 @@ export async function validateStagedOutput(stagingId: string): Promise<{
     }
 
     const staging = rows[0];
-    const errors: string[] = [...(staging.validation_errors_json || [])];
-
-    // Additional validation: source link check for evidence claims
-    if (staging.output_schema_key === "evidence_claim") {
-      const payload = staging.payload_json;
-      if (
-        payload.claim_category !== "assumption" &&
-        !payload.document_chunk_id &&
-        !payload.extracted_table_id &&
-        !payload.source_document_id &&
-        !payload.no_source_reason
-      ) {
-        errors.push(
-          "Non-assumption claims require a source location (document, chunk, or table) or no_source_reason"
-        );
-      }
-    }
+    const errors = stagedOutputErrors(staging.output_schema_key, staging.payload_json)
+      ?? [`Unknown output_schema_key: ${staging.output_schema_key}`];
 
     const valid = errors.length === 0;
 
@@ -364,23 +374,32 @@ export async function acceptStagedOutput(
 }
 
 /**
- * Reject a staged output.
+ * Reject a staged output that is not yet accepted or rejected (#122). An accepted row keeps its
+ * status, since its promoted record stays. Returns "not_found" for a missing id and
+ * "not_rejectable" when the row was already reviewed or is being accepted.
  */
 export async function rejectStagedOutput(
   stagingId: string,
   reason: string
-): Promise<void> {
+): Promise<"rejected" | "not_found" | "not_rejectable"> {
   const sql = postgres(process.env.DATABASE_URL!);
 
   try {
-    await sql`
+    const [row] = await sql`
       UPDATE agent_output_staging
       SET validation_status = 'rejected',
           review_status = 'rejected',
           rejected_at = NOW(),
           rejection_reason = ${reason}
       WHERE id = ${stagingId}
+        AND review_status IS DISTINCT FROM 'accepted'
+        AND review_status IS DISTINCT FROM 'accepting'
+        AND review_status IS DISTINCT FROM 'rejected'
+      RETURNING id
     `;
+    if (row) return "rejected";
+    const [existing] = await sql`SELECT id FROM agent_output_staging WHERE id = ${stagingId}`;
+    return existing ? "not_rejectable" : "not_found";
   } finally {
     await sql.end();
   }

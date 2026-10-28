@@ -135,7 +135,7 @@ export async function recordEffectiveTaskConfig(sql: Sql, runId: string, taskTyp
   await sql`UPDATE research_runs SET metadata_json = COALESCE(metadata_json, '{}'::jsonb) || jsonb_build_object('effective_config',
     COALESCE(metadata_json->'effective_config', '{}'::jsonb) || jsonb_build_object('tasks',
       COALESCE(metadata_json->'effective_config'->'tasks', '{}'::jsonb) || jsonb_build_object(${taskType}::text,
-        ${sql.json(entry as any)}::jsonb || jsonb_build_object('models', (
+        ${JSON.stringify(entry)}::text::jsonb || jsonb_build_object('models', (
           SELECT COALESCE(jsonb_agg(DISTINCT m), '[]'::jsonb) FROM jsonb_array_elements_text(
             COALESCE(metadata_json->'effective_config'->'tasks'->${taskType}::text->'models', '[]'::jsonb) || to_jsonb(${execution.model}::text)) m)))))
     WHERE id = ${runId}`.catch((error) => { recordedTaskConfigs.delete(memo); throw error; });

@@ -5,7 +5,8 @@ import { handleApiError, successResponse, createdResponse, ApiError } from "@/li
 
 /**
  * POST /api/research-runs/:id/generate-signals
- * Trigger valuation signal generation based on the asset's research profile.
+ * Trigger valuation signal generation based on the asset's research profile. Idempotent: a
+ * repeat POST replaces the signals an earlier one generated for this run (#135).
  * §29: recordValuationSignal domain command.
  */
 export async function POST(

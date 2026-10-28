@@ -40,7 +40,7 @@ Labels in the views: *unverified* means the relationship wasn't proven from sour
 
 Model calls have no tool execution. [local-agent-harness.md](local-agent-harness.md) covers the configuration.
 
-**Drill-down: stages** (`src/lib/workflow/stages.ts`; dependencies in `src/lib/research/team-plan.ts:41`). Run-type skips are set at creation through `skipForRunTypes`. Stages 16–19 are skipped for `quick_scan`. Stages 1–15, 20 and 24 are skipped for `backtest_only`.
+**Drill-down: stages** (`src/lib/workflow/stages.ts`; dependencies in `src/lib/research/team-plan.ts:41`). Run-type skips are set at creation through `skipForRunTypes`. Stages 16–19 are skipped for `quick_scan`. New `backtest_only` runs are refused by `createResearchRunSchema` because that type skipped both human gates and could never meet the completion criteria; its `skipForRunTypes` entries remain only for historical rows.
 
 | # | Stage | failureState | Retries | # | Stage | failureState | Retries |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -56,6 +56,8 @@ Model calls have no tool execution. [local-agent-harness.md](local-agent-harness
 | 10 | historical_diagnosis | skip_and_continue | 2 | 22 | human_review **(gate)** | pause_for_human | 0 |
 | 11 | business_process_analysis | skip_and_continue | 2 | 23 | export | skip_and_continue | 2 |
 | 12 | moat_analysis | skip_and_continue | 2 | 24 | refresh_schedule | skip_and_continue | 1 |
+
+`failureState` applies when a stage's retries are exhausted, or at once when it exceeds its stage budget. `fail_run` fails the run. `pause_for_human` waits for a reviewer. `skip_and_continue` marks the stage `skipped` and keeps the reason in `failure_reason`, so its dependents and the human-review gate are not blocked; a dependent that needs its output fails through its own validation. Any stage left `failed` stops the run as `needs_more_work`. A skipped export or refresh schedule leaves the completion criteria unmet, so `completeRun` ends the run `needs_more_work`.
 
 Handlers are registered in the `STAGE_HANDLERS` map (`src/lib/research/handlers/index.ts`).
 
@@ -101,7 +103,7 @@ Schema modules (`src/db/schema/`) and their key tables:
 | saved-charts | saved_charts (My charts board definitions; series keys, never values) |
 | monitoring | asset_monitor_checks (monitor-check results: refresh due, reasons, filings, KPI scores) |
 
-Migrations are `0000`–`0006`, `0009_research_memory_graph`, which adds provenance and review fields plus a uniqueness constraint to `claim_relationships`, `0010_price_history_verification`, which adds the cross-check columns to `market_price_bars`, `0011_saved_charts`, which adds the `saved_charts` table, `0012_task_budget_reservation`, which adds `research_tasks.budget_reservation_usd` for in-flight budget reservations, `0013_research_memory_search`, which adds `document_chunks.search_tsv` (research-memory passages only, backfilled) with a partial GIN index, `0014_performance_indexes`, which indexes `document_chunks.source_document_id`, `evidence_claims (research_run_id, review_status)`, `evidence_links.evidence_claim_id` and `source_locations`' chunk and document columns, and `0015_valuation_v2`, which adds `research_runs.forecast_years` (3-10, set at the plan gate) and `instruments.depositary_ratio`, and `0016_research_lineage_monitoring`, which adds `research_runs.prior_run_id` (self-reference, set null on delete) and the `asset_monitor_checks` table.
+Migrations are `0000`–`0006`, `0009_research_memory_graph`, which adds provenance and review fields plus a uniqueness constraint to `claim_relationships`, `0010_price_history_verification`, which adds the cross-check columns to `market_price_bars`, `0011_saved_charts`, which adds the `saved_charts` table, `0012_task_budget_reservation`, which adds `research_tasks.budget_reservation_usd` for in-flight budget reservations, `0013_research_memory_search`, which adds `document_chunks.search_tsv` (research-memory passages only, backfilled) with a partial GIN index, `0014_performance_indexes`, which indexes `document_chunks.source_document_id`, `evidence_claims (research_run_id, review_status)`, `evidence_links.evidence_claim_id` and `source_locations`' chunk and document columns, and `0015_valuation_v2`, which adds `research_runs.forecast_years` (3-10, set at the plan gate) and `instruments.depositary_ratio`, and `0016_research_lineage_monitoring`, which adds `research_runs.prior_run_id` (self-reference, set null on delete) and the `asset_monitor_checks` table, and `0017_source_and_run_indexes`, which indexes `source_documents` by `research_run_id`, `url` and `asset_id`, and `research_runs (asset_id, status)`. `drizzle/meta/0017_snapshot.json` is the full current schema, so `npm run db:generate` diffs from there.
 
 Artifact statuses are listed in `src/lib/research/artifacts/contracts.ts`; the lifecycle is in the [state machine view](#5-behavioral--state-machine). Each run keeps one current version per artifact type and scope.
 
@@ -131,7 +133,7 @@ Guards:
 
 - Every job update requires `status = 'running' AND lease_owner = <worker>` (`run-queue.ts`). A worker that stops, or finds the run locked by another worker, puts its job back to `queued` without using an attempt (`releaseResearchRunJob`). A renewal that finds the lease gone aborts the run.
 - `cancelRun` moves a run, its open stages and its active job to a terminal state from any status but `completed`; `failRun` doesn't overwrite it.
-- Each worker poll queues a job for a `running` run that had a job before and has had no job activity for 60 s (`reconcileOrphanedResearchRuns`).
+- Each worker poll queues a job for a `running` run that had a job before and has had no job activity for 60 s (`reconcileOrphanedResearchRuns`), up to `MAX_RECONCILE_JOBS_PER_RUN` (2) such jobs since the run's last other enqueue; a run past that is stopped as `needs_more_work`. A job whose lease expires on its last attempt also stops its run as `needs_more_work` (`requeueExpiredResearchRunJobs`), so neither path requeues a crashing run forever.
 - Gate approvals and the re-run decision take `FOR UPDATE` locks (`orchestrator.ts:409`, `467`, `538`, `583`).
 - Artifacts: every artifact save takes a lock on its run, type and scope (the run row in `saveReportArtifact`, an advisory lock in `upsertArtifact`). Changed content or status inserts version n+1 and supersedes the earlier rows, and unchanged content keeps the current row. A failed stage validation moves the stage's `validated` artifacts to `needs_more_work`. `acceptCurrentArtifacts` (`reporting/store.ts`) moves the latest `validated` version to `accepted` inside the gate transaction: plan approval accepts `research_plan`, and stage-22 approval accepts every current artifact, which covers the approved report and its inputs. Later saves of an accepted artifact create a `validated` successor. Readers take `status IN ('validated', 'accepted')`, or `<> 'superseded'` in the read model.
 - `retryCount` and `transient_failures` (stage reruns after transient model failures) live in `validation_result_json`; both are bounded by the stage's `max_retries`.

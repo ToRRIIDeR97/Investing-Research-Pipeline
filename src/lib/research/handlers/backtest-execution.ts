@@ -88,6 +88,12 @@ export const backtestExecutionHandler: StageHandler<Record<string, unknown>> = {
 
       await sql.begin(async (tx) => {
         await clearEarlierAttempt(tx);
+        // An earlier attempt that withheld the backtest skipped its review; this one has results to review.
+        await tx`
+          UPDATE research_stages SET status = 'pending', failure_reason = NULL, updated_at = NOW()
+          WHERE research_run_id = ${ctx.runId} AND stage_key = 'backtest_review' AND status = 'skipped'
+            AND failure_reason LIKE 'Backtest withheld:%'
+        `;
 
         const runIds = new Map<string, string>();
         for (const ranked of result.rankings) {

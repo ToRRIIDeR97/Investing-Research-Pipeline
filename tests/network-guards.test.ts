@@ -7,7 +7,7 @@ import { createPublicFetch, fetchCapped, guardedLookup, publicFetch, readCapped,
 import { MarketDataError } from "../src/lib/market-data/provider";
 import { createYahooMarketDataProvider } from "../src/lib/market-data/providers/yahoo";
 import { fetchStooqCloses } from "../src/lib/market-data/providers/stooq";
-import { discoverRoleSources, isSafePublicUrl } from "../src/lib/research/sources/role-discovery";
+import { discoverRoleSources, isSafePublicUrl, unwrapDuckDuckGoUrl, type SearchFailure } from "../src/lib/research/sources/role-discovery";
 
 async function withEnv<T>(values: Record<string, string | undefined>, run: () => Promise<T>): Promise<T> {
   const saved = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
@@ -180,9 +180,57 @@ test("the web-search key goes to the configured HTTPS endpoint only, and its JSO
   await assert.rejects(withEnv(discoveryEnv({ RESEARCH_WEB_SEARCH_ENDPOINT: "http://search.example/api" }), () =>
     discoverRoleSources({ assetName: "Acme Company", symbol: "ACME" }, ["founder_and_company_history"], fetchMock)), /HTTPS/);
 
+  // An oversized answer loses that query only (#113).
   const endlessJson = (async () => new Response(endless(), { headers: { "content-type": "application/json" } })) as typeof fetch;
-  await assert.rejects(withEnv(discoveryEnv(), () =>
-    discoverRoleSources({ assetName: "Acme Company", symbol: "ACME" }, ["founder_and_company_history"], endlessJson)), /exceeds/);
+  const searchFailures: SearchFailure[] = [];
+  assert.deepEqual(await withEnv(discoveryEnv(), () => discoverRoleSources({ assetName: "Acme Company", symbol: "ACME", searchFailures },
+    ["founder_and_company_history"], endlessJson)), []);
+  assert.ok(searchFailures.length > 0);
+  assert.ok(searchFailures.every((failure) => failure.role === "founder_and_company_history" && /exceeds/.test(failure.error)));
+});
+
+test("one failed web search does not fail discovery; the other queries still run (#113)", async () => {
+  const page = `<html><head><title>Acme founder history</title></head><body><p>${"documented founder history of Acme ".repeat(90)}</p></body></html>`;
+  let searches = 0;
+  const fetchMock = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.startsWith("https://search.example/api")) {
+      searches += 1;
+      if (searches === 1) throw new TypeError("fetch failed: ECONNRESET");
+      return Response.json({ results: [{ url: "https://acme.example/history", title: "Acme history" }] });
+    }
+    return new Response(page, { headers: { "content-type": "text/html" } });
+  }) as typeof fetch;
+  const searchFailures: SearchFailure[] = [];
+  const sources = await withEnv(discoveryEnv(), () => discoverRoleSources({ assetName: "Acme Company", symbol: "ACME", searchFailures },
+    ["founder_and_company_history"], fetchMock));
+  assert.equal(searchFailures.length, 1);
+  assert.match(searchFailures[0].error, /ECONNRESET/);
+  assert.ok(searches > 1);
+  assert.equal(sources.length, 1);
+});
+
+test("a truncating read ignores a large Content-Length (#126)", async () => {
+  const server = createServer((_, response) => {
+    response.writeHead(200, { "content-type": "text/html", "content-length": 3_000_000 });
+    response.end("x".repeat(3_000_000));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const { port } = server.address() as { port: number };
+  try {
+    assert.equal((await readCapped(await fetch(`http://127.0.0.1:${port}/`), 1_000_000, true)).byteLength, 1_000_000);
+    await assert.rejects(readCapped(await fetch(`http://127.0.0.1:${port}/`), 1_000_000), /exceeds 1000000 bytes/);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test("a DuckDuckGo result URL is decoded once (#135)", () => {
+  const target = "https://acme.example/report?file=a%2Fb&x=1%26y";
+  assert.equal(unwrapDuckDuckGoUrl(`https://duckduckgo.com/l/?uddg=${encodeURIComponent(target)}&rut=abc`), target);
+  assert.equal(unwrapDuckDuckGoUrl("https://acme.example/page"), "https://acme.example/page");
 });
 
 test("structured-data fetches time out and cap their bodies (#23)", async () => {

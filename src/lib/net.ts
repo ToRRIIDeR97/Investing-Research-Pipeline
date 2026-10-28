@@ -103,11 +103,11 @@ export function setPublicFetchForTests(fetchImpl: typeof fetch | undefined) {
 /**
  * Reads a body up to maxBytes after content decoding, then cancels the stream. Content-Length is
  * only checked as a fast path: a compressed or chunked body can be far larger than it says.
- * Throws on overflow, or returns the first maxBytes when truncate is set.
+ * Throws on overflow, or returns the first maxBytes when truncate is set (whatever Content-Length says).
  */
 export async function readCapped(response: Response, maxBytes: number, truncate = false): Promise<Uint8Array<ArrayBuffer>> {
   const tooLarge = () => new Error(`Response exceeds ${maxBytes} bytes`);
-  if (Number(response.headers.get("content-length") || 0) > maxBytes) {
+  if (!truncate && Number(response.headers.get("content-length") || 0) > maxBytes) {
     await response.body?.cancel().catch(() => undefined);
     throw tooLarge();
   }

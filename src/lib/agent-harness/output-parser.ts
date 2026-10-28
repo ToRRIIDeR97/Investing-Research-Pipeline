@@ -42,10 +42,23 @@ export function extractJsonObjects(value: string): string[] {
   return objects;
 }
 
+/**
+ * Parses the JSON answer. A fence that wraps the whole output is unwrapped; otherwise the whole text is
+ * scanned, so a fence inside a JSON string (report Markdown, code) is never mistaken for the answer.
+ * The first fence anywhere is read only when the whole text doesn't parse to an answer.
+ */
 export function parseStructuredOutput(text: string, requiredKeys: string[] = []): unknown {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = fenced?.[1] || text;
+  const wrapped = text.match(/^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/i);
+  try {
+    return parseCandidate(wrapped ? wrapped[1] : text, requiredKeys);
+  } catch (error) {
+    const fenced = wrapped ? null : text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (!fenced?.[1]) throw error;
+    try { return parseCandidate(fenced[1], requiredKeys); } catch { throw error; }
+  }
+}
 
+function parseCandidate(candidate: string, requiredKeys: string[]): unknown {
   const jsonObjects = extractJsonObjects(candidate);
   const parsedObjects: unknown[] = [];
   const matches: unknown[] = [];

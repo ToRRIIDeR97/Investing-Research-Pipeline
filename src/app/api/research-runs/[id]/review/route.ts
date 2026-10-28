@@ -10,6 +10,8 @@ import type { Sql } from "@/lib/research/run-context";
 import { reviewGate } from "@/lib/research/reporting/depth";
 import { parseRubricRatings } from "@/lib/research/scoring/rubric";
 
+const UNAUTHENTICATED_REVIEWER = "api:unauthenticated";
+
 /**
  * Persist the final human decision before approving the workflow stage.
  * The stage row is locked during the insert so duplicate submissions are
@@ -21,7 +23,10 @@ export async function POST(
 ) {
   try {
     const { id: runId } = await params;
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new ApiError("A JSON object body is required", 400, "VALIDATION_ERROR");
+    }
     const parsed = reviewDecisionSchema.parse({
       status: body.status,
       conviction: body.conviction,
@@ -30,7 +35,8 @@ export async function POST(
       position_sizing_note: body.positionSizingNote ?? body.position_sizing_note,
       what_would_change_mind: body.whatWouldChangeMind ?? body.what_would_change_mind,
       open_questions: body.openQuestions ?? body.open_questions,
-      reviewed_by: body.reviewedBy ?? body.reviewed_by ?? "user",
+      // The API has no accounts, so the reviewer is recorded as such; a body's reviewedBy is ignored (#13, #135).
+      reviewed_by: UNAUTHENTICATED_REVIEWER,
     });
     const status = parsed.status.toLowerCase();
     if (!isKnownHumanDecision(status)) {

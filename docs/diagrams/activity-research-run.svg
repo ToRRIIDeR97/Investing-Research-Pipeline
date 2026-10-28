@@ -81,7 +81,7 @@
 <rect x="110" y="710" width="440" height="60" rx="6" fill="#fdecec" stroke="#b23b3b" stroke-width="1.4"/>
 <text x="330.0" y="728" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Apply stage failureState</text>
 <text x="330.0" y="745" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">fail_run → run failed, pending stages cancelled</text>
-<text x="330.0" y="760" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">pause_for_human → waiting · skip_and_continue → stage failed, continue</text>
+<text x="330.0" y="760" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">pause_for_human → waiting · skip_and_continue → stage skipped, continue</text>
 <rect x="860" y="620" width="220" height="110" rx="6" fill="#fdecec" stroke="#b23b3b" stroke-width="1.4"/>
 <text x="970.0" y="638" font-size="12" font-weight="bold" text-anchor="middle" fill="#111">Exception anywhere</text>
 <text x="970.0" y="655" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">transient model error: stage</text>

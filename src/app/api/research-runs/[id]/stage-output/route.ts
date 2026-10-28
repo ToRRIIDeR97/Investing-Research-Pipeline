@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import postgres from "postgres";
-import { stageOutput } from "@/lib/agents/staging";
+import { stageOutput, STAGED_SCHEMA_KEYS } from "@/lib/agents/staging";
 import { handleApiError, createdResponse, ApiError } from "@/lib/api/errors";
 
 /**
@@ -15,7 +15,15 @@ export async function POST(
 ) {
   try {
     const { id: runId } = await params;
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") throw new ApiError("A JSON object body is required", 400);
+    // An unknown schema key would only fail later, at accept, with a 500 (#122).
+    if (!STAGED_SCHEMA_KEYS.includes(body.output_schema_key)) {
+      throw new ApiError(`output_schema_key must be one of: ${STAGED_SCHEMA_KEYS.join(", ")}`, 400, "UNKNOWN_SCHEMA_KEY");
+    }
+    if (!body.payload || typeof body.payload !== "object" || Array.isArray(body.payload)) {
+      throw new ApiError("payload must be a JSON object", 400);
+    }
     const sql = postgres(process.env.DATABASE_URL!);
 
     try {

@@ -8,6 +8,23 @@ export function researchObservations(artifacts:Row[]):Row[] {
   return mergeObservations(artifactContent(artifacts,'financial_statement_set').observations??[],
     artifactContent(artifacts,'historical_record').observations??[],artifactContent(artifacts,'market_price_history').observations??[]);
 }
+/** The rows of a list response: a bare array, or a paged object that holds them under items, rows or data (#130). */
+export function listRows<T=Row>(body:unknown):T[] {
+  if(Array.isArray(body))return body as T[];
+  const page=body&&typeof body==='object'?body as Row:{};
+  const rows=[page.items,page.rows,page.data].find(Array.isArray);
+  return (rows??[]) as T[];
+}
+/** Completed and cancelled runs never change again, so a page showing one stops polling (#130). */
+export function runIsTerminal(status:unknown):boolean {return status==='completed'||status==='cancelled';}
+/**
+ * The run a view shows, from runs sorted newest first: the requested one (undefined when it is missing), else the
+ * run already on screen, else the newest. Keeping the shown run stops a run started elsewhere from replacing it (#130).
+ */
+export function pickShownRun<T extends Row>(runs:T[],requestedId:string|null,pinnedId:string|null):T|null|undefined {
+  if(requestedId)return runs.find(r=>r.id===requestedId);
+  return (pinnedId?runs.find(r=>r.id===pinnedId):undefined)??runs[0]??null;
+}
 /** Filed statement rows first; history and market rows only fill series and periods the filings lack. */
 export function mergeObservations(filed:Row[],historical:Row[],market:Row[]):Row[] {
   const signature=(r:Row)=>JSON.stringify([r.metric_key,r.periodicity,r.fiscal_year,r.fiscal_quarter,r.unit,r.currency,r.reporting_basis,r.segment??'',r.geography??'']);

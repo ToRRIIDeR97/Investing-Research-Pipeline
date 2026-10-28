@@ -90,6 +90,7 @@ type RunRow = {
   profile_id: string | null;
   research_question: string | null;
   source_cutoff_at: string | Date | null;
+  created_at: string | Date | null;
   market_data_cutoff_at: string | Date | null;
   budget_limit_usd: string | number | null;
   forecast_years: number | null;
@@ -119,7 +120,7 @@ export async function loadRunContext(sql: Sql, runId: string): Promise<ResearchR
   const rows = await sql<RunRow[]>`
     SELECT
       rr.id, rr.run_type, rr.status, rr.asset_id, rr.profile_id,
-      rr.research_question, rr.source_cutoff_at, rr.market_data_cutoff_at,
+      rr.research_question, rr.source_cutoff_at, rr.created_at, rr.market_data_cutoff_at,
       rr.budget_limit_usd, rr.forecast_years, rr.actual_cost_usd, rr.pipeline_version, rr.metadata_json,
       a.canonical_name, a.slug,
       rp.profile_key,
@@ -165,7 +166,9 @@ export async function loadRunContext(sql: Sql, runId: string): Promise<ResearchR
     }
   }
 
-  const cutoffAt = row.source_cutoff_at ? new Date(row.source_cutoff_at) : new Date();
+  // Runs store their cutoff at creation; older rows without one fall back to the
+  // creation time so every stage, retry and resume sees the same point in time.
+  const cutoffAt = new Date(row.source_cutoff_at ?? row.created_at ?? Date.now());
   const budgetLimit = Number(row.budget_limit_usd || 0);
   const budgetSpent = Number(row.actual_cost_usd || 0);
 
@@ -209,16 +212,32 @@ export async function persistV3Composition(
   archetypes: string[],
   overlays: string[]
 ): Promise<void> {
-  // JSONB || concatenation requires a raw SQL literal; use JSON.stringify
-  // with proper SQL string escaping (double single quotes).
-  const value = JSON.stringify({ v3_archetypes: archetypes, v3_overlays: overlays }).replace(/'/g, "''");
   await sql`
     UPDATE research_runs
     SET metadata_json = coalesce(metadata_json, '{}'::jsonb)
-                         || ${sql.unsafe(`'${value}'::jsonb`)},
+                         || ${jsonbText({ v3_archetypes: archetypes, v3_overlays: overlays })}::text::jsonb,
         updated_at = NOW()
     WHERE id = ${runId}
   `;
+}
+
+/**
+ * A JSON value as a text parameter for a `${...}::text::jsonb` cast, with NULs stripped. sql.json() fails on a client
+ * drizzle() has wrapped (it makes the json/jsonb serializers pass values through), and a bare jsonb parameter would be
+ * encoded twice on a plain client; a text parameter works on both.
+ */
+export function jsonbText(value: unknown): string {
+  return JSON.stringify(stripNul(value));
+}
+
+/** Drop NUL characters from every string in a JSON value; Postgres text and jsonb reject them. */
+export function stripNul<T>(value: T): T {
+  if (typeof value === "string") return value.replaceAll("\u0000", "") as T;
+  if (Array.isArray(value)) return value.map(stripNul) as T;
+  if (value && typeof value === "object" && !(value instanceof Date)) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [stripNul(k), stripNul(v)])) as T;
+  }
+  return value;
 }
 
 export async function createV3Task(

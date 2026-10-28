@@ -1,12 +1,13 @@
 // Git-backed research store. Each machine keeps its own Postgres; the research-store branch carries research between them.
-//   npx tsx scripts/research-store.ts [sync|export|import] [--store research-store] [--no-push]
-// sync: fetch the branch, import it, export this database over it, commit and push. See docs/operations.md.
+//   npx tsx scripts/research-store.ts [sync|export|import] [--store research-store] [--no-push] [--allow-public]
+// sync: fetch the branch, import it, export this database over it, commit and push. Refuses to push unless GitHub
+// reports origin as private (--allow-public overrides). See docs/operations.md.
 import postgres from "postgres";
 import { execFileSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { hostname } from "os";
 import { join, resolve } from "path";
-import { exportStore, importStore, liveWorkerIds, readBase, writeBase } from "../src/lib/maintenance/research-store";
+import { exportStore, importStore, liveWorkerIds, readBase, storeVisibilityError, writeBase } from "../src/lib/maintenance/research-store";
 
 const BRANCH = "research-store";
 
@@ -29,6 +30,14 @@ function option(name: string): string | undefined {
 
 const git = (args: string[], cwd = process.cwd()) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 const gitOk = (args: string[], cwd?: string) => { try { git(args, cwd); return true; } catch { return false; } };
+
+/** origin's visibility as GitHub reports it (PRIVATE, PUBLIC, INTERNAL), or null when gh can't tell. */
+function remoteVisibility(): string | null {
+  try {
+    const url = git(["remote", "get-url", "origin"]);
+    return execFileSync("gh", ["repo", "view", url, "--json", "visibility", "--jq", ".visibility"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim() || null;
+  } catch { return null; }
+}
 
 /** Checks the branch out into the store folder, creating it on first use. */
 function ensureWorktree(storeDir: string) {
@@ -66,25 +75,39 @@ async function main() {
       const workers = await liveWorkerIds(sql);
       if (workers.length) throw new Error(`Refusing to import: research worker ${workers.join(", ")} is polling ${database}. Stop it first.`);
     }
+    const push = command === "sync" && !process.argv.includes("--no-push");
+    // Refuse before anything is exported or committed: the store holds every synced table and storage file.
+    if (push && !process.argv.includes("--allow-public")) {
+      const error = storeVisibilityError(remoteVisibility(), git(["remote", "get-url", "origin"]));
+      if (error) throw new Error(error);
+    }
+    const base = await readBase(basePath);
     if (command === "sync") { ensureWorktree(storeDir); pullStore(storeDir); }
     if (command !== "export" && existsSync(join(storeDir, "manifest.json"))) {
-      const r = await importStore(sql, { storeDir, projectRoot, base: await readBase(basePath) });
-      console.log(`Imported into ${database}: ${r.inserted} new rows, ${r.updated} updated, ${r.remapped} matched to existing rows, ${r.filesCopied} files copied.`);
-      for (const c of r.conflicts) console.log(`  both changed ${c.table} ${c.id}: kept the ${c.kept} copy`);
+      const r = await importStore(sql, { storeDir, projectRoot, base });
+      console.log(`Imported into ${database}: ${r.inserted} new rows, ${r.updated} updated, ${r.deleted} deleted, ${r.remapped} matched to existing rows, ${r.filesCopied} files copied.`);
+      for (const c of r.conflicts) console.log(`  ${c.reason ?? "both changed"} ${c.table} ${c.id}: kept the ${c.kept} copy`);
       for (const f of r.fileConflicts) console.log(`  file differs, kept this machine's copy: ${f}`);
       for (const f of r.skippedFiles) console.log(`  skipped (${f.reason}): ${f.path}`);
     }
     if (command === "import") return;
-    const r = await exportStore(sql, { storeDir, projectRoot });
-    await writeBase(basePath, r.base);
-    console.log(`Exported ${database}: ${r.rows} rows from ${r.tables} tables, ${r.files} files to ${storeDir}.`);
+    const r = await exportStore(sql, { storeDir, projectRoot, base });
+    console.log(`Exported ${database}: ${r.rows} rows from ${r.tables} tables, ${r.files} files, ${r.tombstones} tombstones to ${storeDir}.`);
     for (const f of r.skippedFiles) console.log(`  skipped (${f.reason}): ${f.path}`);
-    if (command !== "sync") return;
+    // The base must only record what the branch holds: written before a failed or skipped push, the next sync would
+    // read the branch's older rows as "changed only in the store" and overwrite newer local ones.
+    if (command !== "sync") { console.log("Base unchanged: it is written only after a successful push."); return; }
     git(["add", "-A"], storeDir);
-    if (!git(["status", "--porcelain"], storeDir)) { console.log("Store unchanged; nothing to push."); return; }
+    if (!git(["status", "--porcelain"], storeDir)) {
+      const onBranch = gitOk(["rev-parse", "--verify", `origin/${BRANCH}`], storeDir) && git(["rev-parse", "HEAD"], storeDir) === git(["rev-parse", `origin/${BRANCH}`], storeDir);
+      if (onBranch) await writeBase(basePath, r.base);
+      console.log("Store unchanged; nothing to push.");
+      return;
+    }
     git(["commit", "-m", `Sync research from ${hostname()}`], storeDir);
-    if (process.argv.includes("--no-push")) { console.log("Committed; not pushed (--no-push)."); return; }
+    if (!push) { console.log("Committed; not pushed (--no-push). Base unchanged."); return; }
     git(["push", "-u", "origin", BRANCH], storeDir);
+    await writeBase(basePath, r.base);
     console.log(`Pushed ${BRANCH}.`);
   } finally {
     await sql.end();

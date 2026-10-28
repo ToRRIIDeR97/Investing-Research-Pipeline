@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 import { backtestEnv, isInside } from "../src/lib/backtesting/executor";
-import { csvEscape, storedBacktestFile } from "../src/lib/export/research-package-generator";
+import { backtestArtifactFileName, csvEscape, mergeBacktestCsvs, storedBacktestFile } from "../src/lib/export/research-package-generator";
 
 test("model-written backtest code gets an allowlisted environment without keys or DATABASE_URL (#11)", async () => {
   const env = backtestEnv({ PATH: "/usr/bin:/bin", HOME: "/home/dev", LANG: "C", DATABASE_URL: "postgres://secret", ANTHROPIC_API_KEY: "a",
@@ -63,4 +63,27 @@ test("CSV cells that a spreadsheet would run as formulas are kept as text (S7)",
     [null, '""'], ['say "hi"', '"say ""hi"""'], ["a=b", '"a=b"']] as const) {
     assert.equal(csvEscape(value), expected, String(value));
   }
+});
+
+test("merged backtest CSVs escape every cell and keep one header (#135)", () => {
+  const merged = mergeBacktestCsvs([
+    { backtestRunId: "bt-1", content: 'date,equity\n2024-01-02,100\n2024-01-03,=HYPERLINK("https://x.example")\n' },
+    { backtestRunId: "bt-2", content: 'date,equity,note\r\n2024-01-02,-5,"a, ""quoted"" note"\r\n\r\n' },
+  ]);
+  assert.equal(merged, [
+    '"backtest_run_id","date","equity","note"',
+    '"bt-1","2024-01-02","100",""',
+    '"bt-1","2024-01-03","\'=HYPERLINK(https://x.example)",""',
+    '"bt-2","2024-01-02","-5","a, ""quoted"" note"',
+    "",
+  ].join("\n"));
+});
+
+test("copied backtest artifacts keep their extension and never share a file name (#135)", () => {
+  const used = new Set<string>();
+  const name = (title: string, storage_path: string) => backtestArtifactFileName({ title, storage_path, backtest_run_id: "bt-1" }, used);
+  assert.equal(name("metrics.json", "storage/backtests/r/bt-1/metrics.json"), "bt_1_metrics.json");
+  assert.equal(name("metrics.json", "storage/backtests/r/bt-1/metrics.json"), "bt_1_metrics_2.json");
+  assert.equal(name("Strategy code", "storage/backtests/r/bt-1/strategy.py"), "bt_1_strategy_code.py");
+  assert.equal(name("runner log", "storage/backtests/r/bt-1/runner"), "bt_1_runner_log");
 });

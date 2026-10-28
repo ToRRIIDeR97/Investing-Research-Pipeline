@@ -118,10 +118,15 @@ const BRIDGE_ITEMS = [
   ["finance_lease_liabilities", -1], ["noncontrolling_interest", -1],
 ] as const;
 
+/** A bridge item older than this (days before the bridge date) is not carried forward: it is listed as stale and missing. */
+export const MAX_BRIDGE_ITEM_AGE_DAYS = 400;
+
 export type EquityBridge = {
   amount: number; period_end: string; components: Record<string, number>; missing: string[];
   /** Items taken from an earlier period than the bridge date, with that period. */
   carried_forward: Record<string, string>;
+  /** Items whose latest value is older than MAX_BRIDGE_ITEM_AGE_DAYS, with that period; left out of the amount. */
+  stale?: Record<string, string>;
   /** Captured but left out, with the amount. */
   excluded: Record<string, number>;
 };
@@ -129,6 +134,7 @@ export type EquityBridge = {
 /**
  * Equity bridge at the latest balance-sheet date (the latest period with cash, else with any item): each item's
  * latest value on or before that date, so a quarter missing a debt tag falls back to the prior period with a note.
+ * A value older than MAX_BRIDGE_ITEM_AGE_DAYS is not carried forward: it is recorded as stale and the item as missing.
  */
 export function equityBridge(fi: ValuationFinancialInputs | null): EquityBridge | null {
   if (!fi) return null;
@@ -142,17 +148,19 @@ export function equityBridge(fi: ValuationFinancialInputs | null): EquityBridge 
   const dated = withItem("cash_and_equivalents").at(-1) ?? rows.filter((row) => items.some(([key]) => cell(fi, row, key) !== null)).at(-1);
   if (!dated) return null;
   const date = String(dated[0]);
-  const components: Record<string, number> = {}, carried_forward: Record<string, string> = {};
+  const components: Record<string, number> = {}, carried_forward: Record<string, string> = {}, stale: Record<string, string> = {};
+  const oldest = new Date(Date.parse(`${date.slice(0, 10)}T00:00:00Z`) - MAX_BRIDGE_ITEM_AGE_DAYS * 86_400_000).toISOString().slice(0, 10);
   for (const [key] of items) {
     const row = withItem(key).filter((candidate) => String(candidate[0]) <= date).at(-1);
     if (!row) continue;
+    if (String(row[0]).slice(0, 10) < oldest) { stale[key] = String(row[0]); continue; }
     components[key] = cell(fi, row, key)!;
     if (String(row[0]) !== date) carried_forward[key] = String(row[0]);
   }
   const amount = items.reduce((sum, [key, sign]) => sum + (key in components ? sign * components[key] : 0), 0);
   const leaseRow = ifrs ? undefined : withItem("operating_lease_liabilities").filter((row) => String(row[0]) <= date).at(-1);
   return {
-    amount: Number(amount.toFixed(6)), period_end: date, components, carried_forward,
+    amount: Number(amount.toFixed(6)), period_end: date, components, carried_forward, ...(Object.keys(stale).length ? { stale } : {}),
     excluded: leaseRow ? { operating_lease_liabilities: cell(fi, leaseRow, "operating_lease_liabilities")! } : {},
     // other_borrowings is an optional sum (most issuers have no separate notes lines), so its absence is not a gap.
     missing: items.map(([key]) => key).filter((key) => key !== "other_borrowings" && !(key in components)),
@@ -267,6 +275,8 @@ export function assembleValuation(input: {
   schedules: Record<Scenario, ValuationMethodInput>;
   probabilities: Partial<Record<"probability_bear" | "probability_base" | "probability_bull", unknown>>;
   marketPrice: number | null; currency: string; fiscalYearEnd?: string;
+  /** The market price's currency; defaults to `currency`. Kept separate so a mismatch stays visible to the path validator. */
+  marketPriceCurrency?: string | null;
 }) {
   const { schedules, currency } = input;
   const paths = Object.fromEntries(SCENARIOS.map((scenario) => {
@@ -287,7 +297,8 @@ export function assembleValuation(input: {
   // Without a market price there is no return; 0 is stored only because the contract needs a number.
   const totalReturn = (price: number) => (market > 0 ? (price - market) / market : 0);
   const probabilities = SCENARIOS.map((scenario) => Number(input.probabilities[`probability_${scenario}`]));
-  const weighted = probabilities.every(Number.isFinite) && Math.abs(probabilities.reduce((sum, p) => sum + p, 0) - 1) <= 0.001
+  // Weights must be non-negative and sum to 1, or the weighted target can fall outside the bear-bull range.
+  const weighted = probabilities.every((p) => Number.isFinite(p) && p >= 0) && Math.abs(probabilities.reduce((sum, p) => sum + p, 0) - 1) <= 0.001
     ? SCENARIOS.reduce((sum, scenario, i) => sum + anchors[scenario] * probabilities[i], 0) : null;
   const weightedToday = weighted === null ? null : SCENARIOS.reduce((sum, scenario, i) => sum + today[scenario] * probabilities[i], 0);
   const irr = (anchor: number) => market > 0 && anchor > 0 ? (anchor / market) ** (1 / horizonYears) - 1 : null;
@@ -309,7 +320,7 @@ export function assembleValuation(input: {
       ...(market > 0 ? { current_market_price: market } : {}),
     },
     annual_price_target_path: {
-      artifact_type: "annual_price_target_path" as const, currency, market_price_currency: currency,
+      artifact_type: "annual_price_target_path" as const, currency, market_price_currency: input.marketPriceCurrency || currency,
       annual_projections: years.map((fiscal_year, i) => ({
         fiscal_year, target_date: `${fiscal_year}-${monthDay}`,
         operating_values: Object.fromEntries(SCENARIOS.flatMap((scenario) => {

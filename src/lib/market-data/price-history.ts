@@ -27,7 +27,8 @@ const MAX_CLOSE_GAP_DAYS = 7;
 const DAY = 86_400_000;
 const USER_AGENT = "ResearchOS/0.1 market-data@example.com";
 
-export type SplitEvent = { ex_day: string; ratio: number };
+/** `ex_day` is the exchange-local ex-date; `ex_at` the provider's event instant (the ex-date's session open). */
+export type SplitEvent = { ex_day: string; ratio: number; ex_at?: string };
 export type StoredBar = {
   id: string;
   day: string;
@@ -35,6 +36,7 @@ export type StoredBar = {
   adjusted_close: number | null;
   currency: string;
   provider_symbol: string;
+  /** Split basis of the stored close: the last exchange-local day whose splits were applied when it was retrieved. */
   retrieved_day: string;
   available_at: string;
   verification_status: string;
@@ -85,6 +87,17 @@ export function closeOnSplitBasis(close: number, tradingDay: string, fromDay: st
     .filter((split) => split.ex_day > tradingDay && split.ex_day <= basis && split.ratio > 0)
     .reduce((product, split) => product * split.ratio, 1);
   return (close * factor(fromDay)) / factor(toDay);
+}
+
+/**
+ * The split basis of a close retrieved at `retrievedAt`, as a day for `closeOnSplitBasis`. A split
+ * counts as applied only once its session has opened (#120): a series fetched on the ex-date
+ * before the open is taken to be on the pre-split basis.
+ */
+export function splitBasisDay(retrievedAt: Date, splits: SplitEvent[], timeZone?: string | null): string {
+  const day = exchangeDay(retrievedAt, timeZone);
+  const pending = splits.some((split) => split.ex_day === day && split.ex_at && Date.parse(split.ex_at) > retrievedAt.getTime());
+  return pending ? isoDay(new Date(Date.parse(`${day}T00:00:00Z`) - DAY)) : day;
 }
 
 /** Compare a primary close with the reference close; null leaves the bar unverified. */
@@ -315,19 +328,35 @@ export async function syncAssetPriceHistory(sql: Sql,
   return summary;
 }
 
+/** Splits keyed by the exchange-local ex-date, like the bars' trading days (#120). */
 async function loadSplits(sql: Sql, instrumentId: string): Promise<SplitEvent[]> {
   const rows = await sql`
-    SELECT DISTINCT ex_date, split_ratio FROM corporate_actions
+    SELECT DISTINCT ex_date, split_ratio,
+      (SELECT exchange_timezone FROM market_price_bars b WHERE b.instrument_id = ${instrumentId} AND b.provider = ${PRIMARY_PRICE_PROVIDER}
+        AND b.exchange_timezone IS NOT NULL LIMIT 1) AS exchange_timezone
+    FROM corporate_actions
     WHERE instrument_id = ${instrumentId} AND provider = ${PRIMARY_PRICE_PROVIDER} AND action_type = 'split' AND ex_date IS NOT NULL`;
-  return rows.map((row) => ({ ex_day: isoDay(new Date(row.ex_date)), ratio: Number(row.split_ratio) })).filter((split) => split.ratio > 0);
+  return rows.map((row) => {
+    const exAt = new Date(row.ex_date);
+    return { ex_day: exchangeDay(exAt, row.exchange_timezone), ratio: Number(row.split_ratio), ex_at: exAt.toISOString() };
+  }).filter((split) => split.ratio > 0);
+}
+
+/**
+ * A bar Stooq has no close for, although Stooq has later days, stays unverified but is not asked
+ * for again (#133). A day after Stooq's last row may just not be published yet and is retried.
+ */
+export function unverifiedDetails(day: string, referenceLastDay: string, url: string | null, now: Date): Row | null {
+  return day < referenceLastDay ? { provider: "stooq", reference_missing_at: now.toISOString(), reason: "No Stooq close for this day", url } : null;
 }
 
 async function crossCheckWithStooq(sql: Sql, instrumentId: string, symbol: string, start: Date, end: Date, now: Date,
   fetchImpl: typeof fetch): Promise<NonNullable<PriceHistorySync["cross_check"]>> {
   const pending = await sql`
-    SELECT id, trading_date, close, adjusted_close, retrieved_at FROM market_price_bars
+    SELECT id, trading_date, close, adjusted_close, retrieved_at, exchange_timezone FROM market_price_bars
     WHERE instrument_id = ${instrumentId} AND provider = ${PRIMARY_PRICE_PROVIDER} AND provider_symbol = ${symbol}
-      AND verification_status = 'unverified' AND trading_date >= ${start.toISOString()} AND trading_date <= ${end.toISOString()}
+      AND verification_status = 'unverified' AND verification_json->>'reference_missing_at' IS NULL
+      AND trading_date >= ${start.toISOString()} AND trading_date <= ${end.toISOString()}
     ORDER BY trading_date`;
   const counts = async () => {
     const rows = await sql`
@@ -359,17 +388,21 @@ async function crossCheckWithStooq(sql: Sql, instrumentId: string, symbol: strin
       ${stooq.status === "ok" ? "success" : "failed"}, ${stooq.status === "ok" ? null : stooq.reason}, ${Date.now() - started}, ${now.toISOString()})`;
   if (stooq.status !== "ok") return { provider: "stooq", status: "unavailable", reason: stooq.reason, url: stooq.url, ...(await counts()) };
   const splits = await loadSplits(sql, instrumentId);
-  const today = isoDay(now);
+  const stooqLastDay = [...stooq.closes.keys()].sort().at(-1) ?? "";
   const checked = pending.flatMap((row) => {
     const day = isoDay(new Date(row.trading_date));
-    const retrievedDay = isoDay(new Date(row.retrieved_at));
+    const retrievedDay = splitBasisDay(new Date(row.retrieved_at), splits, row.exchange_timezone);
+    const today = splitBasisDay(now, splits, row.exchange_timezone);
     // Stooq history is adjusted to today's split basis.
     const rebase = (value: number) => closeOnSplitBasis(value, day, retrievedDay, today, splits);
     const check = crossCheckClose(rebase(Number(row.close)), row.adjusted_close === null ? null : rebase(Number(row.adjusted_close)), stooq.closes.get(day));
-    return check ? [{ id: String(row.id), status: check.status, details: { ...check, url: stooq.url, checked_at: now.toISOString() } }] : [];
+    if (check) return [{ id: String(row.id), status: check.status, details: { ...check, url: stooq.url, checked_at: now.toISOString() } }];
+    const missing = unverifiedDetails(day, stooqLastDay, stooq.url, now);
+    return missing ? [{ id: String(row.id), status: "unverified", details: missing }] : [];
   });
   if (checked.length) await sql`
-    UPDATE market_price_bars m SET verification_status = v.status, verification_json = v.details, verified_at = ${now.toISOString()}
+    UPDATE market_price_bars m SET verification_status = v.status, verification_json = v.details,
+      verified_at = CASE WHEN v.status = 'unverified' THEN m.verified_at ELSE ${now.toISOString()}::timestamptz END
     FROM jsonb_to_recordset(${sql.json(checked)}::jsonb) AS v(id uuid, status text, details jsonb)
     WHERE m.id = v.id`;
   return { provider: "stooq", status: "checked", url: stooq.url, ...(await counts()) };
@@ -379,21 +412,21 @@ async function crossCheckWithStooq(sql: Sql, instrumentId: string, symbol: strin
 export async function loadStoredPriceHistory(sql: Sql, assetId: string, symbol: string, cutoffAt: Date) {
   const rows = await sql`
     SELECT b.id, b.instrument_id, b.trading_date, b.close, b.adjusted_close, b.currency, b.provider_symbol, b.retrieved_at,
-      b.available_at, b.verification_status, b.verification_json
+      b.exchange_timezone, b.available_at, b.verification_status, b.verification_json
     FROM market_price_bars b JOIN instruments i ON i.id = b.instrument_id
     WHERE i.asset_id = ${assetId} AND b.provider = ${PRIMARY_PRICE_PROVIDER} AND b.provider_symbol = ${symbol.toUpperCase()}
       AND b.available_at <= ${cutoffAt.toISOString()}
     ORDER BY b.trading_date`;
-  const bars: StoredBar[] = rows.map((row) => ({
-    id: String(row.id), day: isoDay(new Date(row.trading_date)), close: Number(row.close),
-    adjusted_close: row.adjusted_close === null ? null : Number(row.adjusted_close), currency: String(row.currency),
-    provider_symbol: String(row.provider_symbol), retrieved_day: isoDay(new Date(row.retrieved_at)),
-    available_at: new Date(row.available_at).toISOString(), verification_status: String(row.verification_status),
-    verification_json: (row.verification_json || {}) as Row,
-  }));
   const instrumentIds = [...new Set(rows.map((row) => String(row.instrument_id)))];
   const loaded = (await Promise.all(instrumentIds.map((id) => loadSplits(sql, id)))).flat();
   const splits = [...new Map(loaded.map((split) => [`${split.ex_day}:${split.ratio}`, split])).values()];
+  const bars: StoredBar[] = rows.map((row) => ({
+    id: String(row.id), day: isoDay(new Date(row.trading_date)), close: Number(row.close),
+    adjusted_close: row.adjusted_close === null ? null : Number(row.adjusted_close), currency: String(row.currency),
+    provider_symbol: String(row.provider_symbol), retrieved_day: splitBasisDay(new Date(row.retrieved_at), splits, row.exchange_timezone),
+    available_at: new Date(row.available_at).toISOString(), verification_status: String(row.verification_status),
+    verification_json: (row.verification_json || {}) as Row,
+  }));
   return { bars, splits };
 }
 

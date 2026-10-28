@@ -124,17 +124,20 @@ export class AnthropicCompatibleProvider implements ModelProvider {
     yield { type: "request.sent", body };
     let response = await this.post(body, signal, options.headers);
     let errorText: string | undefined;
-    // A rejected schema is resent once without output_config and not sent again. Checked before the
-    // status mapping, whose context-limit test would read a rejection that names maxLength as a context limit.
+    // A rejected schema is resent once without output_config.format. Checked before the status mapping,
+    // whose context-limit test would read a rejection that names maxLength as a context limit. A 400 about
+    // another output_config field (effort) is not a schema rejection, and the schema is remembered as
+    // rejected only when the request without it is accepted.
     if (format && response.status === 400) {
       errorText = await response.text().catch(() => "");
-      if (/schema|output_config|too complex/i.test(errorText)) {
-        rememberRejectedSchema(format.schema);
+      if (/output_config\.format|schema|too complex/i.test(errorText)) {
+        const rejectedSchema = format.schema;
         format = undefined;
         errorText = undefined;
         body = serialize();
         yield { type: "request.sent", body };
         response = await this.post(body, signal, options.headers);
+        if (response.ok) rememberRejectedSchema(rejectedSchema);
       }
     }
 

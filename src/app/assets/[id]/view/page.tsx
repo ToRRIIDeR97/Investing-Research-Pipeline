@@ -41,7 +41,8 @@ import { ResearchReport } from "@/components/research-report";
 import { FinancialStatements } from "@/components/financial-statements";
 import { KPIDashboard } from '@/components/research-dashboards';
 import { ResearchChat } from '@/components/research-chat';
-import { artifactContent, researchObservations } from '@/lib/research/reporting/data-views';
+import { artifactContent, pickShownRun, researchObservations, runIsTerminal } from '@/lib/research/reporting/data-views';
+import { safeUrl } from '@/lib/research/reporting/presentation.mjs';
 
 type JsonRecord = Record<string, unknown>;
 type ResearchRecord = Record<string, any>;
@@ -141,6 +142,8 @@ function ViewResearch() {
   // Whether the report on screen is the full one. A quiet refresh keeps it while the run row is unchanged; once the
   // row changes, a refresh fetches what the current view needs, so Overview drops back to the summary.
   const shownFull = useRef(false);
+  // Without ?run=, the run first shown stays on screen; a newer run started elsewhere doesn't replace it (#130).
+  const pinnedRunId = useRef<string | null>(null);
   // The interval's loadResearch is from an earlier render, so it reads the current tab here.
   const activeTabRef = useRef(activeTab);
   activeTabRef.current = activeTab;
@@ -151,12 +154,16 @@ function ViewResearch() {
   useEffect(() => {
     // Tab links pin ?run= to the run already on screen. That is navigation, not a new run, so keep the page mounted.
     if (requestedRunId && data.asset?.id === assetId && data.activeRun?.id === requestedRunId) return;
+    pinnedRunId.current = null;
     void loadResearch();
     return () => { loadVersion.current++; };
   }, [assetId, requestedRunId]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void loadResearch(true); }, 60_000);
+    // A completed or cancelled run doesn't change, so its page stops refreshing (#130).
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible' && !runIsTerminal(shownRun.current?.status)) void loadResearch(true);
+    }, 60_000);
     return () => window.clearInterval(timer);
   }, [assetId, requestedRunId]);
 
@@ -176,9 +183,11 @@ function ViewResearch() {
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
       if (version !== loadVersion.current) return;
-      const targetRunId = requestedRunId;
-      const activeRun = targetRunId ? sortedRuns.find((run) => run.id === targetRunId) : sortedRuns[0] ?? null;
-      if (targetRunId && !activeRun) throw new Error("Research run not found.");
+      const activeRun = pickShownRun(sortedRuns, requestedRunId, pinnedRunId.current);
+      if (!activeRun) {
+        if (requestedRunId) throw new Error("Research run not found.");
+        pinnedRunId.current = null;
+      } else pinnedRunId.current = activeRun.id;
 
       if (!activeRun) {
         shownRun.current = null;
@@ -728,15 +737,15 @@ function SourcesSection({
             source.document_date ?? source.published_at ?? "n/a",
             <StatusPill key="status" value={source.ingest_status ?? source.status} />,
             formatPercent(source.trust_score),
-            source.uri ? (
+            safeUrl(source.url) ? (
               <a
                 key="uri"
-                href={String(source.uri)}
+                href={safeUrl(source.url)!}
                 target="_blank"
                 rel="noreferrer"
                 className="max-w-[260px] truncate text-sky-700 hover:text-sky-900"
               >
-                {String(source.uri)}
+                {String(source.url)}
               </a>
             ) : (
               "n/a"
