@@ -6,7 +6,7 @@ import {
 } from "@/lib/market-data/providers/mock";
 import { parseBars } from "@/lib/market-data/providers/yahoo";
 import { MarketDataError } from "@/lib/market-data/provider";
-import { fetchedRange, windowCovered } from "@/lib/market-data/service";
+import { fetchedRange, seriesShape, windowCovered } from "@/lib/market-data/service";
 import { fcfYieldBand, peBand } from "@/lib/valuation/signal-generator";
 import type { YahooChartResult } from "@/lib/market-data/providers/yahoo";
 
@@ -110,25 +110,36 @@ describe("history coverage (#133)", () => {
   const d = (day: string) => new Date(`${day}T00:00:00Z`);
   const start = d("2020-10-28");
 
-  it("accepts a late first bar only when a fetch already spanned the window start", () => {
+  const full = (first: Date | null, gaps: Array<{ from: Date; to: Date }> = []) => ({ start: d("2020-10-20"), end: d("2026-10-20"), first, gaps });
+
+  it("accepts a late first bar only when a full fetch returned the same first bar", () => {
     // Listed in June 2021, after the six-year window starts.
     assert.equal(windowCovered(start, d("2021-06-01"), [], []), false);
-    assert.equal(windowCovered(start, d("2021-06-01"), [], [{ start: d("2020-10-20"), end: d("2026-10-20") }]), true);
+    assert.equal(windowCovered(start, d("2021-06-01"), [], [full(d("2021-06-01"))]), true);
+    // The provider had earlier bars than storage: fetch again.
+    assert.equal(windowCovered(start, d("2021-06-01"), [], [full(d("2020-10-28"))]), false);
     // An incremental fetch from near the end proves nothing about the start.
-    assert.equal(windowCovered(start, d("2021-06-01"), [], [{ start: d("2026-10-15"), end: d("2026-10-20") }]), false);
+    assert.equal(windowCovered(start, d("2021-06-01"), [], [{ start: d("2026-10-15"), end: d("2026-10-20"), first: d("2026-10-15"), gaps: [] }]), false);
     assert.equal(windowCovered(start, d("2020-10-30"), [], []), true);
-    assert.equal(windowCovered(start, null, [], [{ start, end: d("2026-10-20") }]), false);
+    assert.equal(windowCovered(start, null, [], [full(start)]), false);
   });
 
-  it("accepts a gap of more than a week only when a fetch spanned it", () => {
+  it("accepts a gap of more than a week only when a fetch saw the provider's series skip it", () => {
     const gap = [{ from: d("2023-03-01"), to: d("2023-03-20") }];
     assert.equal(windowCovered(start, d("2020-10-29"), gap, []), false);
-    assert.equal(windowCovered(start, d("2020-10-29"), gap, [{ start: d("2020-10-20"), end: d("2026-10-20") }]), true);
+    // Bars missing from storage only (the fetch returned them): fetch again.
+    assert.equal(windowCovered(start, d("2020-10-29"), gap, [full(d("2020-10-29"))]), false);
+    assert.equal(windowCovered(start, d("2020-10-29"), gap, [full(d("2020-10-29"), gap)]), true);
   });
 
-  it("reads fetch ranges from logged daily-history parameters", () => {
-    assert.deepEqual(fetchedRange({ start: "2020-10-20T00:00:00.000Z", end: "2026-10-20T00:00:00.000Z", interval: "1d" }),
-      [{ start: d("2020-10-20"), end: d("2026-10-20") }]);
+  it("logs and reads the shape of a fetched series", () => {
+    const bar = (day: string) => ({ trading_date: d(day), open: 1, high: 1, low: 1, close: 1, currency: "USD" });
+    const shape = seriesShape([bar("2023-03-20"), bar("2023-02-28"), bar("2023-03-01")]);
+    assert.deepEqual(shape, { first_bar: "2023-02-28T00:00:00.000Z", gaps: [{ from: "2023-03-01T00:00:00.000Z", to: "2023-03-20T00:00:00.000Z" }] });
+    assert.deepEqual(fetchedRange({ start: "2020-10-20T00:00:00.000Z", end: "2026-10-20T00:00:00.000Z", interval: "1d", ...shape }),
+      [{ start: d("2020-10-20"), end: d("2026-10-20"), first: d("2023-02-28"), gaps: [{ from: d("2023-03-01"), to: d("2023-03-20") }] }]);
+    // Fetches logged before the shape was recorded prove nothing.
+    assert.deepEqual(fetchedRange({ start: "2020-10-20", end: "2026-10-20" }), [{ start: d("2020-10-20"), end: d("2026-10-20"), first: null, gaps: [] }]);
     assert.deepEqual(fetchedRange({ start: "2020-10-20", end: "2026-10-20", interval: "1wk" }), []);
     assert.deepEqual(fetchedRange({}), []);
   });

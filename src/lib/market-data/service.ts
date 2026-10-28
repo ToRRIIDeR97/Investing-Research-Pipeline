@@ -127,8 +127,8 @@ export function createMarketDataService(config: MarketDataServiceConfig) {
      * Backfill [start, end] once, then fetch only from shortly before the latest stored bar in it.
      * Coverage is judged inside the window: a window that starts more than a week late or has a
      * gap of more than a week (left by runs with other cutoffs) is fetched again in full, unless a
-     * successful fetch already spanned that stretch, which shows the provider has no bars there
-     * (a listing after the window start, a trading halt). `normalize` maps provider bars to stored
+     * successful fetch that spanned it logged the same absence in the provider's own series (a
+     * listing after the window start, a trading halt): each fetch logs its first bar and its gaps. `normalize` maps provider bars to stored
      * bars (trading day, availability) and drops bars that are not final yet; stored rows are
      * never overwritten.
      */
@@ -198,8 +198,9 @@ export function createMarketDataService(config: MarketDataServiceConfig) {
         await logFetch(instrumentId, symbol, "history", "failed", undefined, err, { start: fetchedFrom, end, interval: "1d" });
         throw err;
       }
-      await logFetch(instrumentId, symbol, "history", "success", Date.now() - fetchStart, undefined, { start: fetchedFrom, end, interval: "1d", bars: bars.length });
       const normalized = normalize(bars);
+      await logFetch(instrumentId, symbol, "history", "success", Date.now() - fetchStart, undefined,
+        { start: fetchedFrom, end, interval: "1d", bars: bars.length, ...seriesShape(normalized) });
       await persistPriceBars(instrumentId, symbol, normalized);
       return { fetchedFrom, storedBars: normalized.length };
     },
@@ -341,24 +342,45 @@ export function priceBarRows(instrumentId: string, provider: string, symbol: str
   }));
 }
 
-type DateRange = { start: Date; end: Date };
+const WEEK = 7 * 24 * 60 * 60 * 1000;
 
-/** The [start, end] of a logged successful daily-history fetch, from its request parameters. */
+type DateRange = { start: Date; end: Date; first: Date | null; gaps: Array<{ from: Date; to: Date }> };
+
+/** What a fetch returned: its first bar and its gaps of more than a week, logged with the fetch (#133). */
+export function seriesShape(bars: PriceBar[]): { first_bar: string | null; gaps: Array<{ from: string; to: string }> } {
+  const days = bars.map((bar) => bar.trading_date.getTime()).sort((a, b) => a - b);
+  const gaps = days.slice(1).flatMap((day, index) => day - days[index] > WEEK
+    ? [{ from: new Date(days[index]).toISOString(), to: new Date(day).toISOString() }] : []);
+  return { first_bar: days.length ? new Date(days[0]).toISOString() : null, gaps };
+}
+
+/** A logged successful daily-history fetch: its range and the shape of what it returned. */
 export function fetchedRange(params: unknown): DateRange[] {
   const value = (params ?? {}) as Record<string, unknown>;
   if (value.interval !== undefined && value.interval !== "1d") return [];
-  const start = new Date(String(value.start)), end = new Date(String(value.end));
-  return Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) ? [] : [{ start, end }];
+  const date = (raw: unknown) => {
+    const parsed = typeof raw === "string" ? new Date(raw) : null;
+    return parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+  };
+  const start = date(value.start), end = date(value.end);
+  if (!start || !end) return [];
+  const gaps = (Array.isArray(value.gaps) ? value.gaps : []).flatMap((gap: any) => {
+    const from = date(gap?.from), to = date(gap?.to);
+    return from && to ? [{ from, to }] : [];
+  });
+  return [{ start, end, first: date(value.first_bar), gaps }];
 }
 
 /**
  * Whether stored bars cover the window from its start. A late first bar or a gap of more than a
- * week counts as covered when a successful fetch spanned it: the provider has nothing there (#133).
+ * week counts as covered only when a fetch that spanned it saw the same absence in the provider's
+ * series: bars missing from storage alone are fetched again (#133).
  */
 export function windowCovered(start: Date, first: Date | null, gaps: Array<{ from: Date; to: Date }>, fetched: DateRange[]): boolean {
   if (first === null) return false;
-  const week = 7 * 24 * 60 * 60 * 1000;
-  const spanned = (from: Date, to: Date) => fetched.some((range) => range.start.getTime() <= from.getTime() && range.end.getTime() >= to.getTime());
-  const startCovered = first.getTime() <= start.getTime() + week || spanned(new Date(start.getTime() + week), first);
-  return startCovered && gaps.every((gap) => spanned(gap.from, gap.to));
+  const lateStart = first.getTime() > start.getTime() + WEEK;
+  const listed = fetched.some((range) => range.start.getTime() <= start.getTime() + WEEK && range.first?.getTime() === first.getTime());
+  const genuine = (gap: { from: Date; to: Date }) => fetched.some((range) => range.gaps.some((seen) =>
+    seen.from.getTime() <= gap.from.getTime() && seen.to.getTime() >= gap.to.getTime()));
+  return (!lateStart || listed) && gaps.every(genuine);
 }
