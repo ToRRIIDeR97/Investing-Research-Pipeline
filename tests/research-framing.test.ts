@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { framingContract, classificationArchetypes, mergeFramingArchetypes, checkGateEdits, packetFraming, type ResearchFraming } from "../src/lib/research/framing";
+import { composeProfile } from "../src/lib/research/archetypes/compose";
+import { stripNul } from "../src/lib/research/run-context";
 import { includeFramingQuestions } from "../src/lib/research/reporting/runtime";
 import { validateManagementAssessment } from "../src/lib/research/business/validation";
 import { resolvePeers, peerBenchmarkRow, buildPeerBenchmark } from "../src/lib/research/sources/peers";
@@ -40,6 +42,25 @@ test("archetypes come from the asset's classification, and the framing adds only
   assert.throws(() => checkGateEdits({ archetypes: ["nope"] }, "a"), /registry keys/);
   assert.throws(() => checkGateEdits({ framing: { ...framing, central_question: "" } }, "a"));
   assert.equal(checkGateEdits({ framing }, "a").framing?.central_question, framing.central_question);
+});
+
+test("a specific archetype's explicit valuation rules override the core's defaults instead of conflicting", () => {
+  const holding = composeProfile("p", "a", classificationArchetypes(null, { industry: "Investment Holding Company" }), []);
+  assert.deepEqual(holding.errors, []);
+  assert.deepEqual(holding.profile.valuation_methods.find(m => m.method === "sotp"), { method: "sotp", allowed: true, required: true, rationale: "Sum-of-the-parts primary" });
+  assert.equal(holding.profile.valuation_methods.find(m => m.method === "dcf")?.required, true, "core's dcf still applies");
+  const fund = composeProfile("p", "a", ["operating_company_core", "etf_fund"], []);
+  assert.deepEqual(fund.errors, []);
+  assert.equal(fund.profile.valuation_methods.find(m => m.method === "dcf")?.allowed, false);
+  assert.equal(composeProfile("p", "a", ["bank", "lender"], []).profile.valuation_methods.find(m => m.method === "nav")?.required, true);
+  assert.ok(composeProfile("p", "a", ["operating_company_core", "holding_company", "etf_fund"], []).errors.some(e => e.code === "conflict"),
+    "two specific archetypes that disagree still conflict");
+  assert.ok(composeProfile("p", "a", ["holding_company"], []).errors.some(e => e.code === "missing_base"), "a base archetype is still required");
+  assert.equal(checkGateEdits({ archetypes: ["operating_company_core", "holding_company"] }, "a").archetypes?.length, 2);
+});
+
+test("NUL characters are stripped from model JSON before it is written as jsonb", () => {
+  assert.deepEqual(stripNul({ "a\u0000": ["x\u0000y", 1, null, { b: "it's\u0000" }] }), { a: ["xy", 1, null, { b: "it's" }] });
 });
 
 test("framing key questions the outline skips are added as qualified, never blocked", () => {

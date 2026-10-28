@@ -84,24 +84,43 @@ async function saveExternalBenchmarks(sql: ReturnType<typeof postgres>, ctx: Res
 }
 
 /**
+ * Whether a captured ratio as of `asOf` may replace the instrument's stored one. An empty ratio is always filled. A
+ * ratio this stage wrote carries `contract_specs_json.depositary_ratio_as_of` and yields to one read from filings at
+ * the same or a later cutoff, so a newer filing corrects a stale or mis-read ratio and an older-cutoff run never
+ * reverts it. A ratio set any other way (no as-of date) is never overwritten.
+ */
+export function depositaryRatioReplaces(stored: { depositary_ratio?: unknown; contract_specs_json?: unknown },ratio: number, asOf?: string | null): boolean {
+  if (stored.depositary_ratio === null || stored.depositary_ratio === undefined) return true;
+  const storedAsOf = (stored.contract_specs_json as Record<string, unknown> | null)?.depositary_ratio_as_of;
+  return !!asOf && typeof storedAsOf === "string" && storedAsOf <= asOf && Number(stored.depositary_ratio) !== ratio;
+}
+
+/**
  * The ADS ratio belongs to the depositary instrument only: a Hong Kong ordinary listing of the same company is one
  * share per share. The target is the instrument marked ADS/ADR (type or name), else, when none is marked, the one
- * whose currency is the valuation price's. A ratio already set is never overwritten. Returns the instrument written.
+ * whose currency is the valuation price's (`priceCurrency`, else the asset's latest market_price_history, else USD).
+ * See depositaryRatioReplaces for when a stored ratio is replaced. Returns the instrument written.
  */
-export async function writeDepositaryRatio(sql: ReturnType<typeof postgres>, assetId: string, ratio: number): Promise<string | null> {
-  const marked = await sql`SELECT id, depositary_ratio FROM instruments WHERE asset_id = ${assetId}
+export async function writeDepositaryRatio(sql: ReturnType<typeof postgres>, assetId: string, ratio: number,
+  options: { asOf?: string | null; priceCurrency?: string | null } = {}): Promise<string | null> {
+  const marked = await sql`SELECT id, depositary_ratio, contract_specs_json FROM instruments WHERE asset_id = ${assetId}
     AND (lower(instrument_type) IN ('ads', 'adr', 'depositary_receipt', 'depositary_share') OR name ~* '\\m(ADS|ADR)\\M|depositary')
     ORDER BY created_at LIMIT 1`;
   let target = marked[0] ?? null;
   if (!target) {
-    const [price] = await sql`SELECT content_json->'valuation_price'->>'currency' AS currency FROM research_artifacts a
-      JOIN research_runs r ON r.id = a.research_run_id WHERE r.asset_id = ${assetId} AND a.artifact_type = 'market_price_history'
-      ORDER BY a.created_at DESC LIMIT 1`;
-    const currency = price?.currency || "USD";
-    [target] = await sql`SELECT id, depositary_ratio FROM instruments WHERE asset_id = ${assetId} AND currency = ${currency} ORDER BY created_at LIMIT 1`;
+    let currency = options.priceCurrency || null;
+    if (!currency) {
+      const [price] = await sql`SELECT content_json->'valuation_price'->>'currency' AS currency FROM research_artifacts a
+        JOIN research_runs r ON r.id = a.research_run_id WHERE r.asset_id = ${assetId} AND a.artifact_type = 'market_price_history'
+        ORDER BY a.created_at DESC LIMIT 1`;
+      currency = price?.currency || "USD";
+    }
+    [target] = await sql`SELECT id, depositary_ratio, contract_specs_json FROM instruments WHERE asset_id = ${assetId} AND currency = ${currency} ORDER BY created_at LIMIT 1`;
   }
-  if (!target || target.depositary_ratio !== null) return null;
-  await sql`UPDATE instruments SET depositary_ratio = ${ratio}, updated_at = NOW() WHERE id = ${target.id}`;
+  if (!target || !depositaryRatioReplaces(target, ratio, options.asOf)) return null;
+  await sql`UPDATE instruments SET depositary_ratio = ${ratio},
+    contract_specs_json = COALESCE(contract_specs_json, '{}'::jsonb) || ${sql.json(options.asOf ? { depositary_ratio_as_of: options.asOf } : {})},
+    updated_at = NOW() WHERE id = ${target.id}`;
   return String(target.id);
 }
 
@@ -165,10 +184,6 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       // A foreign issuer has no 10-Qs: its quarters come from 6-K results releases, and fewer than 12 is not a history.
       const quarters = (filings as { quarter_coverage?: { quarters: number; first: string | null; last: string | null; minimum: number } }).quarter_coverage;
       if (quarters && quarters.quarters < quarters.minimum) throw new Error(`Foreign-issuer statements cover ${quarters.quarters} quarters (${quarters.first ?? "none"} to ${quarters.last ?? "none"}), below the ${quarters.minimum} needed; the 20-F and the stored 6-K results releases do not give a 20-quarter history.`);
-      // The ADS ratio read from the release or 20-F fills the instrument's depositary_ratio, which the valuation needs
-      // to put per-ordinary-share values on the per-ADS price. A ratio someone already set is kept.
-      const depositary = (filings as { depositary_ratio?: { value: number } | null }).depositary_ratio;
-      if (depositary?.value) await writeDepositaryRatio(sql, ctx.assetId, depositary.value);
       // 3. Call metric-normalizer agent, only for metrics the filings and companyfacts do not cover.
       const coverage = normalizerCoverage(requiredMetricKeys, [...filings.observations, ...secFacts]);
       const taskKey = "metric-normalizer:observations";
@@ -245,7 +260,7 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
           value_numeric: row.value_numeric !== null ? Number(row.value_numeric) : null,
           unit: String(row.unit || ""),
           currency: String(row.currency || "USD"),
-          confidence: Number(row.confidence || 1),
+          confidence: row.confidence === null || row.confidence === undefined ? 1 : Number(row.confidence),
           source_document_id: row.source_document_id,
           evidence_claim_id: row.evidence_claim_id,
           available_at: row.available_at ? new Date(row.available_at).toISOString().slice(0, 10) : null,
@@ -261,6 +276,12 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
       // Source discovery's price sync summary says whether the Stooq cross-check ran.
       const marketHistory = await captureMarketHistory(sql, ctx, filings.observations, await latestPriceHistorySync(sql, ctx.runId))
         .catch((error) => ({ error: error instanceof Error ? error.message : String(error) }));
+      // The ADS ratio read from the release or 20-F fills the instrument's depositary_ratio, which the valuation needs
+      // to put per-ordinary-share values on the per-ADS price. It is written after the market history so this run's
+      // price currency picks the instrument, and as of this run's cutoff so newer filings correct it.
+      const depositary = (filings as { depositary_ratio?: { value: number } | null }).depositary_ratio;
+      if (depositary?.value) await writeDepositaryRatio(sql, ctx.assetId, depositary.value, { asOf: ctx.cutoffAt.toISOString(),
+        priceCurrency: "error" in marketHistory ? null : (marketHistory.valuation_price as { currency?: string } | null)?.currency });
       const latestFiling=[...filings.tables].sort((a,b)=>b.period_end.localeCompare(a.period_end))[0];
       if(latestFiling?.fiscal_year&&latestFiling?.fiscal_quarter)end={year:latestFiling.fiscal_year,quarter:latestFiling.fiscal_quarter};
       const filingObservations = filings.observations.map(row => HistoricalObservation.parse(row));

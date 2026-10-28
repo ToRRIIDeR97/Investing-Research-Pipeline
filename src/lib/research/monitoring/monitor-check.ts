@@ -1,6 +1,6 @@
 /**
  * monitor-check: a free, deterministic check of each asset against its latest completed run. It looks for
- * 10-Q/10-K filings on EDGAR newer than the run's source cutoff, captures their statements with the filing
+ * periodic filings (10-Q/10-K, a foreign issuer's 20-F/40-F, their amendments, and 6-K results releases) on EDGAR newer than the run's source cutoff, captures their statements with the filing
  * parser, scores the run's monitoring dashboard on them, and stores whether a refresh is due. It makes no
  * model call and never queues or starts a run: a person decides whether to refresh.
  *
@@ -9,14 +9,18 @@
  */
 import type { Sql } from "../run-context";
 import { fetchCapped, isPrivateHostname } from "@/lib/net";
-import { loadSubmissionFilings, resolveSecCik, secArchiveUrl, storedSecFiling } from "../sources/corpus";
+import { isResultsCover, loadSubmissionFilings, resolveSecCik, secArchiveUrl, storedSecFiling } from "../sources/corpus";
 import { extractFilingStatements, statementObservations, type FilingSource, type FilingTable } from "../history/filing-statements";
 import { refreshDecision, scoreDashboard, type MonitorFiling, type MonitorItemResult } from "./monitor-score";
 
 /** The only hosts monitor-check fetches. */
 export const EDGAR_HOSTS = ["data.sec.gov", "www.sec.gov"];
 const SEC_USER_AGENT = "ResearchOS/0.1 research-pipeline@example.com";
-const FORMS = new Set(["10-Q", "10-K"]);
+/** Periodic reports and their amendments. A 6-K counts only when its cover names a results release. */
+const FORMS = new Set(["10-Q", "10-K", "20-F", "40-F", "10-Q/A", "10-K/A", "20-F/A", "40-F/A"]);
+const RESULTS_FORM = "6-K";
+/** Newest 6-K covers read per check: a frequent filer files several a month, and results come once a quarter. */
+const MAX_SIX_K_COVERS = 12;
 /** Newest filings captured per check; older new filings are listed but not parsed. */
 const MAX_CAPTURED = 4;
 const MAX_FILING_BYTES = 40_000_000;
@@ -80,23 +84,33 @@ export async function checkAsset(sql: Sql, target: MonitorTarget, options: { fet
   if (!response.ok) throw new Error(`SEC submissions for CIK ${cik} failed: ${response.status}`);
   const submissions = await response.json();
   const rows = await loadSubmissionFilings(submissions, cutoff, today, fetchEdgar);
-  const fresh = rows.filter(f => FORMS.has(f.form) && DATE.test(String(f.filingDate ?? "")) && String(f.filingDate) > cutoff && String(f.filingDate) <= today
+  const fresh = rows.filter(f => (FORMS.has(f.form) || f.form === RESULTS_FORM) && DATE.test(String(f.filingDate ?? "")) && String(f.filingDate) > cutoff && String(f.filingDate) <= today
     && ACCESSION.test(String(f.accessionNumber ?? "")) && DOCUMENT.test(String(f.primaryDocument ?? "")));
 
   const filings: MonitorFiling[] = [];
   const tables: FilingTable[] = [];
-  for (const [index, f] of fresh.entries()) {
+  const filingHtml = async (url: string) => {
+    const stored = await storedSecFiling(sql, url);
+    if (stored !== null) return stored;
+    const download = await fetchEdgar(url);
+    return download.ok ? download.text() : null;
+  };
+  let parsed = 0, covers = 0;
+  for (const f of fresh) {
     const url = secArchiveUrl(cik, f.accessionNumber!, f.primaryDocument!);
     const reportDate = DATE.test(String(f.reportDate ?? "")) ? String(f.reportDate) : null;
     const filing: MonitorFiling = { form: f.form, filing_date: String(f.filingDate), report_date: reportDate, accession: f.accessionNumber!, url, captured: false };
-    filings.push(filing);
-    if (index >= MAX_CAPTURED) continue;
-    let html = await storedSecFiling(sql, url);
-    if (html === null) {
-      const download = await fetchEdgar(url);
-      if (!download.ok) continue;
-      html = await download.text();
+    // A 6-K is listed only when its cover names a results release; its statements sit in an exhibit, so none are parsed.
+    if (f.form === RESULTS_FORM) {
+      if (covers++ >= MAX_SIX_K_COVERS) continue;
+      const cover = await filingHtml(url);
+      if (cover !== null && isResultsCover(cover)) filings.push(filing);
+      continue;
     }
+    filings.push(filing);
+    if (parsed++ >= MAX_CAPTURED) continue;
+    const html = await filingHtml(url);
+    if (html === null) continue;
     const source: FilingSource = { id: `monitor:${f.accessionNumber}`, url, published_at: String(f.filingDate), period_end: reportDate ?? "", metadata_json: { form: f.form, accessionNumber: f.accessionNumber } };
     const captured = extractFilingStatements(html, source);
     filing.captured = captured.length > 0;
