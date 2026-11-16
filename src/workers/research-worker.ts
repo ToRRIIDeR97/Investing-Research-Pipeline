@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
-import postgres from "postgres";
+import { pipelineSql } from "@/db/pipeline-sql";
 import { executeBacktestTask } from "@/lib/backtesting/executor";
 import { runSystemResearchPipeline } from "@/lib/research/system-pipeline";
 import { ResearchRunInterrupted, ResearchRunLocked } from "@/lib/research/pipeline-runner";
@@ -47,27 +47,23 @@ const workerId = process.argv.find((arg) => arg.startsWith("--worker-id="))?.spl
 const LEASE_RENEW_INTERVAL_MS = Math.max(1000, Math.min(10_000, Math.floor(DEFAULT_RESEARCH_RUN_LEASE_MS / 3)));
 
 async function claimNextBacktestTask(): Promise<ResearchTask | null> {
-  const sql = postgres(process.env.DATABASE_URL!);
-  try {
-    const rows = await sql`
-      UPDATE research_tasks
-      SET status = 'running', started_at = COALESCE(started_at, NOW()), updated_at = NOW()
-      WHERE id = (
-        SELECT id FROM research_tasks
-        WHERE status = 'pending' AND task_type = 'backtest'
-        ORDER BY priority DESC, created_at ASC
-        LIMIT 1 FOR UPDATE SKIP LOCKED
-      )
-      RETURNING id, research_run_id, stage_id, task_key, task_type,
-        agent_name, status, priority, input_json, output_json,
-        validation_status, validation_result_json, retry_count, cost_usd,
-        idempotency_key, started_at, completed_at, failure_reason,
-        created_at, updated_at
-    `;
-    return (rows[0] as unknown as ResearchTask) || null;
-  } finally {
-    await sql.end();
-  }
+  const sql = pipelineSql();
+  const rows = await sql`
+    UPDATE research_tasks
+    SET status = 'running', started_at = COALESCE(started_at, NOW()), updated_at = NOW()
+    WHERE id = (
+      SELECT id FROM research_tasks
+      WHERE status = 'pending' AND task_type = 'backtest'
+      ORDER BY priority DESC, created_at ASC
+      LIMIT 1 FOR UPDATE SKIP LOCKED
+    )
+    RETURNING id, research_run_id, stage_id, task_key, task_type,
+      agent_name, status, priority, input_json, output_json,
+      validation_status, validation_result_json, retry_count, cost_usd,
+      idempotency_key, started_at, completed_at, failure_reason,
+      created_at, updated_at
+  `;
+  return (rows[0] as unknown as ResearchTask) || null;
 }
 
 /**

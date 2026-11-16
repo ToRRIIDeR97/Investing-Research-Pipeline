@@ -8,9 +8,7 @@ import {
   validateArtifactCitationIds,
 } from "../sources/artifact-evidence";
 import { createArtifactRepository } from "../artifacts/repository";
-import { schema } from "@/db";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { pipelineDb, pipelineSql } from "@/db/pipeline-sql";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 
 /** Rules for the genesis analyst. The founder rules match validateGenesisArtifact and validateFounderProfile. */
@@ -36,163 +34,159 @@ export const GENESIS_PROMPT_RULES = [
 export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "company_genesis",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
-    const sql = postgres(process.env.DATABASE_URL!);
-    try {
-      const roleRows = await sql`
-        SELECT DISTINCT sra.role
-        FROM source_role_assignments sra
-        JOIN source_documents sd ON sd.id = sra.source_document_id
-        LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
-        WHERE (sd.research_run_id = ${ctx.runId} OR rrs.research_run_id = ${ctx.runId})
-          AND sra.confidence >= 70
-      `;
-      const missingRoles = missingRequiredSourceRoles(
-        ["founder_and_company_history"],
-        roleRows.map((row) => String(row.role))
+    const sql = pipelineSql();
+    const roleRows = await sql`
+      SELECT DISTINCT sra.role
+      FROM source_role_assignments sra
+      JOIN source_documents sd ON sd.id = sra.source_document_id
+      LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
+      WHERE (sd.research_run_id = ${ctx.runId} OR rrs.research_run_id = ${ctx.runId})
+        AND sra.confidence >= 70
+    `;
+    const missingRoles = missingRequiredSourceRoles(
+      ["founder_and_company_history"],
+      roleRows.map((row) => String(row.role))
+    );
+    if (missingRoles.length > 0) {
+      throw new Error(
+        `Company genesis blocked by evidence coverage: missing ${missingRoles.join(", ")}`
       );
-      if (missingRoles.length > 0) {
-        throw new Error(
-          `Company genesis blocked by evidence coverage: missing ${missingRoles.join(", ")}`
-        );
-      }
-      const evidenceClaims = await loadAcceptedEvidencePacket(sql, {
+    }
+    const evidenceClaims = await loadAcceptedEvidencePacket(sql, {
+      runId: ctx.runId,
+      runType: ctx.runType,
+      assetId: ctx.assetId,
+      assetName: ctx.assetName,
+      assetSlug: ctx.assetSlug,
+      symbol: ctx.symbol,
+      profileId: ctx.profileId || "",
+      profileKey: ctx.profileKey || "",
+      requiredModules: [],
+      requiredLenses: [],
+      marketDataCutoffAt: ctx.marketDataCutoffAt?.toISOString() || null,
+      pipelineVersion: CURRENT_PIPELINE_VERSION,
+    });
+    const taskKey = "genesis-researcher:genesis";
+    const packet = {
+      asset: {
         runId: ctx.runId,
-        runType: ctx.runType,
         assetId: ctx.assetId,
         assetName: ctx.assetName,
-        assetSlug: ctx.assetSlug,
         symbol: ctx.symbol,
-        profileId: ctx.profileId || "",
-        profileKey: ctx.profileKey || "",
-        requiredModules: [],
-        requiredLenses: [],
-        marketDataCutoffAt: ctx.marketDataCutoffAt?.toISOString() || null,
-        pipelineVersion: CURRENT_PIPELINE_VERSION,
-      });
-      const taskKey = "genesis-researcher:genesis";
-      const packet = {
-        asset: {
-          runId: ctx.runId,
-          assetId: ctx.assetId,
-          assetName: ctx.assetName,
-          symbol: ctx.symbol,
-          profileKey: ctx.profileKey,
+        profileKey: ctx.profileKey,
+      },
+      required_modules: ["founder_and_company_history", "corporate_structure"],
+      output_contract: "company_genesis",
+      output_schema: COMPANY_GENESIS_CONTRACT.schema,
+      evidence_claims: evidenceClaims,
+      artifact_shape: {
+        company_genesis: {
+          artifact_type: "company_genesis",
+          required_fields: [
+            "pre_founding_environment", "customer_problem", "incumbent_failure",
+            "enabling_change", "founder_background", "founder_motivations",
+            "alternative_motivation_interpretations", "original_product",
+            "original_customer", "original_geography", "original_revenue_model",
+            "initial_funding", "early_constraints", "first_proof_point",
+            "present_day_implications", "material_claims",
+          ],
         },
-        required_modules: ["founder_and_company_history", "corporate_structure"],
-        output_contract: "company_genesis",
-        output_schema: COMPANY_GENESIS_CONTRACT.schema,
-        evidence_claims: evidenceClaims,
-        artifact_shape: {
-          company_genesis: {
-            artifact_type: "company_genesis",
-            required_fields: [
-              "pre_founding_environment", "customer_problem", "incumbent_failure",
-              "enabling_change", "founder_background", "founder_motivations",
-              "alternative_motivation_interpretations", "original_product",
-              "original_customer", "original_geography", "original_revenue_model",
-              "initial_funding", "early_constraints", "first_proof_point",
-              "present_day_implications", "material_claims",
-            ],
-          },
-          founder_profile: {
-            artifact_type: "founder_profile",
-            required_fields: [
-              "founder_name", "background_summary", "motivations",
-              "alternative_interpretations", "control_evolution", "influence_today",
-            ],
-          },
-          strategic_history_timeline: {
-            artifact_type: "strategic_history_timeline",
-            required_fields: ["events", "major_pivots"],
-          },
-          strategic_dna: {
-            artifact_type: "strategic_dna",
-            required_fields: [
-              "persistent_behaviors", "decision_patterns", "capital_allocation_habits",
-              "talent_and_organization_patterns", "historical_evidence", "current_implications",
-            ],
-          },
+        founder_profile: {
+          artifact_type: "founder_profile",
+          required_fields: [
+            "founder_name", "background_summary", "motivations",
+            "alternative_interpretations", "control_evolution", "influence_today",
+          ],
         },
+        strategic_history_timeline: {
+          artifact_type: "strategic_history_timeline",
+          required_fields: ["events", "major_pivots"],
+        },
+        strategic_dna: {
+          artifact_type: "strategic_dna",
+          required_fields: [
+            "persistent_behaviors", "decision_patterns", "capital_allocation_habits",
+            "talent_and_organization_patterns", "historical_evidence", "current_implications",
+          ],
+        },
+      },
+    };
+
+    const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
+      agentName: "asset-analyst",
+      requiredKeys: COMPANY_GENESIS_CONTRACT.requiredKeys,
+      packet: p,
+      extraRules: GENESIS_PROMPT_RULES,
+    });
+
+    let output = await callResearchAgent<Record<string, any>>({
+      sql, ctx, stageKey: "company_genesis", taskKey,
+      taskType: "company_genesis", agentName: "asset-analyst", modelTier: "mid",
+      packet, promptFactory,
+      outputFormat: COMPANY_GENESIS_CONTRACT,
+    });
+    const allowedClaimRows = await sql`
+      SELECT id FROM evidence_claims
+      WHERE research_run_id = ${ctx.runId} AND review_status = 'accepted'
+    `;
+    const citationValidation = validateArtifactCitationIds(
+      output,
+      allowedClaimRows.map((row) => String(row.id))
+    );
+    if (!citationValidation.valid) {
+      const repairPacket = {
+        ...packet,
+        draft_requiring_citation_repair: output,
+        invalid_evidence_claim_ids: citationValidation.invalidIds,
+        allowed_evidence_claim_ids: allowedClaimRows.map((row) => String(row.id)),
+        repair_instruction:
+          "Return the complete four-artifact output again. Replace an invalid citation only when an allowed evidence claim directly supports the statement. Otherwise remove the unsupported statement, keeping at least one supported founder motivation. Never invent a UUID.",
       };
-
-      const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
+      output = await callResearchAgent<Record<string, any>>({
+        sql,
+        ctx,
+        stageKey: "company_genesis",
+        taskKey: `${taskKey}:citation-repair`,
+        taskType: "company_genesis_citation_repair",
         agentName: "asset-analyst",
-        requiredKeys: COMPANY_GENESIS_CONTRACT.requiredKeys,
-        packet: p,
-        extraRules: GENESIS_PROMPT_RULES,
-      });
-
-      let output = await callResearchAgent<Record<string, any>>({
-        sql, ctx, stageKey: "company_genesis", taskKey,
-        taskType: "company_genesis", agentName: "asset-analyst", modelTier: "mid",
-        packet, promptFactory,
+        modelTier: "mid",
+        packet: repairPacket,
+        promptFactory,
         outputFormat: COMPANY_GENESIS_CONTRACT,
       });
-      const allowedClaimRows = await sql`
-        SELECT id FROM evidence_claims
-        WHERE research_run_id = ${ctx.runId} AND review_status = 'accepted'
-      `;
-      const citationValidation = validateArtifactCitationIds(
-        output,
-        allowedClaimRows.map((row) => String(row.id))
-      );
-      if (!citationValidation.valid) {
-        const repairPacket = {
-          ...packet,
-          draft_requiring_citation_repair: output,
-          invalid_evidence_claim_ids: citationValidation.invalidIds,
-          allowed_evidence_claim_ids: allowedClaimRows.map((row) => String(row.id)),
-          repair_instruction:
-            "Return the complete four-artifact output again. Replace an invalid citation only when an allowed evidence claim directly supports the statement. Otherwise remove the unsupported statement, keeping at least one supported founder motivation. Never invent a UUID.",
-        };
-        output = await callResearchAgent<Record<string, any>>({
-          sql,
-          ctx,
-          stageKey: "company_genesis",
-          taskKey: `${taskKey}:citation-repair`,
-          taskType: "company_genesis_citation_repair",
-          agentName: "asset-analyst",
-          modelTier: "mid",
-          packet: repairPacket,
-          promptFactory,
-          outputFormat: COMPANY_GENESIS_CONTRACT,
-        });
-        // IDs still unknown after the repair are dropped and recorded on company_genesis, not thrown;
-        // an entry left with no supporting citation is removed rather than failing the artifact contract.
-        const dropped = dropInvalidCitationIds(output, allowedClaimRows.map((row) => String(row.id)), { pruneUncited: true });
-        if (dropped.length) {
-          console.warn(`company genesis dropped citations outside the accepted packet: ${dropped.join(", ")}`);
-          if (output.company_genesis && typeof output.company_genesis === "object") {
-            output.company_genesis.citation_adjustments = { dropped_citation_ids: dropped };
-          }
+      // IDs still unknown after the repair are dropped and recorded on company_genesis, not thrown;
+      // an entry left with no supporting citation is removed rather than failing the artifact contract.
+      const dropped = dropInvalidCitationIds(output, allowedClaimRows.map((row) => String(row.id)), { pruneUncited: true });
+      if (dropped.length) {
+        console.warn(`company genesis dropped citations outside the accepted packet: ${dropped.join(", ")}`);
+        if (output.company_genesis && typeof output.company_genesis === "object") {
+          output.company_genesis.citation_adjustments = { dropped_citation_ids: dropped };
         }
       }
-
-      // Persist generated sub-artifacts
-      const db = drizzle(sql, { schema });
-      const repo = createArtifactRepository(db);
-      const subKeys = COMPANY_GENESIS_CONTRACT.requiredKeys;
-      for (const k of subKeys) {
-        if (output[k]) {
-          await repo.upsertArtifact({
-            research_run_id: ctx.runId,
-            asset_id: ctx.assetId,
-            profile_id: ctx.profileId || undefined,
-            artifact_type: k,
-            scope_key: `${ctx.assetSlug}-${k.replace(/_/g, "-")}`,
-            status: "validated",
-            content_json: output[k],
-            schema_version: "3.0.0",
-            validator_version: "1.0.0",
-            prompt_version: "current",
-            created_by: "system-research-os",
-          });
-        }
-      }
-
-      return output;
-    } finally {
-      await sql.end();
     }
+
+    // Persist generated sub-artifacts
+    const db = pipelineDb();
+    const repo = createArtifactRepository(db);
+    const subKeys = COMPANY_GENESIS_CONTRACT.requiredKeys;
+    for (const k of subKeys) {
+      if (output[k]) {
+        await repo.upsertArtifact({
+          research_run_id: ctx.runId,
+          asset_id: ctx.assetId,
+          profile_id: ctx.profileId || undefined,
+          artifact_type: k,
+          scope_key: `${ctx.assetSlug}-${k.replace(/_/g, "-")}`,
+          status: "validated",
+          content_json: output[k],
+          schema_version: "3.0.0",
+          validator_version: "1.0.0",
+          prompt_version: "current",
+          created_by: "system-research-os",
+        });
+      }
+    }
+
+    return output;
   },
 };

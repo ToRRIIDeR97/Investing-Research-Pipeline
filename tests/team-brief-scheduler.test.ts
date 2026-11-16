@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { teamBriefScheduler } from "../src/lib/research/team";
+import { BRIEF_FREE_STAGES, STAGE_OWNERS } from "../src/lib/research/team-plan";
 
 const ctx = {} as any;
 const deferred = () => {
@@ -46,6 +47,20 @@ test("a brief call that finished early (discovery not done yet) is started again
   brief.resolve();
   await specialists;
   assert.equal(startedAt.length, 3);
+});
+
+test("backtest stages launch while the briefs are unsettled; a briefed analysis stage still waits", async () => {
+  const brief = deferred();
+  const briefs = teamBriefScheduler(() => brief.promise);
+  for (const stage of ["indicator_design", "strategy_design", "backtest_execution", "backtest_review"]) {
+    assert.equal(await settled(briefs.before(ctx, [stage])), true, `${stage} does not wait for the briefs`);
+  }
+  const analysis = briefs.before(ctx, ["company_genesis", "strategy_design"]);
+  assert.equal(await settled(analysis), false, "a batch with an analysis stage of a briefed role waits");
+  brief.resolve();
+  await analysis;
+  assert.deepEqual([...BRIEF_FREE_STAGES].sort(), ["backtest_execution", "backtest_review", "indicator_design", "strategy_design"]);
+  assert.equal(STAGE_OWNERS.indicator_design, "business", "ownership is unchanged; only the brief wait is lifted");
 });
 
 test("a brief failure stops the run before a briefed stage, and drain waits for calls in flight", async () => {

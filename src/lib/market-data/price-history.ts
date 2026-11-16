@@ -8,7 +8,7 @@
  */
 
 import postgres from "postgres";
-import { drizzle } from "drizzle-orm/postgres-js";
+import { pipelineDb } from "@/db/pipeline-sql";
 import type { PriceBar } from "./provider";
 import { createMarketDataService } from "./service";
 import { createYahooMarketDataProvider } from "./providers/yahoo";
@@ -275,9 +275,8 @@ export type PriceHistorySync = {
 export async function syncAssetPriceHistory(sql: Sql,
   asset: { assetId: string; assetName: string; symbol: string; cutoffAt: Date | null },
   options: { fetchImpl?: typeof fetch; now?: Date; years?: number } = {}): Promise<PriceHistorySync> {
-  // The Drizzle driver rewrites its client's date parsers and serializers, so the service gets its
-  // own connection and the caller's client is left as it was. Raw queries here pass ISO strings.
-  let serviceClient: Sql | null = null;
+  // The Drizzle driver rewrites its client's date parsers and serializers, so the service uses the
+  // drizzle pool and the caller's client is left as it was. Raw queries here pass ISO strings.
   const symbol = asset.symbol.toUpperCase();
   const summary: PriceHistorySync = { status: "failed", provider: PRIMARY_PRICE_PROVIDER, provider_symbol: symbol };
   try {
@@ -289,8 +288,7 @@ export async function syncAssetPriceHistory(sql: Sql,
     summary.window = { start: start.toISOString(), end: end.toISOString() };
     const instrumentId = await ensureInstrument(sql, asset.assetId, asset.assetName, symbol);
     summary.instrument_id = instrumentId;
-    serviceClient = postgres(process.env.DATABASE_URL!, { max: 1 });
-    const service = createMarketDataService({ db: drizzle(serviceClient) as any, defaultProvider: createYahooMarketDataProvider(fetchImpl), providerName: PRIMARY_PRICE_PROVIDER });
+    const service = createMarketDataService({ db: pipelineDb() as any, defaultProvider: createYahooMarketDataProvider(fetchImpl), providerName: PRIMARY_PRICE_PROVIDER });
     const history = await service.syncDailyHistory(instrumentId, symbol, start, end, (bars) => normalizeDailyBars(bars, now));
     summary.fetched_from = history.fetchedFrom?.toISOString() ?? null;
     summary.stored_bars = history.storedBars;
@@ -309,8 +307,6 @@ export async function syncAssetPriceHistory(sql: Sql,
     summary.status = "synced";
   } catch (error) {
     summary.error = error instanceof Error ? error.message : String(error);
-  } finally {
-    await serviceClient?.end();
   }
   return summary;
 }

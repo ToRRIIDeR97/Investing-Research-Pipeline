@@ -1,5 +1,5 @@
+import { pipelineSql } from "@/db/pipeline-sql";
 import {NextRequest} from 'next/server';
-import postgres from 'postgres';
 import {z} from 'zod';
 import {ApiError,handleApiError,successResponse} from '@/lib/api/errors';
 import {callResearchAgent,exactJsonPrompt,loadRunContext} from '@/lib/research/run-context';
@@ -9,10 +9,10 @@ import {z as v4} from 'zod/v4';
 const responseContract=outputContract({answer:v4.string().min(1),evidence_ids:v4.array(v4.string()),proposals:v4.array(v4.object({title:v4.string(),rationale:v4.string(),research_question:v4.string()}))});
 const enabled=()=>process.env.RUN_PAID_RESEARCH==='1'||process.env.RESEARCH_MODEL_PROVIDER==='mock';
 export async function GET(_:NextRequest,{params}:{params:Promise<{id:string}>}){
- const sql=postgres(process.env.DATABASE_URL!);try{const {id}=await params;z.string().guid().parse(id);const [row]=await sql`SELECT content_json FROM research_artifacts WHERE research_run_id=${id} AND artifact_type='research_chat' ORDER BY artifact_version DESC LIMIT 1`;return successResponse({messages:row?.content_json?.messages??[],enabled:enabled()});}catch(e){return handleApiError(e);}finally{await sql.end();}
+ const sql=pipelineSql();try{const {id}=await params;z.string().guid().parse(id);const [row]=await sql`SELECT content_json FROM research_artifacts WHERE research_run_id=${id} AND artifact_type='research_chat' ORDER BY artifact_version DESC LIMIT 1`;return successResponse({messages:row?.content_json?.messages??[],enabled:enabled()});}catch(e){return handleApiError(e);}
 }
 export async function POST(request:NextRequest,{params}:{params:Promise<{id:string}>}){
- const sql=postgres(process.env.DATABASE_URL!);try{
+ const sql=pipelineSql();try{
    // Compared with the Host header, as src/proxy.ts does: NextURL rewrites 127.0.0.1 to localhost,
    // so nextUrl.origin refused the app's own http://127.0.0.1 origin.
    const origin=request.headers.get('origin');
@@ -28,5 +28,5 @@ export async function POST(request:NextRequest,{params}:{params:Promise<{id:stri
    if((current?.artifact_version??0)!==(prior?.artifact_version??0))throw new ApiError('Another answer was saved. Refresh the conversation before continuing.',409);
    const next=[...messages,{role:'user',content:message},{role:'assistant',content:output.answer,evidence_ids:output.evidence_ids,proposals:output.proposals}];
    await saveReportArtifact(sql,ctx,'research_chat',`${ctx.assetSlug}-chat`,{messages:next,report_hash:document.content_hash},Number(prior?.artifact_version??0));return successResponse({messages:next,enabled:true});
- }catch(e){return handleApiError(e);}finally{await sql.end();}
+ }catch(e){return handleApiError(e);}
 }

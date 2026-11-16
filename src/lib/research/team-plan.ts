@@ -36,6 +36,16 @@ export const STAGE_OWNERS: Record<string, TeamRole> = {
   strategy_design: "business", backtest_execution: "business", backtest_review: "business",
   decision_synthesis: "report", ai_reviewer: "report", export: "report",
 };
+/**
+ * Owned stages whose handlers never read a specialist brief: the deterministic, price-only backtests. They start
+ * without waiting for the briefs; every other stage of a briefed role waits for them.
+ */
+export const BRIEF_FREE_STAGES: ReadonlySet<string> = new Set(["indicator_design", "strategy_design", "backtest_execution", "backtest_review"]);
+/** True when a stage must wait for the specialist briefs before it runs. */
+export function stageNeedsBriefs(stageKey: string): boolean {
+  const role = STAGE_OWNERS[stageKey];
+  return role !== undefined && BRIEF_ROLES.includes(role) && !BRIEF_FREE_STAGES.has(stageKey);
+}
 
 // Dependencies describe actual inputs. Stage order remains the display order.
 export const STAGE_DEPENDENCIES: Record<string, string[]> = {

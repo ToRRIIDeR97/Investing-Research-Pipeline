@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { pipelineSql } from "@/db/pipeline-sql";
 import { advanceStage, startRun, startReadyStages, failRun, getRunProgress } from "@/lib/workflow/orchestrator";
 import type { ValidationResult } from "@/lib/workflow/validators";
 import { ResearchAgentRunError } from "@/lib/agent-harness/errors";
@@ -122,9 +123,12 @@ async function retryTransientFailures(sql: Sql, runId: string, failures: StageFa
 /** Execute handlers; the workflow orchestrator owns every stage transition. */
 export async function runResearchPipeline(runId: string, options: { signal?: AbortSignal } = {}): Promise<SystemPipelineResult> {
   const { signal } = options;
-  const sql = postgres(process.env.DATABASE_URL!);
+  // The run lock is a session-level advisory lock, so it lives on a connection of its own for the whole job;
+  // every other query uses the shared pool.
+  const lockClient = postgres(process.env.DATABASE_URL!, { max: 1 });
+  const sql = pipelineSql();
   const notes: string[] = [];
-  const lease = await sql.reserve();
+  const lease = await lockClient.reserve();
   let locked = false;
   let interrupted = false;
   try {
@@ -259,7 +263,7 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
     if (locked) await lease`SELECT pg_advisory_unlock(hashtextextended(${`research-run:${runId}`}, 0))`;
     lease.release();
     // Bounded: a stalled connection must not keep the worker from closing the job (seen in run dd02bb41).
-    await sql.end({ timeout: 5 });
+    await lockClient.end({ timeout: 5 });
   }
 }
 

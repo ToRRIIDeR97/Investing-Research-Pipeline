@@ -2,7 +2,7 @@ import { z } from "zod/v4";
 import { callResearchAgent, exactJsonPrompt, type ResearchRunContext, type Sql } from "./run-context";
 import { outputContract, type ReportOutline } from "./reporting/contracts";
 import { loadReportInputs, saveReportArtifact } from "./reporting/store";
-import { TEAM_ROLES, BRIEF_ROLES, GAP_OWNER_STAGES, STAGE_DEPENDENCIES, STAGE_OWNERS, dependentStages } from "./team-plan";
+import { TEAM_ROLES, BRIEF_ROLES, GAP_OWNER_STAGES, STAGE_DEPENDENCIES, STAGE_OWNERS, dependentStages, stageNeedsBriefs } from "./team-plan";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { SOURCE_ROLES } from "./sources/roles";
 import { getStageOutputContract } from "./stage-contracts";
@@ -109,8 +109,9 @@ export async function prepareResearchTeam(sql: Sql, ctx: ResearchRunContext) {
 
 /**
  * Only briefed roles read the briefs, so ingestion and evidence extraction (data-owned) run while they
- * are written; the first stage whose owner is briefed waits, and a brief failure surfaces then or at
- * the next pass. drain() waits for brief calls still in flight, so the run lock outlives them.
+ * are written, and so do the price-only backtests (`BRIEF_FREE_STAGES`); the first other stage whose owner
+ * is briefed waits, and a brief failure surfaces then or at the next pass. drain() waits for brief calls
+ * still in flight, so the run lock outlives them.
  */
 export function teamBriefScheduler(prepare: (ctx: ResearchRunContext) => Promise<void>) {
   type Pending = { settled: boolean; failure?: { error: unknown }; done: Promise<void> };
@@ -130,7 +131,7 @@ export function teamBriefScheduler(prepare: (ctx: ResearchRunContext) => Promise
           .finally(() => { entry.settled = true; });
         pending = entry;
       }
-      if (stages.some(key => { const role = STAGE_OWNERS[key]; return role !== undefined && BRIEF_ROLES.includes(role); })) await collect();
+      if (stages.some(stageNeedsBriefs)) await collect();
     },
     async drain() {
       await pending?.done;

@@ -1,4 +1,3 @@
-import postgres from "postgres";
 import { pipelineSql } from "@/db/pipeline-sql";
 import { acceptCurrentArtifacts, getReportState, loadReportInputs } from "@/lib/research/reporting/store";
 import { assertReportApproval } from "@/lib/research/reporting/report";
@@ -63,74 +62,70 @@ export function isApprovedHumanDecision(status: unknown) {
  * §25.2: Skipped stages must be explicitly marked skipped with a reason.
  */
 export async function createStagesForRun(runId: string): Promise<void> {
-  const sql = postgres(process.env.DATABASE_URL!);
+  const sql = pipelineSql();
 
-  try {
-    const runs = await sql`
-      SELECT id, run_type, pipeline_version FROM research_runs WHERE id = ${runId}
+  const runs = await sql`
+    SELECT id, run_type, pipeline_version FROM research_runs WHERE id = ${runId}
+  `;
+  if (runs.length === 0) {
+    throw new Error(`Research run not found: ${runId}`);
+  }
+
+  const runType = runs[0].run_type;
+  const { applicable, skipped } = getAllStagesForRun(runType);
+
+  // Insert applicable stages as pending
+  for (const stage of applicable) {
+    await sql`
+      INSERT INTO research_stages (
+        research_run_id, stage_key, stage_order, status,
+        allowed_model_tiers, max_retries, budget_limit_usd,
+        completion_criteria_json, validator_config_json
+      ) VALUES (
+        ${runId},
+        ${stage.key},
+        ${stage.order},
+        'pending',
+        ${stage.allowedModelTiers},
+        ${stage.maxRetries},
+        ${stage.maxBudgetUsd?.toString() || null},
+        ${sql.json({
+          requiredOutputs: stage.requiredOutputs,
+          requiresHumanApproval: stage.requiresHumanApproval,
+          entryCriteria: stage.entryCriteria,
+          validationRules: stage.validationRules,
+          failureState: stage.failureState,
+        })},
+        ${sql.json({})}
+      )
+      ON CONFLICT (research_run_id, stage_key) DO NOTHING
     `;
-    if (runs.length === 0) {
-      throw new Error(`Research run not found: ${runId}`);
-    }
+  }
 
-    const runType = runs[0].run_type;
-    const { applicable, skipped } = getAllStagesForRun(runType);
-
-    // Insert applicable stages as pending
-    for (const stage of applicable) {
-      await sql`
-        INSERT INTO research_stages (
-          research_run_id, stage_key, stage_order, status,
-          allowed_model_tiers, max_retries, budget_limit_usd,
-          completion_criteria_json, validator_config_json
-        ) VALUES (
-          ${runId},
-          ${stage.key},
-          ${stage.order},
-          'pending',
-          ${stage.allowedModelTiers},
-          ${stage.maxRetries},
-          ${stage.maxBudgetUsd?.toString() || null},
-          ${sql.json({
-            requiredOutputs: stage.requiredOutputs,
-            requiresHumanApproval: stage.requiresHumanApproval,
-            entryCriteria: stage.entryCriteria,
-            validationRules: stage.validationRules,
-            failureState: stage.failureState,
-          })},
-          ${sql.json({})}
-        )
-        ON CONFLICT (research_run_id, stage_key) DO NOTHING
-      `;
-    }
-
-    // Insert skipped stages with explicit reason — §25.2
-    for (const stage of skipped) {
-      await sql`
-        INSERT INTO research_stages (
-          research_run_id, stage_key, stage_order, status,
-          allowed_model_tiers, max_retries,
-          completion_criteria_json, validator_config_json,
-          failure_reason
-        ) VALUES (
-          ${runId},
-          ${stage.key},
-          ${stage.order},
-          'skipped',
-          ${stage.allowedModelTiers},
-          ${stage.maxRetries},
-          ${sql.json({
-            requiredOutputs: stage.requiredOutputs,
-            skipReason: stage.skipReason || `Skipped for run type: ${runType}`,
-          })},
-          ${sql.json({})},
-          ${stage.skipReason || `Skipped for run type: ${runType}`}
-        )
-        ON CONFLICT (research_run_id, stage_key) DO NOTHING
-      `;
-    }
-  } finally {
-    await sql.end();
+  // Insert skipped stages with explicit reason — §25.2
+  for (const stage of skipped) {
+    await sql`
+      INSERT INTO research_stages (
+        research_run_id, stage_key, stage_order, status,
+        allowed_model_tiers, max_retries,
+        completion_criteria_json, validator_config_json,
+        failure_reason
+      ) VALUES (
+        ${runId},
+        ${stage.key},
+        ${stage.order},
+        'skipped',
+        ${stage.allowedModelTiers},
+        ${stage.maxRetries},
+        ${sql.json({
+          requiredOutputs: stage.requiredOutputs,
+          skipReason: stage.skipReason || `Skipped for run type: ${runType}`,
+        })},
+        ${sql.json({})},
+        ${stage.skipReason || `Skipped for run type: ${runType}`}
+      )
+      ON CONFLICT (research_run_id, stage_key) DO NOTHING
+    `;
   }
 }
 
@@ -138,50 +133,46 @@ export async function createStagesForRun(runId: string): Promise<void> {
  * Set a run to 'running' status and start the first applicable stage.
  */
 export async function startRun(runId: string): Promise<void> {
-  const sql = postgres(process.env.DATABASE_URL!);
+  const sql = pipelineSql();
 
-  try {
-    const runs = await sql`
-      SELECT id, status FROM research_runs WHERE id = ${runId}
-    `;
-    if (runs.length === 0) {
-      throw new Error(`Research run not found: ${runId}`);
-    }
+  const runs = await sql`
+    SELECT id, status FROM research_runs WHERE id = ${runId}
+  `;
+  if (runs.length === 0) {
+    throw new Error(`Research run not found: ${runId}`);
+  }
 
-    if (runs[0].status !== "pending") {
-      throw new Error(
-        `Run cannot be started — current status is "${runs[0].status}"`
-      );
-    }
+  if (runs[0].status !== "pending") {
+    throw new Error(
+      `Run cannot be started — current status is "${runs[0].status}"`
+    );
+  }
 
+  await sql`
+    UPDATE research_runs
+    SET status = 'running',
+        started_at = NOW(),
+        updated_at = NOW()
+    WHERE id = ${runId}
+  `;
+
+  // Start the first pending stage
+  const firstStage = await sql`
+    SELECT id, stage_key FROM research_stages
+    WHERE research_run_id = ${runId}
+      AND status = 'pending'
+    ORDER BY stage_order ASC
+    LIMIT 1
+  `;
+
+  if (firstStage.length > 0) {
     await sql`
-      UPDATE research_runs
+      UPDATE research_stages
       SET status = 'running',
           started_at = NOW(),
           updated_at = NOW()
-      WHERE id = ${runId}
+      WHERE id = ${firstStage[0].id}
     `;
-
-    // Start the first pending stage
-    const firstStage = await sql`
-      SELECT id, stage_key FROM research_stages
-      WHERE research_run_id = ${runId}
-        AND status = 'pending'
-      ORDER BY stage_order ASC
-      LIMIT 1
-    `;
-
-    if (firstStage.length > 0) {
-      await sql`
-        UPDATE research_stages
-        SET status = 'running',
-            started_at = NOW(),
-            updated_at = NOW()
-        WHERE id = ${firstStage[0].id}
-      `;
-    }
-  } finally {
-    await sql.end();
   }
 }
 
@@ -406,69 +397,65 @@ export async function approveResearchPlan(
   if (years !== undefined && !(Number.isInteger(years) && years >= 3 && years <= 10)) {
     return { success: false, error: "forecast_years must be a whole number from 3 to 10" };
   }
-  const sql = postgres(process.env.DATABASE_URL!);
+  const sql = pipelineSql();
 
-  try {
-    const validation: ValidationResult = {
-      valid: true,
-      errors: [],
-      warnings: [],
-      checkedAt: new Date().toISOString(),
-    };
-    const transition = await sql.begin(async (tx) => {
-      const stages = await tx`
-        SELECT id, status FROM research_stages
-        WHERE research_run_id = ${runId} AND stage_key = 'research_plan'
-        LIMIT 1 FOR UPDATE
-      `;
-      if (!stages[0]) return { success: false as const, error: "Research plan stage not found" } as PlanApproval;
-      if (stages[0].status !== "waiting_for_human") {
-        // A repeated plain approval is idempotent; edits sent after approval would be silently dropped, so they are refused.
-        if (stages[0].status === "completed") return hasEdits
-          ? { success: false as const, alreadyApproved: true, error: "The research plan was already approved; edits can no longer be applied." }
-          : { success: true as const };
-        return { success: false as const, error: `Research plan is not waiting for approval (status: ${stages[0].status})` };
-      }
-      const [plan] = await tx`
-        SELECT id FROM research_artifacts WHERE research_run_id = ${runId}
-          AND artifact_type = 'research_plan' AND status IN ('validated', 'accepted') LIMIT 1
-      `;
-      if (!plan) return { success: false as const, error: "A persisted research plan is required before approval" };
-      // The reviewer's horizon is written first, so the plan version applyPlanGateEdits rebuilds carries it.
-      if (years !== undefined) await tx`UPDATE research_runs SET forecast_years = ${years}, updated_at = NOW() WHERE id = ${runId}`;
-      // Invalid edits throw, which rolls back the horizon write too.
-      const framing = await applyPlanGateEdits(tx as unknown as Sql, runId, edits).catch((error) => {
-        throw new PlanEditError(`Invalid plan edits: ${error instanceof Error ? error.message : String(error)}`);
-      });
-      await acceptCurrentArtifacts(tx as unknown as Sql, runId, ["research_plan"]);
-      await tx`
-        UPDATE research_stages
-        SET status = 'completed', completed_at = NOW(),
-            validation_result_json = ${tx.json({ ...validation, approvedBy, approvalType: "research_plan" })},
-            updated_at = NOW()
-        WHERE id = ${stages[0].id}
-      `;
-      await tx`
-        UPDATE research_runs
-        SET status = 'running',
-            metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${tx.json({
-              research_plan_approved_by: approvedBy,
-              research_plan_approved_at: new Date().toISOString(),
-              // What the human approved; every later analysis packet carries it (run-context researchFraming).
-              ...(framing ? { research_framing: framing as any } : {}),
-            })},
-            updated_at = NOW()
-        WHERE id = ${runId}
-      `;
-      return { success: true as const } as PlanApproval;
-    }).catch((error) => {
-      if (error instanceof PlanEditError) return { success: false as const, error: error.message } as PlanApproval;
-      throw error;
+  const validation: ValidationResult = {
+    valid: true,
+    errors: [],
+    warnings: [],
+    checkedAt: new Date().toISOString(),
+  };
+  const transition = await sql.begin(async (tx) => {
+    const stages = await tx`
+      SELECT id, status FROM research_stages
+      WHERE research_run_id = ${runId} AND stage_key = 'research_plan'
+      LIMIT 1 FOR UPDATE
+    `;
+    if (!stages[0]) return { success: false as const, error: "Research plan stage not found" } as PlanApproval;
+    if (stages[0].status !== "waiting_for_human") {
+      // A repeated plain approval is idempotent; edits sent after approval would be silently dropped, so they are refused.
+      if (stages[0].status === "completed") return hasEdits
+        ? { success: false as const, alreadyApproved: true, error: "The research plan was already approved; edits can no longer be applied." }
+        : { success: true as const };
+      return { success: false as const, error: `Research plan is not waiting for approval (status: ${stages[0].status})` };
+    }
+    const [plan] = await tx`
+      SELECT id FROM research_artifacts WHERE research_run_id = ${runId}
+        AND artifact_type = 'research_plan' AND status IN ('validated', 'accepted') LIMIT 1
+    `;
+    if (!plan) return { success: false as const, error: "A persisted research plan is required before approval" };
+    // The reviewer's horizon is written first, so the plan version applyPlanGateEdits rebuilds carries it.
+    if (years !== undefined) await tx`UPDATE research_runs SET forecast_years = ${years}, updated_at = NOW() WHERE id = ${runId}`;
+    // Invalid edits throw, which rolls back the horizon write too.
+    const framing = await applyPlanGateEdits(tx as unknown as Sql, runId, edits).catch((error) => {
+      throw new PlanEditError(`Invalid plan edits: ${error instanceof Error ? error.message : String(error)}`);
     });
-    if (!transition.success) return transition;
-  } finally {
-    await sql.end();
-  }
+    await acceptCurrentArtifacts(tx as unknown as Sql, runId, ["research_plan"]);
+    await tx`
+      UPDATE research_stages
+      SET status = 'completed', completed_at = NOW(),
+          validation_result_json = ${tx.json({ ...validation, approvedBy, approvalType: "research_plan" })},
+          updated_at = NOW()
+      WHERE id = ${stages[0].id}
+    `;
+    await tx`
+      UPDATE research_runs
+      SET status = 'running',
+          metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${tx.json({
+            research_plan_approved_by: approvedBy,
+            research_plan_approved_at: new Date().toISOString(),
+            // What the human approved; every later analysis packet carries it (run-context researchFraming).
+            ...(framing ? { research_framing: framing as any } : {}),
+          })},
+          updated_at = NOW()
+      WHERE id = ${runId}
+    `;
+    return { success: true as const } as PlanApproval;
+  }).catch((error) => {
+    if (error instanceof PlanEditError) return { success: false as const, error: error.message } as PlanApproval;
+    throw error;
+  });
+  if (!transition.success) return transition;
 
   const nextStage = await startNextStage(runId);
   return { success: true, nextStage };
@@ -481,66 +468,62 @@ export async function approveHumanReview(
   runId: string,
   reviewedBy: string = "user"
 ): Promise<{ success: boolean; nextStage?: string; error?: string }> {
-  const sql = postgres(process.env.DATABASE_URL!);
+  const sql = pipelineSql();
 
-  try {
-    const validation: ValidationResult = {
-      valid: true,
-      errors: [],
-      warnings: [],
-      checkedAt: new Date().toISOString(),
-    };
-    const transition = await sql.begin(async (tx) => {
-      await tx`SELECT id FROM research_runs WHERE id = ${runId} FOR UPDATE`;
-      const stages = await tx`
-        SELECT id, status FROM research_stages
-        WHERE research_run_id = ${runId} AND stage_key = 'human_review'
-        LIMIT 1 FOR UPDATE
-      `;
-      if (!stages[0]) return { success: false as const, error: "Human review stage not found" };
-      if (stages[0].status !== "waiting_for_human") {
-        return { success: false as const, error: `Human review is not waiting for approval (status: ${stages[0].status})` };
-      }
-      const decisions = await tx`
-        SELECT id, status FROM review_decisions
-        WHERE research_run_id = ${runId}
-        ORDER BY reviewed_at DESC LIMIT 1
-      `;
-      if (!decisions[0] || !isApprovedHumanDecision(decisions[0].status)) {
-        return { success: false as const, error: "A persisted approved human review decision is required before approving the human-review stage" };
-      }
-      const report = await getReportState(tx as unknown as Sql, runId);
-      if (report.required) {
-        if (!report.document || report.approval?.decision_id !== decisions[0].id) return { success: false as const, error: "Approval of the current report version is required" };
-        const inputs = await loadReportInputs(tx as unknown as Sql, runId, report.cutoff);
-        try { assertReportApproval(report.document, report.approval, inputs.input_hash); }
-        catch (error) { return { success: false as const, error: String(error) }; }
-      }
-      // The approved report snapshot and every input it was built from become accepted.
-      await acceptCurrentArtifacts(tx as unknown as Sql, runId);
-      await tx`
-        UPDATE research_stages
-        SET status = 'completed', completed_at = NOW(),
-            validation_result_json = ${tx.json({ ...validation, reviewedBy, reviewDecisionId: decisions[0].id, approvalType: "human_review" })},
-            updated_at = NOW()
-        WHERE id = ${stages[0].id}
-      `;
-      await tx`
-        UPDATE research_runs
-        SET status = 'running',
-            metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${tx.json({
-              human_review_approved_by: reviewedBy,
-              human_review_approved_at: new Date().toISOString(),
-            })},
-            updated_at = NOW()
-        WHERE id = ${runId}
-      `;
-      return { success: true as const };
-    });
-    if (!transition.success) return transition;
-  } finally {
-    await sql.end();
-  }
+  const validation: ValidationResult = {
+    valid: true,
+    errors: [],
+    warnings: [],
+    checkedAt: new Date().toISOString(),
+  };
+  const transition = await sql.begin(async (tx) => {
+    await tx`SELECT id FROM research_runs WHERE id = ${runId} FOR UPDATE`;
+    const stages = await tx`
+      SELECT id, status FROM research_stages
+      WHERE research_run_id = ${runId} AND stage_key = 'human_review'
+      LIMIT 1 FOR UPDATE
+    `;
+    if (!stages[0]) return { success: false as const, error: "Human review stage not found" };
+    if (stages[0].status !== "waiting_for_human") {
+      return { success: false as const, error: `Human review is not waiting for approval (status: ${stages[0].status})` };
+    }
+    const decisions = await tx`
+      SELECT id, status FROM review_decisions
+      WHERE research_run_id = ${runId}
+      ORDER BY reviewed_at DESC LIMIT 1
+    `;
+    if (!decisions[0] || !isApprovedHumanDecision(decisions[0].status)) {
+      return { success: false as const, error: "A persisted approved human review decision is required before approving the human-review stage" };
+    }
+    const report = await getReportState(tx as unknown as Sql, runId);
+    if (report.required) {
+      if (!report.document || report.approval?.decision_id !== decisions[0].id) return { success: false as const, error: "Approval of the current report version is required" };
+      const inputs = await loadReportInputs(tx as unknown as Sql, runId, report.cutoff);
+      try { assertReportApproval(report.document, report.approval, inputs.input_hash); }
+      catch (error) { return { success: false as const, error: String(error) }; }
+    }
+    // The approved report snapshot and every input it was built from become accepted.
+    await acceptCurrentArtifacts(tx as unknown as Sql, runId);
+    await tx`
+      UPDATE research_stages
+      SET status = 'completed', completed_at = NOW(),
+          validation_result_json = ${tx.json({ ...validation, reviewedBy, reviewDecisionId: decisions[0].id, approvalType: "human_review" })},
+          updated_at = NOW()
+      WHERE id = ${stages[0].id}
+    `;
+    await tx`
+      UPDATE research_runs
+      SET status = 'running',
+          metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${tx.json({
+            human_review_approved_by: reviewedBy,
+            human_review_approved_at: new Date().toISOString(),
+          })},
+          updated_at = NOW()
+      WHERE id = ${runId}
+    `;
+    return { success: true as const };
+  });
+  if (!transition.success) return transition;
 
   const nextStage = await startNextStage(runId);
   return { success: true, nextStage };
@@ -559,40 +542,36 @@ export async function approveRequestReset(
   input: { decision: "rerun" | "skip"; actor: string }
 ): Promise<{ decision: "rerun" | "skip"; stages: string[]; request_ids: string[] }> {
   if (input.decision !== "rerun" && input.decision !== "skip") throw new RequestResetError(`Unknown request-reset decision: ${String(input.decision)}`);
-  const sql = postgres(process.env.DATABASE_URL!);
-  try {
-    return await sql.begin(async (tx) => {
-      const [run] = await tx`SELECT status, metadata_json FROM research_runs WHERE id = ${runId} FOR UPDATE`;
-      const reset = run?.metadata_json?.request_reset as { stages: string[]; request_ids: string[] } | undefined;
-      if (run?.status !== "waiting_for_human" || !reset) throw new RequestResetError("The run is not paused on a request reset");
-      const gates = await tx`SELECT stage_key FROM research_stages WHERE research_run_id = ${runId}
-        AND stage_key IN ('research_plan', 'human_review') AND status = 'waiting_for_human'`;
-      if (gates.length) throw new RequestResetError(`The run is waiting at the ${gates[0].stage_key} gate`);
-      const batch = await getTeamRequests(tx as unknown as Sql, runId);
-      if (!batch) throw new RequestResetError("The run has no team requests");
-      if (input.decision === "rerun") {
-        await rerunRequestStages(tx as unknown as Sql, runId, batch, reset,
-          `Superseded: its owning stage was reopened by a re-run approved for team request round ${batch.round}.`);
-      } else {
-        await skipRequestRerun(tx as unknown as Sql, runId, batch, reset.request_ids);
-        await tx`UPDATE research_stages SET status = 'running', updated_at = NOW()
-          WHERE research_run_id = ${runId} AND stage_key = 'ai_reviewer' AND status = 'waiting_for_human'`;
-      }
-      await tx`
-        UPDATE research_runs
-        SET status = 'running',
-            metadata_json = ((CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) - 'request_reset') || ${tx.json({
-              request_reset_decision: { decision: input.decision, actor: input.actor, stages: reset.stages, request_ids: reset.request_ids,
-                decided_at: new Date().toISOString() },
-            })},
-            updated_at = NOW()
-        WHERE id = ${runId}
-      `;
-      return { decision: input.decision, stages: reset.stages, request_ids: reset.request_ids };
-    });
-  } finally {
-    await sql.end();
-  }
+  const sql = pipelineSql();
+  return await sql.begin(async (tx) => {
+    const [run] = await tx`SELECT status, metadata_json FROM research_runs WHERE id = ${runId} FOR UPDATE`;
+    const reset = run?.metadata_json?.request_reset as { stages: string[]; request_ids: string[] } | undefined;
+    if (run?.status !== "waiting_for_human" || !reset) throw new RequestResetError("The run is not paused on a request reset");
+    const gates = await tx`SELECT stage_key FROM research_stages WHERE research_run_id = ${runId}
+      AND stage_key IN ('research_plan', 'human_review') AND status = 'waiting_for_human'`;
+    if (gates.length) throw new RequestResetError(`The run is waiting at the ${gates[0].stage_key} gate`);
+    const batch = await getTeamRequests(tx as unknown as Sql, runId);
+    if (!batch) throw new RequestResetError("The run has no team requests");
+    if (input.decision === "rerun") {
+      await rerunRequestStages(tx as unknown as Sql, runId, batch, reset,
+        `Superseded: its owning stage was reopened by a re-run approved for team request round ${batch.round}.`);
+    } else {
+      await skipRequestRerun(tx as unknown as Sql, runId, batch, reset.request_ids);
+      await tx`UPDATE research_stages SET status = 'running', updated_at = NOW()
+        WHERE research_run_id = ${runId} AND stage_key = 'ai_reviewer' AND status = 'waiting_for_human'`;
+    }
+    await tx`
+      UPDATE research_runs
+      SET status = 'running',
+          metadata_json = ((CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) - 'request_reset') || ${tx.json({
+            request_reset_decision: { decision: input.decision, actor: input.actor, stages: reset.stages, request_ids: reset.request_ids,
+              decided_at: new Date().toISOString() },
+          })},
+          updated_at = NOW()
+      WHERE id = ${runId}
+    `;
+    return { decision: input.decision, stages: reset.stages, request_ids: reset.request_ids };
+  });
 }
 
 export interface PlanGateEdits { framing?: unknown; archetypes?: unknown; overlays?: unknown; forecastYears?: number }
@@ -640,38 +619,34 @@ export async function requestResearchPlanChanges(
   notes: string,
   requestedBy = "user"
 ): Promise<{ success: boolean; error?: string }> {
-  const sql = postgres(process.env.DATABASE_URL!);
-  try {
-    return await sql.begin(async (tx) => {
-      const stages = await tx`
-        SELECT id, status FROM research_stages
-        WHERE research_run_id = ${runId} AND stage_key = 'research_plan'
-        LIMIT 1 FOR UPDATE
-      `;
-      if (!stages[0]) return { success: false, error: "Research plan stage not found" };
-      if (stages[0].status !== "waiting_for_human") {
-        return { success: false, error: `Research plan is not waiting for changes (status: ${stages[0].status})` };
-      }
-      const trimmed = notes.trim().slice(0, 4000);
-      if (!trimmed) return { success: false, error: "Plan feedback is empty" };
-      const entry = { notes: trimmed, requested_by: requestedBy, requested_at: new Date().toISOString() };
-      await tx`
-        UPDATE research_runs
-        SET status = 'running',
-            metadata_json = jsonb_set((CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END),
-              '{research_plan_feedback}',
-              COALESCE(CASE WHEN jsonb_typeof(metadata_json->'research_plan_feedback') = 'array' THEN metadata_json->'research_plan_feedback' END, '[]'::jsonb)
-                || jsonb_build_array(${tx.json(entry)}::jsonb)),
-            updated_at = NOW()
-        WHERE id = ${runId}
-      `;
-      await tx`UPDATE research_stages SET status = 'pending', started_at = NULL, completed_at = NULL, validation_result_json = NULL,
-        failure_reason = NULL, updated_at = NOW() WHERE id = ${stages[0].id}`;
-      return { success: true };
-    });
-  } finally {
-    await sql.end();
-  }
+  const sql = pipelineSql();
+  return await sql.begin(async (tx) => {
+    const stages = await tx`
+      SELECT id, status FROM research_stages
+      WHERE research_run_id = ${runId} AND stage_key = 'research_plan'
+      LIMIT 1 FOR UPDATE
+    `;
+    if (!stages[0]) return { success: false, error: "Research plan stage not found" };
+    if (stages[0].status !== "waiting_for_human") {
+      return { success: false, error: `Research plan is not waiting for changes (status: ${stages[0].status})` };
+    }
+    const trimmed = notes.trim().slice(0, 4000);
+    if (!trimmed) return { success: false, error: "Plan feedback is empty" };
+    const entry = { notes: trimmed, requested_by: requestedBy, requested_at: new Date().toISOString() };
+    await tx`
+      UPDATE research_runs
+      SET status = 'running',
+          metadata_json = jsonb_set((CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END),
+            '{research_plan_feedback}',
+            COALESCE(CASE WHEN jsonb_typeof(metadata_json->'research_plan_feedback') = 'array' THEN metadata_json->'research_plan_feedback' END, '[]'::jsonb)
+              || jsonb_build_array(${tx.json(entry)}::jsonb)),
+          updated_at = NOW()
+      WHERE id = ${runId}
+    `;
+    await tx`UPDATE research_stages SET status = 'pending', started_at = NULL, completed_at = NULL, validation_result_json = NULL,
+      failure_reason = NULL, updated_at = NOW() WHERE id = ${stages[0].id}`;
+    return { success: true };
+  });
 }
 
 /**
@@ -819,78 +794,74 @@ export async function startReadyStages(runId: string): Promise<string[]> {
  * Get comprehensive progress for a research run.
  */
 export async function getRunProgress(runId: string): Promise<RunProgress> {
-  const sql = postgres(process.env.DATABASE_URL!);
+  const sql = pipelineSql();
 
-  try {
-    const runs = await sql`
-      SELECT status, actual_cost_usd FROM research_runs WHERE id = ${runId}
-    `;
-    if (runs.length === 0) {
-      throw new Error(`Research run not found: ${runId}`);
-    }
-
-    const stages = await sql`
-      SELECT
-        id, stage_key, stage_order, status,
-        validation_result_json
-      FROM research_stages
-      WHERE research_run_id = ${runId}
-      ORDER BY stage_order ASC
-    `;
-
-    const completedStages: string[] = [];
-    const pendingStages: string[] = [];
-    const failedStages: string[] = [];
-    const skippedStages: string[] = [];
-    const validationResults: Record<string, ValidationResult> = {};
-    let currentStage: string | null = null;
-    let currentStageOrder: number | null = null;
-
-    for (const stage of stages) {
-      const status = stage.status;
-
-      if (status === "completed") {
-        completedStages.push(stage.stage_key);
-      } else if (status === "skipped") {
-        skippedStages.push(stage.stage_key);
-        completedStages.push(stage.stage_key); // count as done for progress
-      } else if (status === "failed") {
-        failedStages.push(stage.stage_key);
-      } else if (status === "pending") {
-        pendingStages.push(stage.stage_key);
-      } else if (status === "running" || status === "waiting_for_human") {
-        currentStage = stage.stage_key;
-        currentStageOrder = stage.stage_order;
-      }
-
-      if (stage.validation_result_json) {
-        validationResults[stage.stage_key] =
-          stage.validation_result_json as unknown as ValidationResult;
-      }
-    }
-
-    const totalStages = stages.length;
-    const doneCount = completedStages.length;
-    const percentComplete =
-      totalStages > 0 ? Math.round((doneCount / totalStages) * 100) : 0;
-
-    return {
-      runId,
-      status: runs[0].status,
-      currentStage,
-      currentStageOrder,
-      completedStages,
-      pendingStages,
-      failedStages,
-      skippedStages,
-      totalStages,
-      percentComplete,
-      totalCostUsd: Number(runs[0].actual_cost_usd || 0),
-      validationResults,
-    };
-  } finally {
-    await sql.end();
+  const runs = await sql`
+    SELECT status, actual_cost_usd FROM research_runs WHERE id = ${runId}
+  `;
+  if (runs.length === 0) {
+    throw new Error(`Research run not found: ${runId}`);
   }
+
+  const stages = await sql`
+    SELECT
+      id, stage_key, stage_order, status,
+      validation_result_json
+    FROM research_stages
+    WHERE research_run_id = ${runId}
+    ORDER BY stage_order ASC
+  `;
+
+  const completedStages: string[] = [];
+  const pendingStages: string[] = [];
+  const failedStages: string[] = [];
+  const skippedStages: string[] = [];
+  const validationResults: Record<string, ValidationResult> = {};
+  let currentStage: string | null = null;
+  let currentStageOrder: number | null = null;
+
+  for (const stage of stages) {
+    const status = stage.status;
+
+    if (status === "completed") {
+      completedStages.push(stage.stage_key);
+    } else if (status === "skipped") {
+      skippedStages.push(stage.stage_key);
+      completedStages.push(stage.stage_key); // count as done for progress
+    } else if (status === "failed") {
+      failedStages.push(stage.stage_key);
+    } else if (status === "pending") {
+      pendingStages.push(stage.stage_key);
+    } else if (status === "running" || status === "waiting_for_human") {
+      currentStage = stage.stage_key;
+      currentStageOrder = stage.stage_order;
+    }
+
+    if (stage.validation_result_json) {
+      validationResults[stage.stage_key] =
+        stage.validation_result_json as unknown as ValidationResult;
+    }
+  }
+
+  const totalStages = stages.length;
+  const doneCount = completedStages.length;
+  const percentComplete =
+    totalStages > 0 ? Math.round((doneCount / totalStages) * 100) : 0;
+
+  return {
+    runId,
+    status: runs[0].status,
+    currentStage,
+    currentStageOrder,
+    completedStages,
+    pendingStages,
+    failedStages,
+    skippedStages,
+    totalStages,
+    percentComplete,
+    totalCostUsd: Number(runs[0].actual_cost_usd || 0),
+    validationResults,
+  };
 }
 
 /**
@@ -900,32 +871,28 @@ export async function pauseForHumanReview(
   runId: string,
   reason: string
 ): Promise<void> {
-  const sql = postgres(process.env.DATABASE_URL!);
+  const sql = pipelineSql();
 
-  try {
-    await sql.begin(async (tx) => {
-      await tx`
-        UPDATE research_runs
-        SET status = 'waiting_for_human',
-            metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${tx.json({
-              human_review_reason: reason,
-              human_review_requested_at: new Date().toISOString(),
-            })},
-            updated_at = NOW()
-        WHERE id = ${runId}
-      `;
+  await sql.begin(async (tx) => {
+    await tx`
+      UPDATE research_runs
+      SET status = 'waiting_for_human',
+          metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${tx.json({
+            human_review_reason: reason,
+            human_review_requested_at: new Date().toISOString(),
+          })},
+          updated_at = NOW()
+      WHERE id = ${runId}
+    `;
 
-      await tx`
-        UPDATE research_stages
-        SET status = 'waiting_for_human',
-            updated_at = NOW()
-        WHERE research_run_id = ${runId}
-          AND status = 'running'
-      `;
-    });
-  } finally {
-    await sql.end();
-  }
+    await tx`
+      UPDATE research_stages
+      SET status = 'waiting_for_human',
+          updated_at = NOW()
+      WHERE research_run_id = ${runId}
+        AND status = 'running'
+    `;
+  });
 }
 
 /**
@@ -936,55 +903,51 @@ export async function failRun(
   reason: string,
   status: "failed" | "needs_more_work" = "failed"
 ): Promise<void> {
-  const sql = postgres(process.env.DATABASE_URL!);
+  const sql = pipelineSql();
 
-  try {
-    // One transaction: a run marked failed with a stage still running cannot be resumed or re-queued.
-    await sql.begin(async (tx) => {
-      // A handler that ignores the abort signal may fail after its run was cancelled; cancelled stays final.
-      const [updated] = await tx`
-        UPDATE research_runs
-        SET status = ${status},
-            failure_reason = ${reason},
-            completed_at = NOW(),
-            updated_at = NOW()
-        WHERE id = ${runId} AND status <> 'cancelled'
-        RETURNING id
-      `;
-      if (!updated) return;
+  // One transaction: a run marked failed with a stage still running cannot be resumed or re-queued.
+  await sql.begin(async (tx) => {
+    // A handler that ignores the abort signal may fail after its run was cancelled; cancelled stays final.
+    const [updated] = await tx`
+      UPDATE research_runs
+      SET status = ${status},
+          failure_reason = ${reason},
+          completed_at = NOW(),
+          updated_at = NOW()
+      WHERE id = ${runId} AND status <> 'cancelled'
+      RETURNING id
+    `;
+    if (!updated) return;
 
-      await tx`
-        UPDATE research_stages
-        SET status = 'failed',
-            failure_reason = ${reason},
-            completed_at = NOW(),
-            updated_at = NOW()
-        WHERE research_run_id = ${runId}
-          AND status IN ('running', 'waiting_for_human')
-      `;
+    await tx`
+      UPDATE research_stages
+      SET status = 'failed',
+          failure_reason = ${reason},
+          completed_at = NOW(),
+          updated_at = NOW()
+      WHERE research_run_id = ${runId}
+        AND status IN ('running', 'waiting_for_human')
+    `;
 
-      await tx`
-        UPDATE research_tasks
-        SET status = 'failed',
-            failure_reason = ${reason},
-            completed_at = NOW(),
-            updated_at = NOW()
-        WHERE research_run_id = ${runId}
-          AND status = 'running'
-      `;
+    await tx`
+      UPDATE research_tasks
+      SET status = 'failed',
+          failure_reason = ${reason},
+          completed_at = NOW(),
+          updated_at = NOW()
+      WHERE research_run_id = ${runId}
+        AND status = 'running'
+    `;
 
-      await tx`
-        UPDATE research_stages
-        SET status = 'cancelled',
-            failure_reason = ${`Run failed: ${reason}`},
-            updated_at = NOW()
-        WHERE research_run_id = ${runId}
-          AND status = 'pending'
-      `;
-    });
-  } finally {
-    await sql.end();
-  }
+    await tx`
+      UPDATE research_stages
+      SET status = 'cancelled',
+          failure_reason = ${`Run failed: ${reason}`},
+          updated_at = NOW()
+      WHERE research_run_id = ${runId}
+        AND status = 'pending'
+    `;
+  });
 }
 
 /**
@@ -992,64 +955,45 @@ export async function failRun(
  * executing it loses its lease at the next renewal and aborts the in-flight model call.
  */
 export async function cancelRun(runId: string, actor = "user"): Promise<{ cancelled: boolean; status: string } | null> {
-  const sql = postgres(process.env.DATABASE_URL!);
-  try {
-    return await sql.begin(async (tx) => {
-      const [run] = await tx`SELECT status FROM research_runs WHERE id = ${runId} FOR UPDATE`;
-      if (!run) return null;
-      if (run.status === "completed" || run.status === "cancelled") return { cancelled: false, status: String(run.status) };
-      const reason = `Cancelled by ${actor}`;
-      await tx`UPDATE research_runs SET status = 'cancelled', failure_reason = ${reason}, completed_at = NOW(), updated_at = NOW()
-        WHERE id = ${runId}`;
-      await tx`UPDATE research_stages SET status = 'cancelled', failure_reason = ${reason}, updated_at = NOW(),
-          completed_at = CASE WHEN status = 'pending' THEN completed_at ELSE NOW() END
-        WHERE research_run_id = ${runId} AND status IN ('pending', 'running', 'waiting_for_human')`;
-      await tx`UPDATE research_tasks SET status = 'failed', failure_reason = ${reason}, completed_at = NOW(), updated_at = NOW()
-        WHERE research_run_id = ${runId} AND status IN ('pending', 'running')`;
-      await tx`UPDATE research_run_jobs SET status = 'failed', failure_reason = ${reason}, lease_owner = NULL,
-          lease_expires_at = NULL, completed_at = NOW(), updated_at = NOW()
-        WHERE research_run_id = ${runId} AND status IN ('queued', 'running')`;
-      return { cancelled: true, status: "cancelled" };
-    });
-  } finally {
-    await sql.end();
-  }
+  const sql = pipelineSql();
+  return await sql.begin(async (tx) => {
+    const [run] = await tx`SELECT status FROM research_runs WHERE id = ${runId} FOR UPDATE`;
+    if (!run) return null;
+    if (run.status === "completed" || run.status === "cancelled") return { cancelled: false, status: String(run.status) };
+    const reason = `Cancelled by ${actor}`;
+    await tx`UPDATE research_runs SET status = 'cancelled', failure_reason = ${reason}, completed_at = NOW(), updated_at = NOW()
+      WHERE id = ${runId}`;
+    await tx`UPDATE research_stages SET status = 'cancelled', failure_reason = ${reason}, updated_at = NOW(),
+        completed_at = CASE WHEN status = 'pending' THEN completed_at ELSE NOW() END
+      WHERE research_run_id = ${runId} AND status IN ('pending', 'running', 'waiting_for_human')`;
+    await tx`UPDATE research_tasks SET status = 'failed', failure_reason = ${reason}, completed_at = NOW(), updated_at = NOW()
+      WHERE research_run_id = ${runId} AND status IN ('pending', 'running')`;
+    await tx`UPDATE research_run_jobs SET status = 'failed', failure_reason = ${reason}, lease_owner = NULL,
+        lease_expires_at = NULL, completed_at = NOW(), updated_at = NOW()
+      WHERE research_run_id = ${runId} AND status IN ('queued', 'running')`;
+    return { cancelled: true, status: "cancelled" };
+  });
 }
 
 /**
  * Mark a run as completed after running final validation.
  */
 export async function completeRun(runId: string): Promise<void> {
-  const sql = postgres(process.env.DATABASE_URL!);
+  const sql = pipelineSql();
 
-  try {
-    const validation = await validateCompletionCriteria(runId);
-    const quality = await evaluateResearchQuality(runId);
+  const validation = await validateCompletionCriteria(runId);
+  const quality = await evaluateResearchQuality(runId);
 
-    if (!validation.valid) {
-      throw new Error(
-        `Cannot complete run — completion criteria not met: ${validation.errors.join("; ")}`
-      );
-    }
+  if (!validation.valid) {
+    throw new Error(
+      `Cannot complete run — completion criteria not met: ${validation.errors.join("; ")}`
+    );
+  }
 
-    if (quality.status !== "pass") {
-      await sql`
-        UPDATE research_runs
-        SET status = 'needs_more_work',
-            completed_at = NOW(),
-            updated_at = NOW(),
-            metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
-              completion_validation: validation as any,
-              quality_gate: quality as any,
-            })}
-        WHERE id = ${runId}
-      `;
-      return;
-    }
-
+  if (quality.status !== "pass") {
     await sql`
       UPDATE research_runs
-      SET status = 'completed',
+      SET status = 'needs_more_work',
           completed_at = NOW(),
           updated_at = NOW(),
           metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
@@ -1058,60 +1002,67 @@ export async function completeRun(runId: string): Promise<void> {
           })}
       WHERE id = ${runId}
     `;
-  } finally {
-    await sql.end();
+    return;
   }
+
+  await sql`
+    UPDATE research_runs
+    SET status = 'completed',
+        completed_at = NOW(),
+        updated_at = NOW(),
+        metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) || ${sql.json({
+          completion_validation: validation as any,
+          quality_gate: quality as any,
+        })}
+    WHERE id = ${runId}
+  `;
 }
 
 export async function resumeResearchRun(runId: string) {
-  const sql = postgres(process.env.DATABASE_URL!);
-  try {
-    await sql.begin(async (tx) => {
-      const [run] = await tx`SELECT status, pipeline_version FROM research_runs WHERE id = ${runId} FOR UPDATE`;
-      if (!run || Number(run.pipeline_version) !== CURRENT_PIPELINE_VERSION || !["needs_more_work", "failed"].includes(run.status)) return;
-      const active = await tx`SELECT id FROM research_run_jobs WHERE research_run_id = ${runId} AND status IN ('queued', 'running') LIMIT 1`;
-      if (active.length) return;
-      const stages = await tx`
-        SELECT id, stage_key, stage_order, status FROM research_stages
-        WHERE research_run_id = ${runId} AND status IN ('failed', 'running', 'waiting_for_human')
-        ORDER BY stage_order
-      `;
-      if (!stages.length) throw new Error("Cannot resume: expected failed stages and no active stage");
-      // A gate left open waits for its reviewer again; no handler can run human_review, so it is never restarted.
-      const gate = stages[0].status === "waiting_for_human" || stages[0].stage_key === "human_review";
-      // A stopped run cannot have active stages; these were left by an interrupted transition.
-      const leftActive = stages.filter((stage, i) => stage.status !== "failed" && !(gate && i === 0)).map((stage) => String(stage.id));
-      if (leftActive.length) await tx`
-        UPDATE research_stages SET status = 'failed', failure_reason = 'Left active when the run stopped',
-          completed_at = NOW(), updated_at = NOW()
-        WHERE id = ANY(${leftActive}::uuid[])
-      `;
-      if (gate) await tx`
-        UPDATE research_stages
-        SET status = 'waiting_for_human', failure_reason = NULL, started_at = COALESCE(started_at, NOW()),
-            completed_at = NULL, updated_at = NOW()
-        WHERE id = ${stages[0].id}
-      `;
-      else await tx`
-        UPDATE research_stages
-        SET status = 'running', failure_reason = NULL, validation_result_json = NULL,
-            started_at = NOW(), completed_at = NULL, updated_at = NOW()
-        WHERE id = ${stages[0].id}
-      `;
-      await tx`
-        UPDATE research_stages
-        SET status = 'pending', failure_reason = NULL, started_at = NULL,
-            completed_at = NULL, validation_result_json = NULL, updated_at = NOW()
-        WHERE research_run_id = ${runId} AND stage_order > ${stages[0].stage_order}
-          AND status IN ('failed', 'cancelled')
-      `;
-      await tx`
-        UPDATE research_runs
-        SET status = ${gate ? "waiting_for_human" : "running"}, failure_reason = NULL, completed_at = NULL, updated_at = NOW()
-        WHERE id = ${runId}
-      `;
-    });
-  } finally {
-    await sql.end();
-  }
+  const sql = pipelineSql();
+  await sql.begin(async (tx) => {
+    const [run] = await tx`SELECT status, pipeline_version FROM research_runs WHERE id = ${runId} FOR UPDATE`;
+    if (!run || Number(run.pipeline_version) !== CURRENT_PIPELINE_VERSION || !["needs_more_work", "failed"].includes(run.status)) return;
+    const active = await tx`SELECT id FROM research_run_jobs WHERE research_run_id = ${runId} AND status IN ('queued', 'running') LIMIT 1`;
+    if (active.length) return;
+    const stages = await tx`
+      SELECT id, stage_key, stage_order, status FROM research_stages
+      WHERE research_run_id = ${runId} AND status IN ('failed', 'running', 'waiting_for_human')
+      ORDER BY stage_order
+    `;
+    if (!stages.length) throw new Error("Cannot resume: expected failed stages and no active stage");
+    // A gate left open waits for its reviewer again; no handler can run human_review, so it is never restarted.
+    const gate = stages[0].status === "waiting_for_human" || stages[0].stage_key === "human_review";
+    // A stopped run cannot have active stages; these were left by an interrupted transition.
+    const leftActive = stages.filter((stage, i) => stage.status !== "failed" && !(gate && i === 0)).map((stage) => String(stage.id));
+    if (leftActive.length) await tx`
+      UPDATE research_stages SET status = 'failed', failure_reason = 'Left active when the run stopped',
+        completed_at = NOW(), updated_at = NOW()
+      WHERE id = ANY(${leftActive}::uuid[])
+    `;
+    if (gate) await tx`
+      UPDATE research_stages
+      SET status = 'waiting_for_human', failure_reason = NULL, started_at = COALESCE(started_at, NOW()),
+          completed_at = NULL, updated_at = NOW()
+      WHERE id = ${stages[0].id}
+    `;
+    else await tx`
+      UPDATE research_stages
+      SET status = 'running', failure_reason = NULL, validation_result_json = NULL,
+          started_at = NOW(), completed_at = NULL, updated_at = NOW()
+      WHERE id = ${stages[0].id}
+    `;
+    await tx`
+      UPDATE research_stages
+      SET status = 'pending', failure_reason = NULL, started_at = NULL,
+          completed_at = NULL, validation_result_json = NULL, updated_at = NOW()
+      WHERE research_run_id = ${runId} AND stage_order > ${stages[0].stage_order}
+        AND status IN ('failed', 'cancelled')
+    `;
+    await tx`
+      UPDATE research_runs
+      SET status = ${gate ? "waiting_for_human" : "running"}, failure_reason = NULL, completed_at = NULL, updated_at = NOW()
+      WHERE id = ${runId}
+    `;
+  });
 }

@@ -15,6 +15,7 @@ import {
   sourceReaderBatchFingerprint,
 } from "../source-reader-batching";
 import postgres from "postgres";
+import { pipelineSql } from "@/db/pipeline-sql";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 import { isValidSourceRole } from "../sources/roles";
 import { isPlausibleSourceRole } from "../sources/role-discovery";
@@ -167,253 +168,245 @@ export async function extractEvidenceForSources(sql: ReturnType<typeof postgres>
 export const evidenceExtractionHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "evidence_extraction",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
-    const sql = postgres(process.env.DATABASE_URL!);
-    try {
-      // 1. Build RunContext
-      const v2Ctx = {
-        runId: ctx.runId,
-        runType: ctx.runType,
-        assetId: ctx.assetId,
-        assetName: ctx.assetName,
-        assetSlug: ctx.assetSlug,
-        symbol: ctx.symbol,
-        profileId: ctx.profileId || "",
-        profileKey: ctx.profileKey || "",
-        requiredModules: ctx.composedProfile?.required_artifacts.map((a: any) => a.artifact_type) || [],
-        requiredLenses: ctx.composedProfile?.valuation_methods.map((m: any) => m.method) || [],
-        marketDataCutoffAt: ctx.marketDataCutoffAt ? ctx.marketDataCutoffAt.toISOString() : null,
-        pipelineVersion: CURRENT_PIPELINE_VERSION,
-      };
+    const sql = pipelineSql();
+    // 1. Build RunContext
+    const v2Ctx = {
+      runId: ctx.runId,
+      runType: ctx.runType,
+      assetId: ctx.assetId,
+      assetName: ctx.assetName,
+      assetSlug: ctx.assetSlug,
+      symbol: ctx.symbol,
+      profileId: ctx.profileId || "",
+      profileKey: ctx.profileKey || "",
+      requiredModules: ctx.composedProfile?.required_artifacts.map((a: any) => a.artifact_type) || [],
+      requiredLenses: ctx.composedProfile?.valuation_methods.map((m: any) => m.method) || [],
+      marketDataCutoffAt: ctx.marketDataCutoffAt ? ctx.marketDataCutoffAt.toISOString() : null,
+      pipelineVersion: CURRENT_PIPELINE_VERSION,
+    };
 
-      // 2. Fetch Stored Sources for this run from DB
-      // One row per document; its passages come from the research memory.
-      const sourceRows = await sql`
-        SELECT DISTINCT ON (sd.id) sd.id as "sourceId", dp.id as "parseId", dc.id as "chunkId",
-               sd.source_type as "sourceType", sd.title, sd.publisher, sd.url,
-               sd.published_at as "publishedAt", sd.period_end as "periodEnd",
-               sd.created_at as "createdAt",
-               sd.metadata_json as metadata
-        FROM source_documents sd
-        JOIN document_parses dp ON dp.source_document_id = sd.id AND dp.status = 'completed'
-        JOIN document_chunks dc ON dc.source_document_id = sd.id AND dc.document_parse_id = dp.id
-        LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
-        WHERE sd.research_run_id = ${ctx.runId} OR rrs.research_run_id = ${ctx.runId}
-        ORDER BY sd.id, dc.chunk_index
+    // 2. Fetch Stored Sources for this run from DB
+    // One row per document; its passages come from the research memory.
+    const sourceRows = await sql`
+      SELECT DISTINCT ON (sd.id) sd.id as "sourceId", dp.id as "parseId", dc.id as "chunkId",
+             sd.source_type as "sourceType", sd.title, sd.publisher, sd.url,
+             sd.published_at as "publishedAt", sd.period_end as "periodEnd",
+             sd.created_at as "createdAt",
+             sd.metadata_json as metadata
+      FROM source_documents sd
+      JOIN document_parses dp ON dp.source_document_id = sd.id AND dp.status = 'completed'
+      JOIN document_chunks dc ON dc.source_document_id = sd.id AND dc.document_parse_id = dp.id
+      LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
+      WHERE sd.research_run_id = ${ctx.runId} OR rrs.research_run_id = ${ctx.runId}
+      ORDER BY sd.id, dc.chunk_index
+    `;
+    const excludedSourceIds = [...new Set(sourceRows.filter((row) => {
+      const role = String((row.metadata as Record<string, unknown> | null)?.source_role ||
+        (String(row.sourceType).startsWith("web_") ? String(row.sourceType).slice(4) : ""));
+      return Boolean(row.url) && isValidSourceRole(role) && !isPlausibleSourceRole(String(row.url), role);
+    }).map((row) => String(row.sourceId)))];
+    if (excludedSourceIds.length) {
+      await sql`
+        UPDATE evidence_claims ec
+        SET review_status = 'rejected', reviewed_by = 'system:source-role-reconciliation', reviewed_at = NOW()
+        WHERE ec.research_run_id = ${ctx.runId} AND ec.review_status != 'rejected'
+          AND EXISTS (
+            SELECT 1 FROM evidence_links el JOIN source_locations sl ON sl.id = el.source_location_id
+            WHERE el.evidence_claim_id = ec.id AND sl.source_document_id = ANY(${excludedSourceIds}::uuid[])
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM evidence_links el JOIN source_locations sl ON sl.id = el.source_location_id
+            WHERE el.evidence_claim_id = ec.id AND sl.source_document_id != ALL(${excludedSourceIds}::uuid[])
+          )
       `;
-      const excludedSourceIds = [...new Set(sourceRows.filter((row) => {
-        const role = String((row.metadata as Record<string, unknown> | null)?.source_role ||
-          (String(row.sourceType).startsWith("web_") ? String(row.sourceType).slice(4) : ""));
-        return Boolean(row.url) && isValidSourceRole(role) && !isPlausibleSourceRole(String(row.url), role);
-      }).map((row) => String(row.sourceId)))];
-      if (excludedSourceIds.length) {
-        await sql`
-          UPDATE evidence_claims ec
-          SET review_status = 'rejected', reviewed_by = 'system:source-role-reconciliation', reviewed_at = NOW()
-          WHERE ec.research_run_id = ${ctx.runId} AND ec.review_status != 'rejected'
-            AND EXISTS (
-              SELECT 1 FROM evidence_links el JOIN source_locations sl ON sl.id = el.source_location_id
-              WHERE el.evidence_claim_id = ec.id AND sl.source_document_id = ANY(${excludedSourceIds}::uuid[])
-            )
-            AND NOT EXISTS (
-              SELECT 1 FROM evidence_links el JOIN source_locations sl ON sl.id = el.source_location_id
-              WHERE el.evidence_claim_id = ec.id AND sl.source_document_id != ALL(${excludedSourceIds}::uuid[])
-            )
-        `;
+    }
+    const eligibleSourceRows = sourceRows.filter((row) => !excludedSourceIds.includes(String(row.sourceId)));
+    const latestByUrl = new Map<string, { id: string; createdAt: number }>();
+    for (const row of eligibleSourceRows) {
+      const key = String(row.url || row.sourceId);
+      const createdAt = new Date(row.createdAt).getTime();
+      const prior = latestByUrl.get(key);
+      if (!prior || createdAt > prior.createdAt) {
+        latestByUrl.set(key, { id: String(row.sourceId), createdAt });
       }
-      const eligibleSourceRows = sourceRows.filter((row) => !excludedSourceIds.includes(String(row.sourceId)));
-      const latestByUrl = new Map<string, { id: string; createdAt: number }>();
-      for (const row of eligibleSourceRows) {
-        const key = String(row.url || row.sourceId);
-        const createdAt = new Date(row.createdAt).getTime();
-        const prior = latestByUrl.get(key);
-        if (!prior || createdAt > prior.createdAt) {
-          latestByUrl.set(key, { id: String(row.sourceId), createdAt });
-        }
-      }
-      const currentSourceRows = eligibleSourceRows.filter((row) =>
-        latestByUrl.get(String(row.url || row.sourceId))?.id === String(row.sourceId)
-      );
-      const sources = currentSourceRows.map(row => ({
-        sourceId: String(row.sourceId),
-        parseId: String(row.parseId),
-        chunkId: String(row.chunkId),
-        content: "", // Content not needed for buildSourcePacket mapping
-        title: String(row.title),
-        sourceType: String(row.sourceType),
-        metadata: (row.metadata as Record<string, any>) || {},
+    }
+    const currentSourceRows = eligibleSourceRows.filter((row) =>
+      latestByUrl.get(String(row.url || row.sourceId))?.id === String(row.sourceId)
+    );
+    const sources = currentSourceRows.map(row => ({
+      sourceId: String(row.sourceId),
+      parseId: String(row.parseId),
+      chunkId: String(row.chunkId),
+      content: "", // Content not needed for buildSourcePacket mapping
+      title: String(row.title),
+      sourceType: String(row.sourceType),
+      metadata: (row.metadata as Record<string, any>) || {},
+    }));
+
+    // 3. Build Source Packet (chunks)
+    const kpis = await runHeadlineKpis(sql, ctx);
+    const sourcePacket = await buildSourcePacket(sql, v2Ctx, sources, { kpis });
+    if (!(sourcePacket as any[]).some((chunk) => FOUNDER_NEED_KEYS.includes(chunk.need))) {
+      await requestFounderSources(sql, ctx, sources.map((source) => source.sourceId));
+    }
+
+    const { target: evidenceTarget, floor: evidenceFloor } = evidenceTargets(ctx.runType, sources.length);
+    const batches = createSourceReaderBatches(sourcePacket as any[], {
+      maxChunks: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_CHUNKS || 8),
+      maxBytes: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_BYTES || 36_000),
+    });
+
+    if (!batches.length) {
+      throw new Error("Source-reader has no persisted source chunks to analyze");
+    }
+
+    const batchTarget = Math.max(5, Math.ceil(evidenceTarget / batches.length) + 1);
+    const promptFactory = (target: number) => sourceReaderPrompt(target, kpis);
+
+    // Batches are independent; outputs stay index-aligned with batches for the merge.
+    const outputs = await mapWithConcurrency(batches, batch => {
+      const fingerprint = sourceReaderBatchFingerprint(batch);
+      const taskKey = `source-reader:batch:${batch.id}:${fingerprint}`;
+
+      const packet = {
+        asset: v2Ctx,
+        batch: { id: batch.id, count: batches.length, claim_target: batchTarget },
+        source_corpus: batch.chunks,
+      };
+      return callResearchAgent<Record<string, unknown>>({
+        sql, ctx, stageKey: "evidence_extraction", taskKey,
+        taskType: "evidence_extraction_batch", agentName: "source-reader", modelTier: "cheap",
+        packet, promptFactory: promptFactory(batchTarget), perCallKeys: BATCH_KEYS,
+      });
+    });
+
+    let evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
+
+    const usableClaims = (out: any) => Array.isArray(out?.evidence_claims) ? out.evidence_claims : [];
+    // The founder pass is skipped only when a claim already affirms the founder or origin.
+    const hasFounderOriginClaim = (out: any) => usableClaims(out).some((claim: any) => {
+      const text = String(claim?.claim_text || "");
+      return FOUNDER_TERMS.test(text) && !ABSENCE_STATEMENT.test(text) && !SOURCE_META_CLAIM.test(text);
+    });
+
+    if (usableClaims(evidenceOutput).length < evidenceTarget) {
+      // One retry per batch that came back well short, run with the same concurrency as the batches.
+      const acceptedPerBatch = batches.map((batch, index) => mergeSourceReaderOutputs([outputs[index]], [batch]).evidence_claims.length);
+      const retryBatches = gapRetryBatchIndexes(acceptedPerBatch, batchTarget).map((index) => batches[index]);
+      const gapOutputs = await mapWithConcurrency(retryBatches, (batch) => callResearchAgent<Record<string, unknown>>({
+        sql, ctx, stageKey: "evidence_extraction",
+        taskKey: `source-reader:batch:${batch.id}:${sourceReaderBatchFingerprint(batch)}:gap`,
+        taskType: "evidence_extraction_gap", agentName: "source-reader", modelTier: "cheap",
+        packet: { asset: v2Ctx, batch: { id: batch.id, count: batches.length, claim_target: batchTarget, gap_retry: true }, source_corpus: batch.chunks },
+        promptFactory: promptFactory(batchTarget),
       }));
+      outputs.push(...gapOutputs);
+      evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
+    }
 
-      // 3. Build Source Packet (chunks)
-      const kpis = await runHeadlineKpis(sql, ctx);
-      const sourcePacket = await buildSourcePacket(sql, v2Ctx, sources, { kpis });
-      if (!(sourcePacket as any[]).some((chunk) => FOUNDER_NEED_KEYS.includes(chunk.need))) {
-        await requestFounderSources(sql, ctx, sources.map((source) => source.sourceId));
-      }
-
-      const { target: evidenceTarget, floor: evidenceFloor } = evidenceTargets(ctx.runType, sources.length);
-      const batches = createSourceReaderBatches(sourcePacket as any[], {
-        maxChunks: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_CHUNKS || 8),
-        maxBytes: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_BYTES || 36_000),
-      });
-
-      if (!batches.length) {
-        throw new Error("Source-reader has no persisted source chunks to analyze");
-      }
-
-      const batchTarget = Math.max(5, Math.ceil(evidenceTarget / batches.length) + 1);
-      const promptFactory = (target: number) => sourceReaderPrompt(target, kpis);
-
-      // Batches are independent; outputs stay index-aligned with batches for the merge.
-      const outputs = await mapWithConcurrency(batches, batch => {
-        const fingerprint = sourceReaderBatchFingerprint(batch);
-        const taskKey = `source-reader:batch:${batch.id}:${fingerprint}`;
-
-        const packet = {
-          asset: v2Ctx,
-          batch: { id: batch.id, count: batches.length, claim_target: batchTarget },
-          source_corpus: batch.chunks,
-        };
-        return callResearchAgent<Record<string, unknown>>({
-          sql, ctx, stageKey: "evidence_extraction", taskKey,
-          taskType: "evidence_extraction_batch", agentName: "source-reader", modelTier: "cheap",
-          packet, promptFactory: promptFactory(batchTarget), perCallKeys: BATCH_KEYS,
+    let founderPassTaskKey: string | undefined;
+    if (!hasFounderOriginClaim(evidenceOutput)) {
+      // Only passages that answered a founder need (founder-history documents first, then filings and
+      // investor material); never a founder document's opening pages.
+      const founderChunks = FOUNDER_NEED_KEYS.flatMap((key) => (sourcePacket as any[]).filter((chunk) => chunk.need === key));
+      if (founderChunks.length > 0) {
+        const [founderBatch] = createSourceReaderBatches(founderChunks, {
+          maxChunks: Math.max(1, founderChunks.length),
+          maxBytes: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_BYTES || 36_000),
         });
-      });
-
-      let evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
-
-      const usableClaims = (out: any) => Array.isArray(out?.evidence_claims) ? out.evidence_claims : [];
-      // The founder pass is skipped only when a claim already affirms the founder or origin.
-      const hasFounderOriginClaim = (out: any) => usableClaims(out).some((claim: any) => {
-        const text = String(claim?.claim_text || "");
-        return FOUNDER_TERMS.test(text) && !ABSENCE_STATEMENT.test(text) && !SOURCE_META_CLAIM.test(text);
-      });
-
-      if (usableClaims(evidenceOutput).length < evidenceTarget) {
-        // One retry per batch that came back well short, run with the same concurrency as the batches.
-        const acceptedPerBatch = batches.map((batch, index) => mergeSourceReaderOutputs([outputs[index]], [batch]).evidence_claims.length);
-        const retryBatches = gapRetryBatchIndexes(acceptedPerBatch, batchTarget).map((index) => batches[index]);
-        const gapOutputs = await mapWithConcurrency(retryBatches, (batch) => callResearchAgent<Record<string, unknown>>({
-          sql, ctx, stageKey: "evidence_extraction",
-          taskKey: `source-reader:batch:${batch.id}:${sourceReaderBatchFingerprint(batch)}:gap`,
-          taskType: "evidence_extraction_gap", agentName: "source-reader", modelTier: "cheap",
-          packet: { asset: v2Ctx, batch: { id: batch.id, count: batches.length, claim_target: batchTarget, gap_retry: true }, source_corpus: batch.chunks },
-          promptFactory: promptFactory(batchTarget),
-        }));
-        outputs.push(...gapOutputs);
+        const roleBatch = { ...founderBatch, id: "founder-origin" };
+        founderPassTaskKey = `source-reader:role:founder-origin:${sourceReaderBatchFingerprint(roleBatch)}`;
+        const founderOutput = await callResearchAgent<Record<string, unknown>>({
+          sql,
+          ctx,
+          stageKey: "evidence_extraction",
+          taskKey: founderPassTaskKey,
+          taskType: "evidence_extraction_role_gap",
+          agentName: "source-reader",
+          modelTier: "cheap",
+          packet: {
+            asset: v2Ctx,
+            batch: {
+              id: roleBatch.id,
+              claim_target: Math.max(3, founderChunks.length),
+              required_source_role: "founder_and_company_history",
+            },
+            source_corpus: roleBatch.chunks,
+          },
+          promptFactory: (packet) => exactJsonPrompt({
+            agentName: "source-reader",
+            requiredKeys: [...SOURCE_READER_OUTPUT_KEYS],
+            packet,
+            extraRules: [
+              "Extract only directly supported founder and company-origin facts from source_corpus.",
+              "At least one claim must identify the founder or founding team and why the relevant technology or company was pursued.",
+              "Prioritize contemporary statements and university archives over later corporate narrative.",
+              "Each claim must copy source_id and document_chunk_id exactly and include claim_text, claim_type, claim_category, confidence, and the most precise available date.",
+              "claim_category must be exactly one of: fact, estimate, assumption, opinion. Use claim_type for the topic.",
+              "Do not infer a financial, mission, status, or other motivation unless the source text directly supports it.",
+              NO_META_CLAIMS,
+              CONTRADICTION_SHAPE,
+            ],
+          }),
+        });
+        // First, so the evidence cap in persistEvidence never drops the claims the founder check needs.
+        outputs.unshift(founderOutput);
+        batches.unshift(roleBatch);
         evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
       }
-
-      let founderPassTaskKey: string | undefined;
-      if (!hasFounderOriginClaim(evidenceOutput)) {
-        // Only passages that answered a founder need (founder-history documents first, then filings and
-        // investor material); never a founder document's opening pages.
-        const founderChunks = FOUNDER_NEED_KEYS.flatMap((key) => (sourcePacket as any[]).filter((chunk) => chunk.need === key));
-        if (founderChunks.length > 0) {
-          const [founderBatch] = createSourceReaderBatches(founderChunks, {
-            maxChunks: Math.max(1, founderChunks.length),
-            maxBytes: Number(process.env.RESEARCH_SOURCE_READER_BATCH_MAX_BYTES || 36_000),
-          });
-          const roleBatch = { ...founderBatch, id: "founder-origin" };
-          founderPassTaskKey = `source-reader:role:founder-origin:${sourceReaderBatchFingerprint(roleBatch)}`;
-          const founderOutput = await callResearchAgent<Record<string, unknown>>({
-            sql,
-            ctx,
-            stageKey: "evidence_extraction",
-            taskKey: founderPassTaskKey,
-            taskType: "evidence_extraction_role_gap",
-            agentName: "source-reader",
-            modelTier: "cheap",
-            packet: {
-              asset: v2Ctx,
-              batch: {
-                id: roleBatch.id,
-                claim_target: Math.max(3, founderChunks.length),
-                required_source_role: "founder_and_company_history",
-              },
-              source_corpus: roleBatch.chunks,
-            },
-            promptFactory: (packet) => exactJsonPrompt({
-              agentName: "source-reader",
-              requiredKeys: [...SOURCE_READER_OUTPUT_KEYS],
-              packet,
-              extraRules: [
-                "Extract only directly supported founder and company-origin facts from source_corpus.",
-                "At least one claim must identify the founder or founding team and why the relevant technology or company was pursued.",
-                "Prioritize contemporary statements and university archives over later corporate narrative.",
-                "Each claim must copy source_id and document_chunk_id exactly and include claim_text, claim_type, claim_category, confidence, and the most precise available date.",
-                "claim_category must be exactly one of: fact, estimate, assumption, opinion. Use claim_type for the topic.",
-                "Do not infer a financial, mission, status, or other motivation unless the source text directly supports it.",
-                NO_META_CLAIMS,
-                CONTRADICTION_SHAPE,
-              ],
-            }),
-          });
-          // First, so the evidence cap in persistEvidence never drops the claims the founder check needs.
-          outputs.unshift(founderOutput);
-          batches.unshift(roleBatch);
-          evidenceOutput = mergeSourceReaderOutputs(outputs, batches);
-        }
-      }
-
-      // The cap leaves room for the founder pass, which is merged first.
-      let persistedEvidenceCount = await persistEvidence(sql, v2Ctx, sources, evidenceOutput, evidenceTarget + 10);
-
-      if (persistedEvidenceCount < evidenceFloor) {
-        // Fallback: inventory claims top up to the floor only, never to the scaled target.
-        const fallbackEvidence = deterministicEvidenceFallback(v2Ctx, sources, {}, evidenceFloor - persistedEvidenceCount);
-        persistedEvidenceCount += await persistEvidence(sql, v2Ctx, sources, fallbackEvidence);
-        if (persistedEvidenceCount >= evidenceFloor) {
-          evidenceOutput = {
-            ...evidenceOutput,
-            evidence_claims: [...usableClaims(evidenceOutput), ...usableClaims(fallbackEvidence)],
-          };
-        }
-      }
-
-      await reconcileSourceGaps(sql, v2Ctx, evidenceOutput, "system:source-reader");
-
-      return {
-        status: "success",
-        extractedClaimsCount: persistedEvidenceCount,
-        founderPassTaskKey,
-      };
-    } finally {
-      await sql.end();
     }
+
+    // The cap leaves room for the founder pass, which is merged first.
+    let persistedEvidenceCount = await persistEvidence(sql, v2Ctx, sources, evidenceOutput, evidenceTarget + 10);
+
+    if (persistedEvidenceCount < evidenceFloor) {
+      // Fallback: inventory claims top up to the floor only, never to the scaled target.
+      const fallbackEvidence = deterministicEvidenceFallback(v2Ctx, sources, {}, evidenceFloor - persistedEvidenceCount);
+      persistedEvidenceCount += await persistEvidence(sql, v2Ctx, sources, fallbackEvidence);
+      if (persistedEvidenceCount >= evidenceFloor) {
+        evidenceOutput = {
+          ...evidenceOutput,
+          evidence_claims: [...usableClaims(evidenceOutput), ...usableClaims(fallbackEvidence)],
+        };
+      }
+    }
+
+    await reconcileSourceGaps(sql, v2Ctx, evidenceOutput, "system:source-reader");
+
+    return {
+      status: "success",
+      extractedClaimsCount: persistedEvidenceCount,
+      founderPassTaskKey,
+    };
   },
   async validate(ctx: ResearchRunContext, output: any): Promise<ValidationResult> {
-    const sql = postgres(process.env.DATABASE_URL!);
-    try {
-      const rows = await sql`
-        SELECT COUNT(*) as cnt FROM evidence_claims
-        WHERE research_run_id = ${ctx.runId}
-      `;
-      const errors: string[] = [];
-      if (Number(rows[0].cnt) === 0) {
-        errors.push("No evidence claims extracted for this run");
-      }
-      // System inventory and metric claims name document types, not founders.
-      const founderClaims = await sql`
-        SELECT ec.claim_text
-        FROM evidence_claims ec
-        WHERE ec.research_run_id = ${ctx.runId}
-          AND ec.review_status = 'accepted'
-          AND ec.claim_type NOT IN ('source_inventory_fact', 'deterministic_metric_observation')
-      `;
-      const founderRows = [{ cnt: founderClaims.filter((row) => {
-        const text = String(row.claim_text || "");
-        return FOUNDER_TERMS.test(text) && !ABSENCE_STATEMENT.test(text) && !SOURCE_META_CLAIM.test(text);
-      }).length }];
-      if (Number(founderRows[0]?.cnt || 0) === 0) {
-        errors.push(FOUNDER_GAP_ERROR);
-      }
-      // The orchestrator narrows a founder-gap retry to this attempt's founder pass only.
-      const result: ValidationResult = makeValidationResult(errors);
-      if (typeof output?.founderPassTaskKey === "string") result.founderPassTaskKey = output.founderPassTaskKey;
-      return result;
-    } finally {
-      await sql.end();
+    const sql = pipelineSql();
+    const rows = await sql`
+      SELECT COUNT(*) as cnt FROM evidence_claims
+      WHERE research_run_id = ${ctx.runId}
+    `;
+    const errors: string[] = [];
+    if (Number(rows[0].cnt) === 0) {
+      errors.push("No evidence claims extracted for this run");
     }
+    // System inventory and metric claims name document types, not founders.
+    const founderClaims = await sql`
+      SELECT ec.claim_text
+      FROM evidence_claims ec
+      WHERE ec.research_run_id = ${ctx.runId}
+        AND ec.review_status = 'accepted'
+        AND ec.claim_type NOT IN ('source_inventory_fact', 'deterministic_metric_observation')
+    `;
+    const founderRows = [{ cnt: founderClaims.filter((row) => {
+      const text = String(row.claim_text || "");
+      return FOUNDER_TERMS.test(text) && !ABSENCE_STATEMENT.test(text) && !SOURCE_META_CLAIM.test(text);
+    }).length }];
+    if (Number(founderRows[0]?.cnt || 0) === 0) {
+      errors.push(FOUNDER_GAP_ERROR);
+    }
+    // The orchestrator narrows a founder-gap retry to this attempt's founder pass only.
+    const result: ValidationResult = makeValidationResult(errors);
+    if (typeof output?.founderPassTaskKey === "string") result.founderPassTaskKey = output.founderPassTaskKey;
+    return result;
   }
 };
