@@ -24,6 +24,8 @@ export interface CompositionActions {
    */
   rework?(review: ReportReview & DerivedReview): Promise<Record<string, any>[]>;
   save(type: string, scope: string, value: Record<string, any>): Promise<unknown>;
+  /** Retires the current artifacts of `type` whose scope is not listed (sections a later outline no longer has). */
+  retain?(type: string, scopes: string[]): Promise<unknown>;
 }
 
 const latestContent = (artifacts: ReportInput["artifacts"], type: string) => artifacts.filter(a => a.artifact_type === type)
@@ -147,7 +149,15 @@ export async function reviewDraftedReport(input: CompositionInput, actions: Comp
   for (let round = 0; round <= 1; round++) {
     const outline = state.outline;
     const document = round === 0 ? draft.document : c.documentFor(priorFindings);
-    if (round > 0) await actions.save("report_document", "document", document);
+    // The current outline, questions, sections and document are always the ones the reviewed document was built
+    // from. In round 0 that restores the draft over a failed earlier attempt's repair; an unchanged save keeps the row.
+    if (round === 0) {
+      await actions.save("report_outline", "outline", outline);
+      await actions.save("question_register", "questions", { questions: outline.questions });
+      for (const section of sections) await actions.save("report_section", section.id, section);
+    }
+    await actions.retain?.("report_section", sections.map(section => section.id));
+    await actions.save("report_document", "document", document);
     // Substance findings join the reviewer's, so a passed review with thin or leaking sections still gets the one repair.
     const reviewed = await actions.review(document);
     // Question and coverage leaks are shown to the reviewer; only section text can be repaired by a writer.

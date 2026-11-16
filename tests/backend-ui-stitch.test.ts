@@ -15,7 +15,7 @@ describe("backend/UI stitching contracts", () => {
     assert.equal("pipeline_version" in parsed, false);
   });
 
-  it("initializes the complete ordered 24-stage ledger", () => {
+  it("initializes the complete ordered 25-stage ledger", () => {
     const { applicable, skipped } = getAllStagesForRun("deep_dive");
     const stages = [...applicable, ...skipped].sort((a, b) => a.order - b.order);
     assert.equal(STAGE_CONFIGS.length, 25);

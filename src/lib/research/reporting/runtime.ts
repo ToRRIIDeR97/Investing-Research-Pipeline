@@ -220,9 +220,17 @@ export interface StoredDraftState {
   input_hash: string; content_hash: string; final_coverage: CoverageCheck[] | null; dropped_citations: string[];
 }
 
-/** A stored draft no longer matches the run's report inputs; report_draft was reopened, and the runner redrafts. */
+/**
+ * The stored draft no longer matches the run's report inputs. When `reopened`, report_draft and ai_reviewer are
+ * pending again and the runner redrafts; otherwise the run had stopped running and nothing was changed. Either way the
+ * runner treats it like a request pause: no failure, no retry and no transient count.
+ */
 export class ReportDraftReopened extends ResearchRequestsPending {
-  constructor() { super(); this.message = "The report inputs changed since the draft; report_draft was reopened"; }
+  constructor(readonly reopened = true) {
+    super();
+    this.message = reopened ? "The report inputs changed since the draft; report_draft was reopened"
+      : "The report draft is stale, but the run is no longer running; nothing was reopened";
+  }
 }
 
 /**
@@ -318,6 +326,11 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
       savedIds.set(`${type}:${scope}`, String((row as { id: unknown }).id));
       return row;
     },
+    async retain(type, scopes) {
+      await sql`UPDATE research_artifacts SET status = 'superseded', updated_at = NOW()
+        WHERE research_run_id = ${ctx.runId} AND artifact_type = ${type} AND status IN ('validated', 'accepted')
+          AND scope_key <> ALL(${scopes.map(scope => `${ctx.assetSlug}-${scope}`)}::text[])`;
+    },
   };
   return { actions, reportInput, input_hash, dropped, tracked, savedIds };
 }
@@ -339,10 +352,15 @@ export async function draftReport(sql: Sql, ctx: ResearchRunContext) {
     document_id: id("report_document", "document"), input_hash: draft.document.input_hash, content_hash: draft.document.content_hash,
     final_coverage: draft.finalCoverage ?? null, dropped_citations: [...composition.dropped].sort(),
   };
+  await saveDraftState(sql, ctx.runId, state);
+  return draft;
+}
+
+/** Saves what the review stage needs from the draft on the report_draft stage row. */
+export async function saveDraftState(sql: Sql, runId: string, state: StoredDraftState) {
   await sql`UPDATE research_stages SET completion_criteria_json = COALESCE(completion_criteria_json, '{}'::jsonb)
       || jsonb_build_object('report_draft', ${JSON.stringify(state)}::text::jsonb), updated_at = NOW()
-    WHERE research_run_id = ${ctx.runId} AND stage_key = 'report_draft'`;
-  return draft;
+    WHERE research_run_id = ${runId} AND stage_key = 'report_draft'`;
 }
 
 /** The draft as report_draft left it, or null when there is none to review. */
@@ -352,12 +370,23 @@ async function storedDraft(sql: Sql, ctx: ResearchRunContext): Promise<StoredDra
   return stage?.status === "completed" && stage.state ? stage.state as StoredDraftState : null;
 }
 
-/** Puts report_draft (and this stage) back to pending; the runner redrafts with the current inputs. */
-async function reopenDraft(sql: Sql, ctx: ResearchRunContext): Promise<never> {
-  await sql`UPDATE research_stages SET status = 'pending', started_at = NULL, completed_at = NULL, validation_result_json = NULL,
-      transient_failures = 0, last_transient_error = NULL, failure_reason = NULL, updated_at = NOW()
-    WHERE research_run_id = ${ctx.runId} AND stage_key IN ('report_draft', 'ai_reviewer')`;
-  throw new ReportDraftReopened();
+/**
+ * Puts report_draft and this stage back to pending, so the runner redrafts with the current inputs. One transaction
+ * holding the run row, the lock orchestrator transitions (startReadyStages, gates, cancelRun, failRun) take: it
+ * changes the stages only while the run is running and ai_reviewer is the running stage that called it.
+ */
+export async function reopenDraft(sql: Sql, ctx: Pick<ResearchRunContext, "runId">): Promise<never> {
+  const reopened = await sql.begin(async tx => {
+    const [run] = await tx`SELECT status FROM research_runs WHERE id = ${ctx.runId} FOR UPDATE`;
+    if (run?.status !== "running") return false;
+    const rows = await tx`UPDATE research_stages SET status = 'pending', started_at = NULL, completed_at = NULL, validation_result_json = NULL,
+        transient_failures = 0, last_transient_error = NULL, failure_reason = NULL, updated_at = NOW()
+      WHERE research_run_id = ${ctx.runId} AND stage_key IN ('report_draft', 'ai_reviewer')
+        AND EXISTS (SELECT 1 FROM research_stages r WHERE r.research_run_id = ${ctx.runId} AND r.stage_key = 'ai_reviewer' AND r.status = 'running')
+      RETURNING stage_key`;
+    return rows.length > 0;
+  });
+  throw new ReportDraftReopened(reopened);
 }
 
 /**
@@ -367,6 +396,17 @@ async function reopenDraft(sql: Sql, ctx: ResearchRunContext): Promise<never> {
  * redrafted first, as one composition would have done on resume.
  */
 export async function reviewReport(sql: Sql, ctx: ResearchRunContext) {
+  const { composition, draft } = await loadCurrentDraft(sql, ctx);
+  return reviewDraftedReport(composition.reportInput, composition.actions, draft);
+}
+
+/**
+ * The stored draft and the review stage's composition, when the draft still matches the run's report inputs. A
+ * missing or stale draft reopens report_draft (reopenDraft) and throws ReportDraftReopened. The draft's artifacts are
+ * read by the ids it saved, so rows a failed review attempt superseded are still found; report products are not
+ * report inputs, so that attempt's repaired artifacts don't make the draft look stale.
+ */
+export async function loadCurrentDraft(sql: Sql, ctx: ResearchRunContext) {
   const state = await storedDraft(sql, ctx);
   if (!state) return reopenDraft(sql, ctx);
   const composition = await reportComposition(sql, ctx, "ai_reviewer", state.dropped_citations);
@@ -380,5 +420,5 @@ export async function reviewReport(sql: Sql, ctx: ResearchRunContext) {
   const draft = draftDocument(composition.reportInput, { outline, sections, finalCoverage: state.final_coverage ?? undefined });
   if (draft.document.content_hash !== state.content_hash) return reopenDraft(sql, ctx);
   composition.tracked.outlineSections = outline.sections;
-  return reviewDraftedReport(composition.reportInput, composition.actions, draft);
+  return { composition, draft };
 }

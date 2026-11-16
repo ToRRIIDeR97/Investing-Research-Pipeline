@@ -30,7 +30,7 @@
 <path d="M70,100 L210,100" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="140.0" y="95" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">POST /assets/:id/research-runs</text>
 <path d="M210,128 L350,128" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="280.0" y="123" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">insert run (pending, v3) + 24 stages [txn]</text>
+<text x="280.0" y="123" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">insert run (pending, v3) + 25 stages [txn]</text>
 <path d="M210,156 L70,156" fill="none" stroke="#333" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#o)"/>
 <text x="140.0" y="151" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">201 run</text>
 <path d="M70,184 L210,184" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>

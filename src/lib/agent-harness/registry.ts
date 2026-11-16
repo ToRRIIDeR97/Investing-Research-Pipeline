@@ -836,6 +836,29 @@ export function resolveTaskEffort(input: { tier?: string | null; stageKey?: stri
   return isModelTier(input.tier) ? TIER_EFFORT[input.tier] : undefined;
 }
 
+/**
+ * The environment variables that supplied a task's model and effort, for the record (effective_config, call logs):
+ * which RESEARCH_STAGE_* applied after the stage fallback, or the tier, all-agents or agent variable. Null when the
+ * value is a built-in default. Mirrors resolveTaskModel and resolveTaskEffort without changing what they return.
+ */
+export function taskSettingVariables(input: { agentName: ResearchAgentName; tier?: string | null; stageKey?: string | null }):
+  { model: string | null; effort: string | null } {
+  const set = (name: string | undefined) => (name && process.env[name] ? name : undefined);
+  const stageModel = stageSettingKey(input.stageKey, "MODEL");
+  const config = getAgentConfig(input.agentName);
+  const model = (stageModel ? `RESEARCH_STAGE_${envKey(stageModel)}_MODEL` : undefined)
+    ?? (isModelTier(input.tier) ? set(`RESEARCH_${envKey(input.tier)}_MODEL`) : undefined)
+    ?? set("RESEARCH_ALL_AGENTS_MODEL") ?? set(`RESEARCH_${envKey(input.agentName)}_MODEL`) ?? set(config.modelEnvVar) ?? null;
+  const stageEffort = stageSettingKey(input.stageKey, "EFFORT");
+  let effort: string | null = null;
+  for (const name of [stageEffort ? `RESEARCH_STAGE_${envKey(stageEffort)}_EFFORT` : undefined,
+    isModelTier(input.tier) ? `RESEARCH_${envKey(input.tier)}_EFFORT` : undefined, "RESEARCH_EFFORT"]) {
+    const value = name ? process.env[name]?.trim().toLowerCase() : undefined;
+    if (value && (value === "default" || value === "none" || (EFFORTS as readonly string[]).includes(value))) { effort = name!; break; }
+  }
+  return { model, effort };
+}
+
 export function listResearchAgents(): ResearchAgentConfig[] {
   return RESEARCH_AGENT_NAMES.map((agentName) => AGENT_CONFIGS[agentName]);
 }

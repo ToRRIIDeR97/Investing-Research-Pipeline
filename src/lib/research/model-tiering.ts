@@ -7,7 +7,7 @@
 import { execFileSync } from "node:child_process";
 import type postgres from "postgres";
 import type { ExecutionPolicy } from "@/lib/agent-harness/types";
-import { MODEL_TIERS, TIER_EFFORT, resolveTaskEffort, resolveTaskModel, type ResearchAgentName } from "@/lib/agent-harness/registry";
+import { MODEL_TIERS, TIER_EFFORT, resolveTaskEffort, resolveTaskModel, taskSettingVariables, type ResearchAgentName } from "@/lib/agent-harness/registry";
 import { calculateCost } from "@/lib/agent-harness/telemetry";
 
 type Sql = ReturnType<typeof postgres>;
@@ -36,6 +36,8 @@ const isTier = (tier: string) => (MODEL_TIERS as readonly string[]).includes(tie
 
 export type TaskExecution = {
   tier: string; model: string; modelSource: string; fallbackModel?: string | null;
+  /** The variables that supplied the model and the effort (null: a built-in default); recorded only, never sent. */
+  modelVariable?: string | null; effortVariable?: string | null;
   effort?: ExecutionPolicy["effort"]; policy: Partial<ExecutionPolicy>; reserveUsd: number;
 };
 
@@ -58,7 +60,8 @@ export function taskExecution(input: { agentName: ResearchAgentName; modelTier: 
   const tierReserve = isTier(input.modelTier) ? positive(`RESEARCH_${input.modelTier.toUpperCase()}_ATTEMPT_BUDGET_RESERVE_USD`) : undefined;
   // Priced at a prompt just over 100K tokens, so Haiku 5.5's 5x long-prompt rate is covered (24 of META 4fae0fb1's 79 calls exceeded 100K).
   const reserveUsd = tierReserve ?? Math.max(floor, Number(calculateCost(resolved.model, RESERVE_PROMPT_TOKENS, outputLimit).toFixed(4)));
-  return { tier: input.modelTier, model: resolved.model, modelSource: resolved.source,
+  const variables = taskSettingVariables({ agentName: input.agentName, tier: input.modelTier, stageKey: input.stageKey });
+  return { tier: input.modelTier, model: resolved.model, modelSource: resolved.source, modelVariable: variables.model, effortVariable: variables.effort,
     ...(resolved.fallbackModel !== undefined ? { fallbackModel: resolved.fallbackModel } : {}), effort, policy, reserveUsd };
 }
 
@@ -125,6 +128,7 @@ const recordedTaskConfigs = new Map<string, string>();
 
 export async function recordEffectiveTaskConfig(sql: Sql, runId: string, taskType: string, execution: TaskExecution & { agentName: string }) {
   const entry = { agent: execution.agentName, tier: execution.tier, model: execution.model, model_source: execution.modelSource,
+    model_variable: execution.modelVariable ?? null, effort_variable: execution.effortVariable ?? null,
     effort: execution.effort ?? null, max_output_tokens: execution.policy.maxOutputTokens ?? null,
     total_timeout_ms: execution.policy.totalTimeoutMs ?? null, reserve_usd: execution.reserveUsd };
   // One write per run, task type and settings in this process: fan-out calls (source-reader batches, report sections)

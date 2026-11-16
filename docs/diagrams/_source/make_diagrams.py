@@ -10,7 +10,7 @@ P = lambda n: os.path.join(OUT, n)
 # ---------------------------------------------------------------- component
 s = Svg(1100, 700, "Research OS — UML component view (current)",
         "Browser UI calls Next.js API routes (optional operator token; a middleware refuses foreign hosts and cross-site writes); the API writes Postgres and enqueues jobs; "
-        "a separate worker claims jobs and runs the 24-stage pipeline, which calls the agent harness, "
+        "a separate worker claims jobs and runs the 25-stage pipeline, which calls the agent harness, "
         "source discovery and ingestion, backtesting (Python), and export; all state lives in Postgres and ./storage.")
 s.box(30, 60, 220, 70, "Analyst browser", ["src/app/** client pages"], "ui", stereo="actor/UI")
 s.box(310, 50, 260, 90, "Next.js API routes", ["src/app/api/** (54 route files)", "optional token · Host/Origin middleware"], "api", stereo="component")
@@ -79,7 +79,7 @@ s.save(P("deployment.svg"))
 
 # ---------------------------------------------------------------- class
 s = Svg(1100, 640, "Research OS — UML class view (core domain, from src/db/schema)",
-        "Core persisted domain types and multiplicities: Asset has many ResearchRuns; a run has 24 stages, tasks, jobs, artifacts, "
+        "Core persisted domain types and multiplicities: Asset has many ResearchRuns; a run has 25 stages, tasks, jobs, artifacts, "
         "model call logs, backtests and review decisions; artifacts link to evidence claims, which link to source locations in parsed documents.")
 def cls(x, y, name, attrs, w=200, kind="plain"):
     h = 30 + 15 * len(attrs) + 8
@@ -91,7 +91,7 @@ def cls(x, y, name, attrs, w=200, kind="plain"):
 cls(30, 60, "Asset", ["id, symbol, kind", "→ research_profiles 0..1"], kind="ui")
 cls(30, 200, "Instrument / Listing", ["→ market_price_bars *", "→ corporate_actions *"], kind="ui")
 cls(300, 60, "ResearchRun", ["status, run_type", "pipeline_version = 3", "prior_run_id → run 0..1"], kind="api")
-cls(570, 60, "ResearchStage", ["stage_key, order 1..24", "status, validation_result_json"], kind="api")
+cls(570, 60, "ResearchStage", ["stage_key, order 1..25", "status, validation_result_json"], kind="api")
 cls(840, 60, "ResearchTask", ["status, cost_usd", "output (agent result)"], kind="api")
 cls(300, 220, "ResearchRunJob", ["status queued|running|…", "lease_owner, attempt_count", "max_attempts = 3"], kind="worker")
 cls(570, 220, "ResearchArtifact", ["artifact_type, scope_key, status", "version · supersedes_artifact_id"], w=230, kind="lib")
@@ -109,7 +109,7 @@ def ln(pts):
 def m(x, y, t, anchor="start"):
     s.text(x, y, t, 11, fill="#a33", anchor=anchor)
 ln([(230, 85), (300, 85)]); m(236, 79, "1"); m(294, 79, "*", "end")
-ln([(500, 85), (570, 85)]); m(506, 79, "1"); m(564, 79, "1..24", "end")
+ln([(500, 85), (570, 85)]); m(506, 79, "1"); m(564, 79, "1..25", "end")
 ln([(770, 85), (840, 85)]); m(776, 79, "1"); m(834, 79, "*", "end")
 ln([(130, 128), (130, 200)]); m(136, 142, "1"); m(136, 194, "*")
 # bus from ResearchRun to row 2
@@ -130,7 +130,7 @@ ln([(770, 400), (840, 400)]); m(774, 394, "*"); m(836, 394, "*", "end")
 s.text(805, 420, "evidence_links", 10.5, fill="#555", italic=True, anchor="middle")
 ln([(940, 433), (940, 500)]); m(946, 447, "*"); m(946, 494, "1")
 s.text(16, 628, "Associations follow FK columns in src/db/schema/*.ts. Attribute lists are abridged; see the schema for full columns. "
-       "Stage count is fixed by STAGE_CONFIGS (24).", 11, fill="#555")
+       "Stage count is fixed by STAGE_CONFIGS (25).", 11, fill="#555")
 s.save(P("class.svg"))
 
 # ---------------------------------------------------------------- activity
@@ -332,9 +332,9 @@ s.line([(380, 800), (580, 800)], "human gate approves", lx=480, ly=792)
 s.line([(700, 800), (860, 800), (860, 830), (900, 830)], "changed save", lx=780, ly=792)
 s.line([(390, 877), (860, 877), (860, 845), (900, 845)], "retry or re-run: changed save", lx=625, ly=871)
 s.text(445, 832, "plan gate: research_plan only;", 11, fill="#555")
-s.text(445, 847, "stage 22: every current validated artifact", 11, fill="#555")
+s.text(445, 847, "stage 23: every current validated artifact", 11, fill="#555")
 s.text(40, 918, "One current version per run, type and scope: a save with changed content or status inserts version n+1 and supersedes the rest;", 11, fill="#555")
-s.text(40, 933, "an unchanged save keeps the row. Artifacts saved after stage 22 (export, refresh schedule, chat) stay validated.", 11, fill="#555")
+s.text(40, 933, "an unchanged save keeps the row. Artifacts saved after stage 23 (export, refresh schedule, chat) stay validated.", 11, fill="#555")
 s.save(P("state-machines.svg"))
 
 # ---------------------------------------------------------------- sequence
@@ -365,7 +365,7 @@ def frame(label, color, x0, x1, body):
     s.raw(f'<rect x="{x0}" y="{y0}" width="{x1 - x0}" height="{y[0] - y0 - 10}" fill="none" stroke="{color}" stroke-dasharray="6 3"/>')
     y[0] += 8
 msg(0, 1, "POST /assets/:id/research-runs")
-msg(1, 2, "insert run (pending, v3) + 24 stages [txn]")
+msg(1, 2, "insert run (pending, v3) + 25 stages [txn]")
 msg(1, 0, "201 run", ret=True)
 msg(0, 1, "POST /research-runs/:id/run-system-pipeline")
 msg(1, 2, "enqueueResearchRun (FOR UPDATE, 1 active job)")
