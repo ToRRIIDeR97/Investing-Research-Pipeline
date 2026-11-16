@@ -26,6 +26,7 @@ import { MockProvider } from "../src/lib/agent-harness/providers/mock";
 import { assertModelBudgetAvailable, recordModelCall } from "../src/lib/agents/model-calls";
 import { createV3Task } from "../src/lib/research/run-context";
 import { getTeamRequests } from "../src/lib/research/team";
+import { STAGE_HANDLERS } from "../src/lib/research/handlers";
 
 function request(body: Record<string, unknown> = {}) {
   return new NextRequest("http://localhost/api/test", { method: "POST", body: JSON.stringify(body) });
@@ -337,6 +338,22 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
       SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'human_review'
     `;
     assert.equal(finalStage?.status, "waiting_for_human");
+
+    // Architecture-9 P4: the report is drafted in report_draft and reviewed in ai_reviewer (AC-4.2, AC-4.3, AC-4.6).
+    const [draftStage] = await sql`SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'report_draft'`;
+    assert.equal(draftStage?.status, "completed", "the report draft stage completed");
+    const draftAndReviewTasks = await sql`SELECT t.task_type, s.stage_key FROM research_tasks t JOIN research_stages s ON s.id = t.stage_id
+      WHERE t.research_run_id = ${runId} AND t.task_type IN ('report_outline', 'report_section', 'ai_review') ORDER BY t.created_at, t.id`;
+    const stagesOf = (type: string) => draftAndReviewTasks.filter(t => t.task_type === type).map(t => String(t.stage_key));
+    assert.equal(stagesOf("report_outline")[0], "report_draft", "the first outline belongs to report_draft");
+    assert.ok(stagesOf("report_section").length > 0 && stagesOf("report_section").includes("report_draft"), "first-draft sections belong to report_draft");
+    const firstReview = draftAndReviewTasks.findIndex(t => t.task_type === "ai_review");
+    assert.ok(firstReview > 0, "the report was reviewed");
+    assert.ok(draftAndReviewTasks.slice(0, firstReview).every(t => t.stage_key === "report_draft"), "everything written before the first review is the draft's");
+    assert.ok(stagesOf("ai_review").every(stage => stage === "ai_reviewer"), "review calls belong to ai_reviewer");
+    const reviewArtifacts = await sql`SELECT DISTINCT artifact_type FROM research_artifacts WHERE research_run_id = ${runId}
+      AND status IN ('validated', 'accepted') AND artifact_type IN ('report_review', 'review_summary', 'findings', 'quality_score', 'recommendations', 'review_verdict', 'depth_checks')`;
+    assert.equal(reviewArtifacts.length, 7, `review artifacts: ${reviewArtifacts.map(a => a.artifact_type).join(", ")}`);
 
     // Framework backtest executed 50 thesis-distinct combinations
     const backtestStages = await sql`
@@ -835,6 +852,50 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     const failedStages = await sql`SELECT id FROM research_stages WHERE research_run_id = ${runId} AND status = 'failed'`;
     assert.equal(failedStages.length, 0);
     await deleteAssetCascade(sql, testAssetId, runId);
+  });
+
+  test("AC-4.4: a review failure keeps the draft, and the resume reviews it without writing it again", { timeout: 120_000 }, async () => {
+    const cutoffAt = "2026-01-01T00:00:00.000Z";
+    const created = await createRun(request({ run_type: "deep_dive", research_question: "Mock SOFI review failure?",
+      requested_by: "system-test-harness", budget_limit_usd: 100, source_cutoff_at: cutoffAt, market_data_cutoff_at: cutoffAt }), paramsFor(testAssetId));
+    assert.equal(created.status, 201);
+    const { id: runId } = await created.json();
+    assert.equal((await queueRun(request(), paramsFor(runId))).status, 202);
+    assert.equal((await runQueuedJob(runId)).status, "waiting_for_human");
+    assert.equal((await approvePlan(request({ approved_by: "system-test-harness" }), paramsFor(runId))).status, 200);
+    const reviewer = STAGE_HANDLERS.ai_reviewer;
+    STAGE_HANDLERS.ai_reviewer = { ...reviewer, async execute() { throw new Error("Reviewer crashed (test)"); } };
+    try {
+      assert.equal((await runQueuedJob(runId)).status, "needs_more_work");
+    } finally { STAGE_HANDLERS.ai_reviewer = reviewer; }
+    const stage = async (key: string) => (await sql`SELECT status, completed_at FROM research_stages WHERE research_run_id = ${runId} AND stage_key = ${key}`)[0];
+    const draftBefore = await stage("report_draft");
+    assert.equal(draftBefore.status, "completed", "the draft stage stays completed");
+    assert.equal((await stage("ai_reviewer")).status, "failed");
+    const draftTasks = async () => sql`SELECT t.id, t.task_type, t.validation_status FROM research_tasks t JOIN research_stages s ON s.id = t.stage_id
+      WHERE t.research_run_id = ${runId} AND s.stage_key = 'report_draft' AND t.status = 'completed'`;
+    const before = await draftTasks();
+    assert.ok(before.some(t => t.task_type === "report_outline") && before.some(t => t.task_type === "report_section"));
+    assert.ok(before.every(t => t.validation_status !== "invalid"), "the draft's tasks stay valid");
+    const writersBefore = await sql`SELECT count(*)::int AS n FROM research_tasks WHERE research_run_id = ${runId} AND task_type IN ('report_outline', 'report_section')`;
+
+    // The resume restarts ai_reviewer on the stored draft.
+    assert.equal((await queueRun(request(), paramsFor(runId))).status, 202);
+    assert.equal((await runQueuedJob(runId)).status, "waiting_for_human");
+    const draftAfter = await stage("report_draft");
+    assert.equal(draftAfter.status, "completed");
+    assert.equal(String(draftAfter.completed_at), String(draftBefore.completed_at), "report_draft did not run again");
+    const firstDraft = await sql`SELECT count(*)::int AS n FROM research_tasks t JOIN research_stages s ON s.id = t.stage_id
+      WHERE t.research_run_id = ${runId} AND s.stage_key = 'report_draft' AND t.task_type IN ('report_outline', 'report_section')`;
+    assert.equal(firstDraft[0].n, before.filter(t => ["report_outline", "report_section"].includes(t.task_type)).length, "no first-draft call was made again");
+    const reviewTasks = await sql`SELECT count(*)::int AS n FROM research_tasks t JOIN research_stages s ON s.id = t.stage_id
+      WHERE t.research_run_id = ${runId} AND s.stage_key = 'ai_reviewer' AND t.task_type = 'ai_review' AND t.status = 'completed'`;
+    assert.ok(reviewTasks[0].n >= 1, "the resumed stage reviewed the draft");
+    // Any outline or section call after the failure belongs to the review's repair round, never to a redraft.
+    const writersAfter = await sql`SELECT count(*)::int AS n FROM research_tasks WHERE research_run_id = ${runId} AND task_type IN ('report_outline', 'report_section')`;
+    const repairs = await sql`SELECT count(*)::int AS n FROM research_tasks t JOIN research_stages s ON s.id = t.stage_id
+      WHERE t.research_run_id = ${runId} AND t.task_type IN ('report_outline', 'report_section') AND s.stage_key = 'ai_reviewer'`;
+    assert.equal(writersAfter[0].n, writersBefore[0].n + repairs[0].n);
   });
 
   test("a second run links to the first completed run, starts from its prior_research and reports what changed", { timeout: 120_000 }, async () => {

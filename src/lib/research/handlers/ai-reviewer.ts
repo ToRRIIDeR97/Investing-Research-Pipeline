@@ -5,9 +5,8 @@ import { AI_REVIEWER_CONTRACT } from "../stage-contracts";
 import { createArtifactRepository } from "../artifacts/repository";
 import postgres from "postgres";
 import { pipelineDb, pipelineSql } from "@/db/pipeline-sql";
-import { draftAndReviewReport } from "../reporting/runtime";
+import { reviewReport } from "../reporting/runtime";
 import { DEPTH_CHECKS, DEPTH_CHECK_RULE } from "../reporting/depth";
-import { saveVersionChangeLog } from "../lineage/runs";
 
 /**
  * Save each review sub-artifact. A quality_score of 0 or an empty findings list is a real answer, so only absent keys
@@ -38,8 +37,7 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "ai_reviewer",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = pipelineSql();
-    // What changed since the prior run, computed by code before the report is written; nothing without a prior.
-    await saveVersionChangeLog(sql, ctx);
+    // report_draft saved the version change log and, for an adaptive plan, the draft this stage reviews.
     const artifacts = await sql`
       SELECT artifact_type, content_json
       FROM research_artifacts
@@ -76,7 +74,7 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
     });
 
     const adaptive = artifacts.some(artifact => artifact.artifact_type === "research_plan" && artifact.content_json?.report_standard);
-    const output = adaptive ? (await draftAndReviewReport(sql, ctx)).review : await callResearchAgent<Record<string, unknown>>({
+    const output = adaptive ? (await reviewReport(sql, ctx)).review : await callResearchAgent<Record<string, unknown>>({
       sql, ctx, stageKey: "ai_reviewer", taskKey,
       taskType: "ai_review", agentName: "research-reviewer", modelTier: "cheap",
       packet, promptFactory,

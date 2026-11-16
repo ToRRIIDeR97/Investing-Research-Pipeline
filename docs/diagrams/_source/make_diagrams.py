@@ -140,7 +140,7 @@ s = Svg(1100, 800, "Research run — UML activity view",
 cx = 330
 s.initial(cx, 55)
 steps = [
-    (75, "POST /api/assets/:id/research-runs", "run pending (v3) + 24 stages; run-type skips set at creation"),
+    (75, "POST /api/assets/:id/research-runs", "run pending (v3) + 25 stages; run-type skips set at creation"),
     (140, "POST …/run-system-pipeline (or approve-plan / review)", "enqueueResearchRun (resumes failed runs) → job queued"),
     (205, "Worker: requeueExpired, reconcile → claim (SKIP LOCKED)", "lease 5 min, renewed every 10 s; lost lease or SIGTERM aborts"),
     (270, "runResearchPipeline: pg_try_advisory_lock(run)", "fail stale running tasks · startRun if pending"),
@@ -169,7 +169,7 @@ s.line([(914, 502), (1020, 502), (1020, 540)], "yes", lx=990, ly=518)
 s.line([(886, 502), (840, 502), (840, 540)], "no", lx=860, ly=518)
 s.line([(cx, 472), (cx, 494)], "yes", lx=345, ly=486, lanchor="start")
 s.diamond(cx, 508)
-s.text(cx - 20, 496, "human gate (stage 4 / 22)?", 11, fill="#5a4700", italic=True, anchor="end")
+s.text(cx - 20, 496, "human gate (stage 4 / 23)?", 11, fill="#5a4700", italic=True, anchor="end")
 s.box(480, 540, 260, 56, "waiting_for_human; job completes", ["approval → new job enqueued"], "warn", title_size=12)
 s.line([(cx + 14, 508), (610, 508), (610, 540)], "yes", lx=580, ly=502)
 s.line([(cx, 522), (cx, 544)], "no", lx=345, ly=536, lanchor="start")
@@ -318,7 +318,7 @@ s.text(760, 655, "skip_and_continue: failed, run continues", 11, fill="#555")
 s.text(760, 670, "max_retries per stage: 0–3 (stages.ts)", 11, fill="#555")
 s.text(760, 685, "owner requires_rerun: stage + dependents → pending", 11, fill="#555")
 s.text(760, 700, "(auto once ≤ 6 analysis stages, else approved);", 11, fill="#555")
-s.text(760, 715, "ai_reviewer waiting_for_human until the decision", 11, fill="#555")
+s.text(760, 715, "report_draft or ai_reviewer waits until the decision", 11, fill="#555")
 # Artifact
 s.zone(20, 740, 1060, 205, "research_artifacts (artifacts/repository.ts upsertArtifact, reporting/store.ts saveReportArtifact)", "#2f6f9f")
 s.initial(55, 800)
@@ -375,7 +375,7 @@ msg(3, 4, "runResearchPipeline(runId)")
 msg(4, 2, "pg_try_advisory_lock(run); startRun / resume")
 def loop_body():
     msg(4, 2, "startReadyStages (dependency graph)")
-    msg(4, 5, "execute(ctx) × ready stages (parallel)")
+    msg(4, 5, "execute(ctx) × ready stages (parallel; report_draft, then ai_reviewer)")
     msg(5, 2, "loadFilingPassages: newest filings, driver passages")
     msg(5, 6, "callResearchAgent(role, packet + filing_passages)")
     msg(6, 7, "HTTPS chat/completions | messages (cached prefix)")
@@ -391,7 +391,7 @@ def requests_body():
     msg(4, 6, "team_answer(owner, report inputs + passages)")
     msg(6, 7, "one call; one more after a collector search")
     msg(4, 2, "requestResetPlan: none → answered · auto → reset once")
-    msg(4, 2, "approval → run, ai_reviewer waiting; request_reset")
+    msg(4, 2, "approval → run + running report stage waiting; request_reset")
     msg(0, 1, "POST …/request-reset {rerun | skip}")
     msg(1, 2, "approveRequestReset + enqueue new job")
 frame("alt [report requests in team_requests: 2 rounds pre-draft, 1 after review]", "#2f7f7f", xs[0] - 60, xs[7] + 65, requests_body)
@@ -412,7 +412,7 @@ def stop_body():
     msg(3, 2, "release job → queued, no attempt used [owner]")
 frame("alt [cancel or worker shutdown]", "#b23b3b", xs[0] - 60, xs[6] + 65, stop_body)
 assert y[0] < 1350, y[0]
-s.text(16, 1370, "Stage 22 human_review repeats this: POST …/review writes review_decisions; a position needs the effective review verdict; then completeRun or needs_more_work.", 11, fill="#555")
+s.text(16, 1370, "Stage 23 human_review repeats this: POST …/review writes review_decisions; a position needs the effective review verdict; then completeRun or needs_more_work.", 11, fill="#555")
 s.save(P("sequence-research-run.svg"))
 
 # ---------------------------------------------------------------- trust boundaries
@@ -473,7 +473,7 @@ s.box(30, 70, 230, 100, "Run A (completed or approved)", ["documents · question
 s.box(330, 70, 260, 100, "Run creation", ["run-service.ts · lineage/runs.ts", "prior_run_id: default, explicit or null", "same asset · pipeline v3"], "api", stereo="transaction")
 s.box(660, 70, 400, 100, "prior_research artifact (≤ 10 KB)", ["lineage/prior-research.ts (pure)", "documents, blocked questions, unavailable requests,", "decision, valuation summary, human follow-up"], "lib", stereo="artifact")
 s.box(330, 230, 260, 110, "Analysis + report calls (Run B)", ["prepareResearchCall adds prior_research", "in the cached packet prefix", "absent → packet byte-identical"], "worker", stereo="model packets")
-s.box(660, 230, 400, 110, "version_change_log artifact", ["lineage/change-log.ts (pure, no model): Run B vs Run A", "valuation per case + weighted, drivers, decision,", "thesis; new documents vs method/model change"], "lib", stereo="ai_reviewer start")
+s.box(660, 230, 400, 110, "version_change_log artifact", ["lineage/change-log.ts (pure, no model): Run B vs Run A", "valuation per case + weighted, drivers, decision,", "thesis; new documents vs method/model change"], "lib", stereo="report_draft start")
 s.box(660, 400, 400, 80, "Report", ["\"Changes since the prior run\" section + UI table"], "ui", stereo="report_document")
 s.box(30, 400, 280, 110, "npm run monitor:check", ["scripts/monitor-check.ts", "monitoring/monitor-check.ts", "monitoring/monitor-score.ts (pure)"], "worker", stereo="script")
 s.box(30, 230, 230, 110, "SEC EDGAR", ["data.sec.gov · www.sec.gov only", "10-Q / 10-K after the cutoff", "untrusted filing HTML"], "ext", stereo="external")

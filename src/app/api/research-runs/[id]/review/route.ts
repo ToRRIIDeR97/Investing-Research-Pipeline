@@ -138,7 +138,7 @@ export async function POST(
         if (report.required) {
           await tx`UPDATE research_stages SET status = 'pending', completed_at = NULL, failure_reason = NULL,
             validation_result_json = NULL, transient_failures = 0, last_transient_error = NULL, updated_at = NOW()
-            WHERE research_run_id = ${runId} AND stage_key IN ('ai_reviewer', 'human_review', 'export', 'refresh_schedule')`;
+            WHERE research_run_id = ${runId} AND stage_key IN ('report_draft', 'ai_reviewer', 'human_review', 'export', 'refresh_schedule')`;
           await tx`UPDATE research_runs SET status = 'running', completed_at = NULL,
             metadata_json = (metadata_json - 'report_approval') || ${tx.json({ report_revision_request: {
               decision_id: rows[0].id, notes: parsed.open_questions || parsed.watchlist_reason || "Address unresolved review findings",

@@ -12,9 +12,9 @@ export const PRIOR_RESEARCH_MAX_BYTES = 10 * 1024;
 const TEXT_LIMIT = 400;
 const TITLE_LIMIT = 140;
 
-/** Analysis stages and the report stage whose model calls carry prior_research in their shared packet prefix. */
+/** Analysis stages and the report stages whose model calls carry prior_research in their shared packet prefix. */
 export const PRIOR_RESEARCH_STAGES = new Set(["historical_diagnosis", "company_genesis", "business_process_analysis", "moat_analysis",
-  "operating_model", "operating_scenarios", "asset_valuation", "decision_synthesis", "ai_reviewer"]);
+  "operating_model", "operating_scenarios", "asset_valuation", "decision_synthesis", "report_draft", "ai_reviewer"]);
 
 export const PRIOR_RESEARCH_RULE = "prior_research is a code-built summary of this asset's previous run: the documents it used, the questions it left blocked, the requests it could not answer, its decision and its valuation. Start from it: work on what it left open and say where this run's view differs and why. It is context, not evidence. Cite only this run's evidence_claims and artifacts, and do not repeat a prior figure as current without this run's support. A review_status of unreviewed means no human approved the prior run.";
 

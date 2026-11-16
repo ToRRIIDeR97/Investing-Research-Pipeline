@@ -1,14 +1,15 @@
 import { callResearchAgent, exactJsonPrompt, type ResearchRunContext, type Sql } from "../run-context";
 import { AI_REVIEWER_CONTRACT } from "../stage-contracts";
-import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Section, normalizeOutlineStructure, validateProductOutline, validateChartPlan, outputContract, type ReportOutline, type ReportSection, type CoverageCheck } from "./contracts";
-import { composeReviewedReport, checkFinalCoverage, type ReportReview, type WrittenSection, REQUIRED_COVERAGE } from "./compose";
+import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Outline, Section, normalizeOutlineStructure, validateProductOutline, validateChartPlan, outputContract, type ReportOutline, type ReportSection, type CoverageCheck } from "./contracts";
+import { composeDraft, draftDocument, reviewDraftedReport, checkFinalCoverage, type CompositionActions, type ReportReview, type WrittenSection, REQUIRED_COVERAGE } from "./compose";
 import { z } from "zod/v4";
 import { DEPTH_CHECKS, DEPTH_CHECK_RULE, REWORK_STAGES, depthFindings } from "./depth";
 import { loadReportInputs, saveReportArtifact } from "./store";
 import { createReport, reviewDocument } from "./report";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { VISUAL_GUIDELINES } from './visuals';
-import { getTeamRequests, includeUnansweredQuestions, requestMissingResearch, preDraftBatch, preDraftRequests, postReviewAnswers } from "../team";
+import { getTeamRequests, includeUnansweredQuestions, requestMissingResearch, preDraftBatch, preDraftRequests, postReviewAnswers, ResearchRequestsPending } from "../team";
+import { saveVersionChangeLog } from "../lineage/runs";
 import { buildReportFacts } from "./facts";
 import { researchPacketForModel } from "./packet";
 
@@ -210,13 +211,29 @@ export const FINAL_COVERAGE_RULE ="packet.provisional_coverage is the planner's 
 /** Review finding categories that may send work back to the specialists after the review. */
 const REWORK_CATEGORIES = ["research_gap", "calculation", "evidence", "analysis_rework"];
 
-export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
-  await requestMissingResearch(sql, ctx);
+/** The two report stages. Their calls share one composition, so a draft call's packet is the same in either stage. */
+export type ReportStageKey = "report_draft" | "ai_reviewer";
+
+/** What the review stage needs from the draft that its artifacts don't hold. Saved on the report_draft stage row. */
+export interface StoredDraftState {
+  outline_id: string; section_ids: string[]; document_id: string;
+  input_hash: string; content_hash: string; final_coverage: CoverageCheck[] | null; dropped_citations: string[];
+}
+
+/** A stored draft no longer matches the run's report inputs; report_draft was reopened, and the runner redrafts. */
+export class ReportDraftReopened extends ResearchRequestsPending {
+  constructor() { super(); this.message = "The report inputs changed since the draft; report_draft was reopened"; }
+}
+
+/**
+ * The calls and packets both report stages make: outline, sections, review, post-review rework and artifact saves.
+ * `stageKey` records each call under the stage that makes it; it does not change a packet or a prompt.
+ */
+async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: ReportStageKey, droppedSeed: string[] = []) {
   const teamRequests = await getTeamRequests(sql, ctx.runId);
-  await saveReportFacts(sql, ctx);
-  const { artifacts, evidence } = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
+  const { artifacts, evidence, input_hash } = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
   const { shared, packetArtifacts } = splitReportArtifacts(artifacts);
-  const dropped = new Set<string>();
+  const dropped = new Set<string>(droppedSeed);
   const usable = <T>(value: T) => keepUsableReferences(value, artifacts, evidence, dropped);
   const check = <T>(value: T) => keepUsableReferences(value, artifacts, evidence);
   const usableOutline = (value: { outline: ReportOutline }, keepIds = usable) => { const kept = keepIds(value); return { ...kept, outline: normalizeOutlineStructure(kept.outline) }; };
@@ -228,11 +245,13 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
   const reportInput = { asset_name: ctx.assetName, cutoff: ctx.cutoffAt.toISOString(), is_test: ctx.testMode,
     required_coverage: REQUIRED_COVERAGE, artifacts, evidence };
   // The latest outline's sections, so rework requests from missing depth checks name the chapter that owns them.
-  let outlineSections: ReportOutline["sections"] = [];
-  return composeReviewedReport(reportInput, {
+  const tracked = { outlineSections: [] as ReportOutline["sections"] };
+  // The id of each artifact a save stored (or kept, when unchanged), by type and scope.
+  const savedIds = new Map<string, string>();
+  const actions: CompositionActions = {
     async plan(feedback) {
       const packet = { ...common, feedback, output_contract: "report_outline", output_schema: OUTLINE_CONTRACT.schema };
-      const output = usableOutline(await callResearchAgent<{ outline: ReportOutline }>({ sql, ctx, stageKey: "ai_reviewer",
+      const output = usableOutline(await callResearchAgent<{ outline: ReportOutline }>({ sql, ctx, stageKey,
         taskKey: "report:outline", taskType: "report_outline", agentName: "asset-analyst", modelTier: "mid", packet,
         outputFormat: checkedContract(OUTLINE_CONTRACT, ({ outline }: { outline: ReportOutline }) => {
           validateProductOutline(outline);
@@ -251,15 +270,15 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
             ...(ctx.researchFraming ? [FRAMING_OUTLINE_RULE] : [])] }) }));
       const unanswered = output.outline.questions.filter(q => q.status === "blocked" && q.materiality !== "supporting")
         .map(q => ({ category: "research_gap", question: q.question, follow_up: q.follow_up }));
-      if (unanswered.length) await requestMissingResearch(sql, ctx, unanswered);
+      if (unanswered.length) await requestMissingResearch(sql, ctx, unanswered, "pre_draft", stageKey);
       const planned = includeFramingQuestions(includeUnansweredQuestions(output.outline, preDraftBatch(teamRequests)), ctx.researchFraming);
-      outlineSections = planned.sections;
+      tracked.outlineSections = planned.sections;
       return planned;
     },
     async write(section, outline, feedback, completed, options) {
       const finalCoverage = options?.coverage;
       const { packet, contract, perCallKeys, extraRules } = reportSectionCall(common, packetArtifacts, section, outline, feedback, completed, finalCoverage);
-      const output = usable(await callResearchAgent<{ section: ReportSection; coverage?: WrittenSection["final_coverage"] }>({ sql, ctx, stageKey: "ai_reviewer",
+      const output = usable(await callResearchAgent<{ section: ReportSection; coverage?: WrittenSection["final_coverage"] }>({ sql, ctx, stageKey,
         taskKey: `report:section:${section.id}`, taskType: "report_section", agentName: "export-writer", modelTier: "mid", packet,
         perCallKeys, outputFormat: checkedContract(contract, (result: { section: ReportSection; coverage?: WrittenSection["final_coverage"] }) => {
           if (result.section.id !== section.id || JSON.stringify(result.section.coverage) !== JSON.stringify(section.coverage)) throw new Error("Preserve section id and coverage exactly");
@@ -274,7 +293,7 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
       const packet = { ...common, visual_guidelines: VISUAL_GUIDELINES, report_document: reviewDocument(document),
         depth_checks: DEPTH_CHECKS.map(({ id, label, ask, critical }) => ({ id, label, ask, decision_critical: critical })),
         output_contract: "report_review", output_schema: AI_REVIEWER_CONTRACT.schema };
-      const review = await callResearchAgent<ReportReview>({ sql, ctx, stageKey: "ai_reviewer", taskKey: "report:review", taskType: "ai_review",
+      const review = await callResearchAgent<ReportReview>({ sql, ctx, stageKey, taskKey: "report:review", taskType: "ai_review",
         agentName: "research-reviewer", modelTier: "mid", packet, outputFormat: AI_REVIEWER_CONTRACT,
         promptFactory: p => exactJsonPrompt({ agentName: "research-reviewer", requiredKeys: AI_REVIEWER_CONTRACT.requiredKeys, packet: p,
           extraRules: [REPORT_FACTS_RULE,
@@ -289,11 +308,77 @@ export async function draftAndReviewReport(sql: Sql, ctx: ResearchRunContext) {
     },
     // Called once, after the first review is saved: the post-review round may pause the run; on resume its answers come back.
     async rework(review) {
-      const gaps = [...review.findings.filter(f => REWORK_CATEGORIES.includes(f.category)), ...depthFindings(review.depth_checks, outlineSections)];
-      if (gaps.length) await requestMissingResearch(sql, ctx, gaps, "post_review");
+      const gaps = [...review.findings.filter(f => REWORK_CATEGORIES.includes(f.category)), ...depthFindings(review.depth_checks, tracked.outlineSections)];
+      if (gaps.length) await requestMissingResearch(sql, ctx, gaps, "post_review", stageKey);
       return postReviewAnswers(await getTeamRequests(sql, ctx.runId));
     },
-    save: (type, scope, content) => saveReportArtifact(sql, ctx, type, `${ctx.assetSlug}-${scope}`,
-      type === "report_review" ? { ...content, dropped_citations: [...dropped].sort() } : content),
-  });
+    async save(type, scope, content) {
+      const row = await saveReportArtifact(sql, ctx, type, `${ctx.assetSlug}-${scope}`,
+        type === "report_review" ? { ...content, dropped_citations: [...dropped].sort() } : content);
+      savedIds.set(`${type}:${scope}`, String((row as { id: unknown }).id));
+      return row;
+    },
+  };
+  return { actions, reportInput, input_hash, dropped, tracked, savedIds };
+}
+
+/**
+ * report_draft: the version change log, pre-draft team requests, report_facts, the outline, every section and the
+ * first report_document. The review stage reads that draft; what its artifacts don't hold is saved on the stage row.
+ */
+export async function draftReport(sql: Sql, ctx: ResearchRunContext) {
+  // What changed since the prior run, computed by code before the report is written; nothing without a prior.
+  await saveVersionChangeLog(sql, ctx);
+  await requestMissingResearch(sql, ctx, [], "pre_draft", "report_draft");
+  await saveReportFacts(sql, ctx);
+  const composition = await reportComposition(sql, ctx, "report_draft");
+  const draft = await composeDraft(composition.reportInput, composition.actions);
+  const id = (type: string, scope: string) => composition.savedIds.get(`${type}:${scope}`)!;
+  const state: StoredDraftState = {
+    outline_id: id("report_outline", "outline"), section_ids: draft.sections.map(section => id("report_section", section.id)),
+    document_id: id("report_document", "document"), input_hash: draft.document.input_hash, content_hash: draft.document.content_hash,
+    final_coverage: draft.finalCoverage ?? null, dropped_citations: [...composition.dropped].sort(),
+  };
+  await sql`UPDATE research_stages SET completion_criteria_json = COALESCE(completion_criteria_json, '{}'::jsonb)
+      || jsonb_build_object('report_draft', ${JSON.stringify(state)}::text::jsonb), updated_at = NOW()
+    WHERE research_run_id = ${ctx.runId} AND stage_key = 'report_draft'`;
+  return draft;
+}
+
+/** The draft as report_draft left it, or null when there is none to review. */
+async function storedDraft(sql: Sql, ctx: ResearchRunContext): Promise<StoredDraftState | null> {
+  const [stage] = await sql`SELECT status, completion_criteria_json->'report_draft' AS state FROM research_stages
+    WHERE research_run_id = ${ctx.runId} AND stage_key = 'report_draft'`;
+  return stage?.status === "completed" && stage.state ? stage.state as StoredDraftState : null;
+}
+
+/** Puts report_draft (and this stage) back to pending; the runner redrafts with the current inputs. */
+async function reopenDraft(sql: Sql, ctx: ResearchRunContext): Promise<never> {
+  await sql`UPDATE research_stages SET status = 'pending', started_at = NULL, completed_at = NULL, validation_result_json = NULL,
+      transient_failures = 0, last_transient_error = NULL, failure_reason = NULL, updated_at = NOW()
+    WHERE research_run_id = ${ctx.runId} AND stage_key IN ('report_draft', 'ai_reviewer')`;
+  throw new ReportDraftReopened();
+}
+
+/**
+ * ai_reviewer: rebuilds the stored draft from its artifacts (zod restores the key order jsonb dropped, so every
+ * packet is the one the draft stage would have built), reviews it, then runs the post-review rework and the repair
+ * round. A draft that no longer matches the report inputs, for example after a request round added evidence, is
+ * redrafted first, as one composition would have done on resume.
+ */
+export async function reviewReport(sql: Sql, ctx: ResearchRunContext) {
+  const state = await storedDraft(sql, ctx);
+  if (!state) return reopenDraft(sql, ctx);
+  const composition = await reportComposition(sql, ctx, "ai_reviewer", state.dropped_citations);
+  if (composition.input_hash !== state.input_hash) return reopenDraft(sql, ctx);
+  const ids = [state.outline_id, ...state.section_ids];
+  const rows = await sql`SELECT id, content_json FROM research_artifacts WHERE research_run_id = ${ctx.runId} AND id = ANY(${ids}::uuid[])`;
+  const content = new Map(rows.map(row => [String(row.id), row.content_json]));
+  if (ids.some(id => !content.has(id))) return reopenDraft(sql, ctx);
+  const outline = Outline.parse(content.get(state.outline_id));
+  const sections = state.section_ids.map(id => Section.parse(content.get(id)));
+  const draft = draftDocument(composition.reportInput, { outline, sections, finalCoverage: state.final_coverage ?? undefined });
+  if (draft.document.content_hash !== state.content_hash) return reopenDraft(sql, ctx);
+  composition.tracked.outlineSections = outline.sections;
+  return reviewDraftedReport(composition.reportInput, composition.actions, draft);
 }

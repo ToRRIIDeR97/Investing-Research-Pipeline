@@ -28,7 +28,7 @@
 <text x="460.0" y="296" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">in the cached packet prefix</text>
 <text x="460.0" y="311" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">absent → packet byte-identical</text>
 <rect x="660" y="230" width="400" height="110" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
-<text x="860.0" y="248" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«ai_reviewer start»</text>
+<text x="860.0" y="248" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«report_draft start»</text>
 <text x="860.0" y="264" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">version_change_log artifact</text>
 <text x="860.0" y="281" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">lineage/change-log.ts (pure, no model): Run B vs Run A</text>
 <text x="860.0" y="296" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">valuation per case + weighted, drivers, decision,</text>

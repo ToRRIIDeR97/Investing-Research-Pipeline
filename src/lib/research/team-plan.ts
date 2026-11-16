@@ -34,7 +34,7 @@ export const STAGE_OWNERS: Record<string, TeamRole> = {
   business_process_analysis: "business", moat_analysis: "business", operating_model: "business",
   operating_scenarios: "business", asset_valuation: "valuation", indicator_design: "business",
   strategy_design: "business", backtest_execution: "business", backtest_review: "business",
-  decision_synthesis: "report", ai_reviewer: "report", export: "report",
+  decision_synthesis: "report", report_draft: "report", ai_reviewer: "report", export: "report",
 };
 /**
  * Owned stages whose handlers never read a specialist brief: the deterministic, price-only backtests. They start
@@ -61,7 +61,8 @@ export const STAGE_DEPENDENCIES: Record<string, string[]> = {
   // analysis branch. The decision joins both branches.
   indicator_design: ["research_plan"], strategy_design: ["indicator_design"],
   backtest_execution: ["strategy_design"], backtest_review: ["backtest_execution"],
-  decision_synthesis: ["asset_valuation", "backtest_review"], ai_reviewer: ["decision_synthesis"],
+  // The report is drafted in its own stage and reviewed (and repaired) in the next.
+  decision_synthesis: ["asset_valuation", "backtest_review"], report_draft: ["decision_synthesis"], ai_reviewer: ["report_draft"],
   human_review: ["ai_reviewer"], export: ["human_review"], refresh_schedule: ["export"],
 };
 

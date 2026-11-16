@@ -20,7 +20,7 @@ export interface CreateResearchRunInput {
 }
 /**
  * Create a run and its complete stage ledger in one database transaction.
- * A run without its 24 stage rows is not a valid UI-created run.
+ * A run without its 25 stage rows is not a valid UI-created run.
  */
 export async function createResearchRunWithStages(input: CreateResearchRunInput) {
   const sql = pipelineSql();

@@ -559,8 +559,9 @@ export async function approveRequestReset(
         `Superseded: its owning stage was reopened by a re-run approved for team request round ${batch.round}.`);
     } else {
       await skipRequestRerun(tx as unknown as Sql, runId, batch, reset.request_ids);
+      // The report stage the round paused (report_draft or ai_reviewer) resumes.
       await tx`UPDATE research_stages SET status = 'running', updated_at = NOW()
-        WHERE research_run_id = ${runId} AND stage_key = 'ai_reviewer' AND status = 'waiting_for_human'`;
+        WHERE research_run_id = ${runId} AND stage_key IN ('report_draft', 'ai_reviewer') AND status = 'waiting_for_human'`;
     }
     await tx`UPDATE research_run_resets SET status = ${input.decision === "rerun" ? "applied" : "skipped"},
       decided_by = ${input.actor}, decided_at = NOW() WHERE id = ${pending.id}`;

@@ -7,6 +7,7 @@ import { ModelBudgetExhausted } from "@/lib/agents/model-calls";
 import { loadRunContext, type Sql } from "./run-context";
 import { STAGE_HANDLERS } from "./handlers";
 import { CURRENT_PIPELINE_VERSION } from "./version";
+import { STAGE_CONFIGS } from "@/lib/workflow/stages";
 import { prepareResearchTeam, processResearchRequests, ResearchRequestsPending, teamBriefScheduler } from "./team";
 import { processSourceRequests } from "./sources/collector";
 import { SourceRequestsPending } from "./sources/source-requests";
@@ -24,9 +25,9 @@ export interface SystemPipelineResult {
 /**
  * Scheduling passes one job may make: each claim of ready stages and each dataflow launch after a stage
  * settles counts as one. A run that needs more is looping, and the runner fails it instead of spinning.
- * The budget is eight passes for each of the 24 stages.
+ * The budget is eight passes per stage (200 for the 25 stages).
  */
-export const MAX_SCHEDULING_PASSES = 24 * 8;
+export const MAX_SCHEDULING_PASSES = 8 * STAGE_CONFIGS.length;
 
 /** Another worker holds the run's session lock; the job should wait, not fail. */
 export class ResearchRunLocked extends Error {}

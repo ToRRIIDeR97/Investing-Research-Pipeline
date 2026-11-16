@@ -62,7 +62,9 @@ const ANSWER_CONTRACT = { ...outputContract({ status: z.enum(["answered", "unava
   evidence_ids: z.array(z.string()), artifact_ids: z.array(z.string()), source_ids: z.array(z.string()).optional(), requires_rerun: z.boolean().optional() }),
   requiredKeys: ["status", "answer", "evidence_ids", "artifact_ids"] };
 /** Stages after the analysis: a re-run reopens them but does not wait for them. */
-export const REQUEST_TAIL_STAGES = ["ai_reviewer", "human_review", "export", "refresh_schedule"];
+export const REQUEST_TAIL_STAGES = ["report_draft", "ai_reviewer", "human_review", "export", "refresh_schedule"];
+/** The two report stages; a request round pauses whichever of them is running. */
+export const REPORT_STAGES = ["report_draft", "ai_reviewer"];
 export class ResearchRequestsPending extends Error {
   constructor() { super("Specialists are investigating report requests"); }
 }
@@ -197,7 +199,12 @@ export function reworkRequests(findings: Record<string, any>[]): (Request & Pick
  * The report owner decides what is missing, using the complete current input snapshot. The post-review phase also
  * turns analysis_rework findings into rerun requests for their owning stages.
  */
-export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, findings: Record<string, any>[] = [], phase: RequestPhase = "pre_draft") {
+/**
+ * `stageKey` is the report stage making the call: pre-draft rounds run in report_draft, the post-review round and
+ * the repair re-plan in ai_reviewer. It records the call under that stage and picks its model; the prompt is the same.
+ */
+export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, findings: Record<string, any>[] = [], phase: RequestPhase = "pre_draft",
+  stageKey: string = phase === "post_review" ? "ai_reviewer" : "report_draft") {
   const previous = await getTeamRequests(sql, ctx.runId);
   if (previous && previous.state !== "answered") throw new ResearchRequestsPending();
   // Persisted limit survives worker restarts. Unavailable material answers stay blocked.
@@ -205,7 +212,7 @@ export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, 
   const inputs = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
   const packet = { asset: { name: ctx.assetName, symbol: ctx.symbol }, ...inputs, previous_requests: previous?.requests || [],
     findings, role: "report", output_contract: "team_requests" };
-  const result = await callResearchAgent<{ requests: Request[] }>({ sql, ctx, stageKey: "ai_reviewer",
+  const result = await callResearchAgent<{ requests: Request[] }>({ sql, ctx, stageKey,
     taskKey: `team:requests:${previous?.round || 0}`, taskType: "team_requests", agentName: "export-writer", modelTier: "cheap",
     packet, outputFormat: REQUEST_CONTRACT, promptFactory: p => exactJsonPrompt({ agentName: "export-writer",
       requiredKeys: ["requests"], packet: p, extraRules: [TEAM_ROLES.report.purpose,
@@ -578,8 +585,9 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
       JOIN research_stages s ON s.id = m.stage_id WHERE m.research_run_id = ${ctx.runId} AND s.stage_key = ANY(${plan.stages}::text[])`;
     const { rerun_stages: _, ...rest } = final;
     await writeTeamRequests(tx as unknown as Sql, ctx.runId, { ...rest, state: "processing" });
+    // The report stage that raised the round waits with the run.
     await tx`UPDATE research_stages SET status = 'waiting_for_human', updated_at = NOW()
-      WHERE research_run_id = ${ctx.runId} AND stage_key = 'ai_reviewer'`;
+      WHERE research_run_id = ${ctx.runId} AND stage_key = ANY(${REPORT_STAGES}::text[]) AND status = 'running'`;
     await tx`INSERT INTO research_run_resets (research_run_id, kind, status, stages, request_ids, estimated_cost_usd)
       VALUES (${ctx.runId}, 'approval', 'pending', ${record.stages}::text[], ${record.request_ids}::text[], ${Number(cost)})`;
     await tx`UPDATE research_runs SET status = 'waiting_for_human', updated_at = NOW() WHERE id = ${ctx.runId}`;

@@ -18,6 +18,7 @@ import { strategyDesignHandler } from "./strategy-design";
 import { backtestExecutionHandler } from "./backtest-execution";
 import { backtestReviewHandler } from "./backtest-review";
 import { decisionSynthesisHandler } from "./decision-synthesis";
+import { reportDraftHandler } from "./report-draft";
 import { aiReviewerHandler } from "./ai-reviewer";
 import { humanReviewHandler } from "./human-review";
 import { exportHandler } from "./export";
@@ -26,5 +27,5 @@ import { refreshScheduleHandler } from "./refresh-schedule";
 import type { StageHandler } from "../run-context";
 
 export const STAGE_HANDLERS: Record<string, StageHandler> = Object.fromEntries(
-  [intakeHandler, assetIdentityHandler, archetypeCompositionHandler, researchPlanHandler, sourceDiscoveryHandler, sourceIngestionHandler, evidenceExtractionHandler, historicalRecordHandler, companyGenesisHandler, historicalDiagnosisHandler, businessProcessAnalysisHandler, moatAnalysisHandler, operatingModelHandler, operatingScenariosHandler, assetValuationHandler, indicatorDesignHandler, strategyDesignHandler, backtestExecutionHandler, backtestReviewHandler, decisionSynthesisHandler, aiReviewerHandler, humanReviewHandler, exportHandler, refreshScheduleHandler].map((handler) => [handler.stageKey, handler])
+  [intakeHandler, assetIdentityHandler, archetypeCompositionHandler, researchPlanHandler, sourceDiscoveryHandler, sourceIngestionHandler, evidenceExtractionHandler, historicalRecordHandler, companyGenesisHandler, historicalDiagnosisHandler, businessProcessAnalysisHandler, moatAnalysisHandler, operatingModelHandler, operatingScenariosHandler, assetValuationHandler, indicatorDesignHandler, strategyDesignHandler, backtestExecutionHandler, backtestReviewHandler, decisionSynthesisHandler, reportDraftHandler, aiReviewerHandler, humanReviewHandler, exportHandler, refreshScheduleHandler].map((handler) => [handler.stageKey, handler])
 );

@@ -767,6 +767,19 @@ export const MODEL_TIERS = ["premium", "mid", "cheap"] as const;
 export type ModelTier = (typeof MODEL_TIERS)[number];
 const isModelTier = (value: unknown): value is ModelTier => (MODEL_TIERS as readonly string[]).includes(String(value));
 const envKey = (value: string) => value.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+/**
+ * Stages split out of another stage read the original stage's RESEARCH_STAGE_* settings when their own are unset:
+ * report_draft's writers ran in ai_reviewer until the report got its own stage.
+ */
+const STAGE_SETTING_FALLBACKS: Record<string, string> = { report_draft: "ai_reviewer" };
+/** The stage whose RESEARCH_STAGE_<KEY>_<suffix> applies: the stage itself, else the stage it was split from. */
+function stageSettingKey(stageKey: string | null | undefined, suffix: "MODEL" | "EFFORT"): string | undefined {
+  if (!stageKey) return undefined;
+  for (const key of [stageKey, STAGE_SETTING_FALLBACKS[stageKey]]) {
+    if (key && process.env[`RESEARCH_STAGE_${envKey(key)}_${suffix}`]) return key;
+  }
+  return undefined;
+}
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 /** Default effort per tier; Claude Opus 5.5 and Haiku 5.5 otherwise default to medium. */
 export const TIER_EFFORT: Record<ModelTier, (typeof EFFORTS)[number]> = { premium: "high", mid: "medium", cheap: "low" };
@@ -776,7 +789,7 @@ export type TaskModelSource = "override" | "stage" | "tier" | "all_agents" | "ag
 /**
  * The model for one task, first match wins:
  * 1. modelOverride (a caller's explicit choice);
- * 2. RESEARCH_STAGE_<STAGE_KEY>_MODEL;
+ * 2. RESEARCH_STAGE_<STAGE_KEY>_MODEL (report_draft falls back to ai_reviewer's);
  * 3. RESEARCH_<TIER>_MODEL (premium, mid or cheap);
  * 4. RESEARCH_ALL_AGENTS_MODEL;
  * 5. RESEARCH_<AGENT>_MODEL, then the agent config's own env var;
@@ -787,14 +800,15 @@ export type TaskModelSource = "override" | "stage" | "tier" | "all_agents" | "ag
  */
 export function resolveTaskModel(input: { agentName: ResearchAgentName; tier?: string | null; stageKey?: string | null; modelOverride?: string | null }):
   { model: string; source: TaskModelSource; fallbackModel?: string | null } {
-  const stage = input.stageKey ? process.env[`RESEARCH_STAGE_${envKey(input.stageKey)}_MODEL`] : undefined;
+  const stageKey = stageSettingKey(input.stageKey, "MODEL");
+  const stage = stageKey ? process.env[`RESEARCH_STAGE_${envKey(stageKey)}_MODEL`] : undefined;
   const tier = isModelTier(input.tier) ? process.env[`RESEARCH_${envKey(input.tier)}_MODEL`] : undefined;
   if (input.modelOverride) return { model: normalizeModelEnvValue(input.modelOverride), source: "override" };
   const fallback = (scope: string) => {
     const value = process.env[`RESEARCH_${scope}_FALLBACK_MODEL`];
     return value ? normalizeModelEnvValue(value) : null;
   };
-  if (stage) return { model: normalizeModelEnvValue(stage), source: "stage", fallbackModel: fallback(`STAGE_${envKey(input.stageKey!)}`) };
+  if (stage) return { model: normalizeModelEnvValue(stage), source: "stage", fallbackModel: fallback(`STAGE_${envKey(stageKey!)}`) };
   if (tier) return { model: normalizeModelEnvValue(tier), source: "tier", fallbackModel: fallback(envKey(input.tier!)) };
   const config = getAgentConfig(input.agentName);
   const source: TaskModelSource = process.env.RESEARCH_ALL_AGENTS_MODEL ? "all_agents"
@@ -803,13 +817,13 @@ export function resolveTaskModel(input: { agentName: ResearchAgentName; tier?: s
 }
 
 /**
- * Reasoning effort for one task, first match wins: RESEARCH_STAGE_<STAGE_KEY>_EFFORT, RESEARCH_<TIER>_EFFORT,
+ * Reasoning effort for one task, first match wins: RESEARCH_STAGE_<STAGE_KEY>_EFFORT (with the same stage fallback), RESEARCH_<TIER>_EFFORT,
  * RESEARCH_EFFORT, then the tier default (premium high, mid medium, cheap low). "default" (or "none") at any level
  * sends no effort, leaving the model's own default. Untiered calls send none unless RESEARCH_EFFORT is set.
  */
 export function resolveTaskEffort(input: { tier?: string | null; stageKey?: string | null }): (typeof EFFORTS)[number] | undefined {
   const values = [
-    input.stageKey ? process.env[`RESEARCH_STAGE_${envKey(input.stageKey)}_EFFORT`] : undefined,
+    ((key) => key ? process.env[`RESEARCH_STAGE_${envKey(key)}_EFFORT`] : undefined)(stageSettingKey(input.stageKey, "EFFORT")),
     isModelTier(input.tier) ? process.env[`RESEARCH_${envKey(input.tier)}_EFFORT`] : undefined,
     process.env.RESEARCH_EFFORT,
   ];

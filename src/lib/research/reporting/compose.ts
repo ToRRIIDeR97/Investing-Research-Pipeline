@@ -72,18 +72,19 @@ export function checkFinalCoverage(input: Omit<ReportInput, "sections" | "covera
 
 const severe = (f: Record<string, any>) => ["high", "critical"].includes(String(f.severity ?? "").toLowerCase());
 
-/** One repair round, even after restart: callers cache calls by input content. */
-export async function composeReviewedReport(input: Omit<ReportInput, "sections" | "coverage" | "questions">, actions: CompositionActions) {
-  let outline = Outline.parse(await actions.plan([]));
-  await actions.save("report_outline", "outline", outline);
-  await actions.save("question_register", "questions", { questions: outline.questions });
-  const sections: ReportSection[] = [];
-  let finalCoverage: CoverageCheck[] | undefined;
-  async function write(plan: ReportOutline["sections"][number], feedback: Record<string, any>[], completed = sections, last = false) {
-    const written = await actions.write(plan, outline, feedback, completed, last ? { coverage: outline.coverage } : undefined);
+/** The first draft: its outline, its sections in outline order, the last conclusion's coverage and the first document. */
+export interface ReportDraft {
+  outline: ReportOutline; sections: ReportSection[]; finalCoverage?: CoverageCheck[]; document: ReportDocument;
+}
+type CompositionInput = Omit<ReportInput, "sections" | "coverage" | "questions">;
+
+/** Writing state shared by the draft and the repair round: the current outline, sections and final coverage. */
+function composer(input: CompositionInput, actions: CompositionActions, state: { outline: ReportOutline; sections: ReportSection[]; finalCoverage?: CoverageCheck[] }) {
+  async function write(plan: ReportOutline["sections"][number], feedback: Record<string, any>[], completed = state.sections, last = false) {
+    const written = await actions.write(plan, state.outline, feedback, completed, last ? { coverage: state.outline.coverage } : undefined);
     const section = Section.parse(written);
     if (section.id !== plan.id || JSON.stringify(section.coverage) !== JSON.stringify(plan.coverage)) throw new Error("Writer changed section identity or coverage");
-    if (last && Array.isArray(written.final_coverage)) finalCoverage = written.final_coverage;
+    if (last && Array.isArray(written.final_coverage)) state.finalCoverage = written.final_coverage;
     await actions.save("report_section", section.id, section);
     return section;
   }
@@ -96,14 +97,57 @@ export async function composeReviewedReport(input: Omit<ReportInput, "sections" 
     const list = conclusions(plans);
     for (const [i, plan] of list.entries()) done.push(await write(plan, feedback, done, i === list.length - 1));
   };
-  sections.push(...await mapWithConcurrency(body(outline.sections), plan => write(plan, [], [])));
-  await writeConclusions(outline.sections, [], sections);
-  sections.sort((a,b) => outline.sections.findIndex(s => s.id === a.id) - outline.sections.findIndex(s => s.id === b.id));
+  const inOutlineOrder = (list: ReportSection[]) => list.sort((a, b) =>
+    state.outline.sections.findIndex(s => s.id === a.id) - state.outline.sections.findIndex(s => s.id === b.id));
+  const documentFor = (findings: Record<string, any>[]) => {
+    const coverage = reconcileCoverage(state.outline.coverage, state.finalCoverage, { artifacts: input.artifacts, sections: state.sections, findings });
+    return createReport({ ...input, ...state.outline, coverage, sections: state.sections });
+  };
+  return { write, body, writeConclusions, inOutlineOrder, documentFor };
+}
+
+/** The report_draft stage: outline, sections and the first report_document. */
+export async function composeDraft(input: CompositionInput, actions: CompositionActions): Promise<ReportDraft> {
+  const state: { outline: ReportOutline; sections: ReportSection[]; finalCoverage?: CoverageCheck[] } =
+    { outline: Outline.parse(await actions.plan([])), sections: [] };
+  await actions.save("report_outline", "outline", state.outline);
+  await actions.save("question_register", "questions", { questions: state.outline.questions });
+  const c = composer(input, actions, state);
+  state.sections.push(...await mapWithConcurrency(c.body(state.outline.sections), plan => c.write(plan, [], [])));
+  await c.writeConclusions(state.outline.sections, [], state.sections);
+  c.inOutlineOrder(state.sections);
+  const document = c.documentFor([]);
+  await actions.save("report_document", "document", document);
+  return { ...state, document };
+}
+
+/** A stored draft's first document, rebuilt exactly as composeDraft built it from the same outline and sections. */
+export function draftDocument(input: CompositionInput, parts: Omit<ReportDraft, "document">): ReportDraft {
+  const state = { outline: parts.outline, sections: parts.sections, finalCoverage: parts.finalCoverage };
+  // A no-op actions object: documentFor only reads the state.
+  const c = composer(input, {} as CompositionActions, state);
+  return { ...state, document: c.documentFor([]) };
+}
+
+/** One repair round, even after restart: callers cache calls by input content. */
+export async function composeReviewedReport(input: CompositionInput, actions: CompositionActions) {
+  return reviewDraftedReport(input, actions, await composeDraft(input, actions));
+}
+
+/**
+ * The ai_reviewer stage: reviews the stored draft, then runs the post-review rework and the one repair round
+ * exactly as one composition did. The first round reviews the draft's own document, which is already saved.
+ */
+export async function reviewDraftedReport(input: CompositionInput, actions: CompositionActions, draft: ReportDraft) {
+  const state = { outline: draft.outline, sections: [...draft.sections], finalCoverage: draft.finalCoverage };
+  const c = composer(input, actions, state);
+  const { write, body, writeConclusions } = c;
+  const sections = state.sections;
   let priorFindings: Record<string, any>[] = [];
   for (let round = 0; round <= 1; round++) {
-    const coverage = reconcileCoverage(outline.coverage, finalCoverage, { artifacts: input.artifacts, sections, findings: priorFindings });
-    const document = createReport({ ...input, ...outline, coverage, sections });
-    await actions.save("report_document", "document", document);
+    const outline = state.outline;
+    const document = round === 0 ? draft.document : c.documentFor(priorFindings);
+    if (round > 0) await actions.save("report_document", "document", document);
     // Substance findings join the reviewer's, so a passed review with thin or leaking sections still gets the one repair.
     const reviewed = await actions.review(document);
     // Question and coverage leaks are shown to the reviewer; only section text can be repaired by a writer.
@@ -124,17 +168,18 @@ export async function composeReviewedReport(input: Omit<ReportInput, "sections" 
     if (researchFindings.length) {
       // Re-investigate the existing corpus once. Missing disclosures must become
       // qualified/blocked questions, not facts invented by the section writer.
-      outline = Outline.parse(await actions.plan(researchFindings));
-      await actions.save("report_outline", "outline", outline);
-      await actions.save("question_register", "questions", { questions: outline.questions });
-      const revised: ReportSection[] = await mapWithConcurrency(body(outline.sections), plan => {
+      state.outline = Outline.parse(await actions.plan(researchFindings));
+      const replanned = state.outline;
+      await actions.save("report_outline", "outline", replanned);
+      await actions.save("question_register", "questions", { questions: replanned.questions });
+      const revised: ReportSection[] = await mapWithConcurrency(body(replanned.sections), plan => {
         const prior = sections.find(s => s.id === plan.id);
         const affected = findings.some(f => !f.section_id || f.section_id === plan.id);
         return prior && !affected && JSON.stringify(prior.coverage) === JSON.stringify(plan.coverage)
           ? Promise.resolve(prior) : write(plan, feedback, []);
       });
-      await writeConclusions(outline.sections, feedback, revised);
-      revised.sort((a,b) => outline.sections.findIndex(s => s.id === a.id) - outline.sections.findIndex(s => s.id === b.id));
+      await writeConclusions(replanned.sections, feedback, revised);
+      c.inOutlineOrder(revised);
       sections.splice(0, sections.length, ...revised);
       continue;
     }

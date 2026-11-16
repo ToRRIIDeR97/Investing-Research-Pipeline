@@ -18,7 +18,8 @@ export const TEAM = "../../../src/lib/research/team";
 export const ORCHESTRATOR = "../../../src/lib/workflow/orchestrator";
 export const RESET_ROUTE = "../../../src/app/api/research-runs/[id]/request-reset/route";
 export const SOURCE_REQUESTS = "../../../src/lib/research/sources/source-requests";
-export const TAIL = ["ai_reviewer", "human_review", "export", "refresh_schedule"];
+// REQUEST_TAIL_STAGES: report_draft joined the tail in architecture-9 P4.
+export const TAIL = ["report_draft", "ai_reviewer", "human_review", "export", "refresh_schedule"];
 
 export function loadEnv() {
   process.env.RESEARCH_MODEL_PROVIDER = "mock";
@@ -133,7 +134,7 @@ export async function seedCost(sql: postgres.Sql, runId: string, stageKey: strin
 /** Simulate the worker finishing the reopened stages: they complete and the report stage runs again. */
 export async function finishReopenedStages(sql: postgres.Sql, runId: string) {
   await sql`UPDATE research_stages SET status = 'completed', completed_at = NOW()
-    WHERE research_run_id = ${runId} AND status = 'pending' AND stage_key != ALL(${TAIL}::text[])`;
+    WHERE research_run_id = ${runId} AND status = 'pending' AND stage_key != ALL(${TAIL.slice(1)}::text[])`;  // report_draft finishes too
   await sql`UPDATE research_stages SET status = 'running', started_at = NOW() WHERE research_run_id = ${runId} AND stage_key = 'ai_reviewer'`;
 }
 

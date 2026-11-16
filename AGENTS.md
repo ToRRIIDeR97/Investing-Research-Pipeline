@@ -1,6 +1,6 @@
 # Repository guide
 
-- Research OS is a Next.js app backed by PostgreSQL. The database owns run, stage, artifact and job state. A separate worker runs queued research jobs (pipeline version 3, 24 stages, scheduled from a dependency graph).
+- Research OS is a Next.js app backed by PostgreSQL. The database owns run, stage, artifact and job state. A separate worker runs queued research jobs (pipeline version 3, 25 stages, scheduled from a dependency graph).
 - UI run creation lives in `src/lib/research/run-service.ts`. Durable jobs live in `src/lib/research/run-queue.ts`. Execution runs in `src/workers/research-worker.ts` and `src/lib/research/pipeline-runner.ts`.
 - Keep both human gates explicit. Don't complete a run before export and refresh scheduling. Treat typed `research_artifacts` as the report source of truth.
 - Keep provider credentials in local environment files and never commit them. Paid runs require an explicit flag (`RUN_PAID_RESEARCH=1`, `RUN_PAID_MELI=1`, `RUN_PROVIDER_SMOKE=1`, `RUN_SOURCE_READER_SMOKE=1`, `RUN_PAID_EVAL=1`). Run them only when the user asks.

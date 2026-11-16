@@ -18,7 +18,8 @@ export const TEAM = "../../../src/lib/research/team";
 export const ORCHESTRATOR = "../../../src/lib/workflow/orchestrator";
 export const RESET_ROUTE = "../../../src/app/api/research-runs/[id]/request-reset/route";
 export const SOURCE_REQUESTS = "../../../src/lib/research/sources/source-requests";
-export const TAIL = ["ai_reviewer", "human_review", "export", "refresh_schedule"];
+// REQUEST_TAIL_STAGES: report_draft joined the tail in architecture-9 P4.
+export const TAIL = ["report_draft", "ai_reviewer", "human_review", "export", "refresh_schedule"];
 
 /** Never a paid provider, embedding endpoint or OCR service. Only DATABASE_URL is read from .env.local. */
 export function loadEnv() {
