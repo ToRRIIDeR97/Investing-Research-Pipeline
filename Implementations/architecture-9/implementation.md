@@ -149,4 +149,38 @@ Baseline: P1-P5 acceptance tests fail on `18bf019` for the intended assertions (
 
 ## Completion evidence
 
-To be filled per phase: verified SHA, correction rounds, commands run by the verifier and by the plan author, and remaining limits.
+Branch `claude/architecture-9`, tip `de2ac6d`, base `18bf019`. Not pushed, not merged. Implementor and verifier were separate Opus 5.5 subagents at medium effort, each in its own worktree. This section lives in the plan author's copy; the copy committed on the branch does not have it.
+
+| Phase | Verified SHA | Correction rounds | Verifier result |
+| --- | --- | --- | --- |
+| P1 | `b5042aa` | 0 (one packaging fix by the plan author: later-phase tests were committed too early) | PASS |
+| P2 | `d4121c6` | 0 | PASS |
+| P3 | `bac1d66` | 0 | PASS |
+| P4 | `040c159` | 1 (`897f392` returned with three issues) | PASS |
+| P5 | `de2ac6d` | 0 | PASS; whole-branch check PASS |
+
+**Verified independently (verifier, at `de2ac6d`).** Acceptance p1-p5 and verification p1-p5 all pass. `npm run lint` 0 errors (121 warnings, as on the base). `npx tsc --noEmit` and `npm run build` exit 0. `npm run test:unit`: 598 pass, 6 fail, 53 skipped. `npm run test:db`: 996 pass, 7 fail, 2 skipped. The failures are exactly the base's environmental set (Windows symlink `EPERM` in five tests, Docling `ENOENT`, and the storage-gc path-separator test). Migrations `0000`-`0018` and the seed apply to a fresh empty database. Diagrams regenerate identically from the committed script. `tests/prompt-layout.test.ts`, `providers/` and `cache.ts` are unchanged since the base.
+
+**Checked by the plan author.** Read the P1 source diff in full; confirmed the branch tip, commit list, the stage graph and handler registry at the tip, and that only `registry.ts` changed under `src/lib/agent-harness/`. The plan author did not rerun the suites at the tip; the results above are the verifier's.
+
+**Implementor reports only (not independently reproduced).** `npm run test:sofi-v3` as a separate command (the verifier ran the same file inside `test:db`).
+
+**Deviations from this plan.**
+
+1. Model request content changes for new runs. "Prompts stay byte-identical" and AC-4.8 hold for layout and request-building code. But report and team-request packets embed the `research_plan` artifact, whose `research_team.dependencies` (P1, P4), `stage_owners` and `applicable_stages` (P4) differ for runs created after this change. Whether that needs the paid live provider test in `AGENTS.md` is the user's decision. No paid call was made.
+2. `src/lib/agent-harness/registry.ts` changed, which no phase planned: `report_draft` falls back to `RESEARCH_STAGE_AI_REVIEWER_MODEL` / `_EFFORT`, and the run config records which variable supplied a setting.
+3. Report stage budget: draft and review each have a $5 after-the-fact cap where one $5 covered both. The run budget remains the hard limit.
+4. Added beyond the planned scope: `BRIEF_FREE_STAGES` (backtests don't wait for briefs), the draft-reopen path in `ai_reviewer` when report inputs changed, `scoring/command.ts`, and five new test files under `tests/`.
+5. P3: the transient-failure counter now survives stage completion (AC-3.3 requires it); it is reset on every path that reruns a stage.
+6. `--latest` orders runs by completion time (the lineage rule), not `run_created_at`.
+7. `TEAM_ROLES.report.stage` is still `ai_reviewer`, so the report specialist's brief is recorded under the review stage.
+
+**Remaining limits.**
+
+- No paid run was made, so `evals/scores.csv` is unchanged and output quality is not shown to have improved.
+- The historical-record handler stays on the drizzle pool's client to preserve its behaviour, including a config write that still fails with a logged warning.
+- Queue, API and pipeline share pools of 10 connections.
+- A failing backtest stage can discard in-flight analysis results until a resume replays them; parallel backtests make that more likely.
+- Research-store import fails, instead of last-writer-wins, if two machines hold different pending re-runs for one run.
+- The Linux and macOS behaviour of the changed code was not run; all checks ran on Windows.
+- Feature-map line references above describe the base commit.
