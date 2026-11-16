@@ -6,9 +6,12 @@
  *   npm run eval:score -- --case META         score the case's first baseline run
  *   npm run eval:score -- --all               every case
  *   npm run eval:score -- --stability META    compare the case's baseline runs (per-case CV, model choices)
+ *   npm run eval:score -- --latest            each case's newest completed or approved v3 run (--case META for one)
+ *   npm run eval:score -- --check             the trend in evals/scores.csv; exits 1 when a case regressed
  *   --no-write                                print only; by default results go to evals/results/ and evals/scores.csv
  *
- * DATABASE_URL comes from the environment, then .env.local.
+ * After a change: score the latest runs (--latest), then --check, and quote the rows in the PR.
+ * DATABASE_URL comes from the environment, then .env.local. --check reads only evals/scores.csv and needs none.
  */
 import postgres from "postgres";
 import { execFileSync } from "node:child_process";
@@ -20,6 +23,9 @@ import { runChecks, traitPresence } from "../src/lib/research/scoring/checks";
 import { runProbes, type ProbeSpec } from "../src/lib/research/scoring/depth-probes";
 import { stabilityReport } from "../src/lib/research/scoring/stability";
 import { RUBRIC_DIMENSIONS } from "../src/lib/research/scoring/rubric";
+import { parseScoreArgs, SCORE_USAGE } from "../src/lib/research/scoring/command";
+import { formatTrend, parseScores, scoreTrend } from "../src/lib/research/scoring/trend";
+import { defaultPriorRunId } from "../src/lib/research/lineage/runs";
 
 interface EvalCase { id: string; role: "depth" | "coverage_stress"; asset_slug: string; symbol: string; cutoff: string;
   baseline_runs: string[]; probes: ProbeSpec[]; expected?: { statement_quarters_min?: number } }
@@ -34,19 +40,26 @@ function loadEnvFile(fileName: string) {
     if (!process.env[key]) process.env[key] = rest.join("=").trim().replace(/^['"]|['"]$/g, "");
   }
 }
-loadEnvFile(".env.local");
 
-const args = process.argv.slice(2);
-const flag = (name: string) => args.includes(name);
-const option = (name: string) => (args.indexOf(name) >= 0 ? args[args.indexOf(name) + 1] : undefined);
-const write = !flag("--no-write");
+const command = parseScoreArgs(process.argv.slice(2));
+// --check needs no environment; every other mode reads .env.local first, as before.
+if (command.mode !== "check") loadEnvFile(".env.local");
+const write = "write" in command && command.write;
 const SET_PATH = resolve(process.cwd(), "evals", "eval-set.json");
+const SCORES_PATH = resolve(process.cwd(), "evals", "scores.csv");
 const cases: EvalCase[] = JSON.parse(readFileSync(SET_PATH, "utf8")).cases;
-if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is not set (environment or .env.local)");
-const sql = postgres(process.env.DATABASE_URL, { max: 2, connection: { default_transaction_read_only: true } }) as unknown as Sql;
+// Opened on first use, so --check never reads .env.local for it or opens a connection.
+let client: Sql | undefined;
+function db(): Sql {
+  if (client) return client;
+  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is not set (environment or .env.local)");
+  client = postgres(process.env.DATABASE_URL, { max: 2, connection: { default_transaction_read_only: true } }) as unknown as Sql;
+  return client;
+}
 const commit = (() => { try { return execFileSync("git", ["rev-parse", "--short", "HEAD"], { encoding: "utf8" }).trim(); } catch { return "unknown"; } })();
 
 async function score(runId: string, evalCase?: EvalCase) {
+  const sql = db();
   const snapshot = await loadRunSnapshot(sql, runId);
   const found = evalCase ?? cases.find((c) => c.asset_slug === snapshot.run.asset_slug);
   const checks = runChecks(snapshot);
@@ -90,11 +103,10 @@ function record(result: Scored) {
   const row = [result.scoring_commit, result.case ?? "", result.run_id, result.run_created_at, result.cutoff, result.summary.checks_passed,
     result.summary.checks_applicable, result.summary.probes_flagged, result.summary.probes_total, result.summary.traits_present,
     result.summary.traits_total, value("figure_trace"), value("reader_leaks"), value("effective_verdict"), result.summary.human_rating_mean ?? "", result.scored_at].join(",");
-  const path = resolve(process.cwd(), "evals", "scores.csv");
   // One row per run per scoring commit: a re-score on the same commit replaces its row.
-  const lines = existsSync(path) ? readFileSync(path, "utf8").split(/\r?\n/).filter(Boolean).slice(1) : [];
+  const lines = existsSync(SCORES_PATH) ? readFileSync(SCORES_PATH, "utf8").split(/\r?\n/).filter(Boolean).slice(1) : [];
   const kept = lines.filter((line) => !line.startsWith(`${result.scoring_commit},${result.case ?? ""},${result.run_id},`));
-  writeFileSync(path, [CSV_HEADER, ...kept, row].join("\n") + "\n");
+  writeFileSync(SCORES_PATH, [CSV_HEADER, ...kept, row].join("\n") + "\n");
 }
 
 function print(result: Scored) {
@@ -108,23 +120,52 @@ function print(result: Scored) {
   console.log(`  traits absent: ${result.traits.filter((t) => !t.present).map((t) => t.id).join(", ") || "none"}`);
 }
 
+/** --check: the trend in evals/scores.csv. Reads that file only and writes nothing; exits 1 when a case regressed. */
+function check() {
+  const trend = scoreTrend(parseScores(existsSync(SCORES_PATH) ? readFileSync(SCORES_PATH, "utf8") : ""));
+  if (!trend.length) console.log("No scored runs in evals/scores.csv");
+  for (const line of formatTrend(trend)) console.log(line);
+  if (trend.some((c) => c.regressed)) process.exitCode = 1;
+}
+
+/** --latest: each case's newest pipeline-v3 run that is completed or approved, the rule lineage uses for a prior run. */
+async function latestTargets(only?: string) {
+  const selected = only ? cases.filter((c) => c.id === only) : cases;
+  if (only && !selected.length) throw new Error(`No eval case ${only}`);
+  const targets: { runId: string; evalCase: EvalCase }[] = [];
+  for (const c of selected) {
+    const [asset] = await db()`SELECT id FROM assets WHERE slug = ${c.asset_slug}`;
+    const runId = asset ? await defaultPriorRunId(db(), String(asset.id)) : null;
+    if (runId) targets.push({ runId, evalCase: c });
+    else console.log(`\n${c.id}: no run yet (${asset ? "no completed or approved v3 run" : `no asset ${c.asset_slug}`})`);
+  }
+  return targets;
+}
+
 async function main() {
-  const caseId = option("--case"), stability = option("--stability");
-  if (stability) {
-    const evalCase = cases.find((c) => c.id === stability);
-    if (!evalCase) throw new Error(`No eval case ${stability}`);
+  if (command.mode === "check") return check();
+  if (command.mode === "usage") throw new Error(SCORE_USAGE);
+  if (command.mode === "stability") {
+    const evalCase = cases.find((c) => c.id === command.caseId);
+    if (!evalCase) throw new Error(`No eval case ${command.caseId}`);
     const snapshots = [];
-    for (const runId of evalCase.baseline_runs) snapshots.push(await loadRunSnapshot(sql, runId));
+    for (const runId of evalCase.baseline_runs) snapshots.push(await loadRunSnapshot(db(), runId));
     console.log(JSON.stringify({ case: evalCase.id, ...stabilityReport(snapshots) }, null, 2));
     return;
   }
-  const targets: { runId: string; evalCase?: EvalCase }[] = flag("--all")
-    ? cases.flatMap((c) => c.baseline_runs.length ? [{ runId: c.baseline_runs[0], evalCase: c }] : [])
-    : caseId ? (() => { const c = cases.find((x) => x.id === caseId); if (!c) throw new Error(`No eval case ${caseId}`);
-      if (!c.baseline_runs.length) throw new Error(`Eval case ${caseId} has no run yet`); return [{ runId: c.baseline_runs[0], evalCase: c }]; })()
-    : args.filter((a) => !a.startsWith("--")).map((runId) => ({ runId }));
-  if (!targets.length) throw new Error("Usage: npm run eval:score -- <run-id> | --case <ID> | --all | --stability <ID> [--no-write]");
-  for (const c of cases.filter((x) => flag("--all") && !x.baseline_runs.length)) console.log(`\n${c.id}: no run yet (${c.role})`);
+  const caseTarget = (caseId: string) => {
+    const c = cases.find((x) => x.id === caseId);
+    if (!c) throw new Error(`No eval case ${caseId}`);
+    if (!c.baseline_runs.length) throw new Error(`Eval case ${caseId} has no run yet`);
+    return [{ runId: c.baseline_runs[0], evalCase: c }];
+  };
+  const targets: { runId: string; evalCase?: EvalCase }[] = command.mode === "latest" ? await latestTargets(command.caseId)
+    : command.mode === "all" ? cases.flatMap((c) => c.baseline_runs.length ? [{ runId: c.baseline_runs[0], evalCase: c }] : [])
+    : command.mode === "case" ? caseTarget(command.caseId)
+    : command.runIds.map((runId) => ({ runId }));
+  // --latest with no scored run is not an error: each case already printed "no run yet".
+  if (command.mode !== "latest" && !targets.length) throw new Error(SCORE_USAGE);
+  if (command.mode === "all") for (const c of cases.filter((x) => !x.baseline_runs.length)) console.log(`\n${c.id}: no run yet (${c.role})`);
   for (const target of targets) {
     const result = await score(target.runId, target.evalCase);
     print(result);
@@ -133,4 +174,4 @@ async function main() {
 }
 
 main().catch((error) => { console.error(error instanceof Error ? error.message : error); process.exitCode = 1; })
-  .finally(() => (sql as unknown as { end: () => Promise<void> }).end());
+  .finally(() => (client as unknown as { end: () => Promise<void> } | undefined)?.end());

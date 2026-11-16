@@ -34,7 +34,7 @@ When persistence, the queue, orchestration or the pipeline changes, also run the
 - `npm run test:db`: every database-backed suite, one file at a time, with the mock provider. It takes only `DATABASE_URL` from `.env.local`. The suites share one database and interfere when run in parallel.
 - Both refuse a database a research worker is polling (a heartbeat in the last 30 s). Use a separate test database.
 
-Research quality: `npm run eval:score -- --case META` (or a run id, `--all`, `--stability META`) scores stored runs with code checks and depth probes. It is read-only and free, so run it before and after changes to prompts, contracts or models and quote the `evals/scores.csv` rows in the PR. `npm run eval:judge` is the paid LLM judge (`RUN_PAID_EVAL=1`). See [docs/system.md](docs/system.md#measuring-research-quality).
+Research quality: `npm run eval:score -- --case META` (or a run id, `--all`, `--latest`, `--stability META`) scores stored runs with code checks and depth probes. It is read-only and free, so run it before and after changes to prompts, contracts or models and quote the `evals/scores.csv` rows in the PR. After a change, `npm run eval:score -- --latest` scores each case's newest completed or approved run, then `npm run eval:score -- --check` (no database) prints the per-case trend and exits 1 when a case regressed. `npm run eval:judge` is the paid LLM judge (`RUN_PAID_EVAL=1`). See [docs/system.md](docs/system.md#measuring-research-quality).
 
 `npm run lint` runs ESLint with the flat config in `eslint.config.mjs` (`next/core-web-vitals` + `next/typescript`). Errors fail it; warnings (unused variables, hook dependencies) don't. `no-explicit-any` is off for now.
 
