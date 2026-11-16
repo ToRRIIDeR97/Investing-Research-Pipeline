@@ -20,6 +20,13 @@ export interface SystemPipelineResult {
   failure_reason?: string | null;
 }
 
+/**
+ * Scheduling passes one job may make: each claim of ready stages and each dataflow launch after a stage
+ * settles counts as one. A run that needs more is looping, and the runner fails it instead of spinning.
+ * The budget is eight passes for each of the 24 stages.
+ */
+export const MAX_SCHEDULING_PASSES = 24 * 8;
+
 /** Another worker holds the run's session lock; the job should wait, not fail. */
 export class ResearchRunLocked extends Error {}
 /** The caller aborted the run (worker shutdown, lost lease or cancellation); the run was left resumable. */
@@ -138,7 +145,7 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
     const briefs = teamBriefScheduler(ctx => prepareResearchTeam(sql, ctx));
     try {
       if (run.status === "pending") await startRun(runId);
-      for (let iteration = 0; iteration < 192; iteration += 1) {
+      for (let iteration = 0; iteration < MAX_SCHEDULING_PASSES; iteration += 1) {
         if (signal?.aborted) throw new ResearchRunInterrupted("Research run interrupted");
         const [state] = await sql`SELECT status FROM research_runs WHERE id = ${runId}`;
         if (state.status !== "running") break;
@@ -196,7 +203,7 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
           if (hold || stop || signal?.aborted) continue;
           try {
             iteration += 1;
-            if (iteration >= 191) throw new Error("Pipeline exceeded 192 stage iterations");
+            if (iteration >= MAX_SCHEDULING_PASSES - 1) throw new Error(`Pipeline exceeded ${MAX_SCHEDULING_PASSES} stage iterations`);
             const next = (await startReadyStages(runId)).filter(stageKey => !inFlight.has(stageKey));
             if (!next.length) continue;
             const nextContext = { ...(await loadRunContext(sql, runId)), signal };
@@ -223,7 +230,7 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
         }
         if (loopError) throw loopError;
         if (stop) break;
-        if (iteration === 191) throw new Error("Pipeline exceeded 192 stage iterations");
+        if (iteration === MAX_SCHEDULING_PASSES - 1) throw new Error(`Pipeline exceeded ${MAX_SCHEDULING_PASSES} stage iterations`);
       }
     } catch (error) {
       if (signal?.aborted) {

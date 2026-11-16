@@ -47,7 +47,9 @@ export const STAGE_DEPENDENCIES: Record<string, string[]> = {
   historical_diagnosis: ["historical_record"], business_process_analysis: ["company_genesis", "historical_diagnosis"],
   moat_analysis: ["business_process_analysis"], operating_model: ["historical_diagnosis", "moat_analysis"],
   operating_scenarios: ["operating_model"], asset_valuation: ["operating_scenarios"],
-  indicator_design: ["asset_valuation"], strategy_design: ["indicator_design"],
+  // The backtests read only the approved plan and price history, so they run beside the
+  // analysis branch. The decision joins both branches.
+  indicator_design: ["research_plan"], strategy_design: ["indicator_design"],
   backtest_execution: ["strategy_design"], backtest_review: ["backtest_execution"],
   decision_synthesis: ["asset_valuation", "backtest_review"], ai_reviewer: ["decision_synthesis"],
   human_review: ["ai_reviewer"], export: ["human_review"], refresh_schedule: ["export"],

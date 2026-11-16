@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 470" role="img" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+<title>Proposed stage graph and state</title><desc>Backtests branch at the plan gate; report_draft precedes ai_reviewer; typed control tables; shared pools.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L9 5L1 9z" fill="#555"/></marker></defs>
+<rect width="760" height="470" fill="#ffffff"/>
+<text x="20" y="24" font-size="11.5" fill="#444" text-anchor="start">Proposed (not yet implemented). Green boxes change.</text>
+<rect x="20" y="70" width="150" height="46" rx="5" fill="#f3f2ee" stroke="#77756e"/><text x="95.0" y="89.0" text-anchor="middle" font-weight="600" fill="#222">Stages 1-4</text><text x="95.0" y="106.0" text-anchor="middle" font-size="11.5" fill="#444">plan gate</text>
+<line x1="170" y1="82" x2="198" y2="62" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<line x1="170" y1="104" x2="198" y2="124" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<rect x="200" y="36" width="250" height="46" rx="5" fill="#f3f2ee" stroke="#77756e"/><text x="325.0" y="55.0" text-anchor="middle" font-weight="600" fill="#222">Stages 5-15</text><text x="325.0" y="72.0" text-anchor="middle" font-size="11.5" fill="#444">sources to valuation</text>
+<rect x="200" y="104" width="250" height="46" rx="5" fill="#e3f4ec" stroke="#12735a"/><text x="325.0" y="123.0" text-anchor="middle" font-weight="600" fill="#222">Stages 16-19 backtests</text><text x="325.0" y="140.0" text-anchor="middle" font-size="11.5" fill="#444">start at plan approval (AC-1.1)</text>
+<line x1="450" y1="59" x2="508" y2="82" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<line x1="450" y1="127" x2="508" y2="104" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<rect x="510" y="70" width="230" height="46" rx="5" fill="#f3f2ee" stroke="#77756e"/><text x="625.0" y="89.0" text-anchor="middle" font-weight="600" fill="#222">20 decision</text><text x="625.0" y="106.0" text-anchor="middle" font-size="11.5" fill="#444">needs both (unchanged)</text>
+<line x1="625" y1="116" x2="625" y2="148" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<rect x="510" y="150" width="230" height="52" rx="5" fill="#e3f4ec" stroke="#12735a"/><text x="625.0" y="172.0" text-anchor="middle" font-weight="600" fill="#222">21 report_draft</text><text x="625.0" y="189.0" text-anchor="middle" font-size="11.5" fill="#444">outline, sections (AC-4.2)</text>
+<line x1="510" y1="176" x2="472" y2="176" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<rect x="270" y="150" width="200" height="52" rx="5" fill="#e3f4ec" stroke="#12735a"/><text x="370.0" y="172.0" text-anchor="middle" font-weight="600" fill="#222">22 ai_reviewer</text><text x="370.0" y="189.0" text-anchor="middle" font-size="11.5" fill="#444">review, rework, repair</text>
+<line x1="270" y1="176" x2="232" y2="176" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<rect x="20" y="150" width="210" height="52" rx="5" fill="#f3f2ee" stroke="#77756e"/><text x="125.0" y="172.0" text-anchor="middle" font-weight="600" fill="#222">23 gate, 24-25</text><text x="125.0" y="189.0" text-anchor="middle" font-size="11.5" fill="#444">human review, export, refresh</text>
+<text x="20" y="244" font-size="11.5" fill="#444" text-anchor="start">State and connections</text>
+<rect x="20" y="258" width="340" height="62" rx="5" fill="#e3f4ec" stroke="#12735a"/><text x="190.0" y="285.0" text-anchor="middle" font-weight="600" fill="#222">research_run_resets</text><text x="190.0" y="302.0" text-anchor="middle" font-size="11.5" fill="#444">pending / applied / skipped rows (AC-3.4)</text>
+<rect x="400" y="258" width="340" height="62" rx="5" fill="#e3f4ec" stroke="#12735a"/><text x="570.0" y="285.0" text-anchor="middle" font-weight="600" fill="#222">research_plan_feedback</text><text x="570.0" y="302.0" text-anchor="middle" font-size="11.5" fill="#444">one row per note (AC-3.2)</text>
+<rect x="20" y="344" width="340" height="62" rx="5" fill="#e3f4ec" stroke="#12735a"/><text x="190.0" y="371.0" text-anchor="middle" font-weight="600" fill="#222">research_stages.transient_failures</text><text x="190.0" y="388.0" text-anchor="middle" font-size="11.5" fill="#444">typed counter (AC-3.3)</text>
+<rect x="400" y="344" width="340" height="62" rx="5" fill="#e3f4ec" stroke="#12735a"/><text x="570.0" y="371.0" text-anchor="middle" font-weight="600" fill="#222">src/db/pipeline-sql.ts</text><text x="570.0" y="388.0" text-anchor="middle" font-size="11.5" fill="#444">pipelineSql() and pipelineDb() pools (AC-2.2)</text>
+<text x="20" y="440" font-size="11.5" fill="#444" text-anchor="start">Unchanged: job leases, the per-run advisory lock, both human gates, contracts and validators, prompts.</text>
+</svg>

@@ -40,7 +40,7 @@ Labels in the views: *unverified* means the relationship wasn't proven from sour
 
 Model calls have no tool execution. [local-agent-harness.md](local-agent-harness.md) covers the configuration.
 
-**Drill-down: stages** (`src/lib/workflow/stages.ts`; dependencies in `src/lib/research/team-plan.ts:41`). Run-type skips are set at creation through `skipForRunTypes`. Stages 16–19 are skipped for `quick_scan`. Stages 1–15, 20 and 24 are skipped for `backtest_only`.
+**Drill-down: stages** (`src/lib/workflow/stages.ts`; dependencies in `src/lib/research/team-plan.ts:41`). Run-type skips are set at creation through `skipForRunTypes`. Stages 16–19 are skipped for `quick_scan`. Stages 1–15, 20 and 24 are skipped for `backtest_only`. The numbers are display order, not a chain: after the plan gate two branches run side by side, the analysis (5–15) and the price-only backtests (16–19, which depend only on `research_plan`), and `decision_synthesis` (20) joins them. A valuation re-run therefore doesn't reopen the backtests.
 
 | # | Stage | failureState | Retries | # | Stage | failureState | Retries |
 | --- | --- | --- | --- | --- | --- | --- | --- |

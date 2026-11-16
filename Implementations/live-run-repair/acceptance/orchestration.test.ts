@@ -120,7 +120,9 @@ test("AC-5: reopening a stage supersedes its open gaps, and a re-emitted gap ope
 
 test("AC-6: a run blocked by a failed stage names that stage and its reason", { skip }, async () => {
   const sql = postgres(process.env.DATABASE_URL!);
-  const done = ["intake", "asset_identity", "archetype_composition", "research_plan"];
+  // The backtest branch depends only on the plan (architecture-9 P1), so it is done here for the run to be blocked.
+  const done = ["intake", "asset_identity", "archetype_composition", "research_plan",
+    "indicator_design", "strategy_design", "backtest_execution", "backtest_review"];
   const run = await createRun(sql, { ...Object.fromEntries(done.map(k => [k, "completed"])), source_discovery: "failed" }, "pending");
   try {
     await startNextStage(run.runId);

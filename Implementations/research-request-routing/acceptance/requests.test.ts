@@ -125,7 +125,7 @@ test("AC-4: when the search finds nothing the single answer attempt ends unavail
   } finally { model.restore(); web.restore(); await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
 });
 
-/** A financials answer that asks for a re-run: 13 analysis stages, above the default limit of 6. */
+/** A financials answer that asks for a re-run: 9 analysis stages, above the default limit of 6. */
 async function pauseOnFinancialsRerun(sql: postgres.Sql, run: Run) {
   const record = await saveReportArtifact(sql, run, "historical_record", `${run.assetSlug}-historical-record`,
     { artifact_type: "historical_record", summary: `Capex series with year-to-date derived quarters. Fixture ${run.runId}.` });

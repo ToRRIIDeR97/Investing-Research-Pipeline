@@ -83,11 +83,12 @@ test("AC-5: no role, with or without needs_sources, maps to source_discovery", (
 test("AC-6: the automatic limit is inclusive and configurable", () => {
   const requestResetPlan = exported(TEAM, "requestResetPlan");
   const valuation = [rerun(request("r1", "valuation", "regulatory_filing", "Recompute the discounting base date"))];
-  assert.equal(requestResetPlan(valuation, ledger(), { autoResetUsed: false, maxAutoStages: 6 }).mode, "auto", "6 of 6");
-  assert.equal(requestResetPlan(valuation, ledger(), { autoResetUsed: false, maxAutoStages: 5 }).mode, "approval", "6 of 5");
+  // Valuation and decision only: the backtests no longer depend on valuation (architecture-9 P1).
+  assert.equal(requestResetPlan(valuation, ledger(), { autoResetUsed: false, maxAutoStages: 2 }).mode, "auto", "2 of 2");
+  assert.equal(requestResetPlan(valuation, ledger(), { autoResetUsed: false, maxAutoStages: 1 }).mode, "approval", "2 of 1");
   const financials = [rerun(request("r2", "financials", "regulatory_filing", "Recapture the Q3 2025 cash flow quarter"))];
-  process.env.RESEARCH_MAX_AUTO_RESET_STAGES = "13";
-  try { assert.equal(requestResetPlan(financials, ledger(), { autoResetUsed: false }).mode, "auto", "13 of 13 from the environment"); }
+  process.env.RESEARCH_MAX_AUTO_RESET_STAGES = "9";
+  try { assert.equal(requestResetPlan(financials, ledger(), { autoResetUsed: false }).mode, "auto", "9 of 9 from the environment"); }
   finally { delete process.env.RESEARCH_MAX_AUTO_RESET_STAGES; }
   assert.equal(requestResetPlan(financials, ledger(), { autoResetUsed: false }).mode, "approval", "default limit 6");
 });
