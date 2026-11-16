@@ -119,7 +119,10 @@ export const researchPlanHandler: StageHandler<unknown> = {
     const repo = createArtifactRepository(db);
     const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}`;
     const metadata = (run?.metadata_json || {}) as Record<string, any>;
-    const feedback: PlanFeedback[] = Array.isArray(metadata.research_plan_feedback) ? metadata.research_plan_feedback : [];
+    // Built in the shape and key order the notes had in metadata_json, so packets and the plan artifact are unchanged.
+    const feedback: PlanFeedback[] = (await sql`SELECT notes, requested_by, requested_at FROM research_plan_feedback
+      WHERE research_run_id = ${ctx.runId} ORDER BY requested_at, id`).map(row => ({ notes: String(row.notes),
+      requested_by: String(row.requested_by), requested_at: new Date(row.requested_at).toISOString() }));
     const framing = await draftFraming(sql as unknown as Sql, ctx, feedback);
     // The framing may add archetypes unless the run was created with them or the reviewer chose them.
     let planCtx = ctx;

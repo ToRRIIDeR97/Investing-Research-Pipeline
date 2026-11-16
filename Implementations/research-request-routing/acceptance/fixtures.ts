@@ -129,7 +129,14 @@ export async function stageStatuses(sql: postgres.Sql, runId: string): Promise<R
 
 export async function runState(sql: postgres.Sql, runId: string) {
   const [row] = await sql`SELECT status, metadata_json FROM research_runs WHERE id = ${runId}`;
-  return { status: String(row.status), metadata: (row.metadata_json || {}) as Record<string, any> };
+  // Re-run state lives in research_run_resets (architecture-9 P3): the pending approval and the automatic re-run.
+  const [pending] = await sql`SELECT stages, request_ids, estimated_cost_usd FROM research_run_resets
+    WHERE research_run_id = ${runId} AND status = 'pending'`;
+  const [auto] = await sql`SELECT stages, request_ids, round FROM research_run_resets WHERE research_run_id = ${runId} AND kind = 'auto'`;
+  return { status: String(row.status), metadata: (row.metadata_json || {}) as Record<string, any>,
+    requestReset: pending ? { stages: pending.stages as string[], request_ids: pending.request_ids as string[],
+      estimated_cost_usd: Number(pending.estimated_cost_usd) } : null,
+    autoReset: (auto ?? null) as Record<string, any> | null };
 }
 
 /** Call processResearchRequests as the runner loop would, until the batch is answered or the run leaves running. */

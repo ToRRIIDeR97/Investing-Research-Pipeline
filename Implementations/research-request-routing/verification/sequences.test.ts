@@ -184,9 +184,9 @@ test("AC-6: after an automatic reset completes, a second requires_rerun pauses i
     assert.equal(model.answers().length, 2, "the owner answers again after the re-run");
     const state = await runState(sql, run.runId);
     assert.equal(state.status, "waiting_for_human");
-    assert.deepEqual(state.metadata.request_reset?.request_ids, [request.id]);
-    assert.deepEqual(sorted(state.metadata.request_reset.stages), sorted(dependentStages(["asset_valuation"])));
-    assert.ok(Math.abs(Number(state.metadata.request_reset.estimated_cost_usd) - 0.4) < 1e-6, `estimate ${state.metadata.request_reset.estimated_cost_usd}`);
+    assert.deepEqual(state.requestReset?.request_ids, [request.id]);
+    assert.deepEqual(sorted(state.requestReset.stages), sorted(dependentStages(["asset_valuation"])));
+    assert.ok(Math.abs(Number(state.requestReset.estimated_cost_usd) - 0.4) < 1e-6, `estimate ${state.requestReset.estimated_cost_usd}`);
   } finally { model.restore(); await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
 });
 
@@ -209,7 +209,7 @@ test("AC-7: after skip the report continues; the decision cannot be applied twic
   try {
     await pauseOnBusinessRerun(sql, run);
     await assert.rejects(() => approveRequestReset(run.runId, { decision: "approve", actor: "qa" }));  // an unknown decision
-    assert.ok((await runState(sql, run.runId)).metadata.request_reset, "a rejected decision leaves the pause in place");
+    assert.ok((await runState(sql, run.runId)).requestReset, "a rejected decision leaves the pause in place");
     await approveRequestReset(run.runId, { decision: "skip", actor: "qa" });
     await assert.rejects(() => approveRequestReset(run.runId, { decision: "rerun", actor: "qa" }));  // nothing is pending any more
     assert.equal((await stageStatuses(sql, run.runId)).company_genesis, "completed");
@@ -262,7 +262,7 @@ test("AC-6, AC-7: an approved re-run does not use up the run's automatic reset",
     await drain(sql, run);
     const state = await runState(sql, run.runId);
     assert.equal(state.status, "running", "the small valuation re-run is automatic");
-    assert.equal(state.metadata.request_reset ?? null, null);
+    assert.equal(state.requestReset ?? null, null);
     assert.equal((await stageStatuses(sql, run.runId)).asset_valuation, "pending");
   } finally { model.restore(); await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
 });

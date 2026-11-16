@@ -328,7 +328,7 @@ export async function advanceStage(
       // Persist retry count in the validation payload; stage schema has no retry_count column.
       await sql`
         UPDATE research_stages
-        SET validation_result_json = ${sql.json(retryValidation)},
+        SET validation_result_json = ${sql.json(retryValidation)}, transient_failures = 0, last_transient_error = NULL,
             updated_at = NOW()
         WHERE id = ${currentStage.id}
       `;
@@ -544,9 +544,11 @@ export async function approveRequestReset(
   if (input.decision !== "rerun" && input.decision !== "skip") throw new RequestResetError(`Unknown request-reset decision: ${String(input.decision)}`);
   const sql = pipelineSql();
   return await sql.begin(async (tx) => {
-    const [run] = await tx`SELECT status, metadata_json FROM research_runs WHERE id = ${runId} FOR UPDATE`;
-    const reset = run?.metadata_json?.request_reset as { stages: string[]; request_ids: string[] } | undefined;
-    if (run?.status !== "waiting_for_human" || !reset) throw new RequestResetError("The run is not paused on a request reset");
+    const [run] = await tx`SELECT status FROM research_runs WHERE id = ${runId} FOR UPDATE`;
+    const [pending] = await tx`SELECT id, stages, request_ids FROM research_run_resets
+      WHERE research_run_id = ${runId} AND status = 'pending' FOR UPDATE`;
+    if (run?.status !== "waiting_for_human" || !pending) throw new RequestResetError("The run is not paused on a request reset");
+    const reset = { stages: (pending.stages ?? []) as string[], request_ids: (pending.request_ids ?? []) as string[] };
     const gates = await tx`SELECT stage_key FROM research_stages WHERE research_run_id = ${runId}
       AND stage_key IN ('research_plan', 'human_review') AND status = 'waiting_for_human'`;
     if (gates.length) throw new RequestResetError(`The run is waiting at the ${gates[0].stage_key} gate`);
@@ -560,16 +562,9 @@ export async function approveRequestReset(
       await tx`UPDATE research_stages SET status = 'running', updated_at = NOW()
         WHERE research_run_id = ${runId} AND stage_key = 'ai_reviewer' AND status = 'waiting_for_human'`;
     }
-    await tx`
-      UPDATE research_runs
-      SET status = 'running',
-          metadata_json = ((CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END) - 'request_reset') || ${tx.json({
-            request_reset_decision: { decision: input.decision, actor: input.actor, stages: reset.stages, request_ids: reset.request_ids,
-              decided_at: new Date().toISOString() },
-          })},
-          updated_at = NOW()
-      WHERE id = ${runId}
-    `;
+    await tx`UPDATE research_run_resets SET status = ${input.decision === "rerun" ? "applied" : "skipped"},
+      decided_by = ${input.actor}, decided_at = NOW() WHERE id = ${pending.id}`;
+    await tx`UPDATE research_runs SET status = 'running', updated_at = NOW() WHERE id = ${runId}`;
     return { decision: input.decision, stages: reset.stages, request_ids: reset.request_ids };
   });
 }
@@ -611,7 +606,7 @@ async function applyPlanGateEdits(tx: Sql, runId: string, edits: PlanGateEdits) 
 }
 
 /**
- * Plan feedback redrafts the plan: the notes are appended to metadata.research_plan_feedback, the plan stage reopens
+ * Plan feedback redrafts the plan: the notes are saved as a research_plan_feedback row, the plan stage reopens
  * and the run resumes, so the next job reruns the framing call with every note and the gate opens on the next version.
  */
 export async function requestResearchPlanChanges(
@@ -632,19 +627,11 @@ export async function requestResearchPlanChanges(
     }
     const trimmed = notes.trim().slice(0, 4000);
     if (!trimmed) return { success: false, error: "Plan feedback is empty" };
-    const entry = { notes: trimmed, requested_by: requestedBy, requested_at: new Date().toISOString() };
-    await tx`
-      UPDATE research_runs
-      SET status = 'running',
-          metadata_json = jsonb_set((CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END),
-            '{research_plan_feedback}',
-            COALESCE(CASE WHEN jsonb_typeof(metadata_json->'research_plan_feedback') = 'array' THEN metadata_json->'research_plan_feedback' END, '[]'::jsonb)
-              || jsonb_build_array(${tx.json(entry)}::jsonb)),
-          updated_at = NOW()
-      WHERE id = ${runId}
-    `;
+    await tx`INSERT INTO research_plan_feedback (research_run_id, notes, requested_by)
+      VALUES (${runId}, ${trimmed}, ${requestedBy})`;
+    await tx`UPDATE research_runs SET status = 'running', updated_at = NOW() WHERE id = ${runId}`;
     await tx`UPDATE research_stages SET status = 'pending', started_at = NULL, completed_at = NULL, validation_result_json = NULL,
-      failure_reason = NULL, updated_at = NOW() WHERE id = ${stages[0].id}`;
+      transient_failures = 0, last_transient_error = NULL, failure_reason = NULL, updated_at = NOW() WHERE id = ${stages[0].id}`;
     return { success: true };
   });
 }
@@ -1048,14 +1035,14 @@ export async function resumeResearchRun(runId: string) {
     `;
     else await tx`
       UPDATE research_stages
-      SET status = 'running', failure_reason = NULL, validation_result_json = NULL,
+      SET status = 'running', failure_reason = NULL, validation_result_json = NULL, transient_failures = 0, last_transient_error = NULL,
           started_at = NOW(), completed_at = NULL, updated_at = NOW()
       WHERE id = ${stages[0].id}
     `;
     await tx`
       UPDATE research_stages
       SET status = 'pending', failure_reason = NULL, started_at = NULL,
-          completed_at = NULL, validation_result_json = NULL, updated_at = NOW()
+          completed_at = NULL, validation_result_json = NULL, transient_failures = 0, last_transient_error = NULL, updated_at = NOW()
       WHERE research_run_id = ${runId} AND stage_order > ${stages[0].stage_order}
         AND status IN ('failed', 'cancelled')
     `;

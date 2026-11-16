@@ -346,7 +346,7 @@ export async function rerunRequestStages(tx: Sql, runId: string, batch: RequestB
     "report_outline", "report_section", "report_document", "report_review", "question_register"];
   if (affected.includes("historical_record")) types.push("historical_record", "financial_statement_set", "market_price_history", "financial_analytics", "financial_statement_summary", "peer_benchmark", "demand_backdrop");
   await tx`UPDATE research_stages SET status = 'pending', started_at = NULL, completed_at = NULL,
-    validation_result_json = NULL, failure_reason = NULL, updated_at = NOW()
+    validation_result_json = NULL, transient_failures = 0, last_transient_error = NULL, failure_reason = NULL, updated_at = NOW()
     WHERE research_run_id = ${runId} AND stage_key = ANY(${affected}::text[]) AND status != 'skipped'`;
   await tx`UPDATE research_tasks SET validation_status = 'invalid', updated_at = NOW()
     WHERE research_run_id = ${runId} AND stage_id IN
@@ -550,9 +550,10 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
   }
 
   const stages = await sql`SELECT stage_key, status FROM research_stages WHERE research_run_id = ${ctx.runId}`;
-  const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}`;
+  // The run's one automatic re-run is used once it has an auto row.
+  const [auto] = await sql`SELECT 1 FROM research_run_resets WHERE research_run_id = ${ctx.runId} AND kind = 'auto' LIMIT 1`;
   const plan = requestResetPlan(batch.requests, stages.map(s => ({ stage_key: String(s.stage_key), status: String(s.status) })),
-    { autoResetUsed: Boolean(run?.metadata_json?.request_auto_reset) });
+    { autoResetUsed: Boolean(auto) });
   if (plan.mode === "none") {
     const { rerun_stages: _, ...rest } = batch;
     batch = { ...rest, state: "answered" };
@@ -568,8 +569,9 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
       await rerunRequestStages(tx as unknown as Sql, ctx.runId, final, record,
         `Superseded: its owning stage was reopened by team request round ${final.round}.`);
       // Only automatic resets use up the run's one automatic re-run.
-      await tx`UPDATE research_runs SET metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
-        || ${tx.json({ request_auto_reset: { ...record, round: final.round, at: new Date().toISOString() } })}, updated_at = NOW() WHERE id = ${ctx.runId}`;
+      await tx`INSERT INTO research_run_resets (research_run_id, kind, status, stages, request_ids, round)
+        VALUES (${ctx.runId}, 'auto', 'applied', ${record.stages}::text[], ${record.request_ids}::text[], ${final.round ?? null})`;
+      await tx`UPDATE research_runs SET updated_at = NOW() WHERE id = ${ctx.runId}`;
       return;
     }
     const [{ cost }] = await tx`SELECT COALESCE(SUM(m.cost_usd), 0) AS cost FROM model_call_logs m
@@ -578,9 +580,9 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
     await writeTeamRequests(tx as unknown as Sql, ctx.runId, { ...rest, state: "processing" });
     await tx`UPDATE research_stages SET status = 'waiting_for_human', updated_at = NOW()
       WHERE research_run_id = ${ctx.runId} AND stage_key = 'ai_reviewer'`;
-    await tx`UPDATE research_runs SET status = 'waiting_for_human',
-      metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
-        || ${tx.json({ request_reset: { ...record, estimated_cost_usd: Number(cost) } })}, updated_at = NOW() WHERE id = ${ctx.runId}`;
+    await tx`INSERT INTO research_run_resets (research_run_id, kind, status, stages, request_ids, estimated_cost_usd)
+      VALUES (${ctx.runId}, 'approval', 'pending', ${record.stages}::text[], ${record.request_ids}::text[], ${Number(cost)})`;
+    await tx`UPDATE research_runs SET status = 'waiting_for_human', updated_at = NOW() WHERE id = ${ctx.runId}`;
   });
   return true;
 }

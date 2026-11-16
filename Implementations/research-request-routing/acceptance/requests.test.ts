@@ -150,8 +150,8 @@ test("AC-6: a re-run above the automatic limit pauses the run with its stages, r
     await pauseOnFinancialsRerun(sql, run);
     const state = await runState(sql, run.runId);
     assert.equal(state.status, "waiting_for_human");
-    const reset = state.metadata.request_reset;
-    assert.ok(reset, "metadata.request_reset is set");
+    const reset = state.requestReset;
+    assert.ok(reset, "a pending research_run_resets row is set");
     assert.deepEqual(sorted(reset.stages), sorted(dependentStages(["historical_record"])));
     assert.deepEqual(reset.request_ids, [REQUEST_1_2.id]);
     // Every reset stage's earlier cost, company_genesis included now that it reads the analytics digest.
@@ -178,7 +178,7 @@ test("AC-6: the first re-run within the limit resets the owner stage and its dep
     assert.equal(model.answers().length, 1, "the owner answered before anything was reset");
     const state = await runState(sql, run.runId);
     assert.equal(state.status, "running");
-    assert.equal(state.metadata.request_reset ?? null, null, "no approval is needed");
+    assert.equal(state.requestReset ?? null, null, "no approval is needed");
     const statuses = await stageStatuses(sql, run.runId);
     for (const key of dependentStages(["asset_valuation"])) assert.equal(statuses[key], "pending", key);
     for (const key of ["source_discovery", "historical_record", "company_genesis", "operating_scenarios"]) assert.equal(statuses[key], "completed", key);
@@ -195,7 +195,7 @@ test("AC-7: approving the re-run performs the reset and resumes the run", { skip
     await approveRequestReset(run.runId, { decision: "rerun", actor: "qa-reviewer" });
     const state = await runState(sql, run.runId);
     assert.equal(state.status, "running");
-    assert.equal(state.metadata.request_reset ?? null, null);
+    assert.equal(state.requestReset ?? null, null);
     const statuses = await stageStatuses(sql, run.runId);
     for (const key of dependentStages(["historical_record"])) assert.equal(statuses[key], "pending", key);
     for (const key of ["source_discovery", "evidence_extraction"]) assert.equal(statuses[key], "completed", key);
@@ -215,7 +215,7 @@ test("AC-7: skipping the re-run marks the request unavailable and lets the repor
     await approveRequestReset(run.runId, { decision: "skip", actor: "qa-reviewer" });
     const state = await runState(sql, run.runId);
     assert.equal(state.status, "running");
-    assert.equal(state.metadata.request_reset ?? null, null);
+    assert.equal(state.requestReset ?? null, null);
     const statuses = await stageStatuses(sql, run.runId);
     assert.equal(statuses.historical_record, "completed", "nothing is reset");
     assert.ok(["running", "pending"].includes(statuses.ai_reviewer), `ai_reviewer is ${statuses.ai_reviewer}`);
@@ -241,6 +241,6 @@ test("AC-7: the route rejects an unknown decision with 400 and queues nothing", 
     assert.equal(jobs.length, 0, "nothing is queued");
     const state = await runState(sql, run.runId);
     assert.equal(state.status, "waiting_for_human");
-    assert.ok(state.metadata.request_reset, "the pause is unchanged");
+    assert.ok(state.requestReset, "the pause is unchanged");
   } finally { await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
 });

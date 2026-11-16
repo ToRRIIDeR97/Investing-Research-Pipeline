@@ -101,14 +101,12 @@ export async function settleBatch(
 async function retryTransientFailures(sql: Sql, runId: string, failures: StageFailure[], notes: string[], signal?: AbortSignal) {
   if (!failures.every((failure) => isTransientAgentError(failure.reason))) return false;
   const keys = failures.map((failure) => failure.stageKey);
-  const rows = await sql`SELECT stage_key, max_retries, COALESCE((validation_result_json->>'transient_failures')::int, 0) AS failures
+  const rows = await sql`SELECT stage_key, max_retries, transient_failures AS failures
     FROM research_stages WHERE research_run_id = ${runId} AND stage_key = ANY(${keys}::text[]) AND status = 'running'`;
   if (rows.length !== keys.length || rows.some((row) => Number(row.failures) >= Number(row.max_retries ?? 2))) return false;
   for (const failure of failures) {
     const message = (failure.reason instanceof Error ? failure.reason.message : String(failure.reason)).slice(0, 1000);
-    await sql`UPDATE research_stages SET validation_result_json = COALESCE(validation_result_json, '{}'::jsonb)
-        || jsonb_build_object('transient_failures', COALESCE((validation_result_json->>'transient_failures')::int, 0) + 1,
-          'last_transient_error', ${message}::text),
+    await sql`UPDATE research_stages SET transient_failures = transient_failures + 1, last_transient_error = ${message},
         updated_at = NOW()
       WHERE research_run_id = ${runId} AND stage_key = ${failure.stageKey}`;
     notes.push(`Stage ${failure.stageKey}: transient failure, retrying (${message})`);

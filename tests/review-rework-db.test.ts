@@ -29,7 +29,7 @@ test("an analysis_rework request reruns asset_valuation once, then is answered w
     assert.equal(reopened!.state, "processing");
     assert.equal(reopened!.requests[0].reworked, true);
     assert.equal(reopened!.requests[0].response, undefined);
-    assert.ok((await runState(sql, run.runId)).metadata.request_auto_reset, "the run's one automatic rerun is used");
+    assert.ok((await runState(sql, run.runId)).autoReset, "the run's one automatic rerun is used");
 
     await sql`UPDATE research_stages SET status = 'completed' WHERE research_run_id = ${run.runId} AND stage_key = ANY(${reopened!.rerun_stages!}::text[])`;
     await processResearchRequests(sql, stageCtx(run));

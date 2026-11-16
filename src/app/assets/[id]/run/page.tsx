@@ -636,7 +636,7 @@ export default function RunResearchPage() {
         totalCost: parseFloat(data.actual_cost_usd || "0"),
         createdAt: data.created_at,
         marketDataCutoffAt: data.market_data_cutoff_at,
-        requestReset: data.metadata_json?.request_reset || null,
+        requestReset: data.request_reset ?? null,
       });
 
       setTheater({
