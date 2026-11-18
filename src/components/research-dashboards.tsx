@@ -9,6 +9,6 @@ export function KPIDashboard(props:{artifacts:Row[];compact?:boolean;onRefresh?:
 }
 
 /** Summary-first valuation: weighted value, scenarios, reasons, then the supporting detail. */
-export function ValuationDashboard({artifacts,conclusionStatus}:{artifacts:Row[];conclusionStatus?:string}) {
-  return <ValuationSummaryView artifacts={artifacts} conclusionStatus={conclusionStatus}/>;
+export function ValuationDashboard({artifacts,conclusionStatus,hideHero}:{artifacts:Row[];conclusionStatus?:string;hideHero?:boolean}) {
+  return <ValuationSummaryView artifacts={artifacts} conclusionStatus={conclusionStatus} hideHero={hideHero}/>;
 }

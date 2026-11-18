@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" role="img"><title>Proposed report layout</title><desc>After: one sticky header, report as tiles: sticky rail tile with short names, chapter header, takeaway, analysis with side tiles, exhibits as visible tiles.</desc><rect width="720" height="360" fill="#f3f4f6"/>
+<g><rect x="10" y="10" width="700" height="34" rx="6" fill="#fff" stroke="#9ca3af"/><text x="20" y="32" font-family="Inter,sans-serif" font-size="13" fill="#111827">App header (only sticky chrome)</text></g>
+<g><rect x="10" y="50" width="700" height="34" rx="6" fill="#fff" stroke="#9ca3af"/><text x="20" y="72" font-family="Inter,sans-serif" font-size="13" fill="#111827">Asset title + tabs (report bar removed)</text></g>
+<g><rect x="10" y="90" width="160" height="260" rx="6" fill="#e8f2ec" stroke="#9ca3af"/><text x="20" y="112" font-family="Inter,sans-serif" font-size="13" fill="#111827">Rail tile: 01 Short names</text></g>
+<text x="20" y="132" font-family="Inter" font-size="12" fill="#4b5563">sticky, no inner scroll</text><text x="20" y="150" font-family="Inter" font-size="12" fill="#4b5563">AC-1 AC-3 AC-10</text>
+<g><rect x="180" y="90" width="530" height="44" rx="6" fill="#e8f2ec" stroke="#9ca3af"/><text x="190" y="112" font-family="Inter,sans-serif" font-size="13" fill="#111827">Chapter header: Chapter 3 of 12 · short title  (AC-4)</text></g>
+<g><rect x="180" y="140" width="530" height="40" rx="6" fill="#e8f2ec" stroke="#9ca3af"/><text x="190" y="162" font-family="Inter,sans-serif" font-size="13" fill="#111827">Takeaway tile: investment implication  (AC-4)</text></g>
+<g><rect x="180" y="186" width="340" height="110" rx="6" fill="#fff" stroke="#9ca3af"/><text x="190" y="208" font-family="Inter,sans-serif" font-size="13" fill="#111827">Analysis tile, ~72ch measure  (AC-2)</text></g>
+<g><rect x="530" y="186" width="180" height="52" rx="6" fill="#e8f2ec" stroke="#9ca3af"/><text x="540" y="208" font-family="Inter,sans-serif" font-size="13" fill="#111827">Counterarguments</text></g>
+<g><rect x="530" y="244" width="180" height="52" rx="6" fill="#e8f2ec" stroke="#9ca3af"/><text x="540" y="266" font-family="Inter,sans-serif" font-size="13" fill="#111827">Evidence gaps (AC-6)</text></g>
+<g><rect x="180" y="302" width="530" height="48" rx="6" fill="#e8f2ec" stroke="#9ca3af"/><text x="190" y="324" font-family="Inter,sans-serif" font-size="13" fill="#111827">Exhibit tiles: tables visible, no disclosures  (AC-5 AC-7)</text></g>
+</svg>

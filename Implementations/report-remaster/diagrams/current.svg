@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" role="img"><title>Current report layout</title><desc>Before: four stacked bars of chrome, a scrolling rail, prose only, exhibits hidden in Analysis view.</desc><rect width="720" height="360" fill="#fff"/>
+<g><rect x="10" y="10" width="700" height="34" rx="6" fill="#f3f4f6" stroke="#9ca3af"/><text x="20" y="32" font-family="Inter,sans-serif" font-size="13" fill="#111827">App header (sticky)</text></g>
+<g><rect x="10" y="50" width="700" height="34" rx="6" fill="#f3f4f6" stroke="#9ca3af"/><text x="20" y="72" font-family="Inter,sans-serif" font-size="13" fill="#111827">Asset title + tabs (scroll away)</text></g>
+<g><rect x="10" y="90" width="700" height="34" rx="6" fill="#fde8e8" stroke="#9ca3af"/><text x="20" y="112" font-family="Inter,sans-serif" font-size="13" fill="#111827">Report bar: Reading / Analysis toggle (sticky at 52px)</text></g>
+<g><rect x="10" y="130" width="170" height="220" rx="6" fill="#fde8e8" stroke="#9ca3af"/><text x="20" y="152" font-family="Inter,sans-serif" font-size="13" fill="#111827">Rail: long titles,</text></g>
+<text x="20" y="172" font-family="Inter" font-size="12" fill="#4b5563">own scrollbar</text>
+<g><rect x="190" y="130" width="330" height="50" rx="6" fill="#fde8e8" stroke="#9ca3af"/><text x="200" y="152" font-family="Inter,sans-serif" font-size="13" fill="#111827">Serif chapter title (3 lines)</text></g>
+<g><rect x="190" y="186" width="330" height="120" rx="6" fill="#f3f4f6" stroke="#9ca3af"/><text x="200" y="208" font-family="Inter,sans-serif" font-size="13" fill="#111827">600-1,200 words of prose</text></g>
+<g><rect x="190" y="312" width="330" height="38" rx="6" fill="#fde8e8" stroke="#9ca3af"/><text x="200" y="334" font-family="Inter,sans-serif" font-size="13" fill="#111827">Takeaway last; gaps collapsed</text></g>
+<g><rect x="530" y="130" width="180" height="220" rx="6" fill="#fde8e8" stroke="#9ca3af"/><text x="540" y="152" font-family="Inter,sans-serif" font-size="13" fill="#111827">Exhibits: only in</text></g>
+<text x="540" y="172" font-family="Inter" font-size="12" fill="#4b5563">Analysis view, nested</text><text x="540" y="188" font-family="Inter" font-size="12" fill="#4b5563">disclosures, inner scroll</text></svg>

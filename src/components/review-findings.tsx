@@ -16,7 +16,7 @@ export function ReviewFindings({ review }: { review: Row | null }) {
     .filter(([, list]) => list.length);
   const other = findings.filter(f => !SEVERITIES.includes(String(f.severity ?? "").toLowerCase()));
   const verdict = String(gate.verdict ?? "");
-  return <section className={`${ui.section} !mt-0`}>
+  return <section id="ai-review" className={`${ui.section} !mt-0`}>
     <div className={ui.sectionHead}><h2>AI review</h2><span className={ui.status} data-status={verdict === "pass" ? "pass" : verdict === "fail" ? "fail" : "needs_more_work"}>{label(verdict)}</span></div>
     <dl className={`${ui.metadata} px-3.5 pt-1`}>
       <div><dt>Reviewer verdict</dt><dd>{label(review.model_verdict ?? review.review_verdict)}</dd></div>

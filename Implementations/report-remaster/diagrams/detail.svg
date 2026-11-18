@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 300" role="img"><title>Implementation detail</title><desc>Files and symbols changed per part.</desc><rect width="720" height="300" fill="#fff"/>
+<g><rect x="10" y="10" width="340" height="60" rx="6" fill="#e8f2ec" stroke="#9ca3af"/><text x="20" y="32" font-family="Inter,sans-serif" font-size="13" fill="#111827">P1 presentation.mjs</text></g>
+<text x="20" y="54" font-family="Inter" font-size="12" fill="#4b5563">+ railName(), readerText rounds 3+ decimals</text>
+<g><rect x="370" y="10" width="340" height="60" rx="6" fill="#e8f2ec" stroke="#9ca3af"/><text x="380" y="32" font-family="Inter,sans-serif" font-size="13" fill="#111827">P2 research-report.tsx shell</text></g>
+<text x="380" y="54" font-family="Inter" font-size="12" fill="#4b5563">- reportBar/mode, + rail tile, page scroll</text>
+<g><rect x="10" y="90" width="340" height="60" rx="6" fill="#e8f2ec" stroke="#9ca3af"/><text x="20" y="112" font-family="Inter,sans-serif" font-size="13" fill="#111827">P3 chapter body + exhibits</text></g>
+<text x="20" y="134" font-family="Inter" font-size="12" fill="#4b5563">header, takeaway, side tiles, visible exhibits</text>
+<g><rect x="370" y="90" width="340" height="60" rx="6" fill="#e8f2ec" stroke="#9ca3af"/><text x="380" y="112" font-family="Inter,sans-serif" font-size="13" fill="#111827">P4 panels</text></g>
+<text x="380" y="134" font-family="Inter" font-size="12" fill="#4b5563">valuation hero, KPI labels, questions/sources</text>
+<g><rect x="10" y="170" width="700" height="60" rx="6" fill="#e8f2ec" stroke="#9ca3af"/><text x="20" y="192" font-family="Inter,sans-serif" font-size="13" fill="#111827">P5 containers: view page (no wrapper tile, tab scrollbar), review page (container query)</text></g>
+<text x="20" y="262" font-family="Inter" font-size="12" fill="#4b5563">Unchanged: report data contract, API routes, report generation, prompts. ?layout=analysis still loads (AC-11).</text></svg>

@@ -13,12 +13,12 @@ interface PipelineProgressChartProps {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  completed: "#469172",
-  running: "#7a91a6",
+  completed: "#2d7d46",
+  running: "#2e5fa3",
   pending: "#e5e7eb",
-  failed: "#bf5549",
+  failed: "#c9302c",
   skipped: "#f3f4f6",
-  waiting_for_human: "#b7893e",
+  waiting_for_human: "#b8860b",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -53,7 +53,7 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 export function PipelineProgressChart({ data }: PipelineProgressChartProps) {
-  if (!data || data.length === 0) return <p className="py-8 text-sm text-[#626b78]">No pipeline data yet.</p>;
+  if (!data || data.length === 0) return <p className="py-8 text-sm text-[#6b7280]">No pipeline data yet.</p>;
 
   // Sort by stage_order and build chart data
   const sorted = [...data].sort((a, b) => a.stage_order - b.stage_order);
@@ -72,7 +72,7 @@ export function PipelineProgressChart({ data }: PipelineProgressChartProps) {
     <div className="flex flex-col" style={{ height: Math.max(220, data.length * 28 + 40) }}>
       {/* Summary line */}
       <div className="flex items-center justify-between px-1 mb-2">
-        <span className="text-xs text-gray-400 font-medium">
+        <span className="text-xs text-gray-500 font-medium">
           {completedCount}/{totalRelevant} stages complete
         </span>
         <div className="flex gap-2">
@@ -108,7 +108,7 @@ export function PipelineProgressChart({ data }: PipelineProgressChartProps) {
               type="category"
               dataKey="name"
               width={150}
-              tick={{ fontSize: 12, fill: "#626b78" }}
+              tick={{ fontSize: 12, fill: "#6b7280" }}
               tickLine={false}
               interval={0}
               axisLine={false}

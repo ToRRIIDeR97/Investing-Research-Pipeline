@@ -28,15 +28,55 @@ const names = {
   combination_key:'Strategy combination', lead_bucket:'Leading signal', parameter_stability:'Parameter stability',
   reporting_basis:'Reporting basis', present:'Available', why_missing:'What is missing',
 };
-const internal = /^(confidence|confidence_score|artifact_type|metadata_json|restatement_version|system_generated|source_accession_number|source_document_id|source_id|id|created_at|updated_at|scope_key)$|(_ids?$)|(^supporting_observation)|(^supersedes_)/;
+const internal = /^(valuation_accepted_first|confidence|confidence_score|artifact_type|metadata_json|restatement_version|system_generated|source_accession_number|source_document_id|source_id|id|created_at|updated_at|scope_key)$|(_ids?$)|(^supporting_observation)|(^supersedes_)/;
 const uuid = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
+const acronyms=/\b(usd|gaap|ttm|nim|cet1|kpi|tam|fcf|fcfe|fcff|nav|yoy|ebitda|eps|rwa|roe|roa|roic|dcf|cagr|tbv|tbvps|bvps|nii|ltv|cac|arpu|sbc|roi|apy)\b/gi;
 export function label(key){
   if(names[key])return names[key];
   const value=String(key).replace(/_json$/,'').replace(/([a-z])([A-Z])/g,'$1 $2').replace(/[_.]+/g,' ').trim();
-  return (value.charAt(0).toUpperCase()+value.slice(1)).replace(/\b(usd|gaap|ttm|nim|cet1|kpi|tam|fcf|nav|yoy)\b/gi,m=>m.toUpperCase());
+  const words=value.replace(/\s+key$/i,'')||value;
+  return (words.charAt(0).toUpperCase()+words.slice(1)).replace(acronyms,m=>m.toUpperCase());
 }
+// Round a decimal string half up to two places, keeping thousands separators ("1,351.9912" -> "1,351.99").
+function roundTwo(whole,fraction){
+  let cents=Number(fraction.slice(0,2))+(Number(fraction[2])>=5?1:0);
+  let digits=whole.replace(/,/g,'');
+  if(cents===100){cents=0;digits=(BigInt(digits)+1n).toString();}
+  const grouped=whole.includes(',')?digits.replace(/\B(?=(\d{3})+(?!\d))/g,','):digits;
+  return `${grouped}.${String(cents).padStart(2,'0')}`;
+}
+/** Model prose sometimes carries raw model output such as $12.29933; values of 1 or more with 3+ decimals read as 2. */
+export function tidyDecimals(text){
+  return String(text).replace(/(?<![\d.,])([1-9]\d{0,2}(?:,\d{3})+|[1-9]\d*)\.(\d{3,})(?![\d.])/g,(_,whole,fraction)=>roundTwo(whole,fraction));
+}
+/** Forecast years read 2027E, not 2027e.
+ * @param {string} text
+ * @returns {string} */
+const estimateYears=(text)=>text.replace(/\b((?:19|20)\d{2})e\b/g,'$1E');
 export function readerText(value){
-  return String(value).replace(uuid,'[reference]').replace(/\bevidence claim [a-f0-9]{8}\b/gi,'the cited evidence').replace(/\b[a-zA-Z][a-zA-Z0-9]*(?:_[a-zA-Z0-9]+)+\b/g,label);
+  return estimateYears(tidyDecimals(String(value).replace(/\s*(?:\[\s*[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\s*\])+/gi,'').replace(uuid,'[reference]').replace(/\bevidence claim [a-f0-9]{8}\b/gi,'the cited evidence').replace(/\b[a-zA-Z][a-zA-Z0-9]*(?:_[a-zA-Z0-9]+)+\b/g,label)));
+}
+/** A numeric table cell for reading: 153,577,000 -> 153.6M, 875.4125 -> 875.41, 0.65949 -> 0.66; other text unchanged. */
+export function compactNumber(text){
+  const raw=String(text).trim(),match=raw.match(/^([−-]?)([\d,]+(?:\.\d+)?)(%?)$/);
+  if(!match)return text;
+  const n=Number(match[2].replace(/,/g,'')),sign=match[1]?'−':'',pct=match[3];
+  if(!Number.isFinite(n))return text;
+  const a=Math.abs(n);
+  const body=pct?`${a.toFixed(a>=1?1:2)}%`:a>=1e9?`${(a/1e9).toFixed(2)}B`:a>=1e6?`${(a/1e6).toFixed(1)}M`:a>=1000?Math.round(a).toLocaleString('en-US'):a>=1?String(Math.round(a*100)/100):a===0?'0':String(Number(a.toPrecision(2)));
+  return sign+body;
+}
+/** Short chapter name for the report rail: the curated name, else the title before its colon or dash, at most 40 characters. */
+export function railName(section){
+  if(chapterNames[section.id])return chapterNames[section.id];
+  const source=String(section.title||'').trim()||String(section.id||'').replace(/[-_]+/g,' ');
+  let name=readerText(source).split(/:\s|\s[—–-]\s/)[0].trim();
+  name=name.charAt(0).toUpperCase()+name.slice(1);
+  // A list title ("Segment Economics, Customer Decisions, and Cash Conversion") reads by its first item.
+  if(name.length>28&&name.indexOf(', ')>3)name=name.slice(0,name.indexOf(', '));
+  if(name.length<=40)return name;
+  const cut=name.slice(0,40);
+  return `${cut.slice(0,cut.lastIndexOf(' ')).replace(/[\s,;:.–—-]+$/,'')}…`;
 }
 export function number(value,digits=6){
   if(value==null||!Number.isFinite(Number(value)))return 'Not disclosed';

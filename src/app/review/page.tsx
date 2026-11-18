@@ -129,7 +129,7 @@ function ReviewQueue() {
         {selectedItem.research_question && <section className={ui.tile}><div className={ui.tileHead}><h2>Research question</h2></div><p className={ui.tileBody}>{selectedItem.research_question}</p></section>}
         {reportDocument ? <>
           <ReviewFindings review={aiReview} />
-          <details className={`${ui.section} !mt-0`} open><summary>Report under review</summary><div className="px-[18px] pb-[18px]"><ResearchReport document={reportDocument} /></div></details>
+          <h2 className="mt-2 text-[13px] font-semibold">Report under review</h2><ResearchReport document={reportDocument} />
         </> : !submitError && <p className={ui.muted} role="status">Loading the report…</p>}
       </div>
       <form onSubmit={handleSubmitReview} className={`${ui.s4} flex min-w-0 flex-col gap-4 lg:sticky lg:top-[68px]`}>
@@ -142,7 +142,7 @@ function ReviewQueue() {
               <label className={ui.field}>Priority<select value={reviewForm.priority} disabled={submitting} onChange={(event) => setReviewForm({ ...reviewForm, priority: event.target.value })}>{["high", "medium", "low"].map((value) => <option value={value} key={value}>{value[0].toUpperCase() + value.slice(1)}</option>)}</select></label>
             </div>
             <label className={ui.field}>What would change your mind?<textarea rows={3} value={reviewForm.whatWouldChangeMind} disabled={submitting} onChange={(event) => setReviewForm({ ...reviewForm, whatWouldChangeMind: event.target.value })} /></label>
-            {gate.open_severe > 0 && <label className={ui.check}><input type="checkbox" checked={acknowledged} disabled={submitting} onChange={(event) => setAcknowledged(event.target.checked)} />I have read the {gate.open_severe} open high or critical review findings. Approval needs this.</label>}
+            {gate.open_severe > 0 && <label className={ui.check}><input type="checkbox" checked={acknowledged} disabled={submitting} onChange={(event) => setAcknowledged(event.target.checked)} /><span>I have read the <a href="#ai-review" className="text-[var(--blue)] underline">{gate.open_severe} open high or critical review findings</a>. Approval needs this.</span></label>}
           </div>
           <details className={ui.fold}><summary>Depth ratings (optional, 0-4)</summary><div className={`${ui.form} ${ui.tileBody}`}>
             <p className={ui.muted}>{RUBRIC_LEVELS.join(" · ")}</p>

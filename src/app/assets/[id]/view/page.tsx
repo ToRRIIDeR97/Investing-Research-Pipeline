@@ -267,7 +267,7 @@ function ViewResearch() {
       <div className={ui.titleGroup}>
         <h1>{asset.canonical_name}</h1>
         <span className={ui.muted}>{[(asset.listings?.find((item) => item.is_primary) ?? asset.listings?.[0])?.symbol, cleanWords(asset.asset_kind.replace(/_asset/g, "")), asset.sector].filter(Boolean).join(" · ")}</span>
-        <span className={ui.status} data-status={action.tone}>{action.label}</span>
+        {activeTab !== "thesis" && <span className={ui.status} data-status={action.tone}>{action.label}</span>}
       </div>
       <div className={ui.headActions}>
         <Link href={`/assets/${assetId}`} className={ui.secondary}>Asset details</Link>
@@ -283,7 +283,7 @@ function ViewResearch() {
     {wrap ? <section className={`${ui.tile} ${styles.wide}`}>{body}</section> : body}
   </div></div>;
   if (activeTab === 'kpis') return view(<KPIDashboard key={data.activeRun?.id} artifacts={viewArtifacts} onRefresh={()=>void loadResearch()} refreshing={loading}/>, true);
-  if (activeTab === 'thesis' && data.report?.report_document) return view(<ResearchReport key={data.activeRun?.id} document={data.report.report_document} liveArtifacts={viewArtifacts} onBack={()=>openSection('overview')} financialsHref={sectionHref('financials')}/>, true);
+  if (activeTab === 'thesis' && data.report?.report_document) return view(<ResearchReport key={data.activeRun?.id} document={data.report.report_document} liveArtifacts={viewArtifacts} financialsHref={sectionHref('financials')}/>);
   if (activeTab === 'financials') {
     const observations = researchObservations(viewArtifacts);
     return view(<FinancialStatements key={data.activeRun?.id} observations={observations} filingTables={artifactContent(viewArtifacts,'financial_statement_set').tables??[]} sources={data.sources} evidence={[...(data.report?.report_document?.evidence??[]),...data.evidence]} isTest={data.report?.report_document?.is_test}/>, true);

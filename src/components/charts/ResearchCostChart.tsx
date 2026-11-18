@@ -32,7 +32,7 @@ const TIER_LABELS: Record<string, string> = {
 };
 
 export function ResearchCostChart({ data }: ResearchCostChartProps) {
-  if (!data || data.length === 0 || data.every((d) => d.cost === 0)) return <p className="py-8 text-sm text-[#626b78]">No research costs yet.</p>;
+  if (!data || data.length === 0 || data.every((d) => d.cost === 0)) return <p className="py-8 text-sm text-[#6b7280]">No research costs yet.</p>;
 
   const totalCost = data.reduce((sum, d) => sum + d.cost, 0);
 
@@ -89,7 +89,7 @@ export function ResearchCostChart({ data }: ResearchCostChartProps) {
           <div className="text-[13px] font-bold text-black">
             ${totalCost.toFixed(2)}
           </div>
-          <div className="text-xs text-gray-400 uppercase tracking-wider">
+          <div className="text-xs text-gray-500 uppercase tracking-wider">
             Total
           </div>
         </div>

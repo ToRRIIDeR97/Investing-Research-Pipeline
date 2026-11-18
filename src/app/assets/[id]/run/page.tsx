@@ -857,7 +857,7 @@ export default function RunResearchPage() {
     </form> : phase === "plan" ? <div className={ui.grid}>
       <section className={`${ui.tile} ${ui.s8}`}>
         <div className={ui.tileHead}><h2>Gate 1 of 2: review research plan</h2><span className={ui.status} data-status="waiting_for_human">Waiting for you</span></div>
-        {researchPlan && <div className="px-3.5 pt-3"><FramingEditor key={`${researchPlan.generated_at}`} plan={researchPlan} disabled={isProcessing} onChange={setPlanEdits} /></div>}
+        {researchPlan && <div className="border-b border-[var(--line-soft)] [&>section]:m-0 [&>section]:rounded-none [&>section]:border-0"><FramingEditor key={`${researchPlan.generated_at}`} plan={researchPlan} disabled={isProcessing} onChange={setPlanEdits} /></div>}
         <ResearchPlanCard plan={researchPlan} />
       </section>
       <section className={`${ui.tile} ${ui.s4}`}>

@@ -7,11 +7,11 @@ type Row=Record<string,any>;
 
 const glyphs:Record<ScenarioType,string>={bear:'▼',base:'●',bull:'▲'};
 const currencyNames:Record<string,string>={USD:'US dollars',EUR:'Euros',GBP:'Pounds sterling',JPY:'Japanese yen'};
-const signed=(r:number)=>`${r<0?'−':'+'}${Math.abs(Math.round(r*100))}%`;
+const signed=(r:number)=>`${r<0?'−':'+'}${Math.abs(r*100).toFixed(1)}%`;
 const tone=(r:number|null)=>r==null?undefined:r<0?styles.down:styles.up;
 
 function Item({title,open=false,detailsRef,children}:{title:string;open?:boolean;detailsRef?:RefObject<HTMLDetailsElement|null>;children:ReactNode}) {
-  return <details open={open} ref={detailsRef}><summary><svg className={styles.chev} width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5L7.5 6 4 9.5" stroke="#515d70" strokeWidth="1.6" fill="none" strokeLinecap="round"/></svg><span>{title}</span></summary>{children}</details>;
+  return <details open={open} ref={detailsRef}><summary><svg className={styles.chev} width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5L7.5 6 4 9.5" stroke="#4b5563" strokeWidth="1.6" fill="none" strokeLinecap="round"/></svg><span>{title}</span></summary>{children}</details>;
 }
 
 function PriceTargetTable({targets,currency}:{targets:PriceTargets;currency:string}) {
@@ -28,7 +28,8 @@ function PriceTargetTable({targets,currency}:{targets:PriceTargets;currency:stri
   </div>;
 }
 
-export function ValuationSummaryView({artifacts,conclusionStatus}:{artifacts:Row[];conclusionStatus?:string}) {
+export function ValuationSummaryView({artifacts,conclusionStatus,hideHero=false}:{artifacts:Row[];conclusionStatus?:string;hideHero?:boolean}) {
+  const flat=hideHero;
   const s=useMemo(()=>valuationSummary(artifacts,{conclusionStatus}),[artifacts,conclusionStatus]);
   const [pick,setPick]=useState<ScenarioType>('base');
   const why=useRef<HTMLDetailsElement>(null);
@@ -39,11 +40,11 @@ export function ValuationSummaryView({artifacts,conclusionStatus}:{artifacts:Row
   const showWhy=()=>{const d=why.current;if(!d)return;d.open=true;d.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});d.querySelector('summary')?.focus({preventScroll:true});};
   const hasWhy=s.notFinal&&!!s.issues.length;
   return <div className={`${styles.embedded} ${styles.valuation}`}>
-    {s.weighted!=null&&<section aria-label="Valuation summary" className={styles.hero}>
+    {s.weighted!=null&&!hideHero&&<section aria-label="Valuation summary" className={styles.hero}>
       <p className={styles.heroValue}>{price(s.weighted,c)}</p>
       <p className={styles.heroLine}>
         <span title="Bear, base and bull values weighted by their probabilities">{s.terminalYear?`weighted target per share for ${s.terminalYear}`:'weighted value per share'}</span>
-        {r!=null&&s.price!=null&&<> · <b className={tone(r)}>{Math.abs(r)<0.005?'in line with':`${Math.abs(Math.round(r*100))}% ${r<0?'below':'above'}`}</b> the {price(s.price,c)} last price{!s.priceVerified&&<span className={styles.muted} title={s.priceDate?`Close on ${s.priceDate}, not checked against a second source`:'Price snapshot, not a recorded close'}> (unverified)</span>}</>}
+        {r!=null&&s.price!=null&&<> · <b className={tone(r)}>{Math.abs(r)<0.005?'in line with':`${Math.abs(r*100).toFixed(1)}% ${r<0?'below':'above'}`}</b> the {price(s.price,c)} last price{!s.priceVerified&&<span className={styles.muted} title={s.priceDate?`Close on ${s.priceDate}, not checked against a second source`:'Price snapshot, not a recorded close'}> (unverified)</span>}</>}
         {s.notFinal&&<> · {hasWhy?<button type="button" className={styles.pendingLink} onClick={showWhy}>not final</button>:<span className={styles.pending}>not final</span>}</>}
       </p>
       {!!s.disagreements.length&&<p className={styles.heroNote}>
@@ -59,15 +60,25 @@ export function ValuationSummaryView({artifacts,conclusionStatus}:{artifacts:Row
         </div>;})}</div>}
     </section>}
     {!!s.reasons.length&&<ol className={styles.reasons} aria-label="What drives the value">{s.reasons.map((x,i)=><li key={i}><span aria-hidden="true">{i+1}</span><span><b>{x.title}</b> <span>{x.text}</span></span></li>)}</ol>}
-    <div className={styles.accordion}>
+    <div className={flat?`${styles.accordion} ${styles.flatAccordion}`:styles.accordion}>
       {calc&&<Item title="How the value is calculated" open>
         <div className={styles.panel}>
           {s.calculations.length>1&&<span className={styles.switch} role="group" aria-label="Scenario">{s.calculations.map(x=><button type="button" key={x.type} aria-pressed={x.type===calc.type} onClick={()=>setPick(x.type)}>{scenarioNames[x.type]}</button>)}</span>}
-          {!!calc.rows.length&&<table className={styles.numbers}>
-            <thead><tr><th scope="col">{currencyNames[c.toUpperCase()]??c}</th>{calc.years.map(y=><th scope="col" key={y}>{y}</th>)}</tr></thead>
-            <tbody>{calc.rows.map(row=><tr key={row.label} className={row.strong?styles.strong:undefined}><th scope="row">{row.label}</th>{row.values.map((v,i)=><td key={i} className={v!=null&&v<0?styles.negative:undefined}>{moneyMillions(v,c)}</td>)}</tr>)}</tbody>
-          </table>}
-          {calc.priceTargets&&<PriceTargetTable targets={calc.priceTargets} currency={c}/>}
+          {(()=>{const merge=!!calc.rows.length&&!!calc.priceTargets&&calc.priceTargets.years.join()===calc.years.join();
+            if(!merge)return <>{!!calc.rows.length&&<table className={styles.numbers}>
+              <thead><tr><th scope="col">{currencyNames[c.toUpperCase()]??c}</th>{calc.years.map(y=><th scope="col" key={y}>{y}</th>)}</tr></thead>
+              <tbody>{calc.rows.map(row=><tr key={row.label} className={row.strong?styles.strong:undefined}><th scope="row">{row.label}</th>{row.values.map((v,i)=><td key={i} className={v!=null&&v<0?styles.negative:undefined}>{moneyMillions(v,c)}</td>)}</tr>)}</tbody>
+            </table>}{calc.priceTargets&&<PriceTargetTable targets={calc.priceTargets} currency={c}/>}</>;
+            const t=calc.priceTargets!;
+            return <table className={styles.numbers}>
+              <thead><tr><th scope="col">{currencyNames[c.toUpperCase()]??c}</th>{calc.years.map((y,i)=><th scope="col" key={y}>{y}{t.interpolated[i]?'*':''}</th>)}</tr></thead>
+              <tbody>
+                {calc.rows.map(row=><tr key={row.label} className={row.strong?styles.strong:undefined}><th scope="row">{row.label}</th>{row.values.map((v,i)=><td key={i} className={v!=null&&v<0?styles.negative:undefined}>{moneyMillions(v,c)}</td>)}</tr>)}
+                <tr className={styles.sectionRow}><th scope="rowgroup" colSpan={calc.years.length+1}>Per share, end of year{t.interpolated.some(Boolean)?' (* estimated between modelled years)':''}</th></tr>
+                <tr><th scope="row">Value per share</th>{t.values.map((v,i)=><td key={i}>{price(v,c,true)}</td>)}</tr>
+                <tr><th scope="row">Return vs last price</th>{t.returns.map((r,i)=><td key={i} className={r!=null&&r<0?styles.negative:undefined}>{r!=null&&r>0?'+':''}{percent(r)}</td>)}</tr>
+              </tbody>
+            </table>;})()}
           {!!calc.steps.length&&<ol className={styles.steps}>{calc.steps.map((step,i)=><li key={i}>{step.text}: <b>{step.value}</b>.</li>)}</ol>}
           {calc.note&&<p className={styles.note}>{calc.note}</p>}
         </div>

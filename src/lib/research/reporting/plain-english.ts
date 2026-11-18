@@ -124,5 +124,8 @@ export function formatInUnit(value:number|null|undefined,unit:unknown):string {
   if(u?.base==='%')return `${minus(value)}${Math.abs(value).toFixed(1)}%`;
   const n=new Intl.NumberFormat('en-US',{maximumFractionDigits:Math.abs(value)<10?2:0}).format(Math.abs(value));
   const suffix=String(unit??'').replace(/_/g,' ').trim();
+  // "16 millions" reads as 16M; "16 million shares" as 16M shares.
+  const scaled=suffix.match(/^(millions?|billions?)\s*(.*)$/i);
+  if(scaled)return `${minus(value)}${n}${/^m/i.test(scaled[1])?'M':'B'}${scaled[2]?` ${scaled[2]}`:''}`;
   return `${minus(value)}${n}${suffix?` ${suffix}`:''}`;
 }
