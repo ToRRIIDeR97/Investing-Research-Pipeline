@@ -69,6 +69,19 @@ export function primarySchedules(models: ValuationMethodInput[]): Record<Scenari
   return null;
 }
 
+/**
+ * An FCFE schedule whose reinvestment exceeds net income in every year never pays its owners before the terminal
+ * year: usually loan or balance-sheet growth deducted in full (BANK_FCFE_RULE). Rejected so the model rebuilds it.
+ */
+export function fcfeRetentionErrors(models: ValuationMethodInput[]) {
+  return models.flatMap((model, i) => {
+    if (model.method !== "fcfe" || !model.years.length) return [];
+    const absorbed = model.years.every((y) => y.build && y.build.starting_profit > 0 && y.build.change_in_net_working_capital > y.build.starting_profit);
+    return absorbed ? [{ path: `valuation_scenario_set.method_inputs.${i}.years`, message:
+      `fcfe ${model.scenario_type}: change_in_net_working_capital exceeds net income in every year, so owners receive nothing before the terminal value. ${BANK_FCFE_RULE}` }] : [];
+  });
+}
+
 export function equityMethodsFormat(options: { requireDepreciationAddBack: boolean }): AgentOutputFormat {
   return {
     requiredKeys: Object.keys(EquityMethodsOutput.shape),
@@ -81,6 +94,7 @@ export function equityMethodsFormat(options: { requireDepreciationAddBack: boole
         return set.withheld_reason?.trim() ? [] : [{ path: "valuation_scenario_set.withheld_reason", message: "Name the missing packet inputs when the valuation is withheld." }];
       }
       const errors = options.requireDepreciationAddBack ? cashFlowBuildErrors(set.method_inputs) : [];
+      errors.push(...fcfeRetentionErrors(set.method_inputs));
       try {
         validateMethodInputs(set.method_inputs);
         const primary = primarySchedules(set.method_inputs);
@@ -94,7 +108,14 @@ export function equityMethodsFormat(options: { requireDepreciationAddBack: boole
   };
 }
 
-export const equityMethodsPrompt = (p: Record<string, unknown>) => exactJsonPrompt({
+/**
+ * For a deposit-funded lender, loan growth is funded mostly by deposits and borrowing; only the equity it ties up
+ * reduces cash to shareholders. Deducting the whole balance-sheet growth makes every explicit year negative and
+ * leaves the terminal value as more than all of the value.
+ */
+export const BANK_FCFE_RULE = "For a bank or other deposit-funded lender, FCFE is net income minus the equity retained to keep the target capital ratio as the balance sheet grows: put that retained equity (growth in risk-weighted assets, or loans when RWA is not given, times the target CET1 or equity-to-assets ratio) in change_in_net_working_capital. Never deduct loan growth, balance-sheet growth or a funding-surplus proxy from the operating scenarios in full; deposits and borrowings fund the rest. State the capital ratio and its source in source_notes.";
+
+export const equityMethodsPrompt =(p: Record<string, unknown>) => exactJsonPrompt({
   agentName: "valuation-analyst",
   requiredKeys: Object.keys(EquityMethodsOutput.shape),
   packet: p,
@@ -105,6 +126,7 @@ export const equityMethodsPrompt = (p: Record<string, unknown>) => exactJsonProm
     `The application computes discount factors, terminal values, the yearly value per share, the scenario anchors, the weighted target and the returns from the first method in the order ${METHOD_ORDER.join(", ")}; other methods are cross-checks. Explain unsupported methods in omitted_methods; never fabricate data to fill a schedule.`,
     "Use financial_inputs (captured quarterly and annual revenue, costs, tax, D&A, SBC, operating cash flow, capex, cash, marketable securities, debt, leases, diluted shares, headcount, period-end closes and market caps), the operating scenarios, accepted historical metrics and the current market price. Check financial_inputs.columns and not_captured before listing a gap; never call a supplied input absent.",
     "For fcfe, give every year a build: starting_profit (net income), depreciation_amortization added back, capital_expenditures as a positive amount that is subtracted, change_in_net_working_capital, and other_adjustments (net borrowing; stock-based compensation when treated as a cash cost). cash_flow must equal the build.",
+    BANK_FCFE_RULE,
     "Discount rates, terminal growth and multiples are analyst assumptions: state each one and its rationale in source_notes rather than treating it as a missing input.",
     COST_OF_CAPITAL_RULE,
     "reverse_valuation gives the revenue growth and operating margin the current market price implies.",

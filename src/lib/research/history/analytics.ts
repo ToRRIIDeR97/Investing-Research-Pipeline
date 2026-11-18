@@ -49,7 +49,7 @@ export const FinancialAnalytics = z.object({
 export type FinancialAnalytics = z.infer<typeof FinancialAnalytics>;
 
 const DIGITS: Record<Kind, number> = { money: 1, ratio: 4, days: 1, x: 2, shares: 1 };
-const MONEY = new Set(["revenue", "operating_income", "fcf_ttm", "fcf_after_lease_principal_ttm", "growth_capex_ttm", "nopat_ttm", "invested_capital",
+const MONEY = new Set(["revenue", "operating_income", "fcf_ttm", "fcf_after_lease_principal_ttm", "growth_capex_ttm", "nopat_ttm", "net_income_ttm", "invested_capital",
   "cash", "marketable_securities", "long_term_debt", "net_cash", "buybacks_ttm", "dividends_ttm", "sbc_ttm", "market_cap",
   "change_in_revenue_ttm", "change_in_nopat_ttm", "change_in_invested_capital", "cumulative_operating_income", "revenue_ttm", "operating_income_ttm"]);
 /** Unit of a pack column; fiscal_year and years round as ratios, which leaves integers unchanged. */
@@ -114,6 +114,7 @@ export const ANALYTICS_DEFINITIONS: Record<string, string> = {
   invested_capital: "Equity + long-term debt − cash − current marketable securities, period end",
   roic: "TTM NOPAT ÷ average invested capital (this quarter end and a year earlier)",
   revenue_to_net_ppe: "TTM revenue ÷ net property and equipment (incl. finance-lease assets where reported together)",
+  net_income_ttm: "Net income, trailing 12 months",
   incremental_operating_margin: "Change in TTM income from operations ÷ change in TTM revenue over the period",
   incremental_roic: "Change in TTM NOPAT ÷ change in invested capital over the period",
   dso: "Accounts receivable ÷ TTM revenue × 365",
@@ -205,6 +206,7 @@ export function buildFinancialAnalytics(input: AnalyticsInput): FinancialAnalyti
       capex_to_da: div(capex, da), growth_capex_ttm: millions(minus(capex, da)), nopat_ttm: millions(nopat(p)),
       invested_capital: millions(ic), roic: div(nopat(p), ic === null || icYearAgo === null ? null : (ic + icYearAgo) / 2),
       revenue_to_net_ppe: div(ttm("revenue", p), value(book.get("net_ppe", p))),
+      net_income_ttm: millions(netIncome),
     };
   });
   const incremental = [1, 2, 3].map((years) => {

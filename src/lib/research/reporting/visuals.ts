@@ -137,6 +137,18 @@ function scenarioValuation(c: Record<string,any>, scenario: typeof scenarioTypes
   return calculateValuationSchedule(input);
 }
 
+/**
+ * One statement line by fiscal year. The contract leaves the statements free-form, and models write them either by
+ * year (`{years: {2026: {metric}}}` or `{2026: {metric}}`) or by metric (`{metric: {2026: value}}`); both are read.
+ */
+export function statementSeries(statements: unknown, metric: string): [number, unknown][] {
+  const s = (statements ?? {}) as Record<string, any>;
+  const byMetric = s[metric];
+  if (byMetric && typeof byMetric === 'object' && !Array.isArray(byMetric)) return Object.entries(byMetric).map(([year, v]) => [Number(year), v]);
+  const rows = s.years && typeof s.years === 'object' ? s.years : s;
+  return Object.entries(rows).map(([year, row]: [string, any]) => [Number(year), row?.[metric]]);
+}
+
 /** Bear, base and bull side by side: value per share from the valuation set, or a yearly driver or statement line from the operating set. */
 function scenarioSeries(spec: Extract<VisualSpec,{kind:'scenarios'}>, artifacts: ReportArtifact[]): BuiltVisual {
   const artifact = storedArtifact(spec.artifact_id, artifacts, ['valuation_scenario_set','operating_scenario_set']);
@@ -161,9 +173,8 @@ function scenarioSeries(spec: Extract<VisualSpec,{kind:'scenarios'}>, artifacts:
   const yearly = scenarioTypes.map(t => {
     const s = scenarios.find(s => s.scenario_type === t);
     if (!s) throw new Error(`Operating scenarios lack ${t}`);
-    const statements = s.resulting_financial_statements_json?.years ?? s.resulting_financial_statements_json ?? {};
     const entries: [number, unknown][] = ratio ? (s.yearly_drivers ?? []).map((d: any) => [d.fiscal_year, d[spec.metric]])
-      : Object.entries(statements).map(([year, row]: [string, any]) => [Number(year), row?.[spec.metric]]);
+      : statementSeries(s.resulting_financial_statements_json, spec.metric);
     return new Map(entries.filter(([y, v]) => Number.isInteger(y) && finite(v)) as [number, number][]);
   });
   if (yearly.some(m => !m.size)) throw new Error(`Every scenario needs ${spec.metric} values`);

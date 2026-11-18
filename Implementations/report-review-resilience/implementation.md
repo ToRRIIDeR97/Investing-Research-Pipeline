@@ -205,10 +205,27 @@ Three items left open after the first round are now fixed:
 
 ### Not verified
 
-- **M-1:** the paid live run is not approved or run yet, so this has no real-provider evidence:
-  - the run reaching `human_review`;
-  - the token and cost reduction;
-  - the gap appearing in the report.
+- **Chart gap in a live report:** run `9cd97f72` drew or skipped every planned chart itself, so the `CHART_PLAN_GAP` path was not triggered live. It is covered by unit tests only.
+
+### M-1: paid live run (approved by the user, 2026-11-18)
+
+Run `9cd97f72` was SoFi with every agent on `claude-haiku-5-5` (Anthropic API), medium effort, a $10 run cap and a $5 review-stage cap. At the user's choice, the team-request rerun gate was skipped.
+
+| | Run `3c3fc4ce` (before) | Run `9cd97f72` (after) |
+|---|---|---|
+| Reached `human_review` | no (`needs_more_work` after 3 resumes) | yes |
+| `ai_reviewer` cost | $6.10 (57 calls) | $1.87 (22 calls) |
+| Section-writer input, first attempt in review | about 167K average | 94–125K |
+| Run cost at `human_review` | $9.21 (stopped earlier) | $4.86 |
+| Eval score | checks 5/11, traits 8/12, trace 84%, 46 reader leaks | checks 6/14, traits 9/12, trace 86%, 30 reader leaks |
+
+- **AC-3 and AC-4 live:** the repair rewrite of the forecasts chapter failed validation twice ("Every scenario needs revenue_usd_millions values").
+  - `keepDraft` stored the round-0 review with `repair.status = failed`, and the stage completed.
+  - The verdict stayed `needs_more_work`: the model said `conditional_pass`, and code confirmed a high finding on terminal value.
+- **A separate bug found on the way:**
+  - The first `ai_reviewer` attempt failed the C14-T6 prompt guard in `agent-harness/runner.ts`.
+  - The guard scanned the whole prompt, including the drafted report, and the report said the monitoring set "cannot yet confirm the thesis".
+  - The guard now checks only the instructions (the prompt built with an empty packet). `tests/agent-roles.test.ts` covers both directions.
 
 One author wrote the plan, both test sets and the code. The verification set is not independent.
 

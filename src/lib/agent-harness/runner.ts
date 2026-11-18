@@ -442,7 +442,9 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
   // Built once: the original prompt also serves attempts that send the packet uncompacted.
   const promptText = input.builtPrompt ?? buildTaskPrompt(input, config);
   if (input.agentName.toLowerCase().includes("red-team") || input.agentName.toLowerCase().includes("reviewer")) {
-    if (promptText.toLowerCase().includes("confirm the thesis") || promptText.toLowerCase().includes("prove the thesis")) {
+    // Only the instructions are checked: the packet is data, and a report may rightly say it "cannot confirm the thesis".
+    const instructions = (input.promptFactory || input.prompt ? buildTaskPrompt({ ...input, taskPacket: {} }, config) : promptText).toLowerCase();
+    if (instructions.includes("confirm the thesis") || instructions.includes("prove the thesis")) {
       throw new Error("Red-team prompt review failed: prompt must not contain instructions to confirm or prove the thesis.");
     }
   }
