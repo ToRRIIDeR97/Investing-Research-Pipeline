@@ -114,8 +114,9 @@ export async function recordEffectiveRunConfig(sql: Sql, runId: string) {
   const same = prior && JSON.stringify(canonical({ ...prior, recorded_at: null })) === JSON.stringify(canonical({ ...config, recorded_at: null }));
   if (same) return;
   const history = [...(Array.isArray(row?.config?.history) ? row.config.history : []), ...(prior ? [prior] : [])].slice(-10);
+  // JSON goes in as text: sql.json() fails on a drizzle-wrapped client, whose jsonb serializer passes objects through.
   await sql`UPDATE research_runs SET metadata_json = COALESCE(metadata_json, '{}'::jsonb) || jsonb_build_object('effective_config',
-    COALESCE(metadata_json->'effective_config', '{}'::jsonb) || ${sql.json({ run: config, history } as any)}::jsonb)
+    COALESCE(metadata_json->'effective_config', '{}'::jsonb) || ${JSON.stringify({ run: config, history })}::text::jsonb)
     WHERE id = ${runId}`;
 }
 
@@ -136,10 +137,11 @@ export async function recordEffectiveTaskConfig(sql: Sql, runId: string, taskTyp
   const memo = `${runId}:${taskType}`, signature = JSON.stringify(entry);
   if (recordedTaskConfigs.get(memo) === signature) return false;
   recordedTaskConfigs.set(memo, signature);
+  // JSON goes in as text, so callers on a drizzle client's $client (historical_record) can record too.
   await sql`UPDATE research_runs SET metadata_json = COALESCE(metadata_json, '{}'::jsonb) || jsonb_build_object('effective_config',
     COALESCE(metadata_json->'effective_config', '{}'::jsonb) || jsonb_build_object('tasks',
       COALESCE(metadata_json->'effective_config'->'tasks', '{}'::jsonb) || jsonb_build_object(${taskType}::text,
-        ${sql.json(entry as any)}::jsonb || jsonb_build_object('models', (
+        ${signature}::text::jsonb || jsonb_build_object('models', (
           SELECT COALESCE(jsonb_agg(DISTINCT m), '[]'::jsonb) FROM jsonb_array_elements_text(
             COALESCE(metadata_json->'effective_config'->'tasks'->${taskType}::text->'models', '[]'::jsonb) || to_jsonb(${execution.model}::text)) m)))))
     WHERE id = ${runId}`.catch((error) => { recordedTaskConfigs.delete(memo); throw error; });

@@ -2,6 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { recordEffectiveRunConfig, recordEffectiveTaskConfig, taskExecution } from "../src/lib/research/model-tiering";
 import { cleanup, createRun, loadEnv, skipDb as skip } from "../Implementations/research-request-routing/acceptance/fixtures";
 
@@ -41,5 +42,24 @@ test("effective_config keeps the run's settings, the history of a changed job, a
   } finally {
     if (saved === undefined) delete process.env.RESEARCH_PREMIUM_MODEL; else process.env.RESEARCH_PREMIUM_MODEL = saved;
     await cleanup(sql, [run.runId], [run.assetId]); await sql.end();
+  }
+});
+
+// historical_record passes its drizzle client's $client, whose jsonb serializer passes objects through unchanged.
+test("effective_config records through a drizzle-wrapped client", { skip }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!, { onnotice: () => {} });
+  const wrapped = postgres(process.env.DATABASE_URL!, { onnotice: () => {} });
+  drizzle(wrapped);
+  const run = await createRun(sql);
+  try {
+    await recordEffectiveRunConfig(wrapped, run.runId);
+    const execution = taskExecution({ agentName: "asset-analyst", modelTier: "cheap", stageKey: "historical_record" });
+    assert.equal(await recordEffectiveTaskConfig(wrapped, run.runId, "metric_normalization", { ...execution, agentName: "asset-analyst" }), true);
+    const [row] = await sql`SELECT metadata_json->'effective_config' AS config FROM research_runs WHERE id = ${run.runId}`;
+    assert.equal(typeof row.config.run, "object");
+    assert.equal(row.config.tasks.metric_normalization.agent, "asset-analyst");
+    assert.deepEqual(row.config.tasks.metric_normalization.models, [execution.model]);
+  } finally {
+    await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); await wrapped.end();
   }
 });
