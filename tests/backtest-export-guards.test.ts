@@ -6,6 +6,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 import { backtestEnv, isInside } from "../src/lib/backtesting/executor";
 import { csvEscape, storedBacktestFile } from "../src/lib/export/research-package-generator";
+import { symlinkSkip } from "./helpers/platform";
 
 test("model-written backtest code gets an allowlisted environment without keys or DATABASE_URL (#11)", async () => {
   const env = backtestEnv({ PATH: "/usr/bin:/bin", HOME: "/home/dev", LANG: "C", DATABASE_URL: "postgres://secret", ANTHROPIC_API_KEY: "a",
@@ -31,7 +32,7 @@ test("model-written backtest code gets an allowlisted environment without keys o
   }
 });
 
-test("backtest artifact paths must stay inside the backtest storage tree (S6)", async () => {
+test("backtest artifact paths must stay inside the backtest storage tree (S6)", { skip: symlinkSkip }, async () => {
   const artifactDir = join(process.cwd(), "storage", "backtests", "run", "bt");
   assert.equal(isInside(artifactDir, "storage/backtests/run/bt/metrics.json"), true);
   for (const path of [".env.local", "../../.ssh/id_rsa", "/etc/passwd", "storage/backtests/run/bt", "storage/backtests/run/other/metrics.json",

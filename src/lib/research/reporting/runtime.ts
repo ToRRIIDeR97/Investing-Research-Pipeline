@@ -1,6 +1,6 @@
 import { callResearchAgent, exactJsonPrompt, type ResearchRunContext, type Sql } from "../run-context";
 import { AI_REVIEWER_CONTRACT } from "../stage-contracts";
-import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Outline, Section, normalizeOutlineStructure, validateProductOutline, validateChartPlan, outputContract, type ReportOutline, type ReportSection, type CoverageCheck } from "./contracts";
+import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Outline, Section, normalizeOutlineStructure, validateProductOutline, validateChartPlan, fillChartPlanGap, outputContract, type ReportOutline, type ReportSection, type CoverageCheck } from "./contracts";
 import { composeDraft, draftDocument, reviewDraftedReport, checkFinalCoverage, type CompositionActions, type ReportReview, type WrittenSection, REQUIRED_COVERAGE } from "./compose";
 import { z } from "zod/v4";
 import { DEPTH_CHECKS, DEPTH_CHECK_RULE, REWORK_STAGES, depthFindings } from "./depth";
@@ -185,6 +185,16 @@ function checkedContract(base: AgentOutputFormat, check: (value: any) => void, c
 }
 
 /**
+ * How a section write turns the model's answer into the stored result. A planned chart the writer could not build
+ * becomes a gap in code, in the value validation sees (`outputFormat`, after `check`) and in the value stored (`finish`).
+ */
+export function sectionWriteSteps<V>(section: ReportOutline["sections"][number], contract: AgentOutputFormat,
+  check: (value: V) => V, validate: (value: V) => void) {
+  const withChartGap = (value: V): V => (value as any)?.section ? { ...value, section: fillChartPlanGap(section, (value as any).section) } : value;
+  return { outputFormat: checkedContract(contract, validate, value => withChartGap(check(value))), finish: withChartGap };
+}
+
+/**
  * The analysis stages see every accepted claim, but the report may cite only dated, linked evidence
  * and current artifacts. A citation outside that set is dropped, as for team answers, and its ID goes to
  * `dropped` (saved with the review), never to the reader. A fact left without support still fails validation.
@@ -286,15 +296,17 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
     async write(section, outline, feedback, completed, options) {
       const finalCoverage = options?.coverage;
       const { packet, contract, perCallKeys, extraRules } = reportSectionCall(common, packetArtifacts, section, outline, feedback, completed, finalCoverage);
-      const output = usable(await callResearchAgent<{ section: ReportSection; coverage?: WrittenSection["final_coverage"] }>({ sql, ctx, stageKey,
+      type Written = { section: ReportSection; coverage?: WrittenSection["final_coverage"] };
+      const steps = sectionWriteSteps<Written>(section, contract, check, result => {
+        if (result.section.id !== section.id || JSON.stringify(result.section.coverage) !== JSON.stringify(section.coverage)) throw new Error("Preserve section id and coverage exactly");
+        validateChartPlan(section, result.section);
+        createReport({ ...reportInput, required_coverage: section.coverage, sections: [result.section], questions: [],
+          coverage: section.coverage.map(key => ({ key, status: "qualified", rationale: "Section validation", section_ids: [section.id] })) });
+        if (finalCoverage) checkFinalCoverage(reportInput, outline, [...completed.filter(s => s.id !== section.id), result.section], result.coverage ?? []);
+      });
+      const output = steps.finish(usable(await callResearchAgent<Written>({ sql, ctx, stageKey,
         taskKey: `report:section:${section.id}`, taskType: "report_section", agentName: "export-writer", modelTier: "mid", packet,
-        perCallKeys, outputFormat: checkedContract(contract, (result: { section: ReportSection; coverage?: WrittenSection["final_coverage"] }) => {
-          if (result.section.id !== section.id || JSON.stringify(result.section.coverage) !== JSON.stringify(section.coverage)) throw new Error("Preserve section id and coverage exactly");
-          validateChartPlan(section, result.section);
-          createReport({ ...reportInput, required_coverage: section.coverage, sections: [result.section], questions: [],
-            coverage: section.coverage.map(key => ({ key, status: "qualified", rationale: "Section validation", section_ids: [section.id] })) });
-          if (finalCoverage) checkFinalCoverage(reportInput, outline, [...completed.filter(s => s.id !== section.id), result.section], result.coverage ?? []);
-        }, check), promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: contract.requiredKeys, packet: p, extraRules }) }));
+        perCallKeys, outputFormat: steps.outputFormat, promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: contract.requiredKeys, packet: p, extraRules }) })));
       return finalCoverage ? { ...output.section, final_coverage: output.coverage } : output.section;
     },
     async review(document) {
