@@ -77,7 +77,7 @@ function ChartFigure({visual,chart}:{visual:ChartVisual;chart:BuiltVisual}) {
         {waterfall&&<Bar dataKey="base" stackId="w" fill="transparent" tooltipType="none" isAnimationActive={false}/>}
         {waterfall?<Bar dataKey="s0" name="s0" stackId="w" maxBarSize={64} isAnimationActive={false}>{chart.points.map(p=><Cell key={p.key} fill={p.total?'#515d70':(p.values[0]??0)<0?'#b5523f':'#3f8f6b'}/>)}</Bar>
           :chart.labels.map((l,i)=>chart.display==='lines'
-            ?<Line key={l} dataKey={`s${i}`} name={`s${i}`} stroke={colors[i%colors.length]} strokeWidth={2} dot={{r:3,fill:'#fbfbf9',stroke:colors[i%colors.length],strokeWidth:2}} connectNulls={false} isAnimationActive={false}/>
+            ?<Line key={l} dataKey={`s${i}`} name={`s${i}`} stroke={colors[i%colors.length]} strokeWidth={2} dot={{r:3,fill:'#ffffff',stroke:colors[i%colors.length],strokeWidth:2}} connectNulls={false} isAnimationActive={false}/>
             :<Bar key={l} dataKey={`s${i}`} name={`s${i}`} fill={colors[i%colors.length]} stackId={chart.display==='stacked'?'s':undefined} maxBarSize={64} isAnimationActive={false}/>)}
       </ComposedChart></ResponsiveContainer>
     </div>

@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 640" width="1100" height="640" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" font-size="13">
-<title id="t">Research OS — UML class view (core domain, from src/db/schema)</title><desc id="d">Core persisted domain types and multiplicities: Asset has many ResearchRuns; a run has 25 stages, tasks, jobs, artifacts, model call logs, backtests and review decisions; artifacts link to evidence claims, which link to source locations in parsed documents.</desc>
+<title id="t">Pragma Research — UML class view (core domain, from src/db/schema)</title><desc id="d">Core persisted domain types and multiplicities: Asset has many ResearchRuns; a run has 25 stages, tasks, jobs, artifacts, model call logs, backtests and review decisions; artifacts link to evidence claims, which link to source locations in parsed documents.</desc>
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker><marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10" fill="none" stroke="#333"/></marker></defs>
 <rect x="0" y="0" width="1100" height="640" fill="#ffffff"/>
-<text x="16" y="26" font-size="16" font-weight="bold" fill="#111">Research OS — UML class view (core domain, from src/db/schema)</text>
+<text x="16" y="26" font-size="16" font-weight="bold" fill="#111">Pragma Research — UML class view (core domain, from src/db/schema)</text>
 <rect x="30" y="60" width="200" height="68" rx="2" fill="#e8f1fb" stroke="#3b6ea8" stroke-width="1.4"/>
 <text x="130.0" y="78" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Asset</text>
 <line x1="30" y1="86" x2="230" y2="86" stroke="#444"/>

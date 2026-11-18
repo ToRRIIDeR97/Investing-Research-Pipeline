@@ -1,6 +1,6 @@
 # Security
 
-Research OS is a local, single-user tool with no hosted deployment. It handles provider credentials, database credentials, financial source material and research decisions. Its main risks are:
+Pragma Research is a local, single-user tool with no hosted deployment. It handles provider credentials, database credentials, financial source material and research decisions. Its main risks are:
 
 - control of paid model calls and research state by any local process that can reach the app port, unless `RESEARCH_OS_API_TOKEN` is set;
 - secret leakage into logs, prompts or child processes;

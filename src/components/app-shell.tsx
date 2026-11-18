@@ -2,70 +2,96 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { ArrowUpRight, Search, X } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Search } from "lucide-react";
+import { PragmaMark } from "@/components/brand/logo";
 import styles from "./app-shell.module.css";
 
 interface Asset { id: string; canonical_name: string; slug: string; }
 
+/** Pragma Research chrome: wordmark, three plain links (current one underlined), inline asset search, Start research. */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const dialog = useRef<HTMLDialogElement>(null);
-  const [assets, setAssets] = useState<Asset[]>([]);
+  const router = useRouter();
+  const box = useRef<HTMLDivElement>(null);
+  const [assets, setAssets] = useState<Asset[] | null>(null);
+  const [searchError, setSearchError] = useState(false);
   const [query, setQuery] = useState("");
-  const [searchState, setSearchState] = useState("loading");
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const [reviewCount, setReviewCount] = useState<number | null>(null);
 
-  useEffect(() => { dialog.current?.close(); setQuery(""); }, [pathname]);
-  useEffect(()=>{const pointer=()=>{document.documentElement.dataset.input='pointer';};const keyboard=()=>{document.documentElement.dataset.input='keyboard';};window.addEventListener('pointerdown',pointer);window.addEventListener('keydown',keyboard);return()=>{window.removeEventListener('pointerdown',pointer);window.removeEventListener('keydown',keyboard);};},[]);
+  useEffect(() => { setOpen(false); setQuery(""); }, [pathname]);
+  useEffect(() => {
+    const pointer = () => { document.documentElement.dataset.input = "pointer"; };
+    const keyboard = () => { document.documentElement.dataset.input = "keyboard"; };
+    const outside = (event: PointerEvent) => { if (box.current && !box.current.contains(event.target as Node)) setOpen(false); };
+    window.addEventListener("pointerdown", pointer); window.addEventListener("keydown", keyboard); window.addEventListener("pointerdown", outside);
+    return () => { window.removeEventListener("pointerdown", pointer); window.removeEventListener("keydown", keyboard); window.removeEventListener("pointerdown", outside); };
+  }, []);
+  // The review count beside Reviews; refreshed on navigation so a submitted decision lowers it.
+  useEffect(() => {
+    if (pathname === "/login") return;
+    let cancelled = false;
+    fetch("/api/review/queue").then((res) => res.ok ? res.json() : null).then((data) => { if (!cancelled && Array.isArray(data)) setReviewCount(data.length); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [pathname]);
 
-  async function openSearch() {
-    dialog.current?.showModal();
-    setSearchState("loading");
+  async function loadAssets() {
+    if (assets) return;
+    setSearchError(false);
     try {
       const response = await fetch("/api/assets");
-      if (!response.ok) throw new Error("Search unavailable");
+      if (!response.ok) throw new Error();
       const data = await response.json();
       setAssets(Array.isArray(data) ? data : []);
-      setSearchState("ready");
-    } catch { setSearchState("error"); }
+    } catch { setSearchError(true); }
   }
 
+  const needle = query.trim().toLowerCase();
+  const matches = (assets ?? []).filter((asset) => `${asset.canonical_name} ${asset.slug}`.toLowerCase().includes(needle)).slice(0, 8);
+  const go = (asset: Asset) => { setOpen(false); router.push(`/assets/${asset.id}/view`); };
+  const current = (prefix: string) => (prefix === "/" ? pathname === "/" : pathname.startsWith(prefix)) ? "page" as const : undefined;
 
-  const matches = assets.filter((asset) => `${asset.canonical_name} ${asset.slug}`.toLowerCase().includes(query.trim().toLowerCase()));
+  if (pathname === "/login") return <div className={styles.shell}><main className={styles.main}>{children}</main></div>;
 
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
-        <Link href="/" className={styles.brand} aria-label="Kintsugi OS home">
-          <span className={styles.mark}>K</span><span>Kintsugi OS</span>
-        </Link>
-        <nav className={styles.nav} aria-label="Main navigation">
-          <Link href="/assets" aria-current={pathname.startsWith("/assets") ? "page" : undefined}>Research</Link>
-          <Link href="/review" aria-current={pathname.startsWith("/review") ? "page" : undefined}>Reviews</Link>
-        </nav>
-        <button className={styles.iconButton} onClick={openSearch} aria-label="Search research"><Search size={22} strokeWidth={1.6} /></button>
-      </header>
-      <main className={styles.main}>{children}</main>
-      <dialog ref={dialog} className={styles.searchDialog} aria-label="Search research" onClick={(event) => {
-        if (event.target === event.currentTarget) dialog.current?.close();
-      }}>
-        <div>
-          <div className={styles.searchInput}>
-            <Search size={19} aria-hidden="true" />
-            <input autoFocus type="search" aria-label="Search assets" placeholder="Search assets" value={query} onChange={(event) => setQuery(event.target.value)} />
-            <button className={styles.iconButton} aria-label="Close search" onClick={() => dialog.current?.close()}><X size={19} /></button>
-          </div>
-          <div className={styles.searchResults}>
-            {searchState === "loading" ? <p role="status">Loading research…</p> : searchState === "error" ? (
-              <p role="alert">Search is unavailable. <button onClick={openSearch}>Try again</button></p>
-            ) : matches.length === 0 ? <p>No assets found.</p> : matches.map((asset) => (
-              <Link key={asset.id} href={`/assets/${asset.id}/view`} onClick={() => dialog.current?.close()}>
-                <span>{asset.canonical_name}</span><ArrowUpRight size={16} aria-hidden="true" />
-              </Link>
-            ))}
+        <div className={styles.bar}>
+          <Link href="/" className={styles.brand} aria-label="Pragma Research home"><PragmaMark size={24} /><span>Pragma Research</span></Link>
+          <nav className={styles.nav} aria-label="Main">
+            <Link href="/" aria-current={current("/")}>Home</Link>
+            <Link href="/assets" aria-current={current("/assets")}>Research</Link>
+            <Link href="/review" aria-current={current("/review")}>Reviews{reviewCount ? <span className={styles.count}>{reviewCount}</span> : null}</Link>
+          </nav>
+          <div className={styles.tools}>
+            <div className={styles.search} ref={box}>
+              <Search size={14} aria-hidden="true" />
+              <input type="search" role="combobox" aria-expanded={open} aria-controls="asset-search-results" aria-label="Search assets" placeholder="Search assets"
+                value={query}
+                onFocus={() => { void loadAssets(); setOpen(true); }}
+                onChange={(event) => { setQuery(event.target.value); setActive(0); setOpen(true); }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") { setOpen(false); return; }
+                  if (event.key === "ArrowDown") { event.preventDefault(); setActive((i) => Math.min(i + 1, Math.max(matches.length - 1, 0))); }
+                  if (event.key === "ArrowUp") { event.preventDefault(); setActive((i) => Math.max(i - 1, 0)); }
+                  if (event.key === "Enter" && matches[active]) { event.preventDefault(); go(matches[active]); }
+                }} />
+              {open && <div id="asset-search-results" role="listbox" aria-label="Assets" className={styles.results}>
+                {searchError ? <p role="alert">Search is unavailable. <button type="button" onClick={() => void loadAssets()}>Try again</button></p>
+                  : !assets ? <p role="status">Loading assets…</p>
+                  : !matches.length ? <p>No assets found.</p>
+                  : matches.map((asset, index) => <button type="button" role="option" aria-selected={index === active} key={asset.id} onMouseEnter={() => setActive(index)} onClick={() => go(asset)}>
+                    <span>{asset.canonical_name}</span><span className={styles.ticker}>{asset.slug}</span>
+                  </button>)}
+              </div>}
+            </div>
+            <Link href="/research/new" className={styles.start}>Start research</Link>
           </div>
         </div>
-      </dialog>
+      </header>
+      <main className={styles.main}>{children}</main>
     </div>
   );
 }

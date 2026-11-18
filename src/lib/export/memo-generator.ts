@@ -199,7 +199,7 @@ export async function generateMemo(params: {
 
   // Footer
   sections.push("---");
-  sections.push("*Generated from database records by Research OS*");
+  sections.push("*Generated from database records by Pragma Research*");
 
   const content = sections.join("\n");
   const contentHash = createHash("sha256").update(content).digest("hex");

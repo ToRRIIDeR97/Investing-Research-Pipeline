@@ -3,8 +3,10 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowUpRight } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import ui from "@/components/research-ui.module.css";
+import styles from "./page.module.css";
+import { STAGE_CONFIG_MAP } from "@/lib/workflow/stages";
 import { FramingEditor, type FramingEdits } from "@/components/framing-editor";
 import { pollTick, runProgressIsLive } from "@/lib/research/run-polling";
 
@@ -170,7 +172,7 @@ function buildTimeline(
       id: `stage-${stage.id}`,
       time: stage.completed_at || stage.started_at || progress?.createdAt || new Date().toISOString(),
       type: "stage",
-      title: humanize(stage.key),
+      title: stageLabel(stage.key),
       detail: stage.failure_reason || `Stage is ${stage.status}`,
       status: stage.status,
     });
@@ -248,6 +250,12 @@ function buildTimeline(
     .slice(0, 36);
 }
 
+/** Readable stage name, e.g. "Asset identity". */
+function stageLabel(key: string) {
+  const name = STAGE_CONFIG_MAP[key]?.name ?? humanize(key);
+  return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+}
+
 function StatusBadge({ status }: { status: string }) {
   return <span className={ui.status} data-status={status}>{humanize(status).replace(/^./, (letter) => letter.toUpperCase())}</span>;
 }
@@ -262,55 +270,82 @@ function ResearchPlanCard({ plan }: { plan: Record<string, any> | null }) {
   if (!plan) return <p className={ui.notice}>Preparing the research plan…</p>;
   const list = (value: unknown): any[] => Array.isArray(value) ? value : [];
   return <>
-    <p className={ui.lead}>{plan.research_question || "No research question recorded."}</p>
-    <dl className={ui.metadata}>
+    <div className={ui.tileBody}><p className={ui.lead}>{plan.research_question || "No research question recorded."}</p></div>
+    <dl className={`${ui.metadata} px-3.5`}>
       <div><dt>Budget</dt><dd>{plan.budget?.limit_usd != null ? `$${plan.budget.limit_usd}` : "Not set"}</dd></div>
       <div><dt>Forecast years</dt><dd>{plan.forecast_years ?? "Not set"}</dd></div>
       <div><dt>Profile</dt><dd>{[...list(plan.composed_archetypes), ...list(plan.overlays)].map(humanize).join(" · ") || "Not set"}</dd></div>
+      <div><dt>Source cutoff</dt><dd>{plan.cutoffs?.source_cutoff_at ? new Date(plan.cutoffs.source_cutoff_at).toLocaleString() : "Not set"}</dd></div>
+      <div><dt>Market cutoff</dt><dd>{plan.cutoffs?.market_data_cutoff_at ? new Date(plan.cutoffs.market_data_cutoff_at).toLocaleString() : "Not set"}</dd></div>
     </dl>
+    <div className="mt-3">
     {[
       ["Valuation methods", list(plan.valuation_methods).map((item) => `${humanize(item.method || item.method_key)}: ${item.allowed === false ? "excluded" : "included"}`)],
       ["Source requirements", list(plan.required_source_roles).map((item) => `${humanize(item.role)}: ${item.required === false ? "optional" : "required"}`)],
       ["Analysis modules", list(plan.required_analysis_modules).map((item) => `${humanize(item.artifact_type)}: ${item.required === false ? "optional" : "required"}`)],
       ["Planned stages", list(plan.applicable_stages).map((item) => `${item.order}. ${item.name || humanize(item.key)}`)],
-    ].map(([title, values]) => <details key={String(title)} className={ui.section}><summary>{title}</summary><div className={ui.sectionBody}><ul>{(values as string[]).map((value, index) => <li key={index}>{value}</li>)}</ul></div></details>)}
-    <p className={`${ui.muted} mt-6`}>Source cutoff: {plan.cutoffs?.source_cutoff_at ? new Date(plan.cutoffs.source_cutoff_at).toLocaleString() : "Not set"}<br />Market cutoff: {plan.cutoffs?.market_data_cutoff_at ? new Date(plan.cutoffs.market_data_cutoff_at).toLocaleString() : "Not set"}</p>
+    ].map(([title, values]) => <details key={String(title)} className={styles.fold}><summary>{title}<span className={ui.muted}>{(values as string[]).length}</span></summary><ul>{(values as string[]).map((value, index) => <li key={index}>{value}</li>)}</ul></details>)}
+    </div>
   </>;
 }
 
 function RunDetails({ progress, theater, quality, messages }: { progress: RunProgress; theater: TheaterData; quality: ResearchQuality | null; messages: Message[] }) {
   const completed = progress.stages.filter((stage) => stage.status === "completed").length;
-  const current = progress.stages.find((stage) => ["running", "waiting_for_human", "failed"].includes(stage.status));
+  const running = progress.stages.filter((stage) => ["running", "waiting_for_human", "failed"].includes(stage.status));
   const blockers = quality?.missingCoverage.filter((item) => item.requiredForCompletion) || [];
   const events = buildTimeline(progress, theater, messages);
   return <>
-    <div className="flex items-center justify-between gap-4 text-sm text-[#626b78]"><span>{completed} of {progress.stages.length} stages complete</span><span>{formatMoney(progress.totalCost)}</span></div>
-    <progress className={ui.progress} max={progress.stages.length || 1} value={completed} aria-label="Research progress" />
-    {current && <p className={ui.muted}>{humanize(current.key)} · {humanize(current.status)}</p>}
-    {progress.latestJob?.failure_reason && <p className={ui.error} role="alert">{progress.latestJob.failure_reason}</p>}
-    {!progress.workerHealthy && progress.latestJob?.status === "queued" && <p className={ui.notice}>Waiting for an available worker.</p>}
-    <details className={ui.section}><summary>Stages</summary><div className={ui.sectionBody}>
-      {progress.stages.map((stage) => <div key={stage.id} className={ui.row}><div><div className={ui.rowTitle}>{humanize(stage.key)}</div>{stage.failure_reason && <p className={ui.error}>{stage.failure_reason}</p>}<div className={ui.rowMeta}>{formatTime(stage.completed_at || stage.started_at)}</div></div><StatusBadge status={stage.status} /></div>)}
-    </div></details>
-    <details className={ui.section} open={quality?.status === "fail"}><summary>Quality checks {quality && <StatusBadge status={quality.status} />}</summary><div className={ui.sectionBody}>
-      {quality ? <>
+    <section className={`${ui.tile} ${ui.s8}`}>
+      <div className={ui.tileHead}><h2>Pipeline</h2><span className={ui.muted}>{completed} of {progress.stages.length} stages complete</span></div>
+      <div className="px-3.5 pt-2">
+        <progress className={ui.progress} max={progress.stages.length || 1} value={completed} aria-label="Research progress" />
+        {running.length > 0 && <p className={ui.muted}>Now: {running.map((stage) => `${stageLabel(stage.key)} (${humanize(stage.status)})`).join(" · ")}</p>}
+        {progress.latestJob?.failure_reason && <p className={ui.error} role="alert">{progress.latestJob.failure_reason}</p>}
+        {!progress.workerHealthy && progress.latestJob?.status === "queued" && <p className={ui.notice}>Waiting for an available worker.</p>}
+      </div>
+      <ol className={styles.stages}>
+        {progress.stages.map((stage) => <li key={stage.id} data-status={stage.status} data-gate={stage.key === "research_plan" || stage.key === "human_review" ? "" : undefined} title={stage.failure_reason || undefined}>
+          <span className={styles.stageName}>{stageLabel(stage.key)}{(stage.key === "research_plan" || stage.key === "human_review") && <span className={ui.muted}> · gate</span>}</span>
+          <StatusBadge status={stage.status} />
+        </li>)}
+      </ol>
+    </section>
+    <section className={`${ui.tile} ${ui.s4}`}>
+      <div className={ui.tileHead}><h2>Run details</h2></div>
+      <dl className={ui.kv}>
+        <dt>Run</dt><dd className={ui.mono}>{progress.runId.slice(0, 8)}</dd>
+        <dt>Created</dt><dd>{progress.createdAt ? new Date(progress.createdAt).toLocaleString() : "Not set"}</dd>
+        <dt>Job</dt><dd>{humanize(progress.latestJob?.status)}</dd>
+        <dt>Market data cutoff</dt><dd>{progress.marketDataCutoffAt ? new Date(progress.marketDataCutoffAt).toLocaleDateString() : "Not set"}</dd>
+        <dt>Cost</dt><dd>{formatMoney(progress.totalCost)}{progress.budgetLimit != null ? ` of $${progress.budgetLimit}` : ""}</dd>
+        <dt>Model calls</dt><dd>{theater.modelCalls.length}</dd>
+        <dt>Sources</dt><dd>{progress.sourceCount}</dd>
+        <dt>Exports</dt><dd>{progress.exportCount}</dd>
+      </dl>
+    </section>
+    <section className={`${ui.tile} ${ui.s6}`}>
+      <div className={ui.tileHead}><h2>Quality checks</h2>{quality && <StatusBadge status={quality.status} />}</div>
+      {quality ? <div className="px-3.5 pb-3">
         <dl className={ui.metadata}>{[["Evidence", quality.counts.evidence], ["Sources", quality.counts.sources], ["Valuation anchors", quality.counts.scenariosWithValueAnchors], ["Open gaps", quality.counts.openSourceGaps]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-        <p className="mt-6">{humanize(quality.actionReadiness)}</p>
-        {blockers.length > 0 && <ul className="mt-4">{blockers.map((item, index) => <li key={index}>{item.description}</li>)}</ul>}
+        <p className={`${ui.muted} mt-2`}>Readiness: {humanize(quality.actionReadiness)}</p>
+        {blockers.length > 0 && <ul className="mt-2 list-disc pl-[18px]">{blockers.map((item, index) => <li key={index}>{item.description}</li>)}</ul>}
         {quality.errors.filter((error) => !blockers.some((item) => item.description === error)).map((error, index) => <p key={index} className={ui.error}>{error}</p>)}
-        {quality.warnings.length > 0 && <details className="mt-4"><summary>Warnings ({quality.warnings.length})</summary><ul className="mt-3">{quality.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
-      </> : <p>Quality checks are not available yet.</p>}
-    </div></details>
-    <details className={ui.section}><summary>Activity</summary><div className={ui.sectionBody}>
-      {events.length ? events.map((event) => <div key={event.id} className={ui.row}><div><div className={ui.rowTitle}>{event.title}</div><p className={ui.rowMeta}>{event.detail}</p><span className={ui.rowMeta}>{formatTime(event.time)}</span></div><StatusBadge status={event.status} /></div>) : <p>No activity yet.</p>}
-      <details className="mt-6"><summary>Tasks ({progress.tasks.length})</summary>{progress.tasks.map((task) => <div key={task.id} className={ui.row}><div><div>{task.agent_name || humanize(task.task_type)}</div><p className={ui.rowMeta}>{task.failure_reason || humanize(task.task_key)}</p></div><StatusBadge status={task.status} /></div>)}</details>
-      <details className="mt-6"><summary>Model calls ({theater.modelCalls.length})</summary>{theater.modelCalls.map((call) => <div key={call.id} className={ui.row}><div><div>{call.agent_name || call.model_tier}</div><p className={ui.rowMeta}>{call.model_provider}/{call.model_name} · {formatMoney(call.cost_usd)}</p>{call.error_message && <p className={ui.error}>{call.error_message}</p>}</div><StatusBadge status={call.status} /></div>)}</details>
-    </div></details>
-    <details className={ui.section}><summary>Run details</summary><dl className={`${ui.metadata} ${ui.sectionBody}`}>
-      <div><dt>Run</dt><dd>{progress.runId}</dd></div><div><dt>Created</dt><dd>{progress.createdAt ? new Date(progress.createdAt).toLocaleString() : "Not set"}</dd></div>
-      <div><dt>Job</dt><dd>{humanize(progress.latestJob?.status)}</dd></div><div><dt>Market data cutoff</dt><dd>{progress.marketDataCutoffAt ? new Date(progress.marketDataCutoffAt).toLocaleString() : "Not set"}</dd></div>
-      <div><dt>Budget</dt><dd>{progress.budgetLimit != null ? `$${progress.budgetLimit}` : "Not set"}</dd></div><div><dt>Exports</dt><dd>{progress.exportCount}</dd></div>
-    </dl></details>
+        {quality.warnings.length > 0 && <details className={`${styles.fold} mt-2`}><summary>Warnings<span className={ui.muted}>{quality.warnings.length}</span></summary><ul>{quality.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul></details>}
+      </div> : <p className={ui.empty}>Quality checks are not available yet.</p>}
+    </section>
+    <section className={`${ui.tile} ${ui.s6}`}>
+      <div className={ui.tileHead}><h2>Activity</h2><span className={ui.muted}>{events.length}</span></div>
+      <div className={styles.scroll}>
+        {events.length ? events.map((event) => <div key={event.id} className={ui.row}><div><div className={ui.rowTitle}>{event.title}</div><p className={ui.rowMeta}>{event.detail} · {formatTime(event.time)}</p></div><StatusBadge status={event.status} /></div>) : <p className={ui.empty}>No activity yet.</p>}
+      </div>
+      <details className={styles.fold}><summary>Tasks<span className={ui.muted}>{progress.tasks.length}</span></summary>{progress.tasks.map((task) => <div key={task.id} className={ui.row}><div><div className={ui.rowTitle}>{task.agent_name || humanize(task.task_type)}</div><p className={ui.rowMeta}>{task.failure_reason || humanize(task.task_key)}</p></div><StatusBadge status={task.status} /></div>)}</details>
+    </section>
+    <section className={`${ui.tile} ${ui.s12}`}>
+      <div className={ui.tileHead}><h2>Model calls</h2><span className={ui.muted}>{theater.modelCalls.length}</span></div>
+      {theater.modelCalls.length ? <div className={`${ui.table} ${styles.scroll}`}><table><thead><tr><th>Agent</th><th>Model</th><th>Tier</th><th>Status</th><th className={ui.num}>Cost</th></tr></thead><tbody>
+        {theater.modelCalls.map((call) => <tr key={call.id}><td>{call.agent_name || call.model_tier}{call.error_message && <div className={ui.error}>{call.error_message}</div>}</td><td className={ui.mono}>{call.model_provider}/{call.model_name}</td><td>{call.model_tier}</td><td><StatusBadge status={call.status} /></td><td className={ui.num}>{formatMoney(call.cost_usd)}</td></tr>)}
+      </tbody></table></div> : <p className={ui.empty}>No model calls yet.</p>}
+    </section>
   </>;
 }
 
@@ -786,54 +821,85 @@ export default function RunResearchPage() {
   if (loading) return <div className={ui.page} role="status">Loading research…</div>;
   const finalReviewWaiting = progress?.stages.some((stage) => stage.key === "human_review" && stage.status === "waiting_for_human");
   const lastMessage = messages[messages.length - 1];
+  const startNew = () => { activeRunRef.current = null; window.history.replaceState(null, "", `/assets/${assetId}/run?new=1`); setRunId(null); setProgress(null); setQuality(null); setResearchPlan(null); setPhase("intake"); setMessages([]); setTheater({ sources: [], traces: [], modelCalls: [], backtests: [] }); setLoadError(""); };
 
   return <div className={`${ui.page} ${ui.withBack}`}>
-    <Link href={`/assets/${assetId}/view${runId ? `?run=${runId}` : ""}`} className={ui.back}><ArrowLeft size={17} />Research brief</Link>
-    <header className={ui.heading}><h1>{assetName || "Research"}</h1>{phase !== "intake" && progress && <StatusBadge status={progress.status} />}</header>
+    <Link href={`/assets/${assetId}/view${runId ? `?run=${runId}` : ""}`} className={ui.back}><ArrowLeft size={14} />Research brief</Link>
+    <header className={ui.heading}>
+      <div className={ui.titleGroup}><h1>{assetName || "Research"}</h1>{phase === "intake" ? <span className={ui.muted}>New research run</span> : progress && <><span className={ui.mono}>{progress.runId.slice(0, 8)}</span><StatusBadge status={progress.status} /></>}</div>
+      {runId && progress && phase === "pipeline" && <div className={ui.headActions}>
+        <Link href={`/assets/${assetId}/view?run=${runId}`} className={ui.secondary}>Read research</Link>
+        {!["completed", "cancelled"].includes(progress.status) && <button className={ui.secondary} onClick={handleCancelRun} disabled={isProcessing}>Cancel run</button>}
+        <button className={ui.primary} onClick={startNew}>New research</button>
+      </div>}
+    </header>
     {loadError && <p className={ui.error} role="alert">{loadError}{runId && <button onClick={() => fetchProgress(runId)}>Try again</button>}</p>}
-    {phase === "intake" && !loadError ? <form className={ui.form} onSubmit={(event) => { event.preventDefault(); handleSend(); }}>
-      <label className={ui.field}>Research question<textarea rows={4} value={input} onChange={(event) => setInput(event.target.value)} placeholder={`What would you like to understand about ${assetName}?`} disabled={isProcessing} required /></label>
-      <div className="flex flex-wrap gap-x-6 gap-y-2">{["Long-term investment thesis", "Update valuation"].map((label, index) => <button key={label} type="button" className={ui.textLink} onClick={() => setInput(index === 0 ? `Research ${assetName} as a long-term compounder` : "Update valuation with latest data")}>{label}</button>)}</div>
-      <label className={ui.field}>Research type<select value={runType} onChange={(event) => setRunType(event.target.value)} disabled={isProcessing}>{[["quick_scan", "Quick scan"], ["deep_dive", "Deep dive"], ["thesis_investigation", "Thesis investigation"], ["full_initiation_report", "Full initiation report"]].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-      <details className={ui.section}><summary>Budget and data cutoffs</summary><div className={`${ui.form} ${ui.sectionBody}`}>
-        <label className={ui.field}>Budget (USD)<input type="number" min="0" step="0.01" value={budgetLimitUsd} onChange={(event) => setBudgetLimitUsd(event.target.value)} disabled={isProcessing} /></label>
-        <div className={ui.formGrid}><label className={ui.field}>Source cutoff<input type="datetime-local" value={sourceCutoffAt} onChange={(event) => setSourceCutoffAt(event.target.value)} disabled={isProcessing} /></label><label className={ui.field}>Market data cutoff<input type="datetime-local" value={marketDataCutoffAt} onChange={(event) => setMarketDataCutoffAt(event.target.value)} disabled={isProcessing} /></label></div>
-      </div></details>
-      <div className={ui.actions}><span /><button className={ui.primary} disabled={isProcessing || !input.trim()}>{isProcessing ? "Creating…" : "Create research plan"}</button></div>
-    </form> : phase === "plan" ? <>
-      <h2 className="mb-8 text-[22px]">Review research plan</h2>
-      {researchPlan && <FramingEditor key={`${researchPlan.generated_at}`} plan={researchPlan} disabled={isProcessing} onChange={setPlanEdits} />}
-      <ResearchPlanCard plan={researchPlan} />
-      <div className={`${ui.form} mt-8`}><ForecastYearsField value={planForecastYears} onChange={setPlanForecastYears} disabled={isProcessing} /><label className={ui.field}>Requested changes<textarea rows={3} value={planChangeNotes} onChange={(event) => setPlanChangeNotes(event.target.value)} disabled={isProcessing} /></label><div className={ui.actions}>
-        <button className={ui.secondary} onClick={handleRequestPlanChanges} disabled={isProcessing || !planChangeNotes.trim()}>Request changes</button>
-        <button className={ui.primary} onClick={handleApprovePlan} disabled={isProcessing}>{isProcessing ? "Saving…" : "Approve plan & start"}</button>
-      </div></div>
-    </> : progress ? <>
-      {finalReviewWaiting && <div className={`${ui.actions} mb-8 mt-0 border-t-0 pt-0`}><p className={ui.muted}>Ready for your review.</p><Link className={ui.primary} href={`/review?run=${runId}`}>Review research</Link></div>}
-      {progress.requestReset && <section className="mb-8" aria-label="Re-run approval">
-        <h2 className="mb-3 text-[22px]">Approve a re-run?</h2>
-        <p className={ui.muted}>A specialist asked to recompute its analysis to answer {progress.requestReset.request_ids.length === 1 ? "one report question" : `${progress.requestReset.request_ids.length} report questions`}. Re-running reopens {progress.requestReset.stages.length} stages; their earlier model calls cost {formatMoney(progress.requestReset.estimated_cost_usd)}. Skipping keeps the current analysis and lists the requests as open questions.</p>
-        <ul className="mt-4">{progress.requestReset.stages.map((stage) => <li key={stage}>{humanize(stage)}</li>)}</ul>
+    {lastMessage && !lastMessage.content.startsWith("Loaded research run") && <p className={`${ui.banner} ${ui.notes} ${ui.muted}`} role="status">{lastMessage.content}</p>}
+
+    {phase === "intake" && !loadError ? <form className={ui.grid} onSubmit={(event) => { event.preventDefault(); handleSend(); }}>
+      <section className={`${ui.tile} ${ui.s8}`}>
+        <div className={ui.tileHead}><h2>Research question</h2></div>
+        <div className={`${ui.form} ${ui.tileBody}`}>
+          <label className={ui.field}><span className="sr-only">Research question</span><textarea rows={5} value={input} onChange={(event) => setInput(event.target.value)} placeholder={`What would you like to understand about ${assetName}?`} disabled={isProcessing} required /></label>
+          <div className="flex flex-wrap gap-x-5 gap-y-1">{["Long-term investment thesis", "Update valuation"].map((label, index) => <button key={label} type="button" className={ui.textLink} onClick={() => setInput(index === 0 ? `Research ${assetName} as a long-term compounder` : "Update valuation with latest data")}>{label}</button>)}</div>
+          <label className={ui.field}>Research type<select value={runType} onChange={(event) => setRunType(event.target.value)} disabled={isProcessing}>{[["quick_scan", "Quick scan"], ["deep_dive", "Deep dive"], ["thesis_investigation", "Thesis investigation"], ["full_initiation_report", "Full initiation report"]].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        </div>
+      </section>
+      <section className={`${ui.tile} ${ui.s4}`}>
+        <div className={ui.tileHead}><h2>Budget and data cutoffs</h2></div>
+        <div className={`${ui.form} ${ui.tileBody}`}>
+          <label className={ui.field}>Budget (USD)<input type="number" min="0" step="0.01" value={budgetLimitUsd} onChange={(event) => setBudgetLimitUsd(event.target.value)} disabled={isProcessing} /></label>
+          <label className={ui.field}>Source cutoff<input type="datetime-local" value={sourceCutoffAt} onChange={(event) => setSourceCutoffAt(event.target.value)} disabled={isProcessing} /></label>
+          <label className={ui.field}>Market data cutoff<input type="datetime-local" value={marketDataCutoffAt} onChange={(event) => setMarketDataCutoffAt(event.target.value)} disabled={isProcessing} /></label>
+        </div>
+        <div className={ui.actions}><span className={ui.muted}>Stops first at the plan gate</span><button className={ui.primary} disabled={isProcessing || !input.trim()}>{isProcessing ? "Creating…" : "Create research plan"}</button></div>
+      </section>
+    </form> : phase === "plan" ? <div className={ui.grid}>
+      <section className={`${ui.tile} ${ui.s8}`}>
+        <div className={ui.tileHead}><h2>Gate 1 of 2: review research plan</h2><span className={ui.status} data-status="waiting_for_human">Waiting for you</span></div>
+        {researchPlan && <div className="px-3.5 pt-3"><FramingEditor key={`${researchPlan.generated_at}`} plan={researchPlan} disabled={isProcessing} onChange={setPlanEdits} /></div>}
+        <ResearchPlanCard plan={researchPlan} />
+      </section>
+      <section className={`${ui.tile} ${ui.s4}`}>
+        <div className={ui.tileHead}><h2>Your decision</h2></div>
+        <div className={`${ui.form} ${ui.tileBody}`}>
+          <ForecastYearsField value={planForecastYears} onChange={setPlanForecastYears} disabled={isProcessing} />
+          <label className={ui.field}>Requested changes<textarea rows={4} value={planChangeNotes} onChange={(event) => setPlanChangeNotes(event.target.value)} disabled={isProcessing} /></label>
+        </div>
+        <div className={ui.actions}>
+          <button className={ui.secondary} onClick={handleRequestPlanChanges} disabled={isProcessing || !planChangeNotes.trim()}>Request changes</button>
+          <button className={ui.primary} onClick={handleApprovePlan} disabled={isProcessing}>{isProcessing ? "Saving…" : "Approve plan & start"}</button>
+        </div>
+      </section>
+    </div> : progress ? <div className={ui.grid}>
+      {finalReviewWaiting && <section className={`${ui.tile} ${ui.s12}`}>
+        <div className={ui.tileHead}><h2>Gate 2 of 2: human review</h2><span className={ui.status} data-status="waiting_for_human">Waiting for you</span></div>
+        <div className={`${ui.tileBody} flex flex-wrap items-center justify-between gap-3`}><p className={ui.muted}>The report and AI review are ready. Record a verdict to export the report and schedule refreshes.</p><Link className={ui.primary} href={`/review?run=${runId}`}>Review research</Link></div>
+      </section>}
+      {progress.requestReset && <section className={`${ui.tile} ${ui.s12}`} aria-label="Re-run approval">
+        <div className={ui.tileHead}><h2>Approve a re-run?</h2><span className={ui.status} data-status="waiting_for_human">Waiting for you</span></div>
+        <div className={ui.tileBody}>
+          <p className={ui.muted}>A specialist asked to recompute its analysis to answer {progress.requestReset.request_ids.length === 1 ? "one report question" : `${progress.requestReset.request_ids.length} report questions`}. Re-running reopens {progress.requestReset.stages.length} stages; their earlier model calls cost {formatMoney(progress.requestReset.estimated_cost_usd)}. Skipping keeps the current analysis and lists the requests as open questions.</p>
+          <ul className="mt-2">{progress.requestReset.stages.map((stage) => <li key={stage}>{stageLabel(stage)}</li>)}</ul>
+        </div>
         <div className={ui.actions}>
           <button className={ui.secondary} onClick={() => handleRequestReset("skip")} disabled={isProcessing}>Skip re-run</button>
           <button className={ui.primary} onClick={() => handleRequestReset("rerun")} disabled={isProcessing}>{isProcessing ? "Saving…" : "Re-run stages"}</button>
         </div>
       </section>}
       <RunDetails progress={progress} theater={theater} quality={quality} messages={messages} />
-    </> : null}
-    {runId && progress && <>
-      <details className={ui.section}><summary>Sources <span className={ui.muted}>{theater.sources.length}</span></summary><div className={ui.sectionBody}>
-        {theater.sources.length ? theater.sources.map((source) => <div key={source.id} className={ui.row}><div><div className={ui.rowTitle}>{source.url ? <a href={source.url} target="_blank" rel="noreferrer" className="underline underline-offset-4">{source.title}</a> : source.title}</div><p className={ui.rowMeta}>{[humanize(source.source_type), source.publisher].filter(Boolean).join(" · ")}</p></div></div>) : <p>No sources attached.</p>}
+      <section className={`${ui.tile} ${ui.s6}`}>
+        <div className={ui.tileHead}><h2>Sources</h2><span className={ui.muted}>{theater.sources.length}</span></div>
+        <div className={styles.scroll}>{theater.sources.length ? theater.sources.map((source) => <div key={source.id} className={ui.row}><div><div className={ui.rowTitle}>{source.url ? <a href={source.url} target="_blank" rel="noreferrer" className="hover:underline">{source.title}</a> : source.title}</div><p className={ui.rowMeta}>{[humanize(source.source_type), source.publisher].filter(Boolean).join(" · ")}</p></div></div>) : <p className={ui.empty}>No sources attached.</p>}</div>
         <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" aria-label="Upload source file" />
-        <div className={ui.actions}><button className={ui.secondary} onClick={() => fileInputRef.current?.click()} disabled={isUploading}>{isUploading ? "Attaching…" : "Attach file"}</button><button className={ui.textLink} onClick={() => setShowLinkInput(!showLinkInput)} disabled={isUploading}>Attach link</button></div>
-        {showLinkInput && <form className="mt-6" onSubmit={(event) => { event.preventDefault(); handleLinkAttach(); }}><label className={ui.field}>Source URL<input type="url" value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} required disabled={isUploading} /></label><div className={ui.actions}><button type="button" className={ui.textLink} onClick={() => { setShowLinkInput(false); setLinkUrl(""); }}>Cancel</button><button className={ui.primary} disabled={isUploading || !linkUrl.trim()}>Attach source</button></div></form>}
-      </div></details>
-      <details className={ui.section}><summary>Backtests <span className={ui.muted}>{theater.backtests.length}</span></summary><div className={ui.sectionBody}>
-        {theater.backtests.map((test) => <div key={test.id} className={ui.row}><div><div className={ui.rowTitle}>{test.strategy_name || `${test.symbol} backtest`}</div><p className={ui.rowMeta}>{test.error_message || test.strategy_prompt}</p></div><StatusBadge status={test.status} /></div>)}
-        <form className="mt-6" onSubmit={(event) => { event.preventDefault(); handleBacktestRequest(); }}><label className={ui.field}>Strategy<textarea rows={3} value={backtestPrompt} onChange={(event) => setBacktestPrompt(event.target.value)} disabled={isBacktestSubmitting} placeholder="Describe the strategy to test" required /></label><div className={ui.actions}><span /><button className={ui.primary} disabled={isBacktestSubmitting || !backtestPrompt.trim()}>{isBacktestSubmitting ? "Queueing…" : "Queue backtest"}</button></div></form>
-      </div></details>
-      {phase === "pipeline" && <footer className={ui.actions}><Link href={`/assets/${assetId}/view?run=${runId}`} className={ui.textLink}>Read research<ArrowUpRight size={16} /></Link><span className="flex flex-wrap items-center gap-6">{!["completed", "cancelled"].includes(progress.status) && <button className={ui.textLink} onClick={handleCancelRun} disabled={isProcessing}>Cancel run</button>}<button className={ui.secondary} onClick={() => { activeRunRef.current = null; window.history.replaceState(null, "", `/assets/${assetId}/run?new=1`); setRunId(null); setProgress(null); setQuality(null); setResearchPlan(null); setPhase("intake"); setMessages([]); setTheater({ sources: [], traces: [], modelCalls: [], backtests: [] }); setLoadError(""); }}>New research</button></span></footer>}
-    </>}
-    {lastMessage && !lastMessage.content.startsWith("Loaded research run") && <p className={`${ui.notes} ${ui.notice}`} role="status">{lastMessage.content}</p>}
+        {showLinkInput && <form className={`${ui.form} ${ui.tileBody}`} onSubmit={(event) => { event.preventDefault(); handleLinkAttach(); }}><label className={ui.field}>Source URL<input type="url" value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} required disabled={isUploading} /></label><div className="flex gap-3"><button className={ui.primary} disabled={isUploading || !linkUrl.trim()}>Attach source</button><button type="button" className={ui.secondary} onClick={() => { setShowLinkInput(false); setLinkUrl(""); }}>Cancel</button></div></form>}
+        <div className={ui.actions}><button className={ui.textLink} onClick={() => setShowLinkInput(!showLinkInput)} disabled={isUploading}>Attach link</button><button className={ui.secondary} onClick={() => fileInputRef.current?.click()} disabled={isUploading}>{isUploading ? "Attaching…" : "Attach file"}</button></div>
+      </section>
+      <section className={`${ui.tile} ${ui.s6}`}>
+        <div className={ui.tileHead}><h2>Backtests</h2><span className={ui.muted}>{theater.backtests.length}</span></div>
+        {theater.backtests.length ? theater.backtests.map((test) => <div key={test.id} className={ui.row}><div><div className={ui.rowTitle}>{test.strategy_name || `${test.symbol} backtest`}</div><p className={ui.rowMeta}>{test.error_message || test.strategy_prompt}</p></div><StatusBadge status={test.status} /></div>) : <p className={ui.empty}>No backtests for this run.</p>}
+        <form className={`${ui.form} ${ui.tileBody}`} onSubmit={(event) => { event.preventDefault(); handleBacktestRequest(); }}><label className={ui.field}>Strategy<textarea rows={3} value={backtestPrompt} onChange={(event) => setBacktestPrompt(event.target.value)} disabled={isBacktestSubmitting} placeholder="Describe the strategy to test" required /></label><div><button className={ui.primary} disabled={isBacktestSubmitting || !backtestPrompt.trim()}>{isBacktestSubmitting ? "Queueing…" : "Queue backtest"}</button></div></form>
+      </section>
+    </div> : null}
   </div>;
 }

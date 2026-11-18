@@ -1,4 +1,4 @@
-# Local Research OS development
+# Local Pragma Research development
 
 Repository rules and required checks are in [AGENTS.md](../AGENTS.md). Runtime topology is in the [deployment view](architecture.md#2-structural--deployment).
 

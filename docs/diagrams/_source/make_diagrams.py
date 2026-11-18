@@ -8,7 +8,7 @@ os.makedirs(OUT, exist_ok=True)
 P = lambda n: os.path.join(OUT, n)
 
 # ---------------------------------------------------------------- component
-s = Svg(1100, 700, "Research OS — UML component view (current)",
+s = Svg(1100, 700, "Pragma Research — UML component view (current)",
         "Browser UI calls Next.js API routes (optional operator token; a middleware refuses foreign hosts and cross-site writes); the API writes Postgres and enqueues jobs; "
         "a separate worker claims jobs and runs the 25-stage pipeline, which calls the agent harness, "
         "source discovery and ingestion, backtesting (Python), and export; all state lives in Postgres and ./storage.")
@@ -48,7 +48,7 @@ s.text(16, 690, "Solid: call/dependency · Dashed: network or DB access. All lib
 s.save(P("component.svg"))
 
 # ---------------------------------------------------------------- deployment
-s = Svg(1060, 640, "Research OS — UML deployment view (local only)",
+s = Svg(1060, 640, "Pragma Research — UML deployment view (local only)",
         "All runtime nodes run on one developer machine: Next.js server, research worker, python3 child processes, "
         "./storage, and a Docker Postgres container. Outbound HTTPS to LLM and data providers. No hosted deployment exists. "
         "Machines share research only through the research-store branch on GitHub.")
@@ -78,7 +78,7 @@ s.line([(340, 550), (760, 550)], "git fetch / push", lx=550, ly=542)
 s.save(P("deployment.svg"))
 
 # ---------------------------------------------------------------- class
-s = Svg(1100, 640, "Research OS — UML class view (core domain, from src/db/schema)",
+s = Svg(1100, 640, "Pragma Research — UML class view (core domain, from src/db/schema)",
         "Core persisted domain types and multiplicities: Asset has many ResearchRuns; a run has 25 stages, tasks, jobs, artifacts, "
         "model call logs, backtests and review decisions; artifacts link to evidence claims, which link to source locations in parsed documents.")
 def cls(x, y, name, attrs, w=200, kind="plain"):

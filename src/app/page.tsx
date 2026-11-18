@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight } from "lucide-react";
 import ui from "@/components/research-ui.module.css";
+import { AssetTable, words, type AssetRow } from "@/components/asset-table";
 
-interface Asset { id: string; canonical_name: string; asset_kind: string; sector?: string | null; }
-interface ReviewItem { run_id: string; asset_name: string; run_type: string; }
+interface ReviewItem { run_id: string; asset_id: string; asset_name: string; run_type: string; priority?: string | null; }
+
 
 export default function HomePage() {
-  const [assets, setAssets] = useState<Asset[]>([]);
+  const [assets, setAssets] = useState<AssetRow[]>([]);
   const [queue, setQueue] = useState<ReviewItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -28,24 +28,32 @@ export default function HomePage() {
   useEffect(() => { load(); }, []);
 
   return <div className={ui.page}>
-    <header className={ui.heading}><h1 className="sr-only">Your research</h1><Link href="/research/new" className={ui.primary}>Start research<ArrowRight size={16}/></Link></header>
-    {loading ? <p className={ui.empty} role="status">Loading research…</p> : error ? <p className={ui.error} role="alert">{error}<button onClick={load}>Try again</button></p> : <>
-      <section className={ui.section}>
-        <div className={ui.sectionHead}><h2>Awaiting review</h2><span className={ui.muted}>{queue.length}</span></div>
-        {queue.length ? queue.map((item) => <Link key={item.run_id} href={`/review?run=${item.run_id}`} className={ui.row}>
-          <div><div className={ui.rowTitle}>{item.asset_name}</div><div className={ui.rowMeta}>{item.run_type.replace(/_/g, " ")}</div></div>
-          <ArrowRight size={18} />
-        </Link>) : <p className={ui.empty}>No reviews waiting.</p>}
+    <header className={ui.heading}><div className={ui.titleGroup}><h1>Home</h1><span className={ui.muted}>Reviews waiting on you and recent research</span></div></header>
+    {loading ? <p className={ui.muted} role="status">Loading research…</p> : error ? <p className={ui.error} role="alert">{error}<button onClick={load}>Try again</button></p> : <div className={ui.grid}>
+      <section className={`${ui.tile} ${ui.s8}`}>
+        <div className={ui.tileHead}><h2>Awaiting review</h2><Link href="/review" className={ui.textLink}>Open queue</Link></div>
+        <div className={ui.stat}><strong>{queue.length}</strong><span className={ui.muted}>{queue.length === 1 ? "report needs" : "reports need"} a human decision</span></div>
+        {queue.length ? <div className={ui.table}><table>
+          <thead><tr><th>Asset</th><th>Run</th><th>Id</th><th className={ui.num}>Priority</th></tr></thead>
+          <tbody>{queue.map((item) => <tr key={item.run_id}>
+            <td><Link href={`/review?run=${item.run_id}`} className="font-medium hover:underline">{item.asset_name}</Link></td>
+            <td className={ui.muted}>{words(item.run_type)}</td>
+            <td className={ui.mono}>{item.run_id.slice(0, 8)}</td>
+            <td className={ui.num}>{words(item.priority) || "Medium"}</td>
+          </tr>)}</tbody>
+        </table></div> : <p className={ui.empty}>All reviews are decided.</p>}
       </section>
-      <section className={ui.section}>
-        <div className={ui.sectionHead}><h2>Assets</h2><span className={ui.muted}>{assets.length}</span></div>
-        {assets.slice(0, 6).map((asset) => <Link key={asset.id} href={`/assets/${asset.id}/view`} className={ui.row}>
-          <div><div className={ui.rowTitle}>{asset.canonical_name}</div><div className={ui.rowMeta}>{[asset.asset_kind.replace(/_asset/g, "").replace(/_/g, " "), asset.sector].filter(Boolean).join(" · ")}</div></div>
-          <ArrowUpRight size={18} />
-        </Link>)}
-        {!assets.length && <p className={ui.empty}>No assets yet.</p>}
+      <section className={`${ui.tile} ${ui.s4}`}>
+        <div className={ui.tileHead}><h2>New research</h2></div>
+        <div className={`${ui.tileBody} flex flex-col gap-3`}>
+          <p className={ui.muted}>Pick an asset and a run type. Each run stops at two human gates: the research plan and the final report.</p>
+          <Link href="/research/new" className={ui.primary}>Start research</Link>
+        </div>
       </section>
-      {assets.length > 6 && <footer className={ui.actions}><Link href="/assets" className={ui.textLink}>View all assets<ArrowRight size={16} /></Link></footer>}
-    </>}
+      <section className={`${ui.tile} ${ui.s12}`}>
+        <div className={ui.tileHead}><h2>Recent assets</h2><Link href="/assets" className={ui.textLink}>All assets</Link></div>
+        {assets.length ? <AssetTable assets={assets.slice(0, 8)} /> : <p className={ui.empty}>No assets yet.</p>}
+      </section>
+    </div>}
   </div>;
 }

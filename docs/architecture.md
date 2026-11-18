@@ -1,4 +1,4 @@
-# Research OS — master architecture views
+# Pragma Research — master architecture views
 
 This document holds the master UML 2.5.1 views of the **current** system, traced from source on 2026-10-05 (pipeline version 3, 24 stages); research across runs added 2026-10-22; the report split into `report_draft` and `ai_reviewer` (25 stages) in architecture-9.
 
@@ -16,7 +16,7 @@ Labels in the views: *unverified* means the relationship wasn't proven from sour
 
 ## 1. Structural — Component
 
-![UML component view of Research OS](diagrams/component.svg)
+![UML component view of Pragma Research](diagrams/component.svg)
 
 **Drill-down: agent harness** (`src/lib/agent-harness/`):
 

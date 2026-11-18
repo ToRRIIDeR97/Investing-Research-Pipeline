@@ -90,12 +90,12 @@ function MonitorStatus({ monitor }: { monitor: MonitorCheck }) {
   const checked = new Date(monitor.checked_at).toLocaleDateString();
   if (!monitor.refresh_due) {
     const outcome = monitor.status === "current" ? "no refresh due" : monitor.status === "skipped" ? "not checked" : "check failed";
-    return <p className={ui.muted} role="status">Monitor check {checked}: {outcome}.{monitor.status !== "current" && monitor.reasons[0] ? ` ${monitor.reasons[0]}` : ""}</p>;
+    return <p className={`${ui.banner} ${ui.muted}`} role="status">Monitor check {checked}: {outcome}.{monitor.status !== "current" && monitor.reasons[0] ? ` ${monitor.reasons[0]}` : ""}</p>;
   }
-  return <section className={ui.notice} role="status" aria-label="Refresh due">
-    <strong>Refresh due</strong> (monitor check {checked})
-    <ul>{monitor.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul>
-    <p>{monitor.newer_run ? "A newer run of this asset already exists." : "A new run builds on the last completed run and reports what changed. Nothing starts automatically."}</p>
+  return <section className={`${ui.tile} mb-4`} role="status" aria-label="Refresh due">
+    <div className={ui.tileHead}><h2>Refresh due</h2><span className={ui.muted}>Monitor check {checked}</span></div>
+    <div className={ui.tileBody}><ul>{monitor.reasons.map((reason, index) => <li key={index}>{reason}</li>)}</ul>
+    <p className={ui.muted}>{monitor.newer_run ? "A newer run of this asset already exists." : "A new run builds on the last completed run and reports what changed. Nothing starts automatically."}</p></div>
   </section>;
 }
 
@@ -179,35 +179,51 @@ export default function AssetDetailPage() {
   if (loading) return <div className={ui.page} role="status">Loading asset…</div>;
   if (!asset) return <div className={ui.page}><p className={ui.error} role="alert">{error || "Asset not found."}</p><Link href="/assets" className={ui.textLink}>Back to research</Link></div>;
   const listing = asset.listings?.find((item) => item.is_primary) || asset.listings?.[0];
+  const words = (value: string) => value.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
   return <div className={`${ui.page} ${ui.withBack}`}>
-    <Link href={`/assets/${assetId}/view`} className={ui.back}><ArrowLeft size={17} />Research brief</Link>
-    <header className={ui.heading}><h1>{asset.canonical_name}</h1><span className={ui.muted}>{listing?.symbol || asset.asset_kind.replace(/_asset/g, "")}</span></header>
-    {asset.description && <p className={ui.lead}>{asset.description}</p>}
-    <div className={ui.actions}>
-      <Link href={`/assets/${assetId}/view`} className={ui.textLink}>Read research<ArrowUpRight size={16} /></Link>
-      <Link href={`/assets/${assetId}/run`} className={ui.primary}>{runs.length ? "Open run" : "Start research"}</Link>
-    </div>
+    <Link href={`/assets/${assetId}/view`} className={ui.back}><ArrowLeft size={14} />Research brief</Link>
+    <header className={ui.heading}>
+      <div className={ui.titleGroup}><h1>{asset.canonical_name}</h1><span className={ui.muted}>{listing?.symbol || asset.asset_kind.replace(/_asset/g, "")}</span></div>
+      <div className={ui.headActions}>
+        <Link href={`/assets/${assetId}/view`} className={ui.secondary}>Read research</Link>
+        <Link href={`/assets/${assetId}/run`} className={ui.primary}>{runs.length ? "Open run" : "Start research"}</Link>
+      </div>
+    </header>
     {monitor && <MonitorStatus monitor={monitor} />}
-    <details className={ui.section} open><summary>Asset details</summary><dl className={`${ui.metadata} ${ui.sectionBody}`}>
-      {[["Sector", asset.sector], ["Industry", asset.industry], ["Country", asset.home_country], ["Currency", asset.base_currency], ["Profile", asset.profile_name], ["Status", asset.status], ["Exchange", listing?.exchange], ["Last run", runs[0] ? new Date(runs[0].created_at).toLocaleDateString() : "None"]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || "Not set"}</dd></div>)}
-    </dl></details>
-    <details className={ui.section}><summary>Metrics</summary><div className={ui.chart}><MetricHistoryChart data={metrics} /></div></details>
-    <details className={ui.section}><summary>Valuation signals</summary><div className={ui.chart}><ValuationSignalChart data={signals} /></div></details>
-    <details className={ui.section}><summary>Research cost</summary><div className={ui.chart}><ResearchCostChart data={costData} /></div></details>
-    <details className={ui.section}><summary>Pipeline progress</summary><div className={ui.sectionBody}><PipelineProgressChart data={stages} /></div></details>
-    <details className={ui.section}><summary>Backtests <span className={ui.muted}>{backtests.length}</span></summary>
-      <div className={ui.sectionBody}>{!backtests.length ? <p>No backtests for the latest run.</p> : backtests.map((test) => <div key={test.id} className={ui.row}>
-        <div><div className={ui.rowTitle}>{test.strategy_name || "Backtest"}</div><p className={ui.rowMeta}>{test.symbol}{test.benchmark_symbol ? ` · ${test.benchmark_symbol}` : ""} · {test.status}</p><p className={ui.rowMeta}>{test.error_message || test.strategy_prompt}</p>
-          <p className={ui.rowMeta}>Return {formatPercent(test.metrics_json?.total_return)} · Sharpe {formatNumber(test.metrics_json?.sharpe)} · Drawdown {formatPercent(test.metrics_json?.max_drawdown)} · Trades {formatNumber(test.metrics_json?.trade_count, 0)}</p>
-          <Link href={`/api/backtests/${test.id}/artifacts`} className={ui.textLink}>Artifacts<ArrowUpRight size={15} /></Link>
-        </div>
-      </div>)}</div>
-    </details>
-    <details className={ui.section}><summary>Run history <span className={ui.muted}>{runs.length}</span></summary><div className={ui.sectionBody}>
-      {runs.length ? runs.map((run) => <Link key={run.id} href={`/assets/${assetId}/run?run=${run.id}`} className={ui.row}>
-        <div><div className={ui.rowTitle}>{run.run_type.replace(/_/g, " ")}</div><div className={ui.rowMeta}>{new Date(run.created_at).toLocaleDateString()} · {run.id.slice(0, 8)} · {run.status.replace(/_/g, " ")}</div></div><ArrowUpRight size={17} />
-      </Link>) : <p>No research runs yet.</p>}
-    </div></details>
+    <div className={ui.grid}>
+      <section className={`${ui.tile} ${ui.s7}`}>
+        <div className={ui.tileHead}><h2>Asset details</h2></div>
+        {asset.description && <p className={`${ui.tileBody} ${ui.muted}`}>{asset.description}</p>}
+        <dl className={`${ui.metadata} px-3.5 pb-3`}>
+          {[["Sector", asset.sector], ["Industry", asset.industry], ["Country", asset.home_country], ["Currency", asset.base_currency], ["Profile", asset.profile_name], ["Status", asset.status ? words(asset.status) : null], ["Exchange", listing?.exchange], ["Last run", runs[0] ? new Date(runs[0].created_at).toLocaleDateString() : "None"]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || "Not set"}</dd></div>)}
+        </dl>
+      </section>
+      <section className={`${ui.tile} ${ui.s5}`}>
+        <div className={ui.tileHead}><h2>Pipeline progress</h2></div>
+        <div className={ui.tileBody}><PipelineProgressChart data={stages} /></div>
+      </section>
+      <section className={`${ui.tile} ${ui.s6}`}><div className={ui.tileHead}><h2>Metrics</h2></div><div className={ui.chart}><MetricHistoryChart data={metrics} /></div></section>
+      <section className={`${ui.tile} ${ui.s6}`}><div className={ui.tileHead}><h2>Valuation signals</h2></div><div className={ui.chart}><ValuationSignalChart data={signals} /></div></section>
+      <section className={`${ui.tile} ${ui.s6}`}><div className={ui.tileHead}><h2>Research cost</h2></div><div className={ui.chart}><ResearchCostChart data={costData} /></div></section>
+      <section className={`${ui.tile} ${ui.s6}`}>
+        <div className={ui.tileHead}><h2>Run history</h2><span className={ui.muted}>{runs.length}</span></div>
+        {runs.length ? <div className={ui.table}><table><thead><tr><th>Run</th><th>Started</th><th>Id</th><th>Status</th></tr></thead><tbody>
+          {runs.map((run) => <tr key={run.id}><td><Link href={`/assets/${assetId}/run?run=${run.id}`} className="font-medium hover:underline">{words(run.run_type)}</Link></td><td>{new Date(run.created_at).toLocaleDateString()}</td><td className={ui.mono}>{run.id.slice(0, 8)}</td><td><span className={ui.status} data-status={run.status}>{words(run.status)}</span></td></tr>)}
+        </tbody></table></div> : <p className={ui.empty}>No research runs yet.</p>}
+      </section>
+      <section className={`${ui.tile} ${ui.s12}`}>
+        <div className={ui.tileHead}><h2>Backtests</h2><span className={ui.muted}>{backtests.length}</span></div>
+        {!backtests.length ? <p className={ui.empty}>No backtests for the latest run.</p> : <div className={ui.table}><table>
+          <thead><tr><th>Strategy</th><th>Symbol</th><th>Benchmark</th><th>Status</th><th className={ui.num}>Return</th><th className={ui.num}>Sharpe</th><th className={ui.num}>Drawdown</th><th className={ui.num}>Trades</th><th className={ui.num}><span className="sr-only">Artifacts</span></th></tr></thead>
+          <tbody>{backtests.map((test) => <tr key={test.id}>
+            <td><div className="font-medium">{test.strategy_name || "Backtest"}</div><div className={ui.rowMeta}>{test.error_message || test.strategy_prompt}</div></td>
+            <td>{test.symbol}</td><td>{test.benchmark_symbol || "—"}</td><td><span className={ui.status} data-status={test.status}>{words(test.status)}</span></td>
+            <td className={ui.num}>{formatPercent(test.metrics_json?.total_return)}</td><td className={ui.num}>{formatNumber(test.metrics_json?.sharpe)}</td><td className={ui.num}>{formatPercent(test.metrics_json?.max_drawdown)}</td><td className={ui.num}>{formatNumber(test.metrics_json?.trade_count, 0)}</td>
+            <td className={ui.num}><Link href={`/api/backtests/${test.id}/artifacts`} className={ui.textLink}>Artifacts<ArrowUpRight size={13} /></Link></td>
+          </tr>)}</tbody>
+        </table></div>}
+      </section>
+    </div>
   </div>;
 }
