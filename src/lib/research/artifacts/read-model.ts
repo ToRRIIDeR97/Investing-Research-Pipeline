@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { pipelineSql } from "@/db/pipeline-sql";
 
 export interface ResearchArtifactReadModel {
   id: string;
@@ -80,34 +81,30 @@ async function loadRun(sql: ReturnType<typeof postgres>, runId: string) {
 }
 
 export async function getResearchRunArtifacts(runId: string, artifactType?: string) {
-  const sql = postgres(process.env.DATABASE_URL!);
-  try {
-    const run = await loadRun(sql, runId);
-    if (!run) return null;
-    const rows = artifactType
-      ? await sql`
-          SELECT DISTINCT ON (artifact_type, scope_key) *
-          FROM research_artifacts
-          WHERE research_run_id = ${runId}
-            AND artifact_type = ${artifactType}
-            AND status <> 'superseded'
-          ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC
-        `
-      : await sql`
-          SELECT DISTINCT ON (artifact_type, scope_key) *
-          FROM research_artifacts
-          WHERE research_run_id = ${runId}
-            AND status <> 'superseded'
-          ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC
-        `;
-    return rows.map((row) => normalizeArtifact(row as Record<string, unknown>));
-  } finally {
-    await sql.end();
-  }
+  const sql = pipelineSql();
+  const run = await loadRun(sql, runId);
+  if (!run) return null;
+  const rows = artifactType
+    ? await sql`
+        SELECT DISTINCT ON (artifact_type, scope_key) *
+        FROM research_artifacts
+        WHERE research_run_id = ${runId}
+          AND artifact_type = ${artifactType}
+          AND status <> 'superseded'
+        ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC
+      `
+    : await sql`
+        SELECT DISTINCT ON (artifact_type, scope_key) *
+        FROM research_artifacts
+        WHERE research_run_id = ${runId}
+          AND status <> 'superseded'
+        ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC
+      `;
+  return rows.map((row) => normalizeArtifact(row as Record<string, unknown>));
 }
 
 /**
- * Pass `client` to reuse a long-lived pool; without one a client is opened and closed for this call.
+ * Pass `client` to reuse a long-lived pool; without one the shared pipeline pool is used.
  * `summary` leaves out large artifact bodies (marked `content_omitted`) and the report document's artifact copies
  * (`report_document.artifacts`), so a page can show its overview first and load the full report when a view needs it.
  */
@@ -116,131 +113,127 @@ export async function getResearchRunReport(
   client?: ReturnType<typeof postgres>,
   options: { summary?: boolean } = {}
 ) {
-  const sql = client ?? postgres(process.env.DATABASE_URL!);
-  try {
-    const run = await loadRun(sql, runId);
-    if (!run) return null;
-    const omitBody = sql`artifact_type <> 'report_document' AND artifact_type <> ALL(${SUMMARY_BODY_TYPES})
-      AND pg_column_size(content_json) > ${SUMMARY_BODY_LIMIT_BYTES}`;
-    const [artifactRows, evidence, metrics, valuationSignals, scenarios, backtests, sources, roleCoverage, modelCalls, exports, reviews, theses, risks, catalysts, stageRows] = await Promise.all([
-      options.summary
-        ? sql`
-          SELECT DISTINCT ON (artifact_type, scope_key)
-            id, artifact_type, scope_key, artifact_version, status, schema_version, validator_version, prompt_version,
-            validation_result_json, created_by, supersedes_artifact_id, accepted_at, created_at, updated_at,
-            CASE
-              WHEN artifact_type = 'report_document' AND jsonb_typeof(content_json) = 'object' THEN content_json - 'artifacts'
-              WHEN ${omitBody} THEN NULL
-              ELSE content_json
-            END AS content_json,
-            (${omitBody}) AS content_omitted
-          FROM research_artifacts
-          WHERE research_run_id = ${runId} AND status <> 'superseded'
-          ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC
-        `
-        : sql`
-          SELECT DISTINCT ON (artifact_type, scope_key) *
-          FROM research_artifacts
-          WHERE research_run_id = ${runId} AND status <> 'superseded'
-          ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC
-        `,
-      sql`SELECT * FROM evidence_claims WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
-      sql`SELECT * FROM metric_observations WHERE research_run_id = ${runId} ORDER BY period_end DESC NULLS LAST, created_at DESC`,
-      sql`SELECT * FROM valuation_signals WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
-      sql`SELECT * FROM scenarios WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
-      sql`SELECT * FROM backtest_runs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
-      sql`SELECT DISTINCT sd.*
-          FROM source_documents sd
-          LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
-          WHERE sd.research_run_id = ${runId} OR rrs.research_run_id = ${runId}
-          ORDER BY sd.created_at DESC`,
-      sql`SELECT * FROM source_role_coverage WHERE research_run_id = ${runId} ORDER BY source_role, artifact_type`,
-      sql`SELECT * FROM model_call_logs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
-      sql`SELECT * FROM exports WHERE research_run_id = ${runId} ORDER BY generated_at DESC`,
-      sql`SELECT * FROM review_decisions WHERE research_run_id = ${runId} ORDER BY reviewed_at DESC`,
-      sql`SELECT * FROM theses WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
-      sql`SELECT * FROM risks WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
-      sql`SELECT * FROM catalysts WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
-      sql`SELECT stage_key, status FROM research_stages WHERE research_run_id = ${runId}`,
-    ]);
-    const artifacts = artifactRows.map((row) => normalizeArtifact(row as Record<string, unknown>));
-    const byType: Record<string, ResearchArtifactReadModel[]> = {};
-    for (const artifact of artifacts) (byType[artifact.type] ||= []).push(artifact);
+  const sql = client ?? pipelineSql();
+  const run = await loadRun(sql, runId);
+  if (!run) return null;
+  const omitBody = sql`artifact_type <> 'report_document' AND artifact_type <> ALL(${SUMMARY_BODY_TYPES})
+    AND pg_column_size(content_json) > ${SUMMARY_BODY_LIMIT_BYTES}`;
+  const [artifactRows, evidence, metrics, valuationSignals, scenarios, backtests, sources, roleCoverage, modelCalls, exports, reviews, theses, risks, catalysts, stageRows] = await Promise.all([
+    options.summary
+      ? sql`
+        SELECT DISTINCT ON (artifact_type, scope_key)
+          id, artifact_type, scope_key, artifact_version, status, schema_version, validator_version, prompt_version,
+          validation_result_json, created_by, supersedes_artifact_id, accepted_at, created_at, updated_at,
+          CASE
+            WHEN artifact_type = 'report_document' AND jsonb_typeof(content_json) = 'object' THEN content_json - 'artifacts'
+            WHEN ${omitBody} THEN NULL
+            ELSE content_json
+          END AS content_json,
+          (${omitBody}) AS content_omitted
+        FROM research_artifacts
+        WHERE research_run_id = ${runId} AND status <> 'superseded'
+        ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC
+      `
+      : sql`
+        SELECT DISTINCT ON (artifact_type, scope_key) *
+        FROM research_artifacts
+        WHERE research_run_id = ${runId} AND status <> 'superseded'
+        ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC
+      `,
+    sql`SELECT * FROM evidence_claims WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM metric_observations WHERE research_run_id = ${runId} ORDER BY period_end DESC NULLS LAST, created_at DESC`,
+    sql`SELECT * FROM valuation_signals WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM scenarios WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM backtest_runs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT DISTINCT sd.*
+        FROM source_documents sd
+        LEFT JOIN research_run_sources rrs ON rrs.source_document_id = sd.id
+        WHERE sd.research_run_id = ${runId} OR rrs.research_run_id = ${runId}
+        ORDER BY sd.created_at DESC`,
+    sql`SELECT * FROM source_role_coverage WHERE research_run_id = ${runId} ORDER BY source_role, artifact_type`,
+    sql`SELECT * FROM model_call_logs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM exports WHERE research_run_id = ${runId} ORDER BY generated_at DESC`,
+    sql`SELECT * FROM review_decisions WHERE research_run_id = ${runId} ORDER BY reviewed_at DESC`,
+    sql`SELECT * FROM theses WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM risks WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT * FROM catalysts WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
+    sql`SELECT stage_key, status FROM research_stages WHERE research_run_id = ${runId}`,
+  ]);
+  const artifacts = artifactRows.map((row) => normalizeArtifact(row as Record<string, unknown>));
+  const byType: Record<string, ResearchArtifactReadModel[]> = {};
+  for (const artifact of artifacts) (byType[artifact.type] ||= []).push(artifact);
 
-    const stageStatus = new Map(
-      stageRows.map((stage) => [String(stage.stage_key), String(stage.status)])
-    );
-    const requiredSections: Array<{
-      type: string;
-      label: string;
-      stageKey?: string;
-      artifactTypes?: readonly string[];
-    }> = [
-      { type: "company_genesis", label: "Company genesis" },
-      { type: "historical_record", label: "Historical record" },
-      { type: "business_process_map", label: "Business process" },
-      { type: "moat_assessment", label: "Moat assessment" },
-      { type: "driver_tree", label: "Driver tree" },
-      { type: "operating_model", label: "Operating model" },
-      { type: "operating_scenario_set", label: "Operating scenarios" },
-      { type: "annual_price_target_path", label: "Annual price targets" },
-      { type: "decision_record", label: "Decision" },
-      { type: "backtest_review", label: "Backtest review", stageKey: "backtest_review" },
-      {
-        type: "ai_review",
-        label: "AI review",
-        stageKey: "ai_reviewer",
-        artifactTypes: ["review_summary", "findings", "quality_score", "recommendations", "review_verdict"],
-      },
-      { type: "refresh_schedule", label: "Refresh schedule" },
-    ];
-    const missingSections = requiredSections
-      .filter((section) => {
-        if (section.stageKey && stageStatus.get(section.stageKey) === "skipped") return false;
-        if (section.artifactTypes) {
-          return section.artifactTypes.some((type) => !byType[type]?.length);
-        }
-        return !byType[section.type]?.length;
-      })
-      .map((section) => ({ type: section.type, label: section.label, status: "incomplete" }));
+  const stageStatus = new Map(
+    stageRows.map((stage) => [String(stage.stage_key), String(stage.status)])
+  );
+  const requiredSections: Array<{
+    type: string;
+    label: string;
+    stageKey?: string;
+    artifactTypes?: readonly string[];
+  }> = [
+    { type: "company_genesis", label: "Company genesis" },
+    { type: "historical_record", label: "Historical record" },
+    { type: "business_process_map", label: "Business process" },
+    { type: "moat_assessment", label: "Moat assessment" },
+    { type: "driver_tree", label: "Driver tree" },
+    { type: "operating_model", label: "Operating model" },
+    { type: "operating_scenario_set", label: "Operating scenarios" },
+    { type: "annual_price_target_path", label: "Annual price targets" },
+    { type: "decision_record", label: "Decision" },
+    { type: "backtest_review", label: "Backtest review", stageKey: "backtest_review" },
+    {
+      type: "ai_review",
+      label: "AI review",
+      stageKey: "ai_reviewer",
+      artifactTypes: ["review_summary", "findings", "quality_score", "recommendations", "review_verdict"],
+    },
+    { type: "refresh_schedule", label: "Refresh schedule" },
+  ];
+  const missingSections = requiredSections
+    .filter((section) => {
+      if (section.stageKey && stageStatus.get(section.stageKey) === "skipped") return false;
+      if (section.artifactTypes) {
+        return section.artifactTypes.some((type) => !byType[type]?.length);
+      }
+      return !byType[section.type]?.length;
+    })
+    .map((section) => ({ type: section.type, label: section.label, status: "incomplete" }));
 
-    return {
-      summary: Boolean(options.summary),
-      run: run,
-      asset: {
-        id: run.asset_id,
-        canonical_name: run.asset_name,
-        slug: run.asset_slug,
-        asset_kind: run.asset_kind,
-        sector: run.sector,
-        industry: run.industry,
-        base_currency: run.base_currency,
-        home_country: run.home_country,
-      },
-      // The report document's body is sent once, as report_document, not again in its artifact row.
-      artifacts: artifacts.map((artifact) => artifact.type === "report_document" ? { ...artifact, content_json: {} } : artifact),
-      report_document: byType.report_document?.[0]?.content_json || null,
-      missing_sections: missingSections,
-      incomplete: missingSections.length > 0,
-      read_models: {
-        evidence,
-        metrics,
-        valuation_signals: valuationSignals,
-        scenarios,
-        backtests,
-        sources,
-        source_role_coverage: roleCoverage,
-        model_calls: modelCalls,
-        exports,
-        review_decisions: reviews,
-        theses,
-        risks,
-        catalysts,
-      },
-      export: artifacts.find((artifact) => artifact.type === "synthetic_report") || exports[0] || null,
-      refresh_schedule: artifacts.find((artifact) => artifact.type === "refresh_schedule") || null,
-    };
-  } finally {
-    if (!client) await sql.end();
-  }
+  return {
+    summary: Boolean(options.summary),
+    run: run,
+    asset: {
+      id: run.asset_id,
+      canonical_name: run.asset_name,
+      slug: run.asset_slug,
+      asset_kind: run.asset_kind,
+      sector: run.sector,
+      industry: run.industry,
+      base_currency: run.base_currency,
+      home_country: run.home_country,
+    },
+    // The report document's body is sent once, as report_document, not again in its artifact row.
+    artifacts: artifacts.map((artifact) => artifact.type === "report_document" ? { ...artifact, content_json: {} } : artifact),
+    report_document: byType.report_document?.[0]?.content_json || null,
+    missing_sections: missingSections,
+    incomplete: missingSections.length > 0,
+    read_models: {
+      evidence,
+      metrics,
+      valuation_signals: valuationSignals,
+      scenarios,
+      backtests,
+      sources,
+      source_role_coverage: roleCoverage,
+      model_calls: modelCalls,
+      exports,
+      review_decisions: reviews,
+      theses,
+      risks,
+      catalysts,
+    },
+    export: artifacts.find((artifact) => artifact.type === "synthetic_report") || exports[0] || null,
+    refresh_schedule: artifacts.find((artifact) => artifact.type === "refresh_schedule") || null,
+  };
 }

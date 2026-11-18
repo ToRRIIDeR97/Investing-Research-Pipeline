@@ -1,4 +1,4 @@
-import postgres from "postgres";
+import { pipelineSql } from "@/db/pipeline-sql";
 
 /**
  * Parse result from Docling or other parsers.
@@ -40,77 +40,73 @@ export async function storeParseResults(params: {
   parseResult: ParseResult;
   storagePath?: string;
 }): Promise<{ parseId: string; chunkCount: number; tableCount: number }> {
-  const sql = postgres(process.env.DATABASE_URL!);
+  const sql = pipelineSql();
 
-  try {
-    // Create document_parse record
-    const parseRows = await sql`
-      INSERT INTO document_parses (
-        source_document_id, parser_name, parser_version,
-        status, warnings_json, output_storage_path, completed_at
+  // Create document_parse record
+  const parseRows = await sql`
+    INSERT INTO document_parses (
+      source_document_id, parser_name, parser_version,
+      status, warnings_json, output_storage_path, completed_at
+    ) VALUES (
+      ${params.sourceDocumentId},
+      ${params.parserName},
+      ${params.parserVersion},
+      'completed',
+      ${sql.json(params.parseResult.warnings)},
+      ${params.storagePath || null},
+      NOW()
+    )
+    RETURNING id
+  `;
+  const parseId = parseRows[0].id;
+
+  // Store chunks
+  for (const chunk of params.parseResult.chunks) {
+    await sql`
+      INSERT INTO document_chunks (
+        source_document_id, document_parse_id, chunk_index,
+        section_title, page_start, page_end, char_start, char_end,
+        text, token_count
       ) VALUES (
         ${params.sourceDocumentId},
-        ${params.parserName},
-        ${params.parserVersion},
-        'completed',
-        ${sql.json(params.parseResult.warnings)},
-        ${params.storagePath || null},
-        NOW()
+        ${parseId},
+        ${chunk.chunkIndex},
+        ${chunk.sectionTitle || null},
+        ${chunk.pageStart || null},
+        ${chunk.pageEnd || null},
+        ${chunk.charStart ?? null},
+        ${chunk.charEnd ?? null},
+        ${chunk.text},
+        ${chunk.tokenCount || null}
       )
-      RETURNING id
     `;
-    const parseId = parseRows[0].id;
-
-    // Store chunks
-    for (const chunk of params.parseResult.chunks) {
-      await sql`
-        INSERT INTO document_chunks (
-          source_document_id, document_parse_id, chunk_index,
-          section_title, page_start, page_end, char_start, char_end,
-          text, token_count
-        ) VALUES (
-          ${params.sourceDocumentId},
-          ${parseId},
-          ${chunk.chunkIndex},
-          ${chunk.sectionTitle || null},
-          ${chunk.pageStart || null},
-          ${chunk.pageEnd || null},
-          ${chunk.charStart ?? null},
-          ${chunk.charEnd ?? null},
-          ${chunk.text},
-          ${chunk.tokenCount || null}
-        )
-      `;
-    }
-
-    // Store tables
-    for (const table of params.parseResult.tables) {
-      await sql`
-        INSERT INTO extracted_tables (
-          source_document_id, document_parse_id, table_index,
-          page_start, page_end, table_title,
-          table_json, confidence
-        ) VALUES (
-          ${params.sourceDocumentId},
-          ${parseId},
-          ${table.tableIndex},
-          ${table.pageStart || null},
-          ${table.pageEnd || null},
-          ${table.title || null},
-          ${sql.json(table.tableJson as any)},
-          ${table.confidence || null}
-        )
-      `;
-    }
-
-    return {
-      parseId,
-      chunkCount: params.parseResult.chunks.length,
-      tableCount: params.parseResult.tables.length,
-    };
-  } finally {
-    await sql.end();
   }
+
+  // Store tables
+  for (const table of params.parseResult.tables) {
+    await sql`
+      INSERT INTO extracted_tables (
+        source_document_id, document_parse_id, table_index,
+        page_start, page_end, table_title,
+        table_json, confidence
+      ) VALUES (
+        ${params.sourceDocumentId},
+        ${parseId},
+        ${table.tableIndex},
+        ${table.pageStart || null},
+        ${table.pageEnd || null},
+        ${table.title || null},
+        ${sql.json(table.tableJson as any)},
+        ${table.confidence || null}
+      )
+    `;
+  }
+
+  return {
+    parseId,
+    chunkCount: params.parseResult.chunks.length,
+    tableCount: params.parseResult.tables.length,
+  };
 }
 
 /**

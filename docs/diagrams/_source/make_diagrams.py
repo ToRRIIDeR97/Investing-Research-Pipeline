@@ -10,7 +10,7 @@ P = lambda n: os.path.join(OUT, n)
 # ---------------------------------------------------------------- component
 s = Svg(1100, 700, "Research OS — UML component view (current)",
         "Browser UI calls Next.js API routes (optional operator token; a middleware refuses foreign hosts and cross-site writes); the API writes Postgres and enqueues jobs; "
-        "a separate worker claims jobs and runs the 24-stage pipeline, which calls the agent harness, "
+        "a separate worker claims jobs and runs the 25-stage pipeline, which calls the agent harness, "
         "source discovery and ingestion, backtesting (Python), and export; all state lives in Postgres and ./storage.")
 s.box(30, 60, 220, 70, "Analyst browser", ["src/app/** client pages"], "ui", stereo="actor/UI")
 s.box(310, 50, 260, 90, "Next.js API routes", ["src/app/api/** (54 route files)", "optional token · Host/Origin middleware"], "api", stereo="component")
@@ -79,7 +79,7 @@ s.save(P("deployment.svg"))
 
 # ---------------------------------------------------------------- class
 s = Svg(1100, 640, "Research OS — UML class view (core domain, from src/db/schema)",
-        "Core persisted domain types and multiplicities: Asset has many ResearchRuns; a run has 24 stages, tasks, jobs, artifacts, "
+        "Core persisted domain types and multiplicities: Asset has many ResearchRuns; a run has 25 stages, tasks, jobs, artifacts, "
         "model call logs, backtests and review decisions; artifacts link to evidence claims, which link to source locations in parsed documents.")
 def cls(x, y, name, attrs, w=200, kind="plain"):
     h = 30 + 15 * len(attrs) + 8
@@ -91,7 +91,7 @@ def cls(x, y, name, attrs, w=200, kind="plain"):
 cls(30, 60, "Asset", ["id, symbol, kind", "→ research_profiles 0..1"], kind="ui")
 cls(30, 200, "Instrument / Listing", ["→ market_price_bars *", "→ corporate_actions *"], kind="ui")
 cls(300, 60, "ResearchRun", ["status, run_type", "pipeline_version = 3", "prior_run_id → run 0..1"], kind="api")
-cls(570, 60, "ResearchStage", ["stage_key, order 1..24", "status, validation_result_json"], kind="api")
+cls(570, 60, "ResearchStage", ["stage_key, order 1..25", "status, validation_result_json"], kind="api")
 cls(840, 60, "ResearchTask", ["status, cost_usd", "output (agent result)"], kind="api")
 cls(300, 220, "ResearchRunJob", ["status queued|running|…", "lease_owner, attempt_count", "max_attempts = 3"], kind="worker")
 cls(570, 220, "ResearchArtifact", ["artifact_type, scope_key, status", "version · supersedes_artifact_id"], w=230, kind="lib")
@@ -109,7 +109,7 @@ def ln(pts):
 def m(x, y, t, anchor="start"):
     s.text(x, y, t, 11, fill="#a33", anchor=anchor)
 ln([(230, 85), (300, 85)]); m(236, 79, "1"); m(294, 79, "*", "end")
-ln([(500, 85), (570, 85)]); m(506, 79, "1"); m(564, 79, "1..24", "end")
+ln([(500, 85), (570, 85)]); m(506, 79, "1"); m(564, 79, "1..25", "end")
 ln([(770, 85), (840, 85)]); m(776, 79, "1"); m(834, 79, "*", "end")
 ln([(130, 128), (130, 200)]); m(136, 142, "1"); m(136, 194, "*")
 # bus from ResearchRun to row 2
@@ -130,7 +130,7 @@ ln([(770, 400), (840, 400)]); m(774, 394, "*"); m(836, 394, "*", "end")
 s.text(805, 420, "evidence_links", 10.5, fill="#555", italic=True, anchor="middle")
 ln([(940, 433), (940, 500)]); m(946, 447, "*"); m(946, 494, "1")
 s.text(16, 628, "Associations follow FK columns in src/db/schema/*.ts. Attribute lists are abridged; see the schema for full columns. "
-       "Stage count is fixed by STAGE_CONFIGS (24).", 11, fill="#555")
+       "Stage count is fixed by STAGE_CONFIGS (25).", 11, fill="#555")
 s.save(P("class.svg"))
 
 # ---------------------------------------------------------------- activity
@@ -140,7 +140,7 @@ s = Svg(1100, 800, "Research run — UML activity view",
 cx = 330
 s.initial(cx, 55)
 steps = [
-    (75, "POST /api/assets/:id/research-runs", "run pending (v3) + 24 stages; run-type skips set at creation"),
+    (75, "POST /api/assets/:id/research-runs", "run pending (v3) + 25 stages; run-type skips set at creation"),
     (140, "POST …/run-system-pipeline (or approve-plan / review)", "enqueueResearchRun (resumes failed runs) → job queued"),
     (205, "Worker: requeueExpired, reconcile → claim (SKIP LOCKED)", "lease 5 min, renewed every 10 s; lost lease or SIGTERM aborts"),
     (270, "runResearchPipeline: pg_try_advisory_lock(run)", "fail stale running tasks · startRun if pending"),
@@ -169,7 +169,7 @@ s.line([(914, 502), (1020, 502), (1020, 540)], "yes", lx=990, ly=518)
 s.line([(886, 502), (840, 502), (840, 540)], "no", lx=860, ly=518)
 s.line([(cx, 472), (cx, 494)], "yes", lx=345, ly=486, lanchor="start")
 s.diamond(cx, 508)
-s.text(cx - 20, 496, "human gate (stage 4 / 22)?", 11, fill="#5a4700", italic=True, anchor="end")
+s.text(cx - 20, 496, "human gate (stage 4 / 23)?", 11, fill="#5a4700", italic=True, anchor="end")
 s.box(480, 540, 260, 56, "waiting_for_human; job completes", ["approval → new job enqueued"], "warn", title_size=12)
 s.line([(cx + 14, 508), (610, 508), (610, 540)], "yes", lx=580, ly=502)
 s.line([(cx, 522), (cx, 544)], "no", lx=345, ly=536, lanchor="start")
@@ -318,7 +318,7 @@ s.text(760, 655, "skip_and_continue: failed, run continues", 11, fill="#555")
 s.text(760, 670, "max_retries per stage: 0–3 (stages.ts)", 11, fill="#555")
 s.text(760, 685, "owner requires_rerun: stage + dependents → pending", 11, fill="#555")
 s.text(760, 700, "(auto once ≤ 6 analysis stages, else approved);", 11, fill="#555")
-s.text(760, 715, "ai_reviewer waiting_for_human until the decision", 11, fill="#555")
+s.text(760, 715, "report_draft or ai_reviewer waits until the decision", 11, fill="#555")
 # Artifact
 s.zone(20, 740, 1060, 205, "research_artifacts (artifacts/repository.ts upsertArtifact, reporting/store.ts saveReportArtifact)", "#2f6f9f")
 s.initial(55, 800)
@@ -332,9 +332,9 @@ s.line([(380, 800), (580, 800)], "human gate approves", lx=480, ly=792)
 s.line([(700, 800), (860, 800), (860, 830), (900, 830)], "changed save", lx=780, ly=792)
 s.line([(390, 877), (860, 877), (860, 845), (900, 845)], "retry or re-run: changed save", lx=625, ly=871)
 s.text(445, 832, "plan gate: research_plan only;", 11, fill="#555")
-s.text(445, 847, "stage 22: every current validated artifact", 11, fill="#555")
+s.text(445, 847, "stage 23: every current validated artifact", 11, fill="#555")
 s.text(40, 918, "One current version per run, type and scope: a save with changed content or status inserts version n+1 and supersedes the rest;", 11, fill="#555")
-s.text(40, 933, "an unchanged save keeps the row. Artifacts saved after stage 22 (export, refresh schedule, chat) stay validated.", 11, fill="#555")
+s.text(40, 933, "an unchanged save keeps the row. Artifacts saved after stage 23 (export, refresh schedule, chat) stay validated.", 11, fill="#555")
 s.save(P("state-machines.svg"))
 
 # ---------------------------------------------------------------- sequence
@@ -365,7 +365,7 @@ def frame(label, color, x0, x1, body):
     s.raw(f'<rect x="{x0}" y="{y0}" width="{x1 - x0}" height="{y[0] - y0 - 10}" fill="none" stroke="{color}" stroke-dasharray="6 3"/>')
     y[0] += 8
 msg(0, 1, "POST /assets/:id/research-runs")
-msg(1, 2, "insert run (pending, v3) + 24 stages [txn]")
+msg(1, 2, "insert run (pending, v3) + 25 stages [txn]")
 msg(1, 0, "201 run", ret=True)
 msg(0, 1, "POST /research-runs/:id/run-system-pipeline")
 msg(1, 2, "enqueueResearchRun (FOR UPDATE, 1 active job)")
@@ -375,7 +375,7 @@ msg(3, 4, "runResearchPipeline(runId)")
 msg(4, 2, "pg_try_advisory_lock(run); startRun / resume")
 def loop_body():
     msg(4, 2, "startReadyStages (dependency graph)")
-    msg(4, 5, "execute(ctx) × ready stages (parallel)")
+    msg(4, 5, "execute(ctx) × ready stages (parallel; report_draft, then ai_reviewer)")
     msg(5, 2, "loadFilingPassages: newest filings, driver passages")
     msg(5, 6, "callResearchAgent(role, packet + filing_passages)")
     msg(6, 7, "HTTPS chat/completions | messages (cached prefix)")
@@ -391,7 +391,7 @@ def requests_body():
     msg(4, 6, "team_answer(owner, report inputs + passages)")
     msg(6, 7, "one call; one more after a collector search")
     msg(4, 2, "requestResetPlan: none → answered · auto → reset once")
-    msg(4, 2, "approval → run, ai_reviewer waiting; request_reset")
+    msg(4, 2, "approval → run + running report stage waiting; request_reset")
     msg(0, 1, "POST …/request-reset {rerun | skip}")
     msg(1, 2, "approveRequestReset + enqueue new job")
 frame("alt [report requests in team_requests: 2 rounds pre-draft, 1 after review]", "#2f7f7f", xs[0] - 60, xs[7] + 65, requests_body)
@@ -412,7 +412,7 @@ def stop_body():
     msg(3, 2, "release job → queued, no attempt used [owner]")
 frame("alt [cancel or worker shutdown]", "#b23b3b", xs[0] - 60, xs[6] + 65, stop_body)
 assert y[0] < 1350, y[0]
-s.text(16, 1370, "Stage 22 human_review repeats this: POST …/review writes review_decisions; a position needs the effective review verdict; then completeRun or needs_more_work.", 11, fill="#555")
+s.text(16, 1370, "Stage 23 human_review repeats this: POST …/review writes review_decisions; a position needs the effective review verdict; then completeRun or needs_more_work.", 11, fill="#555")
 s.save(P("sequence-research-run.svg"))
 
 # ---------------------------------------------------------------- trust boundaries
@@ -473,7 +473,7 @@ s.box(30, 70, 230, 100, "Run A (completed or approved)", ["documents · question
 s.box(330, 70, 260, 100, "Run creation", ["run-service.ts · lineage/runs.ts", "prior_run_id: default, explicit or null", "same asset · pipeline v3"], "api", stereo="transaction")
 s.box(660, 70, 400, 100, "prior_research artifact (≤ 10 KB)", ["lineage/prior-research.ts (pure)", "documents, blocked questions, unavailable requests,", "decision, valuation summary, human follow-up"], "lib", stereo="artifact")
 s.box(330, 230, 260, 110, "Analysis + report calls (Run B)", ["prepareResearchCall adds prior_research", "in the cached packet prefix", "absent → packet byte-identical"], "worker", stereo="model packets")
-s.box(660, 230, 400, 110, "version_change_log artifact", ["lineage/change-log.ts (pure, no model): Run B vs Run A", "valuation per case + weighted, drivers, decision,", "thesis; new documents vs method/model change"], "lib", stereo="ai_reviewer start")
+s.box(660, 230, 400, 110, "version_change_log artifact", ["lineage/change-log.ts (pure, no model): Run B vs Run A", "valuation per case + weighted, drivers, decision,", "thesis; new documents vs method/model change"], "lib", stereo="report_draft start")
 s.box(660, 400, 400, 80, "Report", ["\"Changes since the prior run\" section + UI table"], "ui", stereo="report_document")
 s.box(30, 400, 280, 110, "npm run monitor:check", ["scripts/monitor-check.ts", "monitoring/monitor-check.ts", "monitoring/monitor-score.ts (pure)"], "worker", stereo="script")
 s.box(30, 230, 230, 110, "SEC EDGAR", ["data.sec.gov · www.sec.gov only", "10-Q / 10-K after the cutoff", "untrusted filing HTML"], "ext", stereo="external")

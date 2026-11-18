@@ -5,14 +5,12 @@ import { createArtifactRepository } from "../artifacts/repository";
 import { buildHistoricalDiagnosis } from "../diagnosis/diagnosis";
 import { latestCompletedQuarter } from "../history/normalizer";
 import { fiscalCalendar, fiscalLabel, fiscalPeriodsFromObservations } from "../history/fiscal-calendar";
-import { schema } from "@/db";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { pipelineDb, pipelineSql } from "@/db/pipeline-sql";
 
 export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "historical_diagnosis",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
-    const sql = postgres(process.env.DATABASE_URL!);
+    const sql = pipelineSql();
     const taskKey = "historical-diagnostician:diagnosis";
     const task = await createV3Task(
       sql,
@@ -92,7 +90,7 @@ export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> =
       };
 
       // Persist generated sub-artifacts
-      const db = drizzle(sql, { schema });
+      const db = pipelineDb();
       const repo = createArtifactRepository(db);
       const subKeys = HISTORICAL_DIAGNOSIS_CONTRACT.requiredKeys;
       for (const k of subKeys) {
@@ -118,8 +116,6 @@ export const historicalDiagnosisHandler: StageHandler<Record<string, unknown>> =
     } catch (error) {
       await failV3Task(sql, task.id, error);
       throw error;
-    } finally {
-      await sql.end();
     }
   },
 };

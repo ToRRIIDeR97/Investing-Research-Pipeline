@@ -107,8 +107,9 @@ test("AC-5: a data request needing sources supersedes no gap; an approved re-run
 
 test("AC-6: a failure in the business branch names that stage once no other stage can run", { skip }, async () => {
   const sql = postgres(process.env.DATABASE_URL!);
-  const ctx = await run(sql, { ...completed([...early, "historical_record", "historical_diagnosis", "company_genesis", "business_process_analysis"]),
-    moat_analysis: "failed" }, "pending");
+  // The backtest branch depends only on the plan (architecture-9 P1), so it is done here for the run to be blocked.
+  const ctx = await run(sql, { ...completed([...early, "historical_record", "historical_diagnosis", "company_genesis", "business_process_analysis",
+    "indicator_design", "strategy_design", "backtest_execution", "backtest_review"]), moat_analysis: "failed" }, "pending");
   try {
     await startNextStage(ctx.runId);
     const [state] = await sql`SELECT status, failure_reason FROM research_runs WHERE id = ${ctx.runId}`;

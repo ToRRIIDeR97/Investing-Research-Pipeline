@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { pipelineSql } from "@/db/pipeline-sql";
 import { createHash } from "node:crypto";
 import { copyFile, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
@@ -88,127 +89,123 @@ export async function generateResearchPackage(params: {
   assetId: string;
   generatedBy: string;
 }): Promise<ResearchPackageResult> {
-  const sql = postgres(process.env.DATABASE_URL!);
+  const sql = pipelineSql();
 
-  try {
-    const data = await loadPackageData(sql, params.runId, params.assetId);
-    data.quality = await evaluateResearchQuality(params.runId);
-    const indicators = buildIndicators(data);
-    const combinations = buildStrategyCombinations(indicators);
-    const generatedAt = new Date().toISOString();
-    const folderName = `${safeSlug(data.asset.slug || data.asset.canonical_name)}_${data.run.run_type}_${Date.now()}_research_package`;
-    const storagePath = `storage/exports/${folderName}`;
-    const absoluteDir = join(process.cwd(), storagePath);
+  const data = await loadPackageData(sql, params.runId, params.assetId);
+  data.quality = await evaluateResearchQuality(params.runId);
+  const indicators = buildIndicators(data);
+  const combinations = buildStrategyCombinations(indicators);
+  const generatedAt = new Date().toISOString();
+  const folderName = `${safeSlug(data.asset.slug || data.asset.canonical_name)}_${data.run.run_type}_${Date.now()}_research_package`;
+  const storagePath = `storage/exports/${folderName}`;
+  const absoluteDir = join(process.cwd(), storagePath);
 
-    await mkdir(absoluteDir, { recursive: true });
-    await mkdir(join(absoluteDir, "source_intelligence"), { recursive: true });
-    await mkdir(join(absoluteDir, "data", "processed"), { recursive: true });
-    await mkdir(join(absoluteDir, "data", "backtest_outputs"), { recursive: true });
-    await mkdir(join(absoluteDir, "charts", "backtests"), { recursive: true });
-    await mkdir(join(absoluteDir, "charts", "indicators"), { recursive: true });
-    await mkdir(join(absoluteDir, "charts", "price"), { recursive: true });
-    await mkdir(join(absoluteDir, "code"), { recursive: true });
-    await mkdir(join(absoluteDir, "filings", "raw"), { recursive: true });
-    await mkdir(join(absoluteDir, "filings", "parsed"), { recursive: true });
-    await mkdir(join(absoluteDir, "filings", "extracted_tables"), { recursive: true });
+  await mkdir(absoluteDir, { recursive: true });
+  await mkdir(join(absoluteDir, "source_intelligence"), { recursive: true });
+  await mkdir(join(absoluteDir, "data", "processed"), { recursive: true });
+  await mkdir(join(absoluteDir, "data", "backtest_outputs"), { recursive: true });
+  await mkdir(join(absoluteDir, "charts", "backtests"), { recursive: true });
+  await mkdir(join(absoluteDir, "charts", "indicators"), { recursive: true });
+  await mkdir(join(absoluteDir, "charts", "price"), { recursive: true });
+  await mkdir(join(absoluteDir, "code"), { recursive: true });
+  await mkdir(join(absoluteDir, "filings", "raw"), { recursive: true });
+  await mkdir(join(absoluteDir, "filings", "parsed"), { recursive: true });
+  await mkdir(join(absoluteDir, "filings", "extracted_tables"), { recursive: true });
 
-    const files: Record<string, string> = {
-      "AGENT.md": renderAgentInstructions(),
-      "00_intake.md": renderIntake(data, generatedAt),
-      "01_company_or_asset_profile.md": renderAssetProfile(data),
-      "02_source_intelligence.md": renderSourceIntelligence(data),
-      "02_industry_research.md": renderIndustryResearch(data),
-      "03_investment_thesis.md": renderInvestmentThesis(data),
-      "04_risk_reward.md": renderRiskReward(data),
-      "05_valuation.md": renderValuation(data),
-      "06_custom_indicators.md": renderIndicators(indicators),
-      "07_strategy_design.md": renderStrategyDesign(data, indicators),
-      "08_backtest_results.md": renderBacktests(data, combinations),
-      "09_review_packet.md": renderReviewPacket(data, indicators, combinations),
-      "10_strategy_combinations.md": renderCombinations(combinations),
-      "sources.md": renderSources(data),
-      "quality_gates.json": `${JSON.stringify(data.quality, null, 2)}\n`,
-      "source_intelligence/AGENT.md": renderSourceAgentInstructions(),
-      "source_intelligence/source_inventory.md": renderSourceInventory(data),
-      "source_intelligence/source_quality_scores.md": renderSourceQuality(data),
-      "source_intelligence/data_availability_map.md": renderDataAvailability(data),
-      "source_intelligence/asset_specific_source_plan.md": renderAssetSpecificSourcePlan(data),
-      "source_intelligence/filing_download_log.md": renderFilingDownloadLog(data),
-      "source_intelligence/source_to_indicator_map.md": renderSourceToIndicatorMap(data, indicators),
-      "source_intelligence/failed_source_attempts.md": renderFailedSourceAttempts(data),
-      "source_intelligence/regulatory_source_map.md": renderRegulatorySourceMap(data),
-      "source_intelligence/refresh_schedule.md": renderRefreshSchedule(data),
-      "data/processed/indicator_metadata.csv": indicatorMetadataCsv(indicators),
-      "data/processed/indicator_combinations.csv": combinationsCsv(combinations),
-      "data/processed/aligned_research_dataset.csv": alignedResearchDatasetCsv(data, indicators),
-      "data/processed/valuation_dashboard.csv": valuationDashboardCsv(data.signals),
-      "data/backtest_outputs/combo_rankings.csv": comboRankingsCsv(combinations, data.backtests),
-      "data/backtest_outputs/backtest_summary.csv": backtestSummaryCsv(data.backtests),
-      "data/backtest_outputs/backtest_artifacts.csv": backtestArtifactsCsv(data.backtestArtifacts),
-      "code/README.md": renderCodeReadme(data),
-    };
+  const files: Record<string, string> = {
+    "AGENT.md": renderAgentInstructions(),
+    "00_intake.md": renderIntake(data, generatedAt),
+    "01_company_or_asset_profile.md": renderAssetProfile(data),
+    "02_source_intelligence.md": renderSourceIntelligence(data),
+    "02_industry_research.md": renderIndustryResearch(data),
+    "03_investment_thesis.md": renderInvestmentThesis(data),
+    "04_risk_reward.md": renderRiskReward(data),
+    "05_valuation.md": renderValuation(data),
+    "06_custom_indicators.md": renderIndicators(indicators),
+    "07_strategy_design.md": renderStrategyDesign(data, indicators),
+    "08_backtest_results.md": renderBacktests(data, combinations),
+    "09_review_packet.md": renderReviewPacket(data, indicators, combinations),
+    "10_strategy_combinations.md": renderCombinations(combinations),
+    "sources.md": renderSources(data),
+    "quality_gates.json": `${JSON.stringify(data.quality, null, 2)}\n`,
+    "source_intelligence/AGENT.md": renderSourceAgentInstructions(),
+    "source_intelligence/source_inventory.md": renderSourceInventory(data),
+    "source_intelligence/source_quality_scores.md": renderSourceQuality(data),
+    "source_intelligence/data_availability_map.md": renderDataAvailability(data),
+    "source_intelligence/asset_specific_source_plan.md": renderAssetSpecificSourcePlan(data),
+    "source_intelligence/filing_download_log.md": renderFilingDownloadLog(data),
+    "source_intelligence/source_to_indicator_map.md": renderSourceToIndicatorMap(data, indicators),
+    "source_intelligence/failed_source_attempts.md": renderFailedSourceAttempts(data),
+    "source_intelligence/regulatory_source_map.md": renderRegulatorySourceMap(data),
+    "source_intelligence/refresh_schedule.md": renderRefreshSchedule(data),
+    "data/processed/indicator_metadata.csv": indicatorMetadataCsv(indicators),
+    "data/processed/indicator_combinations.csv": combinationsCsv(combinations),
+    "data/processed/aligned_research_dataset.csv": alignedResearchDatasetCsv(data, indicators),
+    "data/processed/valuation_dashboard.csv": valuationDashboardCsv(data.signals),
+    "data/backtest_outputs/combo_rankings.csv": comboRankingsCsv(combinations, data.backtests),
+    "data/backtest_outputs/backtest_summary.csv": backtestSummaryCsv(data.backtests),
+    "data/backtest_outputs/backtest_artifacts.csv": backtestArtifactsCsv(data.backtestArtifacts),
+    "code/README.md": renderCodeReadme(data),
+  };
 
-    await Promise.all(
-      Object.entries(files).map(([relativePath, content]) =>
-        writeFile(join(absoluteDir, relativePath), content, "utf8")
-      )
-    );
-    const copiedArtifacts = await copyBacktestArtifacts(data, absoluteDir);
+  await Promise.all(
+    Object.entries(files).map(([relativePath, content]) =>
+      writeFile(join(absoluteDir, relativePath), content, "utf8")
+    )
+  );
+  const copiedArtifacts = await copyBacktestArtifacts(data, absoluteDir);
 
-    const manifest = {
-      generated_at: generatedAt,
-      asset_id: params.assetId,
-      run_id: params.runId,
-      canonical_files: CANONICAL_FILES,
-      section_counts: {
-        evidence: data.evidence.length,
-        metrics: data.metrics.length,
-        valuation_signals: data.signals.length,
-        scenarios: data.scenarios.length,
-        risks: data.risks.length,
-        catalysts: data.catalysts.length,
-        indicators: indicators.length,
-        strategy_combinations: combinations.length,
-        backtests: data.backtests.length,
-        backtest_artifacts: data.backtestArtifacts.length,
-        sources: data.sources.length,
-        inferred_source_gaps: inferredSourceGaps(data).length,
-        quality_status: data.quality.status,
-        action_readiness: data.quality.actionReadiness,
-      },
-      quality_gates: data.quality,
-      copied_artifacts: copiedArtifacts,
-    };
-    const manifestContent = `${JSON.stringify(manifest, null, 2)}\n`;
-    await writeFile(join(absoluteDir, "manifest.json"), manifestContent, "utf8");
+  const manifest = {
+    generated_at: generatedAt,
+    asset_id: params.assetId,
+    run_id: params.runId,
+    canonical_files: CANONICAL_FILES,
+    section_counts: {
+      evidence: data.evidence.length,
+      metrics: data.metrics.length,
+      valuation_signals: data.signals.length,
+      scenarios: data.scenarios.length,
+      risks: data.risks.length,
+      catalysts: data.catalysts.length,
+      indicators: indicators.length,
+      strategy_combinations: combinations.length,
+      backtests: data.backtests.length,
+      backtest_artifacts: data.backtestArtifacts.length,
+      sources: data.sources.length,
+      inferred_source_gaps: inferredSourceGaps(data).length,
+      quality_status: data.quality.status,
+      action_readiness: data.quality.actionReadiness,
+    },
+    quality_gates: data.quality,
+    copied_artifacts: copiedArtifacts,
+  };
+  const manifestContent = `${JSON.stringify(manifest, null, 2)}\n`;
+  await writeFile(join(absoluteDir, "manifest.json"), manifestContent, "utf8");
 
-    const contentHash = createHash("sha256")
-      .update(Object.values(files).join("\n\n---FILE---\n\n"))
-      .update(manifestContent)
-      .digest("hex");
+  const contentHash = createHash("sha256")
+    .update(Object.values(files).join("\n\n---FILE---\n\n"))
+    .update(manifestContent)
+    .digest("hex");
 
-    const rows = await sql`
-      INSERT INTO exports (
-        asset_id, research_run_id, export_type,
-        template_version, storage_path, content_hash,
-        generated_by, generated_at, metadata_json
-      ) VALUES (
-        ${params.assetId}, ${params.runId}, 'research_package',
-        'sofi-folder-standard-v1', ${storagePath}, ${contentHash},
-        ${params.generatedBy}, NOW(), ${sql.json(manifest as any)}
-      )
-      RETURNING id
-    `;
+  const rows = await sql`
+    INSERT INTO exports (
+      asset_id, research_run_id, export_type,
+      template_version, storage_path, content_hash,
+      generated_by, generated_at, metadata_json
+    ) VALUES (
+      ${params.assetId}, ${params.runId}, 'research_package',
+      'sofi-folder-standard-v1', ${storagePath}, ${contentHash},
+      ${params.generatedBy}, NOW(), ${sql.json(manifest as any)}
+    )
+    RETURNING id
+  `;
 
-    return {
-      exportId: rows[0].id,
-      storagePath,
-      contentHash,
-      files: [...Object.keys(files), ...copiedArtifacts.map((artifact) => artifact.package_path), "manifest.json"],
-    };
-  } finally {
-    await sql.end();
-  }
+  return {
+    exportId: rows[0].id,
+    storagePath,
+    contentHash,
+    files: [...Object.keys(files), ...copiedArtifacts.map((artifact) => artifact.package_path), "manifest.json"],
+  };
 }
 
 async function loadPackageData(sql: ReturnType<typeof postgres>, runId: string, assetId: string): Promise<ResearchPackageData> {

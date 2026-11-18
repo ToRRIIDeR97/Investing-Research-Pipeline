@@ -74,7 +74,7 @@ async function main() {
   for (const section of [...outline.sections.filter((s: any) => !isConclusion(s)), ...outline.sections.filter(isConclusion)]) {
     const call = reportSectionCall(common, packetArtifacts, section, outline, [], isConclusion(section) ? [...completed] : [],
       section.id === lastConclusion ? outline.coverage : undefined);
-    const { params } = await prepareResearchCall({ sql, ctx, stageKey: "ai_reviewer", taskKey: `report:section:${section.id}`, taskType: "report_section",
+    const { params } = await prepareResearchCall({ sql, ctx, stageKey: "report_draft", taskKey: `report:section:${section.id}`, taskType: "report_section",
       agentName: "export-writer", modelTier: "mid", packet: call.packet, perCallKeys: call.perCallKeys,
       promptFactory: (p) => exactJsonPrompt({ agentName: "export-writer", requiredKeys: call.contract.requiredKeys, packet: p, extraRules: call.extraRules }) });
     const written = (document?.sections ?? []).find((s: any) => s.id === section.id);

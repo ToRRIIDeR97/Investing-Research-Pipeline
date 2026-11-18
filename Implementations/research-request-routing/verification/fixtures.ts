@@ -18,7 +18,8 @@ export const TEAM = "../../../src/lib/research/team";
 export const ORCHESTRATOR = "../../../src/lib/workflow/orchestrator";
 export const RESET_ROUTE = "../../../src/app/api/research-runs/[id]/request-reset/route";
 export const SOURCE_REQUESTS = "../../../src/lib/research/sources/source-requests";
-export const TAIL = ["ai_reviewer", "human_review", "export", "refresh_schedule"];
+// REQUEST_TAIL_STAGES: report_draft joined the tail in architecture-9 P4.
+export const TAIL = ["report_draft", "ai_reviewer", "human_review", "export", "refresh_schedule"];
 
 export function loadEnv() {
   process.env.RESEARCH_MODEL_PROVIDER = "mock";
@@ -105,7 +106,14 @@ export async function stageStatuses(sql: postgres.Sql, runId: string): Promise<R
 
 export async function runState(sql: postgres.Sql, runId: string) {
   const [row] = await sql`SELECT status, metadata_json FROM research_runs WHERE id = ${runId}`;
-  return { status: String(row.status), metadata: (row.metadata_json || {}) as Record<string, any> };
+  // Re-run state lives in research_run_resets (architecture-9 P3): the pending approval and the automatic re-run.
+  const [pending] = await sql`SELECT stages, request_ids, estimated_cost_usd FROM research_run_resets
+    WHERE research_run_id = ${runId} AND status = 'pending'`;
+  const [auto] = await sql`SELECT stages, request_ids, round FROM research_run_resets WHERE research_run_id = ${runId} AND kind = 'auto'`;
+  return { status: String(row.status), metadata: (row.metadata_json || {}) as Record<string, any>,
+    requestReset: pending ? { stages: pending.stages as string[], request_ids: pending.request_ids as string[],
+      estimated_cost_usd: Number(pending.estimated_cost_usd) } : null,
+    autoReset: (auto ?? null) as Record<string, any> | null };
 }
 
 export async function drain(sql: postgres.Sql, run: Run, rounds = 5) {
@@ -126,7 +134,7 @@ export async function seedCost(sql: postgres.Sql, runId: string, stageKey: strin
 /** Simulate the worker finishing the reopened stages: they complete and the report stage runs again. */
 export async function finishReopenedStages(sql: postgres.Sql, runId: string) {
   await sql`UPDATE research_stages SET status = 'completed', completed_at = NOW()
-    WHERE research_run_id = ${runId} AND status = 'pending' AND stage_key != ALL(${TAIL}::text[])`;
+    WHERE research_run_id = ${runId} AND status = 'pending' AND stage_key != ALL(${TAIL.slice(1)}::text[])`;  // report_draft finishes too
   await sql`UPDATE research_stages SET status = 'running', started_at = NOW() WHERE research_run_id = ${runId} AND stage_key = 'ai_reviewer'`;
 }
 

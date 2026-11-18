@@ -2,7 +2,7 @@ import { z } from "zod/v4";
 import { callResearchAgent, exactJsonPrompt, type ResearchRunContext, type Sql } from "./run-context";
 import { outputContract, type ReportOutline } from "./reporting/contracts";
 import { loadReportInputs, saveReportArtifact } from "./reporting/store";
-import { TEAM_ROLES, BRIEF_ROLES, GAP_OWNER_STAGES, STAGE_DEPENDENCIES, STAGE_OWNERS, dependentStages } from "./team-plan";
+import { TEAM_ROLES, BRIEF_ROLES, GAP_OWNER_STAGES, STAGE_DEPENDENCIES, STAGE_OWNERS, dependentStages, stageNeedsBriefs } from "./team-plan";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { SOURCE_ROLES } from "./sources/roles";
 import { getStageOutputContract } from "./stage-contracts";
@@ -62,7 +62,9 @@ const ANSWER_CONTRACT = { ...outputContract({ status: z.enum(["answered", "unava
   evidence_ids: z.array(z.string()), artifact_ids: z.array(z.string()), source_ids: z.array(z.string()).optional(), requires_rerun: z.boolean().optional() }),
   requiredKeys: ["status", "answer", "evidence_ids", "artifact_ids"] };
 /** Stages after the analysis: a re-run reopens them but does not wait for them. */
-export const REQUEST_TAIL_STAGES = ["ai_reviewer", "human_review", "export", "refresh_schedule"];
+export const REQUEST_TAIL_STAGES = ["report_draft", "ai_reviewer", "human_review", "export", "refresh_schedule"];
+/** The two report stages; a request round pauses whichever of them is running. */
+export const REPORT_STAGES = ["report_draft", "ai_reviewer"];
 export class ResearchRequestsPending extends Error {
   constructor() { super("Specialists are investigating report requests"); }
 }
@@ -109,8 +111,9 @@ export async function prepareResearchTeam(sql: Sql, ctx: ResearchRunContext) {
 
 /**
  * Only briefed roles read the briefs, so ingestion and evidence extraction (data-owned) run while they
- * are written; the first stage whose owner is briefed waits, and a brief failure surfaces then or at
- * the next pass. drain() waits for brief calls still in flight, so the run lock outlives them.
+ * are written, and so do the price-only backtests (`BRIEF_FREE_STAGES`); the first other stage whose owner
+ * is briefed waits, and a brief failure surfaces then or at the next pass. drain() waits for brief calls
+ * still in flight, so the run lock outlives them.
  */
 export function teamBriefScheduler(prepare: (ctx: ResearchRunContext) => Promise<void>) {
   type Pending = { settled: boolean; failure?: { error: unknown }; done: Promise<void> };
@@ -130,7 +133,7 @@ export function teamBriefScheduler(prepare: (ctx: ResearchRunContext) => Promise
           .finally(() => { entry.settled = true; });
         pending = entry;
       }
-      if (stages.some(key => { const role = STAGE_OWNERS[key]; return role !== undefined && BRIEF_ROLES.includes(role); })) await collect();
+      if (stages.some(stageNeedsBriefs)) await collect();
     },
     async drain() {
       await pending?.done;
@@ -196,7 +199,12 @@ export function reworkRequests(findings: Record<string, any>[]): (Request & Pick
  * The report owner decides what is missing, using the complete current input snapshot. The post-review phase also
  * turns analysis_rework findings into rerun requests for their owning stages.
  */
-export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, findings: Record<string, any>[] = [], phase: RequestPhase = "pre_draft") {
+/**
+ * `stageKey` is the report stage making the call: pre-draft rounds run in report_draft, the post-review round and
+ * the repair re-plan in ai_reviewer. It records the call under that stage and picks its model; the prompt is the same.
+ */
+export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, findings: Record<string, any>[] = [], phase: RequestPhase = "pre_draft",
+  stageKey: string = phase === "post_review" ? "ai_reviewer" : "report_draft") {
   const previous = await getTeamRequests(sql, ctx.runId);
   if (previous && previous.state !== "answered") throw new ResearchRequestsPending();
   // Persisted limit survives worker restarts. Unavailable material answers stay blocked.
@@ -204,7 +212,7 @@ export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, 
   const inputs = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
   const packet = { asset: { name: ctx.assetName, symbol: ctx.symbol }, ...inputs, previous_requests: previous?.requests || [],
     findings, role: "report", output_contract: "team_requests" };
-  const result = await callResearchAgent<{ requests: Request[] }>({ sql, ctx, stageKey: "ai_reviewer",
+  const result = await callResearchAgent<{ requests: Request[] }>({ sql, ctx, stageKey,
     taskKey: `team:requests:${previous?.round || 0}`, taskType: "team_requests", agentName: "export-writer", modelTier: "cheap",
     packet, outputFormat: REQUEST_CONTRACT, promptFactory: p => exactJsonPrompt({ agentName: "export-writer",
       requiredKeys: ["requests"], packet: p, extraRules: [TEAM_ROLES.report.purpose,
@@ -345,7 +353,7 @@ export async function rerunRequestStages(tx: Sql, runId: string, batch: RequestB
     "report_outline", "report_section", "report_document", "report_review", "question_register"];
   if (affected.includes("historical_record")) types.push("historical_record", "financial_statement_set", "market_price_history", "financial_analytics", "financial_statement_summary", "peer_benchmark", "demand_backdrop");
   await tx`UPDATE research_stages SET status = 'pending', started_at = NULL, completed_at = NULL,
-    validation_result_json = NULL, failure_reason = NULL, updated_at = NOW()
+    validation_result_json = NULL, transient_failures = 0, last_transient_error = NULL, failure_reason = NULL, updated_at = NOW()
     WHERE research_run_id = ${runId} AND stage_key = ANY(${affected}::text[]) AND status != 'skipped'`;
   await tx`UPDATE research_tasks SET validation_status = 'invalid', updated_at = NOW()
     WHERE research_run_id = ${runId} AND stage_id IN
@@ -549,9 +557,10 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
   }
 
   const stages = await sql`SELECT stage_key, status FROM research_stages WHERE research_run_id = ${ctx.runId}`;
-  const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}`;
+  // The run's one automatic re-run is used once it has an auto row.
+  const [auto] = await sql`SELECT 1 FROM research_run_resets WHERE research_run_id = ${ctx.runId} AND kind = 'auto' LIMIT 1`;
   const plan = requestResetPlan(batch.requests, stages.map(s => ({ stage_key: String(s.stage_key), status: String(s.status) })),
-    { autoResetUsed: Boolean(run?.metadata_json?.request_auto_reset) });
+    { autoResetUsed: Boolean(auto) });
   if (plan.mode === "none") {
     const { rerun_stages: _, ...rest } = batch;
     batch = { ...rest, state: "answered" };
@@ -567,19 +576,21 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
       await rerunRequestStages(tx as unknown as Sql, ctx.runId, final, record,
         `Superseded: its owning stage was reopened by team request round ${final.round}.`);
       // Only automatic resets use up the run's one automatic re-run.
-      await tx`UPDATE research_runs SET metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
-        || ${tx.json({ request_auto_reset: { ...record, round: final.round, at: new Date().toISOString() } })}, updated_at = NOW() WHERE id = ${ctx.runId}`;
+      await tx`INSERT INTO research_run_resets (research_run_id, kind, status, stages, request_ids, round)
+        VALUES (${ctx.runId}, 'auto', 'applied', ${record.stages}::text[], ${record.request_ids}::text[], ${final.round ?? null})`;
+      await tx`UPDATE research_runs SET updated_at = NOW() WHERE id = ${ctx.runId}`;
       return;
     }
     const [{ cost }] = await tx`SELECT COALESCE(SUM(m.cost_usd), 0) AS cost FROM model_call_logs m
       JOIN research_stages s ON s.id = m.stage_id WHERE m.research_run_id = ${ctx.runId} AND s.stage_key = ANY(${plan.stages}::text[])`;
     const { rerun_stages: _, ...rest } = final;
     await writeTeamRequests(tx as unknown as Sql, ctx.runId, { ...rest, state: "processing" });
+    // The report stage that raised the round waits with the run.
     await tx`UPDATE research_stages SET status = 'waiting_for_human', updated_at = NOW()
-      WHERE research_run_id = ${ctx.runId} AND stage_key = 'ai_reviewer'`;
-    await tx`UPDATE research_runs SET status = 'waiting_for_human',
-      metadata_json = (CASE WHEN jsonb_typeof(metadata_json) = 'object' THEN metadata_json ELSE '{}'::jsonb END)
-        || ${tx.json({ request_reset: { ...record, estimated_cost_usd: Number(cost) } })}, updated_at = NOW() WHERE id = ${ctx.runId}`;
+      WHERE research_run_id = ${ctx.runId} AND stage_key = ANY(${REPORT_STAGES}::text[]) AND status = 'running'`;
+    await tx`INSERT INTO research_run_resets (research_run_id, kind, status, stages, request_ids, estimated_cost_usd)
+      VALUES (${ctx.runId}, 'approval', 'pending', ${record.stages}::text[], ${record.request_ids}::text[], ${Number(cost)})`;
+    await tx`UPDATE research_runs SET status = 'waiting_for_human', updated_at = NOW() WHERE id = ${ctx.runId}`;
   });
   return true;
 }

@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, normalize, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import postgres from "postgres";
+import { pipelineSql } from "@/db/pipeline-sql";
 import { z } from "zod";
 import { generateBacktestCode } from "./backtest-coder";
 import { recordModelCall } from "@/lib/agents/model-calls";
@@ -132,19 +133,15 @@ async function insertArtifacts(
 }
 
 async function markBacktestFailed(backtestRunId: string, message: string) {
-  const sql = postgres(process.env.DATABASE_URL!);
-  try {
-    await sql`
-      UPDATE backtest_runs
-      SET status = 'failed',
-          error_message = ${message},
-          completed_at = NOW(),
-          updated_at = NOW()
-      WHERE id = ${backtestRunId}
-    `;
-  } finally {
-    await sql.end();
-  }
+  const sql = pipelineSql();
+  await sql`
+    UPDATE backtest_runs
+    SET status = 'failed',
+        error_message = ${message},
+        completed_at = NOW(),
+        updated_at = NOW()
+    WHERE id = ${backtestRunId}
+  `;
 }
 
 export async function executeBacktestTask(task: ResearchTask): Promise<void> {
@@ -153,7 +150,7 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
     throw new Error(`No backtest_run found for task ${task.id}`);
   }
 
-  const sql = postgres(process.env.DATABASE_URL!);
+  const sql = pipelineSql();
   const artifactDir = join(
     process.cwd(),
     "storage",
@@ -370,7 +367,5 @@ export async function executeBacktestTask(task: ResearchTask): Promise<void> {
     await markBacktestFailed(backtest.id, message);
     await failTask(task.id, message);
     throw error;
-  } finally {
-    await sql.end();
   }
 }

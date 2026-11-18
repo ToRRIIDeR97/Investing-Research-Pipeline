@@ -13,8 +13,8 @@ receive its doctrine through the existing model harness. The latest publicly
 reported fiscal periods at the source cutoff define history availability; missing
 periods and inappropriate metrics must be explained, not synthesized as facts.
 
-The existing `ai_reviewer` stage now plans the report, records material questions,
-writes individual sections, and reviews the completed document against the full
+The `report_draft` stage plans the report, records material questions and
+writes individual sections, and `ai_reviewer` reviews the completed document against the full
 analytical artifacts and source passages. The writer selects company-specific
 headings and may add sections. Body sections are written up to four at a time
 (`RESEARCH_AGENT_CONCURRENCY`); the executive judgment is written after the body.

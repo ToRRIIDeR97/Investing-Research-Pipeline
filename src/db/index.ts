@@ -12,8 +12,9 @@ const globalForDb = globalThis as typeof globalThis & {
   researchSqlClient?: ReturnType<typeof postgres>;
 };
 const client = globalForDb.researchDbClient ?? postgres(connectionString);
-// A long-lived pool for raw queries on hot API paths. Scripts and the worker keep their own clients. It is separate
-// from drizzle's pool because drizzle makes its client return timestamps as raw Postgres text instead of Dates.
+// A long-lived pool for raw queries on hot API paths; pipeline and queue code use the idle-timeout pools in
+// pipeline-sql.ts. It is separate from drizzle's pool because drizzle makes its client return timestamps as raw
+// Postgres text instead of Dates.
 const rawClient = globalForDb.researchSqlClient ?? postgres(connectionString);
 if (process.env.NODE_ENV !== "production") {
   globalForDb.researchDbClient = client;

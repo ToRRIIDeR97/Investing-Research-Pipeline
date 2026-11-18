@@ -24,7 +24,7 @@ export const createAssetSchema = z.object({
   description: z.string().max(5000).optional(),
 });
 
-// valuation_refresh and source_update are no longer created: they ran all 24 stages on lower evidence targets.
+// valuation_refresh and source_update are no longer created: they ran every stage on lower evidence targets.
 // A refresh is a new run of the original type linked through prior_run_id. Historical rows stay readable.
 export const createResearchRunSchema = z.object({
   run_type: z.enum([

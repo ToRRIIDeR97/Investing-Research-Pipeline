@@ -34,8 +34,18 @@ export const STAGE_OWNERS: Record<string, TeamRole> = {
   business_process_analysis: "business", moat_analysis: "business", operating_model: "business",
   operating_scenarios: "business", asset_valuation: "valuation", indicator_design: "business",
   strategy_design: "business", backtest_execution: "business", backtest_review: "business",
-  decision_synthesis: "report", ai_reviewer: "report", export: "report",
+  decision_synthesis: "report", report_draft: "report", ai_reviewer: "report", export: "report",
 };
+/**
+ * Owned stages whose handlers never read a specialist brief: the deterministic, price-only backtests. They start
+ * without waiting for the briefs; every other stage of a briefed role waits for them.
+ */
+export const BRIEF_FREE_STAGES: ReadonlySet<string> = new Set(["indicator_design", "strategy_design", "backtest_execution", "backtest_review"]);
+/** True when a stage must wait for the specialist briefs before it runs. */
+export function stageNeedsBriefs(stageKey: string): boolean {
+  const role = STAGE_OWNERS[stageKey];
+  return role !== undefined && BRIEF_ROLES.includes(role) && !BRIEF_FREE_STAGES.has(stageKey);
+}
 
 // Dependencies describe actual inputs. Stage order remains the display order.
 export const STAGE_DEPENDENCIES: Record<string, string[]> = {
@@ -47,9 +57,12 @@ export const STAGE_DEPENDENCIES: Record<string, string[]> = {
   historical_diagnosis: ["historical_record"], business_process_analysis: ["company_genesis", "historical_diagnosis"],
   moat_analysis: ["business_process_analysis"], operating_model: ["historical_diagnosis", "moat_analysis"],
   operating_scenarios: ["operating_model"], asset_valuation: ["operating_scenarios"],
-  indicator_design: ["asset_valuation"], strategy_design: ["indicator_design"],
+  // The backtests read only the approved plan and price history, so they run beside the
+  // analysis branch. The decision joins both branches.
+  indicator_design: ["research_plan"], strategy_design: ["indicator_design"],
   backtest_execution: ["strategy_design"], backtest_review: ["backtest_execution"],
-  decision_synthesis: ["asset_valuation", "backtest_review"], ai_reviewer: ["decision_synthesis"],
+  // The report is drafted in its own stage and reviewed (and repaired) in the next.
+  decision_synthesis: ["asset_valuation", "backtest_review"], report_draft: ["decision_synthesis"], ai_reviewer: ["report_draft"],
   human_review: ["ai_reviewer"], export: ["human_review"], refresh_schedule: ["export"],
 };
 

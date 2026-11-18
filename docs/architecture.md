@@ -1,6 +1,6 @@
 # Research OS — master architecture views
 
-This document holds the master UML 2.5.1 views of the **current** system, traced from source on 2026-10-05 (pipeline version 3, 24 stages); research across runs added 2026-10-22.
+This document holds the master UML 2.5.1 views of the **current** system, traced from source on 2026-10-05 (pipeline version 3, 24 stages); research across runs added 2026-10-22; the report split into `report_draft` and `ai_reviewer` (25 stages) in architecture-9.
 
 - [system.md](system.md) owns component responsibilities, the specialist team and the research-memory narrative.
 - [security.md](security.md) owns trust boundaries.
@@ -40,7 +40,7 @@ Labels in the views: *unverified* means the relationship wasn't proven from sour
 
 Model calls have no tool execution. [local-agent-harness.md](local-agent-harness.md) covers the configuration.
 
-**Drill-down: stages** (`src/lib/workflow/stages.ts`; dependencies in `src/lib/research/team-plan.ts:41`). Run-type skips are set at creation through `skipForRunTypes`. Stages 16–19 are skipped for `quick_scan`. Stages 1–15, 20 and 24 are skipped for `backtest_only`.
+**Drill-down: stages** (`src/lib/workflow/stages.ts`; dependencies in `src/lib/research/team-plan.ts:41`). Run-type skips are set at creation through `skipForRunTypes`. Stages 16–19 are skipped for `quick_scan`. Stages 1–15 and 20–25 are skipped for `backtest_only`. The numbers are display order, not a chain: after the plan gate two branches run side by side, the analysis (5–15) and the price-only backtests (16–19, which depend only on `research_plan`), and `decision_synthesis` (20) joins them. A valuation re-run therefore doesn't reopen the backtests.
 
 | # | Stage | failureState | Retries | # | Stage | failureState | Retries |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -52,10 +52,13 @@ Model calls have no tool execution. [local-agent-harness.md](local-agent-harness
 | 6 | source_ingestion | skip_and_continue | 3 | 18 | backtest_execution | fail_run | 1 |
 | 7 | evidence_extraction | fail_run | 2 | 19 | backtest_review | fail_run | 1 |
 | 8 | historical_record | fail_run | 2 | 20 | decision_synthesis | skip_and_continue | 2 |
-| 9 | company_genesis | skip_and_continue | 2 | 21 | ai_reviewer | fail_run | 1 |
-| 10 | historical_diagnosis | skip_and_continue | 2 | 22 | human_review **(gate)** | pause_for_human | 0 |
-| 11 | business_process_analysis | skip_and_continue | 2 | 23 | export | skip_and_continue | 2 |
-| 12 | moat_analysis | skip_and_continue | 2 | 24 | refresh_schedule | skip_and_continue | 1 |
+| 9 | company_genesis | skip_and_continue | 2 | 21 | report_draft | fail_run | 2 |
+| 10 | historical_diagnosis | skip_and_continue | 2 | 22 | ai_reviewer (Report Review) | fail_run | 1 |
+| 11 | business_process_analysis | skip_and_continue | 2 | 23 | human_review **(gate)** | pause_for_human | 0 |
+| 12 | moat_analysis | skip_and_continue | 2 | 24 | export | skip_and_continue | 2 |
+|  |  |  |  | 25 | refresh_schedule | skip_and_continue | 1 |
+
+The report runs in two stages: `report_draft` writes the outline, sections and first `report_document`; `ai_reviewer` rebuilds that draft from its artifacts, reviews it and runs the post-review rework and one repair round ([system.md](system.md#report-review-depth-checks-and-rework)).
 
 Handlers are registered in the `STAGE_HANDLERS` map (`src/lib/research/handlers/index.ts`).
 
@@ -85,7 +88,7 @@ Schema modules (`src/db/schema/`) and their key tables:
 | --- | --- |
 | core | assets, instruments, listings, entities |
 | profiles | research_profiles, profile_module_schemas, asset_profile_assignments |
-| workflow | runs (with `prior_run_id`, the run it builds on), stages, tasks, task dependencies, validation results |
+| workflow | runs (with `prior_run_id`, the run it builds on), stages (with `transient_failures`), tasks, task dependencies, validation results, `research_run_resets` (team-request re-runs: automatic, or awaiting and decided by a reviewer), `research_plan_feedback` (plan-gate notes) |
 | research-run-jobs | jobs, worker heartbeats |
 | corpus | source documents, parses, chunks, `document_embeddings`, tables, locations |
 | source-intelligence | source_retrieval_attempts, source_role_coverage, source_role_assignments, source_document_metadata |
@@ -101,7 +104,7 @@ Schema modules (`src/db/schema/`) and their key tables:
 | saved-charts | saved_charts (My charts board definitions; series keys, never values) |
 | monitoring | asset_monitor_checks (monitor-check results: refresh due, reasons, filings, KPI scores) |
 
-Migrations are `0000`–`0006`, `0009_research_memory_graph`, which adds provenance and review fields plus a uniqueness constraint to `claim_relationships`, `0010_price_history_verification`, which adds the cross-check columns to `market_price_bars`, `0011_saved_charts`, which adds the `saved_charts` table, `0012_task_budget_reservation`, which adds `research_tasks.budget_reservation_usd` for in-flight budget reservations, `0013_research_memory_search`, which adds `document_chunks.search_tsv` (research-memory passages only, backfilled) with a partial GIN index, `0014_performance_indexes`, which indexes `document_chunks.source_document_id`, `evidence_claims (research_run_id, review_status)`, `evidence_links.evidence_claim_id` and `source_locations`' chunk and document columns, and `0015_valuation_v2`, which adds `research_runs.forecast_years` (3-10, set at the plan gate) and `instruments.depositary_ratio`, and `0016_research_lineage_monitoring`, which adds `research_runs.prior_run_id` (self-reference, set null on delete) and the `asset_monitor_checks` table.
+Migrations are `0000`–`0006`, `0009_research_memory_graph`, which adds provenance and review fields plus a uniqueness constraint to `claim_relationships`, `0010_price_history_verification`, which adds the cross-check columns to `market_price_bars`, `0011_saved_charts`, which adds the `saved_charts` table, `0012_task_budget_reservation`, which adds `research_tasks.budget_reservation_usd` for in-flight budget reservations, `0013_research_memory_search`, which adds `document_chunks.search_tsv` (research-memory passages only, backfilled) with a partial GIN index, `0014_performance_indexes`, which indexes `document_chunks.source_document_id`, `evidence_claims (research_run_id, review_status)`, `evidence_links.evidence_claim_id` and `source_locations`' chunk and document columns, and `0015_valuation_v2`, which adds `research_runs.forecast_years` (3-10, set at the plan gate) and `instruments.depositary_ratio`, and `0016_research_lineage_monitoring`, which adds `research_runs.prior_run_id` (self-reference, set null on delete) and the `asset_monitor_checks` table, and `0017_run_control_state`, which adds `research_run_resets`, `research_plan_feedback` and `research_stages.transient_failures`/`last_transient_error`, backfilled re-runnably from the old `metadata_json` and `validation_result_json` keys. `0018_report_draft_stage` inserts `report_draft` at order 21 in every run with the 24-stage tail and moves `ai_reviewer` through `refresh_schedule` to 22-25 (completed or skipped with `ai_reviewer`, otherwise pending), re-runnably.
 
 Artifact statuses are listed in `src/lib/research/artifacts/contracts.ts`; the lifecycle is in the [state machine view](#5-behavioral--state-machine). Each run keeps one current version per artifact type and scope.
 
@@ -133,11 +136,11 @@ Guards:
 - `cancelRun` moves a run, its open stages and its active job to a terminal state from any status but `completed`; `failRun` doesn't overwrite it.
 - Each worker poll queues a job for a `running` run that had a job before and has had no job activity for 60 s (`reconcileOrphanedResearchRuns`).
 - Gate approvals and the re-run decision take `FOR UPDATE` locks (`orchestrator.ts:409`, `467`, `538`, `583`).
-- Artifacts: every artifact save takes a lock on its run, type and scope (the run row in `saveReportArtifact`, an advisory lock in `upsertArtifact`). Changed content or status inserts version n+1 and supersedes the earlier rows, and unchanged content keeps the current row. A failed stage validation moves the stage's `validated` artifacts to `needs_more_work`. `acceptCurrentArtifacts` (`reporting/store.ts`) moves the latest `validated` version to `accepted` inside the gate transaction: plan approval accepts `research_plan`, and stage-22 approval accepts every current artifact, which covers the approved report and its inputs. Later saves of an accepted artifact create a `validated` successor. Readers take `status IN ('validated', 'accepted')`, or `<> 'superseded'` in the read model.
-- `retryCount` and `transient_failures` (stage reruns after transient model failures) live in `validation_result_json`; both are bounded by the stage's `max_retries`.
+- Artifacts: every artifact save takes a lock on its run, type and scope (the run row in `saveReportArtifact`, an advisory lock in `upsertArtifact`). Changed content or status inserts version n+1 and supersedes the earlier rows, and unchanged content keeps the current row. A failed stage validation moves the stage's `validated` artifacts to `needs_more_work`. `acceptCurrentArtifacts` (`reporting/store.ts`) moves the latest `validated` version to `accepted` inside the gate transaction: plan approval accepts `research_plan`, and stage-23 approval accepts every current artifact, which covers the approved report and its inputs. Later saves of an accepted artifact create a `validated` successor. Readers take `status IN ('validated', 'accepted')`, or `<> 'superseded'` in the read model.
+- `retryCount` lives in `validation_result_json` and the transient-failure count in `research_stages.transient_failures`; both are bounded by the stage's `max_retries`.
 - The runner advances each stage as it settles and claims newly ready stages while others are in flight (`startReadyStages` filters out human_review). After any rejection, pause, skip or source/team request it launches nothing more until in-flight stages drain, so failures, requests and gates are still handled with nothing in flight.
 - `resumeResearchRun` restarts at the first failed stage when a run is enqueued. Stages left `running` or `waiting_for_human` on a stopped run are failed first. A gate left `waiting_for_human`, or `human_review` in any state, is restored as `waiting_for_human` with the run instead. The runner stops a `running` run with no dispatchable stage as `needs_more_work`. `failRun`, `pauseForHumanReview` and the gate branch of `startNextStage` are single transactions.
-- An arriving team request reopens nothing (`team.ts:processResearchRequests`). Only an owner's `requires_rerun` answer, or a review's `analysis_rework` finding (one rework request per named stage, after the first review), reopens its stage and dependents (`requestResetPlan`): automatically once per run when at most `RESEARCH_MAX_AUTO_RESET_STAGES` (default 6) analysis stages reopen; otherwise the run and the `ai_reviewer` stage become `waiting_for_human` with `metadata_json.request_reset` until `approveRequestReset` records `rerun` or `skip`. That decision is refused unless the run is paused on the re-run and while the plan or final-review gate waits.
+- An arriving team request reopens nothing (`team.ts:processResearchRequests`). Only an owner's `requires_rerun` answer, or a review's `analysis_rework` finding (one rework request per named stage, after the first review), reopens its stage and dependents (`requestResetPlan`): automatically once per run when at most `RESEARCH_MAX_AUTO_RESET_STAGES` (default 6) analysis stages reopen; otherwise the run and the report stage that raised the round (`report_draft` or `ai_reviewer`) become `waiting_for_human` with a pending `research_run_resets` row (one per run at most) until `approveRequestReset` locks it and sets it `applied` or `skipped`. That decision is refused unless the run is paused on the re-run and while the plan or final-review gate waits.
 
 ## 6. Interaction — Sequence
 
@@ -165,14 +168,14 @@ Report requests (two rounds before drafting, one after the first review) are ans
 | Research framing and plan gate | Activity, State, Sequence | `framing.ts` (`ResearchFraming`, `classificationArchetypes`, `checkGateEdits`, `FRAMING_RULE`), `handlers/research-plan.ts` (`draftFraming`, `buildResearchPlan`), `handlers/archetype-composition.ts`, `orchestrator.ts` (`approveResearchPlan`, `applyPlanGateEdits`, `requestResearchPlanChanges`), `run-context.ts` (`researchFraming` injection), `src/app/api/research-runs/[id]/approve-plan/route.ts`, `request-plan-changes/route.ts`, `src/components/framing-editor.tsx` |
 | Peer and demand benchmarks | Component, Activity, Trust | `sources/peers.ts` (`resolvePeers`, `buildPeerBenchmark`), `sources/demand.ts` (`buildDemandBackdrop`), `handlers/historical-record.ts:saveExternalBenchmarks`, `run-context.ts` (`BENCHMARK_INJECTIONS`) |
 | Reporting and export | Component | `src/lib/research/reporting/**`, `src/lib/export/**` |
-| Report review gate: depth checks, verdicts, rework | Activity, State, Sequence | `reporting/depth.ts` (`DEPTH_CHECKS`, `deriveReview`, `valuationFlags`, `reviewGate`), `reporting/compose.ts` (`composeReviewedReport`, `reconcileCoverage`), `reporting/runtime.ts` (`CONCLUSION_CONTRACT`, `rework`), `team.ts` (`reworkRequests`, `reworkAnswer`, `preDraftRequests`, `postReviewAnswers`), `src/app/api/research-runs/[id]/review/route.ts`, `src/components/review-findings.tsx` |
-| Research scoring (eval harness) | Activity | `evals/eval-set.json`, `scripts/score-research.ts`, `scripts/judge-research.ts`, `src/lib/research/scoring/**` |
+| Report review gate: depth checks, verdicts, rework | Activity, State, Sequence | `reporting/depth.ts` (`DEPTH_CHECKS`, `deriveReview`, `valuationFlags`, `reviewGate`), `reporting/compose.ts` (`composeDraft`, `reviewDraftedReport`, `draftDocument`, `reconcileCoverage`), `reporting/runtime.ts` (`draftReport`, `reviewReport`, `CONCLUSION_CONTRACT`, `rework`), `handlers/report-draft.ts`, `team.ts` (`reworkRequests`, `reworkAnswer`, `preDraftRequests`, `postReviewAnswers`), `src/app/api/research-runs/[id]/review/route.ts`, `src/components/review-findings.tsx` |
+| Research scoring (eval harness) | Activity | `evals/eval-set.json`, `scripts/score-research.ts`, `scripts/judge-research.ts`, `src/lib/research/scoring/**` (`trend.ts`: `parseScores`, `scoreTrend` for `--check`; `command.ts`: `parseScoreArgs`) |
 | Artifact lifecycle | Class, State | `artifacts/repository.ts:upsertArtifact`, `reporting/store.ts:saveReportArtifact`, `acceptCurrentArtifacts`, `orchestrator.ts:approveResearchPlan`, `approveHumanReview` |
 | Foreign private issuers | Activity, Trust | `history/press-release.ts` (`scanTables`, `extractReleaseStatements`, `isResultsRelease`, `depositaryRatioFromText`), `history/filing-store.ts` (`captureReleaseStatements`, `quarterCoverage`), `sources/corpus.ts` (`isResultsCover`, `foreignResultsPayloads`, `fxSourcePayload`), `history/sec-companyfacts.ts` (`dominantCurrency`, `reportingTaxonomy`), `valuation/engine.ts:equityBridge` (IFRS 16), `scripts/fpi-capture-demo.ts`, `tests/fixtures/jd/` |
 | Financial analytics pack | Activity | `history/analytics.ts` (`buildFinancialAnalytics`, `analyticsDigest`, `analyticsMetrics`), `history/statement-summary.ts`, `handlers/historical-record.ts`, `run-context.ts:prepareResearchCall`, `reporting/facts.ts:buildReportFacts`, `reporting/runtime.ts:splitReportArtifacts`, `reporting/packet.ts`, `decision/monitoring-levels.ts`, `scripts/report-packet-size.ts` |
 | Valuation engine | Activity | `handlers/asset-valuation.ts`, `valuation/engine.ts`, `valuation/v2.ts`, `valuation/cost-of-capital.ts`, `handlers/operating-scenarios.ts`, `scripts/valuation-whatif.ts` |
 | Financials view: metric catalogue, statement charts, My charts | Component, Class | `src/components/financial-statements.tsx`, `src/components/financials/**`, `reporting/metric-catalogue.ts`, `reporting/chart-series.ts`, `reporting/saved-charts.ts`, `src/app/api/saved-charts/**` |
-| Postgres | Component, Deployment, Class | `src/db/schema/**`, `src/db/schemas.ts`, `drizzle/`, `docker-compose.yml` |
+| Postgres | Component, Deployment, Class | `src/db/schema/**`, `src/db/schemas.ts`, `drizzle/`, `docker-compose.yml`; connections: `src/db/pipeline-sql.ts` (`pipelineSql`, `pipelineDb`, shared by pipeline, queue, worker and API code), `src/db/index.ts` (`db`, `sqlClient`), and the runner's run-lock client |
 | `./storage` | Component, Deployment, Trust | `storage/` (gitignored); opt-in cleanup `scripts/storage-gc.ts`, `src/lib/maintenance/storage-gc.ts` ([operations](operations.md#storage-cleanup)) |
 | Research store sync | Deployment, Trust | `scripts/research-store.ts`, `src/lib/maintenance/research-store.ts` (`exportStore`, `importStore`, `decideRow`, file guards `mirrorFiles` and `importFiles`), branch `research-store` checked out at `./research-store/` (gitignored) ([operations](operations.md#sync-research-between-machines)) |
 | Child processes | Component, Deployment, Trust | `python/**`, `repair/sandbox.ts` |

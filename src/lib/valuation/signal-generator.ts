@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { pipelineSql } from "@/db/pipeline-sql";
 
 // ============================================================
 // Valuation Signal Generator — §8, §27.10
@@ -19,54 +20,50 @@ interface SignalInput {
 export async function generateValuationSignals(
   input: SignalInput
 ): Promise<{ signalCount: number; signals: Record<string, unknown>[] }> {
-  const sql = postgres(process.env.DATABASE_URL!);
+  const sql = pipelineSql();
 
-  try {
-    // Get valuation methods applicable to this profile
-    const methods = await sql`
-      SELECT * FROM valuation_methods
-      WHERE ${input.profileKey} = ANY(applicable_profile_keys)
-    `;
+  // Get valuation methods applicable to this profile
+  const methods = await sql`
+    SELECT * FROM valuation_methods
+    WHERE ${input.profileKey} = ANY(applicable_profile_keys)
+  `;
 
-    // Get metric observations for this asset/run
-    const observations = await sql`
-      SELECT mo.*, md.metric_key, md.display_name, md.metric_category
-      FROM metric_observations mo
-      JOIN metric_definitions md ON mo.metric_definition_id = md.id
-      WHERE mo.asset_id = ${input.assetId}
-        AND mo.research_run_id = ${input.runId}
-        AND mo.review_status != 'rejected'
-    `;
+  // Get metric observations for this asset/run
+  const observations = await sql`
+    SELECT mo.*, md.metric_key, md.display_name, md.metric_category
+    FROM metric_observations mo
+    JOIN metric_definitions md ON mo.metric_definition_id = md.id
+    WHERE mo.asset_id = ${input.assetId}
+      AND mo.research_run_id = ${input.runId}
+      AND mo.review_status != 'rejected'
+  `;
 
-    const signals: Record<string, unknown>[] = [];
+  const signals: Record<string, unknown>[] = [];
 
-    // Generate signals based on profile type
-    switch (input.profileKey) {
-      case "operating_company":
-        signals.push(
-          ...(await generateOperatingCompanySignals(sql, input, observations, methods))
-        );
-        break;
-      case "bitcoin":
-        signals.push(
-          ...(await generateBitcoinSignals(sql, input, observations, methods))
-        );
-        break;
-      case "financials":
-        signals.push(
-          ...(await generateFinancialsSignals(sql, input, observations, methods))
-        );
-        break;
-      default:
-        signals.push(
-          ...(await generateGenericSignals(sql, input, observations, methods))
-        );
-    }
-
-    return { signalCount: signals.length, signals };
-  } finally {
-    await sql.end();
+  // Generate signals based on profile type
+  switch (input.profileKey) {
+    case "operating_company":
+      signals.push(
+        ...(await generateOperatingCompanySignals(sql, input, observations, methods))
+      );
+      break;
+    case "bitcoin":
+      signals.push(
+        ...(await generateBitcoinSignals(sql, input, observations, methods))
+      );
+      break;
+    case "financials":
+      signals.push(
+        ...(await generateFinancialsSignals(sql, input, observations, methods))
+      );
+      break;
+    default:
+      signals.push(
+        ...(await generateGenericSignals(sql, input, observations, methods))
+      );
   }
+
+  return { signalCount: signals.length, signals };
 }
 
 async function generateOperatingCompanySignals(

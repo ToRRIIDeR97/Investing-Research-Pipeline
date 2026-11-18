@@ -614,6 +614,7 @@ export async function callResearchAgent<T extends Record<string, unknown>>(input
               original_input_bytes: attempt.originalInputBytes,
               effort: execution.effort ?? null,
               model_source: execution.modelSource,
+              model_variable: execution.modelVariable ?? null,
               budget_reserve_usd: execution.reserveUsd,
             },
             responseMetadata: {

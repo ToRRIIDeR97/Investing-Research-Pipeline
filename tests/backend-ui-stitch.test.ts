@@ -15,13 +15,13 @@ describe("backend/UI stitching contracts", () => {
     assert.equal("pipeline_version" in parsed, false);
   });
 
-  it("initializes the complete ordered 24-stage ledger", () => {
+  it("initializes the complete ordered 25-stage ledger", () => {
     const { applicable, skipped } = getAllStagesForRun("deep_dive");
     const stages = [...applicable, ...skipped].sort((a, b) => a.order - b.order);
-    assert.equal(STAGE_CONFIGS.length, 24);
-    assert.equal(stages.length, 24);
-    assert.deepEqual(stages.map((stage) => stage.order), Array.from({ length: 24 }, (_, index) => index + 1));
-    assert.equal(new Set(stages.map((stage) => stage.key)).size, 24);
+    assert.equal(STAGE_CONFIGS.length, 25);
+    assert.equal(stages.length, 25);
+    assert.deepEqual(stages.map((stage) => stage.order), Array.from({ length: 25 }, (_, index) => index + 1));
+    assert.equal(new Set(stages.map((stage) => stage.key)).size, 25);
   });
 
   it("keeps quick-scan skips explicit in the stage ledger", () => {

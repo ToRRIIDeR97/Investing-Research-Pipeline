@@ -7,10 +7,12 @@ import {
   timestamp,
   jsonb,
   unique,
+  uniqueIndex,
   index,
+  check,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { assets } from "./core";
 import { research_profiles } from "./profiles";
 
@@ -63,6 +65,9 @@ export const research_stages = pgTable(
     completion_criteria_json: jsonb("completion_criteria_json").notNull().default({}),
     validator_config_json: jsonb("validator_config_json").notNull().default({}),
     validation_result_json: jsonb("validation_result_json"),
+    // Transient model failures retried while the stage runs (bounded by max_retries); reset with the stage.
+    transient_failures: integer("transient_failures").notNull().default(0),
+    last_transient_error: text("last_transient_error"),
     started_at: timestamp("started_at", { withTimezone: true }),
     completed_at: timestamp("completed_at", { withTimezone: true }),
     failure_reason: text("failure_reason"),
@@ -73,6 +78,50 @@ export const research_stages = pgTable(
     unique("research_stages_run_key_unique").on(table.research_run_id, table.stage_key),
     unique("research_stages_run_order_unique").on(table.research_run_id, table.stage_order),
   ]
+);
+
+// ============================================================
+// research_run_resets
+// Team-request re-runs: the run's one automatic re-run ('auto', applied when planned) and re-runs above the
+// automatic limit ('approval': pending until a reviewer applies or skips them). At most one pending row per run.
+// ============================================================
+export const research_run_resets = pgTable(
+  "research_run_resets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    research_run_id: uuid("research_run_id").notNull().references(() => research_runs.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    status: text("status").notNull(),
+    stages: text("stages").array().notNull().default([]),
+    request_ids: text("request_ids").array().notNull().default([]),
+    round: integer("round"),
+    estimated_cost_usd: numeric("estimated_cost_usd"),
+    decided_by: text("decided_by"),
+    decided_at: timestamp("decided_at", { withTimezone: true }),
+    created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("research_run_resets_run_idx").on(table.research_run_id, table.created_at),
+    uniqueIndex("research_run_resets_one_pending").on(table.research_run_id).where(sql`${table.status} = 'pending'`),
+    check("research_run_resets_kind_check", sql`${table.kind} IN ('auto', 'approval')`),
+    check("research_run_resets_status_check", sql`${table.status} IN ('pending', 'applied', 'skipped')`),
+  ]
+);
+
+// ============================================================
+// research_plan_feedback
+// Reviewer notes that sent the research plan back for a redraft, read in requested_at order.
+// ============================================================
+export const research_plan_feedback = pgTable(
+  "research_plan_feedback",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    research_run_id: uuid("research_run_id").notNull().references(() => research_runs.id, { onDelete: "cascade" }),
+    notes: text("notes").notNull(),
+    requested_by: text("requested_by").notNull(),
+    requested_at: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("research_plan_feedback_run_idx").on(table.research_run_id, table.requested_at)]
 );
 
 // ============================================================

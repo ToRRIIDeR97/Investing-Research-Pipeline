@@ -49,14 +49,19 @@ export async function GET(
       .where(eq(research_tasks.research_run_id, id))
       .orderBy(asc(research_tasks.created_at));
 
-    const [latestJob, workers, roleCoverage] = await Promise.all([
+    const [latestJob, workers, roleCoverage, [pendingReset]] = await Promise.all([
       getLatestResearchRunJob(id, sqlClient),
       getWorkerHealth(sqlClient),
       db.select().from(source_role_coverage).where(eq(source_role_coverage.research_run_id, id)),
+      // A team-request re-run waiting for the reviewer's decision (approveRequestReset).
+      sqlClient`SELECT stages, request_ids, estimated_cost_usd FROM research_run_resets
+        WHERE research_run_id = ${id} AND status = 'pending' LIMIT 1`,
     ]);
 
     return successResponse({
       ...run,
+      request_reset: pendingReset ? { stages: pendingReset.stages ?? [], request_ids: pendingReset.request_ids ?? [],
+        estimated_cost_usd: Number(pendingReset.estimated_cost_usd ?? 0) } : null,
       stages,
       tasks,
       latest_job: latestJob,

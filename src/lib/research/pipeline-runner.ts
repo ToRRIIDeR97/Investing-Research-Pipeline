@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { pipelineSql } from "@/db/pipeline-sql";
 import { advanceStage, startRun, startReadyStages, failRun, getRunProgress } from "@/lib/workflow/orchestrator";
 import type { ValidationResult } from "@/lib/workflow/validators";
 import { ResearchAgentRunError } from "@/lib/agent-harness/errors";
@@ -6,6 +7,7 @@ import { ModelBudgetExhausted } from "@/lib/agents/model-calls";
 import { loadRunContext, type Sql } from "./run-context";
 import { STAGE_HANDLERS } from "./handlers";
 import { CURRENT_PIPELINE_VERSION } from "./version";
+import { STAGE_CONFIGS } from "@/lib/workflow/stages";
 import { prepareResearchTeam, processResearchRequests, ResearchRequestsPending, teamBriefScheduler } from "./team";
 import { processSourceRequests } from "./sources/collector";
 import { SourceRequestsPending } from "./sources/source-requests";
@@ -19,6 +21,13 @@ export interface SystemPipelineResult {
   notes: string[];
   failure_reason?: string | null;
 }
+
+/**
+ * Scheduling passes one job may make: each claim of ready stages and each dataflow launch after a stage
+ * settles counts as one. A run that needs more is looping, and the runner fails it instead of spinning.
+ * The budget is eight passes per stage (200 for the 25 stages).
+ */
+export const MAX_SCHEDULING_PASSES = 8 * STAGE_CONFIGS.length;
 
 /** Another worker holds the run's session lock; the job should wait, not fail. */
 export class ResearchRunLocked extends Error {}
@@ -93,14 +102,12 @@ export async function settleBatch(
 async function retryTransientFailures(sql: Sql, runId: string, failures: StageFailure[], notes: string[], signal?: AbortSignal) {
   if (!failures.every((failure) => isTransientAgentError(failure.reason))) return false;
   const keys = failures.map((failure) => failure.stageKey);
-  const rows = await sql`SELECT stage_key, max_retries, COALESCE((validation_result_json->>'transient_failures')::int, 0) AS failures
+  const rows = await sql`SELECT stage_key, max_retries, transient_failures AS failures
     FROM research_stages WHERE research_run_id = ${runId} AND stage_key = ANY(${keys}::text[]) AND status = 'running'`;
   if (rows.length !== keys.length || rows.some((row) => Number(row.failures) >= Number(row.max_retries ?? 2))) return false;
   for (const failure of failures) {
     const message = (failure.reason instanceof Error ? failure.reason.message : String(failure.reason)).slice(0, 1000);
-    await sql`UPDATE research_stages SET validation_result_json = COALESCE(validation_result_json, '{}'::jsonb)
-        || jsonb_build_object('transient_failures', COALESCE((validation_result_json->>'transient_failures')::int, 0) + 1,
-          'last_transient_error', ${message}::text),
+    await sql`UPDATE research_stages SET transient_failures = transient_failures + 1, last_transient_error = ${message},
         updated_at = NOW()
       WHERE research_run_id = ${runId} AND stage_key = ${failure.stageKey}`;
     notes.push(`Stage ${failure.stageKey}: transient failure, retrying (${message})`);
@@ -115,9 +122,12 @@ async function retryTransientFailures(sql: Sql, runId: string, failures: StageFa
 /** Execute handlers; the workflow orchestrator owns every stage transition. */
 export async function runResearchPipeline(runId: string, options: { signal?: AbortSignal } = {}): Promise<SystemPipelineResult> {
   const { signal } = options;
-  const sql = postgres(process.env.DATABASE_URL!);
+  // The run lock is a session-level advisory lock, so it lives on a connection of its own for the whole job;
+  // every other query uses the shared pool.
+  const lockClient = postgres(process.env.DATABASE_URL!, { max: 1 });
+  const sql = pipelineSql();
   const notes: string[] = [];
-  const lease = await sql.reserve();
+  const lease = await lockClient.reserve();
   let locked = false;
   let interrupted = false;
   try {
@@ -138,7 +148,7 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
     const briefs = teamBriefScheduler(ctx => prepareResearchTeam(sql, ctx));
     try {
       if (run.status === "pending") await startRun(runId);
-      for (let iteration = 0; iteration < 192; iteration += 1) {
+      for (let iteration = 0; iteration < MAX_SCHEDULING_PASSES; iteration += 1) {
         if (signal?.aborted) throw new ResearchRunInterrupted("Research run interrupted");
         const [state] = await sql`SELECT status FROM research_runs WHERE id = ${runId}`;
         if (state.status !== "running") break;
@@ -196,7 +206,7 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
           if (hold || stop || signal?.aborted) continue;
           try {
             iteration += 1;
-            if (iteration >= 191) throw new Error("Pipeline exceeded 192 stage iterations");
+            if (iteration >= MAX_SCHEDULING_PASSES - 1) throw new Error(`Pipeline exceeded ${MAX_SCHEDULING_PASSES} stage iterations`);
             const next = (await startReadyStages(runId)).filter(stageKey => !inFlight.has(stageKey));
             if (!next.length) continue;
             const nextContext = { ...(await loadRunContext(sql, runId)), signal };
@@ -223,7 +233,7 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
         }
         if (loopError) throw loopError;
         if (stop) break;
-        if (iteration === 191) throw new Error("Pipeline exceeded 192 stage iterations");
+        if (iteration === MAX_SCHEDULING_PASSES - 1) throw new Error(`Pipeline exceeded ${MAX_SCHEDULING_PASSES} stage iterations`);
       }
     } catch (error) {
       if (signal?.aborted) {
@@ -252,7 +262,7 @@ export async function runResearchPipeline(runId: string, options: { signal?: Abo
     if (locked) await lease`SELECT pg_advisory_unlock(hashtextextended(${`research-run:${runId}`}, 0))`;
     lease.release();
     // Bounded: a stalled connection must not keep the worker from closing the job (seen in run dd02bb41).
-    await sql.end({ timeout: 5 });
+    await lockClient.end({ timeout: 5 });
   }
 }
 

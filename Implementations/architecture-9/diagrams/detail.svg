@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 520" role="img" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+<title>Implementation detail by phase</title><desc>Files and symbols changed in each phase, in dependency order, with the acceptance criteria that check them.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M1 1L9 5L1 9z" fill="#555"/></marker></defs>
+<rect width="760" height="520" fill="#ffffff"/>
+<text x="20" y="24" font-size="11.5" fill="#444" text-anchor="start">Implementation detail: phases run top to bottom; each is one verified commit.</text>
+<rect x="20" y="44" width="160" height="60" rx="5" fill="#eceafc" stroke="#5148b0"/><text x="100.0" y="79.0" text-anchor="middle" font-weight="600" fill="#222">P1 stage graph</text>
+<rect x="200" y="44" width="420" height="60" rx="5" fill="#f3f2ee" stroke="#77756e"/><text x="212" y="64" font-size="11.5" fill="#222">team-plan.ts STAGE_DEPENDENCIES.indicator_design</text><text x="212" y="80" font-size="11.5" fill="#222">pipeline-runner.ts MAX_SCHEDULING_PASSES</text><rect x="640" y="44" width="100" height="60" rx="5" fill="#e3f4ec" stroke="#12735a"/><text x="690.0" y="70.0" text-anchor="middle" font-weight="600" fill="#222">AC-1.1</text><text x="690.0" y="87.0" text-anchor="middle" font-size="11.5" fill="#444">to 1.5</text>
+<line x1="180" y1="74" x2="198" y2="74" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<line x1="620" y1="74" x2="638" y2="74" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<line x1="100" y1="104" x2="100" y2="126" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<rect x="20" y="128" width="160" height="60" rx="5" fill="#eceafc" stroke="#5148b0"/><text x="100.0" y="163.0" text-anchor="middle" font-weight="600" fill="#222">P2 data access</text>
+<rect x="200" y="128" width="420" height="60" rx="5" fill="#f3f2ee" stroke="#77756e"/><text x="212" y="148" font-size="11.5" fill="#222">src/db/pipeline-sql.ts pipelineDb()</text><text x="212" y="164" font-size="11.5" fill="#222">run-queue.ts, orchestrator.ts, handlers/*.ts drop per-call clients</text><rect x="640" y="128" width="100" height="60" rx="5" fill="#e3f4ec" stroke="#12735a"/><text x="690.0" y="154.0" text-anchor="middle" font-weight="600" fill="#222">AC-2.1</text><text x="690.0" y="171.0" text-anchor="middle" font-size="11.5" fill="#444">to 2.5</text>
+<line x1="180" y1="158" x2="198" y2="158" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<line x1="620" y1="158" x2="638" y2="158" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<line x1="100" y1="188" x2="100" y2="210" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<rect x="20" y="212" width="160" height="60" rx="5" fill="#eceafc" stroke="#5148b0"/><text x="100.0" y="247.0" text-anchor="middle" font-weight="600" fill="#222">P3 run-control state</text>
+<rect x="200" y="212" width="420" height="60" rx="5" fill="#f3f2ee" stroke="#77756e"/><text x="212" y="232" font-size="11.5" fill="#222">drizzle/0017</text><text x="212" y="248" font-size="11.5" fill="#222">team.ts processResearchRequests</text><text x="212" y="264" font-size="11.5" fill="#222">orchestrator.ts approveRequestReset, requestResearchPlanChanges</text><rect x="640" y="212" width="100" height="60" rx="5" fill="#e3f4ec" stroke="#12735a"/><text x="690.0" y="238.0" text-anchor="middle" font-weight="600" fill="#222">AC-3.1</text><text x="690.0" y="255.0" text-anchor="middle" font-size="11.5" fill="#444">to 3.7</text>
+<line x1="180" y1="242" x2="198" y2="242" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<line x1="620" y1="242" x2="638" y2="242" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<line x1="100" y1="272" x2="100" y2="294" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<rect x="20" y="296" width="160" height="60" rx="5" fill="#eceafc" stroke="#5148b0"/><text x="100.0" y="331.0" text-anchor="middle" font-weight="600" fill="#222">P4 report stages</text>
+<rect x="200" y="296" width="420" height="60" rx="5" fill="#f3f2ee" stroke="#77756e"/><text x="212" y="316" font-size="11.5" fill="#222">drizzle/0018</text><text x="212" y="332" font-size="11.5" fill="#222">stages.ts</text><text x="212" y="348" font-size="11.5" fill="#222">handlers/report-draft.ts (new)</text><rect x="640" y="296" width="100" height="60" rx="5" fill="#e3f4ec" stroke="#12735a"/><text x="690.0" y="322.0" text-anchor="middle" font-weight="600" fill="#222">AC-4.1</text><text x="690.0" y="339.0" text-anchor="middle" font-size="11.5" fill="#444">to 4.9</text>
+<line x1="180" y1="326" x2="198" y2="326" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<line x1="620" y1="326" x2="638" y2="326" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<line x1="100" y1="356" x2="100" y2="378" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<rect x="20" y="380" width="160" height="60" rx="5" fill="#eceafc" stroke="#5148b0"/><text x="100.0" y="415.0" text-anchor="middle" font-weight="600" fill="#222">P5 eval trend</text>
+<rect x="200" y="380" width="420" height="60" rx="5" fill="#f3f2ee" stroke="#77756e"/><text x="212" y="400" font-size="11.5" fill="#222">scoring/trend.ts (new) parseScores, scoreTrend</text><text x="212" y="416" font-size="11.5" fill="#222">scripts/score-research.ts --latest, --check</text><rect x="640" y="380" width="100" height="60" rx="5" fill="#e3f4ec" stroke="#12735a"/><text x="690.0" y="406.0" text-anchor="middle" font-weight="600" fill="#222">AC-5.1</text><text x="690.0" y="423.0" text-anchor="middle" font-size="11.5" fill="#444">to 5.4</text>
+<line x1="180" y1="410" x2="198" y2="410" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<line x1="620" y1="410" x2="638" y2="410" stroke="#555" stroke-width="1.2"  marker-end="url(#a)"/>
+<text x="20" y="472" font-size="11.5" fill="#444" text-anchor="start">Failure handling: a phase starts only after the previous one passes independent verification;</text>
+<text x="20" y="490" font-size="11.5" fill="#444" text-anchor="start">each migration is re-runnable, so the verifier applies it twice to legacy-shaped rows.</text>
+</svg>

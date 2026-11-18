@@ -51,13 +51,14 @@ test("collector searches the requested question and only accepts fetched documen
 });
 test("business analysis starts once the financial analytics exist, and forecasts wait for both branches", () => {
   const stages = ledger(STAGE_CONFIGS.slice(0, 7).map(s => s.key));
-  assert.deepEqual(readyStages(stages), ["historical_record"]);
+  // The price-only backtest branch starts at plan approval and stays ready beside the analysis.
+  assert.deepEqual(readyStages(stages), ["historical_record", "indicator_design"]);
   stages.find(s => s.stage_key === "historical_record")!.status = "completed";
-  assert.deepEqual(readyStages(stages), ["company_genesis", "historical_diagnosis"]);
+  assert.deepEqual(readyStages(stages), ["company_genesis", "historical_diagnosis", "indicator_design"]);
   stages.find(s => s.stage_key === "company_genesis")!.status = "completed";
-  assert.deepEqual(readyStages(stages), ["historical_diagnosis"], "segment economics reach the business analysis");
+  assert.deepEqual(readyStages(stages), ["historical_diagnosis", "indicator_design"], "segment economics reach the business analysis");
   stages.find(s => s.stage_key === "historical_diagnosis")!.status = "completed";
-  assert.deepEqual(readyStages(stages), ["business_process_analysis"]);
+  assert.deepEqual(readyStages(stages), ["business_process_analysis", "indicator_design"]);
   assert.ok(!readyStages(stages).includes("asset_valuation"));
   stages.find(s => s.stage_key === "research_plan")!.status = "waiting_for_human";
   // Initial plan approval cannot be treated as dependency completion.

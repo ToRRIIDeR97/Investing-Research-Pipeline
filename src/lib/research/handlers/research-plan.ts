@@ -1,9 +1,7 @@
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
 import { makeValidationResult } from "../run-context";
-import postgres from "postgres";
+import { pipelineDb, pipelineSql } from "@/db/pipeline-sql";
 import { createArtifactRepository } from "../artifacts/repository";
-import { schema } from "@/db";
-import { drizzle } from "drizzle-orm/postgres-js";
 import { getAllStagesForRun } from "@/lib/workflow/stages";
 import { STANDARD_VERSION, COVERAGE, RESEARCH_DOCTRINE } from "../reporting/contracts";
 import { TEAM_ROLES, STAGE_DEPENDENCIES, STAGE_OWNERS } from "../team-plan";
@@ -116,77 +114,73 @@ async function draftFraming(sql: Sql, ctx: ResearchRunContext, feedback: PlanFee
 export const researchPlanHandler: StageHandler<unknown> = {
   stageKey: "research_plan",
   async execute(ctx: ResearchRunContext): Promise<unknown> {
-    const sql = postgres(process.env.DATABASE_URL!);
-    try {
-      const db = drizzle(sql, { schema });
-      const repo = createArtifactRepository(db);
-      const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}`;
-      const metadata = (run?.metadata_json || {}) as Record<string, any>;
-      const feedback: PlanFeedback[] = Array.isArray(metadata.research_plan_feedback) ? metadata.research_plan_feedback : [];
-      const framing = await draftFraming(sql as unknown as Sql, ctx, feedback);
-      // The framing may add archetypes unless the run was created with them or the reviewer chose them.
-      let planCtx = ctx;
-      const merged = ["request", "reviewer"].includes(String(metadata.v3_archetypes_source))
-        ? null : mergeFramingArchetypes({ archetypes: ctx.archetypeKeys, overlays: ctx.overlayKeys }, framing, ctx.assetId);
-      if (merged) {
-        await persistV3Composition(sql as unknown as Sql, ctx.runId, merged.archetypes, merged.overlays);
-        await sql`UPDATE research_runs SET metadata_json = coalesce(metadata_json, '{}'::jsonb) || ${sql.json({ v3_archetypes_source: "framing" })} WHERE id = ${ctx.runId}`;
-        planCtx = { ...(await loadRunContext(sql as unknown as Sql, ctx.runId)), signal: ctx.signal };
-      }
-      const plan = buildResearchPlan(planCtx, { framing, feedback });
-      const artifact = await repo.upsertArtifact({
-        research_run_id: ctx.runId,
-        asset_id: ctx.assetId,
-        profile_id: ctx.profileId || undefined,
-        artifact_type: "research_plan",
-        scope_key: `${ctx.assetSlug}-research-plan`,
-        status: "validated",
-        content_json: plan,
-        schema_version: "3.0.0",
-        validator_version: "1.0.0",
-        prompt_version: "framing-v1",
-        validation_result_json: { valid: true, generated: true },
-        created_by: "system-research-os",
-      });
-
-      const completionCriteria = JSON.stringify({
-        requiredOutputs: ["research_plan_json"],
-        plan_artifact_id: artifact.id,
-        research_plan: plan,
-      }).replace(/'/g, "''");
-      await sql`
-        UPDATE research_stages
-        SET completion_criteria_json = ${sql.unsafe(`'${completionCriteria}'::jsonb`)}, updated_at = NOW()
-        WHERE research_run_id = ${ctx.runId} AND stage_key = 'research_plan'
-      `;
-      return { status: "success", artifactId: artifact.id, researchPlan: plan };
-    } finally {
-      await sql.end();
+    const sql = pipelineSql();
+    const db = pipelineDb();
+    const repo = createArtifactRepository(db);
+    const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}`;
+    const metadata = (run?.metadata_json || {}) as Record<string, any>;
+    // The shape the notes had in metadata_json. Only `notes` reaches the framing prompt; the plan artifact stores the
+    // objects as jsonb, which keeps no key order, so the order built here does not matter.
+    const feedback: PlanFeedback[] = (await sql`SELECT notes, requested_by, requested_at FROM research_plan_feedback
+      WHERE research_run_id = ${ctx.runId} ORDER BY requested_at, id`).map(row => ({ notes: String(row.notes),
+      requested_by: String(row.requested_by), requested_at: new Date(row.requested_at).toISOString() }));
+    const framing = await draftFraming(sql as unknown as Sql, ctx, feedback);
+    // The framing may add archetypes unless the run was created with them or the reviewer chose them.
+    let planCtx = ctx;
+    const merged = ["request", "reviewer"].includes(String(metadata.v3_archetypes_source))
+      ? null : mergeFramingArchetypes({ archetypes: ctx.archetypeKeys, overlays: ctx.overlayKeys }, framing, ctx.assetId);
+    if (merged) {
+      await persistV3Composition(sql as unknown as Sql, ctx.runId, merged.archetypes, merged.overlays);
+      await sql`UPDATE research_runs SET metadata_json = coalesce(metadata_json, '{}'::jsonb) || ${sql.json({ v3_archetypes_source: "framing" })} WHERE id = ${ctx.runId}`;
+      planCtx = { ...(await loadRunContext(sql as unknown as Sql, ctx.runId)), signal: ctx.signal };
     }
+    const plan = buildResearchPlan(planCtx, { framing, feedback });
+    const artifact = await repo.upsertArtifact({
+      research_run_id: ctx.runId,
+      asset_id: ctx.assetId,
+      profile_id: ctx.profileId || undefined,
+      artifact_type: "research_plan",
+      scope_key: `${ctx.assetSlug}-research-plan`,
+      status: "validated",
+      content_json: plan,
+      schema_version: "3.0.0",
+      validator_version: "1.0.0",
+      prompt_version: "framing-v1",
+      validation_result_json: { valid: true, generated: true },
+      created_by: "system-research-os",
+    });
+
+    const completionCriteria = JSON.stringify({
+      requiredOutputs: ["research_plan_json"],
+      plan_artifact_id: artifact.id,
+      research_plan: plan,
+    }).replace(/'/g, "''");
+    await sql`
+      UPDATE research_stages
+      SET completion_criteria_json = ${sql.unsafe(`'${completionCriteria}'::jsonb`)}, updated_at = NOW()
+      WHERE research_run_id = ${ctx.runId} AND stage_key = 'research_plan'
+    `;
+    return { status: "success", artifactId: artifact.id, researchPlan: plan };
   },
   async validate(ctx: ResearchRunContext, output: any): Promise<ValidationResult> {
-    const sql = postgres(process.env.DATABASE_URL!);
-    try {
-      const rows = await sql`
-        SELECT completion_criteria_json
-        FROM research_stages
-        WHERE research_run_id = ${ctx.runId} AND stage_key = 'research_plan'
-      `;
-      const errors: string[] = [];
-      if (rows.length === 0 || !rows[0].completion_criteria_json) {
-        errors.push("Research plan JSON not found in stage completion criteria");
-      }
-      const artifacts = await sql`
-        SELECT id FROM research_artifacts
-        WHERE research_run_id = ${ctx.runId}
-          AND artifact_type = 'research_plan'
-          AND status IN ('validated', 'accepted')
-        LIMIT 1
-      `;
-      if (!artifacts[0]) errors.push("Persisted research_plan artifact not found");
-      return makeValidationResult(errors);
-    } finally {
-      await sql.end();
+    const sql = pipelineSql();
+    const rows = await sql`
+      SELECT completion_criteria_json
+      FROM research_stages
+      WHERE research_run_id = ${ctx.runId} AND stage_key = 'research_plan'
+    `;
+    const errors: string[] = [];
+    if (rows.length === 0 || !rows[0].completion_criteria_json) {
+      errors.push("Research plan JSON not found in stage completion criteria");
     }
+    const artifacts = await sql`
+      SELECT id FROM research_artifacts
+      WHERE research_run_id = ${ctx.runId}
+        AND artifact_type = 'research_plan'
+        AND status IN ('validated', 'accepted')
+      LIMIT 1
+    `;
+    if (!artifacts[0]) errors.push("Persisted research_plan artifact not found");
+    return makeValidationResult(errors);
   }
 };
