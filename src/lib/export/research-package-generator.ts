@@ -1124,7 +1124,7 @@ function renderCodeReadme(data: ResearchPackageData) {
   return [
     "# Code Artifacts",
     "",
-    "This package is generated from Research OS database records. Future versions should place generated valuation, indicator, and backtest code here.",
+    "This package is generated from Pragma Research database records. Future versions should place generated valuation, indicator, and backtest code here.",
     "",
     `Asset: ${data.asset.canonical_name}`,
     `Run: ${data.run.id}`,
@@ -1193,7 +1193,7 @@ function buildIndicators(data: ResearchPackageData): IndicatorCandidate[] {
       name,
       family,
       hypothesis: `${name} should help distinguish confirmed thesis setups from unsupported or high-risk setups.`,
-      source: "Research OS package generator",
+      source: "Pragma Research package generator",
       quality: "Derived; requires validation",
       updateFrequency: "Each research refresh",
       backtestability: "Medium",

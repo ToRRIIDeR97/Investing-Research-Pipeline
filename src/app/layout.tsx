@@ -3,8 +3,8 @@ import "./globals.css";
 import { AppShell } from "@/components/app-shell";
 
 export const metadata: Metadata = {
-  title: "Research OS",
-  description: "Private investment research operating system",
+  title: { default: "Pragma Research", template: "%s · Pragma Research" },
+  description: "Evidence-backed investment research with human review gates",
 };
 
 export default function RootLayout({
@@ -14,7 +14,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-[#fbfbf9] text-[#111111] antialiased selection:bg-[#111111] selection:text-[#ffffff]">
+      <body className="min-h-screen antialiased">
         <AppShell>{children}</AppShell>
       </body>
     </html>

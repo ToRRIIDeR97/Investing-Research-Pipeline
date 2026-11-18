@@ -5,7 +5,7 @@ import { formatAxis, formatSeriesValue, type BuiltChart } from '@/lib/research/r
 import { periodName } from '@/lib/research/reporting/metric-catalogue';
 import styles from './financials.module.css';
 
-const TICK = { fontSize: 11, fill: '#626b78' };
+const TICK = { fontSize: 11, fill: '#6b7280' };
 
 /** Bars and lines over fiscal periods; missing values are gaps, never zero. */
 export function SeriesChart({ chart, height = 230, compact = false, dashedRight = false, empty = 'Nothing to chart yet.' }: { chart: BuiltChart; height?: number; compact?: boolean; dashedRight?: boolean; empty?: string }) {
@@ -16,15 +16,15 @@ export function SeriesChart({ chart, height = 230, compact = false, dashedRight 
   return <div className={styles.chartCanvas} style={{ height }} role="img" aria-label={`Chart of ${summary}`}>
     <ResponsiveContainer width="100%" height="100%">
       <ComposedChart data={chart.data} margin={{ top: 10, right: compact ? 2 : 6, bottom: 0, left: compact ? -6 : 0 }} barGap={3} barCategoryGap="24%" accessibilityLayer={false}>
-        <CartesianGrid vertical={false} stroke="#edeff0" />
-        <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: '#cbd0d5' }} tick={{ ...TICK, fontSize: compact ? 10 : 11 }} interval="preserveStartEnd" minTickGap={6} />
+        <CartesianGrid vertical={false} stroke="#f3f4f6" />
+        <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: '#d1d5db' }} tick={{ ...TICK, fontSize: compact ? 10 : 11 }} interval="preserveStartEnd" minTickGap={6} />
         <YAxis yAxisId="left" width={compact ? 48 : 58} axisLine={false} tickLine={false} tick={{ ...TICK, fontSize: compact ? 10 : 11 }}
           domain={chart.left ? [chart.left.scale.lo, chart.left.scale.hi] : [0, 1]} ticks={chart.left?.scale.ticks} interval={0}
           tickFormatter={(v: number) => chart.left ? formatAxis(v, chart.left.kind, chart.left.currency) : String(v)} />
         {chart.right && <YAxis yAxisId="right" orientation="right" width={compact ? 40 : 48} axisLine={false} tickLine={false} tick={{ ...TICK, fontSize: compact ? 10 : 11 }}
           domain={[chart.right.scale.lo, chart.right.scale.hi]} ticks={chart.right.scale.ticks} interval={0}
           tickFormatter={(v: number) => formatAxis(v, chart.right!.kind, chart.right!.currency)} />}
-        {negative && <ReferenceLine yAxisId="left" y={0} stroke="#9aa1ab" />}
+        {negative && <ReferenceLine yAxisId="left" y={0} stroke="#9ca3af" />}
         <Tooltip cursor={{ fill: 'rgba(81,93,112,.07)' }} isAnimationActive={false} content={({ active, label }) => {
           if (!active) return null;
           const index = chart.data.findIndex((d) => d.label === label);

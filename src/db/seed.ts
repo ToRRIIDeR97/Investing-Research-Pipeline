@@ -415,7 +415,7 @@ const assets: AssetSeed[] = [
 // ── Seed Logic ──────────────────────────────────────────────────────
 
 async function seed(): Promise<void> {
-  console.log("=== Research OS — Database Seed ===\n");
+  console.log("=== Pragma Research — Database Seed ===\n");
 
   // ── 1. Research Profiles ──────────────────────────────────────────
   console.log("[1/5] Seeding research_profiles …");

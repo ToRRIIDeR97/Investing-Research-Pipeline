@@ -25,9 +25,9 @@ interface ValuationSignalChartProps {
 
 const SIGNAL_COLORS: Record<string, string> = {
   very_cheap: "#065f46",
-  cheap: "#469172",
+  cheap: "#2d7d46",
   neutral: "#6b7280",
-  expensive: "#bf5549",
+  expensive: "#c9302c",
   very_expensive: "#991b1b",
   inconclusive: "#d1d5db",
   not_applicable: "#e5e7eb",
@@ -44,7 +44,7 @@ const SIGNAL_LABELS: Record<string, string> = {
 };
 
 export function ValuationSignalChart({ data }: ValuationSignalChartProps) {
-  if (!data || data.length === 0) return <p className="py-8 text-sm text-[#626b78]">No valuation signals yet.</p>;
+  if (!data || data.length === 0) return <p className="py-8 text-sm text-[#6b7280]">No valuation signals yet.</p>;
 
   // Sort by cheapness_score descending (cheapest first)
   const chartData = data
@@ -62,7 +62,7 @@ export function ValuationSignalChart({ data }: ValuationSignalChartProps) {
     }))
     .sort((a, b) => b.score - a.score);
 
-  if (chartData.length === 0) return <p className="py-8 text-sm text-[#626b78]">No applicable valuation signals.</p>;
+  if (chartData.length === 0) return <p className="py-8 text-sm text-[#6b7280]">No applicable valuation signals.</p>;
 
   const barHeight = Math.max(28, Math.min(40, 220 / chartData.length));
 
@@ -83,7 +83,7 @@ export function ValuationSignalChart({ data }: ValuationSignalChartProps) {
           <XAxis
             type="number"
             domain={[0, 100]}
-            tick={{ fontSize: 12, fill: "#626b78" }}
+            tick={{ fontSize: 12, fill: "#6b7280" }}
             tickLine={false}
             axisLine={{ stroke: "#e5e7eb" }}
             tickFormatter={(v) => `${v}`}
@@ -119,7 +119,7 @@ export function ValuationSignalChart({ data }: ValuationSignalChartProps) {
                       Value: {d.value.toLocaleString()}
                     </div>
                   )}
-                  <div className="text-gray-400 text-xs">{d.lens}</div>
+                  <div className="text-gray-500 text-xs">{d.lens}</div>
                 </div>,
                 "",
               ];

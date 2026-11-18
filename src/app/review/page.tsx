@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, ArrowRight, ArrowUpRight, Search } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Search } from "lucide-react";
 import ui from "@/components/research-ui.module.css";
 import { ResearchReport } from "@/components/research-report";
 import type { ReportDocument } from "@/lib/research/reporting/report";
@@ -115,47 +115,67 @@ function ReviewQueue() {
     finally { setSubmitting(false); }
   }
   const visible = items.filter((item) => [item.asset_name, item.asset_slug, item.asset_kind, item.run_type, item.research_question || "", item.priority || ""].some((value) => value.toLowerCase().includes(query.trim().toLowerCase())));
+  const words = (value: string | null | undefined) => value ? value.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()) : "";
+  const gate = reviewGate(aiReview);
 
-  return <div className={`${ui.page} ${selectedItem ? ui.withBack : ""}`}>
-    {selectedItem ? <>
-      <button className={ui.back} onClick={() => selectItem(null)} disabled={submitting}><ArrowLeft size={17} />Reviews</button>
-      <header className={ui.heading}><h1>{selectedItem.asset_name}</h1><span className={ui.status} data-status="waiting_for_human">Review pending</span></header>
-      {selectedItem.research_question && <details className="mb-6 text-sm text-[#515d70]"><summary>Research question</summary><p className="mt-4 leading-7">{selectedItem.research_question}</p></details>}
-      <Link href={`/assets/${selectedItem.asset_id}/view?run=${selectedItem.run_id}`} className={ui.textLink}>Read research<ArrowUpRight size={16} /></Link>
-      {reportDocument && <details className={ui.section} open><summary>Report under review</summary><ResearchReport document={reportDocument} /></details>}
-      {reportDocument && <ReviewFindings review={aiReview} />}
-      <form onSubmit={handleSubmitReview}>
-        <section className={ui.section}>
-          <div className={ui.sectionHead}><h2>Your decision</h2></div>
-          <div className={ui.form}>
+  if (selectedItem) return <div className={`${ui.page} ${ui.withBack}`}>
+    <button className={ui.back} onClick={() => selectItem(null)} disabled={submitting}><ArrowLeft size={14} />Reviews</button>
+    <header className={ui.heading}>
+      <div className={ui.titleGroup}><h1>{selectedItem.asset_name}</h1><span className={ui.muted}>{words(selectedItem.run_type)}</span><span className={ui.mono}>{selectedItem.run_id.slice(0, 8)}</span><span className={ui.status} data-status="waiting_for_human">Review pending</span></div>
+      <div className={ui.headActions}><Link href={`/assets/${selectedItem.asset_id}/view?run=${selectedItem.run_id}`} className={ui.secondary}>Read research<ArrowUpRight size={14} /></Link></div>
+    </header>
+    <div className={ui.grid}>
+      <div className={`${ui.s8} flex min-w-0 flex-col gap-4`}>
+        {selectedItem.research_question && <section className={ui.tile}><div className={ui.tileHead}><h2>Research question</h2></div><p className={ui.tileBody}>{selectedItem.research_question}</p></section>}
+        {reportDocument ? <>
+          <ReviewFindings review={aiReview} />
+          <h2 className="mt-2 text-[13px] font-semibold">Report under review</h2><ResearchReport document={reportDocument} />
+        </> : !submitError && <p className={ui.muted} role="status">Loading the report…</p>}
+      </div>
+      <form onSubmit={handleSubmitReview} className={`${ui.s4} flex min-w-0 flex-col gap-4 lg:sticky lg:top-[68px]`}>
+        <section className={ui.tile}>
+          <div className={ui.tileHead}><h2>Gate 2 of 2: your decision</h2></div>
+          <div className={`${ui.form} ${ui.tileBody}`}>
             <label className={ui.field}>Verdict<select value={reviewForm.status} disabled={submitting} onChange={(event) => setReviewForm({ ...reviewForm, status: event.target.value })}>{verdicts.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <div className={ui.formGrid}>
               <label className={ui.field}>Conviction<select value={reviewForm.conviction} disabled={submitting} onChange={(event) => setReviewForm({ ...reviewForm, conviction: event.target.value })}><option value="">Unset</option>{["high", "medium", "low", "speculative"].map((value) => <option value={value} key={value}>{value[0].toUpperCase() + value.slice(1)}</option>)}</select></label>
               <label className={ui.field}>Priority<select value={reviewForm.priority} disabled={submitting} onChange={(event) => setReviewForm({ ...reviewForm, priority: event.target.value })}>{["high", "medium", "low"].map((value) => <option value={value} key={value}>{value[0].toUpperCase() + value.slice(1)}</option>)}</select></label>
             </div>
             <label className={ui.field}>What would change your mind?<textarea rows={3} value={reviewForm.whatWouldChangeMind} disabled={submitting} onChange={(event) => setReviewForm({ ...reviewForm, whatWouldChangeMind: event.target.value })} /></label>
-            {reviewGate(aiReview).open_severe > 0 && <label className="flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1" checked={acknowledged} disabled={submitting} onChange={(event) => setAcknowledged(event.target.checked)} />I have read the {reviewGate(aiReview).open_severe} open high or critical review findings. Approval needs this.</label>}
+            {gate.open_severe > 0 && <label className={ui.check}><input type="checkbox" checked={acknowledged} disabled={submitting} onChange={(event) => setAcknowledged(event.target.checked)} /><span>I have read the <a href="#ai-review" className="text-[var(--blue)] underline">{gate.open_severe} open high or critical review findings</a>. Approval needs this.</span></label>}
           </div>
+          <details className={ui.fold}><summary>Depth ratings (optional, 0-4)</summary><div className={`${ui.form} ${ui.tileBody}`}>
+            <p className={ui.muted}>{RUBRIC_LEVELS.join(" · ")}</p>
+            <div className={ui.formGrid}>{RUBRIC_DIMENSIONS.map(d => <label key={d.id} className={ui.field} title={`3 = ${d.anchor3}`}>{d.label}<select value={ratings[d.id] ?? ""} disabled={submitting} onChange={(event) => setRatings({ ...ratings, [d.id]: event.target.value })}><option value="">Unrated</option>{[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}</select></label>)}</div>
+          </div></details>
+          <details className={ui.fold}><summary>Additional notes</summary><div className={`${ui.form} ${ui.tileBody}`}>
+            {[["watchlistReason", "Watchlist reason"], ["positionSizingNote", "Position sizing"], ["openQuestions", "Open questions"]].map(([key, label]) => <label key={key} className={ui.field}>{label}<textarea rows={3} disabled={submitting} value={reviewForm[key as keyof typeof reviewForm]} onChange={(event) => setReviewForm({ ...reviewForm, [key]: event.target.value })} /></label>)}
+          </div></details>
+          {submitError && <p className={`${ui.error} px-3.5`} role="alert">{submitError}</p>}
+          <div className={ui.actions}><button type="button" className={ui.secondary} disabled={submitting} onClick={() => selectItem(null)}>Cancel</button><button className={ui.primary} type="submit" disabled={submitting || !reportReady}>{submitting ? "Saving…" : "Submit decision"}</button></div>
         </section>
-        <details className={ui.section}><summary>Depth ratings (optional, 0-4)</summary><div className={`${ui.form} ${ui.sectionBody}`}>
-          <p className={ui.muted}>{RUBRIC_LEVELS.join(" · ")}</p>
-          <div className={ui.formGrid}>{RUBRIC_DIMENSIONS.map(d => <label key={d.id} className={ui.field} title={`3 = ${d.anchor3}`}>{d.label}<select value={ratings[d.id] ?? ""} disabled={submitting} onChange={(event) => setRatings({ ...ratings, [d.id]: event.target.value })}><option value="">Unrated</option>{[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}</select></label>)}</div>
-        </div></details>
-        <details className={ui.section}><summary>Additional notes</summary><div className={`${ui.form} ${ui.sectionBody}`}>
-          {[["watchlistReason", "Watchlist reason"], ["positionSizingNote", "Position sizing"], ["openQuestions", "Open questions"]].map(([key, label]) => <label key={key} className={ui.field}>{label}<textarea rows={3} disabled={submitting} value={reviewForm[key as keyof typeof reviewForm]} onChange={(event) => setReviewForm({ ...reviewForm, [key]: event.target.value })} /></label>)}
-        </div></details>
-        {submitError && <p className={ui.error} role="alert">{submitError}</p>}
-        <footer className={ui.actions}><button type="button" className={ui.textLink} disabled={submitting} onClick={() => selectItem(null)}>Cancel</button><button className={ui.primary} type="submit" disabled={submitting || !reportReady}>{submitting ? "Saving…" : "Submit decision"}</button></footer>
       </form>
-    </> : <>
-      <header className={ui.heading}><h1 className="sr-only">Reviews</h1><span className={ui.muted}>{loading ? "" : `${items.length} pending`}</span></header>
-      {saved && <p className={ui.notice} role="status">Decision saved.</p>}
-      <div className={ui.search}><Search size={19} aria-hidden="true" /><input type="search" aria-label="Search reviews" placeholder="Search reviews" value={query} onChange={(event) => setQuery(event.target.value)} /></div>
-      {loading ? <p className={ui.empty} role="status">Loading reviews…</p> : error ? <p className={ui.error} role="alert">{error}<button onClick={() => fetchQueue(true)}>Try again</button></p> : <>
+    </div>
+  </div>;
+
+  return <div className={ui.page}>
+    <header className={ui.heading}><div className={ui.titleGroup}><h1>Reviews</h1><span className={ui.muted}>{loading ? "" : `${items.length} awaiting a human decision`}</span></div></header>
+    {saved && <p className={`${ui.banner} text-[var(--positive)]`} role="status">Decision saved.</p>}
+    <section className={ui.tile}>
+      <div className={ui.toolbar}><div className={ui.search}><Search size={14} aria-hidden="true" /><input type="search" aria-label="Search reviews" placeholder="Search reviews" value={query} onChange={(event) => setQuery(event.target.value)} /></div></div>
+      {loading ? <p className={ui.empty} role="status">Loading reviews…</p> : error ? <p className={`${ui.error} px-3.5`} role="alert">{error}<button onClick={() => fetchQueue(true)}>Try again</button></p> : <>
         {requestedRunId && !items.some((item) => item.run_id === requestedRunId) && !saved && <p className={ui.notice}>This run is no longer awaiting review.</p>}
-        {visible.map((item) => <button key={item.run_id} className={ui.row} onClick={() => selectItem(item)}><div><div className={ui.rowTitle}>{item.asset_name}</div><div className={ui.rowMeta}>{item.run_type.replace(/_/g, " ")} · {item.run_id.slice(0, 8)}</div></div><ArrowRight size={18} /></button>)}
-        {!visible.length && <p className={ui.empty}>{query ? "No reviews match your search." : "No reviews waiting."}</p>}
+        {visible.length ? <div className={ui.table}><table>
+          <thead><tr><th>Asset</th><th>Run</th><th>Id</th><th>Question</th><th className={ui.num}>Priority</th></tr></thead>
+          <tbody>{visible.map((item) => <tr key={item.run_id}>
+            <td><button className="font-medium hover:underline" onClick={() => selectItem(item)}>{item.asset_name}</button></td>
+            <td className={ui.muted}>{words(item.run_type)}</td>
+            <td className={ui.mono}>{item.run_id.slice(0, 8)}</td>
+            <td className={`${ui.muted} max-w-[420px] truncate`}>{item.research_question || "—"}</td>
+            <td className={ui.num}>{words(item.priority) || "Medium"}</td>
+          </tr>)}</tbody>
+        </table></div> : <p className={ui.empty}>{query ? "No reviews match your search." : "No reviews waiting."}</p>}
       </>}
-    </>}
+    </section>
   </div>;
 }
