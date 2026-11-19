@@ -69,19 +69,6 @@ export function primarySchedules(models: ValuationMethodInput[]): Record<Scenari
   return null;
 }
 
-/**
- * An FCFE schedule whose reinvestment exceeds net income in every year never pays its owners before the terminal
- * year: usually loan or balance-sheet growth deducted in full (BANK_FCFE_RULE). Rejected so the model rebuilds it.
- */
-export function fcfeRetentionErrors(models: ValuationMethodInput[]) {
-  return models.flatMap((model, i) => {
-    if (model.method !== "fcfe" || !model.years.length) return [];
-    const absorbed = model.years.every((y) => y.build && y.build.starting_profit > 0 && y.build.change_in_net_working_capital > y.build.starting_profit);
-    return absorbed ? [{ path: `valuation_scenario_set.method_inputs.${i}.years`, message:
-      `fcfe ${model.scenario_type}: change_in_net_working_capital exceeds net income in every year, so owners receive nothing before the terminal value. ${BANK_FCFE_RULE}` }] : [];
-  });
-}
-
 export function equityMethodsFormat(options: { requireDepreciationAddBack: boolean }): AgentOutputFormat {
   return {
     requiredKeys: Object.keys(EquityMethodsOutput.shape),
@@ -94,7 +81,6 @@ export function equityMethodsFormat(options: { requireDepreciationAddBack: boole
         return set.withheld_reason?.trim() ? [] : [{ path: "valuation_scenario_set.withheld_reason", message: "Name the missing packet inputs when the valuation is withheld." }];
       }
       const errors = options.requireDepreciationAddBack ? cashFlowBuildErrors(set.method_inputs) : [];
-      errors.push(...fcfeRetentionErrors(set.method_inputs));
       try {
         validateMethodInputs(set.method_inputs);
         const primary = primarySchedules(set.method_inputs);
@@ -113,7 +99,7 @@ export function equityMethodsFormat(options: { requireDepreciationAddBack: boole
  * reduces cash to shareholders. Deducting the whole balance-sheet growth makes every explicit year negative and
  * leaves the terminal value as more than all of the value.
  */
-export const BANK_FCFE_RULE = "For a bank or other deposit-funded lender, FCFE is net income minus the equity retained to keep the target capital ratio as the balance sheet grows: put that retained equity (growth in risk-weighted assets, or loans when RWA is not given, times the target CET1 or equity-to-assets ratio) in change_in_net_working_capital. Never deduct loan growth, balance-sheet growth or a funding-surplus proxy from the operating scenarios in full; deposits and borrowings fund the rest. State the capital ratio and its source in source_notes.";
+export const BANK_FCFE_RULE = "For a bank or other deposit-funded lender, FCFE is net income minus the equity retained to keep the target capital ratio as the balance sheet grows: put that retained equity (growth in risk-weighted assets, or loans when RWA is not given, times the target CET1 or equity-to-assets ratio) in change_in_net_working_capital. Never deduct loan growth, balance-sheet growth or a funding-surplus proxy from the operating scenarios in full; deposits and borrowings fund the rest. When RWA or a target ratio is not in the packet, use the latest reported CET1 or equity-to-assets ratio from the filings or financial_inputs, or else 10% as a stated analyst assumption. State the ratio and its source in source_notes. A missing RWA series, call report, tax rate (use the historical effective rate) or an unreconciled corporate line in the scenarios is a gap to note, never a reason to withhold the valuation.";
 
 export const equityMethodsPrompt =(p: Record<string, unknown>) => exactJsonPrompt({
   agentName: "valuation-analyst",

@@ -7,7 +7,7 @@ import { DEPTH_CHECKS, DEPTH_CHECK_RULE, REWORK_STAGES, depthFindings } from "./
 import { loadReportInputs, saveReportArtifact } from "./store";
 import { createReport, reviewDocument } from "./report";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
-import { VISUAL_GUIDELINES } from './visuals';
+import { VISUAL_GUIDELINES, validateVisual } from './visuals';
 import { getTeamRequests, includeUnansweredQuestions, requestMissingResearch, preDraftBatch, preDraftRequests, postReviewAnswers, ResearchRequestsPending } from "../team";
 import { saveVersionChangeLog } from "../lineage/runs";
 import { buildReportFacts } from "./facts";
@@ -185,12 +185,19 @@ function checkedContract(base: AgentOutputFormat, check: (value: any) => void, c
 }
 
 /**
- * How a section write turns the model's answer into the stored result. A planned chart the writer could not build
- * becomes a gap in code, in the value validation sees (`outputFormat`, after `check`) and in the value stored (`finish`).
+ * How a section write turns the model's answer into the stored result, in the value validation sees (`outputFormat`,
+ * after `check`) and in the value stored (`finish`). With `visualInput`, a visual that cannot be built from the stored
+ * data (an unknown metric, say) is dropped instead of failing the section; a planned chart left without a visual then
+ * becomes a gap, both in code.
  */
 export function sectionWriteSteps<V>(section: ReportOutline["sections"][number], contract: AgentOutputFormat,
-  check: (value: V) => V, validate: (value: V) => void) {
-  const withChartGap = (value: V): V => (value as any)?.section ? { ...value, section: fillChartPlanGap(section, (value as any).section) } : value;
+  check: (value: V) => V, validate: (value: V) => void, visualInput?: Parameters<typeof validateVisual>[1]) {
+  const buildable = (visual: Parameters<typeof validateVisual>[0]) => { try { validateVisual(visual, visualInput!); return true; } catch { return false; } };
+  const tidy = (written: ReportSection): ReportSection => {
+    const visuals = visualInput && written.visuals ? written.visuals.filter(buildable) : written.visuals;
+    return fillChartPlanGap(section, visuals === written.visuals ? written : { ...written, visuals });
+  };
+  const withChartGap = (value: V): V => (value as any)?.section ? { ...value, section: tidy((value as any).section) } : value;
   return { outputFormat: checkedContract(contract, validate, value => withChartGap(check(value))), finish: withChartGap };
 }
 
@@ -303,7 +310,7 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
         createReport({ ...reportInput, required_coverage: section.coverage, sections: [result.section], questions: [],
           coverage: section.coverage.map(key => ({ key, status: "qualified", rationale: "Section validation", section_ids: [section.id] })) });
         if (finalCoverage) checkFinalCoverage(reportInput, outline, [...completed.filter(s => s.id !== section.id), result.section], result.coverage ?? []);
-      });
+      }, reportInput);
       const output = steps.finish(usable(await callResearchAgent<Written>({ sql, ctx, stageKey,
         taskKey: `report:section:${section.id}`, taskType: "report_section", agentName: "export-writer", modelTier: "mid", packet,
         perCallKeys, outputFormat: steps.outputFormat, promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: contract.requiredKeys, packet: p, extraRules }) })));

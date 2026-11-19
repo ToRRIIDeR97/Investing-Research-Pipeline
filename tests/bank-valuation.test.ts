@@ -4,7 +4,7 @@ import test from "node:test";
 import { FinancialAnalytics, buildFinancialAnalytics, tableRows } from "../src/lib/research/history/analytics";
 import { buildReportFacts } from "../src/lib/research/reporting/facts";
 import { statementSeries } from "../src/lib/research/reporting/visuals";
-import { BANK_FCFE_RULE, equityMethodsPrompt, fcfeRetentionErrors } from "../src/lib/research/handlers/asset-valuation";
+import { BANK_FCFE_RULE, equityMethodsPrompt } from "../src/lib/research/handlers/asset-valuation";
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/meta-statements.json", import.meta.url), "utf8"));
 const observations = fixture.rows.map((row: unknown[]) => Object.fromEntries(fixture.columns.map((c: string, i: number) => [c, row[i]])))
@@ -48,16 +48,12 @@ test("report_facts re-rates equity-method cases on P/E when there is no NOPAT, a
   assert.equal(base.no_rerating_return, -0.28);
 });
 
-test("an FCFE schedule that reinvests more than net income every year is rejected with the bank rule", () => {
-  const absorbed = fcfe("base", [{ starting_profit: 690, change_in_net_working_capital: 3206 }, { starting_profit: 636, change_in_net_working_capital: 1140 }]);
-  const errors = fcfeRetentionErrors([absorbed]);
-  assert.equal(errors.length, 1);
-  assert.match(errors[0].message, /fcfe base: change_in_net_working_capital exceeds net income in every year/);
-  assert.ok(errors[0].message.includes(BANK_FCFE_RULE));
-  assert.deepEqual(fcfeRetentionErrors([fcfe("base", [{ starting_profit: 690, change_in_net_working_capital: 3206 }, { starting_profit: 900, change_in_net_working_capital: 120 }])]), [],
-    "one year that pays owners is allowed");
-  assert.deepEqual(fcfeRetentionErrors([{ ...absorbed, method: "fcff" as any }]), [], "only FCFE is checked");
-  assert.match(equityMethodsPrompt({}), /deposit-funded lender/);
+test("the valuation prompt carries the bank FCFE rule with a fallback ratio and no withholding for missing RWA", () => {
+  const prompt = equityMethodsPrompt({});
+  assert.ok(prompt.includes(BANK_FCFE_RULE));
+  assert.match(BANK_FCFE_RULE, /Never deduct loan growth/);
+  assert.match(BANK_FCFE_RULE, /10% as a stated analyst assumption/);
+  assert.match(BANK_FCFE_RULE, /never a reason to withhold/);
 });
 
 test("scenario statement lines are read by year or by metric", () => {
