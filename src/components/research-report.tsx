@@ -15,7 +15,7 @@ import {readerSections,readerSectionId} from '@/lib/research/reporting/data-view
 import {KPIDashboard,ValuationDashboard} from './research-dashboards';
 import {ChangeLogTable} from './report/change-log-table';
 import {ExhibitTile} from './report/exhibit-tile';
-import {chapterExhibits} from '@/lib/research/reporting/exhibits';
+import {chapterExhibits,EXHIBIT_STANDARD} from '@/lib/research/reporting/exhibits';
 
 type RecordValue=Record<string,any>;
 const clean=readerText;
@@ -24,8 +24,6 @@ const pad=(n:number)=>String(n).padStart(2,'0');
 // Paths shown elsewhere (Financials tab) or too granular for a chapter.
 const hiddenPaths=['observations','ttm_series','coverage.cells','coverage.gaps'];
 const nameKeys=['Scenario','Scenario name','Method','Claimed moat','Process node','Segment name','Segment','Risk name','Catalyst name','Name','Measure','Metric','Question','Event','Claim','Driver key','Driver','Indicator','Strategy name','Combination key','Year','Dataset','Title'];
-// Reports of this standard store exhibit keys on each section; code builds the exhibits from stored artifacts.
-const CODE_BUILT_STANDARD='asset-framework-2.1-adaptive-3';
 const isLong=(v:unknown)=>typeof v==='string'&&v.length>90||(!!v&&typeof v==='object');
 
 /** Display name for a record: "bear" in a Scenario field reads "Bear case"; a bare key such as "fcfe" reads "FCFE". */
@@ -268,7 +266,8 @@ export function ResearchReport({document,financialsHref,liveArtifacts}:{document
   },[document,sections]);
   const section=sections.find(s=>s.id===active); const index=sections.findIndex(s=>s.id===active);
   const visuals=useMemo(()=>sectionVisuals(document,active),[document,active]);
-  const codeBuilt=document.standard_version===CODE_BUILT_STANDARD;
+  // Reports of this standard store exhibit keys on each section; code builds the exhibits from stored artifacts.
+  const codeBuilt=document.standard_version===EXHIBIT_STANDARD;
   const built=useMemo(()=>codeBuilt?chapterExhibits(document,active):[],[codeBuilt,document,active]);
   const evidence=document.evidence.find(e=>e.id===source);
   function showSource(id:string){setSource(id);dialog.current?.showModal();}
