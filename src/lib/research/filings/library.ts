@@ -18,12 +18,13 @@ const formIn = (text: unknown): FilingForm | null => {
 export type FilingDoc = { source_type: string; title: string; url: string | null; metadata_json?: Record<string, unknown> | null };
 
 /**
- * The document's form: from `metadata_json.form` (an EDGAR filing names it), else the title, else the URL; null when
- * none names a form. A metadata form outside the library's forms (for example "DEF 14A") is returned as stated.
+ * The document's library form (one of FILING_FORMS; an amendment such as "10-K/A" is its form) or null. A stated
+ * `metadata_json.form` (an EDGAR filing names it) is authoritative: a form outside the library (for example
+ * "DEF 14A") gives null, without looking at the title or URL. Otherwise the title, else the URL.
  */
-export function filingForm(doc: FilingDoc): string | null {
+export function filingForm(doc: FilingDoc): FilingForm | null {
   const stated = doc.metadata_json?.form;
-  if (typeof stated === "string" && stated.trim()) return formIn(stated) ?? stated.trim().slice(0, 20);
+  if (typeof stated === "string" && stated.trim()) return formIn(stated);
   return formIn(doc.title) ?? formIn(doc.url);
 }
 
@@ -34,15 +35,22 @@ const time = (value: string | null | undefined) => { const t = value ? Date.pars
  * The library's filings: forms in FILING_FORMS only, published within `years` of `now` (undated documents are left
  * out), one per URL (the copy retrieved last), newest publication first.
  */
-export function recentFilings<T extends Dated>(docs: T[], now: Date, years = 2): (T & { form: string })[] {
+/** `years` before `now`: whole years on the calendar, then any fraction as that share of 365.25 days. */
+export function yearsBefore(now: Date, years: number): number {
+  const whole = Math.trunc(years);
   const since = new Date(now);
-  since.setUTCFullYear(since.getUTCFullYear() - years);
+  since.setUTCFullYear(since.getUTCFullYear() - whole);
+  return since.getTime() - (years - whole) * 365.25 * 86_400_000;
+}
+
+export function recentFilings<T extends Dated>(docs: T[], now: Date, years = 2): (T & { form: string })[] {
+  const since = yearsBefore(now, years);
   const byUrl = new Map<string, T & { form: string }>();
   for (const doc of docs) {
     const form = filingForm(doc);
-    if (!form || !(FILING_FORMS as readonly string[]).includes(form)) continue;
+    if (!form) continue;
     const published = time(doc.published_at);
-    if (published === null || published < since.getTime() || published > now.getTime()) continue;
+    if (published === null || published < since || published > now.getTime()) continue;
     const key = doc.url || `id:${doc.id}`;
     const held = byUrl.get(key);
     if (!held || (time(doc.retrieved_at) ?? 0) > (time(held.retrieved_at) ?? 0)) byUrl.set(key, { ...doc, form });
