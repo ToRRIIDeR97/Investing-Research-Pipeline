@@ -1,57 +1,52 @@
+// Section writes under standard adaptive-3: writers return prose only and code sets the exhibits (storedSection).
+// These replace the chart-plan gap tests: chart plans are no longer planned, validated or filled for new writes.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CHART_PLAN_GAP, SECTION_CONTRACT, validateChartPlan, type ReportSection } from "../src/lib/research/reporting/contracts";
+import { SECTION_CONTRACT, type ReportSection } from "../src/lib/research/reporting/contracts";
 import { sectionWriteSteps } from "../src/lib/research/reporting/runtime";
 
 type Written = { section: ReportSection };
-const plan = { id: "segments", title: "Segments", purpose: "Explain the segments", coverage: ["business"], artifact_ids: [] as string[],
-  chart_plan: "Segment revenue mix (series, stacked) from historical_record" };
-const written = (over: Partial<ReportSection> = {}): Written => ({ section: { id: "segments", title: "Segments", purpose: "Explain the segments",
+const plan = { id: "segments", title: "Segments", purpose: "Explain the segments", coverage: ["business"], artifact_ids: [] as string[] };
+const written = (over: Record<string, unknown> = {}): Written => ({ section: { id: "segments", title: "Segments", purpose: "Explain the segments",
   coverage: ["business"], artifact_ids: [], paragraphs: [{ kind: "analysis", text: "Lending earns most of the revenue.", evidence_ids: [], artifact_ids: [] }],
-  counterevidence: "Deposits could reprice.", implication: "Lending drives the thesis.", gaps: [], tables: [], ...over } });
-const steps = (validate = (v: Written) => validateChartPlan(plan, v.section), check = (v: Written) => v) =>
-  sectionWriteSteps<Written>(plan, SECTION_CONTRACT, check, validate);
+  counterevidence: "Deposits could reprice.", implication: "Lending drives the thesis.", gaps: [], ...over } as unknown as ReportSection });
+const chart = { kind: "scenarios" as const, title: "Revenue by scenario", caption: "", artifact_id: "osc-1", metric: "revenue", unit: "USD millions" };
+const evidence = { id: "ev-1", claim_text: "c", source_title: "10-K", url: "https://example.com/10k", published_at: "2026-01-01T00:00:00.000Z", location: "p. 4", quote: "Loans fund the deposits." };
+const lane = (evidence_ids: string[]) => ({ nodes: [{ label: "Deposits", icon: "bank" }, { label: "Loans", icon: "document" }], note: "n", relationship: "documented", evidence_ids, artifact_ids: [] });
+const process = (evidence_ids: string[]) => ({ kind: "process" as const, title: "How deposits fund loans", caption: "c", lanes: [lane(evidence_ids)] });
 
-test("a section write without its planned chart passes validation and is stored with the chart gap", () => {
-  const s = steps();
-  assert.deepEqual(SECTION_CONTRACT.validate?.(written()) ?? [], [], "the fixture meets the section schema");
-  assert.throws(() => validateChartPlan(plan, written().section), "without the step the chart rule rejects it");
-  assert.deepEqual(s.outputFormat.validate?.(written()), []);
-  const stored = s.finish(written());
-  assert.deepEqual(stored.section.gaps, [CHART_PLAN_GAP]);
-  assert.deepEqual(s.finish(stored), stored, "finishing twice adds nothing");
+test("a write that still sends tables, a chart plan and a chart passes and is stored as prose with the placed exhibits", () => {
+  const s = sectionWriteSteps<Written>(plan, SECTION_CONTRACT, v => v, () => {}, undefined, ["segment_economics", "cash_conversion"]);
+  const answer = written({ chart_plan: "Segment mix", tables: [{ title: "Segments", artifact_id: "a1", path: "segments.annual" }], visuals: [chart] });
+  assert.deepEqual(s.outputFormat.validate?.(answer), []);
+  const stored = s.finish(answer);
+  assert.deepEqual(stored.section.tables, []);
+  assert.deepEqual(stored.section.visuals, []);
+  assert.equal("chart_plan" in stored.section, false);
+  assert.deepEqual(stored.section.exhibits, ["segment_economics", "cash_conversion"]);
+  assert.deepEqual(stored.section.gaps, [], "no chart gap is added for new writes");
+  assert.deepEqual(s.finish(stored), stored, "finishing twice changes nothing");
 });
 
-test("the chart step runs after the reference check and hides no other validation error", () => {
+test("the store step runs after the reference check and hides no other validation error", () => {
   const seen: string[] = [];
-  const s = steps(v => { seen.push(...v.section.gaps); throw new Error("Preserve section id and coverage exactly"); },
-    v => { seen.push("checked"); return v; });
-  const errors = s.outputFormat.validate?.(written()) ?? [];
+  const s = sectionWriteSteps<Written>(plan, SECTION_CONTRACT, v => { seen.push("checked"); return v; },
+    v => { seen.push(`tables ${v.section.tables.length}`); throw new Error("Preserve section id and coverage exactly"); });
+  const errors = s.outputFormat.validate?.(written({ tables: [{ title: "t", artifact_id: "a1", path: "" }] })) ?? [];
   assert.equal(errors.length, 1);
   assert.match(String(errors[0].message), /Preserve section id/);
-  assert.deepEqual(seen, ["checked", CHART_PLAN_GAP]);
+  assert.deepEqual(seen, ["checked", "tables 0"]);
 });
 
-test("a visual that cannot be built from the stored data is dropped in code and the planned chart becomes a gap", () => {
-  const scenarios = { id: "osc-1", artifact_type: "operating_scenario_set", content_json: { scenarios: ["bear", "base", "bull"].map(scenario_type => ({ scenario_type,
-    yearly_drivers: [], resulting_financial_statements_json: { revenue_usd_millions: { 2027: 10, 2028: 12 } } })) } };
-  const visualInput = { artifacts: [scenarios] as any, evidence: [], cutoff: "2026-11-18T00:00:00.000Z" };
-  const visual = (metric: string) => ({ kind: "scenarios" as const, title: "Revenue by scenario", caption: "", artifact_id: "osc-1", metric, unit: "USD millions" });
-  const s = sectionWriteSteps<Written>(plan, SECTION_CONTRACT, v => v, v => validateChartPlan(plan, v.section), visualInput);
-
-  const bad = s.finish(written({ visuals: [visual("revenue_musd")] }));
-  assert.deepEqual(bad.section.visuals, [], "the chart naming an unknown metric is dropped");
-  assert.deepEqual(bad.section.gaps, [CHART_PLAN_GAP]);
-  assert.deepEqual(s.outputFormat.validate?.(written({ visuals: [visual("revenue_musd")] })), []);
-
-  const good = s.finish(written({ visuals: [visual("revenue_usd_millions")] }));
-  assert.equal(good.section.visuals?.length, 1, "a chart that builds is kept");
-  assert.deepEqual(good.section.gaps, []);
+test("a process visual is kept when its sources check, and dropped in code when they don't", () => {
+  const visualInput = { artifacts: [], evidence: [evidence], cutoff: "2026-11-18T00:00:00.000Z" };
+  const s = sectionWriteSteps<Written>(plan, SECTION_CONTRACT, v => v, () => {}, visualInput);
+  assert.deepEqual(s.finish(written({ visuals: [process(["ev-1"])] })).section.visuals?.map(v => v.kind), ["process"]);
+  assert.deepEqual(s.finish(written({ visuals: [process(["ev-missing"])] })).section.visuals, []);
+  assert.deepEqual(s.finish(written()).section.exhibits, [], "no exhibits placed means an empty list");
 });
 
-test("a section with no chart plan, or one that drew its chart, is stored unchanged", () => {
-  const none = sectionWriteSteps<Written>({ ...plan, chart_plan: "" }, SECTION_CONTRACT, v => v, () => {});
-  assert.deepEqual(none.finish(written()), written());
-  const drawn = written({ gaps: ["Charts are omitted: fewer than four quarters."] });
-  assert.deepEqual(steps().finish(drawn), drawn);
+test("a section without prose is still rejected", () => {
+  const errors = SECTION_CONTRACT.validate?.(written({ paragraphs: [] })) ?? [];
+  assert.ok(errors.some(e => e.path.includes("paragraphs")));
 });

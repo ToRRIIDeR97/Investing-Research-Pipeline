@@ -2,7 +2,8 @@ import { flatTable, resolveTable, type FlatTable } from "./tables";
 import { validateVisual, historySeries, buildVisual } from './visuals';
 export { resolveTable } from "./tables";
 import { createHash } from "node:crypto";
-import { Section, CoverageResult, Question, STANDARD_VERSION, type ReportSection, type CoverageCheck, type ResearchQuestion } from "./contracts";
+import { buildExhibits, isAvailable, type BuiltExhibit } from "./exhibits";
+import { Section, CoverageResult, Question, STANDARD_VERSION, ADAPTIVE_2_STANDARD, type ReportSection, type CoverageCheck, type ResearchQuestion } from "./contracts";
 import { changeLogMarkdown, type VersionChangeLog } from "../lineage/change-log";
 
 export interface ReportArtifact {
@@ -60,7 +61,13 @@ function flatTableMarkdown(table: FlatTable): string {
   return [`| ${keys.map(blank).join(" | ")} |`, `| ${keys.map(() => "---").join(" | ")} |`,
     ...table.rows.map(row => `| ${keys.map(k => blank(row[k])).join(" | ")} |`), ...table.notes.flatMap(note => ["", plainMarkdown(note)])].join("\n");
 }
-/** The renderer of reports stored before STANDARD_VERSION adaptive-2; kept so their content hash still verifies. */
+/** A code-built exhibit's formatted cells (exhibits.ts) as a Markdown table; numeric columns align right. */
+function exhibitMarkdown(table: BuiltExhibit["table"]): string {
+  if (!table.rows.length) return "No observations available.";
+  return [`| ${table.columns.map(c => plainMarkdown(c.label)).join(" | ")} |`, `| ${table.columns.map(c => c.numeric ? "---:" : "---").join(" | ")} |`,
+    ...table.rows.map(row => `| ${table.columns.map((_, i) => plainMarkdown(row[i] ?? "—")).join(" | ")} |`)].join("\n");
+}
+/** The renderer of reports stored before adaptive-2; kept so their content hash still verifies. */
 function tableMarkdown(value: unknown): string {
   // Columnar tables (financial_analytics, report_facts) render as their rows.
   const columnar = value as { columns?: unknown; rows?: unknown };
@@ -83,8 +90,13 @@ export function createReport(input: ReportInput): ReportDocument {
   // A stored report keeps the standard it was written under, so re-rendering it reproduces its hash.
   const stored = (input as Partial<ReportDocument>).standard_version;
   const legacy = Boolean(stored) && stored !== STANDARD_VERSION;
-  const renderTable = (table: ReportSection["tables"][number]) => legacy
-    ? tableMarkdown(resolveTable(table, input.artifacts)) : flatTableMarkdown(flatTable(table, input.artifacts));
+  // adaptive-3 renders the exhibits code placed; adaptive-2 the model's tables as flat rows; earlier standards as raw tables.
+  const codeExhibits = !legacy;
+  const renderTable = (table: ReportSection["tables"][number]) => stored === ADAPTIVE_2_STANDARD
+    ? flatTableMarkdown(flatTable(table, input.artifacts)) : tableMarkdown(resolveTable(table, input.artifacts));
+  const built = codeExhibits ? new Map(buildExhibits(input.artifacts, { cutoff: input.cutoff }).filter(isAvailable).map(e => [e.key, e])) : new Map<string, BuiltExhibit>();
+  const placed = (section: ReportSection) => (section.exhibits ?? []).flatMap(key => built.get(key) ?? []);
+  const modelTables = (section: ReportSection) => codeExhibits ? [] : section.tables;
   const sections = input.sections.map(s => Section.parse(s));
   const coverage = input.coverage.map(c => CoverageResult.parse(c));
   const questions = input.questions.map(q => Question.parse(q));
@@ -114,7 +126,7 @@ export function createReport(input: ReportInput): ReportDocument {
       refs(p.evidence_ids, p.artifact_ids);
       if (p.kind === "fact" && !p.evidence_ids.length && !p.artifact_ids.length) errors.push(`Unsupported fact in ${section.id}`);
     }
-    for (const table of section.tables) {
+    for (const table of modelTables(section)) {
       try { renderTable(table); } catch (error) { errors.push(String(error)); }
     }
     for (const visual of section.visuals ?? []) {
@@ -148,7 +160,10 @@ export function createReport(input: ReportInput): ReportDocument {
   for (const s of sections) {
     lines.push(`## ${plainMarkdown(s.title)}`, "");
     for (const p of s.paragraphs) lines.push(`${p.kind === "assumption" ? "Analyst assumption. " : p.kind === "speculation" ? "Speculative option. " : ""}${plainMarkdown(p.text)} ${p.evidence_ids.map(citation).join(" ")}`.trim(), "");
-    for (const table of s.tables) lines.push(`### ${plainMarkdown(table.title)}`, "", renderTable(table), "");
+    for (const table of modelTables(s)) lines.push(`### ${plainMarkdown(table.title)}`, "", renderTable(table), "");
+    // Code-built exhibits (adaptive-3) export as their formatted table, charts included; unknown or unavailable keys are skipped.
+    for (const exhibit of placed(s)) lines.push(`### ${plainMarkdown(exhibit.title)}`, "",
+      ...(exhibit.caption ? [plainMarkdown(exhibit.caption), ""] : []), exhibitMarkdown(exhibit.table), "", ...exhibit.notes.flatMap(note => [plainMarkdown(note), ""]));
     // Visual specifications and provenance are part of the approved/exported content.
     for (const visual of s.visuals ?? []) {
       lines.push(`### ${plainMarkdown(visual.title)}`, '', plainMarkdown(visual.caption), '');

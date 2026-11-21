@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 560" width="1100" height="560" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" font-size="13">
-<title id="t">Research across runs: lineage, change log and monitoring</title><desc id="d">A new run links to the asset's latest completed or approved run (prior_run_id) and saves a code-built prior_research block that analysis and report packets carry in their cached prefix. Before the report, code diffs the run against the prior into version_change_log. Separately, npm run monitor:check reads new 10-Q/10-K filings from EDGAR, scores the dashboard and stores whether a refresh is due; the asset page shows it and a person decides. No model call, and no run starts on its own.</desc>
+<title id="t">Research across runs: lineage, change log and monitoring</title><desc id="d">A new run links to the asset's latest completed or approved run (prior_run_id) and saves a code-built prior_research block that analysis and report packets carry (report packets with its ids as id&lt;n&gt; tokens). Before the report, code diffs the run against the prior into version_change_log. Separately, npm run monitor:check reads new 10-Q/10-K filings from EDGAR, scores the dashboard and stores whether a refresh is due; the asset page shows it and a person decides. No model call, and no run starts on its own.</desc>
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker><marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10" fill="none" stroke="#333"/></marker></defs>
 <rect x="0" y="0" width="1100" height="560" fill="#ffffff"/>
 <text x="16" y="26" font-size="16" font-weight="bold" fill="#111">Research across runs: lineage, change log and monitoring</text>
@@ -24,8 +24,8 @@
 <rect x="330" y="230" width="260" height="110" rx="6" fill="#fdf3e3" stroke="#b07a1f" stroke-width="1.4"/>
 <text x="460.0" y="248" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«model packets»</text>
 <text x="460.0" y="264" font-size="13" font-weight="bold" text-anchor="middle" fill="#111">Analysis + report calls (Run B)</text>
-<text x="460.0" y="281" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">prepareResearchCall adds prior_research</text>
-<text x="460.0" y="296" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">in the cached packet prefix</text>
+<text x="460.0" y="281" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">analysis: prepareResearchCall adds it</text>
+<text x="460.0" y="296" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">report: reportComposition, as id&lt;n&gt; tokens</text>
 <text x="460.0" y="311" font-size="11.5" font-weight="normal" text-anchor="middle" fill="#333">absent → packet byte-identical</text>
 <rect x="660" y="230" width="400" height="110" rx="6" fill="#f3eefa" stroke="#6f4fa3" stroke-width="1.4"/>
 <text x="860.0" y="248" font-size="11" font-weight="normal" text-anchor="middle" fill="#555">«report_draft start»</text>

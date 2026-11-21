@@ -24,7 +24,8 @@ test("AC-1/2: custom sections preserve explanation and source-backed tables", as
     implication: "Loss normalization determines the scenario spread.", gaps: ["Cohort retention is unavailable."],
     tables: [{ title: "Operating inputs", artifact_id: "model-1", path: "" }],
   };
-  const document = r.createReport({ asset_name: "Retail Co", cutoff: "2026-08-01", sections: [section],
+  // Model-requested tables are the adaptive-2 format; adaptive-3 reports print code-built exhibits instead (report-templates).
+  const document = r.createReport({ ...{ standard_version: "asset-framework-2.1-adaptive-2" }, asset_name: "Retail Co", cutoff: "2026-08-01", sections: [section],
     coverage: [{ key: "management", status: "qualified", rationale: "Retention disclosure is missing.", section_ids: ["expansion"] }],
     required_coverage: ["management"], questions: [], evidence, artifacts, is_test: true });
   const markdown = generateMarkdownReport({ runId: "r", asset: { canonical_name: "Retail Co", slug: "retail", asset_kind: "equity" }, report_document: document } as any);
