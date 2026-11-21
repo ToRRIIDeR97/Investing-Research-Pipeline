@@ -94,7 +94,14 @@ export function equityMethodsFormat(options: { requireDepreciationAddBack: boole
   };
 }
 
-export const equityMethodsPrompt = (p: Record<string, unknown>) => exactJsonPrompt({
+/**
+ * For a deposit-funded lender, loan growth is funded mostly by deposits and borrowing; only the equity it ties up
+ * reduces cash to shareholders. Deducting the whole balance-sheet growth makes every explicit year negative and
+ * leaves the terminal value as more than all of the value.
+ */
+export const BANK_FCFE_RULE = "For a bank or other deposit-funded lender, FCFE is net income minus the equity retained to keep the target capital ratio as the balance sheet grows: put that retained equity (growth in risk-weighted assets, or loans when RWA is not given, times the target CET1 or equity-to-assets ratio) in change_in_net_working_capital. Never deduct loan growth, balance-sheet growth or a funding-surplus proxy from the operating scenarios in full; deposits and borrowings fund the rest. When RWA or a target ratio is not in the packet, use the latest reported CET1 or equity-to-assets ratio from the filings or financial_inputs, or else 10% as a stated analyst assumption. State the ratio and its source in source_notes. A missing RWA series, call report, tax rate (use the historical effective rate) or an unreconciled corporate line in the scenarios is a gap to note, never a reason to withhold the valuation.";
+
+export const equityMethodsPrompt =(p: Record<string, unknown>) => exactJsonPrompt({
   agentName: "valuation-analyst",
   requiredKeys: Object.keys(EquityMethodsOutput.shape),
   packet: p,
@@ -105,6 +112,7 @@ export const equityMethodsPrompt = (p: Record<string, unknown>) => exactJsonProm
     `The application computes discount factors, terminal values, the yearly value per share, the scenario anchors, the weighted target and the returns from the first method in the order ${METHOD_ORDER.join(", ")}; other methods are cross-checks. Explain unsupported methods in omitted_methods; never fabricate data to fill a schedule.`,
     "Use financial_inputs (captured quarterly and annual revenue, costs, tax, D&A, SBC, operating cash flow, capex, cash, marketable securities, debt, leases, diluted shares, headcount, period-end closes and market caps), the operating scenarios, accepted historical metrics and the current market price. Check financial_inputs.columns and not_captured before listing a gap; never call a supplied input absent.",
     "For fcfe, give every year a build: starting_profit (net income), depreciation_amortization added back, capital_expenditures as a positive amount that is subtracted, change_in_net_working_capital, and other_adjustments (net borrowing; stock-based compensation when treated as a cash cost). cash_flow must equal the build.",
+    BANK_FCFE_RULE,
     "Discount rates, terminal growth and multiples are analyst assumptions: state each one and its rationale in source_notes rather than treating it as a missing input.",
     COST_OF_CAPITAL_RULE,
     "reverse_valuation gives the revenue growth and operating margin the current market price implies.",

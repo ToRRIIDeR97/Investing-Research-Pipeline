@@ -23,13 +23,17 @@ export const REPORT_FACT_DEFINITIONS: Record<string, string> = {
   tv_share_of_ev: "Present value of the terminal value alone (after any fade years) ÷ enterprise value",
   value_beyond_explicit_share: "Present value of everything after the explicit forecast (fade years and terminal value) ÷ enterprise value; information, not a gate",
   explicit_cash_flow_sum: "Sum of the explicit-year cash flows, undiscounted (currency millions); fade years excluded",
-  no_rerating_return: "Return to the terminal year if EV/NOPAT stays at today's level: (today's EV/NOPAT × terminal-year NOPAT + equity bridge + explicit cash flows) ÷ diluted shares ÷ market price − 1",
+  no_rerating_return: "Return to the terminal year if today's multiple holds: (today's EV/NOPAT × terminal-year NOPAT + equity bridge + explicit cash flows) ÷ diluted shares ÷ market price − 1; for equity methods (FCFE, dividends) today's P/E × terminal-year net income",
   no_rerating_return_annualized: "no_rerating_return compounded per explicit year",
   weighted_pv_per_share: "Probability-weighted PV per share over bear, base and bull",
   fcf_yield: "TTM free cash flow ÷ market cap at the market price",
   fcf_ex_sbc_yield: "(TTM free cash flow − TTM stock-based compensation) ÷ market cap",
   ev_to_nopat_ttm: "(Market price × diluted shares − equity bridge) ÷ TTM NOPAT at the normalized tax rate",
-  ev_to_nopat_next: "The same enterprise value ÷ the base case's first forecast-year NOPAT",
+  ev_to_nopat_next: "The same enterprise value ÷ the base case's first forecast-year NOPAT (FCFF only)",
+  net_income_ttm: "Net income, trailing 12 months",
+  pe_ttm: "Market price × diluted shares ÷ TTM net income",
+  pe_next: "The same market cap ÷ the base case's first forecast-year net income (equity methods only)",
+  earnings_yield: "TTM net income ÷ market cap; the cash-yield cross-check for banks and other firms valued on equity",
 };
 
 /** The facts writers cite; withheld valuations give only the market block. Null when nothing is stored. */
@@ -45,6 +49,7 @@ export function buildReportFacts(artifacts: Row[]) {
   const latest = (table: AnalyticsTable) => tableRows(table).at(-1) ?? {};
   const cash = pack ? latest(pack.cash_conversion.quarterly) : {}, capital = pack ? latest(pack.capital_allocation.quarterly) : {};
   const nopatTtm = typeof cash.nopat_ttm === "number" ? cash.nopat_ttm : null;
+  const netIncomeTtm = typeof cash.net_income_ttm === "number" ? cash.net_income_ttm : null;
   const fcfTtm = typeof cash.fcf_ttm === "number" ? cash.fcf_ttm : null;
   const sbcTtm = typeof capital.sbc_ttm === "number" ? capital.sbc_ttm : null;
 
@@ -53,7 +58,12 @@ export function buildReportFacts(artifacts: Row[]) {
   const marketCap = price !== null && shares !== null ? price * shares : null;
   const ev = marketCap !== null && bridge !== null ? marketCap - bridge : null;
   const multiple = ev !== null && nopatTtm !== null && nopatTtm > 0 ? ev / nopatTtm : null;
-  const firstNopat = base?.years?.[0]?.build?.starting_profit ?? null;
+  // Equity methods (FCFE, dividends, earnings or book exits) start each year from net income, so they re-rate on P/E.
+  const equityMethod = (s: ValuationMethodInput | undefined) => !!s && s.method !== "fcff";
+  const peTtm = marketCap !== null && netIncomeTtm !== null && netIncomeTtm > 0 ? marketCap / netIncomeTtm : null;
+  const firstProfit = base?.years?.[0]?.build?.starting_profit ?? null;
+  const firstNopat = equityMethod(base) ? null : firstProfit;
+  const firstNetIncome = equityMethod(base) ? firstProfit : null;
 
   const unrounded = new Map<string, number>();
   const cases = withheld ? [] : CASES.flatMap((type) => {
@@ -66,11 +76,12 @@ export function buildReportFacts(artifacts: Row[]) {
     const explicitPv = explicitYears.reduce((n, y) => n + y.present_value, 0);
     const enterprise = calc.years.reduce((n, y) => n + y.present_value, 0) + calc.terminal_present_value;
     const explicit = explicitYears.reduce((n, y) => n + ((y as { counted_cash_flow?: number }).counted_cash_flow ?? y.cash_flow), 0);
-    const lastNopat = explicitYears.at(-1)?.build?.starting_profit ?? null;
+    const lastProfit = explicitYears.at(-1)?.build?.starting_profit ?? null;
+    const rerate = equityMethod(s) ? peTtm : multiple;
     // The valuation stage's own no-rerating figure wins when it computed one.
     const staged = valuation?.cross_checks?.no_rerating?.[type]?.return;
-    const noRerating = typeof staged === "number" ? staged : price !== null && multiple !== null && lastNopat !== null
-      ? (multiple * lastNopat + calc.equity_bridge + explicit) / calc.diluted_shares / price - 1 : null;
+    const noRerating = typeof staged === "number" ? staged : price !== null && rerate !== null && lastProfit !== null
+      ? (rerate * lastProfit + calc.equity_bridge + explicit) / calc.diluted_shares / price - 1 : null;
     const anchor = Number(valuation?.[`terminal_anchor_${type}`]);
     unrounded.set(type, calc.value_per_share);
     return [{
@@ -110,6 +121,10 @@ export function buildReportFacts(artifacts: Row[]) {
       fcf_ex_sbc_yield: r4(marketCap && fcfTtm !== null && sbcTtm !== null ? (fcfTtm - sbcTtm) / marketCap : null),
       ev_to_nopat_ttm: r2(multiple),
       ev_to_nopat_next: r2(ev !== null && firstNopat !== null && firstNopat > 0 ? ev / firstNopat : null),
+      net_income_ttm: netIncomeTtm,
+      pe_ttm: r2(peTtm),
+      pe_next: r2(marketCap !== null && firstNetIncome !== null && firstNetIncome > 0 ? marketCap / firstNetIncome : null),
+      earnings_yield: r4(peTtm !== null ? 1 / peTtm : null),
     },
     definitions: REPORT_FACT_DEFINITIONS,
   };
