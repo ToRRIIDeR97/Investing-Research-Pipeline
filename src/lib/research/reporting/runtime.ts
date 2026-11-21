@@ -293,8 +293,8 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
     return { keys, built: keys.flatMap(key => exhibits.filter(isAvailable).filter(e => e.key === key)) };
   };
   const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}`;
-  // The prior run's summary joins the packet here, before refs.packet tokenizes it; prepareResearchCall would add it
-  // afterwards, with its document and run UUIDs, and skips a packet that already has it (so the rule is added here too).
+  // The prior run's summary joins the packet here, and refs.packet tokenizes it with the rest; prepareResearchCall would add it
+  // too, and skips a packet that already has it (so the rule is added here too).
   const prior = await loadPriorResearch(sql, ctx.runId);
   const priorRules = prior ? [PRIOR_RESEARCH_RULE] : [];
   const common = { asset: { assetName: ctx.assetName, symbol: ctx.symbol, profile: ctx.profileKey },
@@ -311,7 +311,7 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
     async plan(feedback) {
       const packet = { ...common, exhibit_catalogue: exhibitCatalogue, feedback, output_contract: "report_outline", output_schema: OUTLINE_CONTRACT.schema };
       const output = usableOutline(answer(await callResearchAgent<{ outline: ReportOutline }>({ sql, ctx, stageKey,
-        taskKey: "report:outline", taskType: "report_outline", agentName: "asset-analyst", modelTier: "mid", packet: refs.packet(packet),
+        taskKey: "report:outline", taskType: "report_outline", agentName: "asset-analyst", modelTier: "mid", packet, packetTransform: refs.packet,
         outputFormat: resolved(checkedContract(OUTLINE_CONTRACT, ({ outline }: { outline: ReportOutline }) => {
           validateProductOutline(outline);
           createReport({ ...reportInput, ...outline, sections: outline.sections.map(section => ({ ...section,
@@ -346,7 +346,7 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
         if (finalCoverage) checkFinalCoverage(reportInput, outline, [...completed.filter(s => s.id !== section.id), result.section], result.coverage ?? []);
       }, reportInput, placed.keys);
       const output = steps.finish(usable(answer(await callResearchAgent<Written>({ sql, ctx, stageKey,
-        taskKey: `report:section:${section.id}`, taskType: "report_section", agentName: "export-writer", modelTier: "mid", packet: refs.packet(packet),
+        taskKey: `report:section:${section.id}`, taskType: "report_section", agentName: "export-writer", modelTier: "mid", packet, packetTransform: refs.packet,
         perCallKeys, outputFormat: resolved(steps.outputFormat), promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: contract.requiredKeys, packet: p, extraRules: [...extraRules, ...priorRules] }) }), dropped)));
       return finalCoverage ? { ...output.section, final_coverage: output.coverage } : output.section;
     },
@@ -355,7 +355,7 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
         depth_checks: DEPTH_CHECKS.map(({ id, label, ask, critical }) => ({ id, label, ask, decision_critical: critical })),
         output_contract: "report_review", output_schema: AI_REVIEWER_CONTRACT.schema };
       const review = answer(await callResearchAgent<ReportReview>({ sql, ctx, stageKey, taskKey: "report:review", taskType: "ai_review",
-        agentName: "research-reviewer", modelTier: "mid", packet: refs.packet(packet), outputFormat: resolved(AI_REVIEWER_CONTRACT),
+        agentName: "research-reviewer", modelTier: "mid", packet, packetTransform: refs.packet, outputFormat: resolved(AI_REVIEWER_CONTRACT),
         promptFactory: p => exactJsonPrompt({ agentName: "research-reviewer", requiredKeys: AI_REVIEWER_CONTRACT.requiredKeys, packet: p,
           extraRules: [REPORT_FACTS_RULE,
             "Review the exact report_document against source passages AND complete analytical artifacts. Check citation entailment, unsupported facts/numbers, historical causes, counterarguments, operating-to-valuation links, contradictions across sections, numerical consistency and unjustified confidence. Flag analysis that lists figures without explaining what drove them, and figures repeated across sections.",

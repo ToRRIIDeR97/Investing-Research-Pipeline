@@ -24,6 +24,7 @@ import { mergeObservations } from "../src/lib/research/reporting/data-views";
 import { FinancialAnalytics, buildFinancialAnalytics } from "../src/lib/research/history/analytics";
 import { buildStatementSummary } from "../src/lib/research/history/statement-summary";
 import { getTeamRequests } from "../src/lib/research/team";
+import { citationRefs } from "../src/lib/research/reporting/refs";
 
 const runId = process.argv[2];
 if (!runId || !process.env.DATABASE_URL) throw new Error("Usage: DATABASE_URL=... tsx scripts/report-packet-size.ts <run-id> [--live section-id,...]");
@@ -51,6 +52,8 @@ async function main() {
   }
   if (!artifacts.some((a) => a.artifact_type === "report_facts")) synthetic("report_facts", buildReportFacts(artifacts));
   const { shared, packetArtifacts } = splitReportArtifacts(artifacts);
+  // Like the runtime: report packets carry citation tokens, applied to the finished packet.
+  const refs = citationRefs(artifacts, inputs.evidence);
   const teamRequests = await getTeamRequests(sql, runId);
   const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${runId}`;
   const common = { asset: { assetName: ctx.assetName, symbol: ctx.symbol, profile: ctx.profileKey },
@@ -80,7 +83,7 @@ async function main() {
     const call = reportSectionCall(common, packetArtifacts, section, outline, [], isConclusion(section) ? [...completed] : [],
       section.id === lastConclusion ? outline.coverage : undefined, placedIn(section.id));
     const { params } = await prepareResearchCall({ sql, ctx, stageKey: "report_draft", taskKey: `report:section:${section.id}`, taskType: "report_section",
-      agentName: "export-writer", modelTier: "mid", packet: call.packet, perCallKeys: call.perCallKeys,
+      agentName: "export-writer", modelTier: "mid", packet: call.packet, perCallKeys: call.perCallKeys, packetTransform: refs.packet,
       promptFactory: (p) => exactJsonPrompt({ agentName: "export-writer", requiredKeys: call.contract.requiredKeys, packet: p, extraRules: call.extraRules }) });
     const written = (document?.sections ?? []).find((s: any) => s.id === section.id);
     if (isConclusion(section) && written) completed.push(written);
