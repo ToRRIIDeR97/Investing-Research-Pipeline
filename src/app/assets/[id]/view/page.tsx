@@ -26,6 +26,7 @@ import { ResearchReport } from "@/components/research-report";
 import { FinancialStatements } from "@/components/financial-statements";
 import { KPIDashboard } from '@/components/research-dashboards';
 import { ResearchChat } from '@/components/research-chat';
+import { ValuationWorkbench } from "@/components/workbench/valuation-workbench";
 import { artifactContent, researchObservations } from '@/lib/research/reporting/data-views';
 
 type JsonRecord = Record<string, unknown>;
@@ -83,7 +84,7 @@ const emptyResearchData: ResearchData = {
   artifacts: [],
 };
 
-type TabId = "overview" | "evidence" | "metrics" | "valuation" | "thesis" | "financials" | "kpis" | "notebook" | "backtests" | "sources" | "runs";
+type TabId = "overview" | "evidence" | "metrics" | "valuation" | "workbench" | "thesis" | "financials" | "kpis" | "notebook" | "backtests" | "sources" | "runs";
 const tabLabels: Partial<Record<TabId, string>> = { thesis: "Report", financials: "Financials", kpis: "KPIs", notebook: "Notebook", runs: "Run history" };
 const tabLabel = (tab: TabId) => tabLabels[tab] ?? tab.charAt(0).toUpperCase() + tab.slice(1);
 // Views that read large artifact bodies or the report document's artifacts. The others render from the summary report.
@@ -115,7 +116,7 @@ function ViewResearch() {
   const [data, setData] = useState<ResearchData>(emptyResearchData);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const activeTab:TabId = requestedView === 'report' ? 'thesis' : ['evidence','metrics','valuation','financials','kpis','notebook','backtests','sources','runs'].includes(requestedView ?? '') ? requestedView as TabId : 'overview';
+  const activeTab:TabId = requestedView === 'report' ? 'thesis' : ['evidence','metrics','valuation','workbench','financials','kpis','notebook','backtests','sources','runs'].includes(requestedView ?? '') ? requestedView as TabId : 'overview';
   const [searchQuery, setSearchQuery] = useState("");
   const loadVersion = useRef(0);
   // The run row behind the report on screen. A quiet refresh skips the report (megabytes) while that row is unchanged.
@@ -258,6 +259,8 @@ function ViewResearch() {
   function sectionHref(section:TabId, runId?:string) {
     const query = new URLSearchParams(searchParams.toString());
     query.set('view',section === 'thesis' ? 'report' : section);
+    // A chat proposal reference only means something on the Workbench tab it opened.
+    query.delete('proposal');
     if (runId ?? data.activeRun?.id) query.set('run',runId ?? data.activeRun!.id);
     return `/assets/${assetId}/view?${query}`;
   }
@@ -276,7 +279,7 @@ function ViewResearch() {
       </div>
       <div className={ui.headActions}>
         <Link href={`/assets/${assetId}`} className={ui.secondary}>Asset details</Link>
-        {data.activeRun&&<ResearchChat key={data.activeRun.id} runId={data.activeRun.id} evidence={data.report?.report_document?.evidence??[]}/>}
+        {data.activeRun&&<ResearchChat key={data.activeRun.id} runId={data.activeRun.id} evidence={data.report?.report_document?.evidence??[]} workbenchHref={(proposal)=>`${sectionHref('workbench')}&proposal=${encodeURIComponent(proposal)}`}/>}
         <Link href={`/assets/${assetId}/run?new=1`} className={ui.primary}>New research</Link>
       </div>
     </header>
@@ -291,6 +294,8 @@ function ViewResearch() {
     notebookHref={sectionHref("notebook")} assetName={asset.canonical_name} />}</div>;
   if (activeTab === 'notebook') return view(<InvestingNotebook api={notebookApi} artifacts={viewArtifacts} document={reportDocument} runId={data.activeRun?.id ?? null}
     runDate={data.activeRun?.created_at ? String(data.activeRun.created_at).slice(0, 10) : null} reportHref={(id) => `${sectionHref("thesis")}#report-${id}`} />);
+  if (activeTab === 'workbench') return view(data.activeRun ? <ValuationWorkbench key={data.activeRun.id} runId={String(data.activeRun.id)} proposalRef={searchParams.get('proposal')} />
+    : <section className={ui.tile}><p className={ui.empty}>Run research first; the workbench recomputes a run&apos;s stored valuation.</p></section>);
   if (activeTab === 'kpis') return view(<KPIDashboard key={data.activeRun?.id} artifacts={viewArtifacts} onRefresh={()=>void loadResearch()} refreshing={loading}/>, true);
   if (activeTab === 'thesis' && data.report?.report_document) return view(<ResearchReport key={data.activeRun?.id} document={data.report.report_document} liveArtifacts={viewArtifacts} financialsHref={sectionHref('financials')}/>);
   if (activeTab === 'financials') {
@@ -375,7 +380,7 @@ function RunHistory({ runs, activeRun, stages, assetId, onSelect }: { runs: Rese
   </>;
 }
 
-const tabViews: TabId[] = ["overview", "thesis", "financials", "kpis", "notebook", "valuation", "evidence", "metrics", "backtests", "sources", "runs"];
+const tabViews: TabId[] = ["overview", "thesis", "financials", "kpis", "notebook", "valuation", "workbench", "evidence", "metrics", "backtests", "sources", "runs"];
 
 function AssetTabs({ activeTab, hrefFor }: { activeTab: TabId; hrefFor: (view: TabId) => string }) {
   return <nav aria-label="Asset views" className={styles.tabs}>
