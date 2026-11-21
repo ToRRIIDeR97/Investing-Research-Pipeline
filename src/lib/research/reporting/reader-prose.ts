@@ -16,7 +16,13 @@ const BARE_REF = `\\b(?:${UUID_ANY_CASE}|${TOKEN})\\b`;
 const BARE_RUN = new RegExp(`(?:\\b[Ss][Ee][Ee]\\s+)?${BARE_REF}(?:\\s*(?:,|;|&|\\band\\b|\\bor\\b)\\s*${BARE_REF})*`, "g");
 /** Text before a removed run that ends a sentence, so the next word is capitalised. */
 const SENTENCE_START = /(?:^|[.!?]["')\]]?\s+)\s*$/;
-const MARK = "\u0000";
+/** Text before a removed run that ends in an opening quote or bracket, so the space after the run goes too. */
+const OPENING = /(?:(?:^|[\s:(\[])["']|[“‘(\[])$/;
+/**
+ * Marks left where a run was removed, resolved after snake_case words are written: CAPITAL upper-cases the next
+ * letter, TIGHT eats the following space, GAP lets a separator left directly before the end of a sentence go.
+ */
+const CAPITAL = "\u0000", TIGHT = "\u0001", GAP = "\u0002";
 const BRACKETS = /([([])([^()[\]]*)([)\]])/g;
 const ONLY_SEPARATORS = /^[\s,;:/&|.\-–—]*$/;
 const SNAKE = /\b[a-z0-9]+(?:_[a-z0-9]+)+\b/g;
@@ -40,9 +46,15 @@ export function readerProse(text: string): string {
     if (ONLY_SEPARATORS.test(kept)) return "";
     return open + kept.replace(/\s*([,;])(?:\s*[,;])+/g, "$1").replace(/^[\s,;]+|[\s,;]+$/g, "") + close;
   });
-  out = out.replace(BARE_RUN, (_match, offset: number, whole: string) => SENTENCE_START.test(whole.slice(0, offset)) ? MARK : "")
-    .replace(new RegExp(`${MARK}[ \\t]*([a-z])`, "g"), (_m, letter: string) => letter.toUpperCase()).replaceAll(MARK, "");
-  out = out.replace(SNAKE, words);
+  out = out.replace(BARE_RUN, (_match, offset: number, whole: string) => {
+    const before = whole.slice(0, offset);
+    return SENTENCE_START.test(before) ? CAPITAL : OPENING.test(before) ? TIGHT : GAP;
+  });
+  out = out.replace(SNAKE, words)
+    .replace(new RegExp(`[,;:][ \\t]*${GAP}(?=[ \\t]*(?:[.!?]|$))`, "g"), "")
+    .replace(new RegExp(`${TIGHT}[ \\t]*`, "g"), "")
+    .replace(new RegExp(`${CAPITAL}[ \\t]*([a-z])`, "g"), (_m, letter: string) => letter.toUpperCase())
+    .replace(new RegExp(`[${CAPITAL}${TIGHT}${GAP}]`, "g"), "");
   return out.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+([,.;:])(?=\s|$)/g, "$1").replace(/^[ \t]+|[ \t]+$/g, "");
 }
 

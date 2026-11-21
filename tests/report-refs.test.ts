@@ -42,6 +42,16 @@ test("readerProse removes a run of bare tokens with its separators and a precedi
     ["ev2 shows growth.", "Shows growth."],
     ["Revenue and margin rose, and capex or opex fell & S&P 500 rose.", "Revenue and margin rose, and capex or opex fell & S&P 500 rose."],
     ["Revenue rose and ev1 margin held.", "Revenue rose and margin held."],
+    // snake_case is written as words before the next word is capitalised
+    ["ev2 capex_to_da rose.", "Capex to D&A rose."],
+    ["Growth held. ev2 net_debt fell.", "Growth held. Net debt fell."],
+    ["ev2 fcf_ttm rose.", "FCF TTM rose."],
+    // no separator left before the end of a sentence, no space after an opening quote
+    ["Operations closed; see ar2.", "Operations closed."],
+    ["Operations closed, ev1 and ev2.", "Operations closed."],
+    ['He said: "ev1 margins rose."', 'He said: "margins rose."'],
+    ["Margins rose (per the filing) ev1.", "Margins rose (per the filing)."],
+    ["Ratios: debt; equity.", "Ratios: debt; equity."],
   ];
   for (const [text, expected] of cases) {
     const once = readerProse(text);
