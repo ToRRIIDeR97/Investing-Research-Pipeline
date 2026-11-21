@@ -1,6 +1,7 @@
 import { date, doublePrecision, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { assets } from "./core";
 import { research_runs } from "./workflow";
+import { source_documents } from "./corpus";
 
 // ============================================================
 // The investing notebook: one page per asset for the operator's own pins, KPIs, report annotations and journal.
@@ -58,6 +59,10 @@ export const notebook_annotations = pgTable("notebook_annotations", {
   paragraph_index: integer("paragraph_index"),
   /** The start of the annotated paragraph as it read then, so a moved or rewritten paragraph can still be recognised. */
   quote: text("quote").notNull().default(""),
+  /** report: a report chapter, exhibit or paragraph; filing: a section of a stored filing (migration 0021). */
+  anchor_kind: text("anchor_kind").notNull().default("report"),
+  /** Filing notes: the filing; set null if the document is deleted, keeping the note. */
+  source_document_id: uuid("source_document_id").references(() => source_documents.id, { onDelete: "set null" }),
   body: text("body").notNull(),
   created_at: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updated_at: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

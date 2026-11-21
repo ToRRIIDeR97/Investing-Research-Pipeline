@@ -124,6 +124,9 @@ const exhibitsOf = (section: Row) => Array.isArray(section.exhibits) ? section.e
  * A note nothing matches is unattached, never dropped.
  */
 export function placeAnnotation(annotation: NotebookAnnotation, document: Pick<ReportDocument, "sections">, runId: string | null): AnnotationPlace {
+  // A filing note belongs to its filing, never to a report chapter.
+  if (isFilingNote(annotation)) return { annotation, state: "unattached", section_id: null, exhibit_key: null, paragraph_index: null,
+    reason: "A note on a filing; it is listed under its filing." };
   const sections = document.sections as Row[];
   const byId = sections.find((s) => s.id === annotation.section_id);
   if (runId && annotation.research_run_id === runId && byId)
@@ -148,9 +151,17 @@ export function placeAnnotation(annotation: NotebookAnnotation, document: Pick<R
     reason: "No chapter of this report matches where the note was written." };
 }
 
-/** Every note placed in a report, plus the unattached ones. */
+/** A note on a stored filing (anchor_kind "filing") rather than on the report. */
+export const isFilingNote = (annotation: Pick<NotebookAnnotation, "anchor_kind">) => annotation.anchor_kind === "filing";
+/** The report notes only: filing notes are listed under their filing. */
+export const reportNotes = <T extends Pick<NotebookAnnotation, "anchor_kind">>(annotations: T[]) => annotations.filter((a) => !isFilingNote(a));
+/** A filing's notes, oldest first, as stored. */
+export const filingNotes = <T extends Pick<NotebookAnnotation, "anchor_kind" | "source_document_id">>(annotations: T[], documentId: string) =>
+  annotations.filter((a) => isFilingNote(a) && a.source_document_id === documentId);
+
+/** Every report note placed in a report, plus the unattached ones. Filing notes are left out. */
 export function placeAnnotations(annotations: NotebookAnnotation[], document: Pick<ReportDocument, "sections">, runId: string | null) {
-  const placed = annotations.map((a) => placeAnnotation(a, document, runId));
+  const placed = reportNotes(annotations).map((a) => placeAnnotation(a, document, runId));
   return { bySection: (sectionId: string) => placed.filter((p) => p.section_id === sectionId), unattached: placed.filter((p) => p.state === "unattached") };
 }
 

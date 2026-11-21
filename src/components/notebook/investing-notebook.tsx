@@ -9,7 +9,7 @@ import { researchObservations } from "@/lib/research/reporting/data-views";
 import { valuationSummary } from "@/lib/research/reporting/valuation-summary";
 import { label } from "@/lib/research/reporting/presentation.mjs";
 import type { ReportDocument } from "@/lib/research/reporting/report";
-import { kpiReading, kpiSnapshot, pinViews, placeAnnotations, type KpiReading } from "@/lib/research/notebook/readings";
+import { isFilingNote, kpiReading, kpiSnapshot, pinViews, placeAnnotations, reportNotes, type KpiReading } from "@/lib/research/notebook/readings";
 import type { NotebookApi } from "./use-notebook";
 
 type Row = Record<string, any>;
@@ -185,10 +185,11 @@ function JournalPanel({ api, artifacts, readings, runId }: { api: NotebookApi; a
 function NotesPanel({ api, document, runId, reportHref }: { api: NotebookApi; document: ReportDocument | null; runId: string | null; reportHref: (sectionId: string) => string }) {
   const placed = useMemo(() => document ? placeAnnotations(api.notebook.annotations, document, runId) : null, [api.notebook.annotations, document, runId]);
   const sections = document?.sections ?? [];
+  const onReport = reportNotes(api.notebook.annotations), onFilings = api.notebook.annotations.filter(isFilingNote);
   return <section className={ui.tile} aria-labelledby="nb-notes">
-    <header className={ui.tileHead}><h2 id="nb-notes">Report notes</h2><span className={ui.muted}>{api.notebook.annotations.length} notes</span></header>
+    <header className={ui.tileHead}><h2 id="nb-notes">Report notes</h2><span className={ui.muted}>{onReport.length} notes</span></header>
     <div className={ui.tileBody}>
-      {!api.notebook.annotations.length && <p className={ui.muted}>Add notes from any chapter of the report. They follow their chapter or exhibit to newer runs.</p>}
+      {!onReport.length && <p className={ui.muted}>Add notes from any chapter of the report. They follow their chapter or exhibit to newer runs.</p>}
       {placed && sections.map((s) => { const notes = placed.bySection(s.id); return notes.length ? <div key={s.id} className={styles.entry}>
         <h3><a className={ui.textLink} href={reportHref(s.id)}>{s.title}</a></h3>
         {notes.map((p) => <div key={p.annotation.id}><p className={styles.note}>{p.annotation.body}</p>{p.state === "carried" && <p className={styles.meta}>{p.reason}</p>}</div>)}
@@ -199,7 +200,14 @@ function NotesPanel({ api, document, runId, reportHref }: { api: NotebookApi; do
           <p className={styles.meta}>From “{p.annotation.section_title || p.annotation.section_id}”. {p.reason}</p>
           <button className={styles.link} onClick={() => void api.remove("annotations", p.annotation.id)}>Delete note</button>
         </div>)}</div>}
-      {!document && api.notebook.annotations.length > 0 && api.notebook.annotations.map((a) => <p key={a.id} className={styles.note}>{a.body}</p>)}
+      {!document && onReport.length > 0 && onReport.map((a) => <p key={a.id} className={styles.note}>{a.body}</p>)}
+      {onFilings.length > 0 && <div className={styles.entry}><h3>Filing notes</h3>
+        {onFilings.map((a) => <div key={a.id}>
+          {a.quote && <blockquote className={styles.quote}>{a.quote}</blockquote>}
+          <p className={styles.note}>{a.body}</p>
+          <p className={styles.meta}>On “{a.section_title}”{a.source_document_id ? "" : " of a filing that is no longer stored"}. Open the notebook panel&apos;s Filings tab to read it in place.</p>
+          <button className={styles.link} onClick={() => void api.remove("annotations", a.id)}>Delete note</button>
+        </div>)}</div>}
     </div>
   </section>;
 }
