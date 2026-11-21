@@ -814,6 +814,11 @@ export class MockProvider implements ModelProvider {
         "  }",
         "  return out;",
         "}"].join("\n") };
+    } else if (packet.output_contract === "checklist_judgement") {
+      // One valid result per judgement item, citing the first supplied evidence when there is any.
+      const first = ((packet.evidence as any[]) || [])[0]?.id;
+      response = { results: ((packet.items as any[]) || []).map((item, i) => ({ id: item.id, status: i % 3 === 2 ? "unclear" : i % 3 === 1 ? "not_met" : "met",
+        rationale: `Synthetic judgement of "${String(item.label ?? item.id).slice(0, 80)}" from the supplied research.`, evidence_ids: first ? [first] : [] })) };
     } else if (packet.output_contract === "research_chat") {
       // One typed what-if when the workbench can recompute this run: two points off the base case's first-year margin.
       const workbench = packet.workbench as { available?: boolean; inputs?: { drivers?: Record<string, { fiscal_year: number; operating_margin: number }[]> } } | undefined;

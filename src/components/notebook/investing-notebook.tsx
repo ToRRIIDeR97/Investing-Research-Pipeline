@@ -11,6 +11,7 @@ import { label } from "@/lib/research/reporting/presentation.mjs";
 import type { ReportDocument } from "@/lib/research/reporting/report";
 import { isFilingNote, kpiReading, kpiSnapshot, pinViews, placeAnnotations, reportNotes, type KpiReading } from "@/lib/research/notebook/readings";
 import type { NotebookApi } from "./use-notebook";
+import { ChecklistPanel } from "./checklist-panel";
 
 type Row = Record<string, any>;
 const statusText = { healthy: "Healthy", caution: "Caution", danger: "In danger" } as const;
@@ -25,8 +26,8 @@ function Status({ status }: { status: KpiReading["status"] }) {
  * The operator's notebook for one asset: their KPIs, pinned report exhibits and metrics, journal and report notes.
  * Every value is drawn from the latest run's stored artifacts in code; the notebook stores only references and text.
  */
-export function InvestingNotebook({ api, artifacts, document, runId, runDate, reportHref }: {
-  api: NotebookApi; artifacts: Row[]; document: ReportDocument | null; runId: string | null; runDate: string | null; reportHref: (sectionId: string) => string;
+export function InvestingNotebook({ api, assetId, artifacts, document, runId, runDate, reportHref }: {
+  api: NotebookApi; assetId: string; artifacts: Row[]; document: ReportDocument | null; runId: string | null; runDate: string | null; reportHref: (sectionId: string) => string;
 }) {
   const { notebook, loaded, error } = api;
   const observations = useMemo(() => researchObservations(artifacts), [artifacts]);
@@ -39,6 +40,10 @@ export function InvestingNotebook({ api, artifacts, document, runId, runDate, re
       <div className={`${ui.s7} ${styles.stack}`}>
         <KpiPanel api={api} readings={readings} observations={observations} />
         <PinPanel api={api} artifacts={artifacts} />
+        <section className={ui.tile} aria-labelledby="nb-checklist">
+          <header className={ui.tileHead}><h2 id="nb-checklist">Investment checklist</h2><span className={ui.muted}>Measured by code, judged by the model</span></header>
+          <div className={ui.tileBody}><ChecklistPanel assetId={assetId} runId={runId} /></div>
+        </section>
       </div>
       <div className={`${ui.s5} ${styles.stack}`}>
         <JournalPanel api={api} artifacts={artifacts} readings={readings} runId={runId} />

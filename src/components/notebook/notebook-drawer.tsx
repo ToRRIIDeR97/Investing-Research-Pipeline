@@ -10,6 +10,7 @@ import { kpiSnapshot, placeAnnotations } from "@/lib/research/notebook/readings"
 import type { NotebookApi } from "./use-notebook";
 import { askResearchChat } from "@/components/research-chat";
 import { FilingsPanel } from "./filings-panel";
+import { ChecklistPanel } from "./checklist-panel";
 
 type Row = Record<string, any>;
 /**
@@ -57,7 +58,7 @@ export function NotebookDrawer({ api, assetId, document, runId, artifacts, noteb
   api: NotebookApi; assetId: string; document: ReportDocument | null; runId: string | null; artifacts: Row[]; notebookHref: string; assetName: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<"notes" | "filings">("notes");
+  const [tab, setTab] = useState<"notes" | "filings" | "checklist">("notes");
   const [highlight, setHighlight] = useState<Highlight | null>(null);
   const [pending, setPending] = useState<Highlight | null>(null);
   const [text, setText] = useState("");
@@ -125,10 +126,11 @@ export function NotebookDrawer({ api, assetId, document, runId, artifacts, noteb
       <div className={styles.tabs} role="tablist" aria-label="Notebook panel">
         <button type="button" role="tab" aria-selected={tab === "notes"} onClick={() => setTab("notes")}>Notes</button>
         <button type="button" role="tab" aria-selected={tab === "filings"} onClick={() => setTab("filings")}>Filings</button>
+        <button type="button" role="tab" aria-selected={tab === "checklist"} onClick={() => setTab("checklist")}>Checklist</button>
       </div>
       <div className={styles.body}>
         {api.error && <p className={notes.error} role="alert">{api.error}</p>}
-        {tab === "filings" ? <FilingsPanel assetId={assetId} api={api} highlight={highlight} onNote={noteFilingPassage} /> : <>
+        {tab === "checklist" ? <ChecklistPanel assetId={assetId} runId={runId} compact /> : tab === "filings" ? <FilingsPanel assetId={assetId} api={api} highlight={highlight} onNote={noteFilingPassage} /> : <>
         <form className={ui.form} onSubmit={save} aria-label="Write a note">
           {pending ? <div>
             <span className={notes.label}>{pending.filing ? `On this passage of ${pending.filing.documentTitle}, “${pending.filing.sectionTitle}”` : "On this passage"}</span>
