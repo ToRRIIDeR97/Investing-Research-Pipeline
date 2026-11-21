@@ -814,6 +814,19 @@ export class MockProvider implements ModelProvider {
         "  }",
         "  return out;",
         "}"].join("\n") };
+    } else if (packet.output_contract === "theme_framing") {
+      response = { framing: { demand_driver: "Synthetic framing: electricity demand grows with data centres, electrification and grid replacement.",
+        components: [{ name: "Transmission and distribution", why: "Synthetic: lines and substations must be rebuilt." }, { name: "Generation equipment", why: "Synthetic: new capacity needs turbines." }],
+        horizon_view: "Synthetic: demand compounds over the horizon.", exposure_wanted: "Synthetic: most revenue from grid equipment or services.",
+        sources: ["Synthetic agency outlook"], etfs: ["GRID"] } };
+    } else if (packet.output_contract === "theme_candidates") {
+      // Two overlapping lists, so agreement counts differ: PWR, HUBB and ETN are named by both.
+      const c = (ticker: string, role: string, exposure: number | null, us_listed = true) => ({ ticker, name: `${ticker} synthetic`, role, exposure, us_listed, reason: `Synthetic reason for ${ticker}.` });
+      response = { candidates: packet.angle === "leaders"
+        ? [c("PWR", "supplier", 0.9), c("HUBB", "supplier", 0.7), c("ETN", "supplier", 0.6), c("GEV", "supplier", 0.8), c("NEE", "operator", 0.9), c("ABB", "supplier", 0.6, false)]
+        : [c("PWR", "supplier", 0.95), c("HUBB", "supplier", 0.65), c("ETN", "supplier", null), c("MTZ", "supplier", 0.7), c("SIEGY", "supplier", 0.3)] };
+    } else if (packet.output_contract === "theme_sic") {
+      response = { sic_codes: [{ code: "1623", label: "Water, sewer, pipeline and power line construction" }] };
     } else if (packet.output_contract === "checklist_judgement") {
       // One valid result per judgement item, citing the first supplied evidence when there is any.
       const first = ((packet.evidence as any[]) || [])[0]?.id;
