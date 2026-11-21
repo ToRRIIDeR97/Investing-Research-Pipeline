@@ -990,7 +990,19 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
       AND task_type IN ('operating_model', 'report_outline', 'report_section')`;
     assert.ok(tasksB.some(t => t.task_type === "operating_model") && tasksB.some(t => t.task_type === "report_section"));
     for (const task of tasksB) {
-      assert.equal(task.input_json.packet.prior_research?.prior_run_id, runA.id, `${task.task_type} lacks prior_research`);
+      if (task.task_type === "operating_model") {
+        // Analysis packets keep stored UUIDs by design.
+        assert.equal(task.input_json.packet.prior_research?.prior_run_id, runA.id, `${task.task_type} lacks prior_research`);
+      } else {
+        // AC-9: report packets carry reference tokens, prior_research included, and no UUID.
+        const prior = task.input_json.packet.prior_research;
+        assert.ok(prior, `${task.task_type} lacks prior_research`);
+        assert.match(String(prior.prior_run_id), /^id\d+$/, `${task.task_type} prior_run_id is a token`);
+        assert.notEqual(prior.prior_run_id, runA.id);
+        assert.doesNotMatch(JSON.stringify(task.input_json.packet), /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i, `${task.task_type} packet holds a UUID`);
+        // The report runtime adds the rule itself; run-context must not add it a second time.
+        assert.equal(String(task.input_json.prompt_instructions).split("prior_research is a code-built summary").length - 1, 1, `${task.task_type} has the prior_research rule once`);
+      }
       assert.match(task.input_json.prompt_instructions, /prior_research is a code-built summary/);
     }
     const [log] = await sql`SELECT id, status, content_json FROM research_artifacts WHERE research_run_id = ${runB.id}

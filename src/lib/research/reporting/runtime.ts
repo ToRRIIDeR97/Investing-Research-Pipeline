@@ -10,7 +10,8 @@ import { createReport, reviewDocument } from "./report";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { VISUAL_GUIDELINES, validateVisual } from './visuals';
 import { getTeamRequests, includeUnansweredQuestions, requestMissingResearch, preDraftBatch, preDraftRequests, postReviewAnswers, ResearchRequestsPending } from "../team";
-import { saveVersionChangeLog } from "../lineage/runs";
+import { saveVersionChangeLog, loadPriorResearch } from "../lineage/runs";
+import { PRIOR_RESEARCH_RULE } from "../lineage/prior-research";
 import { buildReportFacts } from "./facts";
 import { researchPacketForModel } from "./packet";
 import { citationRefs } from "./refs";
@@ -292,10 +293,14 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
     return { keys, built: keys.flatMap(key => exhibits.filter(isAvailable).filter(e => e.key === key)) };
   };
   const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}`;
+  // The prior run's summary joins the packet here, before refs.packet tokenizes it; prepareResearchCall would add it
+  // afterwards, with its document and run UUIDs, and skips a packet that already has it (so the rule is added here too).
+  const prior = await loadPriorResearch(sql, ctx.runId);
+  const priorRules = prior ? [PRIOR_RESEARCH_RULE] : [];
   const common = { asset: { assetName: ctx.assetName, symbol: ctx.symbol, profile: ctx.profileKey },
     research_question: ctx.researchQuestion, source_cutoff: ctx.cutoffAt.toISOString(),
     coverage_requirements: COVERAGE, ...shared, artifacts: packetArtifacts, evidence_claims: reportEvidenceView(evidence), specialist_requests: preDraftRequests(teamRequests),
-    human_revision_request: run?.metadata_json?.report_revision_request || null };
+    human_revision_request: run?.metadata_json?.report_revision_request || null, ...(prior ? { prior_research: prior } : {}) };
   const reportInput = { asset_name: ctx.assetName, cutoff: ctx.cutoffAt.toISOString(), is_test: ctx.testMode,
     required_coverage: REQUIRED_COVERAGE, artifacts, evidence };
   // The latest outline's sections, so rework requests from missing depth checks name the chapter that owns them.
@@ -321,7 +326,7 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
             "Use only supplied artifact and evidence IDs. Keep numerical models unchanged. Request missing analysis in follow_up when artifacts cannot answer a material question. Prefer 8-16 substantial sections, maximum 24. No word-count target.",
             "Allocate key figures: give each section 2-5 key_figures (metric and period, e.g. \"FY2024 take rate\"). Assign each figure to exactly one section, the one that explains it; other sections refer to it rather than repeat it.",
             EXHIBIT_CATALOGUE_RULE,
-            ...(ctx.researchFraming ? [FRAMING_OUTLINE_RULE] : [])] }) }), dropped));
+            ...(ctx.researchFraming ? [FRAMING_OUTLINE_RULE] : []), ...priorRules] }) }), dropped));
       const unanswered = output.outline.questions.filter(q => q.status === "blocked" && q.materiality !== "supporting")
         .map(q => ({ category: "research_gap", question: q.question, follow_up: q.follow_up }));
       if (unanswered.length) await requestMissingResearch(sql, ctx, unanswered, "pre_draft", stageKey);
@@ -342,7 +347,7 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
       }, reportInput, placed.keys);
       const output = steps.finish(usable(answer(await callResearchAgent<Written>({ sql, ctx, stageKey,
         taskKey: `report:section:${section.id}`, taskType: "report_section", agentName: "export-writer", modelTier: "mid", packet: refs.packet(packet),
-        perCallKeys, outputFormat: resolved(steps.outputFormat), promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: contract.requiredKeys, packet: p, extraRules }) }), dropped)));
+        perCallKeys, outputFormat: resolved(steps.outputFormat), promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: contract.requiredKeys, packet: p, extraRules: [...extraRules, ...priorRules] }) }), dropped)));
       return finalCoverage ? { ...output.section, final_coverage: output.coverage } : output.section;
     },
     async review(document) {
@@ -359,7 +364,7 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
             `Findings must name section_id, category (writing, evidence, calculation, research_gap, analysis_rework), severity and a concrete repair. Treat unavailable facts or missing analytical artifacts as research_gap. Use analysis_rework, with owner_stage (one of ${REWORK_STAGES.join(", ")}), only when a stage's own output is wrong or too thin and must be recomputed. Fail unsupported investment recommendations. Hedging does not substitute for analysis the stored data supports.`,
             DEPTH_CHECK_RULE,
             "Also review existing framework backtest requirements and proxy limitations. A backtest does not prove the fundamental thesis. Do not change model outputs through prose.",
-            REVIEW_FRAMING_RULE] }) }), dropped);
+            REVIEW_FRAMING_RULE, ...priorRules] }) }), dropped);
       return review;
     },
     // Called once, after the first review is saved: the post-review round may pause the run; on resume its answers come back.
