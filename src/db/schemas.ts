@@ -18,6 +18,7 @@ import * as savedChartsSchema from "./schema/saved-charts";
 import * as monitoringSchema from "./schema/monitoring";
 import * as notebookSchema from "./schema/notebook";
 import * as workbenchSchema from "./schema/workbench";
+import * as checklistsSchema from "./schema/checklists";
 
 export const schema = {
   ...coreSchema,
@@ -39,4 +40,5 @@ export const schema = {
   ...monitoringSchema,
   ...notebookSchema,
   ...workbenchSchema,
+  ...checklistsSchema,
 };

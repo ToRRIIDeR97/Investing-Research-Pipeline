@@ -1,0 +1,9 @@
+/* Investment checklist: score line and item rows. */
+.score { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+.score strong { font-size: 24px; font-weight: 600; color: var(--ink); }
+.items { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; }
+.item { padding: 10px 0; border-top: 1px solid var(--line); }
+.item:first-child { border-top: 0; }
+.itemHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.itemLabel { flex: 1 1 160px; font-size: 13px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.evidence { margin: 6px 0 0; padding-left: 18px; font-size: 12px; color: var(--ink-2); list-style: disc; overflow-wrap: anywhere; }

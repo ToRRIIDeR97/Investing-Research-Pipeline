@@ -292,7 +292,7 @@ function ViewResearch() {
     {wrap ? <section className={`${ui.tile} ${styles.wide}`}>{body}</section> : body}
   </div>{activeTab !== "notebook" && <NotebookDrawer api={notebookApi} assetId={assetId} document={reportDocument} runId={data.activeRun?.id ?? null} artifacts={viewArtifacts}
     notebookHref={sectionHref("notebook")} assetName={asset.canonical_name} />}</div>;
-  if (activeTab === 'notebook') return view(<InvestingNotebook api={notebookApi} artifacts={viewArtifacts} document={reportDocument} runId={data.activeRun?.id ?? null}
+  if (activeTab === 'notebook') return view(<InvestingNotebook api={notebookApi} assetId={assetId} artifacts={viewArtifacts} document={reportDocument} runId={data.activeRun?.id ?? null}
     runDate={data.activeRun?.created_at ? String(data.activeRun.created_at).slice(0, 10) : null} reportHref={(id) => `${sectionHref("thesis")}#report-${id}`} />);
   if (activeTab === 'workbench') return view(data.activeRun ? <ValuationWorkbench key={data.activeRun.id} runId={String(data.activeRun.id)} proposalRef={searchParams.get('proposal')} />
     : <section className={ui.tile}><p className={ui.empty}>Run research first; the workbench recomputes a run&apos;s stored valuation.</p></section>);
