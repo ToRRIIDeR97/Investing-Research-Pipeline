@@ -47,6 +47,21 @@ test('a withheld valuation makes every valuation exhibit unavailable with the wi
     assert.equal((byKey(list, key) as any).unavailable, 'No reliable cash flow forecast.', key);
 });
 
+test('incomplete valuation inputs give a plain reader reason, never a validation dump', () => {
+  const list = buildExhibits([art('v', 'valuation_scenario_set', { method_inputs: [{ scenario_type: 'bear', method: 'fcff' }, { scenario_type: 'base', method: 'fcff' }, { scenario_type: 'bull' }] })]);
+  for (const key of ['scenario_values', 'valuation_bridge']) {
+    const reason = (byKey(list, key) as any).unavailable as string;
+    assert.equal(reason, 'The stored valuation inputs are incomplete.', key);
+  }
+  // buildVisual's own plain sentences are kept, with a full stop.
+  const missing = buildExhibits([art('v', 'valuation_scenario_set', { method_inputs: [] })]);
+  assert.equal((byKey(missing, 'scenario_values') as any).unavailable, 'No bear valuation schedule.');
+  for (const e of [...list, ...missing]) if (!isAvailable(e)) {
+    assert.doesNotMatch(e.unavailable, /[_{}[\]"]/, e.key);
+    assert.match(e.unavailable, /\.$/, e.key);
+  }
+});
+
 test('cells are formatted by kind: currency millions, percent, multiples, negatives, missing values', () => {
   const list = buildExhibits([art('a', 'financial_analytics', analytics)]);
   const q = byKey(list, 'quarterly_results') as BuiltExhibit;

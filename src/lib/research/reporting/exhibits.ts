@@ -251,10 +251,19 @@ function valuationSet(ctx: Context): Record<string, any> {
   if (withheld) throw new Unavailable(withheld);
   return c;
 }
+/**
+ * A builder's error as reader text: a short plain sentence is kept (with a full stop); validation dumps, JSON and
+ * anything naming a stored field are replaced by a fixed sentence.
+ */
+export function readerReason(message: unknown, fallback = 'The stored valuation inputs are incomplete.'): string {
+  const text = typeof message === 'string' ? message.trim().replace(/\s+/g, ' ') : '';
+  if (!text || text.length > 200 || !/^[A-Z][A-Za-z0-9 ,.;:'’()%$&-]*$/.test(text) || /[_{}[\]"]/.test(text)) return fallback;
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+}
 /** A chart built by visuals.ts; its errors become the unavailable reason. */
 function visual(spec: Parameters<typeof buildVisual>[0], ctx: Context): BuiltVisual {
   try { return buildVisual(spec, ctx.artifacts, ctx.cutoff); }
-  catch (error) { throw new Unavailable(error instanceof Error ? error.message : 'The chart could not be built.'); }
+  catch (error) { throw new Unavailable(readerReason(error instanceof Error ? error.message : '')); }
 }
 
 function scenarioValues(ctx: Context): Built {
