@@ -83,10 +83,13 @@ function preview(text: string, max: number): string {
   return `${(space > max * 0.5 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
-/** The filing as an outline: each section's title, size and a short preview, the total size and the preview length used. */
+/**
+ * The filing as an outline: each section's title, size and a short preview; `total_chars` is the full size and
+ * `preview_chars` the compressed size (the previews' lengths added up). Both are 0 for no chunks.
+ */
 export function compressFiling(chunks: FilingChunk[], previewChars = 400) {
   const list = sections(chunks).map((s) => ({ index: s.index, title: s.title, chars: s.text.length, preview: preview(s.text, previewChars) }));
-  return { sections: list, total_chars: list.reduce((n, s) => n + s.chars, 0), preview_chars: previewChars };
+  return { sections: list, total_chars: list.reduce((n, s) => n + s.chars, 0), preview_chars: list.reduce((n, s) => n + s.preview.length, 0) };
 }
 
 /** One section's full text, or null when there is no such section. */

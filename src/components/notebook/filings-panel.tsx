@@ -10,7 +10,7 @@ import type { NotebookApi } from "./use-notebook";
 import type { Highlight } from "./notebook-drawer";
 
 type Filing = { id: string; form: string; title: string; url: string | null; published_at: string | null; period_end: string | null; has_text: boolean };
-type Outline = { filing: Omit<Filing, "has_text">; has_text: boolean; truncated: boolean; total_chars: number;
+type Outline = { filing: Omit<Filing, "has_text">; has_text: boolean; truncated: boolean; total_chars: number; preview_chars: number;
   sections: { index: number; title: string; chars: number; preview: string }[] };
 
 const day = (iso: string | null) => iso ? iso.slice(0, 10) : "undated";
@@ -74,7 +74,7 @@ export function FilingsPanel({ assetId, api, highlight, onNote }: {
     <div>
       <button type="button" className={notes.link} onClick={() => { setOutline(null); setTexts({}); setError(null); }}>All filings</button>
       <h3 className={styles.filingTitle}>{doc.form} · {day(doc.published_at)}</h3>
-      <p className={notes.meta}>{doc.title} · {outline.sections.length} sections · {size(outline.total_chars)}{outline.truncated ? " (shortened)" : ""}</p>
+      <p className={notes.meta}>{doc.title} · {outline.sections.length} sections · {size(outline.total_chars)}, outlined in {size(outline.preview_chars)}{outline.truncated ? " (shortened)" : ""}</p>
       <div className={notes.inline}>
         {outline.has_text && <a className={ui.secondary} href={`${base}/${doc.id}/text`} download><Download size={14} aria-hidden="true" />Download text</a>}
         {original && <a className={ui.secondary} href={original} target="_blank" rel="noreferrer noopener"><ExternalLink size={14} aria-hidden="true" />Original</a>}

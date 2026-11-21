@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { annotationCreate, type NotebookAnnotation } from "../src/lib/research/notebook/contracts";
 import { filingNotes, placeAnnotation, placeAnnotations, reportNotes } from "../src/lib/research/notebook/readings";
+import { compressFiling } from "../src/lib/research/filings/library";
 
 const RUN = "11111111-1111-4111-8111-111111111111", DOC = "22222222-2222-4222-8222-222222222222";
 const now = "2026-11-21T00:00:00.000Z";
@@ -18,6 +19,13 @@ test("the contract takes a report note or a filing note, and keeps them apart", 
   assert.equal(annotationCreate.safeParse({ anchor_kind: "filing", source_document_id: DOC, section_index: 0, section_title: "T", body: "b", section_coverage: ["risks"] }).success, false);
   assert.equal(annotationCreate.safeParse({ anchor_kind: "filing", source_document_id: DOC, section_index: 0, section_title: "", body: "b" }).success, false);
   assert.equal(annotationCreate.safeParse({ anchor_kind: "elsewhere", research_run_id: RUN, section_id: "risks", body: "b" }).success, false);
+});
+
+test("the outline reports its compressed size: the previews' lengths added up, 0 for no chunks", () => {
+  const outline = compressFiling([{ chunk_index: 0, section_title: "A", text: "word ".repeat(50) }, { chunk_index: 1, section_title: "B", text: "Short." }], 20);
+  assert.equal(outline.preview_chars, outline.sections.reduce((n, s) => n + s.preview.length, 0));
+  assert.ok(outline.preview_chars < outline.total_chars);
+  assert.deepEqual(compressFiling([]), { sections: [], total_chars: 0, preview_chars: 0 });
 });
 
 test("filing notes are never placed on report chapters, even one with the same id", () => {
