@@ -13,6 +13,8 @@ import { POST as submitReview } from "../src/app/api/research-runs/[id]/review/r
 import { POST as refreshRun } from "../src/app/api/research-runs/[id]/refresh/route";
 import {POST as askResearch, GET as loadChat} from '../src/app/api/research-runs/[id]/chat/route';
 import {loadReportInputs} from '../src/lib/research/reporting/store';
+import {loadWhatIfData} from '../src/lib/research/valuation/whatif-data';
+import {scenarioProposalErrors,whatIfAvailability} from '../src/lib/research/valuation/whatif';
 import { processNextResearchRunJob } from "../src/workers/research-worker";
 import { getLatestResearchRunJob, claimNextResearchRun, requeueExpiredResearchRunJobs } from "../src/lib/research/run-queue";
 import { callResearchAgent, loadRunContext } from "../src/lib/research/run-context";
@@ -508,6 +510,19 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     const conversation=await reply.json();assert.equal(conversation.messages.length,2);
     const chat=await loadChat(new NextRequest('http://localhost/api/test'),paramsFor(runId));
     assert.equal((await chat.json()).messages.length,2);
+    // W-5: a question about a selected passage; the answer carries scenario proposals the workbench can compute.
+    const chapter=draft.content_json.sections[0];
+    const asked=await askResearch(request({message:'What if margins compress?',passage:{quote:'  The base case\u0007 assumes steady margins. ',section_id:chapter.id}}),paramsFor(runId));
+    assert.equal(asked.status,200,JSON.stringify(await asked.clone().json()));
+    const withPassage=(await asked.json()).messages;
+    assert.deepEqual(withPassage.at(-2).passage,{quote:'The base case assumes steady margins.',section_id:chapter.id,section_title:chapter.title});
+    const whatIf=await loadWhatIfData(sql,runId);
+    const proposals=withPassage.at(-1).scenario_proposals;
+    assert.ok(Array.isArray(proposals));
+    if(whatIfAvailability(whatIf).available){assert.equal(proposals.length,1);assert.deepEqual(scenarioProposalErrors(proposals,whatIf),[]);}
+    else assert.deepEqual(proposals,[]);
+    assert.equal((await askResearch(request({message:'x',passage:{quote:'q',section_id:'no-such-chapter'}}),paramsFor(runId))).status,400);
+    assert.equal((await askResearch(request({message:'x',passage:{quote:'q'.repeat(301),section_id:chapter.id}}),paramsFor(runId))).status,400);
     assert.equal((await loadReportInputs(sql,runId,cutoffAt)).input_hash,inputsBeforeChat.input_hash,'Chat must not change report inputs or invalidate approval');
     const maliciousOrigin=new NextRequest('http://localhost/api/test',{method:'POST',headers:{origin:'https://unrelated.example'},body:JSON.stringify({message:'Test'})});
     assert.equal((await askResearch(maliciousOrigin,paramsFor(runId))).status,403);

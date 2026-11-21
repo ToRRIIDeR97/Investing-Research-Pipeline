@@ -17,6 +17,7 @@ import * as researchRunJobsSchema from "./schema/research-run-jobs";
 import * as savedChartsSchema from "./schema/saved-charts";
 import * as monitoringSchema from "./schema/monitoring";
 import * as notebookSchema from "./schema/notebook";
+import * as workbenchSchema from "./schema/workbench";
 
 export const schema = {
   ...coreSchema,
@@ -37,4 +38,5 @@ export const schema = {
   ...savedChartsSchema,
   ...monitoringSchema,
   ...notebookSchema,
+  ...workbenchSchema,
 };

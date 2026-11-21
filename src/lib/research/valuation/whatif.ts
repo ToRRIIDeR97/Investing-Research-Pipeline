@@ -159,3 +159,43 @@ export function computeWhatIf(data: WhatIfData, change: WorkbenchChange = {}): W
     sensitivity: { columns: built.additions.sensitivity_grid.columns, rows: built.additions.sensitivity_grid.rows }, flags,
   };
 }
+
+/** What a saved scenario keeps of a result: values, returns, anchors and weights (already rounded by `computeWhatIf`). */
+export type ScenarioSummary = Pick<WhatIfResult, "value_today" | "return_today" | "anchors" | "probabilities">;
+export function scenarioSummary(result: WhatIfResult): ScenarioSummary {
+  return { value_today: { ...result.value_today }, return_today: { ...result.return_today }, anchors: { ...result.anchors }, probabilities: { ...result.probabilities } };
+}
+
+export const MAX_SCENARIO_PROPOSALS = 3;
+/** One scenario the chat proposes: a name, why, and a typed change the workbench applies. */
+export const ScenarioProposal = z.object({
+  name: z.string().trim().min(1).max(80), rationale: z.string().trim().min(1).max(1000), change: WorkbenchChange,
+}).strict();
+export type ScenarioProposal = z.infer<typeof ScenarioProposal>;
+
+/**
+ * Checks the chat's scenario proposals: an array of at most three strict `{ name, rationale, change }` objects whose
+ * changes compute against this run's stored valuation. Each error names its proposal (`"<name>: <reason>"`); an empty
+ * array means valid.
+ */
+export function scenarioProposalErrors(proposals: unknown, data: WhatIfData): string[] {
+  if (!Array.isArray(proposals)) return ["scenario_proposals must be an array."];
+  const errors: string[] = [];
+  if (proposals.length > MAX_SCENARIO_PROPOSALS) errors.push(`scenario_proposals has ${proposals.length} entries; at most ${MAX_SCENARIO_PROPOSALS} are allowed.`);
+  const seen = new Set<string>();
+  proposals.forEach((raw, index) => {
+    const label = raw && typeof raw === "object" && typeof (raw as Row).name === "string" && (raw as Row).name.trim() ? String((raw as Row).name).trim().slice(0, 80) : `Proposal ${index + 1}`;
+    const parsed = ScenarioProposal.safeParse(raw);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      errors.push(`${label}: ${issue?.path.length ? `${issue.path.join(".")} ` : ""}${issue?.message ?? "is not a valid proposal"}`);
+      return;
+    }
+    const key = parsed.data.name.toLowerCase();
+    if (seen.has(key)) { errors.push(`${label}: another proposal has the same name.`); return; }
+    seen.add(key);
+    try { computeWhatIf(data, parsed.data.change); }
+    catch (error) { errors.push(`${label}: ${error instanceof Error ? error.message : String(error)}`); }
+  });
+  return errors;
+}
