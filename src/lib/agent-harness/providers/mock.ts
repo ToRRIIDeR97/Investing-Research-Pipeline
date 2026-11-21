@@ -119,9 +119,9 @@ function adaptiveReportResponse(packet: Record<string, any>) {
     } };
   }
   if (packet.output_contract === "report_section") {
+    // Writers return prose only (standard adaptive-3): code builds and places the exhibits. The ids cited are the
+    // ones the packet shows (reference tokens once the runtime tokenizes report packets).
     const section = packet.section_plan;
-    const matching = artifacts.find(a => a.artifact_type === ({ history: "historical_record", forecasts: "operating_scenario_set", valuation: "annual_price_target_path" } as Record<string,string>)[section.id]);
-    const tablePath = section.id === "history" ? "observations" : section.id === "valuation" ? "price_target_path" : "scenarios";
     return { section: { ...section,
       paragraphs: [
         { kind: "analysis", text: `This synthetic ${section.title.toLowerCase()} analysis traces the supplied operating evidence to shareholder outcomes. Demand must convert to profitable activity, and reinvestment can absorb the resulting cash before it reaches holders.`, evidence_ids: evidence.slice(0,1).map(e => e.id), artifact_ids: artifactIds },
@@ -129,7 +129,6 @@ function adaptiveReportResponse(packet: Record<string, any>) {
       ], counterevidence: "The fixture cannot establish actual customer retention, competitive responses or future capital allocation.",
       implication: "Reassess the relevant operating assumptions when evidence changes; the fixture is not an investment recommendation.",
       gaps: ["Synthetic data cannot establish live investment quality."],
-      tables: matching && Object.hasOwn(matching.content_json, tablePath) ? [{ title: "Stored model data", artifact_id: matching.id, path: tablePath }] : [],
     }, ...(packet.provisional_coverage ? { coverage: packet.provisional_coverage } : {}) };
   }
   return STATIC["research-reviewer"];

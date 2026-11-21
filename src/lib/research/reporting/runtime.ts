@@ -1,6 +1,7 @@
 import { callResearchAgent, exactJsonPrompt, type ResearchRunContext, type Sql } from "../run-context";
 import { AI_REVIEWER_CONTRACT } from "../stage-contracts";
-import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Outline, Section, normalizeOutlineStructure, validateProductOutline, validateChartPlan, fillChartPlanGap, outputContract, type ReportOutline, type ReportSection, type CoverageCheck } from "./contracts";
+import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Outline, Section, WrittenSectionAnswer, normalizeOutlineStructure, validateProductOutline, storedSection, writerContract, type ReportOutline, type ReportSection, type CoverageCheck, type WriterSection } from "./contracts";
+import { buildExhibits, isAvailable, placeExhibits, type BuiltExhibit } from "./exhibits";
 import { composeDraft, draftDocument, reviewDraftedReport, checkFinalCoverage, type CompositionActions, type ReportReview, type WrittenSection, REQUIRED_COVERAGE } from "./compose";
 import { z } from "zod/v4";
 import { DEPTH_CHECKS, DEPTH_CHECK_RULE, REWORK_STAGES, depthFindings } from "./depth";
@@ -15,7 +16,16 @@ import { researchPacketForModel } from "./packet";
 
 /** Computed inputs every report call shares; they lead the packet instead of riding in each section's artifacts. */
 export const SHARED_REPORT_TYPES = ["financial_analytics", "financial_statement_summary", "report_facts"];
-export const REPORT_FACTS_RULE = "financial_analytics (computed history: statistics, segment economics, cash conversion, working capital, capital allocation), financial_statement_summary (which statements were captured) and report_facts (present values, terminal-value share, yields, implied multiples and no-rerating returns computed from the stored schedules) are code-computed. Cite their artifact_id for any figure they hold and never derive it again in prose; for statistics give the median and where the latest value sits. Their { columns, rows } tables may be requested at their paths (for example quarterly, segments.quarterly, segments.annual, cash_conversion.quarterly, capital_allocation.quarterly, cases). Report a statement gap only where financial_statement_summary shows one.";
+export const REPORT_FACTS_RULE = "financial_analytics (computed history: statistics, segment economics, cash conversion, working capital, capital allocation), financial_statement_summary (which statements were captured) and report_facts (present values, terminal-value share, yields, implied multiples and no-rerating returns computed from the stored schedules) are code-computed. Cite their artifact_id for any figure they hold and never derive it again in prose; for statistics give the median and where the latest value sits. Code builds the report's tables and charts from them and the stored scenario and valuation sets. Report a statement gap only where financial_statement_summary shows one.";
+
+/** The outline packet's exhibit rule: code places the catalogue, so the outline plans no chart or table. */
+export const EXHIBIT_CATALOGUE_RULE = "exhibit_catalogue lists the tables and charts code builds from stored data (available false when the data cannot support one). Code places each available exhibit in the first chapter, other than the opening summary, whose coverage includes its home area. Plan no charts or tables; let coverage decide where each exhibit appears.";
+/** A section packet's exhibit rule; the same text for every body section, so the shared prompt stays cached. */
+export const SECTION_EXHIBITS_RULE = "section_exhibits are the tables and charts code built from stored data and prints in this chapter after your prose. Discuss them by title where they support the analysis and explain what drives them; do not repeat every number, and do not request tables or charts.";
+
+/** A built exhibit as a writer reads it: its title, caption, column labels, formatted rows and notes. */
+export const compactExhibit = (exhibit: BuiltExhibit) => ({ title: exhibit.title, caption: exhibit.caption,
+  columns: exhibit.table.columns.map(c => c.label), rows: exhibit.table.rows, ...(exhibit.notes.length ? { notes: exhibit.notes } : {}) });
 
 /** The reviewer challenges the framing, not only consistency (RQ-MOD-5): these are calculation findings. */
 export const REVIEW_FRAMING_RULE = "Challenge the valuation framing as calculation findings: a forecast horizon that ends inside a reinvestment cycle, terminal value above 75% of enterprise value (report_facts tv_share_of_ev), terminal-year capex far above depreciation, and unnormalized margins. Also check that the report answers research_framing's central_question and keeps its engines separate.";
@@ -43,8 +53,8 @@ export const SECTION_RULES = [
   "Analyse with frameworks, not commentary, where the data allow: revenue as price × volume, a margin bridge between periods, unit economics, return on incremental capital, and moat claims tested against specific KPIs and counter-evidence. Explain why each figure moved (price, volume, mix, cost, accounting), not only that it moved.",
   "Every analysis paragraph carries a figure or a citation. section_plan.key_figures are this section's to present and explain; for figures the outline allocates to other sections, refer to that section by title instead of repeating the number.",
   "Paragraph kinds are fact, analysis, assumption or speculation. Cite exact supporting evidence_ids and artifact_ids for each paragraph. Unknown figures remain unknown. Uncited counterevidence and implication fields may synthesize the cited paragraphs but must not introduce new facts.",
-  "Use plain text inside paragraphs; no HTML, embedded links or Markdown tables. Request tables as artifact_id and dot-separated path to the supplied data, with an empty path meaning the artifact root. Do not author or recalculate table values. A table path must lead to rows of at most 60: a { columns, rows } table, one valuation schedule (method_schedules.N) or a list of flat records; a path to nested objects or a long observation list is rejected.",
-  "Follow packet.visual_guidelines when choosing section.visuals. When section_plan.chart_plan names a chart, add it if the stored data supports it; otherwise omit it and add a gap saying why the chart could not be drawn. Add other visuals only where they explain more than prose. Visual claims require the same evidence and accounting discipline as paragraphs.",
+  "Use plain text inside paragraphs; no HTML, embedded links or Markdown tables. Do not request or author tables or charts: code builds each chapter's exhibits from stored data. Do not recalculate their values.",
+  "Follow packet.visual_guidelines for the optional section.visuals: an organization chart or a process diagram, only where it explains more than prose. Visual claims require the same evidence and accounting discipline as paragraphs.",
   "If any material question or required coverage is blocked, withhold the investment conclusion. Describe the unresolved issue and what research is needed. Never turn a repair request into invented support."
 ];
 
@@ -139,23 +149,26 @@ export function conclusionInputs<E extends { id: string }>(completed: ReportSect
 /**
  * The packet, contract and rules of one report-section call; the report runtime and the packet-size replay both
  * build it here. Conclusions read chapter digests, the claims those cite and capped artifacts, with no filing
- * passages; the last one also gets the provisional coverage to return reconciled.
+ * passages; the last one also gets the provisional coverage to return reconciled. A body section given `exhibits`
+ * (the code-built exhibits placed in it) reads them compact as section_exhibits.
  */
 export function reportSectionCall<A extends { id: string; content_json: any }>(common: Record<string, any> & { evidence_claims: { id: string }[] }, packetArtifacts: A[],
-  section: ReportOutline["sections"][number], outline: ReportOutline, feedback: Record<string, any>[], completed: ReportSection[], finalCoverage?: CoverageCheck[]) {
+  section: ReportOutline["sections"][number], outline: ReportOutline, feedback: Record<string, any>[], completed: ReportSection[], finalCoverage?: CoverageCheck[],
+  exhibits?: BuiltExhibit[]) {
   const selected = packetArtifacts.filter(a => section.artifact_ids.includes(a.id));
   const conclusion = section.coverage.includes("conclusion") ? conclusionInputs(completed, common.evidence_claims) : null;
   const contract = finalCoverage ? CONCLUSION_CONTRACT : SECTION_CONTRACT;
   const artifacts = selected.length ? selected : packetArtifacts;
+  const placed = !conclusion && exhibits ? exhibits : null;
   const packet = { ...common, ...(conclusion ? { evidence_claims: conclusion.evidence, filing_passages: [] } : {}),
-    artifacts: conclusion ? artifacts.map(conclusionArtifactView) : artifacts, section_plan: section,
+    artifacts: conclusion ? artifacts.map(conclusionArtifactView) : artifacts, section_plan: section, ...(placed ? { section_exhibits: placed.map(compactExhibit) } : {}),
     // A conclusion reads the outline's questions and coverage whole, and of the other plans only what names them.
     outline: conclusion ? { ...outline, sections: outline.sections.map(({ id, title, coverage, key_figures }) => ({ id, title, coverage, ...(key_figures ? { key_figures } : {}) })) } : outline,
     feedback, completed_sections: conclusion?.chapters ?? [], ...(finalCoverage ? { provisional_coverage: finalCoverage } : {}),
     visual_guidelines: VISUAL_GUIDELINES, output_contract: "report_section", output_schema: contract.schema };
   // Sections of one round share everything but these keys, so the shared part is read from cache.
-  return { packet, contract, perCallKeys: ["artifacts", "section_plan", "completed_sections", "provisional_coverage"],
-    extraRules: [REPORT_FACTS_RULE, ...SECTION_RULES, ...(conclusion ? [CONCLUSION_DIGEST_RULE] : []), ...(finalCoverage ? [FINAL_COVERAGE_RULE] : [])] };
+  return { packet, contract, perCallKeys: ["artifacts", "section_plan", "section_exhibits", "completed_sections", "provisional_coverage"],
+    extraRules: [REPORT_FACTS_RULE, ...SECTION_RULES, ...(placed ? [SECTION_EXHIBITS_RULE] : []), ...(conclusion ? [CONCLUSION_DIGEST_RULE] : []), ...(finalCoverage ? [FINAL_COVERAGE_RULE] : [])] };
 }
 
 /** Save report_facts from the current valuation and analytics, so writers can cite it like any artifact. */
@@ -186,19 +199,19 @@ function checkedContract(base: AgentOutputFormat, check: (value: any) => void, c
 
 /**
  * How a section write turns the model's answer into the stored result, in the value validation sees (`outputFormat`,
- * after `check`) and in the value stored (`finish`). With `visualInput`, a visual that cannot be built from the stored
- * data (an unknown metric, say) is dropped instead of failing the section; a planned chart left without a visual then
- * becomes a gap, both in code.
+ * after `check`) and in the value stored (`finish`): storedSection, so tables, a chart plan and charts the writer still
+ * sent are stripped and `exhibitKeys` (the exhibits code placed in the section) are set. With `visualInput`, an
+ * organization or process visual that does not check against the stored data is dropped instead of failing the section.
  */
 export function sectionWriteSteps<V>(section: ReportOutline["sections"][number], contract: AgentOutputFormat,
-  check: (value: V) => V, validate: (value: V) => void, visualInput?: Parameters<typeof validateVisual>[1]) {
+  check: (value: V) => V, validate: (value: V) => void, visualInput?: Parameters<typeof validateVisual>[1], exhibitKeys: string[] = []) {
   const buildable = (visual: Parameters<typeof validateVisual>[0]) => { try { validateVisual(visual, visualInput!); return true; } catch { return false; } };
-  const tidy = (written: ReportSection): ReportSection => {
-    const visuals = visualInput && written.visuals ? written.visuals.filter(buildable) : written.visuals;
-    return fillChartPlanGap(section, visuals === written.visuals ? written : { ...written, visuals });
+  const tidy = (written: WriterSection): ReportSection => {
+    const stored = storedSection(written, exhibitKeys);
+    return visualInput && stored.visuals ? { ...stored, visuals: stored.visuals.filter(buildable) } : stored;
   };
-  const withChartGap = (value: V): V => (value as any)?.section ? { ...value, section: tidy((value as any).section) } : value;
-  return { outputFormat: checkedContract(contract, validate, value => withChartGap(check(value))), finish: withChartGap };
+  const stored = (value: V): V => (value as any)?.section ? { ...value, section: tidy((value as any).section) } : value;
+  return { outputFormat: checkedContract(contract, validate, value => stored(check(value))), finish: stored };
 }
 
 /**
@@ -222,8 +235,8 @@ export function keepUsableReferences<T>(value: T, artifacts: { id: string }[], e
 }
 
 /** The last conclusion also returns the report's coverage, reconciled with what the chapters actually did. */
-export const CONCLUSION_CONTRACT = outputContract({ section: Section, coverage: z.array(CoverageResult) });
-export const CONCLUSION_DIGEST_RULE = "completed_sections are code-built digests of the finished chapters: each chapter's implication, one key point per paragraph, its counterevidence and gaps, and every evidence_id and artifact_id it cites. Synthesize from them and refer to a chapter by title; cite the IDs a digest lists for the point you use. Figures not in a digest, report_facts or financial_analytics stay with their chapter. An artifact's omitted_fields were analysed in the chapters that cite it; their paths may still be requested as tables.";
+export const CONCLUSION_CONTRACT = writerContract({ section: WrittenSectionAnswer, coverage: z.array(CoverageResult) });
+export const CONCLUSION_DIGEST_RULE = "completed_sections are code-built digests of the finished chapters: each chapter's implication, one key point per paragraph, its counterevidence and gaps, and every evidence_id and artifact_id it cites. Synthesize from them and refer to a chapter by title; cite the IDs a digest lists for the point you use. Figures not in a digest, report_facts or financial_analytics stay with their chapter. An artifact's omitted_fields were analysed in the chapters that cite it.";
 export const FINAL_COVERAGE_RULE ="packet.provisional_coverage is the planner's coverage, set before any chapter was written. Return coverage with one entry per key, keeping key and section_ids, and set status and rationale to what the completed chapters actually deliver: downgrade a status the chapters do not support. The rationale is reader-facing.";
 /** Review finding categories that may send work back to the specialists after the review. */
 const REWORK_CATEGORIES = ["research_gap", "calculation", "evidence", "analysis_rework"];
@@ -261,7 +274,16 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
   const dropped = new Set<string>(droppedSeed);
   const usable = <T>(value: T) => keepUsableReferences(value, artifacts, evidence, dropped);
   const check = <T>(value: T) => keepUsableReferences(value, artifacts, evidence);
-  const usableOutline = (value: { outline: ReportOutline }, keepIds = usable) => { const kept = keepIds(value); return { ...kept, outline: normalizeOutlineStructure(kept.outline) }; };
+  // Code places the exhibits, so a chart_plan the outline writer still sends is dropped.
+  const withoutChartPlans = (outline: ReportOutline): ReportOutline => ({ ...outline, sections: (outline.sections || []).map(({ chart_plan: _plan, ...plan }) => plan) });
+  const usableOutline = (value: { outline: ReportOutline }, keepIds = usable) => { const kept = keepIds(value); return { ...kept, outline: normalizeOutlineStructure(withoutChartPlans(kept.outline)) }; };
+  // The launch exhibits, built once from the report inputs; placeExhibits assigns them to the outline's chapters.
+  const exhibits = buildExhibits(artifacts, { cutoff: ctx.cutoffAt.toISOString() });
+  const exhibitCatalogue = exhibits.map(e => ({ key: e.key, title: e.title, home: e.home, available: isAvailable(e) }));
+  const placedIn = (outline: ReportOutline, sectionId: string) => {
+    const keys = placeExhibits(outline.sections, exhibits)[sectionId] ?? [];
+    return { keys, built: keys.flatMap(key => exhibits.filter(isAvailable).filter(e => e.key === key)) };
+  };
   const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${ctx.runId}`;
   const common = { asset: { assetName: ctx.assetName, symbol: ctx.symbol, profile: ctx.profileKey },
     research_question: ctx.researchQuestion, source_cutoff: ctx.cutoffAt.toISOString(),
@@ -275,7 +297,7 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
   const savedIds = new Map<string, string>();
   const actions: CompositionActions = {
     async plan(feedback) {
-      const packet = { ...common, feedback, output_contract: "report_outline", output_schema: OUTLINE_CONTRACT.schema };
+      const packet = { ...common, exhibit_catalogue: exhibitCatalogue, feedback, output_contract: "report_outline", output_schema: OUTLINE_CONTRACT.schema };
       const output = usableOutline(await callResearchAgent<{ outline: ReportOutline }>({ sql, ctx, stageKey,
         taskKey: "report:outline", taskType: "report_outline", agentName: "asset-analyst", modelTier: "mid", packet,
         outputFormat: checkedContract(OUTLINE_CONTRACT, ({ outline }: { outline: ReportOutline }) => {
@@ -291,7 +313,7 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
             "Coverage states: satisfied for evidenced analysis including a no-moat finding; qualified for usable analysis with explained limits; blocked for a decision-critical gap; not_applicable only with asset-specific justification. A missing artifact is not evidence of inapplicability.",
             "Use only supplied artifact and evidence IDs. Keep numerical models unchanged. Request missing analysis in follow_up when artifacts cannot answer a material question. Prefer 8-16 substantial sections, maximum 24. No word-count target.",
             "Allocate key figures: give each section 2-5 key_figures (metric and period, e.g. \"FY2024 take rate\"). Assign each figure to exactly one section, the one that explains it; other sections refer to it rather than repeat it.",
-            "Chart plan: for each section covering history, business, forecasts or valuation, set chart_plan to the one chart that best answers its quantitative question, naming the visual kind and the stored data, for example segment revenue mix (series, stacked) or operating margin trend (ratio) from historical_record observations (series listed in its chart_series), bear/base/bull revenue or margins (scenarios) from operating_scenario_set, value per share (scenarios) or the valuation bridge (valuation_bridge) from valuation_scenario_set. Leave chart_plan empty only when no stored numeric data fits. Other sections leave it empty.",
+            EXHIBIT_CATALOGUE_RULE,
             ...(ctx.researchFraming ? [FRAMING_OUTLINE_RULE] : [])] }) }));
       const unanswered = output.outline.questions.filter(q => q.status === "blocked" && q.materiality !== "supporting")
         .map(q => ({ category: "research_gap", question: q.question, follow_up: q.follow_up }));
@@ -302,15 +324,15 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
     },
     async write(section, outline, feedback, completed, options) {
       const finalCoverage = options?.coverage;
-      const { packet, contract, perCallKeys, extraRules } = reportSectionCall(common, packetArtifacts, section, outline, feedback, completed, finalCoverage);
+      const placed = placedIn(outline, section.id);
+      const { packet, contract, perCallKeys, extraRules } = reportSectionCall(common, packetArtifacts, section, outline, feedback, completed, finalCoverage, placed.built);
       type Written = { section: ReportSection; coverage?: WrittenSection["final_coverage"] };
       const steps = sectionWriteSteps<Written>(section, contract, check, result => {
         if (result.section.id !== section.id || JSON.stringify(result.section.coverage) !== JSON.stringify(section.coverage)) throw new Error("Preserve section id and coverage exactly");
-        validateChartPlan(section, result.section);
         createReport({ ...reportInput, required_coverage: section.coverage, sections: [result.section], questions: [],
           coverage: section.coverage.map(key => ({ key, status: "qualified", rationale: "Section validation", section_ids: [section.id] })) });
         if (finalCoverage) checkFinalCoverage(reportInput, outline, [...completed.filter(s => s.id !== section.id), result.section], result.coverage ?? []);
-      }, reportInput);
+      }, reportInput, placed.keys);
       const output = steps.finish(usable(await callResearchAgent<Written>({ sql, ctx, stageKey,
         taskKey: `report:section:${section.id}`, taskType: "report_section", agentName: "export-writer", modelTier: "mid", packet,
         perCallKeys, outputFormat: steps.outputFormat, promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: contract.requiredKeys, packet: p, extraRules }) })));
@@ -325,8 +347,8 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
         promptFactory: p => exactJsonPrompt({ agentName: "research-reviewer", requiredKeys: AI_REVIEWER_CONTRACT.requiredKeys, packet: p,
           extraRules: [REPORT_FACTS_RULE,
             "Review the exact report_document against source passages AND complete analytical artifacts. Check citation entailment, unsupported facts/numbers, historical causes, counterarguments, operating-to-valuation links, contradictions across sections, numerical consistency and unjustified confidence. Flag analysis that lists figures without explaining what drove them, and figures repeated across sections.",
-            "Review every visual under visual_guidelines: verify that the cited source entails each node, arrow and caption, and distinguish documented links from hypotheses. Check chart selection, units, basis and missing observations. A correct reference alone does not prove the diagram; flag misleading causality or accounting as evidence/calculation defects.",
-            "The report is supplied as complete structured sections, questions, coverage and hashes. Tables refer to the complete artifacts and citations refer to evidence_claims supplied alongside it; rendered Markdown is omitted to avoid repeating that content. Review all sections and all referenced data.",
+            "Review every organization or process visual under visual_guidelines: verify that the cited source entails each node, arrow and caption, and distinguish documented links from hypotheses. A correct reference alone does not prove the diagram; flag misleading causality or accounting as evidence/calculation defects.",
+            "The report is supplied as complete structured sections, questions, coverage and hashes. Each section's exhibits name the tables and charts code built from the stored artifacts supplied alongside it, so their numbers are not the writer's; check that the prose agrees with them. Citations refer to evidence_claims; rendered Markdown is omitted to avoid repeating that content. Review all sections and all referenced data.",
             `Findings must name section_id, category (writing, evidence, calculation, research_gap, analysis_rework), severity and a concrete repair. Treat unavailable facts or missing analytical artifacts as research_gap. Use analysis_rework, with owner_stage (one of ${REWORK_STAGES.join(", ")}), only when a stage's own output is wrong or too thin and must be recomputed. Fail unsupported investment recommendations. Hedging does not substitute for analysis the stored data supports.`,
             DEPTH_CHECK_RULE,
             "Also review existing framework backtest requirements and proxy limitations. A backtest does not prove the fundamental thesis. Do not change model outputs through prose.",

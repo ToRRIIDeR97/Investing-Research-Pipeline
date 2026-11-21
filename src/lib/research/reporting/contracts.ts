@@ -3,8 +3,13 @@ import { contractJsonSchema } from "@/lib/research/contract-json-schema";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { ReportVisual, QUANTITATIVE_VISUALS } from './visuals';
 
-/** adaptive-2: report tables print flat rows only (see flatTable). Reports stored under adaptive-1 render as before. */
-export const STANDARD_VERSION = "asset-framework-2.1-adaptive-2";
+/**
+ * adaptive-3: section writers return prose only; code builds and places each chapter's exhibits (exhibits.ts).
+ * Reports stored under adaptive-2 (model-requested flat tables and charts) and adaptive-1 render as before.
+ */
+export const STANDARD_VERSION = "asset-framework-2.1-adaptive-3";
+/** The standard whose reports print model-requested tables as flat rows (see flatTable). */
+export const ADAPTIVE_2_STANDARD = "asset-framework-2.1-adaptive-2";
 export const COVERAGE = {
   ownership: "Investor claim, entity structure and value accrual",
   evidence: "Evidence quality, definitions, periods and missing disclosures",
@@ -21,12 +26,15 @@ export const COVERAGE = {
 } as const;
 
 const id = z.string().min(1);
-export const SectionPlan = z.object({
+/** A section plan as the outline writer returns it. Code places the exhibits, so the outline plans no chart. */
+const PlanFields = z.object({
   id: id.regex(/^[a-z0-9_-]+$/), title: id, purpose: id,
   coverage: z.array(id), artifact_ids: z.array(id),
   // Figures this section presents and explains; other sections refer to them instead of repeating them.
   key_figures: z.array(id).optional(),
-  // The chart a quantitative chapter should carry: the question, visual kind and stored data. Empty when none fits.
+});
+/** A stored section plan. Outlines stored before adaptive-3 may carry the chart their writer was asked to draw. */
+export const SectionPlan = PlanFields.extend({
   chart_plan: z.string().max(400).optional(),
 });
 export const CoverageResult = z.object({
@@ -42,14 +50,27 @@ export const Outline = z.object({
   sections: z.array(SectionPlan).min(1).max(24),
   coverage: z.array(CoverageResult).min(1), questions: z.array(Question),
 });
+/** The outline writer's answer: section plans without chart_plan. */
+const OutlineAnswer = Outline.extend({ sections: z.array(PlanFields).min(1).max(24) });
+const Paragraph = z.object({
+  kind: z.enum(["fact", "analysis", "assumption", "speculation"]), text: id,
+  evidence_ids: z.array(id), artifact_ids: z.array(id),
+});
+const prose = { paragraphs: z.array(Paragraph).min(1), counterevidence: id, implication: id, gaps: z.array(id) };
+/** The visuals a writer may still draw. ReportVisual declares organization and process first. */
+export const QualitativeVisual = z.discriminatedUnion("kind", [ReportVisual.options[0], ReportVisual.options[1]]);
+/** A section as its writer returns it (adaptive-3): plan fields, prose and optional qualitative visuals. */
+export const WrittenSectionAnswer = PlanFields.extend({ ...prose, visuals: z.array(QualitativeVisual).max(2).optional() });
+/**
+ * A stored section: a superset that parses every earlier stored section (model-requested tables, every visual kind,
+ * chart_plan). Sections written under adaptive-3 store tables as [] and the keys of the exhibits code placed in them.
+ */
 export const Section = SectionPlan.extend({
-  paragraphs: z.array(z.object({
-    kind: z.enum(["fact", "analysis", "assumption", "speculation"]), text: id,
-    evidence_ids: z.array(id), artifact_ids: z.array(id),
-  })).min(1),
-  counterevidence: id, implication: id, gaps: z.array(id),
+  ...prose,
   tables: z.array(z.object({ title: id, artifact_id: id, path: z.string() })),
   visuals: z.array(ReportVisual).max(2).optional(),
+  // Keys of the code-built exhibits (exhibits.ts EXHIBITS) placed in this chapter, in order. adaptive-3 only.
+  exhibits: z.array(id).optional(),
 });
 export type ReportSection = z.infer<typeof Section>;
 export type ReportOutline = z.infer<typeof Outline>;
@@ -96,21 +117,43 @@ export function validateProductOutline(outline:ReportOutline) {
 const chartPlanMet = (plan: { chart_plan?: string }, section: ReportSection) => !plan.chart_plan?.trim()
   || (section.visuals ?? []).some(v => QUANTITATIVE_VISUALS.includes(v.kind)) || section.gaps.some(g => /\bcharts?\b/i.test(g));
 
-/** The reader-facing gap code adds when a writer drops its planned chart. It names no stored data: chart_plan does. */
+/** The reader-facing gap code added when an adaptive-2 writer dropped its planned chart. */
 export const CHART_PLAN_GAP = "The planned chart is not shown because it could not be built from the stored data.";
 
 /**
- * A writer that drops its planned chart without saying why gets a plain gap from code instead of another model
- * attempt (SoFi run 3c3fc4ce failed its review on this rule). The section is returned unchanged when the plan is met.
+ * The adaptive-2 chart-plan rule, kept for sections written under it. Not called for new writes: since adaptive-3
+ * outlines plan no chart and code places the exhibits (storedSection).
  */
 export function fillChartPlanGap<S extends ReportSection>(plan: { chart_plan?: string }, section: S): S {
   return chartPlanMet(plan, section) ? section : { ...section, gaps: [...section.gaps, CHART_PLAN_GAP] };
 }
 
-/** A planned chart is drawn, or a gap says why it is not. */
+/** The adaptive-2 rule that a planned chart is drawn, or a gap says why it is not. Not called for new writes. */
 export function validateChartPlan(plan: { chart_plan?: string }, section: ReportSection) {
   if (chartPlanMet(plan, section)) return;
   throw new Error(`section_plan.chart_plan plans a chart ("${(plan.chart_plan ?? "").trim()}"). Add it as a history, series, ratio, scenarios or valuation_bridge visual from stored data, or state in gaps why the chart is omitted.`);
+}
+
+/** The visuals code keeps from a writer's answer: valid organization or process visuals, at most two. */
+const qualitativeVisuals = (visuals: unknown) => Array.isArray(visuals)
+  ? visuals.filter(v => QualitativeVisual.safeParse(v).success).slice(0, 2) as z.infer<typeof QualitativeVisual>[] : undefined;
+
+/**
+ * A section as a writer may send it. Tables, a chart plan, exhibit keys and charts are not part of the writer
+ * contract any more; an answer that still carries them is accepted and storedSection strips them.
+ */
+export type WriterSection = Omit<ReportSection, "tables" | "visuals" | "exhibits" | "chart_plan">
+  & { tables?: unknown; chart_plan?: unknown; exhibits?: unknown; visuals?: unknown[] };
+
+/**
+ * The section stored from a writer's answer (adaptive-3): tables stored as [], no chart plan, no visual other than a
+ * valid organization or process visual, and the keys of the exhibits code placed in it.
+ */
+export function storedSection(written: WriterSection, exhibitKeys: string[]): ReportSection {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { tables, chart_plan, exhibits, visuals, ...rest } = written;
+  const kept = qualitativeVisuals(visuals);
+  return { ...rest, tables: [], ...(kept ? { visuals: kept } : {}), exhibits: [...exhibitKeys] };
 }
 
 export function outputContract(shape: Record<string, z.ZodType>): AgentOutputFormat {
@@ -119,8 +162,20 @@ export function outputContract(shape: Record<string, z.ZodType>): AgentOutputFor
     validate(value) { const parsed = schema.safeParse(value); return parsed.success ? [] :
       parsed.error.issues.map(issue => ({ path: issue.path.join("."), message: issue.message })); } };
 }
-export const OUTLINE_CONTRACT = outputContract({ outline: Outline });
-export const SECTION_CONTRACT = outputContract({ section: Section });
+export const OUTLINE_CONTRACT = outputContract({ outline: OutlineAnswer });
+/**
+ * A contract over a writer's `section`, validated as storedSection will keep it: visuals other than valid organization
+ * or process visuals are ignored, as are tables, chart_plan and exhibits. A section without prose is still rejected.
+ */
+export function writerContract(shape: Record<string, z.ZodType>): AgentOutputFormat {
+  const base = outputContract(shape);
+  return { ...base, validate(value) {
+    const v = value as { section?: unknown } | null;
+    const section = v?.section && typeof v.section === "object" ? v.section as Record<string, unknown> : null;
+    return base.validate!(section && "visuals" in section ? { ...v, section: { ...section, visuals: qualitativeVisuals(section.visuals) } } : value);
+  } };
+}
+export const SECTION_CONTRACT = writerContract({ section: WrittenSectionAnswer });
 
 /** What a strong analyst does, beyond format and integrity (RQ-MOD-5). Shared by every doctrine prompt. */
 export const ANALYST_BEHAVIOUR_RULES = [
