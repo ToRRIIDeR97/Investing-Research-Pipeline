@@ -14,6 +14,8 @@ import styles from './research-report.module.css';
 import {readerSections,readerSectionId} from '@/lib/research/reporting/data-views';
 import {KPIDashboard,ValuationDashboard} from './research-dashboards';
 import {ChangeLogTable} from './report/change-log-table';
+import {ExhibitTile} from './report/exhibit-tile';
+import {chapterExhibits} from '@/lib/research/reporting/exhibits';
 
 type RecordValue=Record<string,any>;
 const clean=readerText;
@@ -22,6 +24,8 @@ const pad=(n:number)=>String(n).padStart(2,'0');
 // Paths shown elsewhere (Financials tab) or too granular for a chapter.
 const hiddenPaths=['observations','ttm_series','coverage.cells','coverage.gaps'];
 const nameKeys=['Scenario','Scenario name','Method','Claimed moat','Process node','Segment name','Segment','Risk name','Catalyst name','Name','Measure','Metric','Question','Event','Claim','Driver key','Driver','Indicator','Strategy name','Combination key','Year','Dataset','Title'];
+// Reports of this standard store exhibit keys on each section; code builds the exhibits from stored artifacts.
+const CODE_BUILT_STANDARD='asset-framework-2.1-adaptive-3';
 const isLong=(v:unknown)=>typeof v==='string'&&v.length>90||(!!v&&typeof v==='object');
 
 /** Display name for a record: "bear" in a Scenario field reads "Bear case"; a bare key such as "fcfe" reads "FCFE". */
@@ -264,6 +268,8 @@ export function ResearchReport({document,financialsHref,liveArtifacts}:{document
   },[document,sections]);
   const section=sections.find(s=>s.id===active); const index=sections.findIndex(s=>s.id===active);
   const visuals=useMemo(()=>sectionVisuals(document,active),[document,active]);
+  const codeBuilt=document.standard_version===CODE_BUILT_STANDARD;
+  const built=useMemo(()=>codeBuilt?chapterExhibits(document,active):[],[codeBuilt,document,active]);
   const evidence=document.evidence.find(e=>e.id===source);
   function showSource(id:string){setSource(id);dialog.current?.showModal();}
   function navigate(id:string){setActive(id);window.location.hash=`report-${id}`;const top=root.current?root.current.getBoundingClientRect().top+window.scrollY-68:0;window.scrollTo({top:Math.max(0,top)});requestAnimationFrame(()=>heading.current?.focus({preventScroll:true}));}
@@ -272,7 +278,9 @@ export function ResearchReport({document,financialsHref,liveArtifacts}:{document
   const status=document.conclusion_status==='withheld'?{label:'Conclusion withheld',tone:'pending'}:document.conclusion_status==='qualified'?{label:'Qualified research',tone:'pending'}:{label:'Ready for review',tone:'completed'};
   if(!sections.length)return <p role="status">No report chapters are available yet.</p>;
 
-  const exhibits=section?section.tables.filter(t=>!hiddenPaths.includes(t.path)&&!(section.coverage.includes('valuation')&&t.path==='method_schedules')):[];
+  // Earlier standards keep the model's table requests and the view's own Exhibit heuristics.
+  const exhibits=section&&!codeBuilt?section.tables.filter(t=>!hiddenPaths.includes(t.path)&&!(section.coverage.includes('valuation')&&t.path==='method_schedules')):[];
+  const exhibitTitles=codeBuilt?built.map(e=>e.title):exhibits.map(t=>exhibitTitle(t));
   const cited=section?new Set(section.paragraphs.flatMap(p=>p.evidence_ids)).size:0;
   const titleText=section?railName(section):active==='sources'?'Sources':'Research questions';
   // The subtitle carries what the short name leaves out: the title minus its own short prefix.
@@ -288,7 +296,7 @@ export function ResearchReport({document,financialsHref,liveArtifacts}:{document
       <aside className={`${styles.tile} ${styles.rail}`} data-rail data-tile aria-label="Report contents">
         <div className={styles.railHead}><p className={styles.railTitle}>Contents</p><p className={styles.muted}>As of {date(document.cutoff)} · {sections.length} chapters</p></div>
         <label className={styles.chapterSearch}><Search size={14} aria-hidden="true"/><input type="search" aria-label="Find a chapter" placeholder="Find a chapter" value={query} onChange={e=>setQuery(e.target.value)}/></label>
-        <nav aria-label="Report chapters">{chapters.map(({s,i})=><a href={`#report-${s.id}`} key={s.id} title={clean(s.title)} aria-current={active===s.id?'page':undefined} onClick={e=>{e.preventDefault();navigate(s.id);}}><span className={styles.railNum}>{pad(i+1)}</span>{railName(s)}</a>).flatMap((link,j)=>chapters[j].s.id===active&&section?[link,<span key="within" className={styles.within} aria-label="In this chapter">{[['chapter-takeaway','Takeaway'],...(section.coverage.includes('valuation')?[['chapter-lead','Valuation detail']]:section.coverage.includes('monitoring')?[['chapter-lead','KPI health']]:[]),['chapter-analysis','Analysis'],...(exhibits.length?[['chapter-exhibits',`Exhibits ${exhibits.length}`]]:[])].map(([id,name])=><a key={id} href={`#${id}`} aria-current={place===id?'location':undefined} onClick={e=>{e.preventDefault();jump(id);}}>{name}</a>)}</span>]:[link])}{!chapters.length&&<p className={styles.muted}>No chapters match.</p>}</nav>
+        <nav aria-label="Report chapters">{chapters.map(({s,i})=><a href={`#report-${s.id}`} key={s.id} title={clean(s.title)} aria-current={active===s.id?'page':undefined} onClick={e=>{e.preventDefault();navigate(s.id);}}><span className={styles.railNum}>{pad(i+1)}</span>{railName(s)}</a>).flatMap((link,j)=>chapters[j].s.id===active&&section?[link,<span key="within" className={styles.within} aria-label="In this chapter">{[['chapter-takeaway','Takeaway'],...(section.coverage.includes('valuation')?[['chapter-lead','Valuation detail']]:section.coverage.includes('monitoring')?[['chapter-lead','KPI health']]:[]),['chapter-analysis','Analysis'],...(exhibitTitles.length?[['chapter-exhibits',`Exhibits ${exhibitTitles.length}`]]:[])].map(([id,name])=><a key={id} href={`#${id}`} aria-current={place===id?'location':undefined} onClick={e=>{e.preventDefault();jump(id);}}>{name}</a>)}</span>]:[link])}{!chapters.length&&<p className={styles.muted}>No chapters match.</p>}</nav>
         <label className={styles.railSelect}><span className={styles.srOnly}>Chapter</span><select value={active} onChange={e=>navigate(e.target.value)}>{sections.map((s,i)=><option key={s.id} value={s.id}>{pad(i+1)} {railName(s)}</option>)}<option value="research-questions">Research questions ({document.questions.length})</option><option value="sources">Sources ({document.evidence.length})</option></select></label>
         <div className={styles.railFoot}>
           <a href="#report-research-questions" aria-current={active==='research-questions'?'page':undefined} onClick={e=>{e.preventDefault();navigate('research-questions');}}>Research questions<span>{document.questions.length}</span></a>
@@ -311,7 +319,7 @@ export function ResearchReport({document,financialsHref,liveArtifacts}:{document
             {(['answered','qualified','blocked'] as const).map(k=>{const n=document.questions.filter(q=>q.status===k).length;return <button key={k} aria-pressed={qFilter===k} disabled={!n} onClick={()=>setQFilter(qFilter===k?null:k)}><span className={styles.status} data-status={questionStatus[k]}>{n} {label(k).toLowerCase()}</span></button>;})}
             {qFilter&&<span>Showing {document.questions.filter(q=>q.status===qFilter).length} of {document.questions.length} · <button className={styles.textButton} onClick={()=>setQFilter(null)}>Clear</button></span>}
           </div>}
-          {section&&<p className={styles.meta}><span>{section.paragraphs.length} paragraphs</span><span>{cited} sources cited</span>{!!exhibits.length&&<span>{exhibits.length} exhibits</span>}</p>}
+          {section&&<p className={styles.meta}><span>{section.paragraphs.length} paragraphs</span><span>{cited} sources cited</span>{!!exhibitTitles.length&&<span>{exhibitTitles.length} exhibits</span>}</p>}
         </header>
 
         {section?<>
@@ -326,7 +334,7 @@ export function ResearchReport({document,financialsHref,liveArtifacts}:{document
             <section id="chapter-analysis" className={styles.tile} data-tile data-analysis>
               <header className={styles.tileHead}><h3 data-tile-title>Analysis</h3></header>
               <div className={`${styles.tileBody} ${styles.narrative}`}>{section.paragraphs.map((p,i)=><p key={i}>{['assumption','speculation'].includes(p.kind)&&<span className={styles.assumption}>{p.kind==='assumption'?'Analyst assumption':'Speculative'}</span>}{leadIn(clean(p.text))}<Citations ids={p.evidence_ids} document={document} onSource={showSource}/></p>)}
-                {financialsHref&&section.tables.some(t=>t.path==='observations')&&<p className={styles.caption}><a href={financialsHref}>Open Financials for the income statement, balance sheet and cash flow.</a></p>}
+                {financialsHref&&(codeBuilt?built.some(e=>e.home==='history'):section.tables.some(t=>t.path==='observations'))&&<p className={styles.caption}><a href={financialsHref}>Open Financials for the income statement, balance sheet and cash flow.</a></p>}
               </div>
             </section>
             <div className={styles.side}>
@@ -337,11 +345,13 @@ export function ResearchReport({document,financialsHref,liveArtifacts}:{document
               {!!section.gaps.length&&<Gaps key={active} gaps={section.gaps}/>}
             </div>
           </div>
-          {!!exhibits.length&&<nav id="chapter-exhibits" className={`${styles.tile} ${styles.exhibitIndex}`} aria-label="Exhibits in this chapter" data-tile>
-            <h3 data-tile-title>Exhibits <span className={styles.muted}>{exhibits.length}</span></h3>
-            <ol>{exhibits.map((t,i)=><li key={i}><a href={`#exhibit-${active}-${i}`} onClick={e=>{e.preventDefault();jump(`exhibit-${active}-${i}`);}}><span className={styles.railNum}>{i+1}</span>{exhibitTitle(t)}</a></li>)}</ol>
+          {!!exhibitTitles.length&&<nav id="chapter-exhibits" className={`${styles.tile} ${styles.exhibitIndex}`} aria-label="Exhibits in this chapter" data-tile>
+            <h3 data-tile-title>Exhibits <span className={styles.muted}>{exhibitTitles.length}</span></h3>
+            <ol>{exhibitTitles.map((title,i)=><li key={i}><a href={`#exhibit-${active}-${i}`} onClick={e=>{e.preventDefault();jump(`exhibit-${active}-${i}`);}}><span className={styles.railNum}>{i+1}</span>{title}</a></li>)}</ol>
           </nav>}
-          {exhibits.map((t,i)=><Exhibit key={`${active}-${i}`} id={`exhibit-${active}-${i}`} table={t} document={document}/>)}
+          {codeBuilt
+            ?built.map((e,i)=><ExhibitTile key={`${active}-${e.key}`} id={`exhibit-${active}-${i}`} exhibit={e}/>)
+            :exhibits.map((t,i)=><Exhibit key={`${active}-${i}`} id={`exhibit-${active}-${i}`} table={t} document={document}/>)}
           {adjacent}
         </>:active==='sources'?<section className={styles.tile} data-tile>
           <header className={styles.tileHead}><h3 data-tile-title>Sources and supporting passages</h3><span className={styles.muted}>{document.evidence.length}</span></header>
