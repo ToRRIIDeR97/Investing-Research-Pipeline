@@ -31,6 +31,25 @@ test("resolve maps a table's artifact_id token back to the stored id", () => {
   assert.equal(out.section.tables[1].artifact_id, "ar9");
 });
 
+test("readerProse removes a run of bare tokens with its separators and a preceding see in any case", () => {
+  const cases: [string, string][] = [
+    ["Margin rose ev1, ev2 and ar3.", "Margin rose."],
+    ["Margin rose ev1; ev2 or ar3 & id4, then fell.", "Margin rose, then fell."],
+    [`Margin rose ev1 and ${EV.toUpperCase()}.`, "Margin rose."],
+    ["See ev4 for detail.", "For detail."],
+    ["Growth held. See ev4 for detail.", "Growth held. For detail."],
+    ["Growth held; see ev4 for detail.", "Growth held; for detail."],
+    ["ev2 shows growth.", "Shows growth."],
+    ["Revenue and margin rose, and capex or opex fell & S&P 500 rose.", "Revenue and margin rose, and capex or opex fell & S&P 500 rose."],
+    ["Revenue rose and ev1 margin held.", "Revenue rose and margin held."],
+  ];
+  for (const [text, expected] of cases) {
+    const once = readerProse(text);
+    assert.equal(once, expected);
+    assert.equal(readerProse(once), once);
+  }
+});
+
 test("readerProse is idempotent and keeps bracketed text that is not a reference", () => {
   for (const text of ["Revenue grew 22% (ev12, Q2 2025) on capex_to_da of 2.1x.", "Margins held (A1 shares) and EV12 is a label."]) {
     const once = readerProse(text);

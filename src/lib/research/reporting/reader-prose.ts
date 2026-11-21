@@ -7,9 +7,16 @@ const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const TOKEN = "(?:ev|ar|id)\\d+";
 /** A UUID or any-case token inside brackets, with a directly preceding "see". */
 const BRACKETED_REF = new RegExp(`(?:\\bsee\\s+)?(?:\\b${UUID}\\b|\\b${TOKEN}\\b)`, "gi");
-/** A UUID (any case) or a lower-case token anywhere, with a directly preceding "see". */
-const BARE_UUID = new RegExp(`(?:\\bsee\\s+)?\\b${UUID}\\b`, "gi");
-const BARE_TOKEN = new RegExp(`(?:\\bsee\\s+)?\\b${TOKEN}\\b`, "g");
+/**
+ * Outside brackets: a run of UUIDs (any case) or lower-case tokens joined by separators or conjunctions
+ * ("ev1, ev2 and ar3"), with a directly preceding "see" in any case. The whole run goes, so no orphan "," or "and".
+ */
+const UUID_ANY_CASE = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+const BARE_REF = `\\b(?:${UUID_ANY_CASE}|${TOKEN})\\b`;
+const BARE_RUN = new RegExp(`(?:\\b[Ss][Ee][Ee]\\s+)?${BARE_REF}(?:\\s*(?:,|;|&|\\band\\b|\\bor\\b)\\s*${BARE_REF})*`, "g");
+/** Text before a removed run that ends a sentence, so the next word is capitalised. */
+const SENTENCE_START = /(?:^|[.!?]["')\]]?\s+)\s*$/;
+const MARK = "\u0000";
 const BRACKETS = /([([])([^()[\]]*)([)\]])/g;
 const ONLY_SEPARATORS = /^[\s,;:/&|.\-–—]*$/;
 const SNAKE = /\b[a-z0-9]+(?:_[a-z0-9]+)+\b/g;
@@ -33,7 +40,8 @@ export function readerProse(text: string): string {
     if (ONLY_SEPARATORS.test(kept)) return "";
     return open + kept.replace(/\s*([,;])(?:\s*[,;])+/g, "$1").replace(/^[\s,;]+|[\s,;]+$/g, "") + close;
   });
-  out = out.replace(BARE_UUID, "").replace(BARE_TOKEN, "");
+  out = out.replace(BARE_RUN, (_match, offset: number, whole: string) => SENTENCE_START.test(whole.slice(0, offset)) ? MARK : "")
+    .replace(new RegExp(`${MARK}[ \\t]*([a-z])`, "g"), (_m, letter: string) => letter.toUpperCase()).replaceAll(MARK, "");
   out = out.replace(SNAKE, words);
   return out.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+([,.;:])(?=\s|$)/g, "$1").replace(/^[ \t]+|[ \t]+$/g, "");
 }
