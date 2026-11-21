@@ -404,7 +404,19 @@ export type ResearchCallParams = {
   outputFormat?: Parameters<typeof runResearchAgent>[0]["outputFormat"];
   /** Packet keys that differ between sibling calls; they follow the shared context and its cache breakpoint. */
   perCallKeys?: string[];
+  /**
+   * Applied to the finished packet, after every block above is added (filing passages, prior research, benchmarks).
+   * The report runtime passes its citation tokenizer here, so blocks added late carry tokens too and are matched to
+   * claims by their stored ids first.
+   */
+  packetTransform?: (packet: Record<string, unknown>) => Record<string, unknown>;
 };
+
+/** The packet a call sends: per-call keys last, the model view of large artifacts, then the caller's transform. */
+export function finishCallPacket(packet: Record<string, unknown>, perCallKeys?: string[], transform?: ResearchCallParams["packetTransform"]) {
+  const view = researchPacketForModel(perCallKeysLast(packet, perCallKeys));
+  return transform ? transform(view) : view;
+}
 
 /**
  * The packet and rules a stage call sends: team context, source-request state, the analytics digest and filing
@@ -502,7 +514,7 @@ export async function prepareResearchCall(params: ResearchCallParams) {
       addRule(FILING_PASSAGE_RULE);
     }
   }
-  params = { ...params, packet: researchPacketForModel(perCallKeysLast(params.packet, params.perCallKeys)) };
+  params = { ...params, packet: finishCallPacket(params.packet, params.perCallKeys, params.packetTransform) };
   return { params, sourceLedger, sourceRequests };
 }
 
