@@ -12,6 +12,7 @@ import { fetchCapped, isPrivateHostname } from "@/lib/net";
 import { loadSubmissionFilings, resolveSecCik, secArchiveUrl, storedSecFiling } from "../sources/corpus";
 import { extractFilingStatements, statementObservations, type FilingSource, type FilingTable } from "../history/filing-statements";
 import { refreshDecision, scoreDashboard, type MonitorFiling, type MonitorItemResult } from "./monitor-score";
+import { notebookMonitorItems } from "../notebook/readings";
 
 /** The only hosts monitor-check fetches. */
 export const EDGAR_HOSTS = ["data.sec.gov", "www.sec.gov"];
@@ -111,7 +112,12 @@ export async function checkAsset(sql: Sql, target: MonitorTarget, options: { fet
   const newPeriods = new Set(tables.map(t => `${t.fiscal_year}-${t.fiscal_quarter}`));
   const observations = tables.length ? statementObservations([...priorTables, ...tables]) as Record<string, any>[] : [];
   const isNew = (o: Record<string, any>) => newPeriods.has(`${o.fiscal_year}-${o.periodicity === "annual" ? 4 : o.fiscal_quarter}`);
-  const kpis = scoreDashboard(dashboard?.items ?? [], observations.filter(isNew), observations.filter(o => !isNew(o)));
+  // The operator's own notebook KPIs are scored on the same new periods, after the run's dashboard.
+  const notebook = await sql`SELECT label, metric_key, segment, bear_line, bull_line FROM notebook_kpis WHERE asset_id = ${target.asset_id}
+    ORDER BY position, created_at`;
+  const items = [...(dashboard?.items ?? []), ...notebookMonitorItems(notebook.map(r => ({ label: String(r.label), metric_key: String(r.metric_key),
+    segment: r.segment ?? null, bear_line: r.bear_line == null ? null : Number(r.bear_line), bull_line: r.bull_line == null ? null : Number(r.bull_line) })))];
+  const kpis = scoreDashboard(items, observations.filter(isNew), observations.filter(o => !isNew(o)));
   const decision = refreshDecision({ filings, kpis, nextRefreshAt: typeof schedule?.next_refresh_at === "string" ? schedule.next_refresh_at : null, now });
   return { ...base, status: decision.refresh_due ? "refresh_due" : "current", refresh_due: decision.refresh_due, reasons: decision.reasons, filings, kpis };
 }

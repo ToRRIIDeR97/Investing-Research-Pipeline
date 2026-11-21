@@ -1,0 +1,13 @@
+/* The notebook's pull-out panel on a stock's pages. */
+.tab { position: fixed; right: 0; top: 45%; z-index: 40; display: inline-flex; align-items: center; gap: 6px; padding: 10px 12px; border: 1px solid var(--line);
+  border-right: 0; border-radius: 8px 0 0 8px; background: var(--navy); color: #fff; font-size: 13px; font-weight: 500; box-shadow: 0 2px 8px rgb(0 0 0 / 0.12); }
+.tab:hover { background: var(--navy-hover); }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: 50; width: min(420px, 100vw); display: flex; flex-direction: column;
+  background: var(--tile); border-left: 1px solid var(--line); box-shadow: -8px 0 24px rgb(0 0 0 / 0.08); }
+.drawer[hidden] { display: none; }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 8px 14px; border-bottom: 1px solid var(--line); }
+.head h2 { font-size: 14px; font-weight: 600; color: var(--ink); }
+.close { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 0; border-radius: 6px; background: none; color: var(--ink-2); }
+.close:hover { background: #f3f4f6; color: var(--ink); }
+.body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+@media print { .tab, .drawer { display: none; } }

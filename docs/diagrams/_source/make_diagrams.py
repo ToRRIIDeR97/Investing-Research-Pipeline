@@ -467,7 +467,7 @@ s.save(P("dev-workflow.svg"))
 s = Svg(1100, 560, "Research across runs: lineage, change log and monitoring",
         "A new run links to the asset's latest completed or approved run (prior_run_id) and saves a code-built prior_research block that "
         "analysis and report packets carry (report packets with its ids as id<n> tokens). Before the report, code diffs the run against the prior into "
-        "version_change_log. Separately, npm run monitor:check reads new 10-Q/10-K filings from EDGAR, scores the dashboard and stores "
+        "version_change_log. Separately, npm run monitor:check reads new 10-Q/10-K filings from EDGAR, scores the dashboard and notebook KPIs and stores "
         "whether a refresh is due; the asset page shows it and a person decides. No model call, and no run starts on its own.")
 s.box(30, 70, 230, 100, "Run A (completed or approved)", ["documents · question_register", "team_requests · decision_record", "valuation_scenario_set"], "store", stereo="prior run")
 s.box(330, 70, 260, 100, "Run creation", ["run-service.ts · lineage/runs.ts", "prior_run_id: default, explicit or null", "same asset · pipeline v3"], "api", stereo="transaction")
