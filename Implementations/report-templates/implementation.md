@@ -188,4 +188,33 @@ Manual: after P4, open a report of each standard in the app and confirm the chap
 
 ## Completion evidence
 
-_To be filled after the last phase: verifier results apart from implementor reports, per phase SHA, commands run, limits._
+Recorded 2026-11-21. Mode: TOR-2-Agents per phase, run concurrently at the user's request; every implementor and verifier was Claude Opus 5.5 at medium effort. Final branch `claude/report-templates`; the feature is commit `72e715f` (P4 tip, which contains P1-P3), plus the commit that adds this record and the verification tests.
+
+### Per phase (independent verifier results)
+
+| Phase | Verified SHA | Correction rounds | Verifier result |
+| --- | --- | --- | --- |
+| P1 tokens and prose cleaning | `b299b3a` | 2 (separator tidy; a capitalisation step that skipped snake_case conversion) | PASS: acceptance 9/9, verification 8/8, unit 617/0 fail, e2e 8/8 on `research_os_arch_test` |
+| P2 exhibit catalogue | `2654733` | 1 (unavailable reasons dumped validator JSON) | PASS with one accepted residual (below): acceptance 9/9, V-AC-4/5 7/7, unit 621/0 fail |
+| P3 prose-only writer and renderer (merged P1, P2) | `ba9e8bf` | 0 product rounds; 1 decision (AC-9 `prior_research` tokenized; e2e subtest 8 assertion changed with plan-author approval); 1 verification-test fix (a fixture cited an artifact it did not pass) | PASS: acceptance 25/25, verification 20/20, tsc clean, unit 626/0 fail, webpack build ok, e2e 8/8 on `research_os_rt_p3`, AC-9 poller 0 UUIDs in 70 report tasks |
+| P4 view and docs (merged P3) | `72e715f` | 2 (packet.ts note still invited charts; `prior_research` docs/diagram and exhibit titles) | PASS: acceptance 25/25, verification 20/20, tsc clean, lint 0 errors, unit 626/0 fail, webpack build ok, e2e 8/8 on `research_os_rt_p4`; docs read against code |
+
+### Orchestrator checks on `72e715f`
+
+- `npx tsx --test Implementations/report-templates/acceptance/*.test.ts Implementations/report-templates/verification/*.test.ts`: 45 tests, 45 pass.
+- `npx tsc --noEmit`: clean. `npm run test:unit`: 683 tests, 626 pass, 0 fail, 57 skipped (baseline 669 / 612 / 0 / 57).
+- Read the diff of `runtime.ts` (P1 wiring and P3 exhibit wiring after both merges), `report.ts`, `contracts.ts` `storedSection` and `research-report.tsx`; they match the Interfaces section. Diagrams in `diagrams/` still describe the built system; the proposed view is now implemented as drawn.
+
+### Criteria
+
+AC-1 to AC-9 met and verified. AC-10 met: `docs/system.md`, `docs/report-visual-guidelines.md`, `docs/architecture.md` and `docs/diagrams/research-across-runs.svg` updated and read against the code by the P4 verifier.
+
+### Limits and open items
+
+- `npm run build` (Turbopack) was not run in a real checkout: every worktree used a `node_modules` junction, which Turbopack refuses. `npx next build --webpack` passed. Run `npm run build` on the branch in a normal checkout before merging (AGENTS.md requires it).
+- No paid run. The design's target effects (fewer report-stage failures and repairs, lower report cost, `reader_leaks` down from 30-62) are not measured yet. After a live run, `npm run eval:score -- --latest` then `-- --check`, and quote the rows in the PR.
+- No screenshot: the e2e suite deletes its runs, so no stored adaptive-3 report existed to open in the app.
+- Accepted residuals: `readerProse` can leave doubled punctuation when a bare token sits mid-list ("rates,, and FX"); an artifact with a garbage id gives the unavailable reason "Unknown visual artifact NaN." (never shown to readers); a retry prompt after a failed validation can quote stored ids from validator messages (pre-existing; answers are cleaned before storage).
+- `validateChartPlan`, `fillChartPlanGap` and `CHART_PLAN_GAP` stay exported for the earlier report-review-resilience tests; nothing calls them for new writes.
+- The branch is built on `claude/report-review-resilience` (`620ec73`), whose three commits are not yet in `main`.
+- Each agent worktree was first created from `main` (`203cc02`) instead of the working branch; every implementor reset to `620ec73` before working, and the history was checked.
