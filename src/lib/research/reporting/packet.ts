@@ -23,7 +23,7 @@ function historyView(record: Row) {
   const issues: Row[] = record.reconciliation_issues ?? [];
   return {
     artifact_type: 'historical_record', asset_id: record.asset_id, run_id: record.run_id ?? null,
-    note: 'Raw observations are omitted from this view: financial_analytics holds the computed history and financial_statement_summary the statement coverage. Charts may name any series in chart_series at path observations (periodicity quarterly).',
+    note: 'Raw observations are omitted from this view: financial_analytics holds the computed history and financial_statement_summary the statement coverage. chart_series lists the quarterly series captured.',
     coverage: { start: `${coverage.start_fiscal_year}Q${coverage.start_fiscal_quarter}`, end: `${coverage.end_fiscal_year}Q${coverage.end_fiscal_quarter}`,
       quarters_required: coverage.quarters_required, quarters_present: coverage.quarters_present, is_complete: coverage.is_complete,
       gaps: (coverage.gaps ?? []).length, first_gaps: (coverage.gaps ?? []).slice(0, MAX_LISTED).map((g: Row) => g.why_missing) },
