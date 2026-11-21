@@ -60,7 +60,8 @@ export function ValuationWorkbench({ runId, proposalRef }: { runId: string; prop
       setLoadError(null);
       setWorkbench(bench as Workbench);
       setProposals(chatProposals(Array.isArray(chat.messages) ? chat.messages : []));
-      if (bench.available) { setDraft(draftFromInputs(bench.inputs)); setResult(bench.baseline); }
+      // A (re)load resets the form, so a linked proposal is applied again on top of it.
+      if (bench.available) { setDraft(draftFromInputs(bench.inputs)); setResult(bench.baseline); setAppliedRef(null); }
     } catch (error) { setLoadError(error instanceof Error ? error.message : "The workbench could not load."); }
   }, [runId]);
   useEffect(() => { void load(); }, [load]);
