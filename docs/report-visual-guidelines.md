@@ -11,16 +11,16 @@ Reports of standard `asset-framework-2.1-adaptive-3` split the work. **Code buil
 | Exhibit | Kind | Home | Fallback | Stored data |
 | --- | --- | --- | --- | --- |
 | Quarterly results | table | history | business | `financial_analytics.quarterly`, last 8 quarters |
-| History statistics | table | history | business | `financial_analytics.statistics` |
+| Historical statistics | table | history | business | `financial_analytics.statistics` |
 | Operating margin trend | chart, lines in % | history | business | `financial_analytics.quarterly`; needs 2 or more values |
 | Segment economics | table | business | history | `financial_analytics.segments.annual` |
 | Cash conversion | table | business | history, management | `financial_analytics.cash_conversion.quarterly`, last 8 |
 | Capital allocation | table | management | business | `financial_analytics.capital_allocation.quarterly`, last 8 |
 | Scenario drivers | table | forecasts | valuation | `operating_scenario_set` yearly drivers: bear, base and bull revenue growth and operating margin per year |
-| Scenario values | chart, bars | valuation | none | `valuation_scenario_set` value per share today, through `buildVisual` |
-| Valuation bridge | chart, waterfall | valuation | none | `valuation_scenario_set` base case, through `buildVisual` |
+| Value per share by scenario | chart, bars | valuation | none | `valuation_scenario_set` value per share today, through `buildVisual` |
+| Valuation bridge, base case | chart, waterfall | valuation | none | `valuation_scenario_set` base case, through `buildVisual` |
 | Valuation matrix | table | valuation | none | `valuation_scenario_set.valuation_matrix` |
-| Sensitivity grid | table | valuation | downside | `valuation_scenario_set.sensitivity_grid`, discount rate by terminal growth |
+| Sensitivity to discount rate and terminal growth | table | valuation | downside | `valuation_scenario_set.sensitivity_grid`, discount rate by terminal growth |
 | Stress cases | table | downside | valuation | `valuation_scenario_set.stress_cases` |
 
 Rules every exhibit follows:
