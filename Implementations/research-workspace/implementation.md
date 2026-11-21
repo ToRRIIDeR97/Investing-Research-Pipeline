@@ -124,4 +124,34 @@ Baseline at `b170e03` (2026-11-21): `p1-workbench` W-1 passes, W-2 and W-3 fail 
 
 ## Completion evidence
 
-_Filled after the last phase._
+Recorded 2026-11-21. Mode: TOR-2-Agents; one implementor and one verifier, both Claude Opus 5.5 at medium effort, phases in order. Stacked branches: `claude/investing-notebook` (`e37df1a`) → `claude/valuation-workbench` (`e50b45b`) → `claude/filings-library` (`c9188e9`) → `claude/investment-checklist` (`786d9ba`) → `claude/theme-research` (`7f74c35`, plus the commit adding this record and the verification tests).
+
+### Per phase (verifier results)
+
+| Phase | Verified SHA | Correction rounds | Verifier result |
+| --- | --- | --- | --- |
+| P1 workbench, chat proposals, ask a passage | `e50b45b` | 0 | PASS: acceptance + engine 13/13, verification 7/7, unit 641/0 fail, workbench DB test 1/1, `test:sofi-v3` 8/8, webpack build ok |
+| P2 filings library, filing notes | `c9188e9` | 2 (`preview_chars` meaning clarified by the plan author; `filingForm` returned unlisted forms and `recentFilings` dropped fractional years) | PASS: acceptance + tests 9/9, verification 4/4, unit 646/0 fail, filings DB test 1/1, `test:sofi-v3` 8/8 (at `807907a`), webpack build ok |
+| P3 investment checklist | `786d9ba` | 0 | PASS: acceptance + tests 8/8, verification 10/10, unit 649/0 fail, four DB suites 4/4, `test:sofi-v3` 8/8 (incl. a mock-judged evaluation; report input hash unchanged), webpack build ok |
+| P4 theme research | `7f74c35` | 1 (theme model spend reset on rerun, was overwritten, and was lost on failure; now a cumulative per-theme cap, added on success and failure, with an overlapping-run guard) | PASS: acceptance + tests 11/11, verification 12/12, unit 654/0 fail, five DB suites 5/5 and the theme budget test 2/2, `test:sofi-v3` 8/8, webpack build ok |
+
+### Orchestrator checks on `7f74c35`
+
+- Acceptance files identical to the plan author's copies (line endings aside).
+- `npx tsx --test Implementations/research-workspace/acceptance/*.test.ts Implementations/research-workspace/verification/*.test.ts`: 51 tests, 51 pass (verification files import acceptance fixtures, so some tests run twice).
+- `npx tsc --noEmit`: clean. `npm run test:unit`: 717 tests, 654 pass, 0 fail, 63 skipped.
+- Read the SEC fetch paths of theme research (only `edgarFetch`, code-built URLs) and the filings ownership check (`requireFilingOfAsset` before every read).
+- Full `npm run test:db` on `research_os_rt_p3` (migrated to `0023`): 1,163 tests, 1,157 pass, 1 fail, 5 skipped; the one failure is the known `tests/storage-gc.test.ts` Windows path-separator case.
+
+### Limits and open items
+
+- `npm run build` (Turbopack) was never run in a real checkout: every worktree used a junctioned `node_modules`, which Turbopack refuses. `npx next build --webpack` passed at every phase. Run `npm run build` in a normal checkout before merging (AGENTS.md).
+- Every `next build` first stopped with a Next.js message recommending a security upgrade and telling the agent to ask the user about `next upgrade --agent=security`. Agents treated it as tool output and did not upgrade. A Next.js upgrade is a reasonable separate PR.
+- `next dev` wrote to `AGENTS.md` and `next-env.d.ts` each time it ran; the implementor reverted them. Expect this when running the dev server.
+- No paid runs. Chat proposals, checklist judgements and theme research were exercised only with the mock provider and stubbed SEC responses.
+- No screenshots in this package; the implementor checked each UI against seeded fixtures in `next dev`, and the verifier checked by build and code review.
+- The workbench recomputes only runs valued by the v2 FCFF engine; bank (FCFE) runs such as SoFi's show why they cannot be recomputed.
+- Small races accepted: the 50-scenario and 50-checklist caps are checked without a transaction; a theme run overtaken by the 15-minute reclaim records its spend, so a theme's total can pass its cap in that case. Checklist evaluations have no per-asset cap (the listing is bounded).
+- Theme model calls are outside the per-run model-call ledger; `theme_research.cost_usd` and the cumulative cap are their accounting.
+- The chat route reads its body without a byte limit (true before P1; passage fields are capped after parsing).
+- Known unrelated `test:db` failure: `tests/storage-gc.test.ts` (Windows path separators).
