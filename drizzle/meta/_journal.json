@@ -148,6 +148,13 @@
       "when": 1792627200000,
       "tag": "0022_investment_checklists",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792713600000,
+      "tag": "0023_theme_research",
+      "breakpoints": true
     }
   ]
 }

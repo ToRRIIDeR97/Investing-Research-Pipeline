@@ -63,6 +63,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <nav className={styles.nav} aria-label="Main">
             <Link href="/" aria-current={current("/")}>Home</Link>
             <Link href="/assets" aria-current={current("/assets")}>Research</Link>
+            <Link href="/themes" aria-current={current("/themes")}>Themes</Link>
             <Link href="/review" aria-current={current("/review")}>Reviews{reviewCount ? <span className={styles.count}>{reviewCount}</span> : null}</Link>
           </nav>
           <div className={styles.tools}>
