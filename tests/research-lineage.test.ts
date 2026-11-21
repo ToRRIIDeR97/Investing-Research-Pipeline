@@ -187,17 +187,22 @@ test("monitor-check finds the 10-Q filed after the cutoff, captures it from a fi
     const text = strings.join("?");
     if (/FROM source_documents/.test(text)) return [];
     if (/FROM research_artifacts/.test(text)) { const type = String(values[1]); return content[type] ? [{ content_json: content[type] }] : []; }
+    // The operator's notebook KPI: operating margin in percent, with their own danger line at 30%.
+    if (/FROM notebook_kpis/.test(text)) return [{ label: "My operating margin", metric_key: "metric:operating_margin", segment: null, bear_line: 30, bull_line: 45 }];
     throw new Error(`Unexpected query: ${text}`);
   }) as unknown as Sql;
   const result = await checkAsset(sql, { asset_id: id(5), slug: "example", symbol: "EXM", run_id: id(1), source_cutoff_at: "2026-08-01T00:00:00.000Z", cik: "0000000001" },
     { fetch: fixtureFetch, now: new Date("2026-11-01T00:00:00Z") });
   assert.deepEqual(result.filings.map(f => [f.form, f.filing_date, f.captured]), [["10-Q", "2026-10-30", true]], "only the 10-Q after the cutoff");
   assert.deepEqual(calls, ["https://data.sec.gov/submissions/CIK0000000001.json", "https://www.sec.gov/Archives/edgar/data/1/000000000126000003/q3.htm"]);
-  const [margin, impressions] = result.kpis;
+  const [margin, impressions, mine] = result.kpis;
   assert.deepEqual([margin.status, margin.value, margin.period], ["danger", 0.25, "2026-Q3"]);
   assert.equal(impressions.status, "not_checkable");
+  // A notebook KPI is scored on the same new quarter, in the percent its lines are written in.
+  assert.deepEqual([mine.source, mine.kpi, mine.status, mine.value, mine.period], ["notebook", "My operating margin", "danger", 25, "2026-Q3"]);
   assert.equal(result.status, "refresh_due");
-  assert.equal(result.reasons.length, 2);
+  assert.equal(result.reasons.length, 3);
+  assert.ok(result.reasons.some(r => r.startsWith("Your KPI My operating margin is in danger")));
   // Nothing new after a later cutoff: current, with no fetch beyond the submissions index.
   calls.length = 0;
   const quiet = await checkAsset(sql, { asset_id: id(5), slug: "example", symbol: "EXM", run_id: id(1), source_cutoff_at: "2026-10-31T00:00:00.000Z", cik: "0000000001" },
@@ -279,7 +284,7 @@ test("without a stored CIK, monitor-check resolves it from SEC's ticker map thro
   }) as typeof fetch;
   const sql = (async (strings: TemplateStringsArray) => {
     const text = strings.join("?");
-    if (/FROM source_documents|FROM research_artifacts/.test(text)) return [];
+    if (/FROM source_documents|FROM research_artifacts|FROM notebook_kpis/.test(text)) return [];
     throw new Error(`Unexpected query: ${text}`);
   }) as unknown as Sql;
   const target = { asset_id: id(5), slug: "example", symbol: "EXM", run_id: id(1), source_cutoff_at: "2026-08-01T00:00:00.000Z", cik: null };

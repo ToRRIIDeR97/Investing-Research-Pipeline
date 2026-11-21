@@ -18,6 +18,9 @@ import {
 
 import styles from "./page.module.css";
 import ui from "@/components/research-ui.module.css";
+import { useNotebook } from "@/components/notebook/use-notebook";
+import { InvestingNotebook } from "@/components/notebook/investing-notebook";
+import { NotebookDrawer } from "@/components/notebook/notebook-drawer";
 import { researchBriefAction } from "@/lib/research/brief-presentation";
 import { ResearchReport } from "@/components/research-report";
 import { FinancialStatements } from "@/components/financial-statements";
@@ -80,11 +83,11 @@ const emptyResearchData: ResearchData = {
   artifacts: [],
 };
 
-type TabId = "overview" | "evidence" | "metrics" | "valuation" | "thesis" | "financials" | "kpis" | "backtests" | "sources" | "runs";
-const tabLabels: Partial<Record<TabId, string>> = { thesis: "Report", financials: "Financials", kpis: "KPIs", runs: "Run history" };
+type TabId = "overview" | "evidence" | "metrics" | "valuation" | "thesis" | "financials" | "kpis" | "notebook" | "backtests" | "sources" | "runs";
+const tabLabels: Partial<Record<TabId, string>> = { thesis: "Report", financials: "Financials", kpis: "KPIs", notebook: "Notebook", runs: "Run history" };
 const tabLabel = (tab: TabId) => tabLabels[tab] ?? tab.charAt(0).toUpperCase() + tab.slice(1);
 // Views that read large artifact bodies or the report document's artifacts. The others render from the summary report.
-const fullReportTabs: readonly TabId[] = ["thesis", "financials", "kpis"];
+const fullReportTabs: readonly TabId[] = ["thesis", "financials", "kpis", "notebook"];
 
 const signalColors: Record<string, string> = {
   very_cheap: "#3d7664",
@@ -107,10 +110,12 @@ function ViewResearch() {
   const requestedView = searchParams.get("view");
   const params = useParams();
   const assetId = String(params.id);
+  // The operator's notebook for this asset: pins, KPIs, report notes and journal (references and text only).
+  const notebookApi = useNotebook(assetId);
   const [data, setData] = useState<ResearchData>(emptyResearchData);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const activeTab:TabId = requestedView === 'report' ? 'thesis' : ['evidence','metrics','valuation','financials','kpis','backtests','sources','runs'].includes(requestedView ?? '') ? requestedView as TabId : 'overview';
+  const activeTab:TabId = requestedView === 'report' ? 'thesis' : ['evidence','metrics','valuation','financials','kpis','notebook','backtests','sources','runs'].includes(requestedView ?? '') ? requestedView as TabId : 'overview';
   const [searchQuery, setSearchQuery] = useState("");
   const loadVersion = useRef(0);
   // The run row behind the report on screen. A quiet refresh skips the report (megabytes) while that row is unchanged.
@@ -120,24 +125,12 @@ function ViewResearch() {
   const shownFull = useRef(false);
   // The interval's loadResearch is from an earlier render, so it reads the current tab here.
   const activeTabRef = useRef(activeTab);
-  activeTabRef.current = activeTab;
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
   const [monitor, setMonitor] = useState<MonitorCheck | null>(null);
   // The stored monitor-check result; the check itself runs from npm run monitor:check, never from this page.
   useEffect(() => {
     fetch(`/api/assets/${assetId}/monitor`).then((res) => res.ok ? res.json() : null).then(setMonitor).catch(() => setMonitor(null));
   }, [assetId]);
-
-  useEffect(() => {
-    // Tab links pin ?run= to the run already on screen. That is navigation, not a new run, so keep the page mounted.
-    if (requestedRunId && data.asset?.id === assetId && data.activeRun?.id === requestedRunId) return;
-    void loadResearch();
-    return () => { loadVersion.current++; };
-  }, [assetId, requestedRunId]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void loadResearch(true); }, 60_000);
-    return () => window.clearInterval(timer);
-  }, [assetId, requestedRunId]);
 
   // Reads only the route, refs and state setters, so it changes only with the asset or the requested run.
   const loadResearch = useCallback(async (quiet = false) => {
@@ -221,6 +214,18 @@ function ViewResearch() {
     }
   }, [assetId, requestedRunId]);
 
+  useEffect(() => {
+    // Tab links pin ?run= to the run already on screen. That is navigation, not a new run, so keep the page mounted.
+    if (requestedRunId && data.asset?.id === assetId && data.activeRun?.id === requestedRunId) return;
+    void loadResearch();
+    return () => { loadVersion.current++; };
+  }, [assetId, requestedRunId]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void loadResearch(true); }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [assetId, requestedRunId]);
+
   // The Report, Financials and KPI views need the full report; the page opened with the summary loads it on first use.
   const needsFullReport = Boolean(data.report?.summary) && fullReportTabs.includes(activeTab);
   useEffect(() => {
@@ -278,10 +283,14 @@ function ViewResearch() {
     <AssetTabs activeTab={activeTab} hrefFor={sectionHref} />
   </>;
   const viewArtifacts = [...data.artifacts, ...(data.report?.report_document?.artifacts ?? []).filter((a:ResearchRecord)=>!data.artifacts.some(b=>b.id===a.id))];
+  const reportDocument = data.report?.report_document ?? null;
   const view = (body: React.ReactNode, wrap = false) => <div className={ui.page}>{header}<div key={activeTab}>
     {activeTab !== "overview" && <h2 className="sr-only">{tabLabel(activeTab)}</h2>}
     {wrap ? <section className={`${ui.tile} ${styles.wide}`}>{body}</section> : body}
-  </div></div>;
+  </div>{activeTab !== "notebook" && <NotebookDrawer api={notebookApi} document={reportDocument} runId={data.activeRun?.id ?? null} artifacts={viewArtifacts}
+    notebookHref={sectionHref("notebook")} assetName={asset.canonical_name} />}</div>;
+  if (activeTab === 'notebook') return view(<InvestingNotebook api={notebookApi} artifacts={viewArtifacts} document={reportDocument} runId={data.activeRun?.id ?? null}
+    runDate={data.activeRun?.created_at ? String(data.activeRun.created_at).slice(0, 10) : null} reportHref={(id) => `${sectionHref("thesis")}#report-${id}`} />);
   if (activeTab === 'kpis') return view(<KPIDashboard key={data.activeRun?.id} artifacts={viewArtifacts} onRefresh={()=>void loadResearch()} refreshing={loading}/>, true);
   if (activeTab === 'thesis' && data.report?.report_document) return view(<ResearchReport key={data.activeRun?.id} document={data.report.report_document} liveArtifacts={viewArtifacts} financialsHref={sectionHref('financials')}/>);
   if (activeTab === 'financials') {
@@ -366,7 +375,7 @@ function RunHistory({ runs, activeRun, stages, assetId, onSelect }: { runs: Rese
   </>;
 }
 
-const tabViews: TabId[] = ["overview", "thesis", "financials", "kpis", "valuation", "evidence", "metrics", "backtests", "sources", "runs"];
+const tabViews: TabId[] = ["overview", "thesis", "financials", "kpis", "notebook", "valuation", "evidence", "metrics", "backtests", "sources", "runs"];
 
 function AssetTabs({ activeTab, hrefFor }: { activeTab: TabId; hrefFor: (view: TabId) => string }) {
   return <nav aria-label="Asset views" className={styles.tabs}>

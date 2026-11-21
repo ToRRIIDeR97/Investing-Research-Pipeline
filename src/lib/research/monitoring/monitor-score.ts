@@ -19,6 +19,8 @@ export interface MonitorItemResult {
   bear_threshold: number | null;
   bull_threshold: number | null;
   reason: string;
+  /** "notebook" for a KPI the operator tracks in the investing notebook; absent for the run's monitoring dashboard. */
+  source?: "notebook";
 }
 
 /** Ratios the dashboard names that the metric catalogue lacks, built from the same statement inputs. */
@@ -31,6 +33,8 @@ const num = (value: unknown) => value === null || value === undefined || value =
 
 /** A catalogue ratio is a decimal; a dashboard item may state its thresholds in percent. */
 function inItemUnits(value: number, item: Row): number {
+  // A notebook KPI states its lines in the metric's display unit (percent, currency millions) and names the scale.
+  if (typeof item.display_scale === "number" && Number.isFinite(item.display_scale)) return value * item.display_scale;
   const percent = parseUnit(item.unit)?.base === "%";
   const scale = Math.max(Math.abs(num(item.bear_threshold) ?? 0), Math.abs(num(item.bull_threshold) ?? 0));
   return percent && scale > 1.5 ? value * 100 : value;
@@ -65,7 +69,7 @@ export function scoreDashboard(items: Row[], newObservations: Row[], context: Ro
   const book = new MetricBook(observations, "quarterly");
   return items.map((item): MonitorItemResult => {
     const base = { kpi: String(item.kpi ?? item.metric_key ?? "KPI"), metric_key: item.metric_key ? String(item.metric_key) : null,
-      bear_threshold: num(item.bear_threshold), bull_threshold: num(item.bull_threshold) };
+      bear_threshold: num(item.bear_threshold), bull_threshold: num(item.bull_threshold), ...(item.source === "notebook" ? { source: "notebook" as const } : {}) };
     if (!newPeriods.length) return { ...base, status: "not_checkable", value: null, period: null, reason: "No new quarterly statements were captured." };
     let reading = ratioReading(item, book, periodRefs);
     if (!reading && item.metric_key) {
@@ -93,7 +97,7 @@ export interface RefreshDecision { refresh_due: boolean; reasons: string[] }
 export function refreshDecision(input: { filings: MonitorFiling[]; kpis: MonitorItemResult[]; nextRefreshAt: string | null; now: Date }): RefreshDecision {
   const reasons: string[] = [];
   for (const f of input.filings) reasons.push(`New ${f.form} filed ${f.filing_date}${f.report_date ? ` for the period ending ${f.report_date}` : ""}.`);
-  for (const k of input.kpis.filter(k => k.status === "danger")) reasons.push(`${k.kpi} is in danger: ${k.reason}`);
+  for (const k of input.kpis.filter(k => k.status === "danger")) reasons.push(`${k.source === "notebook" ? "Your KPI " : ""}${k.kpi} is in danger: ${k.reason}`);
   if (input.nextRefreshAt && Date.parse(input.nextRefreshAt) <= input.now.getTime()) reasons.push(`Scheduled refresh date ${input.nextRefreshAt.slice(0, 10)} has passed.`);
   return { refresh_due: reasons.length > 0, reasons };
 }

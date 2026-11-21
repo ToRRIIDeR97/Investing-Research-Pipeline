@@ -303,7 +303,7 @@ export function ResearchReport({document,financialsHref,liveArtifacts}:{document
         </div>
       </aside>
 
-      <div className={styles.main} id="report-content">
+      <div className={styles.main} id="report-content" data-report-chapter={section?.id}>
         {document.is_test&&<p className={styles.notice}>Synthetic test report. Not for investment decisions.</p>}
         <Verdict document={document}/>
         <header className={`${styles.tile} ${styles.chapterHead}`} data-tile>
@@ -332,7 +332,7 @@ export function ResearchReport({document,financialsHref,liveArtifacts}:{document
           <div className={styles.split}>
             <section id="chapter-analysis" className={styles.tile} data-tile data-analysis>
               <header className={styles.tileHead}><h3 data-tile-title>Analysis</h3></header>
-              <div className={`${styles.tileBody} ${styles.narrative}`}>{section.paragraphs.map((p,i)=><p key={i}>{['assumption','speculation'].includes(p.kind)&&<span className={styles.assumption}>{p.kind==='assumption'?'Analyst assumption':'Speculative'}</span>}{leadIn(clean(p.text))}<Citations ids={p.evidence_ids} document={document} onSource={showSource}/></p>)}
+              <div className={`${styles.tileBody} ${styles.narrative}`}>{section.paragraphs.map((p,i)=><p key={i} data-paragraph={i}>{['assumption','speculation'].includes(p.kind)&&<span className={styles.assumption}>{p.kind==='assumption'?'Analyst assumption':'Speculative'}</span>}{leadIn(clean(p.text))}<Citations ids={p.evidence_ids} document={document} onSource={showSource}/></p>)}
                 {financialsHref&&(codeBuilt?built.some(e=>e.home==='history'):section.tables.some(t=>t.path==='observations'))&&<p className={styles.caption}><a href={financialsHref}>Open Financials for the income statement, balance sheet and cash flow.</a></p>}
               </div>
             </section>
