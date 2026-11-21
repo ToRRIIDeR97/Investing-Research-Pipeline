@@ -9,6 +9,7 @@
 import { z as v4 } from "zod/v4";
 import { pipelineSql } from "@/db/pipeline-sql";
 import { runResearchAgent } from "@/lib/agent-harness/runner";
+import type { ModelProvider } from "@/lib/agent-harness/types";
 import { exactJsonPrompt } from "@/lib/research/run-context";
 import { outputContract } from "@/lib/research/reporting/contracts";
 import { taskExecution } from "@/lib/research/model-tiering";
@@ -22,7 +23,7 @@ export const MAX_SCORED = 12;
 export const SHORTLIST = 4;
 const DAY_MS = 86_400_000;
 const MAX_SIC_TICKERS = 150;
-/** Budget for one theme's model calls (USD), from THEME_RESEARCH_BUDGET_USD; default 2. */
+/** The cumulative cap on one theme's model spend across all its runs (USD), from THEME_RESEARCH_BUDGET_USD; default 2. */
 export const themeBudgetUsd = () => { const n = Number(process.env.THEME_RESEARCH_BUDGET_USD); return Number.isFinite(n) && n > 0 ? n : 2; };
 
 // ---- model contracts --------------------------------------------------------------------------------------------
@@ -72,6 +73,13 @@ export type ThemeDeps = {
   /** A recent USD price for a ticker, or null; by default the latest stored close in market_price_bars (no network). */
   price?: (ticker: string) => Promise<number | null>;
   now?: () => number;
+  /**
+   * The run's model budget, which the caller reads afterwards, also when the run throws: `limit` is what this run may
+   * spend (the theme's cap minus its stored spend) and `spent` grows with each attempt. Default: the whole cap.
+   */
+  budget?: ThemeBudget;
+  /** The model provider (tests pass one that reports a cost); default the configured provider. */
+  provider?: ModelProvider;
 };
 
 // ---- caches (as for peer benchmarks): the ticker map for a day, compact scorecard rows per CIK for a day ----------
@@ -88,9 +96,10 @@ async function storedPrice(ticker: string): Promise<number | null> {
   return Number.isFinite(close) && close > 0 ? close : null;
 }
 
-type Budget = { limit: number; spent: number };
+export type ThemeBudget = { limit: number; spent: number };
+type Budget = ThemeBudget;
 async function modelCall<T>(input: { title: string; contract: ReturnType<typeof outputContract>; packet: Record<string, unknown>; rules: string[];
-  tier: "cheap" | "mid"; budget: Budget; scope: string; validate?: (value: unknown) => { path: string; message: string }[] }): Promise<T> {
+  tier: "cheap" | "mid"; budget: Budget; scope: string; provider?: ModelProvider; validate?: (value: unknown) => { path: string; message: string }[] }): Promise<T> {
   const execution = taskExecution({ agentName: "asset-analyst", modelTier: input.tier, stageKey: "theme_research" });
   const contract = input.validate ? { ...input.contract, validate: (value: unknown) => [...(input.contract.validate?.(value) ?? []), ...input.validate!(value)] } : input.contract;
   const result = await runResearchAgent<T>({
@@ -100,9 +109,9 @@ async function modelCall<T>(input: { title: string; contract: ReturnType<typeof 
       "You have no tools and cannot browse. Name sources only as text the operator can check; do not invent figures. Estimates you give are labelled as model estimates.",
       ...input.rules] }),
     model: execution.model, ...(execution.fallbackModel !== undefined ? { fallbackModel: execution.fallbackModel } : {}), policy: execution.policy,
-    cacheScope: input.scope,
+    cacheScope: input.scope, ...(input.provider ? { provider: input.provider } : {}),
     hooks: {
-      beforeAttempt: () => { if (input.budget.spent + execution.reserveUsd > input.budget.limit) throw new Error(`The theme's model budget of $${input.budget.limit.toFixed(2)} would be exceeded.`); },
+      beforeAttempt: () => { if (input.budget.spent + execution.reserveUsd > input.budget.limit) throw new Error(`The theme's model budget would be exceeded ($${input.budget.limit.toFixed(2)} left for this run of the $${themeBudgetUsd().toFixed(2)} cap).`); },
       onAttemptComplete: (attempt) => { input.budget.spent += Number(attempt.costUsd ?? 0) || 0; },
     },
   });
@@ -114,20 +123,20 @@ export async function runThemeResearch(themeId: string, request: ThemeRequest, d
   const fetchSec = edgarFetch(deps.fetch);
   const price = deps.price ?? storedPrice;
   const now = deps.now ?? Date.now;
-  const budget: Budget = { limit: themeBudgetUsd(), spent: 0 };
+  const budget: Budget = deps.budget ?? { limit: themeBudgetUsd(), spent: 0 };
   const scope = `theme:${themeId}`;
   const notes: string[] = [];
   const base = { theme: request.theme, horizon_years: request.horizon_years, roles: request.roles, min_exposure: request.min_exposure, us_only: request.us_only };
 
   // 1. Framing: the demand driver, its components over the horizon and the exposure wanted.
-  const { framing } = await modelCall<{ framing: Framing }>({ title: `Theme framing: ${request.theme}`, contract: FRAMING_CONTRACT, tier: "mid", budget, scope,
+  const { framing } = await modelCall<{ framing: Framing }>({ title: `Theme framing: ${request.theme}`, contract: FRAMING_CONTRACT, tier: "mid", budget, scope, provider: deps.provider,
     packet: { output_contract: "theme_framing", request: base },
     rules: ["Frame the theme: the durable demand driver, its components over the horizon, the exposure an investor should want, the sources an analyst would read (names only) and up to five US-listed ETFs that track the theme."] });
 
   // 2. Two candidate lists from different prompts.
   const lists: { source: string; label: string; candidates: Candidate[] }[] = [];
   for (const [angle, instruction] of Object.entries(CANDIDATE_ANGLES)) {
-    const { candidates } = await modelCall<{ candidates: Candidate[] }>({ title: `Theme candidates (${angle}): ${request.theme}`, contract: CANDIDATES_CONTRACT, tier: "mid", budget, scope,
+    const { candidates } = await modelCall<{ candidates: Candidate[] }>({ title: `Theme candidates (${angle}): ${request.theme}`, contract: CANDIDATES_CONTRACT, tier: "mid", budget, scope, provider: deps.provider,
       validate: uniqueTickers, packet: { output_contract: "theme_candidates", angle, request: base, framing },
       rules: [instruction, "For each, give its ticker, name, role (supplier, operator or other), your estimate of the share of its business exposed to the theme (0-1, or null if unknown), whether it has a US listing, and a one-line reason."] });
     lists.push({ source: `model:${angle}`, label: angle === "suppliers" ? "Model: pure-play suppliers per component" : "Model: leaders a thematic ETF would hold",
@@ -135,7 +144,7 @@ export async function runThemeResearch(themeId: string, request: ThemeRequest, d
   }
 
   // 3. SEC's company list for 1-3 SIC codes the model names, mapped to tickers through company_tickers.json.
-  const { sic_codes } = await modelCall<{ sic_codes: { code: string; label: string }[] }>({ title: `Theme SIC codes: ${request.theme}`, contract: SIC_CONTRACT, tier: "cheap", budget, scope,
+  const { sic_codes } = await modelCall<{ sic_codes: { code: string; label: string }[] }>({ title: `Theme SIC codes: ${request.theme}`, contract: SIC_CONTRACT, tier: "cheap", budget, scope, provider: deps.provider,
     packet: { output_contract: "theme_sic", request: base, components: framing.components.map((c) => c.name) },
     rules: ["Name one to three four-digit SEC Standard Industrial Classification (SIC) codes whose companies most often supply this theme."] });
   if (!tickerCache || now() - tickerCache.at > DAY_MS) {

@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import postgres from "postgres";
 import { NextRequest } from "next/server";
+import type { ModelProvider, ModelRequest } from "../src/lib/agent-harness/types";
 
 const request = (url: string, method = "GET", body?: unknown, headers: Record<string, string> = {}) =>
   new NextRequest(`http://localhost${url}`, { method, headers: { ...(body === undefined ? {} : { "content-type": "application/json" }), ...headers },
@@ -33,6 +34,72 @@ const facts = (g: number, m: number, d: number) => ({ facts: { "us-gaap": {
   EarningsPerShareDiluted: { units: { "USD/shares": [fy(2025, 4)] } } } } });
 const FACTS: Record<string, unknown> = { "0001050915": facts(0.15, 0.08, 100), "0000048898": facts(0.08, 0.2, 300), "0001551182": facts(0.06, 0.18, 400),
   "0000015615": facts(0.12, 0.05, 200), "0001996810": facts(0.2, 0.06, -50), "0000700923": facts(0.1, 0.04, 50) };
+
+test("a theme's model spend accumulates across runs, failed ones included, and stops at the cumulative cap", { skip: process.env.RUN_DB_INTEGRATION !== "1" }, async () => {
+  const sql = postgres(process.env.DATABASE_URL!, { max: 1 });
+  const { createTheme, runTheme } = await import("../src/lib/api/themes");
+  const { resetThemeCaches } = await import("../src/lib/research/themes/pipeline");
+  const { MockProvider } = await import("../src/lib/agent-harness/providers/mock");
+  const run = await import("../src/app/api/themes/[id]/run/route");
+  // The mock model, reporting $0.05 per call.
+  const mock = new MockProvider();
+  const costly: ModelProvider = { id: "mock", async *stream(request: ModelRequest, signal: AbortSignal) {
+    for await (const event of mock.stream(request, signal)) yield event.type === "usage" ? { ...event, usage: { ...event.usage, costUsd: 0.05 } } : event;
+  } };
+  const secFetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === "https://www.sec.gov/files/company_tickers.json") return Response.json(SEC);
+    if (url.includes("SIC=1623")) return new Response(SIC_PAGE);
+    const cik = /CIK(\d{10})\.json$/.exec(url)?.[1];
+    return cik && FACTS[cik] ? Response.json(FACTS[cik]) : new Response("no", { status: 404 });
+  }) as typeof fetch;
+  const secDown = (async (input: RequestInfo | URL) => String(input).includes("company_tickers") ? new Response("down", { status: 503 }) : secFetch(input)) as typeof fetch;
+  const env = { THEME_RESEARCH_BUDGET_USD: "0.5", RESEARCH_MID_ATTEMPT_BUDGET_RESERVE_USD: "0.01", RESEARCH_CHEAP_ATTEMPT_BUDGET_RESERVE_USD: "0.01" };
+  const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, env);
+  let id = "";
+  const cost = async () => Number((await sql`SELECT cost_usd FROM theme_research WHERE id = ${id}`)[0].cost_usd);
+  try {
+    id = (await createTheme({ theme: "Budget test theme", horizon_years: 10, roles: ["supplier"], min_exposure: 0.5, us_only: true,
+      objectives: { growth: 1, quality: 0, value: 0, balance_sheet: 0 } })).id;
+    // Four model calls a run at $0.05: $0.20 recorded on success.
+    resetThemeCaches();
+    const first = await runTheme(id, { fetch: secFetch, price: async () => 80, provider: costly });
+    assert.equal(first.status, "completed", String(first.error));
+    assert.equal(await cost(), 0.2);
+    // The four calls are paid before SEC fails: the failed run still adds $0.20.
+    resetThemeCaches();
+    const second = await runTheme(id, { fetch: secDown, price: async () => null, provider: costly });
+    assert.equal(second.status, "failed");
+    assert.equal(await cost(), 0.4);
+    // $0.10 is left of the $0.50 cap: two calls fit, the third is refused before it is made, and the $0.10 is recorded.
+    resetThemeCaches();
+    const third = await runTheme(id, { fetch: secFetch, price: async () => 80, provider: costly });
+    assert.equal(third.status, "failed");
+    assert.match(third.error, /model budget would be exceeded/);
+    assert.equal(await cost(), 0.5);
+    // At the cap: refused before anything runs, with the reason.
+    const refused = await run.POST(new NextRequest(`http://localhost/api/themes/${id}/run`, { method: "POST" }), { params: Promise.resolve({ id }) });
+    assert.equal(refused.status, 409);
+    const body = await refused.json();
+    assert.equal(body.code, "BUDGET_SPENT");
+    assert.match(body.error, /used its model budget \(\$0\.50 of \$0\.50\)/);
+    assert.equal(await cost(), 0.5);
+    // A run overtaken by a stuck-run reclaim keeps the newer claim's status but still adds its spend.
+    process.env.THEME_RESEARCH_BUDGET_USD = "5";
+    resetThemeCaches();
+    const overtaken = await runTheme(id, { fetch: secFetch, provider: costly, price: async () => {
+      await sql`UPDATE theme_research SET started_at = clock_timestamp(), status = 'running' WHERE id = ${id}`;
+      return 80;
+    } });
+    assert.equal(overtaken.status, "running", "the newer claim's status is kept");
+    assert.equal(await cost(), 0.7);
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    if (id) await sql`DELETE FROM theme_research WHERE id = ${id}`;
+    await sql.end();
+  }
+});
 
 test("theme research runs end to end with the mock provider and stubbed SEC fetches", { skip: process.env.RUN_DB_INTEGRATION !== "1" }, async () => {
   const sql = postgres(process.env.DATABASE_URL!, { max: 1 });

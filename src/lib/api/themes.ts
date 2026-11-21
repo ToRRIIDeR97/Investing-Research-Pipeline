@@ -6,7 +6,7 @@ import type { NextRequest } from "next/server";
 import { pipelineSql } from "@/db/pipeline-sql";
 import { ApiError } from "@/lib/api/errors";
 import { ThemeRequest } from "@/lib/research/themes";
-import { runThemeResearch, type ThemeDeps } from "@/lib/research/themes/pipeline";
+import { runThemeResearch, themeBudgetUsd, type ThemeBudget, type ThemeDeps } from "@/lib/research/themes/pipeline";
 
 export const MAX_THEMES = 200;
 export const MAX_THEME_BODY_BYTES = 16_384;
@@ -65,27 +65,47 @@ export async function getTheme(id: string) {
 }
 
 /** Runs the pipeline for one theme: 409 while it is running, a stored result on success, a stored reader-facing error on failure. */
+/**
+ * Runs the pipeline for one theme. The theme's model spend is capped cumulatively (`themeBudgetUsd()` across all its
+ * runs): a run may spend the cap minus `cost_usd`, and a theme at its cap is refused (409 BUDGET_SPENT). Each run's
+ * spend is added to `cost_usd` in the same UPDATE that sets the final status, on success and on failure alike. These
+ * calls belong to no research run, so they are outside model_calls and the per-run budget ledger; `cost_usd` and the
+ * cap are their accounting. Only the claimant of the run (matched by its `started_at`) writes the status and result;
+ * a run overtaken by a stuck-run reclaim still adds its spend.
+ */
 export async function runTheme(id: string, deps: ThemeDeps = {}) {
   themeId(id);
   if (!themeModelCallsEnabled()) throw new ApiError("Theme research makes model calls, which are off for this workspace. Enable paid research with a budget, or use the mock provider for testing.", 503);
   const sql = pipelineSql();
-  const [claimed] = await sql`UPDATE theme_research SET status = 'running', started_at = NOW(), updated_at = NOW(), error = NULL
-    WHERE id = ${id} AND (status <> 'running' OR started_at < NOW() - ${`${STALE_RUN_MS / 1000} seconds`}::interval) RETURNING *`;
+  const cap = themeBudgetUsd();
+  const [claimed] = await sql`UPDATE theme_research SET status = 'running', started_at = clock_timestamp(), updated_at = NOW(), error = NULL
+    WHERE id = ${id} AND cost_usd < ${cap} AND (status <> 'running' OR started_at < NOW() - ${`${STALE_RUN_MS / 1000} seconds`}::interval)
+    RETURNING *, started_at::text AS claim`;
   if (!claimed) {
-    const [exists] = await sql`SELECT status FROM theme_research WHERE id = ${id}`;
+    const [exists] = await sql`SELECT status, cost_usd FROM theme_research WHERE id = ${id}`;
     if (!exists) throw new ApiError("Theme not found", 404, "NOT_FOUND");
+    if (Number(exists.cost_usd) >= cap)
+      throw new ApiError(`This theme has used its model budget ($${Number(exists.cost_usd).toFixed(2)} of $${cap.toFixed(2)}). Raise THEME_RESEARCH_BUDGET_USD or start a new theme.`, 409, "BUDGET_SPENT");
     throw new ApiError("This theme is already being researched. Wait for it to finish.", 409, "ALREADY_RUNNING");
   }
   const request = ThemeRequest.parse(claimed.request_json);
+  const budget: ThemeBudget = { limit: Math.max(0, cap - Number(claimed.cost_usd)), spent: 0 };
+  let outcome: { status: "completed"; result: unknown } | { status: "failed"; error: string };
   try {
-    const { result, cost_usd } = await runThemeResearch(id, request, deps);
-    const [row] = await sql`UPDATE theme_research SET status = 'completed', result_json = ${sql.json(result as never)}, cost_usd = ${cost_usd},
-      completed_at = NOW(), updated_at = NOW() WHERE id = ${id} RETURNING *`;
-    return toTheme(row);
+    const { result } = await runThemeResearch(id, request, { ...deps, budget });
+    outcome = { status: "completed", result };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const [row] = await sql`UPDATE theme_research SET status = 'failed', error = ${`Theme research failed: ${message}`.slice(0, 500)},
-      completed_at = NOW(), updated_at = NOW() WHERE id = ${id} RETURNING *`;
-    return toTheme(row);
+    outcome = { status: "failed", error: `Theme research failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500) };
   }
+  const spent = Number(budget.spent.toFixed(6));
+  const [row] = outcome.status === "completed"
+    ? await sql`UPDATE theme_research SET status = 'completed', result_json = ${sql.json(outcome.result as never)}, cost_usd = cost_usd + ${spent},
+        completed_at = NOW(), updated_at = NOW() WHERE id = ${id} AND started_at::text = ${claimed.claim} RETURNING *`
+    : await sql`UPDATE theme_research SET status = 'failed', error = ${outcome.error}, cost_usd = cost_usd + ${spent},
+        completed_at = NOW(), updated_at = NOW() WHERE id = ${id} AND started_at::text = ${claimed.claim} RETURNING *`;
+  if (row) return toTheme(row);
+  // Another run reclaimed the theme meanwhile: keep its status and result, but record this run's spend.
+  const [kept] = await sql`UPDATE theme_research SET cost_usd = cost_usd + ${spent}, updated_at = NOW() WHERE id = ${id} RETURNING *`;
+  if (!kept) throw new ApiError("Theme not found", 404, "NOT_FOUND");
+  return toTheme(kept);
 }
