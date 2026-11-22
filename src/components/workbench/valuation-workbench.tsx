@@ -9,7 +9,8 @@ import { RESEARCH_CHAT_ANSWERED } from "@/components/research-chat";
 type Case = (typeof CASES)[number];
 type Summary = Pick<WhatIfResult, "value_today" | "return_today" | "anchors" | "probabilities">;
 type Scenario = { id: string; name: string; rationale: string; source: "user" | "assistant"; change: WorkbenchChange; result: Summary; created_at: string };
-type Workbench = { available: true; inputs: WorkbenchInputs; baseline: WhatIfResult; scenarios: Scenario[] } | { available: false; reason: string; scenarios: Scenario[] };
+type Source = { pinned_to_report?: boolean; newer_valuation?: { version: number; createdAt: string } | null };
+type Workbench = Source & ({ available: true; inputs: WorkbenchInputs; baseline: WhatIfResult; scenarios: Scenario[] } | { available: false; reason: string; scenarios: Scenario[] });
 type Proposal = { ref: string; name: string; rationale: string; change: WorkbenchChange };
 type Origin = { source: "user" | "assistant"; name: string; rationale: string } | null;
 
@@ -17,6 +18,13 @@ const ROWS: (Case | "weighted")[] = ["bear", "base", "bull", "weighted"];
 const caseLabel = (c: string) => c === "weighted" ? "Probability-weighted" : c.charAt(0).toUpperCase() + c.slice(1);
 const fieldLabel: Record<string, string> = { discount_rate: "Discount rate %", terminal_growth: "Terminal growth %", ronic: "RONIC %", fade_years: "Fade years",
   revenue_growth: "Revenue growth %", operating_margin: "Operating margin %" };
+/** A valuation stored after the report's: the workbench says so and keeps to the report's valuation. */
+function NewerValuation({ source }: { source: Source }) {
+  const newer = source.newer_valuation;
+  if (!newer) return null;
+  const day = new Date(newer.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  return <p className={ui.muted} role="note" data-newer-valuation>A newer valuation (version {newer.version}, stored {day}) exists, but this run&apos;s report was built on an earlier one. The workbench and the report both use the report&apos;s valuation; regenerate the report to use the newer one.</p>;
+}
 const money = (n: number | null | undefined, currency: string) => n == null ? "—" : `${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
 const percent = (n: number | null | undefined, signed = true) => n == null ? "—" : `${signed && n > 0 ? "+" : ""}${(n * 100).toFixed(1)}%`;
 const delta = (now: number | null | undefined, then: number | null | undefined) => now == null || then == null ? "—" : `${now - then > 0 ? "+" : ""}${(now - then).toFixed(2)}`;
@@ -139,7 +147,7 @@ export function ValuationWorkbench({ runId, proposalRef }: { runId: string; prop
   if (!workbench) return <p className={ui.empty} role="status">Loading the workbench…</p>;
   if (!workbench.available) return <section className={ui.tile} aria-labelledby="wb-unavailable">
     <header className={ui.tileHead}><h2 id="wb-unavailable">Valuation workbench</h2></header>
-    <div className={ui.tileBody}><p>{workbench.reason}</p></div>
+    <div className={ui.tileBody}><p>{workbench.reason}</p><NewerValuation source={workbench} /></div>
   </section>;
 
   const baseline = workbench.baseline, shown = unchanged ? baseline : result ?? baseline, currency = baseline.currency;
@@ -149,8 +157,9 @@ export function ValuationWorkbench({ runId, proposalRef }: { runId: string; prop
   return <div className={ui.grid}>
     <section className={`${ui.tile} ${ui.s12}`} aria-labelledby="wb-results">
       <header className={ui.tileHead}><h2 id="wb-results">Results</h2>
-        <span className={ui.muted} role="status">{unchanged ? "The stored valuation" : computing ? "Recomputing…" : "Your what-if, computed in code"}</span></header>
+        <span className={ui.muted} role="status">{unchanged ? (workbench.pinned_to_report ? "The report's valuation" : "The stored valuation") : computing ? "Recomputing…" : "Your what-if, computed in code"}</span></header>
       {problem && <p className={styles.problem} role="alert">{problem}</p>}
+      {workbench.newer_valuation && <div className="px-[18px] pt-3"><NewerValuation source={workbench} /></div>}
       <div className={ui.table}><table>
         <thead><tr><th>Case</th><th className={styles.num}>Weight</th><th className={styles.num}>Value today</th><th className={styles.num}>Return vs {money(shown.price, currency)}</th>
           <th className={styles.num}>Change vs stored</th><th className={styles.num}>Terminal-year anchor</th></tr></thead>

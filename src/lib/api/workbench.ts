@@ -77,16 +77,21 @@ export async function listScenarios(runId: string) {
   return rows.map(toScenario);
 }
 
-/** The workbench page: availability, the editable inputs, the stored valuation recomputed, and saved scenarios. */
+/**
+ * The workbench page: availability, the editable inputs, the stored valuation recomputed, and saved scenarios. The
+ * valuation is the version the run's report was built from, so the baseline matches the report.
+ */
 export async function loadWorkbench(runId: string) {
   const data = await loadRunWhatIfData(runId);
   const availability = whatIfAvailability(data);
   const scenarios = await listScenarios(runId);
-  if (!availability.available) return { available: false as const, reason: availability.reason, inputs: null, baseline: null, scenarios };
+  // Which valuation this is: the report's own, and whether a newer one was stored after the report.
+  const source = { pinned_to_report: data.pinnedToReport === true, newer_valuation: data.newerValuation ?? null };
+  if (!availability.available) return { available: false as const, reason: availability.reason, inputs: null, baseline: null, scenarios, ...source };
   try {
-    return { available: true as const, inputs: workbenchInputs(data), baseline: computeWhatIf(data), scenarios };
+    return { available: true as const, inputs: workbenchInputs(data), baseline: computeWhatIf(data), scenarios, ...source };
   } catch (error) {
-    if (error instanceof WhatIfError) return { available: false as const, reason: error.message, inputs: null, baseline: null, scenarios };
+    if (error instanceof WhatIfError) return { available: false as const, reason: error.message, inputs: null, baseline: null, scenarios, ...source };
     throw error;
   }
 }

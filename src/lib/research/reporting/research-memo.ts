@@ -44,6 +44,8 @@ export interface ResearchMemo {
   status:MemoStatus|null;
   /** The final human review is open, so a decision can be recorded from the memo. */
   reviewOpen:boolean;
+  /** A validated valuation stored after the report's. The memo keeps to the report's and says so. */
+  newerValuation:{version:number;createdAt:string}|null;
   verdict:{
     price:number|null;priceVerified:boolean;priceDate:string|null;
     valuationComplete:boolean;withheldReason:string|null;
@@ -63,7 +65,9 @@ export interface ResearchMemo {
   evidence:Record<string,MemoEvidence>;
 }
 
-export interface MemoRunState {runStatus?:string|null;humanReviewStatus?:string|null;latestDecision?:string|null}
+export interface MemoRunState {runStatus?:string|null;humanReviewStatus?:string|null;latestDecision?:string|null;
+  /** A validated valuation stored after the one the report was built from. */
+  newerValuation?:{version:number;createdAt:string}|null}
 
 const num=(v:unknown):number|null=>{
   if(typeof v==='number'&&Number.isFinite(v))return v;
@@ -319,6 +323,7 @@ export function buildResearchMemo(artifacts:Row[],document:Row|null,state:MemoRu
     currency,
     status:memoStatus(state),
     reviewOpen:state.humanReviewStatus==='waiting_for_human',
+    newerValuation:state.newerValuation??null,
     verdict:{
       price,priceVerified:source.verified===true,priceDate:text(source.trading_date),
       valuationComplete:complete,withheldReason,values,weighted,gap,
