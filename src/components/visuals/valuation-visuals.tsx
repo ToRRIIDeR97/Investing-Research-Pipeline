@@ -166,8 +166,10 @@ export function KpiGauges({ kpis }: { kpis: SnapshotKpi[] }) {
   if (!usable.length) return <p style={{ padding: "14px 18px", color: "var(--ink-2)" }}>No KPI has bear and bull thresholds yet.</p>;
   return <div className={styles.gauges}>{usable.map((kpi) => {
     const bear = kpi.bear_threshold!, bull = kpi.bull_threshold!;
-    const lo = Math.min(bear, bull, kpi.value), hi = Math.max(bear, bull, kpi.value), pad = (hi - lo || 1) * 0.12;
-    const x = (v: number) => 6 + ((v - lo + pad) / (hi - lo + 2 * pad)) * 288;
+    // A bad-to-good scale: bear always on the left and bull on the right, matching the labels below, whichever
+    // direction the metric improves in. A level past either threshold sits just outside it.
+    const t = (v: number) => Math.max(-0.12, Math.min(1.12, (v - bear) / (bull - bear)));
+    const x = (v: number) => 6 + ((t(v) + 0.12) / 1.24) * 288;
     const color = kpi.tone === "good" ? C.positive : kpi.tone === "bad" ? C.critical : C.navy;
     return <div key={kpi.label} className={styles.gauge} data-tone={kpi.tone}>
       <div className={styles.gaugeHead}><strong>{kpi.label}</strong><span>{kpi.display}</span></div>

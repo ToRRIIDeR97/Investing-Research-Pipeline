@@ -1,0 +1,2797 @@
+{
+ "note": "SoFi run 0c9a2731 (18 Nov 2026): memo inputs, trimmed. Exported from the local research_os database for tests.",
+ "run_id": "0c9a2731-b1f8-412d-a081-f942716d3806",
+ "artifacts": [
+  {
+   "artifact_type": "confidence_assessment",
+   "content_json": {
+    "data": 0.55,
+    "moat": 0.3,
+    "history": 0.5,
+    "process": 0.45,
+    "downside": 0.35,
+    "forecast": 0.2,
+    "valuation": 0.25,
+    "artifact_type": "confidence_assessment"
+   }
+  },
+  {
+   "artifact_type": "decision_record",
+   "content_json": {
+    "decision": "pending",
+    "rationale": "The decision is pending because human review is the approval gate, and the packet withholds a supportable conclusion. The bank-capital-constrained FCFE method gives negative bear value, about 1.13 base and about 6.75 bull per diluted share against an unverified 14.28 price, so the central question of whether returns on equity exceed the cost of equity is answered only as a bound: stated ROE is not computed for all 20 quarters and the 13.09% cost of equity rests on an unverified beta. Blocking gaps remain: deposit cost against a market benchmark (FDIC and Nu/Ally series unavailable), Galileo/Technisys segment operating income after allocations, twelve quarters of bank call-report capital, quarterly net income and equity for ROE, and Q3 2026 consolidated operating income, capex and working-capital lines. Peer comparisons (Nu, Ally, Affirm, Block, Dave, Chime) are unverified. The credit and cash-conversion evidence is supportive in part (total net charge-off ratio 1.62% in Q3 2026, against 2.07% in FY2025), but fcf-to-net-income is about -13.8x TTM, so reported earnings do not convert to distributable cash in the packet's model. Conclusion withheld - research incomplete for valuation and decision until the gaps above are supplied.",
+    "adjustments": {
+     "moved_risks": [],
+     "moved_catalysts": [
+      {
+       "reason": "business_driver_only",
+       "catalyst_name": "Card credit reserve and charge-off trend"
+      }
+     ],
+     "dropped_citation_ids": [
+      "6f488f81-0d46-4271-8f57-86a9d8c1f33b"
+     ]
+    },
+    "artifact_type": "decision_record",
+    "human_approved_by": ""
+   }
+  },
+  {
+   "artifact_type": "financial_statement_set",
+   "content_json": {
+    "observations": [
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_interest_income",
+      "period_end": "2024-03-31",
+      "fiscal_year": 2024,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2025-05-06",
+      "period_start": "2024-01-01",
+      "value_numeric": 402718000,
+      "fiscal_quarter": 1,
+      "reporting_basis": "gaap",
+      "source_document_id": "7ac3bb74-3ab1-450c-a5cb-82b225b6d0b2",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_revenue",
+      "period_end": "2024-03-31",
+      "fiscal_year": 2024,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2025-05-06",
+      "period_start": "2024-01-01",
+      "value_numeric": 644995000,
+      "fiscal_quarter": 1,
+      "reporting_basis": "gaap",
+      "source_document_id": "7ac3bb74-3ab1-450c-a5cb-82b225b6d0b2",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_income",
+      "period_end": "2024-03-31",
+      "fiscal_year": 2024,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2025-05-06",
+      "period_start": "2024-01-01",
+      "value_numeric": 88043000,
+      "fiscal_quarter": 1,
+      "reporting_basis": "gaap",
+      "source_document_id": "7ac3bb74-3ab1-450c-a5cb-82b225b6d0b2",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "operating_cash_flow",
+      "period_end": "2024-03-31",
+      "fiscal_year": 2024,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2025-05-06",
+      "period_start": "2024-01-01",
+      "value_numeric": 738248000,
+      "fiscal_quarter": 1,
+      "reporting_basis": "gaap",
+      "source_document_id": "7ac3bb74-3ab1-450c-a5cb-82b225b6d0b2",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_interest_income",
+      "period_end": "2024-06-30",
+      "fiscal_year": 2024,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2025-08-07",
+      "period_start": "2024-04-01",
+      "value_numeric": 412584000,
+      "fiscal_quarter": 2,
+      "reporting_basis": "gaap",
+      "source_document_id": "a37b35d4-0678-43fa-94a7-23b883eb40e9",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_revenue",
+      "period_end": "2024-06-30",
+      "fiscal_year": 2024,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2025-08-07",
+      "period_start": "2024-04-01",
+      "value_numeric": 598618000,
+      "fiscal_quarter": 2,
+      "reporting_basis": "gaap",
+      "source_document_id": "a37b35d4-0678-43fa-94a7-23b883eb40e9",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_income",
+      "period_end": "2024-06-30",
+      "fiscal_year": 2024,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2025-08-07",
+      "period_start": "2024-04-01",
+      "value_numeric": 17404000,
+      "fiscal_quarter": 2,
+      "reporting_basis": "gaap",
+      "source_document_id": "a37b35d4-0678-43fa-94a7-23b883eb40e9",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "operating_cash_flow",
+      "period_end": "2024-06-30",
+      "fiscal_year": 2024,
+      "metric_type": "calculated",
+      "periodicity": "quarterly",
+      "available_at": "2025-08-07",
+      "period_start": "2024-04-01",
+      "value_numeric": -484371000,
+      "fiscal_quarter": 2,
+      "reporting_basis": "gaap",
+      "source_document_id": "a37b35d4-0678-43fa-94a7-23b883eb40e9",
+      "restatement_version": 0,
+      "comparability_status": "comparable",
+      "formula_or_adjustment": "Standalone quarter = 253877000 − 738248000; reported cumulative periods ending 2024-06-30 and 2024-03-31."
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_interest_income",
+      "period_end": "2024-09-30",
+      "fiscal_year": 2024,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2025-11-06",
+      "period_start": "2024-07-01",
+      "value_numeric": 431010000,
+      "fiscal_quarter": 3,
+      "reporting_basis": "gaap",
+      "source_document_id": "8ad2d03c-780b-4c80-99f6-1ea33982a29b",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_revenue",
+      "period_end": "2024-09-30",
+      "fiscal_year": 2024,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2025-11-06",
+      "period_start": "2024-07-01",
+      "value_numeric": 697121000,
+      "fiscal_quarter": 3,
+      "reporting_basis": "gaap",
+      "source_document_id": "8ad2d03c-780b-4c80-99f6-1ea33982a29b",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_income",
+      "period_end": "2024-09-30",
+      "fiscal_year": 2024,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2025-11-06",
+      "period_start": "2024-07-01",
+      "value_numeric": 60745000,
+      "fiscal_quarter": 3,
+      "reporting_basis": "gaap",
+      "source_document_id": "8ad2d03c-780b-4c80-99f6-1ea33982a29b",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "operating_cash_flow",
+      "period_end": "2024-09-30",
+      "fiscal_year": 2024,
+      "metric_type": "calculated",
+      "periodicity": "quarterly",
+      "available_at": "2025-11-06",
+      "period_start": "2024-07-01",
+      "value_numeric": -1173581000,
+      "fiscal_quarter": 3,
+      "reporting_basis": "gaap",
+      "source_document_id": "8ad2d03c-780b-4c80-99f6-1ea33982a29b",
+      "restatement_version": 0,
+      "comparability_status": "comparable",
+      "formula_or_adjustment": "Standalone quarter = -919704000 − 253877000; reported cumulative periods ending 2024-09-30 and 2024-06-30."
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_interest_income",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "metric_type": "reported",
+      "periodicity": "annual",
+      "available_at": "2026-02-17",
+      "period_start": "2024-01-01",
+      "value_numeric": 1716481000,
+      "fiscal_quarter": null,
+      "reporting_basis": "gaap",
+      "source_document_id": "1a21802f-bd92-4d93-bfcb-9dc8060baca9",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_interest_income",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "metric_type": "calculated",
+      "periodicity": "quarterly",
+      "available_at": "2026-02-17",
+      "period_start": "2024-10-01",
+      "value_numeric": 470169000,
+      "fiscal_quarter": 4,
+      "reporting_basis": "gaap",
+      "source_document_id": "1a21802f-bd92-4d93-bfcb-9dc8060baca9",
+      "restatement_version": 0,
+      "comparability_status": "comparable",
+      "formula_or_adjustment": "Standalone quarter = 1716481000 − 1246312000; reported cumulative periods ending 2024-12-31 and 2024-09-30."
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_revenue",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "metric_type": "reported",
+      "periodicity": "annual",
+      "available_at": "2026-02-17",
+      "period_start": "2024-01-01",
+      "value_numeric": 2674859000,
+      "fiscal_quarter": null,
+      "reporting_basis": "gaap",
+      "source_document_id": "1a21802f-bd92-4d93-bfcb-9dc8060baca9",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_revenue",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "metric_type": "calculated",
+      "periodicity": "quarterly",
+      "available_at": "2026-02-17",
+      "period_start": "2024-10-01",
+      "value_numeric": 734125000,
+      "fiscal_quarter": 4,
+      "reporting_basis": "gaap",
+      "source_document_id": "1a21802f-bd92-4d93-bfcb-9dc8060baca9",
+      "restatement_version": 0,
+      "comparability_status": "comparable",
+      "formula_or_adjustment": "Standalone quarter = 2674859000 − 1940734000; reported cumulative periods ending 2024-12-31 and 2024-09-30."
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_income",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "metric_type": "reported",
+      "periodicity": "annual",
+      "available_at": "2026-02-17",
+      "period_start": "2024-01-01",
+      "value_numeric": 498665000,
+      "fiscal_quarter": null,
+      "reporting_basis": "gaap",
+      "source_document_id": "1a21802f-bd92-4d93-bfcb-9dc8060baca9",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_income",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "metric_type": "calculated",
+      "periodicity": "quarterly",
+      "available_at": "2026-02-17",
+      "period_start": "2024-10-01",
+      "value_numeric": 332473000,
+      "fiscal_quarter": 4,
+      "reporting_basis": "gaap",
+      "source_document_id": "1a21802f-bd92-4d93-bfcb-9dc8060baca9",
+      "restatement_version": 0,
+      "comparability_status": "comparable",
+      "formula_or_adjustment": "Standalone quarter = 498665000 − 166192000; reported cumulative periods ending 2024-12-31 and 2024-09-30."
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "operating_cash_flow",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "metric_type": "reported",
+      "periodicity": "annual",
+      "available_at": "2026-02-17",
+      "period_start": "2024-01-01",
+      "value_numeric": -1119807000,
+      "fiscal_quarter": null,
+      "reporting_basis": "gaap",
+      "source_document_id": "1a21802f-bd92-4d93-bfcb-9dc8060baca9",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "operating_cash_flow",
+      "period_end": "2024-12-31",
+      "fiscal_year": 2024,
+      "metric_type": "calculated",
+      "periodicity": "quarterly",
+      "available_at": "2026-02-17",
+      "period_start": "2024-10-01",
+      "value_numeric": -200103000,
+      "fiscal_quarter": 4,
+      "reporting_basis": "gaap",
+      "source_document_id": "1a21802f-bd92-4d93-bfcb-9dc8060baca9",
+      "restatement_version": 0,
+      "comparability_status": "comparable",
+      "formula_or_adjustment": "Standalone quarter = -1119807000 − -919704000; reported cumulative periods ending 2024-12-31 and 2024-09-30."
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_interest_income",
+      "period_end": "2025-03-31",
+      "fiscal_year": 2025,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-05-07",
+      "period_start": "2025-01-01",
+      "value_numeric": 498726000,
+      "fiscal_quarter": 1,
+      "reporting_basis": "gaap",
+      "source_document_id": "2c4258d8-d446-4850-8d2b-8e235fcb0403",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_revenue",
+      "period_end": "2025-03-31",
+      "fiscal_year": 2025,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-05-07",
+      "period_start": "2025-01-01",
+      "value_numeric": 771759000,
+      "fiscal_quarter": 1,
+      "reporting_basis": "gaap",
+      "source_document_id": "2c4258d8-d446-4850-8d2b-8e235fcb0403",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_income",
+      "period_end": "2025-03-31",
+      "fiscal_year": 2025,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-05-07",
+      "period_start": "2025-01-01",
+      "value_numeric": 71116000,
+      "fiscal_quarter": 1,
+      "reporting_basis": "gaap",
+      "source_document_id": "2c4258d8-d446-4850-8d2b-8e235fcb0403",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "operating_cash_flow",
+      "period_end": "2025-03-31",
+      "fiscal_year": 2025,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-05-07",
+      "period_start": "2025-01-01",
+      "value_numeric": 21502000,
+      "fiscal_quarter": 1,
+      "reporting_basis": "gaap",
+      "source_document_id": "2c4258d8-d446-4850-8d2b-8e235fcb0403",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_interest_income",
+      "period_end": "2025-06-30",
+      "fiscal_year": 2025,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-08-06",
+      "period_start": "2025-04-01",
+      "value_numeric": 517837000,
+      "fiscal_quarter": 2,
+      "reporting_basis": "gaap",
+      "source_document_id": "f284ef50-3e88-481e-bfb8-619a8f8d6fe8",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_revenue",
+      "period_end": "2025-06-30",
+      "fiscal_year": 2025,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-08-06",
+      "period_start": "2025-04-01",
+      "value_numeric": 854944000,
+      "fiscal_quarter": 2,
+      "reporting_basis": "gaap",
+      "source_document_id": "f284ef50-3e88-481e-bfb8-619a8f8d6fe8",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_income",
+      "period_end": "2025-06-30",
+      "fiscal_year": 2025,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-08-06",
+      "period_start": "2025-04-01",
+      "value_numeric": 97263000,
+      "fiscal_quarter": 2,
+      "reporting_basis": "gaap",
+      "source_document_id": "f284ef50-3e88-481e-bfb8-619a8f8d6fe8",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "operating_cash_flow",
+      "period_end": "2025-06-30",
+      "fiscal_year": 2025,
+      "metric_type": "calculated",
+      "periodicity": "quarterly",
+      "available_at": "2026-08-06",
+      "period_start": "2025-04-01",
+      "value_numeric": -1466908000,
+      "fiscal_quarter": 2,
+      "reporting_basis": "gaap",
+      "source_document_id": "f284ef50-3e88-481e-bfb8-619a8f8d6fe8",
+      "restatement_version": 0,
+      "comparability_status": "comparable",
+      "formula_or_adjustment": "Standalone quarter = -1445406000 − 21502000; reported cumulative periods ending 2025-06-30 and 2025-03-31."
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_interest_income",
+      "period_end": "2025-09-30",
+      "fiscal_year": 2025,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-11-05",
+      "period_start": "2025-07-01",
+      "value_numeric": 585114000,
+      "fiscal_quarter": 3,
+      "reporting_basis": "gaap",
+      "source_document_id": "2e9b4dba-e672-4fa9-9b54-9cbc8655bc33",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_revenue",
+      "period_end": "2025-09-30",
+      "fiscal_year": 2025,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-11-05",
+      "period_start": "2025-07-01",
+      "value_numeric": 961600000,
+      "fiscal_quarter": 3,
+      "reporting_basis": "gaap",
+      "source_document_id": "2e9b4dba-e672-4fa9-9b54-9cbc8655bc33",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_income",
+      "period_end": "2025-09-30",
+      "fiscal_year": 2025,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-11-05",
+      "period_start": "2025-07-01",
+      "value_numeric": 139392000,
+      "fiscal_quarter": 3,
+      "reporting_basis": "gaap",
+      "source_document_id": "2e9b4dba-e672-4fa9-9b54-9cbc8655bc33",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "operating_cash_flow",
+      "period_end": "2025-09-30",
+      "fiscal_year": 2025,
+      "metric_type": "calculated",
+      "periodicity": "quarterly",
+      "available_at": "2026-11-05",
+      "period_start": "2025-07-01",
+      "value_numeric": -1305874000,
+      "fiscal_quarter": 3,
+      "reporting_basis": "gaap",
+      "source_document_id": "2e9b4dba-e672-4fa9-9b54-9cbc8655bc33",
+      "restatement_version": 0,
+      "comparability_status": "comparable",
+      "formula_or_adjustment": "Standalone quarter = -2751280000 − -1445406000; reported cumulative periods ending 2025-09-30 and 2025-06-30."
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_interest_income",
+      "period_end": "2025-12-31",
+      "fiscal_year": 2025,
+      "metric_type": "reported",
+      "periodicity": "annual",
+      "available_at": "2026-02-17",
+      "period_start": "2025-01-01",
+      "value_numeric": 2218956000,
+      "fiscal_quarter": null,
+      "reporting_basis": "gaap",
+      "source_document_id": "1a21802f-bd92-4d93-bfcb-9dc8060baca9",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_revenue",
+      "period_end": "2025-12-31",
+      "fiscal_year": 2025,
+      "metric_type": "reported",
+      "periodicity": "annual",
+      "available_at": "2026-02-17",
+      "period_start": "2025-01-01",
+      "value_numeric": 3613354000,
+      "fiscal_quarter": null,
+      "reporting_basis": "gaap",
+      "source_document_id": "1a21802f-bd92-4d93-bfcb-9dc8060baca9",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_income",
+      "period_end": "2025-12-31",
+      "fiscal_year": 2025,
+      "metric_type": "reported",
+      "periodicity": "annual",
+      "available_at": "2026-02-17",
+      "period_start": "2025-01-01",
+      "value_numeric": 481320000,
+      "fiscal_quarter": null,
+      "reporting_basis": "gaap",
+      "source_document_id": "1a21802f-bd92-4d93-bfcb-9dc8060baca9",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "operating_cash_flow",
+      "period_end": "2025-12-31",
+      "fiscal_year": 2025,
+      "metric_type": "reported",
+      "periodicity": "annual",
+      "available_at": "2026-02-17",
+      "period_start": "2025-01-01",
+      "value_numeric": -3742458000,
+      "fiscal_quarter": null,
+      "reporting_basis": "gaap",
+      "source_document_id": "1a21802f-bd92-4d93-bfcb-9dc8060baca9",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_interest_income",
+      "period_end": "2026-03-31",
+      "fiscal_year": 2026,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-05-07",
+      "period_start": "2026-01-01",
+      "value_numeric": 692988000,
+      "fiscal_quarter": 1,
+      "reporting_basis": "gaap",
+      "source_document_id": "2c4258d8-d446-4850-8d2b-8e235fcb0403",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_revenue",
+      "period_end": "2026-03-31",
+      "fiscal_year": 2026,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-05-07",
+      "period_start": "2026-01-01",
+      "value_numeric": 1100368000,
+      "fiscal_quarter": 1,
+      "reporting_basis": "gaap",
+      "source_document_id": "2c4258d8-d446-4850-8d2b-8e235fcb0403",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_income",
+      "period_end": "2026-03-31",
+      "fiscal_year": 2026,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-05-07",
+      "period_start": "2026-01-01",
+      "value_numeric": 166731000,
+      "fiscal_quarter": 1,
+      "reporting_basis": "gaap",
+      "source_document_id": "2c4258d8-d446-4850-8d2b-8e235fcb0403",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "operating_cash_flow",
+      "period_end": "2026-03-31",
+      "fiscal_year": 2026,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-05-07",
+      "period_start": "2026-01-01",
+      "value_numeric": -2314994000,
+      "fiscal_quarter": 1,
+      "reporting_basis": "gaap",
+      "source_document_id": "2c4258d8-d446-4850-8d2b-8e235fcb0403",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_interest_income",
+      "period_end": "2026-06-30",
+      "fiscal_year": 2026,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-08-06",
+      "period_start": "2026-04-01",
+      "value_numeric": 788195000,
+      "fiscal_quarter": 2,
+      "reporting_basis": "gaap",
+      "source_document_id": "f284ef50-3e88-481e-bfb8-619a8f8d6fe8",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_revenue",
+      "period_end": "2026-06-30",
+      "fiscal_year": 2026,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-08-06",
+      "period_start": "2026-04-01",
+      "value_numeric": 1218676000,
+      "fiscal_quarter": 2,
+      "reporting_basis": "gaap",
+      "source_document_id": "f284ef50-3e88-481e-bfb8-619a8f8d6fe8",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_income",
+      "period_end": "2026-06-30",
+      "fiscal_year": 2026,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-08-06",
+      "period_start": "2026-04-01",
+      "value_numeric": 156592000,
+      "fiscal_quarter": 2,
+      "reporting_basis": "gaap",
+      "source_document_id": "f284ef50-3e88-481e-bfb8-619a8f8d6fe8",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "operating_cash_flow",
+      "period_end": "2026-06-30",
+      "fiscal_year": 2026,
+      "metric_type": "calculated",
+      "periodicity": "quarterly",
+      "available_at": "2026-08-06",
+      "period_start": "2026-04-01",
+      "value_numeric": -3890444000,
+      "fiscal_quarter": 2,
+      "reporting_basis": "gaap",
+      "source_document_id": "f284ef50-3e88-481e-bfb8-619a8f8d6fe8",
+      "restatement_version": 0,
+      "comparability_status": "comparable",
+      "formula_or_adjustment": "Standalone quarter = -6205438000 − -2314994000; reported cumulative periods ending 2026-06-30 and 2026-03-31."
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_interest_income",
+      "period_end": "2026-09-30",
+      "fiscal_year": 2026,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-11-05",
+      "period_start": "2026-07-01",
+      "value_numeric": 929452000,
+      "fiscal_quarter": 3,
+      "reporting_basis": "gaap",
+      "source_document_id": "2e9b4dba-e672-4fa9-9b54-9cbc8655bc33",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_revenue",
+      "period_end": "2026-09-30",
+      "fiscal_year": 2026,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-11-05",
+      "period_start": "2026-07-01",
+      "value_numeric": 1385099000,
+      "fiscal_quarter": 3,
+      "reporting_basis": "gaap",
+      "source_document_id": "2e9b4dba-e672-4fa9-9b54-9cbc8655bc33",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "net_income",
+      "period_end": "2026-09-30",
+      "fiscal_year": 2026,
+      "metric_type": "reported",
+      "periodicity": "quarterly",
+      "available_at": "2026-11-05",
+      "period_start": "2026-07-01",
+      "value_numeric": 240989000,
+      "fiscal_quarter": 3,
+      "reporting_basis": "gaap",
+      "source_document_id": "2e9b4dba-e672-4fa9-9b54-9cbc8655bc33",
+      "restatement_version": 0,
+      "comparability_status": "comparable"
+     },
+     {
+      "unit": "USD",
+      "segment": null,
+      "currency": "USD",
+      "confidence": 1,
+      "metric_key": "operating_cash_flow",
+      "period_end": "2026-09-30",
+      "fiscal_year": 2026,
+      "metric_type": "calculated",
+      "periodicity": "quarterly",
+      "available_at": "2026-11-05",
+      "period_start": "2026-07-01",
+      "value_numeric": -3012154000,
+      "fiscal_quarter": 3,
+      "reporting_basis": "gaap",
+      "source_document_id": "2e9b4dba-e672-4fa9-9b54-9cbc8655bc33",
+      "restatement_version": 0,
+      "comparability_status": "comparable",
+      "formula_or_adjustment": "Standalone quarter = -9217592000 − -6205438000; reported cumulative periods ending 2026-09-30 and 2026-06-30."
+     }
+    ]
+   }
+  },
+  {
+   "artifact_type": "monitoring_dashboard",
+   "content_json": {
+    "items": [
+     {
+      "kpi": "Share count and dilution",
+      "unit": "shares",
+      "segment": null,
+      "geography": null,
+      "base_range": "1.30bn to 1.36bn",
+      "definition": "Period-end common shares outstanding (sum over classes)",
+      "metric_key": "us_gaap_CommonStockSharesOutstanding",
+      "source_role": "Reported us_gaap_CommonStockSharesOutstanding 2026Q3",
+      "process_node": "Equity issuance and compensation",
+      "current_level": 1296617325,
+      "bear_threshold": 1400000000,
+      "bull_threshold": 1300000000,
+      "reporting_basis": "GAAP period-end, from 10-Q/10-K cover and balance sheet",
+      "reporting_frequency": "Quarterly",
+      "model_input_affected": "diluted_shares"
+     },
+     {
+      "kpi": "Capital headroom",
+      "unit": "percent",
+      "segment": null,
+      "geography": null,
+      "base_range": "14.5% to 17%",
+      "definition": "Holding company CET1 risk-based capital ratio",
+      "metric_key": "cet1_ratio_consolidated",
+      "source_role": "Reported cet1_ratio_consolidated 2026Q3",
+      "process_node": "Loan growth and capital retention",
+      "current_level": 16.9,
+      "bear_threshold": 10,
+      "bull_threshold": 16.9,
+      "reporting_basis": "Regulatory capital, consolidated",
+      "reporting_frequency": "Quarterly",
+      "model_input_affected": "change_in_net_working_capital"
+     },
+     {
+      "kpi": "Bank capital headroom",
+      "unit": "percent",
+      "segment": null,
+      "geography": null,
+      "base_range": "13% to 16%",
+      "definition": "SoFi Bank CET1 risk-based capital ratio",
+      "metric_key": "cet1_ratio_sofi_bank",
+      "source_role": "Reported cet1_ratio_sofi_bank 2026Q3",
+      "process_node": "Bank capital retention",
+      "current_level": 14.9,
+      "bear_threshold": 8,
+      "bull_threshold": 16.4,
+      "reporting_basis": "Regulatory capital, bank level",
+      "reporting_frequency": "Quarterly",
+      "model_input_affected": "change_in_net_working_capital"
+     },
+     {
+      "kpi": "Credit losses",
+      "unit": "percent",
+      "segment": null,
+      "geography": null,
+      "base_range": "1.6% to 2.1%",
+      "definition": "Total net charge-offs divided by average total loans, annualised",
+      "metric_key": "total_net_charge_off_ratio",
+      "source_role": "Reported Q3 2026; 2.04% Q1 2026; 2.07% FY2025",
+      "process_node": "Underwriting and provisioning",
+      "current_level": 1.62,
+      "bear_threshold": 2.5,
+      "bull_threshold": 1.5,
+      "reporting_basis": "Reported credit metric, annualised",
+      "reporting_frequency": "Quarterly",
+      "model_input_affected": "pre-tax margin driver"
+     },
+     {
+      "kpi": "Card credit losses",
+      "unit": "percent",
+      "segment": "Credit card",
+      "geography": null,
+      "base_range": "6% to 8%",
+      "definition": "Credit card net charge-offs divided by average card balances, annualised",
+      "metric_key": "credit_card_net_charge_off_ratio",
+      "source_role": "Reported Q1 2026; 10.89% Q1 2025",
+      "process_node": "Card underwriting",
+      "current_level": 6.68,
+      "bear_threshold": 9,
+      "bull_threshold": 5.5,
+      "reporting_basis": "Reported credit metric, annualised",
+      "reporting_frequency": "Quarterly",
+      "model_input_affected": "pre-tax margin driver"
+     },
+     {
+      "kpi": "Funding and lending spread",
+      "unit": "percent",
+      "segment": null,
+      "geography": null,
+      "base_range": "5.5% to 6.2%",
+      "definition": "Net interest income divided by average interest-earning assets",
+      "metric_key": "net_interest_margin",
+      "source_role": "Reported net_interest_margin 2026Q2",
+      "process_node": "Deposit funding and loan pricing",
+      "current_level": 5.98,
+      "bear_threshold": 5,
+      "bull_threshold": 6.2,
+      "reporting_basis": "Reported, company-defined",
+      "reporting_frequency": "Quarterly",
+      "model_input_affected": "pre-tax margin driver"
+     },
+     {
+      "kpi": "Reserve coverage",
+      "unit": "percent",
+      "segment": null,
+      "geography": null,
+      "base_range": "3.3% to 4.5%",
+      "definition": "Allowance for credit losses divided by loans held for investment",
+      "metric_key": "allowance_to_loans_held_for_investment_ratio",
+      "source_role": "Reported allowance_to_loans_held_for_investment_ratio 2026Q2",
+      "process_node": "Provisioning",
+      "current_level": 4.29,
+      "bear_threshold": 3,
+      "bull_threshold": 3.3,
+      "reporting_basis": "Reported, company-defined",
+      "reporting_frequency": "Quarterly",
+      "model_input_affected": "other_adjustments"
+     },
+     {
+      "kpi": "Cash conversion",
+      "unit": "USD millions",
+      "segment": null,
+      "geography": null,
+      "base_range": "-9000 to 0",
+      "definition": "Operating cash flow minus capex, trailing 12 months",
+      "metric_key": "fcf_ttm",
+      "source_role": "financial_analytics fcf_ttm 2026Q2",
+      "process_node": "Loan origination and sale timing",
+      "current_level": -8793,
+      "bear_threshold": -12000,
+      "bull_threshold": 0,
+      "history_median": -3984.9,
+      "reporting_basis": "Derived from filed cash flow statement",
+      "history_percentile": 0.16,
+      "reporting_frequency": "Quarterly",
+      "model_input_affected": "cash_flow line in FCFE"
+     },
+     {
+      "kpi": "Dilution pace",
+      "unit": "ratio (decimal)",
+      "segment": null,
+      "geography": null,
+      "base_range": "0% to 8%",
+      "definition": "Period-end shares divided by shares one year earlier, minus 1",
+      "metric_key": "shares_yoy",
+      "source_role": "financial_analytics latest value 2026Q3; 20-quarter median 0.1225 across window",
+      "process_node": "Equity compensation and issuance",
+      "current_level": 0.0764,
+      "bear_threshold": 0.15,
+      "bull_threshold": 0.02,
+      "reporting_basis": "Derived from reported period-end shares",
+      "reporting_frequency": "Quarterly",
+      "model_input_affected": "diluted_shares"
+     }
+    ],
+    "drivers": [
+     {
+      "name": "Card credit reserve and charge-off trend",
+      "evidence": "Card net charge-offs 6.68% annualised in Q1 2026; card allowance 54.6m at 30 Jun 2026",
+      "mechanism": "Card loan share and charge-off trend determine allowance build and provision",
+      "model_input_affected": "pre-tax margin driver and other_adjustments"
+     }
+    ],
+    "artifact_type": "monitoring_dashboard"
+   }
+  },
+  {
+   "artifact_type": "question_register",
+   "content_json": {
+    "questions": [
+     {
+      "id": "q1-deposit-cost",
+      "answer": "Not tested. SoFi discloses a 156 bp gap between its average deposit rate and warehouse rates in Q2 2026 (about 712.6m annualised), but that is an internal funding comparison, not a market benchmark. NIM was 5.98% in Q2 2026 and 6.14% in Q3 2026; cost of funds fell 36 bp year on year in Q2. The FDIC survey and Ally or Nu deposit rates are not in the corpus, so the 50 bp falsifier cannot be applied.",
+      "status": "blocked",
+      "question": "Does deposit funding stay cheap enough relative to market deposit and wholesale rates to keep net interest margin on the consumer loan book above the level that covers provisions, operating costs and capital held against loans?",
+      "follow_up": "Obtain the FDIC National Rates and Rate Caps deposit survey for 2025 to 2026 quarters, Ally and Nu quarterly deposit rate disclosures, and SoFi quarterly cost-of-deposits tables; then test the four-quarter falsifier.",
+      "materiality": "critical",
+      "artifact_ids": [
+       "0a3f57f0-aa9c-4e30-90ee-98cd1622481a",
+       "aeeeb7c8-2c89-457d-be04-abba838e1fb8"
+      ],
+      "evidence_ids": [
+       "377e79cf-8745-44da-a139-74878a097ee6",
+       "23275be8-e491-492e-ad8e-bc4c5b4e5f80",
+       "6ef6a536-a93f-4f5f-b62b-b9a7dd95594b"
+      ]
+     },
+     {
+      "id": "q2-cross-sell",
+      "answer": "Partly testable. Financial Services products rose 44% to 23.2m and members rose 35% to 17.1m, which implies rising products per member, but revenue is reported per product, not per member, and no acquisition cost or retention data is captured. The moat is classed as unproven.",
+      "status": "qualified",
+      "question": "Does cross-buying raise revenue per member and reduce acquisition cost, or does most member growth come from single-product users who do not add products over time?",
+      "follow_up": "Obtain quarterly members by product count, revenue per member, retention and marketing spend by product, with definitions, from earnings releases and presentations.",
+      "materiality": "material",
+      "artifact_ids": [
+       "84b8d119-f491-4eb6-91aa-dedfe75dfecb",
+       "6681aeb8-2921-4a2a-8f37-f78ec2e4d568"
+      ],
+      "evidence_ids": [
+       "865dfe27-8c9d-4345-8a78-83fd7bed2fa3",
+       "ea7509c3-1839-4fb4-9ff4-a2e11a1c3bf8"
+      ]
+     },
+     {
+      "id": "q3-platform",
+      "answer": "Unresolved. FY2025 Technology Platform contribution profit was 144.4m on 450.2m revenue, but quarterly contribution fell to 12.0m in Q1 2026 and 11.8m in Q2 2026. Analytics segment revenue (360.8m FY2025) does not reconcile to the filed 450.2m, and segment operating income after allocations is not captured. Intercompany revenue was 8.3m in Q3 2026. The platform is shown as a range, not as an earner.",
+      "status": "blocked",
+      "question": "Is Galileo/Technisys a profitable, separately earning business on its own revenue, costs and capital, or a cost centre whose reported results depend on allocations or intercompany pricing?",
+      "follow_up": "Obtain the 10-K segment note with Technology Platform operating income after corporate allocations for FY2023 to FY2025, the external versus intercompany revenue split, and reconciliation of 360.8m versus 450.2m.",
+      "materiality": "critical",
+      "artifact_ids": [
+       "68d0d7b1-b60d-4d9c-9913-60e0735c49de"
+      ],
+      "evidence_ids": [
+       "2328c668-03f3-4cea-a2c1-4b2a0f803f2d",
+       "4a057292-3a53-4ce8-ba60-c5c5429a9504"
+      ]
+     },
+     {
+      "id": "q4-credit",
+      "answer": "Total net charge-offs improved: 1.62% in Q3 2026 against 1.90% in Q3 2025 and 2.04% in Q1 2026; FY2025 was 2.07%. Card losses are the main risk: card net charge-offs were 6.68% annualised in Q1 2026 (10.89% a year earlier) while cards grew to about 40% of loans. Allowance to loans held for investment rose to 4.29% at June 2026, partly because secured loans fell. The management target band for charge-offs and loan-sale pricing spreads are not disclosed. A 10% rise in loss rates would cut pre-tax income by 257.7m.",
+      "status": "qualified",
+      "question": "Are loan losses and provisions on the consumer book moving in line with the underwriting standards and reserves management describes, and are loans sold to partners priced to cover expected losses?",
+      "follow_up": "Obtain the management target net charge-off band, quarterly allowance rollforwards by product, and loan-sale pricing relative to expected loss.",
+      "materiality": "critical",
+      "artifact_ids": [
+       "3f63f303-7c9c-4efd-aeb8-3785cb46e4dd",
+       "2306fdf2-4ee7-4121-8488-1bd09fc27a2e"
+      ],
+      "evidence_ids": [
+       "2de5a76b-e68c-4fc5-9766-a9ef3333cb06",
+       "2851f6b3-39c9-48b6-88d0-03a3898a2c14",
+       "d363c0cf-4d36-40af-a887-77eb56450da3",
+       "5ad12dc7-6b67-4c1d-bca6-81c3aca5abf2"
+      ]
+     },
+     {
+      "id": "q5-capital",
+      "answer": "Not answered positively. Holding-company CET1 fell from 22.8% to 16.9% and bank CET1 from 16.4% to 14.9% in nine months while total loans rose from 38.0bn to 53.7bn. Both remain well above the 7.0% minimum, but the trend is down and the 2025 ratio gain came partly from 3.2bn of common stock issued in Q3 and Q4 2025. Twelve quarters of bank call-report capital and the RWA path are not captured, so the no-equity test cannot be completed.",
+      "status": "blocked",
+      "question": "Can SoFi grow loans and members while keeping bank regulatory capital above required and planned levels without repeated equity issuance?",
+      "follow_up": "Obtain OCC or FFIEC call reports for at least 12 quarters with Tier 1 capital, RWA and CET1 by quarter, and the FY2026 10-K capital table when filed.",
+      "materiality": "critical",
+      "artifact_ids": [
+       "3f63f303-7c9c-4efd-aeb8-3785cb46e4dd",
+       "1d4dd8c8-6397-49c4-a1ff-84e3eae2a3d0"
+      ],
+      "evidence_ids": [
+       "030641d0-d887-4552-b6a8-a36099abbdb1",
+       "50cdba2d-3b64-4f19-98b1-dac7a4c344aa",
+       "47cba94d-d399-4167-8967-d9945f181588"
+      ]
+     },
+     {
+      "id": "q6-earnings-cash",
+      "answer": "No. Operating cash flow was negative in every year from 2019 to 2025 and was -6.2bn in the first half of 2026, while TTM net income was 737.9m at Q3 2026. TTM FCF was -8.8bn at Q2 2026, and FCF-to-net-income is about -13.8x. The main cause is growth in held-for-sale loans, not reserve releases. Adjusted net income changed definition from Q2 2026 without recasting prior periods, so adjusted figures are not comparable.",
+      "status": "answered",
+      "question": "Do reported and adjusted earnings match the cash the earning engines generate after capital, reserves and stock-based compensation?",
+      "follow_up": "Obtain quarterly loans held-for-sale originations, paydowns and sales, and a reconciliation of adjusted net income to GAAP for Q2 2026 onward.",
+      "materiality": "critical",
+      "artifact_ids": [
+       "68d0d7b1-b60d-4d9c-9913-60e0735c49de",
+       "2306fdf2-4ee7-4121-8488-1bd09fc27a2e"
+      ],
+      "evidence_ids": [
+       "41941e96-0372-4bf7-b88a-1015aa4629b2",
+       "a2b99c3c-506a-4930-8e86-0acfb10dfb2c",
+       "6aa3b77f-af6f-4731-8ca2-5f494afb314a"
+      ]
+     },
+     {
+      "id": "r1-central-roe",
+      "answer": "Not answered. Quarterly ROE and average equity are not computed for all 20 quarters, and ROIC is not computable from captured inputs (Q3 2026 operating income missing). TTM net income of 737.9m on period-end equity of 11.3bn implies a low-teens return on period-end equity, but this is not a sourced ROE and cannot be set against the 13.09% cost of equity, which rests on an unverified beta.",
+      "status": "blocked",
+      "question": "Will SoFi convert its growing member base and bank-funded lending into returns on equity above its cost of equity after credit losses, regulatory capital needs and Galileo/Technisys investment?",
+      "follow_up": "Compute quarterly average-equity ROE from the 10-Q balance sheets and sourced net income, and verify beta and the cost of equity.",
+      "materiality": "critical",
+      "artifact_ids": [
+       "b980dca8-88b2-4471-9dd7-6b437364e8d8",
+       "16274118-b20b-493e-9f5e-e0bec437b9d2"
+      ],
+      "evidence_ids": [
+       "567caadd-ef4f-4448-8028-96e5d476508c",
+       "980a6ed2-5f82-4e72-b23a-7d4952879d4d"
+      ]
+     },
+     {
+      "id": "r2-decisive-insight",
+      "answer": "Not supported yet. Deposit advantage is shown only against warehouse funding. Cross-sell is supported only by product growth. The platform is burning contribution (down from 47.9m to 11.8m a quarter) and its standalone profit is unresolved. The hypothesis cannot be confirmed; on the packet's cash method the base value is about 1.13 per share against a 14.28 price.",
+      "status": "qualified",
+      "question": "Do the decisive insight hypothesis and its falsifiers hold: low-cost deposit funding combined with cross-sold products, and a platform worth more separately than its group share?",
+      "follow_up": "Resolve the deposit benchmark, platform allocation and cross-sell per-member disclosures before revisiting this hypothesis.",
+      "materiality": "material",
+      "artifact_ids": [
+       "16274118-b20b-493e-9f5e-e0bec437b9d2",
+       "b980dca8-88b2-4471-9dd7-6b437364e8d8"
+      ],
+      "evidence_ids": [
+       "377e79cf-8745-44da-a139-74878a097ee6",
+       "2328c668-03f3-4cea-a2c1-4b2a0f803f2d",
+       "865dfe27-8c9d-4345-8a78-83fd7bed2fa3"
+      ]
+     },
+     {
+      "id": "r3-valuation-withheld",
+      "answer": "No decision is supportable yet. Per-share values are -1.79 (bear), 1.13 (base) and 6.74 (bull), with a probability-weighted 1.38 at 30/50/20 weights. All three sit below the 14.28 price, but the price, beta and the 2026 cash flow timing (nine months already in the 30 September balance sheet) are unverified and the sensitivity to CET1 target and terminal multiple is large.",
+      "status": "qualified",
+      "question": "What value per share do the bear, base and bull FCFE cases support against the unverified 14.28 price, and is a decision supportable now?",
+      "follow_up": "Verify the closing price for 17 Nov 2026, the beta series, and the Q4 2026 stub treatment before the decision gate.",
+      "materiality": "critical",
+      "artifact_ids": [
+       "1d4dd8c8-6397-49c4-a1ff-84e3eae2a3d0",
+       "926e0aaa-2200-4ac8-9646-ffca25a6abe8"
+      ],
+      "evidence_ids": []
+     },
+     {
+      "id": "r4-bank-capital-history",
+      "answer": "Only point observations are captured: holding-company CET1 at 31 Dec 2024 (16.0%), 31 Dec 2025 (22.8%) and 30 Sep 2026 (16.9%); bank CET1 at 31 Dec 2024 (17.3%), 31 Dec 2025 (16.4%) and 30 Sep 2026 (14.9%). The 2025 10-K attributes the ratio gains to 3.2bn of common stock issued in 2025. Tier 1 history is missing for the 20-quarter window.",
+      "status": "blocked",
+      "question": "What regulatory capital history supports the bank capital path, and does holding-company capital fund bank capital?",
+      "follow_up": "Obtain bank call reports (FFIEC 031 or 041) for the twelve quarters to Q3 2026.",
+      "materiality": "material",
+      "artifact_ids": [
+       "0de32ca1-d57a-45d9-9b73-6bf96c7b9d00",
+       "181c49a6-86f7-45ac-b118-02a92379edc4"
+      ],
+      "evidence_ids": [
+       "030641d0-d887-4552-b6a8-a36099abbdb1",
+       "50cdba2d-3b64-4f19-98b1-dac7a4c344aa"
+      ]
+     },
+     {
+      "id": "r5-ownership-dilution",
+      "answer": "Common stock is the only class in the analytics share record. Diluted shares rose 16% in a year. The valuation uses the reported diluted count of 1,357.8m as the minimum denominator, so future issuance needed to keep CET1 is excluded. The bear tail (new equity at the unverified price) implies about 15% dilution.",
+      "status": "qualified",
+      "question": "What does a common-share holder own, and how much equity dilution from awards and capital raises is not yet in the per-share bridge?",
+      "follow_up": "Obtain award and convertible tables from the 10-K and DEF 14A, and confirm the absence of preferred or multi-class stock.",
+      "materiality": "material",
+      "artifact_ids": [
+       "68d0d7b1-b60d-4d9c-9913-60e0735c49de",
+       "1d4dd8c8-6397-49c4-a1ff-84e3eae2a3d0"
+      ],
+      "evidence_ids": [
+       "427f6dac-2ec4-4d10-a69d-9258292e81ad",
+       "595936d4-0b4d-40ad-be60-f63bc403743e",
+       "95dcb836-a525-42c8-b476-867ab438c15f"
+      ]
+     },
+     {
+      "id": "r6-governance-alignment",
+      "answer": "Compensation Committee members are independent under Nasdaq rules and the committee recommends CEO pay to independent directors. The CEO is also a director, and some directors receive SoFi Bank board fees. Related-party dealings, insider sales and award tables are not tested in the reviewed extracts.",
+      "status": "qualified",
+      "question": "Are board independence, related-party dealings, insider sales and incentive metrics aligned with outside shareholders?",
+      "follow_up": "Obtain the full DEF 14A related-party, beneficial ownership and insider-sale sections, and the incentive metric definitions.",
+      "materiality": "supporting",
+      "artifact_ids": [
+       "4a05bf16-f27f-4447-a607-1f028c98b4db"
+      ],
+      "evidence_ids": [
+       "3ad6732a-3a5f-478f-8592-95f34a47b5bb",
+       "328c2fa3-0fd9-444d-8e6d-2f089c675ed6",
+       "6e481109-e5d0-4d88-a5fb-e106c19b6ed4"
+      ]
+     },
+     {
+      "id": "r7-founding-motive",
+      "answer": "The only origin source is a 2012 press account of a Stanford pilot that raised a $2 million fund from 40 alumni; founder motive is not stated in any reviewed source and is an inference. The founding model has been replaced by bank deposits, cards, platform and loan-sale fee income, so the present economics rest on current capital and credit data rather than the founding history.",
+      "status": "qualified",
+      "question": "Why was SoFi founded, and does the founding model still bear on the present business?",
+      "follow_up": "Obtain the company's own history from the 10-K business section and any founder interviews to corroborate the 2011 pilot.",
+      "materiality": "supporting",
+      "artifact_ids": [
+       "ced4ef85-b65d-4c54-a73e-16f780b3d0b4",
+       "750d4c69-9f05-4032-9ee3-c565ff433db8"
+      ],
+      "evidence_ids": [
+       "6c7a5fc1-3167-4bca-be36-a508c0fc96bf",
+       "bc1037a7-9fe6-42f9-953f-22f6056046e0",
+       "03d45527-49ca-48be-ac2a-dc059dc511e7"
+      ]
+     },
+     {
+      "id": "r8-peer-comparison",
+      "answer": "Not comparable yet. Peer primary filings for Nu, Dave and Chime are not verified in the corpus. Ally trailing revenue (1,236m, growth -3.3%) and Affirm trailing operating margin (31.5%) are unverified SEC companyfacts. No deposit cost, NIM or loss comparison can be made.",
+      "status": "blocked",
+      "question": "How do SoFi's deposit cost, NIM, credit losses and platform reporting compare with Nu, Ally, Affirm, Block, Dave and Chime?",
+      "follow_up": "Fetch primary 10-K or annual reports for Nu, Ally, Affirm, Block, and public disclosures for Dave; confirm Chime status as private.",
+      "materiality": "material",
+      "artifact_ids": [
+       "5db90b11-227d-4d9b-ab13-94cffcfb33b6",
+       "aeeeb7c8-2c89-457d-be04-abba838e1fb8"
+      ],
+      "evidence_ids": []
+     },
+     {
+      "id": "request-1-5",
+      "answer": "The request asks for a market deposit-rate benchmark (FDIC deposit rate survey and comparable online-bank deposit rates such as Ally and Nu) for 2025 and 2026 quarters to test the deposit-cost falsifier. The supplied passages contain only the FRED 10-year Treasury yield series (a long-term rate, not a deposit rate) and generic FDIC website pages (deposit insurance tools, FAQs, Risk Review links) with no deposit rate figures. No FDIC deposit rate survey data, Ally or Nu deposit rates, or comparable online-bank deposit rates appear in the corpus. Source search was already attempted, so the deposit-cost falsifier for q1-deposit-cost cannot be tested from these inputs. The only SoFi-side deposit cost evidence is a funding comparison (Q2 2026 deposit rate 156 bps below warehouse facility rate, about $712.6m annualized savings), which is explicitly not a market benchmark. Supplied evidence does show Q2 2026 lending NIM of 5.98% and Q2 2026 cost of funds down 36 bps year over year, but these do not establish the comparison against market deposit rates. Remaining gap: a dated FDIC deposit rate survey series and Ally/Nu quarterly deposit rate disclosures for 2025 and 2026.",
+      "status": "blocked",
+      "question": "Market deposit-rate benchmark (FDIC deposit rate survey and comparable online-bank deposit rates, e.g. Ally and Nu) for 2025 and 2026 quarters, needed to test the deposit-cost falsifier, which cannot be applied until a market benchmark exists.",
+      "follow_up": "Market deposit-rate benchmark (FDIC deposit rate survey and comparable online-bank deposit rates, e.g. Ally and Nu) for 2025 and 2026 quarters, needed to test the deposit-cost falsifier, which cannot be applied until a market benchmark exists.",
+      "materiality": "material",
+      "artifact_ids": [],
+      "evidence_ids": []
+     },
+     {
+      "id": "request-2-1",
+      "answer": "The request asks whether the consolidated Q3 2026 statements of operations, cash flow statement and balance sheet can be located so that income from operations, capex, DSO and DPO for the latest quarter can be computed. The supplied passages include the Q3 2026 10-Q's MD&A extracts (cash flow summary for nine months, capital tables, non-GAAP reconciliations, noninterest income detail) but do not include the consolidated statement of operations, the consolidated cash flow statement, or the balance sheet line items for September 30, 2026 with capex or receivables/payables. The financial_statement_summary marks the 2026-09-30 10-Q as extracted with 8 tables and zero missing, yet the analytics artifact still lists Q3 2026 operating income, capex, accounts receivable and accounts payable as not captured. Because source_search_attempted is false, the stage would ordinarily return needs_sources; however the request itself is flagged needs_sources and the question is a request for a source search already described in the request, so this answer records the gap: FCF, operating margin, FCF margin, capex-to-revenue, FCF TTM and DSO/DPO for 2026Q3 remain unavailable from the supplied inputs. Nine-month cash flow passage shows operating cash flow of negative 9,217,592 thousand and investing outflow of 8,302,129 thousand for 2026 year-to-date, which is a reported figure but does not isolate Q3 capex. Lending and Financial Services contribution figures for Q3 2026 (Lending contribution profit 454,934 thousand; Lending GAAP net revenue 821,345 thousand) are sourced but are segment measures, not consolidated operating income. Working capital metrics are not applicable in the analytics artifact because no inventory is reported, and receivables and payables are not defined for a bank balance sheet, so DSO/DPO may be economically inapplicable rather than merely missing; this should be confirmed before treating it as a data gap. Requires a source search of the 10-Q consolidated statements of operations, cash flows and balance sheet for the period ended 2026-09-30.",
+      "status": "blocked",
+      "question": "Q3 2026 income from operations, capital expenditure, accounts receivable and accounts payable were requested previously and answered as not captured in the supplied packet; confirm whether the consolidated Q3 2026 statements of operations, cash flow statement and balance sheet can be located so that FCF, operating margin and DSO/DPO for the latest quarter can be computed.",
+      "follow_up": "Q3 2026 income from operations, capital expenditure, accounts receivable and accounts payable were requested previously and answered as not captured in the supplied packet; confirm whether the consolidated Q3 2026 statements of operations, cash flow statement and balance sheet can be located so that FCF, operating margin and DSO/DPO for the latest quarter can be computed.",
+      "materiality": "material",
+      "artifact_ids": [],
+      "evidence_ids": []
+     },
+     {
+      "id": "request-2-3",
+      "answer": "The Technology Platform earner-or-burner test cannot be completed from the supplied artifacts. The financial analytics segment table reports FY2025 Technology Platform revenue of 360.8m, while the filed FY2025 net revenue (450.2m, with contribution profit of 144.4m and direct expenses of 305.8m) and the Q1 and Q2 2026 contribution figures come from the investor presentation rather than the 10-K segment note. The 10-K disaggregated revenue passage shows total technology platform revenue from contracts with customers of 360.8m for 2025, which conflicts with the 450.2m investor-presentation figure and may reflect a different revenue definition, including or excluding intercompany or other revenue. No supplied passage shows Technology Platform operating income after corporate cost allocations, so the earner-or-burner question stays open and the platform should be shown as a range. The business owner should confirm whether the 10-K segment note reports operating income after allocations and reconcile the 360.8m and 450.2m revenue figures.",
+      "status": "blocked",
+      "question": "The Technology Platform segment is still unresolved: analytics revenue (FY2025 360.8m) does not reconcile to filed net revenue (450.2m) and segment operating income after corporate allocations is not captured. Ask the business owner to confirm whether the 10-K segment note supplies operating income after allocations so the earner-or-burner test can be run.",
+      "follow_up": "The Technology Platform segment is still unresolved: analytics revenue (FY2025 360.8m) does not reconcile to filed net revenue (450.2m) and segment operating income after corporate allocations is not captured. Ask the business owner to confirm whether the 10-K segment note supplies operating income after allocations so the earner-or-burner test can be run.",
+      "materiality": "material",
+      "artifact_ids": [],
+      "evidence_ids": []
+     }
+    ]
+   }
+  },
+  {
+   "artifact_type": "report_facts",
+   "content_json": {
+    "note": "Computed by code from valuation_scenario_set and financial_analytics. Per-share values are currency per share; amounts are currency millions. Cite these instead of deriving figures.",
+    "cases": {
+     "rows": [
+      [
+       "bear",
+       0.3,
+       "fcfe",
+       0.1309,
+       "7x net_income_2030",
+       -1.79,
+       -1.1256,
+       2030,
+       2.35,
+       -0.8358,
+       null,
+       null,
+       -5215.8,
+       -0.6525,
+       -0.1906
+      ],
+      [
+       "base",
+       0.5,
+       "fcfe",
+       0.1309,
+       "9x net_income_2030",
+       1.13,
+       -0.9208,
+       2030,
+       9.36,
+       -0.3449,
+       4.4706,
+       4.4706,
+       -6966.2,
+       0.5534,
+       0.0921
+      ],
+      [
+       "bull",
+       0.2,
+       "fcfe",
+       0.1309,
+       "11x net_income_2030",
+       6.74,
+       -0.5277,
+       2030,
+       20.5,
+       0.4358,
+       1.6436,
+       1.6436,
+       -7686.4,
+       2.0334,
+       0.2485
+      ]
+     ],
+     "columns": [
+      "case",
+      "probability",
+      "method",
+      "discount_rate",
+      "terminal",
+      "pv_per_share",
+      "return_to_pv",
+      "terminal_year",
+      "terminal_price_target",
+      "undiscounted_return_to_terminal",
+      "tv_share_of_ev",
+      "value_beyond_explicit_share",
+      "explicit_cash_flow_sum",
+      "no_rerating_return",
+      "no_rerating_return_annualized"
+     ]
+    },
+    "market": {
+     "pe_ttm": 26.28,
+     "fcf_ttm": null,
+     "pe_next": 27.6,
+     "fcf_yield": null,
+     "nopat_ttm": null,
+     "market_cap": 19389.54,
+     "equity_bridge": 0,
+     "diluted_shares": 1357.811,
+     "earnings_yield": 0.0381,
+     "net_income_ttm": 737.9,
+     "ev_to_nopat_ttm": null,
+     "analytics_period": "2026Q3",
+     "enterprise_value": 19389.54,
+     "ev_to_nopat_next": null,
+     "fcf_ex_sbc_yield": null
+    },
+    "currency": "USD",
+    "weighted": {
+     "pv_per_share": 1.38,
+     "return_to_pv": -0.9036
+    },
+    "definitions": {
+     "pe_ttm": "Market price × diluted shares ÷ TTM net income",
+     "pe_next": "The same market cap ÷ the base case's first forecast-year net income (equity methods only)",
+     "fcf_yield": "TTM free cash flow ÷ market cap at the market price",
+     "pv_per_share": "Today's value per share: explicit-year cash flows and the terminal value discounted to today, plus the equity bridge, over diluted shares",
+     "return_to_pv": "PV per share ÷ market price − 1 (not annualized)",
+     "earnings_yield": "TTM net income ÷ market cap; the cash-yield cross-check for banks and other firms valued on equity",
+     "net_income_ttm": "Net income, trailing 12 months",
+     "tv_share_of_ev": "Present value of the terminal value alone (after any fade years) ÷ enterprise value",
+     "ev_to_nopat_ttm": "(Market price × diluted shares − equity bridge) ÷ TTM NOPAT at the normalized tax rate",
+     "ev_to_nopat_next": "The same enterprise value ÷ the base case's first forecast-year NOPAT (FCFF only)",
+     "fcf_ex_sbc_yield": "(TTM free cash flow − TTM stock-based compensation) ÷ market cap",
+     "no_rerating_return": "Return to the terminal year if today's multiple holds: (today's EV/NOPAT × terminal-year NOPAT + equity bridge + explicit cash flows) ÷ diluted shares ÷ market price − 1; for equity methods (FCFE, dividends) today's P/E × terminal-year net income",
+     "terminal_price_target": "Undiscounted value per share at the end of the terminal year (the scenario anchor)",
+     "weighted_pv_per_share": "Probability-weighted PV per share over bear, base and bull",
+     "explicit_cash_flow_sum": "Sum of the explicit-year cash flows, undiscounted (currency millions); fade years excluded",
+     "value_beyond_explicit_share": "Present value of everything after the explicit forecast (fade years and terminal value) ÷ enterprise value; information, not a gate",
+     "no_rerating_return_annualized": "no_rerating_return compounded per explicit year",
+     "undiscounted_return_to_terminal": "Terminal price target ÷ market price − 1, cumulative and undiscounted"
+    },
+    "market_price": 14.28,
+    "artifact_type": "report_facts",
+    "valuation_status": "complete"
+   }
+  },
+  {
+   "artifact_type": "risk_register",
+   "content_json": {
+    "risks": [
+     {
+      "exposure": -2435.6,
+      "severity": 4.5,
+      "mitigants": [
+       "Bank CET1 of 14.9% remains above the 7.0% minimum and the 6.5% well-capitalized level",
+       "FY2025 capital rise was partly funded by common stock issued in 2025, showing access to equity markets"
+      ],
+      "risk_name": "Bank capital consumption and dilution",
+      "confidence": 0.6,
+      "probability": 0.6,
+      "causal_mechanism": "Loan growth raises risk-weighted assets. Holding-company CET1 fell from 22.8% at 31 Dec 2025 to 16.9% at 30 Sep 2026 as RWA rose from about 37.2bn to 56.2bn. Retained equity absorbs earnings, so per-share value depends on capital ratios holding without new equity issuance.",
+      "failure_threshold": "CET1 trending toward the 7.0% minimum plus management's buffer, or new common equity issued to fund bank capital",
+      "leading_indicator": "Holding-company CET1 ratio each quarter and any common equity issuance in a profitable year",
+      "is_source_gap_only": false,
+      "model_input_affected": "change_in_net_working_capital (retained equity) and diluted_shares",
+      "supporting_claim_ids": [
+       "030641d0-d887-4552-b6a8-a36099abbdb1",
+       "50cdba2d-3b64-4f19-98b1-dac7a4c344aa",
+       "e1af38d5-b667-48fe-96e4-037dbd7c21cd"
+      ],
+      "financial_consequence": "Bear-case equity value of -2,435.6m (-1.79 per diluted share); base value moves about 0.33 per share per percentage point of target CET1"
+     },
+     {
+      "exposure": -257.7,
+      "severity": 4,
+      "mitigants": [
+       "Total net charge-off ratio fell to 1.62% in Q3 2026 from 2.04% in Q1 2026",
+       "Student loan net charge-offs were low at 0.65% annualised in Q1 2026"
+      ],
+      "risk_name": "Credit losses on card and personal loans",
+      "confidence": 0.55,
+      "probability": 0.45,
+      "causal_mechanism": "Card balances are a growing share of loans (40% of loans at 30 Jun 2026 versus 28% a year earlier) and card net charge-offs were 6.68% annualised in Q1 2026. Allowance build tracks card growth; management's hypothetical 10% rise in credit loss rates would cut 12-month pre-tax income by 257.7m.",
+      "failure_threshold": "Net charge-off rate above management's target band for two consecutive quarters, or allowance coverage falling while delinquency rises",
+      "leading_indicator": "Card and personal loan annualised net charge-off ratio and allowance-to-loans ratio by quarter",
+      "is_source_gap_only": false,
+      "model_input_affected": "pre-tax margin driver and other_adjustments",
+      "supporting_claim_ids": [
+       "2de5a76b-e68c-4fc5-9766-a9ef3333cb06",
+       "2851f6b3-39c9-48b6-88d0-03a3898a2c14",
+       "5ad12dc7-6b67-4c1d-bca6-81c3aca5abf2",
+       "d363c0cf-4d36-40af-a887-77eb56450da3"
+      ],
+      "financial_consequence": "A 10% rise in loss rates reduces pre-tax income by about 257.7m, lowering the pre-tax margin driver in every scenario"
+     },
+     {
+      "exposure": -788.2,
+      "severity": 4,
+      "mitigants": [
+       "Average deposit rate was 156 bp below warehouse facility rate in Q2 2026 (a funding comparison, not a market benchmark)",
+       "Cost of funds fell 36 bp year over year in Q2 2026"
+      ],
+      "risk_name": "Deposit funding cost and NIM compression",
+      "confidence": 0.35,
+      "probability": 0.4,
+      "causal_mechanism": "Net interest income is the largest earnings source. Deposit cost against market benchmarks is untested because FDIC and peer deposit series are unavailable; a rate cut or loss of member trust would raise funding cost faster than loan yields.",
+      "failure_threshold": "Deposit cost within about 50 bp of market for four consecutive quarters while NIM falls below credit-cost coverage",
+      "leading_indicator": "Quarterly deposit cost against comparable online-bank deposit rates and net interest margin",
+      "is_source_gap_only": false,
+      "model_input_affected": "pre-tax margin driver",
+      "supporting_claim_ids": [
+       "377e79cf-8745-44da-a139-74878a097ee6",
+       "6ef6a536-a93f-4f5f-b62b-b9a7dd95594b",
+       "23275be8-e491-492e-ad8e-bc4c5b4e5f80"
+      ],
+      "financial_consequence": "Q2 2026 net interest income of 788.2m is exposed; each NIM decline shrinks pre-tax margin in the base case"
+     },
+     {
+      "exposure": -8793,
+      "severity": 4,
+      "mitigants": [
+       "Operating cash outflow is attributed mainly to loans held for sale, which may reverse as loan sales settle"
+      ],
+      "risk_name": "Cash conversion: earnings do not reach distributable cash",
+      "confidence": 0.6,
+      "probability": 0.7,
+      "causal_mechanism": "Operating cash flow is negative in every quarter of the window, with fcf-to-net-income about -13.8x TTM, mainly because loans held for sale originations outpaced sales and paydowns. Reported net income is therefore not distributable cash in the packet's model.",
+      "failure_threshold": "Free cash flow after bank capital persistently below GAAP net income for four quarters with no reported growth investment explaining the gap",
+      "leading_indicator": "TTM free cash flow and operating cash flow relative to net income",
+      "is_source_gap_only": false,
+      "model_input_affected": "cash_flow line in FCFE and terminal multiple",
+      "supporting_claim_ids": [
+       "41941e96-0372-4bf7-b88a-1015aa4629b2",
+       "a2b99c3c-506a-4930-8e86-0acfb10dfb2c",
+       "6299384c-69f9-4e09-969c-e4fcf33aeaee"
+      ],
+      "financial_consequence": "TTM FCF of -8,793m at 2026Q2; fcf yield about -38% on the unverified market cap"
+     },
+     {
+      "exposure": -11.8,
+      "severity": 3,
+      "mitigants": [
+       "Contribution profit stayed positive in each reported quarter of the packet"
+      ],
+      "risk_name": "Galileo/Technisys profit not isolated",
+      "confidence": 0.4,
+      "probability": 0.5,
+      "causal_mechanism": "Platform contribution profit fell to 11.8m in Q2 2026 from 47.9m in Q4 2025, and analytics segment revenue does not reconcile to filed net revenue. Profit after corporate allocations is not captured, so the platform may be a burner or depend on intercompany pricing.",
+      "failure_threshold": "Operating income after allocations negative, or intercompany revenue forming most of platform revenue",
+      "leading_indicator": "Platform contribution profit and operating income after corporate allocations by quarter",
+      "is_source_gap_only": false,
+      "model_input_affected": "segment operating income (not modelled separately)",
+      "supporting_claim_ids": [
+       "2328c668-03f3-4cea-a2c1-4b2a0f803f2d",
+       "4a057292-3a53-4ce8-ba60-c5c5429a9504"
+      ],
+      "financial_consequence": "A burner would reduce the consumer engine value; the platform is not valued separately in the packet"
+     },
+     {
+      "exposure": 1.38,
+      "severity": 3,
+      "mitigants": [
+       "The bear case stays negative under a materially lower discount rate"
+      ],
+      "risk_name": "Valuation discount-rate and beta uncertainty",
+      "confidence": 0.4,
+      "probability": 0.5,
+      "causal_mechanism": "The 13.09% cost of equity uses an adjusted beta of 1.88 from 104 unverified weekly returns with R-squared 0.40. A different beta changes every scenario value, and the terminal multiple is an analyst choice.",
+      "failure_threshold": "Verified cost of equity materially different from 13.09%, or terminal multiple outside 7x to 11x",
+      "leading_indicator": "Verified beta and cost of equity against the price series",
+      "is_source_gap_only": false,
+      "model_input_affected": "discount_rate and terminal multiple",
+      "supporting_claim_ids": [
+       "6b325413-aaef-483b-b4c9-c302e7439cb8"
+      ],
+      "financial_consequence": "Probability-weighted value of about 1.38 per share moves with the discount rate; each 1x of terminal multiple is worth about 0.56 per share"
+     }
+    ],
+    "artifact_type": "risk_register"
+   }
+  },
+  {
+   "artifact_type": "thesis_breakers",
+   "content_json": {
+    "breakers": [
+     {
+      "name": "Holding-company CET1 erosion or equity issuance to fund bank capital",
+      "threshold": "CET1 trending toward 7.0% plus buffer, or common equity issued in a profitable year",
+      "model_consequence": "Retained equity rises and diluted share count grows; base value falls about 0.33 per share per CET1 point"
+     },
+     {
+      "name": "Deposit cost converges to market",
+      "threshold": "Deposit cost within about 50 bp of comparable online-bank rates for four consecutive quarters while NIM falls below credit-cost coverage",
+      "model_consequence": "Pre-tax margin driver (15% to 16% in base) falls, reducing net income and terminal value"
+     },
+     {
+      "name": "Credit loss rates above management band",
+      "threshold": "Net charge-off rate above target band for two consecutive quarters, or allowance coverage falling while delinquency rises",
+      "model_consequence": "Provisions rise; a 10% loss-rate increase cuts pre-tax income by about 257.7m"
+     },
+     {
+      "name": "Galileo/Technisys negative after allocations",
+      "threshold": "Segment operating income negative after corporate allocations, or intercompany revenue forming most of platform revenue",
+      "model_consequence": "Platform treated as a burner; its losses reduce the consumer engine value"
+     },
+     {
+      "name": "FCF stays negative against positive GAAP earnings",
+      "threshold": "FCF after bank capital below GAAP net income for four consecutive quarters without a reported growth explanation",
+      "model_consequence": "Cash-based bridge confirms earnings do not reach holders; terminal multiple unsupported"
+     }
+    ],
+    "artifact_type": "thesis_breakers"
+   }
+  },
+  {
+   "artifact_type": "valuation_scenario_set",
+   "content_json": {
+    "methods": [
+     "fcfe",
+     "tangible_book_nav"
+    ],
+    "source_gaps": [
+     "No sourced future share issuance schedule is available beyond the reported diluted share count.",
+     "No dividend forecast: dividend_per_share is 0 in every year."
+    ],
+    "artifact_type": "valuation_scenario_set",
+    "method_inputs": [
+     {
+      "years": [
+       {
+        "build": {
+         "starting_profit": 546.2,
+         "other_adjustments": -255.3,
+         "capital_expenditures": 374,
+         "depreciation_amortization": 349.1,
+         "change_in_net_working_capital": 3218.4
+        },
+        "cash_flow": -2952.4,
+        "fiscal_year": 2026
+       },
+       {
+        "build": {
+         "starting_profit": 450.6,
+         "other_adjustments": -280.8,
+         "capital_expenditures": 411.4,
+         "depreciation_amortization": 384,
+         "change_in_net_working_capital": 949.8
+        },
+        "cash_flow": -807.4,
+        "fiscal_year": 2027
+       },
+       {
+        "build": {
+         "starting_profit": 424.6,
+         "other_adjustments": -297.7,
+         "capital_expenditures": 436.1,
+         "depreciation_amortization": 407,
+         "change_in_net_working_capital": 731.9
+        },
+        "cash_flow": -634.1,
+        "fiscal_year": 2028
+       },
+       {
+        "build": {
+         "starting_profit": 441.6,
+         "other_adjustments": -309.6,
+         "capital_expenditures": 453.5,
+         "depreciation_amortization": 423.3,
+         "change_in_net_working_capital": 559
+        },
+        "cash_flow": -457.2,
+        "fiscal_year": 2029
+       },
+       {
+        "build": {
+         "starting_profit": 454.9,
+         "other_adjustments": -318.9,
+         "capital_expenditures": 467.1,
+         "depreciation_amortization": 436,
+         "change_in_net_working_capital": 469.6
+        },
+        "cash_flow": -364.7,
+        "fiscal_year": 2030
+       }
+      ],
+      "method": "fcfe",
+      "currency": "USD",
+      "terminal": {
+       "type": "multiple",
+       "metric": "net_income_2030",
+       "multiple": 7,
+       "metric_value": 454.9
+      },
+      "rationale": "Bear case for SoFi as a bank holding company. Revenue grows 38 percent in FY2026 on the FY2025 net revenue base of 3613.4m (revenue 4986.5m), then 10, 6, 4 and 3 percent. Pre-tax margin is 12 percent in 2026, 9 percent in 2027 and 8 percent thereafter. Loan growth is 36, 10, 7, 5 and 4 percent. Net income is pre-tax profit times (1 minus the 8.71 percent normalised tax rate). Retained equity is the change in risk-weighted assets times a 16.9 percent CET1 target. Discount rate is the 13.09 percent CAPM cost of equity, which is unverified because beta is unverified. Terminal value is 7x 2030 net income, a total-earnings multiple. Value is negative because capital retention and stock-based pay exceed earnings in every year, so the bear case is a permanent-loss case on this method.",
+      "method_name": "Bank-capital-constrained FCFE, bear case",
+      "source_notes": [
+       "Operating scenario: bear. Revenue growth 0.38 in FY2026 against FY2025 net revenue of 3613.4m gives 4986.5m; then 0.10, 0.06, 0.04 and 0.03 (analyst assumptions). Revenue and FY2025 base from the stored net revenue history and the operating scenario set.",
+       "Pre-tax margin driver (pre-tax proxy on total net revenue): 0.12 in 2026, 0.09 in 2027, 0.08 in 2028 to 2030. Pre-tax profit is 598.4, 493.7, 465.1, 483.8 and 498.3m. Unverified because consolidated operating income for Q3 2026 is not captured.",
+       "Net income = pre-tax profit x (1 - 0.0871), using the stored normalised tax rate of 8.71 percent (median quarterly effective rate, financial analytics artifact 68d0d7b1). Net income is 546.2, 450.6, 424.6, 441.6 and 454.9m.",
+       "Depreciation and amortisation at 7.0 percent of revenue (349.1, 384.0, 407.0, 423.3, 436.0m). Capex at 7.5 percent of revenue (374.0, 411.4, 436.1, 453.5, 467.1m), an analyst assumption; the Q3 2026 capex actual is not captured. Net D&A less capex is about -25 to -31m a year.",
+       "Retained equity (change_in_net_working_capital, a positive use of cash): change in risk-weighted assets x 16.9 percent holding-company CET1 ratio at 30 Sep 2026 (10-Q, source 2e9b4dba; RWA 56,204.0m at 30 Sep 2026). RWA at 31 Dec 2025 is about 37,160m, derived from CET1 capital 8,473.5m at 22.8 percent (source 030641d0). FY2026 uses 9/30 RWA as the year-end proxy, giving 3218.4m retained in 2026. From 2027, RWA grows with the bear loan growth of 10, 7, 5 and 4 percent: retention is 949.8, 731.9, 559.0 and 469.6m. Loan growth is a proxy for RWA growth (analyst assumption). The bear 2026 loan growth of 36 percent is below the 9/30 loan balance of 53.7bn, so it conflicts with reported balances and is flagged.",
+       "Stock-based compensation as cash cost (other_adjustments, negative): 5.12 percent of revenue, the Q3 2026 ratio (financial analytics 68d0d7b1): -255.3, -280.8, -297.7, -309.6, -318.9m.",
+       "Discount rate 13.09 percent = CAPM cost of equity: risk-free 5.12 percent (FRED DGS10, 16 Nov 2026) + adjusted beta 1.8845 x ERP 4.23 percent (Damodaran implied ERP, as of 31 Dec 2025, not stale). Beta is unverified (105 weekly closes not cross-checked, raw beta 2.32, R-squared 0.40). Discount factors, end-year: 0.8843, 0.7819, 0.6914, 0.6114, 0.5407 for 2026 to 2030.",
+       "Cash flows: -2952.4, -807.4, -634.1, -457.2, -364.7m. PV of cash flows -4157.1m. Terminal value 7 x 454.9 = 3184.3m, PV 1721.9m. Equity value -2435.2m, or -1.79 per diluted share (1357.8m shares).",
+       "Terminal: 7x 2030 total net income, not per share. Gordon form (1 - g/ROE)/(r - g) at r 13.09 percent, g 3 percent and ROE 15 to 20 percent gives about 8x, so 7x is a stressed multiple for card credit and funding pressure. Analyst assumption.",
+       "Tail case below bear: the 2026 negative FCFE of 2952m would need new equity to keep CET1 at 16.9 percent. At the 14.28 price (unverified), that is about 207m new shares, about 15 percent dilution. Bank-to-holding-company dividend limits (10-Q, source 95dcb836) mean holding-company equity may not reach holders. Negative per-share value is a result of the method, not a forecast of liquidation.",
+       "Gaps: bank call reports for 12 quarters, FDIC deposit benchmark, Galileo/Technisys segment profit and quarterly net income are not captured. Q3 2026 consolidated operating income and capex are not captured. The FY2026 flow is counted in full, including nine months already in the 9/30 balance sheet; a Q4-only stub would raise value, but not to the 14.28 price."
+      ],
+      "discount_rate": 0.1309,
+      "equity_bridge": 0,
+      "scenario_type": "bear",
+      "diluted_shares": 1357.811,
+      "cash_flow_label": "FCFE after bank CET1 retention and stock-based compensation, USD millions",
+      "equity_bridge_explanation": "Equity method, so no net debt bridge. Deposits and borrowings are operating funding of the bank. Capital needed for loan growth is deducted inside cash flow as retained equity. Stock-based compensation is treated as a cash cost."
+     },
+     {
+      "years": [
+       {
+        "build": {
+         "starting_profit": 702.6,
+         "other_adjustments": -262.7,
+         "capital_expenditures": 384.8,
+         "depreciation_amortization": 359.2,
+         "change_in_net_working_capital": 3218.4
+        },
+        "cash_flow": -2804.1,
+        "fiscal_year": 2026
+       },
+       {
+        "build": {
+         "starting_profit": 936.9,
+         "other_adjustments": -328.4,
+         "capital_expenditures": 481,
+         "depreciation_amortization": 449,
+         "change_in_net_working_capital": 2089.7
+        },
+        "cash_flow": -1513.2,
+        "fiscal_year": 2027
+       },
+       {
+        "build": {
+         "starting_profit": 1105.4,
+         "other_adjustments": -387.5,
+         "capital_expenditures": 567.6,
+         "depreciation_amortization": 529.8,
+         "change_in_net_working_capital": 1854.1
+        },
+        "cash_flow": -1174,
+        "fiscal_year": 2028
+       },
+       {
+        "build": {
+         "starting_profit": 1260.3,
+         "other_adjustments": -441.8,
+         "capital_expenditures": 647.1,
+         "depreciation_amortization": 604,
+         "change_in_net_working_capital": 1613.1
+        },
+        "cash_flow": -837.7,
+        "fiscal_year": 2029
+       },
+       {
+        "build": {
+         "starting_profit": 1411.4,
+         "other_adjustments": -494.7,
+         "capital_expenditures": 724.8,
+         "depreciation_amortization": 676.4,
+         "change_in_net_working_capital": 1505.5
+        },
+        "cash_flow": -637.2,
+        "fiscal_year": 2030
+       }
+      ],
+      "method": "fcfe",
+      "currency": "USD",
+      "terminal": {
+       "type": "multiple",
+       "metric": "net_income_2030",
+       "multiple": 9,
+       "metric_value": 1411.4
+      },
+      "rationale": "Base case for SoFi as a bank holding company. Revenue grows 42 percent in FY2026 on the FY2025 net revenue base of 3613.4m (revenue 5131.0m), then 25, 18, 14 and 12 percent. Pre-tax margin is 15 percent in 2026 and 16 percent from 2027. Loan growth is 42, 22, 16, 12 and 10 percent. Net income is pre-tax profit times (1 minus 8.71 percent). Retained equity uses a 16.9 percent CET1 target. Discount rate is the 13.09 percent CAPM cost of equity, unverified. Terminal value is 9x 2030 net income. Base value is about 1.13 dollars per diluted share against a 14.28 unverified price, so the market price is not supported by this method on the stated capital ratio.",
+      "method_name": "Bank-capital-constrained FCFE, base case",
+      "source_notes": [
+       "Operating scenario: base. Revenue growth 0.42 in FY2026 gives 5131.0m against FY2025 net revenue of 3613.4m; then 0.25, 0.18, 0.14 and 0.12 (analyst assumptions anchored on reported quarters). Revenue is 5131.0, 6413.8, 7568.3, 8627.9 and 9663.4m.",
+       "Pre-tax margin driver: 0.15 in 2026 (FY2025 pre-tax proxy about 14.6 percent), 0.16 in 2027 to 2030. Pre-tax profit is 769.7, 1026.2, 1210.9, 1380.5 and 1546.1m. Unverified because consolidated operating income for Q3 2026 is not captured.",
+       "Net income = pre-tax profit x (1 - 0.0871), normalised tax rate from the financial analytics artifact. Net income is 702.6, 936.9, 1105.4, 1260.3 and 1411.4m.",
+       "Depreciation and amortisation at 7.0 percent of revenue (359.2, 449.0, 529.8, 604.0, 676.4m). Capex at 7.5 percent of revenue (384.8, 481.0, 567.6, 647.1, 724.8m), an analyst assumption; Q3 2026 capex is not captured.",
+       "Retained equity: change in risk-weighted assets x 16.9 percent holding-company CET1 at 30 Sep 2026 (10-Q, source 2e9b4dba; RWA 56,204.0m). RWA at 31 Dec 2025 is about 37,160m (CET1 8,473.5m at 22.8 percent, source 030641d0). FY2026 uses 9/30 RWA as year-end proxy: 3218.4m. Then RWA grows with base loan growth of 22, 16, 12 and 10 percent: retention 2089.7, 1854.1, 1613.1 and 1505.5m. Loan growth is a proxy for RWA growth (analyst assumption).",
+       "Stock-based compensation as cash cost (other_adjustments): 5.12 percent of revenue, the Q3 2026 ratio (financial analytics artifact 68d0d7b1): -262.7, -328.4, -387.5, -441.8, -494.7m.",
+       "Discount rate 13.09 percent = CAPM cost of equity: risk-free 5.12 percent (FRED DGS10, 16 Nov 2026) + adjusted beta 1.8845 x implied ERP 4.23 percent (Damodaran, 31 Dec 2025). Beta unverified. Discount factors 0.8843, 0.7819, 0.6914, 0.6114, 0.5407.",
+       "Cash flows: -2804.1, -1513.2, -1174.0, -837.7, -637.2m. PV of cash flows -5331.1m. Terminal 9 x 1411.4 = 12702.6m, PV 6867.0m. Equity value 1535.9m, or 1.13 per diluted share.",
+       "Sensitivity: each 1x of terminal multiple is worth about 0.56 per share. Each 1 percentage point of target CET1 is worth about 0.33 per share, because PV of retention rises by about 0.45bn per point. Moving the target to the bank's 14.9 percent CET1 (2 points lower) would add about 0.66 per share, to about 1.79. Terminal of 9x is an analyst assumption.",
+       "Terminal multiple rationale: 9x is generous against Gordon form at 13.09 percent cost of equity, g 3 percent and ROE 18 percent (about 8x). It is used because a stable-state bank with better credit could earn more than 9x. The market price 14.28 implies a multiple and capital path well above this grid (trailing P/E on 737.9m net income TTM is about 25x at the unverified price).",
+       "Timing: the FY2026 cash flow is counted in full, including nine months already in the 30 Sep balance sheet. Counting only the Q4 stub would raise base value by up to about 1.37 per share, still far below 14.28.",
+       "Gaps: bank call reports, FDIC deposit benchmark, Galileo/Technisys segment profit, Q3 2026 consolidated operating income and capex, and quarterly net income series are not captured. Price 14.28 and share count are unverified for the valuation date (17 Nov 2026)."
+      ],
+      "discount_rate": 0.1309,
+      "equity_bridge": 0,
+      "scenario_type": "base",
+      "diluted_shares": 1357.811,
+      "cash_flow_label": "FCFE after bank CET1 retention and stock-based compensation, USD millions",
+      "equity_bridge_explanation": "Equity method, so no net debt bridge. Deposits and borrowings are operating funding of the bank. Capital needed for loan growth is deducted inside cash flow as retained equity. Stock-based compensation is treated as a cash cost."
+     },
+     {
+      "years": [
+       {
+        "build": {
+         "starting_profit": 760,
+         "other_adjustments": -266.4,
+         "capital_expenditures": 390.2,
+         "depreciation_amortization": 364.2,
+         "change_in_net_working_capital": 3218.4
+        },
+        "cash_flow": -2750.8,
+        "fiscal_year": 2026
+       },
+       {
+        "build": {
+         "starting_profit": 1191.3,
+         "other_adjustments": -351.7,
+         "capital_expenditures": 515.1,
+         "depreciation_amortization": 480.8,
+         "change_in_net_working_capital": 2849.5
+        },
+        "cash_flow": -2044.2,
+        "fiscal_year": 2027
+       },
+       {
+        "build": {
+         "starting_profit": 1645.9,
+         "other_adjustments": -439.6,
+         "capital_expenditures": 644,
+         "depreciation_amortization": 601,
+         "change_in_net_working_capital": 2716.5
+        },
+        "cash_flow": -1553.2,
+        "fiscal_year": 2028
+       },
+       {
+        "build": {
+         "starting_profit": 2069.2,
+         "other_adjustments": -527.4,
+         "capital_expenditures": 772.7,
+         "depreciation_amortization": 721.2,
+         "change_in_net_working_capital": 2410.3
+        },
+        "cash_flow": -920,
+        "fiscal_year": 2029
+       },
+       {
+        "build": {
+         "starting_profit": 2530.9,
+         "other_adjustments": -617.1,
+         "capital_expenditures": 904,
+         "depreciation_amortization": 843.7,
+         "change_in_net_working_capital": 2271.7
+        },
+        "cash_flow": -418.2,
+        "fiscal_year": 2030
+       }
+      ],
+      "method": "fcfe",
+      "currency": "USD",
+      "terminal": {
+       "type": "multiple",
+       "metric": "net_income_2030",
+       "multiple": 11,
+       "metric_value": 2530.9
+      },
+      "rationale": "Bull case for SoFi as a bank holding company. Revenue grows 44 percent in FY2026 on the FY2025 net revenue base of 3613.4m (revenue 5203.3m), then 32, 25, 20 and 17 percent. Pre-tax margin rises from 16 percent in 2026 to 23 percent in 2030 through operating leverage. Loan growth is 44, 30, 22, 16 and 13 percent. Terminal value is 11x 2030 net income. Even with these assumptions, the bull value is about 6.75 dollars per diluted share, below the 14.28 unverified price. The bull case assumes capital ratios hold without new equity, which is the least tested assumption.",
+      "method_name": "Bank-capital-constrained FCFE, bull case",
+      "source_notes": [
+       "Operating scenario: bull. Revenue growth 0.44 in FY2026 gives 5203.3m against FY2025 net revenue of 3613.4m; then 0.32, 0.25, 0.20 and 0.17 (analyst assumptions). Revenue is 5203.3, 6868.4, 8585.5, 10302.6 and 12053.0m, anchored on the Q3 2026 growth rate of 44 percent.",
+       "Pre-tax margin driver: 0.16 in 2026, 0.19, 0.21, 0.22 and 0.23 in 2027 to 2030 (analyst assumptions, unverified). Pre-tax profit is 832.5, 1305.0, 1803.0, 2266.6 and 2772.2m.",
+       "Net income = pre-tax profit x (1 - 0.0871). Net income is 760.0, 1191.3, 1645.9, 2069.2 and 2530.9m.",
+       "Depreciation and amortisation at 7.0 percent of revenue (364.2, 480.8, 601.0, 721.2, 843.7m). Capex at 7.5 percent of revenue (390.2, 515.1, 644.0, 772.7, 904.0m), an analyst assumption.",
+       "Retained equity: change in RWA x 16.9 percent CET1 (10-Q, source 2e9b4dba). FY2026 uses 9/30 RWA of 56,204.0m as year-end proxy: 3218.4m. Then RWA grows with bull loan growth of 30, 22, 16 and 13 percent: retention 2849.5, 2716.5, 2410.3 and 2271.7m (analyst assumption; the 44 percent 2026 loan growth is above the 9/30 balance pace and is not reconciled to call reports).",
+       "Stock-based compensation as cash cost: 5.12 percent of revenue (Q3 2026 ratio): -266.4, -351.7, -439.6, -527.4, -617.1m.",
+       "Discount rate 13.09 percent = CAPM cost of equity (risk-free 5.12 percent, FRED DGS10 16 Nov 2026; beta 1.8845 unverified; ERP 4.23 percent as of 31 Dec 2025). Discount factors 0.8843, 0.7819, 0.6914, 0.6114, 0.5407.",
+       "Cash flows: -2750.8, -2044.2, -1553.2, -920.0, -418.2m. PV of cash flows -5893.0m. Terminal 11 x 2530.9 = 27839.9m, PV 15051.9m. Equity value 9158.9m, or 6.75 per diluted share.",
+       "Terminal: 11x 2030 total net income, not per share. Gordon form at 13.09 percent, g 3 percent and ROE 25 percent gives about 9x, so 11x requires sustained high returns and the bull case is not supported by reported ROE (not computed for all quarters).",
+       "Gaps: bank call reports, deposit benchmark, platform segment profit, and loan-sale pricing are not captured. Bull assumes capital stays above buffer without equity issuance, which is untested."
+      ],
+      "discount_rate": 0.1309,
+      "equity_bridge": 0,
+      "scenario_type": "bull",
+      "diluted_shares": 1357.811,
+      "cash_flow_label": "FCFE after bank CET1 retention and stock-based compensation, USD millions",
+      "equity_bridge_explanation": "Equity method, so no net debt bridge. Deposits and borrowings are operating funding of the bank. Capital needed for loan growth is deducted inside cash flow as retained equity. Stock-based compensation is treated as a cash cost."
+     }
+    ],
+    "terminal_year": 2030,
+    "risk_free_rate": {
+     "rate": 0.0512,
+     "source": "FRED",
+     "series_id": "DGS10",
+     "observation_date": "2026-11-16",
+     "source_document_id": "6f488f81-0d46-4271-8f57-86a9d8c1f33b"
+    },
+    "nav_cross_check": {
+     "method": "tangible_book_nav",
+     "limitation": "Tangible book value is a balance-sheet cross-check, not liquidation value or a complete regulatory capital assessment.",
+     "shares_date": "2026-10-30",
+     "goodwill_usd": 1425159000,
+     "balance_sheet_date": "2026-09-30",
+     "source_document_id": "a3f3ee68-f4aa-4513-9d6c-c3a6875b3a21",
+     "intangible_assets_usd": 208093000,
+     "stockholders_equity_usd": 11295137000,
+     "common_shares_outstanding": 1297840447,
+     "diluted_shares_period_end": "2026-09-30",
+     "tangible_book_value_per_share": 7.444586,
+     "tangible_book_value_per_diluted_share": 7.11578,
+     "reported_diluted_weighted_average_shares": 1357811000
+    },
+    "omitted_methods": [
+     {
+      "method": "dividend",
+      "reason": "SoFi pays no dividends (dividends_ttm 0 in the capital allocation record) and cannot pay to holders while bank-to-holding-company dividend limits apply, so a dividend discount schedule would be zero."
+     },
+     {
+      "method": "earnings_exit",
+      "reason": "A P/E exit on earnings with flows set to zero would ignore the capital the bank must retain, which is the main driver of value. Earnings are not distributable cash, so the FCFE terminal multiple already carries the earnings exit view; the separate cross-check is not run."
+     },
+     {
+      "method": "book_exit",
+      "reason": "No book-equity roll-forward is captured: the only balance-sheet point is 30 Sep 2026 equity of 11,295.1m. A 2030 book value would require a forecast of retained earnings and equity issuance that the packet does not supply."
+     },
+     {
+      "method": "tangible_book_exit",
+      "reason": "Tangible book at 30 Sep 2026 is 9,661.8m (equity 11,295.1m less goodwill 1,425.2m and intangibles 208.1m), or 7.12 per diluted share and 7.44 per basic share (balance-sheet cross-check, not liquidation value). A tangible-book exit needs a 2030 tangible-book path, which is not captured, so the method is not run. At 14.28 the price is about 2.0x this tangible book."
+     }
+    ],
+    "weighted_target": 9.48185719514719,
+    "method_schedules": [
+     {
+      "years": [
+       {
+        "build": {
+         "starting_profit": 546.2,
+         "other_adjustments": -255.3,
+         "capital_expenditures": 374,
+         "depreciation_amortization": 349.1,
+         "change_in_net_working_capital": 3218.4
+        },
+        "cash_flow": -2952.4,
+        "fiscal_year": 2026,
+        "present_value": -2610.664072862322,
+        "discount_factor": 0.8842514811212309
+       },
+       {
+        "build": {
+         "starting_profit": 450.6,
+         "other_adjustments": -280.8,
+         "capital_expenditures": 411.4,
+         "depreciation_amortization": 384,
+         "change_in_net_working_capital": 949.8
+        },
+        "cash_flow": -807.4,
+        "fiscal_year": 2027,
+        "present_value": -631.3066105378741,
+        "discount_factor": 0.7819006818650905
+       },
+       {
+        "build": {
+         "starting_profit": 424.6,
+         "other_adjustments": -297.7,
+         "capital_expenditures": 436.1,
+         "depreciation_amortization": 407,
+         "change_in_net_working_capital": 731.9
+        },
+        "cash_flow": -634.1,
+        "fiscal_year": 2028,
+        "present_value": -438.41473372592975,
+        "discount_factor": 0.6913968360289067
+       },
+       {
+        "build": {
+         "starting_profit": 441.6,
+         "other_adjustments": -309.6,
+         "capital_expenditures": 453.5,
+         "depreciation_amortization": 423.3,
+         "change_in_net_working_capital": 559
+        },
+        "cash_flow": -457.2,
+        "fiscal_year": 2029,
+        "present_value": -279.5177588048599,
+        "discount_factor": 0.6113686763010935
+       },
+       {
+        "build": {
+         "starting_profit": 454.9,
+         "other_adjustments": -318.9,
+         "capital_expenditures": 467.1,
+         "depreciation_amortization": 436,
+         "change_in_net_working_capital": 469.6
+        },
+        "cash_flow": -364.7,
+        "fiscal_year": 2030,
+        "present_value": -197.15815390132528,
+        "discount_factor": 0.5406036575303682
+       }
+      ],
+      "method": "fcfe",
+      "currency": "USD",
+      "terminal": {
+       "type": "multiple",
+       "metric": "net_income_2030",
+       "multiple": 7,
+       "metric_value": 454.9
+      },
+      "rationale": "Bear case for SoFi as a bank holding company. Revenue grows 38 percent in FY2026 on the FY2025 net revenue base of 3613.4m (revenue 4986.5m), then 10, 6, 4 and 3 percent. Pre-tax margin is 12 percent in 2026, 9 percent in 2027 and 8 percent thereafter. Loan growth is 36, 10, 7, 5 and 4 percent. Net income is pre-tax profit times (1 minus the 8.71 percent normalised tax rate). Retained equity is the change in risk-weighted assets times a 16.9 percent CET1 target. Discount rate is the 13.09 percent CAPM cost of equity, which is unverified because beta is unverified. Terminal value is 7x 2030 net income, a total-earnings multiple. Value is negative because capital retention and stock-based pay exceed earnings in every year, so the bear case is a permanent-loss case on this method.",
+      "method_name": "Bank-capital-constrained FCFE, bear case",
+      "equity_value": -2435.61710315836,
+      "source_notes": [
+       "Operating scenario: bear. Revenue growth 0.38 in FY2026 against FY2025 net revenue of 3613.4m gives 4986.5m; then 0.10, 0.06, 0.04 and 0.03 (analyst assumptions). Revenue and FY2025 base from the stored net revenue history and the operating scenario set.",
+       "Pre-tax margin driver (pre-tax proxy on total net revenue): 0.12 in 2026, 0.09 in 2027, 0.08 in 2028 to 2030. Pre-tax profit is 598.4, 493.7, 465.1, 483.8 and 498.3m. Unverified because consolidated operating income for Q3 2026 is not captured.",
+       "Net income = pre-tax profit x (1 - 0.0871), using the stored normalised tax rate of 8.71 percent (median quarterly effective rate, financial analytics artifact 68d0d7b1). Net income is 546.2, 450.6, 424.6, 441.6 and 454.9m.",
+       "Depreciation and amortisation at 7.0 percent of revenue (349.1, 384.0, 407.0, 423.3, 436.0m). Capex at 7.5 percent of revenue (374.0, 411.4, 436.1, 453.5, 467.1m), an analyst assumption; the Q3 2026 capex actual is not captured. Net D&A less capex is about -25 to -31m a year.",
+       "Retained equity (change_in_net_working_capital, a positive use of cash): change in risk-weighted assets x 16.9 percent holding-company CET1 ratio at 30 Sep 2026 (10-Q, source 2e9b4dba; RWA 56,204.0m at 30 Sep 2026). RWA at 31 Dec 2025 is about 37,160m, derived from CET1 capital 8,473.5m at 22.8 percent (source 030641d0). FY2026 uses 9/30 RWA as the year-end proxy, giving 3218.4m retained in 2026. From 2027, RWA grows with the bear loan growth of 10, 7, 5 and 4 percent: retention is 949.8, 731.9, 559.0 and 469.6m. Loan growth is a proxy for RWA growth (analyst assumption). The bear 2026 loan growth of 36 percent is below the 9/30 loan balance of 53.7bn, so it conflicts with reported balances and is flagged.",
+       "Stock-based compensation as cash cost (other_adjustments, negative): 5.12 percent of revenue, the Q3 2026 ratio (financial analytics 68d0d7b1): -255.3, -280.8, -297.7, -309.6, -318.9m.",
+       "Discount rate 13.09 percent = CAPM cost of equity: risk-free 5.12 percent (FRED DGS10, 16 Nov 2026) + adjusted beta 1.8845 x ERP 4.23 percent (Damodaran implied ERP, as of 31 Dec 2025, not stale). Beta is unverified (105 weekly closes not cross-checked, raw beta 2.32, R-squared 0.40). Discount factors, end-year: 0.8843, 0.7819, 0.6914, 0.6114, 0.5407 for 2026 to 2030.",
+       "Cash flows: -2952.4, -807.4, -634.1, -457.2, -364.7m. PV of cash flows -4157.1m. Terminal value 7 x 454.9 = 3184.3m, PV 1721.9m. Equity value -2435.2m, or -1.79 per diluted share (1357.8m shares).",
+       "Terminal: 7x 2030 total net income, not per share. Gordon form (1 - g/ROE)/(r - g) at r 13.09 percent, g 3 percent and ROE 15 to 20 percent gives about 8x, so 7x is a stressed multiple for card credit and funding pressure. Analyst assumption.",
+       "Tail case below bear: the 2026 negative FCFE of 2952m would need new equity to keep CET1 at 16.9 percent. At the 14.28 price (unverified), that is about 207m new shares, about 15 percent dilution. Bank-to-holding-company dividend limits (10-Q, source 95dcb836) mean holding-company equity may not reach holders. Negative per-share value is a result of the method, not a forecast of liquidation.",
+       "Gaps: bank call reports for 12 quarters, FDIC deposit benchmark, Galileo/Technisys segment profit and quarterly net income are not captured. Q3 2026 consolidated operating income and capex are not captured. The FY2026 flow is counted in full, including nine months already in the 9/30 balance sheet; a Q4-only stub would raise value, but not to the 14.28 price."
+      ],
+      "discount_rate": 0.1309,
+      "equity_bridge": 0,
+      "scenario_type": "bear",
+      "diluted_shares": 1357.811,
+      "terminal_value": 3184.2999999999997,
+      "tv_share_of_ev": null,
+      "cash_flow_label": "FCFE after bank CET1 retention and stock-based compensation, USD millions",
+      "value_per_share": -1.7937821266423384,
+      "enterprise_value": -2435.61710315836,
+      "explicit_present_value": -4157.0613298323115,
+      "terminal_present_value": 1721.4442266739513,
+      "equity_bridge_explanation": "Equity method, so no net debt bridge. Deposits and borrowings are operating funding of the bank. Capital needed for loan growth is deducted inside cash flow as retained equity. Stock-based compensation is treated as a cash cost."
+     },
+     {
+      "years": [
+       {
+        "build": {
+         "starting_profit": 702.6,
+         "other_adjustments": -262.7,
+         "capital_expenditures": 384.8,
+         "depreciation_amortization": 359.2,
+         "change_in_net_working_capital": 3218.4
+        },
+        "cash_flow": -2804.1,
+        "fiscal_year": 2026,
+        "present_value": -2479.5295782120434,
+        "discount_factor": 0.8842514811212309
+       },
+       {
+        "build": {
+         "starting_profit": 936.9,
+         "other_adjustments": -328.4,
+         "capital_expenditures": 481,
+         "depreciation_amortization": 449,
+         "change_in_net_working_capital": 2089.7
+        },
+        "cash_flow": -1513.2,
+        "fiscal_year": 2027,
+        "present_value": -1183.172111798255,
+        "discount_factor": 0.7819006818650905
+       },
+       {
+        "build": {
+         "starting_profit": 1105.4,
+         "other_adjustments": -387.5,
+         "capital_expenditures": 567.6,
+         "depreciation_amortization": 529.8,
+         "change_in_net_working_capital": 1854.1
+        },
+        "cash_flow": -1174,
+        "fiscal_year": 2028,
+        "present_value": -811.6998854979364,
+        "discount_factor": 0.6913968360289067
+       },
+       {
+        "build": {
+         "starting_profit": 1260.3,
+         "other_adjustments": -441.8,
+         "capital_expenditures": 647.1,
+         "depreciation_amortization": 604,
+         "change_in_net_working_capital": 1613.1
+        },
+        "cash_flow": -837.7,
+        "fiscal_year": 2029,
+        "present_value": -512.143540137426,
+        "discount_factor": 0.6113686763010935
+       },
+       {
+        "build": {
+         "starting_profit": 1411.4,
+         "other_adjustments": -494.7,
+         "capital_expenditures": 724.8,
+         "depreciation_amortization": 676.4,
+         "change_in_net_working_capital": 1505.5
+        },
+        "cash_flow": -637.2,
+        "fiscal_year": 2030,
+        "present_value": -344.4726505783506,
+        "discount_factor": 0.5406036575303682
+       }
+      ],
+      "method": "fcfe",
+      "currency": "USD",
+      "terminal": {
+       "type": "multiple",
+       "metric": "net_income_2030",
+       "multiple": 9,
+       "metric_value": 1411.4
+      },
+      "rationale": "Base case for SoFi as a bank holding company. Revenue grows 42 percent in FY2026 on the FY2025 net revenue base of 3613.4m (revenue 5131.0m), then 25, 18, 14 and 12 percent. Pre-tax margin is 15 percent in 2026 and 16 percent from 2027. Loan growth is 42, 22, 16, 12 and 10 percent. Net income is pre-tax profit times (1 minus 8.71 percent). Retained equity uses a 16.9 percent CET1 target. Discount rate is the 13.09 percent CAPM cost of equity, unverified. Terminal value is 9x 2030 net income. Base value is about 1.13 dollars per diluted share against a 14.28 unverified price, so the market price is not supported by this method on the stated capital ratio.",
+      "method_name": "Bank-capital-constrained FCFE, base case",
+      "equity_value": 1536.0542539212438,
+      "source_notes": [
+       "Operating scenario: base. Revenue growth 0.42 in FY2026 gives 5131.0m against FY2025 net revenue of 3613.4m; then 0.25, 0.18, 0.14 and 0.12 (analyst assumptions anchored on reported quarters). Revenue is 5131.0, 6413.8, 7568.3, 8627.9 and 9663.4m.",
+       "Pre-tax margin driver: 0.15 in 2026 (FY2025 pre-tax proxy about 14.6 percent), 0.16 in 2027 to 2030. Pre-tax profit is 769.7, 1026.2, 1210.9, 1380.5 and 1546.1m. Unverified because consolidated operating income for Q3 2026 is not captured.",
+       "Net income = pre-tax profit x (1 - 0.0871), normalised tax rate from the financial analytics artifact. Net income is 702.6, 936.9, 1105.4, 1260.3 and 1411.4m.",
+       "Depreciation and amortisation at 7.0 percent of revenue (359.2, 449.0, 529.8, 604.0, 676.4m). Capex at 7.5 percent of revenue (384.8, 481.0, 567.6, 647.1, 724.8m), an analyst assumption; Q3 2026 capex is not captured.",
+       "Retained equity: change in risk-weighted assets x 16.9 percent holding-company CET1 at 30 Sep 2026 (10-Q, source 2e9b4dba; RWA 56,204.0m). RWA at 31 Dec 2025 is about 37,160m (CET1 8,473.5m at 22.8 percent, source 030641d0). FY2026 uses 9/30 RWA as year-end proxy: 3218.4m. Then RWA grows with base loan growth of 22, 16, 12 and 10 percent: retention 2089.7, 1854.1, 1613.1 and 1505.5m. Loan growth is a proxy for RWA growth (analyst assumption).",
+       "Stock-based compensation as cash cost (other_adjustments): 5.12 percent of revenue, the Q3 2026 ratio (financial analytics artifact 68d0d7b1): -262.7, -328.4, -387.5, -441.8, -494.7m.",
+       "Discount rate 13.09 percent = CAPM cost of equity: risk-free 5.12 percent (FRED DGS10, 16 Nov 2026) + adjusted beta 1.8845 x implied ERP 4.23 percent (Damodaran, 31 Dec 2025). Beta unverified. Discount factors 0.8843, 0.7819, 0.6914, 0.6114, 0.5407.",
+       "Cash flows: -2804.1, -1513.2, -1174.0, -837.7, -637.2m. PV of cash flows -5331.1m. Terminal 9 x 1411.4 = 12702.6m, PV 6867.0m. Equity value 1535.9m, or 1.13 per diluted share.",
+       "Sensitivity: each 1x of terminal multiple is worth about 0.56 per share. Each 1 percentage point of target CET1 is worth about 0.33 per share, because PV of retention rises by about 0.45bn per point. Moving the target to the bank's 14.9 percent CET1 (2 points lower) would add about 0.66 per share, to about 1.79. Terminal of 9x is an analyst assumption.",
+       "Terminal multiple rationale: 9x is generous against Gordon form at 13.09 percent cost of equity, g 3 percent and ROE 18 percent (about 8x). It is used because a stable-state bank with better credit could earn more than 9x. The market price 14.28 implies a multiple and capital path well above this grid (trailing P/E on 737.9m net income TTM is about 25x at the unverified price).",
+       "Timing: the FY2026 cash flow is counted in full, including nine months already in the 30 Sep balance sheet. Counting only the Q4 stub would raise base value by up to about 1.37 per share, still far below 14.28.",
+       "Gaps: bank call reports, FDIC deposit benchmark, Galileo/Technisys segment profit, Q3 2026 consolidated operating income and capex, and quarterly net income series are not captured. Price 14.28 and share count are unverified for the valuation date (17 Nov 2026)."
+      ],
+      "discount_rate": 0.1309,
+      "equity_bridge": 0,
+      "scenario_type": "base",
+      "diluted_shares": 1357.811,
+      "terminal_value": 12702.6,
+      "tv_share_of_ev": 4.470592104813338,
+      "cash_flow_label": "FCFE after bank CET1 retention and stock-based compensation, USD millions",
+      "value_per_share": 1.1312725069403944,
+      "enterprise_value": 1536.0542539212438,
+      "explicit_present_value": -5331.017766224011,
+      "terminal_present_value": 6867.072020145255,
+      "equity_bridge_explanation": "Equity method, so no net debt bridge. Deposits and borrowings are operating funding of the bank. Capital needed for loan growth is deducted inside cash flow as retained equity. Stock-based compensation is treated as a cash cost."
+     },
+     {
+      "years": [
+       {
+        "build": {
+         "starting_profit": 760,
+         "other_adjustments": -266.4,
+         "capital_expenditures": 390.2,
+         "depreciation_amortization": 364.2,
+         "change_in_net_working_capital": 3218.4
+        },
+        "cash_flow": -2750.8,
+        "fiscal_year": 2026,
+        "present_value": -2432.398974268282,
+        "discount_factor": 0.8842514811212309
+       },
+       {
+        "build": {
+         "starting_profit": 1191.3,
+         "other_adjustments": -351.7,
+         "capital_expenditures": 515.1,
+         "depreciation_amortization": 480.8,
+         "change_in_net_working_capital": 2849.5
+        },
+        "cash_flow": -2044.2,
+        "fiscal_year": 2027,
+        "present_value": -1598.361373868618,
+        "discount_factor": 0.7819006818650905
+       },
+       {
+        "build": {
+         "starting_profit": 1645.9,
+         "other_adjustments": -439.6,
+         "capital_expenditures": 644,
+         "depreciation_amortization": 601,
+         "change_in_net_working_capital": 2716.5
+        },
+        "cash_flow": -1553.2,
+        "fiscal_year": 2028,
+        "present_value": -1073.877565720098,
+        "discount_factor": 0.6913968360289067
+       },
+       {
+        "build": {
+         "starting_profit": 2069.2,
+         "other_adjustments": -527.4,
+         "capital_expenditures": 772.7,
+         "depreciation_amortization": 721.2,
+         "change_in_net_working_capital": 2410.3
+        },
+        "cash_flow": -920,
+        "fiscal_year": 2029,
+        "present_value": -562.459182197006,
+        "discount_factor": 0.6113686763010935
+       },
+       {
+        "build": {
+         "starting_profit": 2530.9,
+         "other_adjustments": -617.1,
+         "capital_expenditures": 904,
+         "depreciation_amortization": 843.7,
+         "change_in_net_working_capital": 2271.7
+        },
+        "cash_flow": -418.2,
+        "fiscal_year": 2030,
+        "present_value": -226.08044957919998,
+        "discount_factor": 0.5406036575303682
+       }
+      ],
+      "method": "fcfe",
+      "currency": "USD",
+      "terminal": {
+       "type": "multiple",
+       "metric": "net_income_2030",
+       "multiple": 11,
+       "metric_value": 2530.9
+      },
+      "rationale": "Bull case for SoFi as a bank holding company. Revenue grows 44 percent in FY2026 on the FY2025 net revenue base of 3613.4m (revenue 5203.3m), then 32, 25, 20 and 17 percent. Pre-tax margin rises from 16 percent in 2026 to 23 percent in 2030 through operating leverage. Loan growth is 44, 30, 22, 16 and 13 percent. Terminal value is 11x 2030 net income. Even with these assumptions, the bull value is about 6.75 dollars per diluted share, below the 14.28 unverified price. The bull case assumes capital ratios hold without new equity, which is the least tested assumption.",
+      "method_name": "Bank-capital-constrained FCFE, bull case",
+      "equity_value": 9157.174219646495,
+      "source_notes": [
+       "Operating scenario: bull. Revenue growth 0.44 in FY2026 gives 5203.3m against FY2025 net revenue of 3613.4m; then 0.32, 0.25, 0.20 and 0.17 (analyst assumptions). Revenue is 5203.3, 6868.4, 8585.5, 10302.6 and 12053.0m, anchored on the Q3 2026 growth rate of 44 percent.",
+       "Pre-tax margin driver: 0.16 in 2026, 0.19, 0.21, 0.22 and 0.23 in 2027 to 2030 (analyst assumptions, unverified). Pre-tax profit is 832.5, 1305.0, 1803.0, 2266.6 and 2772.2m.",
+       "Net income = pre-tax profit x (1 - 0.0871). Net income is 760.0, 1191.3, 1645.9, 2069.2 and 2530.9m.",
+       "Depreciation and amortisation at 7.0 percent of revenue (364.2, 480.8, 601.0, 721.2, 843.7m). Capex at 7.5 percent of revenue (390.2, 515.1, 644.0, 772.7, 904.0m), an analyst assumption.",
+       "Retained equity: change in RWA x 16.9 percent CET1 (10-Q, source 2e9b4dba). FY2026 uses 9/30 RWA of 56,204.0m as year-end proxy: 3218.4m. Then RWA grows with bull loan growth of 30, 22, 16 and 13 percent: retention 2849.5, 2716.5, 2410.3 and 2271.7m (analyst assumption; the 44 percent 2026 loan growth is above the 9/30 balance pace and is not reconciled to call reports).",
+       "Stock-based compensation as cash cost: 5.12 percent of revenue (Q3 2026 ratio): -266.4, -351.7, -439.6, -527.4, -617.1m.",
+       "Discount rate 13.09 percent = CAPM cost of equity (risk-free 5.12 percent, FRED DGS10 16 Nov 2026; beta 1.8845 unverified; ERP 4.23 percent as of 31 Dec 2025). Discount factors 0.8843, 0.7819, 0.6914, 0.6114, 0.5407.",
+       "Cash flows: -2750.8, -2044.2, -1553.2, -920.0, -418.2m. PV of cash flows -5893.0m. Terminal 11 x 2530.9 = 27839.9m, PV 15051.9m. Equity value 9158.9m, or 6.75 per diluted share.",
+       "Terminal: 11x 2030 total net income, not per share. Gordon form at 13.09 percent, g 3 percent and ROE 25 percent gives about 9x, so 11x requires sustained high returns and the bull case is not supported by reported ROE (not computed for all quarters).",
+       "Gaps: bank call reports, deposit benchmark, platform segment profit, and loan-sale pricing are not captured. Bull assumes capital stays above buffer without equity issuance, which is untested."
+      ],
+      "discount_rate": 0.1309,
+      "equity_bridge": 0,
+      "scenario_type": "bull",
+      "diluted_shares": 1357.811,
+      "terminal_value": 27839.9,
+      "tv_share_of_ev": 1.6435585262743537,
+      "cash_flow_label": "FCFE after bank CET1 retention and stock-based compensation, USD millions",
+      "value_per_share": 6.744071317470911,
+      "enterprise_value": 9157.174219646495,
+      "explicit_present_value": -5893.177545633204,
+      "terminal_present_value": 15050.351765279698,
+      "equity_bridge_explanation": "Equity method, so no net debt bridge. Deposits and borrowings are operating funding of the bank. Capital needed for loan growth is deducted inside cash flow as retained equity. Stock-based compensation is treated as a cash cost."
+     }
+    ],
+    "probability_base": 0.5,
+    "probability_bear": 0.3,
+    "probability_bull": 0.2,
+    "valuation_status": "complete",
+    "value_today_base": 1.1312725069403944,
+    "value_today_bear": -1.7937821266423384,
+    "value_today_bull": 6.744071317470911,
+    "uses_adjusted_fcf": true,
+    "dilution_assumption": {
+     "treatment": "Reported diluted shares are the minimum forecast denominator; further issuance is an unquantified source gap.",
+     "reported_period_end": "2026-09-30",
+     "source_accession_number": "0001818874-26-000070",
+     "reported_diluted_weighted_average_shares": 1357811000
+    },
+    "segments_reconciled": true,
+    "current_market_price": 14.28,
+    "irr_to_terminal_year": {
+     "base": -0.08110684059825324,
+     "bear": -0.3032302473250197,
+     "bull": 0.07502862429926993
+    },
+    "terminal_anchor_base": 9.35520481127344,
+    "terminal_anchor_bear": 2.3451717507075727,
+    "terminal_anchor_bull": 20.50351632149099,
+    "weighted_value_today": 1.376315878971678,
+    "cost_of_capital_inputs": {
+     "beta": {
+      "value": 1.8845,
+      "method": "OLS slope of weekly simple price returns on the S&P 500 index (^GSPC) over the 104 weeks ending in the cutoff week; week-last closes available by the market-data cutoff, split-adjusted, dividends excluded; adjusted beta = 0.67 × raw + 0.33 (Blume).",
+      "status": "computed",
+      "raw_beta": 2.3202,
+      "verified": false,
+      "benchmark": {
+       "name": "S&P 500 index",
+       "symbol": "^GSPC",
+       "provider": "yahoo"
+      },
+      "r_squared": 0.4043,
+      "window_end": "2026-11-16",
+      "source_urls": [
+       "https://finance.yahoo.com/quote/SOFI/history/",
+       "https://finance.yahoo.com/quote/%5EGSPC/history/"
+      ],
+      "observations": 104,
+      "stock_symbol": "SOFI",
+      "verification": {
+       "stock_points": 105,
+       "benchmark_points": 105,
+       "stock_verified_points": 0,
+       "benchmark_verified_points": 0
+      },
+      "window_start": "2024-11-18",
+      "adjusted_beta": 1.8845,
+      "standard_error": 0.2788,
+      "market_data_cutoff": "2026-11-18T13:12:12.187Z"
+     },
+     "gaps": [
+      "Beta 1.8845 is unverified: 105 stock and 105 benchmark weekly closes were not cross-checked."
+     ],
+     "capm_cost_of_equity": {
+      "rate": 0.1309,
+      "formula": "0.0512 risk-free (FRED DGS10, 2026-11-16) + 1.8845 adjusted beta × 0.0423 implied ERP (2025-12-31)",
+      "verified": false,
+      "unverified_inputs": [
+       "beta"
+      ]
+     },
+     "equity_risk_premium": {
+      "url": "https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/histimpl.html",
+      "rate": 0.0423,
+      "as_of": "2025-12-31",
+      "stale": false,
+      "series": "Implied ERP (FCFE), S&P 500, year-end",
+      "age_days": 322,
+      "publisher": "Aswath Damodaran, NYU Stern",
+      "recorded_at": "2026-10-14",
+      "available_at": "2026-01-15",
+      "source_update": "January 2026",
+      "verification_status": "cited_reference"
+     }
+    },
+    "current_market_price_source": {
+     "provider": "yahoo",
+     "verified": false,
+     "source_url": "https://finance.yahoo.com/quote/SOFI/history/",
+     "cross_check": {},
+     "trading_date": "2026-11-17",
+     "provider_symbol": "SOFI",
+     "market_price_bar_id": "f88fc316-f396-4989-b773-c2a79d171c55",
+     "verification_status": "unverified"
+    }
+   }
+  }
+ ],
+ "report_document": {
+  "standard_version": "asset-framework-2.1-adaptive-2",
+  "conclusion_status": "withheld",
+  "sections": [
+   {
+    "id": "conclusion",
+    "title": "Judgment: returns on bank capital are not yet proven",
+    "coverage": [
+     "conclusion"
+    ],
+    "paragraphs": [
+     {
+      "kind": "fact",
+      "text": "SoFi's central question is whether its member growth and bank-funded lending can earn a return on equity above its cost of equity after credit losses, regulatory capital and the Galileo and Technisys investment. On the evidence reviewed, that is not yet proven. Reported profit has grown quickly: GAAP net income was 240,989 thousand in Q3 2026 against 139,392 thousand a year earlier, and 564,312 thousand over the nine months to 30 September 2026 against 307,771 thousand. Trailing twelve-month net income is 737.9 million. Cash, capital and share-count measures do not yet follow that profit.",
+      "artifact_ids": [
+       "926e0aaa-2200-4ac8-9646-ffca25a6abe8"
+      ],
+      "evidence_ids": [
+       "567caadd-ef4f-4448-8028-96e5d476508c"
+      ]
+     },
+     {
+      "kind": "fact",
+      "text": "Capital has absorbed much of the growth. Holding-company CET1 capital rose from 8,473,542 thousand at 31 December 2025 to 9,520,479 thousand at 30 September 2026, but the CET1 ratio fell from 22.8% to 16.9% because total loans rose from 38.0 billion to 53.7 billion over the same nine months. SoFi Bank's CET1 ratio fell from 16.4% to 14.9%, against a 7.0% minimum and a 6.5% well-capitalised level. The holding company states that, under Federal Reserve policy, it generally would not have funds free of restrictions for dividends on regulatory capital instruments at 30 September 2026.",
+      "artifact_ids": [],
+      "evidence_ids": [
+       "030641d0-d887-4552-b6a8-a36099abbdb1",
+       "50cdba2d-3b64-4f19-98b1-dac7a4c344aa",
+       "47cba94d-d399-4167-8967-d9945f181588",
+       "95dcb836-a525-42c8-b476-867ab438c15f"
+      ]
+     },
+     {
+      "kind": "analysis",
+      "text": "Growth is also being paid for in shares. Diluted weighted average shares rose from 1,185.5 million in Q1 2025 to 1,357.8 million in Q3 2026, and period-end common shares rose 7.6% year on year to 1,296.6 million. Per-share earnings therefore grew more slowly than net income. Trailing stock-based compensation was 288.3 million, about 39% of trailing net income, and the quarterly ratio of stock-based compensation to revenue sits near the bottom of its own history (5.1% latest against a 9.7% median). Dilution is a real cost to holders even though no cash leaves the company. The 2025 common stock issuance of about 3.2 billion that supported the 2025 ratios is reported in the regulatory capital discussion but has not been traced to a checked passage, so it stays unverified.",
+      "artifact_ids": [
+       "68d0d7b1-b60d-4d9c-9913-60e0735c49de"
+      ],
+      "evidence_ids": [
+       "427f6dac-2ec4-4d10-a69d-9258292e81ad",
+       "595936d4-0b4d-40ad-be60-f63bc403743e"
+      ]
+     },
+     {
+      "kind": "analysis",
+      "text": "On a crude basis, the return is below the cost of equity. Trailing net income of 737.9 million against invested capital of 8,485.6 million at 30 September 2026 gives about 8.7% (derived). The invested-capital measure is a non-bank definition, equity plus long-term debt less cash and securities, and the cost of equity of 13.09% rests on an unverified beta of 1.88 and a 4.23% equity risk premium. The gap is therefore indicative rather than proven, and quarterly ROE on bank equity cannot yet be computed for all twenty quarters. What the filings do show is a rising denominator: invested capital rose about 53% in nine months (derived), and returns on that new capital are not yet visible in cash.",
+      "artifact_ids": [
+       "68d0d7b1-b60d-4d9c-9913-60e0735c49de",
+       "926e0aaa-2200-4ac8-9646-ffca25a6abe8"
+      ],
+      "evidence_ids": []
+     },
+     {
+      "kind": "fact",
+      "text": "Cash conversion is the weakest part of the record. Trailing free cash flow was negative 8,793 million at Q2 2026, against a twenty-quarter median of negative 3,985 million, and the latest value sits at about the 16th percentile of the window. Free cash flow to net income was negative 13.8 times at Q2 2026 against a median of negative 5.8 times. Operating cash outflow of 6,205 million in the first half of 2026 (against 1,445 million a year earlier) is attributed mainly to loans held for sale, where originations outpaced paydowns and sales. Capex ran at 1.11 times depreciation and amortisation at Q2 2026 against a median of 0.64 times.",
+      "artifact_ids": [
+       "68d0d7b1-b60d-4d9c-9913-60e0735c49de"
+      ],
+      "evidence_ids": [
+       "41941e96-0372-4bf7-b88a-1015aa4629b2",
+       "a2b99c3c-506a-4930-8e86-0acfb10dfb2c"
+      ]
+     },
+     {
+      "kind": "analysis",
+      "text": "Credit is improving in aggregate but the card book is the risk to watch. The total net charge-off ratio fell to 1.62% in Q3 2026 from 2.04% in Q1 2026, 2.07% in FY2025 and 2.63% in FY2024. Card net charge-offs fell to 6.68% annualised in Q1 2026 from 10.89% a year earlier, yet card loans rose to about 40% of loans at 30 June 2026 from 28%, and the allowance ratio rose to 4.29% from 3.30%. Management's own hypothetical 10% rise in credit loss rates would reduce pre-tax income by 257.7 million over twelve months, which is about 54% of FY2025 reported net income of 481.3 million. Whether the 1.62% figure is a base rate depends on loss rates through a full cycle, and management's target band by product is not disclosed, so the credit falsifier cannot yet be applied.",
+      "artifact_ids": [],
+      "evidence_ids": [
+       "2de5a76b-e68c-4fc5-9766-a9ef3333cb06",
+       "6b5d716f-4751-49e0-8613-0294ce385f03",
+       "2851f6b3-39c9-48b6-88d0-03a3898a2c14",
+       "d363c0cf-4d36-40af-a887-77eb56450da3",
+       "22299174-266b-4802-9945-f48d5f46dfde",
+       "5ad12dc7-6b67-4c1d-bca6-81c3aca5abf2"
+      ]
+     },
+     {
+      "kind": "analysis",
+      "text": "The funding advantage is supported internally but untested externally. Net interest margin was 5.98% in Q2 2026 and net interest income 788.2 million, up 52% year on year. Management says the average deposit rate in Q2 2026 was 156 basis points below the rate on warehouse facilities, worth about 712.6 million annualised. That comparison is a wholesale funding comparison, not a market deposit benchmark, and no FDIC survey or Ally and Nu deposit-rate series was obtained. The 50 basis point deposit-cost falsifier therefore cannot be tested. As a sensitivity only, a 50 basis point repricing of the 51.3 billion deposit base would cost about 256.5 million a year before tax (derived), roughly one third of the 737.9 million trailing net income.",
+      "artifact_ids": [
+       "e9b273b5-249e-4e6b-b265-9700b3f52097"
+      ],
+      "evidence_ids": [
+       "377e79cf-8745-44da-a139-74878a097ee6",
+       "23275be8-e491-492e-ad8e-bc4c5b4e5f80",
+       "6ef6a536-a93f-4f5f-b62b-b9a7dd95594b"
+      ]
+     },
+     {
+      "kind": "fact",
+      "text": "The Galileo and Technisys platform cannot yet be shown to earn on its own. Its filed net revenue was 450.2 million in FY2025 with contribution profit of 144.4 million (32%). Contribution then fell from 47.9 million in Q4 2025 to 12.0 million in Q1 2026 and 11.8 million in Q2 2026, after a large client left and technology services fees fell. Intercompany revenue from SoFi's own businesses rose, and the analytics series reports platform revenue of 360.8 million for FY2025, which does not reconcile to the filed 450.2 million. Segment operating income after corporate allocations is not captured, so the platform is carried as a range from zero to the 144.4 million pre-allocation contribution, not as an earner.",
+      "artifact_ids": [
+       "68d0d7b1-b60d-4d9c-9913-60e0735c49de"
+      ],
+      "evidence_ids": [
+       "4a057292-3a53-4ce8-ba60-c5c5429a9504",
+       "2328c668-03f3-4cea-a2c1-4b2a0f803f2d"
+      ]
+     },
+     {
+      "kind": "analysis",
+      "text": "Valuation on the capital-constrained equity method does not support the 14.28 price in any case. Value per diluted share is -1.79 in the bear case, 1.13 in the base case and 6.74 in the bull case, giving a probability-weighted value of 1.38 at 30%, 50% and 20% weights. The base case discounts an explicit-year present value of -5,331.0 million and a terminal present value of 6,867.1 million, giving equity value of 1,536.1 million over 1,357.8 million diluted shares. The 13.09% cost of equity is built from a 5.12% ten-year Treasury yield, which is verified, and an unverified beta. Measured to 2030 at today's multiple, the no-rerating return is +55.3% in the base case (9.2% annualised), -65.3% in the bear case and +203.3% in the bull case. Measured as the undiscounted return from each terminal price target to the market price, the base case is -34.5%. These are two different measures and should not be read as one return. Because explicit equity cash flows are negative in every case, the terminal value share of enterprise value (4.47 in the base case) is not a share of positive value and is reported only as an indicator of dependence on the terminal assumption.",
+      "artifact_ids": [
+       "926e0aaa-2200-4ac8-9646-ffca25a6abe8",
+       "16274118-b20b-493e-9f5e-e0bec437b9d2"
+      ],
+      "evidence_ids": [
+       "9c585f16-4608-43d5-806f-6ce48f441cb8"
+      ]
+     },
+     {
+      "kind": "speculation",
+      "text": "The permanent-loss case lies below the bear case. In the bear case, explicit equity cash flows sum to -5,215.8 million undiscounted and equity value is -2,435.6 million. The tail that would cause permanent loss is credit losses moving above the bear stress (net charge-offs of 2.6% in 2026 and 3.0% thereafter) while the bank still retains capital to grow loans. In that case the 2026 capital shortfall of about 2,952 million would have to be met by new equity, roughly 207 million shares at 14.28 (illustrative and derived), with the holder's claim diluted before any terminal value. A 10% rise in credit loss rates alone would remove 257.7 million of pre-tax income over twelve months.",
+      "artifact_ids": [
+       "926e0aaa-2200-4ac8-9646-ffca25a6abe8"
+      ],
+      "evidence_ids": [
+       "5ad12dc7-6b67-4c1d-bca6-81c3aca5abf2"
+      ]
+     },
+     {
+      "kind": "analysis",
+      "text": "Management's alignment is documented in part. The Compensation Committee members are independent under Nasdaq standards and the consultant reports to the committee chair. Those facts argue against weak governance, but they do not show that pay follows per-share outcomes, because incentive metrics, the award table and related-party tables are not in the extracts reviewed. No cash has been returned to shareholders in the window, and the trend in share count and stock compensation means that the holder's claim depends on capital retention and dilution rather than payout. Management has been candid about funding savings but has not benchmarked them against a market deposit rate, and that benchmark is the test management's funding strategy most needs.",
+      "artifact_ids": [
+       "68d0d7b1-b60d-4d9c-9913-60e0735c49de"
+      ],
+      "evidence_ids": [
+       "328c2fa3-0fd9-444d-8e6d-2f089c675ed6",
+       "3ad6732a-3a5f-478f-8592-95f34a47b5bb",
+       "95dcb836-a525-42c8-b476-867ab438c15f"
+      ]
+     },
+     {
+      "kind": "assumption",
+      "text": "Confidence is low on the valuation and forecast, moderate on reported history and credit, and low on the platform and funding claims. The forecast revenue path is not reconciled to September loan balances: full-year 2026 growth rates imply a fourth-quarter revenue fall in the bear case and a near-flat or modest rise in the base and bull cases, and the 2026 flows partly double-count nine months already in the 30 September balance sheet. The decision is therefore withheld. The view would change if a verified capital roll-forward showed loan growth funded mainly from retained earnings and holding-company CET1 held near its current level without new equity, if deposit cost stayed within about 50 basis points of a market benchmark for four quarters, or if platform segment profit after allocations turned clearly positive.",
+      "artifact_ids": [
+       "14b5e025-d9c5-4d07-87c3-d165575a6797",
+       "b980dca8-88b2-4471-9dd7-6b437364e8d8"
+      ],
+      "evidence_ids": []
+     }
+    ],
+    "implication": "The decision is withheld. On the evidence reviewed, SoFi's lending and fee franchise may earn above its cost of equity, but that has not been demonstrated. The equity is not supported at 14.28 on this method, the bear case is a permanent-loss case in capital terms, and the monitoring thresholds should be read as the tests that would change this judgment: holding-company CET1 toward the 10% bear threshold, sustained negative cash conversion after bank capital, card losses above management's band, and platform contribution that does not recover after allocations.",
+    "key_figures": [
+     "Base-case FCFE value per diluted share 1.13 (USD)",
+     "Probability-weighted value per share 1.38 (USD)",
+     "Market price 14.28 (USD, unverified)"
+    ],
+    "gaps": [
+     "No market deposit-rate benchmark (FDIC deposit survey, Ally and Nu quarterly deposit rates) was obtained, so the deposit-cost falsifier cannot be tested.",
+     "Galileo and Technisys segment operating income after corporate allocations is not captured; analytics platform revenue (360.8 million) does not reconcile to filed net revenue (450.2 million).",
+     "Bank call reports and bank-level Tier 1 capital and risk-weighted assets for twelve quarters are not captured, so the capital path cannot be tested quarter by quarter.",
+     "Q3 2026 consolidated operating income, capital expenditure, receivables and payables are not captured, so Q3 2026 operating margin, FCF and DSO and DPO are unavailable; DSO and DPO may be inapplicable to a bank balance sheet.",
+     "The beta of 1.88 and the share price of 14.28 are unverified; the cost of equity and every per-share value depend on them.",
+     "Products per member, revenue per member, retention and acquisition cost per member are not disclosed, so cross-buying cannot be tested.",
+     "Management's net charge-off target band by product, loan-sale pricing spreads and quarterly allowance rollforwards are not captured.",
+     "Peer primary filings (Nu, Ally, Affirm, Block, Dave, Chime) are unverified and are not relied on.",
+     "Equity-award dilution, convertible or preferred instruments, insider sales and related-party dealings are not confirmed from the 10-K and proxy extracts.",
+     "The FY2023 non-interest income reconciliation gap of 15.2 million remains unresolved.",
+     "No organisation chart is supplied; documented reporting lines for management are not in the material reviewed, so none is inferred."
+    ],
+    "counterevidence": "The bearish reading has real limits. Holding-company and bank CET1 ratios remain far above their minimums, SoFi Bank is classed as well capitalised, and liquidity reserves were 15.9 billion with 13.3 billion unused at 30 September 2026. Total net charge-offs fell year on year, net interest margin widened, and trailing net income rose sharply. Operating cash outflows are attributed to held-for-sale timing that could reverse if loan sales catch up, and the negative explicit cash flows largely reflect the capital that loan growth consumes, which would shrink if growth slowed. Against these points, the probability-weighted value sits far below the market price, and the base-case annualised no-rerating return of 9.2% is below the cost of equity."
+   }
+  ],
+  "evidence": [
+   {
+    "id": "030641d0-d887-4552-b6a8-a36099abbdb1",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000070/sofi-20260930.htm",
+    "quote": "CET1 risk-based capital | $ | 9,520,479 | 16.9 | % | $ | 8,473,542 | 22.8 | % | 7.0 | % | n/a",
+    "location": "Source 2e9b4dba-e672-4fa9-9b54-9cbc8655bc33, page n/a, chars 393692-393785",
+    "claim_text": "SoFi Technologies' consolidated CET1 risk-based capital ratio was 16.9% at September 30, 2026, against 22.8% at December 31, 2025 (USD thousands: CET1 capital of 9,520,479 versus 8,473,542).",
+    "published_at": "2026-11-05T00:00:00.000Z",
+    "source_title": "SoFi Technologies, Inc. 10-Q report 2026-09-30"
+   },
+   {
+    "id": "22299174-266b-4802-9945-f48d5f46dfde",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000054/sofi-20260630.htm",
+    "quote": "Ratio(2) | 4.29 | % | 3.30 | %",
+    "location": "Source f284ef50-3e88-481e-bfb8-619a8f8d6fe8, page n/a, chars 303207-303237",
+    "claim_text": "SoFi's allowance for credit losses as a share of total loans held for investment was 4.29% at June 30, 2026, up from 3.30% at June 30, 2025.",
+    "published_at": "2026-08-06T00:00:00.000Z",
+    "source_title": "Pre-existing SoFi 10-Q report 2026-06-30"
+   },
+   {
+    "id": "23275be8-e491-492e-ad8e-bc4c5b4e5f80",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000050/a2026q2earningsrelease.htm",
+    "quote": "For the second quarter, net interest margin of 5.98% increased 4 basis points from the prior quarter.",
+    "location": "Source b7002d3e-52f9-46a1-9e52-d638be5ce837, page n/a, chars 8044-8145",
+    "claim_text": "Net interest margin was 5.98% in Q2 2026, up 4 basis points from Q1 2026.",
+    "published_at": "2026-07-29T00:00:00.000Z",
+    "source_title": "Pre-existing SoFi 8-K report 2026-07-29"
+   },
+   {
+    "id": "2328c668-03f3-4cea-a2c1-4b2a0f803f2d",
+    "url": "https://s27.q4cdn.com/749715820/files/doc_financials/2026/q2/2026-Q2-Investor-Presentation.pdf",
+    "quote": "Net Revenue $ 94,366 $ 95,438 $ 102,539 $ 102,835 $ 103,427 $ 109,833 $ 114,578 $ 122,373 $ 75,086 $ 84,505 Directly Attributable Expenses (14) 63,624 64,287 69,584 70,728 72,514 76,638 82,207 74,439 63,087 72,733 Contribution Profit (Loss) (15) $ 30,742 $ 31,151 $ 32,955 $ 32,107 $ 30,913 $ 33,195 $ 32,371 $ 47,934 $ 11,999 $ 11,772",
+    "location": "Source 343bdbdb-8e6a-41c1-aa11-6b8c9e3b0e3e, page n/a, chars 44963-45298",
+    "claim_text": "Technology Platform contribution profit fell to $11,999 thousand in Q1 2026 and $11,772 thousand in Q2 2026, from $47,934 thousand in Q4 2025, while net revenue fell to $75,086 thousand in Q1 2026 from $122,373 thousand in Q4 2025.",
+    "published_at": null,
+    "source_title": "s27.q4cdn.com"
+   },
+   {
+    "id": "2851f6b3-39c9-48b6-88d0-03a3898a2c14",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000037/sofi-20260331.htm",
+    "quote": "Credit card | 464,009 | 7,647 | 6.68 | % | 297,637 | 7,990 | 10.89 | %",
+    "location": "Source 2c4258d8-d446-4850-8d2b-8e235fcb0403, page n/a, chars 267727-267797",
+    "claim_text": "Credit card net charge-offs were $7.6m in Q1 2026 on average balances of $464.0m, an annualized ratio of 6.68%, down from 10.89% in Q1 2025.",
+    "published_at": "2026-05-07T00:00:00.000Z",
+    "source_title": "Pre-existing SoFi 10-Q report 2026-03-31"
+   },
+   {
+    "id": "2de5a76b-e68c-4fc5-9766-a9ef3333cb06",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000070/sofi-20260930.htm",
+    "quote": "For the three months ended September 30, 2026, the total net charge-off ratio was 1.62%, a decrease of 28 bps compared with the three months ended September 30, 2025, and total net charge-offs were $212.5 million",
+    "location": "Source 2e9b4dba-e672-4fa9-9b54-9cbc8655bc33, page n/a, chars 319182-319394",
+    "claim_text": "Total net charge-off ratio was 1.62% for the three months ended September 30, 2026, down 28 bps from the prior-year quarter, with total net charge-offs of $212.5 million.",
+    "published_at": "2026-11-05T00:00:00.000Z",
+    "source_title": "SoFi Technologies, Inc. 10-Q report 2026-09-30"
+   },
+   {
+    "id": "328c2fa3-0fd9-444d-8e6d-2f089c675ed6",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000032/sofi-20260430.htm",
+    "quote": "The Compensation Committee formulates and presents compensation recommendations for our CEO to the independent members of our Board of Directors for approval.",
+    "location": "Source 96c8cfaf-ee3b-4fa8-b8d3-35a3eafe7c1d, page n/a, chars 119298-119456",
+    "claim_text": "The Compensation Committee formulates compensation recommendations for the CEO and presents them to the independent board members for approval, while overseeing compensation policies for other executive officers and non-employee directors.",
+    "published_at": "2026-04-30T00:00:00.000Z",
+    "source_title": "SoFi Technologies, Inc. DEF 14A report 2026-04-30"
+   },
+   {
+    "id": "377e79cf-8745-44da-a139-74878a097ee6",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000050/a2026q2earningsrelease.htm",
+    "quote": "The average rate paid on deposits in the second quarter was 156 basis points lower than that paid on warehouse facilities, which translates to approximately $712.6 million of annualized interest expense savings",
+    "location": "Source b7002d3e-52f9-46a1-9e52-d638be5ce837, page n/a, chars 8238-8448",
+    "claim_text": "In Q2 2026 the average rate paid on deposits was 156 basis points below the rate paid on warehouse facilities, which management says saves about $712.6 million annualized; this is a funding comparison, not a market deposit-rate benchmark.",
+    "published_at": "2026-07-29T00:00:00.000Z",
+    "source_title": "Pre-existing SoFi 8-K report 2026-07-29"
+   },
+   {
+    "id": "3ad6732a-3a5f-478f-8592-95f34a47b5bb",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000032/sofi-20260430.htm",
+    "quote": "The Board of Directors determined that each of these individuals is “independent” as defined under applicable Nasdaq listing standards",
+    "location": "Source 96c8cfaf-ee3b-4fa8-b8d3-35a3eafe7c1d, page n/a, chars 65787-65921",
+    "claim_text": "The Board determined that each Compensation Committee member (Freiberg, Borden and Liang) is independent under Nasdaq listing standards.",
+    "published_at": "2026-04-30T00:00:00.000Z",
+    "source_title": "SoFi Technologies, Inc. DEF 14A report 2026-04-30"
+   },
+   {
+    "id": "41941e96-0372-4bf7-b88a-1015aa4629b2",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000054/sofi-20260630.htm",
+    "quote": "Net cash used in operating activities | $ | (6,205,438) | $ | (1,445,406)",
+    "location": "Source f284ef50-3e88-481e-bfb8-619a8f8d6fe8, page n/a, chars 365168-365241",
+    "claim_text": "Net cash used in operating activities was $6,205,438 thousand in the six months ended June 30, 2026, against $1,445,406 thousand in 2025, mainly because loans held for sale originations outpaced paydowns and sales.",
+    "published_at": "2026-08-06T00:00:00.000Z",
+    "source_title": "Pre-existing SoFi 10-Q report 2026-06-30"
+   },
+   {
+    "id": "427f6dac-2ec4-4d10-a69d-9258292e81ad",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000020/a2026q1earningsrelease.htm",
+    "quote": "Weighted average common stock outstanding – diluted | 1,378,011 | 1,185,466",
+    "location": "Source 3f8054ea-43e5-420a-9bc9-2535fa6270d6, page n/a, chars 57475-57550",
+    "claim_text": "Q1 2026 diluted weighted average common shares were 1,378,011 thousand versus 1,185,466 thousand in Q1 2025, a rise of about 16%, before the non-GAAP convertible-note adjustment.",
+    "published_at": "2026-04-29T00:00:00.000Z",
+    "source_title": "Pre-existing SoFi 8-K report 2026-04-29"
+   },
+   {
+    "id": "47cba94d-d399-4167-8967-d9945f181588",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000070/sofi-20260930.htm",
+    "quote": "Total loans | $ | 53,742,243 | $ | 38,037,063",
+    "location": "Source 2e9b4dba-e672-4fa9-9b54-9cbc8655bc33, page n/a, chars 55468-55513",
+    "claim_text": "Total loans were $53.7 billion at September 30, 2026, up from $38.0 billion at December 31, 2025, with student loans held for investment at $18.5 billion of that total.",
+    "published_at": "2026-11-05T00:00:00.000Z",
+    "source_title": "SoFi Technologies, Inc. 10-Q report 2026-09-30"
+   },
+   {
+    "id": "4a057292-3a53-4ce8-ba60-c5c5429a9504",
+    "url": "https://s27.q4cdn.com/749715820/files/doc_financials/2026/q2/2026-Q2-Investor-Presentation.pdf",
+    "quote": "Net Revenue $ 315,133 $ 352,340 $ 395,178 $ 450,211 Directly Attributable Expenses (14) 238,620 257,554 268,223 305,798 Contribution Profit (Loss) (15) $ 76,513 $ 94,786 $ 126,955 $ 144,413",
+    "location": "Source 343bdbdb-8e6a-41c1-aa11-6b8c9e3b0e3e, page n/a, chars 46961-47150",
+    "claim_text": "Technology Platform net revenue was $450,211 thousand in FY2025 with contribution profit of $144,413 thousand, against directly attributable expenses of $305,798 thousand (year alignment inferred from the adjacent full-year table).",
+    "published_at": null,
+    "source_title": "s27.q4cdn.com"
+   },
+   {
+    "id": "50cdba2d-3b64-4f19-98b1-dac7a4c344aa",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000070/sofi-20260930.htm",
+    "quote": "CET1 risk-based capital | $ | 8,033,912 | 14.9 | % | $ | 5,789,629 | 16.4 | % | 7.0 | % | 6.5 | %",
+    "location": "Source 2e9b4dba-e672-4fa9-9b54-9cbc8655bc33, page n/a, chars 394157-394254",
+    "claim_text": "SoFi Bank's CET1 risk-based capital ratio was 14.9% at September 30, 2026, against 16.4% at December 31, 2025, versus a 7.0% required minimum and a 6.5% well-capitalized minimum.",
+    "published_at": "2026-11-05T00:00:00.000Z",
+    "source_title": "SoFi Technologies, Inc. 10-Q report 2026-09-30"
+   },
+   {
+    "id": "567caadd-ef4f-4448-8028-96e5d476508c",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000065/a2026q3earningsrelease.htm",
+    "quote": "Net income (GAAP) | $ | 240,989 | $ | 139,392 | $ | 101,597 | $ | 564,312 | $ | 307,771 | $ | 256,541",
+    "location": "Source d3de44d1-0737-4135-970f-9bc2197a1033, page n/a, chars 66725-66826",
+    "claim_text": "GAAP net income was 240,989 for the three months ended September 30, 2026, versus 139,392 a year earlier. For the nine months it was 564,312, versus 307,771.",
+    "published_at": "2026-10-27T00:00:00.000Z",
+    "source_title": "SoFi Technologies, Inc. 8-K report 2026-10-27"
+   },
+   {
+    "id": "595936d4-0b4d-40ad-be60-f63bc403743e",
+    "url": "https://data.sec.gov/",
+    "quote": "\"val\": 1357811000",
+    "location": "Source a3f3ee68-f4aa-4513-9d6c-c3a6875b3a21, page n/a, chars 2583000-2592000",
+    "claim_text": "SoFi Technologies, Inc. reported 1357811000 weighted-average diluted shares outstanding for the quarter ended 2026-09-30 in its 2026-11-05 10-Q.",
+    "published_at": null,
+    "source_title": "SoFi Technologies, Inc. primary source context"
+   },
+   {
+    "id": "5ad12dc7-6b67-4c1d-bca6-81c3aca5abf2",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000070/sofi-20260930.htm",
+    "quote": "Income (loss) before income taxes | (257,670) | 257,670",
+    "location": "Source 2e9b4dba-e672-4fa9-9b54-9cbc8655bc33, page n/a, chars 421478-421533",
+    "claim_text": "Management's hypothetical 10% increase in credit loss rates would reduce pre-tax income by $257.7 million over the next 12 months and reduce the fair value of fair-value-option loans and residual investments by $251.6 million at September 30, 2026.",
+    "published_at": "2026-11-05T00:00:00.000Z",
+    "source_title": "SoFi Technologies, Inc. 10-Q report 2026-09-30"
+   },
+   {
+    "id": "6b5d716f-4751-49e0-8613-0294ce385f03",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000013/sofi-20251231.htm",
+    "quote": "For the year ended December 31, 2025, the total net charge-off ratio was 2.07%, a decrease of 56 bps compared with the year ended December 31, 2024, and total net charge-offs were $670.9 million",
+    "location": "Source 1a21802f-bd92-4d93-bfcb-9dc8060baca9, page n/a, chars 603039-603233",
+    "claim_text": "For the year ended December 31, 2025, SoFi's total net charge-off ratio was 2.07%, 56 bps lower than in 2024, with total net charge-offs of $670.9 million.",
+    "published_at": "2026-02-17T00:00:00.000Z",
+    "source_title": "Pre-existing SoFi 10-K report 2025-12-31"
+   },
+   {
+    "id": "6ef6a536-a93f-4f5f-b62b-b9a7dd95594b",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000050/a2026q2earningsrelease.htm",
+    "quote": "Net interest income of $788.2 million for the second quarter was up 52% year-over-year.",
+    "location": "Source b7002d3e-52f9-46a1-9e52-d638be5ce837, page n/a, chars 7753-7840",
+    "claim_text": "Net interest income was $788.2 million in Q2 2026, up 52% year over year, driven by a 49% rise in average interest-earning assets and a 36 basis point lower cost of funds.",
+    "published_at": "2026-07-29T00:00:00.000Z",
+    "source_title": "Pre-existing SoFi 8-K report 2026-07-29"
+   },
+   {
+    "id": "95dcb836-a525-42c8-b476-867ab438c15f",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000070/sofi-20260930.htm",
+    "quote": "Based on this Federal Reserve policy, as of September 30, 2026, the Company generally would not have any funds free of restrictions available for dividend payments on regulatory capital instruments.",
+    "location": "Source 2e9b4dba-e672-4fa9-9b54-9cbc8655bc33, page n/a, chars 392452-392650",
+    "claim_text": "As of September 30, 2026, under Federal Reserve policy, SoFi Technologies generally would not have funds free of restrictions available to pay dividends on regulatory capital instruments.",
+    "published_at": "2026-11-05T00:00:00.000Z",
+    "source_title": "SoFi Technologies, Inc. 10-Q report 2026-09-30"
+   },
+   {
+    "id": "9c585f16-4608-43d5-806f-6ce48f441cb8",
+    "url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10",
+    "quote": "2026-11-13,5.15 2026-11-16,5.12",
+    "location": "Source 6f488f81-0d46-4271-8f57-86a9d8c1f33b, page n/a, chars 4107-4138",
+    "claim_text": "The FRED 10-year US Treasury yield (DGS10) was 5.12 percent on 2026-11-16, up from 4.12 percent on 2025-11-18.",
+    "published_at": "2026-11-18T05:43:17.022Z",
+    "source_title": "US 10-year Treasury yield (FRED DGS10)"
+   },
+   {
+    "id": "a2b99c3c-506a-4930-8e86-0acfb10dfb2c",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000013/sofi-20251231.htm",
+    "quote": "Net cash used in operating activities | $ | (3,742,458) | $ | (1,119,807) | $ | (7,227,139)",
+    "location": "Source 1a21802f-bd92-4d93-bfcb-9dc8060baca9, page n/a, chars 662692-662783",
+    "claim_text": "Net cash used in operating activities was $3,742,458 thousand in 2025, compared with $1,119,807 thousand in 2024 and $7,227,139 thousand in 2023.",
+    "published_at": "2026-02-17T00:00:00.000Z",
+    "source_title": "Pre-existing SoFi 10-K report 2025-12-31"
+   },
+   {
+    "id": "d363c0cf-4d36-40af-a887-77eb56450da3",
+    "url": "https://www.sec.gov/Archives/edgar/data/1818874/000181887426000054/sofi-20260630.htm",
+    "quote": "Credit card | $ | 54,560 | 40 | % | $ | 45,515 | 28 | %",
+    "location": "Source f284ef50-3e88-481e-bfb8-619a8f8d6fe8, page n/a, chars 303949-304004",
+    "claim_text": "Management attributes the rise in the allowance-to-loans ratio at June 30, 2026 primarily to a $272.9 million decrease in secured loans, and the allowance is allocated mainly to credit card loans, which are 40% of loans against 28% a year earlier.",
+    "published_at": "2026-08-06T00:00:00.000Z",
+    "source_title": "Pre-existing SoFi 10-Q report 2026-06-30"
+   }
+  ]
+ }
+}
