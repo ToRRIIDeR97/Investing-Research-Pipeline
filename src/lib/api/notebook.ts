@@ -5,6 +5,7 @@ import { assets } from "@/db/schema/core";
 import { research_runs } from "@/db/schema/workflow";
 import { notebook_annotations, notebook_journal_entries, notebook_kpis, notebook_pins } from "@/db/schema/notebook";
 import { ApiError } from "@/lib/api/errors";
+import { requireFilingOfAsset } from "@/lib/api/filings";
 import {
   MAX_NOTEBOOK_BODY_BYTES, MAX_NOTEBOOK_ROWS, NOTEBOOK_CONTRACTS, NOTEBOOK_KINDS, type Notebook, type NotebookAnnotation,
   type NotebookJournalEntry, type NotebookKind, type NotebookKpi, type NotebookPin,
@@ -19,7 +20,8 @@ export const toPin = (r: typeof notebook_pins.$inferSelect): NotebookPin => ({ i
   frequency: r.frequency as NotebookPin["frequency"], note: r.note, position: r.position, created_at: iso(r.created_at), updated_at: iso(r.updated_at) });
 export const toKpi = (r: typeof notebook_kpis.$inferSelect): NotebookKpi => ({ id: r.id, label: r.label, metric_key: r.metric_key, segment: r.segment,
   bear_line: r.bear_line, bull_line: r.bull_line, note: r.note, position: r.position, created_at: iso(r.created_at), updated_at: iso(r.updated_at) });
-export const toAnnotation = (r: typeof notebook_annotations.$inferSelect): NotebookAnnotation => ({ id: r.id, research_run_id: r.research_run_id,
+export const toAnnotation = (r: typeof notebook_annotations.$inferSelect): NotebookAnnotation => ({ id: r.id,
+  anchor_kind: r.anchor_kind === "filing" ? "filing" : "report", source_document_id: r.source_document_id ?? null, research_run_id: r.research_run_id,
   section_id: r.section_id, section_title: r.section_title, section_coverage: strings(r.section_coverage), exhibit_key: r.exhibit_key,
   paragraph_index: r.paragraph_index, quote: r.quote, body: r.body, created_at: iso(r.created_at), updated_at: iso(r.updated_at) });
 export const toJournal = (r: typeof notebook_journal_entries.$inferSelect): NotebookJournalEntry => ({ id: r.id, research_run_id: r.research_run_id,
@@ -90,7 +92,15 @@ export async function createNotebookItem(assetId: string, kind: NotebookKind, bo
   if (kind === "annotations") {
     const v = NOTEBOOK_CONTRACTS.annotations.create.parse(body);
     await requireRunOfAsset(v.research_run_id, assetId);
-    const [row] = await db.insert(notebook_annotations).values({ asset_id: assetId, research_run_id: v.research_run_id, section_id: v.section_id,
+    if (v.anchor_kind === "filing") {
+      // A filing note sits on one of the asset's own filings (the same check the filings routes make).
+      await requireFilingOfAsset(assetId, v.source_document_id);
+      const [row] = await db.insert(notebook_annotations).values({ asset_id: assetId, anchor_kind: "filing", source_document_id: v.source_document_id,
+        research_run_id: v.research_run_id ?? null, section_id: `filing-${v.section_index}`, section_title: v.section_title, section_coverage: [],
+        exhibit_key: null, paragraph_index: null, quote: v.quote ?? "", body: v.body }).returning();
+      return toAnnotation(row);
+    }
+    const [row] = await db.insert(notebook_annotations).values({ asset_id: assetId, anchor_kind: "report", research_run_id: v.research_run_id, section_id: v.section_id,
       section_title: v.section_title ?? "", section_coverage: v.section_coverage ?? [], exhibit_key: v.exhibit_key ?? null,
       paragraph_index: v.paragraph_index ?? null, quote: v.quote ?? "", body: v.body }).returning();
     return toAnnotation(row);

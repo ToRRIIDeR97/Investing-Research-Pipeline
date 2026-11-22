@@ -290,7 +290,7 @@ function ViewResearch() {
   const view = (body: React.ReactNode, wrap = false) => <div className={ui.page}>{header}<div key={activeTab}>
     {activeTab !== "overview" && <h2 className="sr-only">{tabLabel(activeTab)}</h2>}
     {wrap ? <section className={`${ui.tile} ${styles.wide}`}>{body}</section> : body}
-  </div>{activeTab !== "notebook" && <NotebookDrawer api={notebookApi} document={reportDocument} runId={data.activeRun?.id ?? null} artifacts={viewArtifacts}
+  </div>{activeTab !== "notebook" && <NotebookDrawer api={notebookApi} assetId={assetId} document={reportDocument} runId={data.activeRun?.id ?? null} artifacts={viewArtifacts}
     notebookHref={sectionHref("notebook")} assetName={asset.canonical_name} />}</div>;
   if (activeTab === 'notebook') return view(<InvestingNotebook api={notebookApi} artifacts={viewArtifacts} document={reportDocument} runId={data.activeRun?.id ?? null}
     runDate={data.activeRun?.created_at ? String(data.activeRun.created_at).slice(0, 10) : null} reportHref={(id) => `${sectionHref("thesis")}#report-${id}`} />);

@@ -50,12 +50,19 @@ export const kpiCreate = z.object(kpiFields).strict().refine(linesDiffer, "The d
 export const kpiUpdate = z.object(kpiFields).partial().strict()
   .refine((v) => Object.keys(v).length > 0, "Nothing to update").refine(linesDiffer, "The danger and target lines must differ");
 
-export const annotationCreate = z.object({
-  research_run_id: uuid, section_id: z.string().min(1).max(120).regex(/^[a-z0-9_-]+$/i, "Unknown chapter"),
+export const reportAnnotationCreate = z.object({
+  anchor_kind: z.literal("report").optional(), research_run_id: uuid, section_id: z.string().min(1).max(120).regex(/^[a-z0-9_-]+$/i, "Unknown chapter"),
   section_title: line(300, true).optional(), section_coverage: z.array(z.string().max(40).regex(/^[a-z_]+$/)).max(20).optional(),
   exhibit_key: exhibitKey.nullable().optional(), paragraph_index: z.number().int().min(0).max(500).nullable().optional(),
   quote: line(300, true).optional(), body: prose(4000, false),
 }).strict().refine((v) => v.exhibit_key == null || v.paragraph_index == null, "Anchor a note to an exhibit or a paragraph, not both");
+/** A note on a passage of a stored filing (the panel's Filings tab): the filing, its section and the passage. */
+export const filingAnnotationCreate = z.object({
+  anchor_kind: z.literal("filing"), source_document_id: uuid, section_index: z.number().int().min(0).max(5000),
+  section_title: line(300), quote: line(300, true).optional(), research_run_id: uuid.nullable().optional(), body: prose(4000, false),
+}).strict();
+/** A report note (anchor_kind omitted or "report") or a filing note (anchor_kind "filing"). */
+export const annotationCreate = z.union([filingAnnotationCreate, reportAnnotationCreate]);
 export const annotationUpdate = z.object({ body: prose(4000, false) }).strict();
 
 export const KPI_STATUSES = ["healthy", "caution", "danger"] as const;
@@ -76,6 +83,7 @@ export const journalUpdate = z.object(journalFields).partial().strict().refine((
 export type PinCreate = z.infer<typeof pinCreate>;
 export type KpiCreate = z.infer<typeof kpiCreate>;
 export type AnnotationCreate = z.infer<typeof annotationCreate>;
+export type FilingAnnotationCreate = z.infer<typeof filingAnnotationCreate>;
 export type JournalCreate = z.infer<typeof journalCreate>;
 export type KpiSnapshotRow = z.infer<typeof snapshotRow>;
 
@@ -89,7 +97,13 @@ export const NOTEBOOK_CONTRACTS = {
 
 export interface NotebookPin { id: string; kind: "exhibit" | "metric"; ref_key: string; frequency: "" | "quarterly" | "annual"; note: string; position: number; created_at: string; updated_at: string }
 export interface NotebookKpi { id: string; label: string; metric_key: string; segment: string | null; bear_line: number | null; bull_line: number | null; note: string; position: number; created_at: string; updated_at: string }
-export interface NotebookAnnotation { id: string; research_run_id: string | null; section_id: string; section_title: string; section_coverage: string[];
+/**
+ * A report note (anchor_kind "report": chapter, exhibit or paragraph) or a filing note (anchor_kind "filing": the
+ * filing in source_document_id, null once that document is deleted, and its section in section_id "filing-<n>"). The API
+ * always sets both; an annotation without anchor_kind is a report note.
+ */
+export interface NotebookAnnotation { id: string; anchor_kind?: "report" | "filing"; source_document_id?: string | null; research_run_id: string | null;
+  section_id: string; section_title: string; section_coverage: string[];
   exhibit_key: string | null; paragraph_index: number | null; quote: string; body: string; created_at: string; updated_at: string }
 export interface NotebookJournalEntry { id: string; research_run_id: string | null; entry_date: string; thesis: string; price: number | null; currency: string | null;
   change_my_mind: string; body: string; kpi_snapshot: KpiSnapshotRow[]; created_at: string; updated_at: string }
