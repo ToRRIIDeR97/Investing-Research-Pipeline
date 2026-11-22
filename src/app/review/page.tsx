@@ -133,7 +133,7 @@ function ReviewQueue() {
     <button className={ui.back} onClick={() => selectItem(null)} disabled={submitting}><ArrowLeft size={14} />Reviews</button>
     <AssetHero assetId={selectedItem.asset_id} name={selectedItem.asset_name} eyebrow={<div className={ui.eyebrow}>Gate 2 of 2 · final report review</div>}
       meta={[words(selectedItem.run_type), `Run ${selectedItem.run_id.slice(0, 8)}`]}
-      status={<span className={ui.status} data-status="waiting_for_human">Review pending</span>}
+      status={<span className={ui.status} data-status="waiting_for_human">Needs your decision</span>}
       actions={<Link href={`/assets/${selectedItem.asset_id}/view?run=${selectedItem.run_id}`} className={ui.secondary}>Read research<ArrowUpRight size={14} /></Link>} />
     {reportDocument && <KeyNumbers snapshot={snapshot} kpis={3} label="Key numbers under review" />}
     <div className={ui.grid}>

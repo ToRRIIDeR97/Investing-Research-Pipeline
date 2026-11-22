@@ -429,7 +429,20 @@ The overview shows these on a value ruler, a price fan with the target table, KP
 - **valuation**: the case table (value today, probability, terminal-year target, exit valuation in words), the discount rate with the beta's verification flag, and a base-case bridge (terminal present value plus forecast-year present value, per diluted share). The bridge is shown only when its parts reproduce value today within one cent;
 - **risks**, a same-quarter-last-year **snapshot**, **open questions** (blocked first) and the cited **evidence** (quote, URL, source title) for a source drawer.
 
-A withheld valuation gives a verdict without numbers and no valuation section. Amounts written in thousands in model prose are restated in millions or billions (`tidyProse`); no other wording changes. Phase 2 of `Implementations/research-memo/implementation.md` draws the memo as the default tab.
+A withheld valuation gives a verdict without numbers and no valuation section. Amounts written in thousands in model prose are restated in millions or billions (`tidyProse`); no other wording changes. **The Memo tab** (`src/components/memo/research-memo.tsx`) is the asset report page's default view. It draws the memo in a fixed order: verdict, why, what would change the view, how the value is reached, risks, the business now, open questions. The verdict sentence comes from the numbers (`verdictLine`), never from model prose. Bars and the valuation bridge draw at their measured width, so labels keep their size on a phone. Citation chips open a source drawer (`source-drawer.tsx`) with the cited passage, the source title and a link to the document (http and https only).
+
+While the run's `human_review` stage waits (`memo.reviewOpen`), the verdict carries a decision panel (`decision-panel.tsx`). It records Reject, Watchlist or Needs more work through `POST /api/research-runs/:id/review` with the report hash, as the Reviews page does. "Approve…" opens the full review form, where open review findings are read and acknowledged and the report is rated. The approval gate is unchanged.
+
+The page has four tabs (`src/lib/research/report-tabs.ts`):
+
+- **Memo**.
+- **Model**: Valuation and Workbench.
+- **Financials**: Statements, KPIs and Metrics.
+- **Audit**: Report, Evidence, Sources, Backtests and Run history.
+
+The active tab's earlier views appear as sub-tabs, and every earlier `?view=` value still opens its view. No `?view=` opens the memo. The notebook opens from its drawer. The earlier overview stays at `?view=overview` for one release, outside the tab bar. The key-numbers strip is hidden on the Memo tab and shows no KPI tiles on the others.
+
+Run status uses one vocabulary on the cards, the asset hero and the memo: Researching, Needs plan approval, Needs your decision, Needs more work, Decided, Failed.
 
 Code-computed `{ columns, rows }` tables in older reports (for example `report_facts.cases`) render as record tables through `src/lib/research/reporting/grid-table.ts:columnTable`, with plain column names, ratios as percentages and years without separators.
 

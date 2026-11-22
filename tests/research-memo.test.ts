@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  buildResearchMemo, exitText, formatLevel, memoStatus, parseBaseRange, signalPosition, splitLead, tidyProse,
+  buildResearchMemo, exitText, formatLevel, memoStatus, parseBaseRange, signalPosition, splitLead, tidyProse, verdictLine,
 } from '../src/lib/research/reporting/research-memo';
+import { REPORT_TABS, tabOf, viewFromQuery, viewQuery } from '../src/lib/research/report-tabs';
 import { columnTable, gridCell } from '../src/lib/research/reporting/grid-table';
 
 // SoFi run 0c9a2731 (18 Nov 2026): the memo inputs, trimmed from the stored run (public filing data only).
@@ -20,6 +21,8 @@ test('the memo verdict shows value today from report_facts, not the 2030 targets
   assert.equal(m.verdict.priceVerified, false);
   assert.equal(m.verdict.gap, -0.9209);
   assert.equal(m.verdict.valuationComplete, true);
+  assert.equal(m.reviewOpen, false);
+  assert.equal(buildResearchMemo(fixture.artifacts, fixture.report_document, { runStatus: 'waiting_for_human', humanReviewStatus: 'waiting_for_human' })!.reviewOpen, true);
   assert.equal(m.verdict.confidence.level, 'low');
   assert.ok(m.verdict.confidence.openQuestions > 0);
   // The 2030 targets appear only as labelled targets in the case table.
@@ -155,6 +158,8 @@ test('no memo field carries a raw float or a snake_case key', () => {
 
 test('a run status maps to one vocabulary', () => {
   assert.equal(memoStatus({ runStatus: 'waiting_for_human' })!.label, 'Needs your decision');
+  assert.equal(memoStatus({ runStatus: 'waiting_for_human', humanReviewStatus: 'waiting_for_human' })!.label, 'Needs your decision');
+  assert.equal(memoStatus({ runStatus: 'waiting_for_human', humanReviewStatus: 'pending' })!.label, 'Needs plan approval');
   assert.equal(memoStatus({ runStatus: 'needs_more_work' })!.label, 'Needs more work');
   assert.equal(memoStatus({ runStatus: 'running' })!.label, 'Researching');
   assert.equal(memoStatus({ runStatus: 'completed' })!.label, 'Decided');
@@ -192,4 +197,30 @@ test('a { columns, rows } exhibit becomes reader records', () => {
   assert.equal(ranges[2]['Latest'], '−8,793');
   assert.equal(columnTable([1, 2]), null);
   assert.equal(columnTable({ columns: ['a'], rows: [] }), null);
+});
+
+test('the verdict sentence is built from the numbers', () => {
+  const m = memo();
+  assert.equal(verdictLine(m), 'At $14.28, the price is above even the bull case ($6.74).');
+  const fair = { ...m, verdict: { ...m.verdict, price: 1.0, values: { bear: 0.5, base: 1.13, bull: 2 } } };
+  assert.equal(verdictLine(fair), 'At $1.00, the base-case value of $1.13 is 13% above the price.');
+  const rich = { ...m, verdict: { ...m.verdict, price: 2.0, values: { bear: 0.5, base: 1.13, bull: 3 } } };
+  assert.equal(verdictLine(rich), 'At $2.00, the base-case value of $1.13 is 44% below the price.');
+  assert.match(verdictLine({ ...m, verdict: { ...m.verdict, valuationComplete: false } }), /withheld/);
+});
+
+test('report tabs group the earlier views and keep their links', () => {
+  assert.equal(viewFromQuery(null), 'memo');
+  assert.equal(viewFromQuery('report'), 'thesis');
+  assert.equal(viewFromQuery('overview'), 'overview');
+  assert.equal(viewFromQuery('nonsense'), 'memo');
+  assert.equal(viewQuery('thesis'), 'report');
+  assert.deepEqual(REPORT_TABS.map((t) => t.label), ['Memo', 'Model', 'Financials', 'Audit']);
+  for (const view of ['valuation', 'workbench', 'financials', 'kpis', 'metrics', 'thesis', 'evidence', 'sources', 'backtests', 'runs'] as const)
+    assert.ok(tabOf(view), `${view} sits under a tab`);
+  assert.equal(tabOf('workbench')!.key, 'model');
+  assert.equal(tabOf('kpis')!.key, 'financials');
+  assert.equal(tabOf('runs')!.key, 'audit');
+  assert.equal(tabOf('notebook'), null);
+  assert.equal(tabOf('overview'), null);
 });

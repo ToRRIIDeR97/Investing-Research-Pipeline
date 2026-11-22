@@ -1,6 +1,6 @@
 import {artifactContent} from './data-views';
 import {kpiCandidateKeys} from './dashboard-series';
-import {money,plainLabel} from './plain-english';
+import {money,percent,plainLabel,price} from './plain-english';
 import {withheldValuationReason} from '../valuation/contracts';
 
 /**
@@ -15,7 +15,7 @@ type Row=Record<string,any>;
 export type MemoCase='bear'|'base'|'bull';
 export const MEMO_CASES:MemoCase[]=['bear','base','bull'];
 
-export type MemoStatusKey='researching'|'needs_decision'|'needs_more_work'|'decided'|'failed';
+export type MemoStatusKey='researching'|'needs_plan_approval'|'needs_decision'|'needs_more_work'|'decided'|'failed';
 export interface MemoStatus {key:MemoStatusKey;label:string}
 export type SignalStatus='near_bear'|'weaker'|'base'|'better';
 export interface MemoSignal {
@@ -42,6 +42,8 @@ export interface ResearchMemo {
   version:1;
   currency:string;
   status:MemoStatus|null;
+  /** The final human review is open, so a decision can be recorded from the memo. */
+  reviewOpen:boolean;
   verdict:{
     price:number|null;priceVerified:boolean;priceDate:string|null;
     valuationComplete:boolean;withheldReason:string|null;
@@ -80,7 +82,9 @@ export function memoStatus(state:MemoRunState):MemoStatus|null {
   if(['failed','cancelled','canceled'].includes(run))return {key:'failed',label:'Failed'};
   if(decision==='needs_more_work'||run==='needs_more_work')return {key:'needs_more_work',label:'Needs more work'};
   if(decision&&decision!=='pending')return {key:'decided',label:'Decided'};
-  if(run==='waiting_for_human'||state.humanReviewStatus==='waiting_for_human')return {key:'needs_decision',label:'Needs your decision'};
+  if(state.humanReviewStatus==='waiting_for_human')return {key:'needs_decision',label:'Needs your decision'};
+  // Waiting at a gate other than the final review: the research plan.
+  if(run==='waiting_for_human')return state.humanReviewStatus==null?{key:'needs_decision',label:'Needs your decision'}:{key:'needs_plan_approval',label:'Needs plan approval'};
   if(['completed','approved'].includes(run))return {key:'decided',label:'Decided'};
   return {key:'researching',label:'Researching'};
 }
@@ -314,6 +318,7 @@ export function buildResearchMemo(artifacts:Row[],document:Row|null,state:MemoRu
     version:1,
     currency,
     status:memoStatus(state),
+    reviewOpen:state.humanReviewStatus==='waiting_for_human',
     verdict:{
       price,priceVerified:source.verified===true,priceDate:text(source.trading_date),
       valuationComplete:complete,withheldReason,values,weighted,gap,
@@ -332,4 +337,18 @@ export function buildResearchMemo(artifacts:Row[],document:Row|null,state:MemoRu
     openQuestions:[...blocked,...open.filter(q=>q.status!=='blocked')],
     evidence,
   };
+}
+
+/** The verdict in one sentence, built from the numbers (never from model prose). */
+export function verdictLine(memo: ResearchMemo): string {
+  const v = memo.verdict, c = memo.currency;
+  if (!v.valuationComplete) return "The valuation was withheld, so there is no value per share to compare with the price.";
+  const { base, bull } = v.values;
+  if (base == null) return "No value per share was stored for this run.";
+  if (v.price == null) return `The base case values a share at ${price(base, c, true)} today. No market price was captured to compare.`;
+  const at = `At ${price(v.price, c, true)}`;
+  if (bull != null && bull < v.price) return `${at}, the price is above even the bull case (${price(bull, c, true)}).`;
+  const gap = base / v.price - 1;
+  if (Math.abs(gap) < 0.05) return `${at}, the price is close to the base-case value of ${price(base, c, true)}.`;
+  return `${at}, the base-case value of ${price(base, c, true)} is ${percent(Math.abs(gap), 0)} ${gap < 0 ? "below" : "above"} the price.`;
 }

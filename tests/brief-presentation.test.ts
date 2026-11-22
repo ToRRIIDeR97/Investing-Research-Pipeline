@@ -11,7 +11,11 @@ test("the brief opens the correct persisted human gate and selected run", () => 
   assert.equal(final.action, "Review");
   assert.equal(final.href, "/review?run=older-run");
   assert.equal(researchBriefAction({ ...run, stages: [] }, "asset").action, "Run details");
-  assert.equal(researchBriefAction({ ...run, status: "completed" }, "asset").label, "Completed");
+  assert.equal(researchBriefAction({ ...run, status: "completed" }, "asset").label, "Decided");
+  assert.equal(researchBriefAction({ ...run, status: "needs_more_work" }, "asset").label, "Needs more work");
+  assert.equal(researchBriefAction({ ...run, status: "running" }, "asset").label, "Researching");
+  assert.equal(plan.label, "Needs plan approval");
+  assert.equal(final.label, "Needs your decision");
   assert.equal(researchBriefAction({ ...run, status: "failed" }, "asset").tone, "error");
   assert.equal(researchBriefAction(null, "asset").action, "Start research");
 });
