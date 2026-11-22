@@ -168,3 +168,37 @@ test("a summary report leaves out large bodies and the report document's artifac
     assert.equal(String(full.artifacts.find((a) => a.type === "financial_statement_set")?.content_json.tables).length, 200_000);
   } finally { await f.cleanup(); await sql.end(); }
 });
+
+test("the workbench and the memo read the valuation the report was built from, and flag a newer one", { skip }, async () => {
+  const { loadWhatIfData } = await import("../src/lib/research/valuation/whatif-data");
+  const { getResearchRunReport } = await import("../src/lib/research/artifacts/read-model");
+  const sql = postgres(process.env.DATABASE_URL!);
+  const f = await fixture(sql, 3);
+  try {
+    const artifact = (type: string, version: number, content: unknown, at: string) => sql`INSERT INTO research_artifacts
+      (research_run_id, asset_id, artifact_type, scope_key, artifact_version, status, content_json, validation_result_json, created_by, created_at)
+      VALUES (${f.runId}, ${f.assetId}, ${type}, 'run', ${version}, 'validated', ${sql.json(content as any)}, ${sql.json({ ok: true })}, 'test', ${at}) RETURNING id`;
+    const [v1] = await artifact("valuation_scenario_set", 1, { value_today_base: 8.8, probability_base: 0.5, label: "report" }, "2026-11-18T11:36:00Z");
+    await artifact("report_facts", 1, { currency: "USD", market_price: 14.28, valuation_status: "complete", weighted: { pv_per_share: 7.7 },
+      cases: { columns: ["case", "probability", "pv_per_share"], rows: [["bear", 0.3, 1.04], ["base", 0.5, 8.8], ["bull", 0.2, 14.92]] } }, "2026-11-18T12:00:00Z");
+    await artifact("report_document", 1, { title: "Report", conclusion_status: "withheld", sections: [], evidence: [],
+      artifacts: [{ id: v1.id, artifact_type: "valuation_scenario_set", artifact_version: 1, content_json: {} }] }, "2026-11-18T12:04:00Z");
+    await artifact("valuation_scenario_set", 2, { value_today_base: 11.13, probability_base: 0.5, label: "later" }, "2026-11-21T16:49:00Z");
+
+    const data = await loadWhatIfData(sql, f.runId);
+    assert.equal(data.valuation?.label, "report", "the workbench reads the report's valuation, not the later one");
+    assert.equal(data.pinnedToReport, true);
+    assert.equal(data.newerValuation?.version, 2);
+
+    const report = await getResearchRunReport(f.runId, undefined, { summary: true });
+    assert.equal(report?.memo?.verdict.values.base, 8.8);
+    assert.equal(report?.memo?.newerValuation?.version, 2);
+
+    // Without a report document the latest validated valuation is read and nothing is flagged.
+    await sql`DELETE FROM research_artifacts WHERE research_run_id = ${f.runId} AND artifact_type = 'report_document'`;
+    const unpinned = await loadWhatIfData(sql, f.runId);
+    assert.equal(unpinned.valuation?.label, "later");
+    assert.equal(unpinned.pinnedToReport, false);
+    assert.equal(unpinned.newerValuation, null);
+  } finally { await f.cleanup(); await sql.end(); }
+});

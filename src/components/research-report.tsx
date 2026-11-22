@@ -228,7 +228,8 @@ function Exhibit({table,document,id}:{table:ReportSection['tables'][number];docu
 /**
  * The report's answer on every chapter: stance, price, value today and the three scenarios. "Value" is value per
  * share today from report_facts (the figure the asset header shows); terminal-year prices are labelled as targets.
- * Runs without report_facts keep the terminal targets, labelled with their year.
+ * Runs without report_facts keep the terminal targets, labelled with their year. It reads the report's own artifact
+ * copies, so a valuation stored after the report never mixes into it.
  */
 function Verdict({document,artifacts}:{document:ReportDocument;artifacts:Record<string,any>[]}) {
   const s=useMemo(()=>valuationSummary(artifacts,{conclusionStatus:document.conclusion_status}),[artifacts,document.conclusion_status]);
@@ -327,7 +328,7 @@ export function ResearchReport({document,financialsHref,liveArtifacts}:{document
 
       <div className={styles.main} id="report-content" data-report-chapter={section?.id}>
         {document.is_test&&<p className={styles.notice}>Synthetic test report. Not for investment decisions.</p>}
-        <Verdict document={document} artifacts={liveArtifacts?.length?liveArtifacts:document.artifacts}/>
+        <Verdict document={document} artifacts={document.artifacts?.length?document.artifacts:liveArtifacts??[]}/>
         <header className={`${styles.tile} ${styles.chapterHead}`} data-tile>
           <div className={styles.chapterTop}>
             <p className={styles.eyebrow} data-chapter-eyebrow>{section?`Chapter ${index+1} of ${sections.length}`:'Appendix'}{section?.coverage.length?` · ${section.coverage.map(c=>label(c)).join(', ')}`:''}</p>

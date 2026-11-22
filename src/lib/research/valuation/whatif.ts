@@ -30,8 +30,14 @@ export const WorkbenchChange = z.object({
 }).strict();
 export type WorkbenchChange = z.infer<typeof WorkbenchChange>;
 
-/** The stored artifacts a what-if reads. */
-export interface WhatIfData { valuation: Row | null; scenarios: Row | null; analytics: Row | null }
+/**
+ * The stored artifacts a what-if reads. `pinnedToReport` says the valuation is the version the run's report was built
+ * from; `newerValuation` is a validated valuation stored after it, which the workbench mentions but does not use.
+ */
+export interface WhatIfData {
+  valuation: Row | null; scenarios: Row | null; analytics: Row | null;
+  pinnedToReport?: boolean; newerValuation?: { version: number; createdAt: string } | null;
+}
 
 export type WhatIfAvailability = { available: true } | { available: false; reason: string };
 /** Whether the workbench can recompute this run's valuation; when not, a reason a reader can act on. */

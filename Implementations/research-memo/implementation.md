@@ -1,12 +1,17 @@
 # Research memo: one reading view per run
 
-Status: phase 1 merged (PR 148). Phase 2 built on `claude/research-memo-p2`. Phases 3–4 not started.
+Status: phases 1 and 2 merged (PR 148, PR 149). Phase 3 built on `claude/research-memo-p3`. Phase 4 not started.
 
 - Open decision 1 was taken as proposed: the lead sentences of the conclusion's evidence-bearing paragraphs.
 - Open decision 2: the earlier overview stays at `?view=overview` for one release, outside the tab bar.
 - Phase 2 deviations:
   - Instead of redirecting old `?view=` values, the four tabs group them as sub-tabs, so every saved link still opens unchanged.
-  - The memo's decision panel records Reject, Watchlist and Needs more work. Approval opens the full review form, so open findings are still read and acknowledged there. Mockup: [prototype/workshop/memo-sofi.html](../../prototype/workshop/memo-sofi.html)
+  - The memo's decision panel records Reject, Watchlist and Needs more work. Approval opens the full review form, so open findings are still read and acknowledged there.
+- Phase 3 deviations:
+  - Financials and Audit keep their sub-tabs instead of one long page; the report already has its own chapter contents.
+  - Model is one page.
+  - No adaptive-3 run exists in the local database, so the no-raw-text scan covered SoFi runs only.
+- Found in phase 3 and fixed in the same branch: for run `9cd97f72` (preview database) the workbench showed a valuation stored three days after the report (v2: base $11.13, weights 25/50/25), while the report showed the one it was built on (v1: base $8.80, weights 30/50/20). The workbench, the chat packet and the memo now read the versions the report recorded (`report-pins.ts`) and note a newer validated valuation instead of using it. Mockup: [prototype/workshop/memo-sofi.html](../../prototype/workshop/memo-sofi.html)
 (static, SoFi run `0c9a2731`). Review of the current page: see "Evidence" below.
 
 ## Problem

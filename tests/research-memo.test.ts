@@ -230,3 +230,10 @@ test('the Model tab renders its views on one page', () => {
   assert.equal(model.onePage, true);
   assert.ok(REPORT_TABS.filter((t) => t.key !== 'model').every((t) => !t.onePage));
 });
+
+test('the memo carries a valuation stored after the report without using it', () => {
+  const m = buildResearchMemo(fixture.artifacts, fixture.report_document, { runStatus: 'waiting_for_human', newerValuation: { version: 2, createdAt: '2026-11-21T16:49:00.000Z' } })!;
+  assert.deepEqual(m.newerValuation, { version: 2, createdAt: '2026-11-21T16:49:00.000Z' });
+  assert.equal(m.verdict.values.base, 1.13, 'values stay the report\'s');
+  assert.equal(memo().newerValuation, null);
+});

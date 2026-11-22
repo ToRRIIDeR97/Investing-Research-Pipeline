@@ -179,6 +179,7 @@ export function ResearchMemoView({ memo, assetId, runId, reportHash, links, onDe
           <div className={styles.fact}><span>Range across cases</span><strong>{v.values.bear != null && v.values.bull != null ? `${price(v.values.bear, c, true)} to ${price(v.values.bull, c, true)}` : "—"}</strong><span>bear to bull{v.weighted != null ? `, weighted ${price(v.weighted, c, true)}` : ""}</span></div>
         </div>
         {v.valuationComplete ? <ValueRuler snapshot={rulerSnapshot(memo)} /> : v.withheldReason && <p className={styles.withheld}>{v.withheldReason}</p>}
+        {memo.newerValuation && <p className={styles.withheld} role="note" data-newer-valuation>A newer valuation (version {memo.newerValuation.version}, stored {new Date(memo.newerValuation.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}) exists, but this report was built on an earlier one. Every number here is the report&apos;s; regenerate the report to use the newer valuation.</p>}
         {memo.reviewOpen && <DecisionPanel runId={runId} assetId={assetId} reportHash={reportHash} onDecided={onDecided} />}
       </section>
 
