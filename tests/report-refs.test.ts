@@ -1,0 +1,70 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { citationRefs } from "../src/lib/research/reporting/refs";
+import { readerProse } from "../src/lib/research/reporting/reader-prose";
+
+const EV = "6f1c2a10-3b4d-4e5f-8a9b-0c1d2e3f4a5b";
+const AR = "11111111-2222-4333-8444-555555555555";
+const OTHER = "99999999-2222-4333-8444-555555555555";
+
+test("other UUIDs get one stable id token per refs object, also in object keys", () => {
+  const refs = citationRefs([{ id: AR }], [{ id: EV }]);
+  const first = refs.packet({ run_id: OTHER, [OTHER]: 1 });
+  const second = refs.packet({ again: OTHER.toUpperCase() });
+  assert.deepEqual(first, { run_id: "id1", id1: 1 });
+  assert.deepEqual(second, { again: "id1" });
+  assert.equal(refs.token(OTHER), "id1");
+});
+
+test("resolve accepts any-case tokens and stored ids, removes duplicates, drops wrong-type refs", () => {
+  const refs = citationRefs([{ id: AR }], [{ id: EV }]);
+  const dropped = new Set<string>();
+  const out = refs.resolve({ evidence_ids: ["EV1", EV, "ar1"], artifact_ids: ["Ar1", "ev1", "id1"] }, dropped);
+  assert.deepEqual(out, { evidence_ids: [EV], artifact_ids: [AR] });
+  assert.deepEqual([...dropped].sort(), ["ar1", "ev1", "id1"]);
+});
+
+test("resolve maps a table's artifact_id token back to the stored id", () => {
+  const refs = citationRefs([{ id: AR }], [{ id: EV }]);
+  const out = refs.resolve({ section: { tables: [{ title: "t", artifact_id: "ar1", path: "quarterly" }, { artifact_id: "ar9" }] } });
+  assert.equal(out.section.tables[0].artifact_id, AR);
+  assert.equal(out.section.tables[1].artifact_id, "ar9");
+});
+
+test("readerProse removes a run of bare tokens with its separators and a preceding see in any case", () => {
+  const cases: [string, string][] = [
+    ["Margin rose ev1, ev2 and ar3.", "Margin rose."],
+    ["Margin rose ev1; ev2 or ar3 & id4, then fell.", "Margin rose, then fell."],
+    [`Margin rose ev1 and ${EV.toUpperCase()}.`, "Margin rose."],
+    ["See ev4 for detail.", "For detail."],
+    ["Growth held. See ev4 for detail.", "Growth held. For detail."],
+    ["Growth held; see ev4 for detail.", "Growth held; for detail."],
+    ["ev2 shows growth.", "Shows growth."],
+    ["Revenue and margin rose, and capex or opex fell & S&P 500 rose.", "Revenue and margin rose, and capex or opex fell & S&P 500 rose."],
+    ["Revenue rose and ev1 margin held.", "Revenue rose and margin held."],
+    // snake_case is written as words before the next word is capitalised
+    ["ev2 capex_to_da rose.", "Capex to D&A rose."],
+    ["Growth held. ev2 net_debt fell.", "Growth held. Net debt fell."],
+    ["ev2 fcf_ttm rose.", "FCF TTM rose."],
+    // no separator left before the end of a sentence, no space after an opening quote
+    ["Operations closed; see ar2.", "Operations closed."],
+    ["Operations closed, ev1 and ev2.", "Operations closed."],
+    ['He said: "ev1 margins rose."', 'He said: "margins rose."'],
+    ["Margins rose (per the filing) ev1.", "Margins rose (per the filing)."],
+    ["Ratios: debt; equity.", "Ratios: debt; equity."],
+  ];
+  for (const [text, expected] of cases) {
+    const once = readerProse(text);
+    assert.equal(once, expected);
+    assert.equal(readerProse(once), once);
+  }
+});
+
+test("readerProse is idempotent and keeps bracketed text that is not a reference", () => {
+  for (const text of ["Revenue grew 22% (ev12, Q2 2025) on capex_to_da of 2.1x.", "Margins held (A1 shares) and EV12 is a label."]) {
+    const once = readerProse(text);
+    assert.equal(readerProse(once), once);
+  }
+  assert.equal(readerProse("Revenue grew 22% (ev12, Q2 2025) on capex_to_da of 2.1x."), "Revenue grew 22% (Q2 2025) on capex to D&A of 2.1x.");
+  assert.equal(readerProse("Margins held (A1 shares) and EV12 is a label."), "Margins held (A1 shares) and EV12 is a label.");
+});

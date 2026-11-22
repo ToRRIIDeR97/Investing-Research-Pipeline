@@ -466,13 +466,13 @@ s.save(P("dev-workflow.svg"))
 # ---------------------------------------------------------------- research across runs
 s = Svg(1100, 560, "Research across runs: lineage, change log and monitoring",
         "A new run links to the asset's latest completed or approved run (prior_run_id) and saves a code-built prior_research block that "
-        "analysis and report packets carry in their cached prefix. Before the report, code diffs the run against the prior into "
+        "analysis and report packets carry (report packets with its ids as id<n> tokens). Before the report, code diffs the run against the prior into "
         "version_change_log. Separately, npm run monitor:check reads new 10-Q/10-K filings from EDGAR, scores the dashboard and stores "
         "whether a refresh is due; the asset page shows it and a person decides. No model call, and no run starts on its own.")
 s.box(30, 70, 230, 100, "Run A (completed or approved)", ["documents · question_register", "team_requests · decision_record", "valuation_scenario_set"], "store", stereo="prior run")
 s.box(330, 70, 260, 100, "Run creation", ["run-service.ts · lineage/runs.ts", "prior_run_id: default, explicit or null", "same asset · pipeline v3"], "api", stereo="transaction")
 s.box(660, 70, 400, 100, "prior_research artifact (≤ 10 KB)", ["lineage/prior-research.ts (pure)", "documents, blocked questions, unavailable requests,", "decision, valuation summary, human follow-up"], "lib", stereo="artifact")
-s.box(330, 230, 260, 110, "Analysis + report calls (Run B)", ["prepareResearchCall adds prior_research", "in the cached packet prefix", "absent → packet byte-identical"], "worker", stereo="model packets")
+s.box(330, 230, 260, 110, "Analysis + report calls (Run B)", ["analysis: prepareResearchCall adds it", "report: reportComposition, as id<n> tokens","absent → packet byte-identical"], "worker", stereo="model packets")
 s.box(660, 230, 400, 110, "version_change_log artifact", ["lineage/change-log.ts (pure, no model): Run B vs Run A", "valuation per case + weighted, drivers, decision,", "thesis; new documents vs method/model change"], "lib", stereo="report_draft start")
 s.box(660, 400, 400, 80, "Report", ["\"Changes since the prior run\" section + UI table"], "ui", stereo="report_document")
 s.box(30, 400, 280, 110, "npm run monitor:check", ["scripts/monitor-check.ts", "monitoring/monitor-check.ts", "monitoring/monitor-score.ts (pure)"], "worker", stereo="script")

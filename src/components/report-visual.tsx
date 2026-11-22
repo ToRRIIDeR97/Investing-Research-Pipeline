@@ -59,14 +59,26 @@ const zeroDomain:[(v:number)=>number,(v:number)=>number]=[v=>Math.min(0,v),v=>Ma
 /** Series, ratio, scenario and bridge charts. Every number comes from buildVisual; exact values sit in the table below. */
 function ChartFigure({visual,chart}:{visual:ChartVisual;chart:BuiltVisual}) {
   const colors=visual.kind==='scenarios'&&chart.display==='lines'?SCENARIO_COLORS:visual.kind==='ratio'?['#4b5563']:REPORT_COLORS;
+  return <figure className={styles.figure}>
+    <figcaption><h3>{readerText(visual.title)}</h3><p>{readerText(visual.caption)}</p><small>{chart.unit}</small></figcaption>
+    <ChartPlot chart={chart} title={visual.title} colors={colors}/>
+    {chart.notes.map(n=><p className={styles.chartNote} key={n}>{n}</p>)}
+    <details className={styles.figureSources}><summary>View underlying data</summary><div className={styles.tableScroll} tabIndex={0} role="region" aria-label={`${visual.title} values`}><table>
+      <thead><tr><th scope="col">{chart.category}</th>{chart.columns.map(c=><th scope="col" key={c}>{c}</th>)}</tr></thead>
+      <tbody>{chart.points.map(p=><tr key={p.key}><th scope="row">{p.period}</th>{p.exact.map((v,i)=><td key={i}>{v}</td>)}</tr>)}</tbody>
+    </table></div></details>
+  </figure>;
+}
+
+/** The legend and chart of a built visual, without caption or data table. Also draws the code-built report exhibits. */
+export function ChartPlot({chart,title,colors=REPORT_COLORS}:{chart:BuiltVisual;title:string;colors?:string[]}) {
   const waterfall=chart.display==='waterfall',percent=chart.unit==='%';
   const data=chart.points.map(p=>({period:p.period,base:p.base,...Object.fromEntries(p.values.map((v,i)=>[`s${i}`,v==null?null:waterfall?Math.abs(v):v]))}));
   const format=(v:unknown)=>`${Number(v).toLocaleString('en-US',{maximumFractionDigits:percent?1:2})}${percent?'%':''}`;
   const slanted=chart.display==='lines'||chart.display==='stacked';
-  return <figure className={styles.figure}>
-    <figcaption><h3>{readerText(visual.title)}</h3><p>{readerText(visual.caption)}</p><small>{chart.unit}</small></figcaption>
+  return <>
     {chart.labels.length>1&&<ul className={styles.chartLegend}>{chart.labels.map((l,i)=><li key={l}><span aria-hidden="true" style={{background:colors[i%colors.length]}}/>{l}</li>)}</ul>}
-    <div className={styles.chart} role="img" aria-label={`${visual.title}. ${chart.unit}. Exact values are in the data table below.`}>
+    <div className={styles.chart} role="img" aria-label={`${title}. ${chart.unit}. Exact values are in the data table below.`}>
       <ResponsiveContainer width="100%" height="100%"><ComposedChart data={data} margin={{top:16,right:12,bottom:slanted?32:8,left:12}} accessibilityLayer>
         <CartesianGrid vertical={false} stroke="#e5e7eb"/>
         {slanted?<XAxis dataKey="period" tick={TICK} angle={-30} textAnchor="end" height={50}/>:<XAxis dataKey="period" tick={{...TICK,fontSize:10}} interval={0}/>}
@@ -81,10 +93,5 @@ function ChartFigure({visual,chart}:{visual:ChartVisual;chart:BuiltVisual}) {
             :<Bar key={l} dataKey={`s${i}`} name={`s${i}`} fill={colors[i%colors.length]} stackId={chart.display==='stacked'?'s':undefined} maxBarSize={64} isAnimationActive={false}/>)}
       </ComposedChart></ResponsiveContainer>
     </div>
-    {chart.notes.map(n=><p className={styles.chartNote} key={n}>{n}</p>)}
-    <details className={styles.figureSources}><summary>View underlying data</summary><div className={styles.tableScroll} tabIndex={0} role="region" aria-label={`${visual.title} values`}><table>
-      <thead><tr><th scope="col">{chart.category}</th>{chart.columns.map(c=><th scope="col" key={c}>{c}</th>)}</tr></thead>
-      <tbody>{chart.points.map(p=><tr key={p.key}><th scope="row">{p.period}</th>{p.exact.map((v,i)=><td key={i}>{v}</td>)}</tr>)}</tbody>
-    </table></div></details>
-  </figure>;
+  </>;
 }

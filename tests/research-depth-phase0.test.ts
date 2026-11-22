@@ -201,14 +201,21 @@ const reportInput = (tables: ReportSection["tables"], evidence: ReportInput["evi
   sections: [section(tables, evidence.map(e => e.id))], coverage: [{ key: "valuation", status: "qualified", rationale: "r", section_ids: ["valuation"] }],
   questions: [], evidence, artifacts: tableArtifacts });
 
-test("new reports render flat tables and undated sources; reports stored under the previous standard re-render unchanged", () => {
+// Under adaptive-3 code builds the exhibits, so the flat-table rendering of model tables is tested on an adaptive-2
+// document (the standard that introduced it), and a new report is checked to print no model table.
+test("adaptive-2 reports render flat tables, new reports print no model tables, and adaptive-1 reports re-render unchanged", () => {
   const undated = { id: "e1", claim_text: "c", source_title: "IAB report", url: "https://example.com/iab", published_at: null, location: "Source 1", quote: "q" };
-  const report = createReport(reportInput([table("method_schedules.1")], [undated]));
-  assert.equal(report.standard_version, STANDARD_VERSION);
+  const adaptive2 = (input: ReportInput) => ({ ...input, standard_version: "asset-framework-2.1-adaptive-2" }) as ReportInput;
+  const report = createReport(adaptive2(reportInput([table("method_schedules.1")], [undated])));
+  assert.equal(report.standard_version, "asset-framework-2.1-adaptive-2");
   assert.match(report.markdown, /\| fiscal\\_year \| cash\\_flow \| build\.starting\\_profit \|/);
   assert.match(report.markdown, /IAB report\]\(https:\/\/example\.com\/iab\) · undated ·/);
   assert.ok(!/\{"/.test(report.markdown), "no JSON cells");
-  assert.throws(() => createReport(reportInput([table("method_schedules")])), /Request method_schedules\.0 instead/);
+  assert.throws(() => createReport(adaptive2(reportInput([table("method_schedules")]))), /Request method_schedules\.0 instead/);
+  const fresh = createReport(reportInput([table("method_schedules.1")], [undated]));
+  assert.equal(fresh.standard_version, STANDARD_VERSION);
+  assert.doesNotMatch(fresh.markdown, /fiscal\\_year/, "a new report prints code-built exhibits, not model tables");
+  assert.match(fresh.markdown, /IAB report\]\(https:\/\/example\.com\/iab\) · undated ·/);
   // An adaptive-1 document keeps its renderer, so getReportState's integrity check still passes.
   const legacy = { ...reportInput([table("method_schedules")]), standard_version: "asset-framework-2.1-adaptive-1" };
   const rendered = createReport(legacy);

@@ -16,13 +16,15 @@ import { ResearchAgentRunError } from "../src/lib/agent-harness/errors";
 import type { AgentAttempt } from "../src/lib/agent-harness/types";
 import { exactJsonPrompt, loadRunContext, prepareResearchCall } from "../src/lib/research/run-context";
 import { loadReportInputs } from "../src/lib/research/reporting/store";
-import { COVERAGE, SECTION_CONTRACT, validateChartPlan } from "../src/lib/research/reporting/contracts";
+import { COVERAGE, SECTION_CONTRACT } from "../src/lib/research/reporting/contracts";
+import { buildExhibits, isAvailable, placeExhibits } from "../src/lib/research/reporting/exhibits";
 import { reportEvidenceView, reportSectionCall, splitReportArtifacts } from "../src/lib/research/reporting/runtime";
 import { buildReportFacts } from "../src/lib/research/reporting/facts";
 import { mergeObservations } from "../src/lib/research/reporting/data-views";
 import { FinancialAnalytics, buildFinancialAnalytics } from "../src/lib/research/history/analytics";
 import { buildStatementSummary } from "../src/lib/research/history/statement-summary";
 import { getTeamRequests } from "../src/lib/research/team";
+import { citationRefs } from "../src/lib/research/reporting/refs";
 
 const runId = process.argv[2];
 if (!runId || !process.env.DATABASE_URL) throw new Error("Usage: DATABASE_URL=... tsx scripts/report-packet-size.ts <run-id> [--live section-id,...]");
@@ -50,6 +52,8 @@ async function main() {
   }
   if (!artifacts.some((a) => a.artifact_type === "report_facts")) synthetic("report_facts", buildReportFacts(artifacts));
   const { shared, packetArtifacts } = splitReportArtifacts(artifacts);
+  // Like the runtime: report packets carry citation tokens, applied to the finished packet.
+  const refs = citationRefs(artifacts, inputs.evidence);
   const teamRequests = await getTeamRequests(sql, runId);
   const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${runId}`;
   const common = { asset: { assetName: ctx.assetName, symbol: ctx.symbol, profile: ctx.profileKey },
@@ -71,11 +75,15 @@ async function main() {
   const isConclusion = (s: any) => s.coverage?.includes("conclusion");
   const completed: any[] = (document?.sections ?? []).filter((s: any) => !isConclusion(s));
   const lastConclusion = outline.sections.filter(isConclusion).at(-1)?.id;
+  // Like the runtime: code builds the exhibits once and places them in the outline's chapters.
+  const exhibits = buildExhibits(artifacts, { cutoff: ctx.cutoffAt.toISOString() });
+  const placement = placeExhibits(outline.sections, exhibits);
+  const placedIn = (id: string) => (placement[id] ?? []).flatMap((key) => exhibits.filter(isAvailable).filter((e) => e.key === key));
   for (const section of [...outline.sections.filter((s: any) => !isConclusion(s)), ...outline.sections.filter(isConclusion)]) {
     const call = reportSectionCall(common, packetArtifacts, section, outline, [], isConclusion(section) ? [...completed] : [],
-      section.id === lastConclusion ? outline.coverage : undefined);
+      section.id === lastConclusion ? outline.coverage : undefined, placedIn(section.id));
     const { params } = await prepareResearchCall({ sql, ctx, stageKey: "report_draft", taskKey: `report:section:${section.id}`, taskType: "report_section",
-      agentName: "export-writer", modelTier: "mid", packet: call.packet, perCallKeys: call.perCallKeys,
+      agentName: "export-writer", modelTier: "mid", packet: call.packet, perCallKeys: call.perCallKeys, packetTransform: refs.packet,
       promptFactory: (p) => exactJsonPrompt({ agentName: "export-writer", requiredKeys: call.contract.requiredKeys, packet: p, extraRules: call.extraRules }) });
     const written = (document?.sections ?? []).find((s: any) => s.id === section.id);
     if (isConclusion(section) && written) completed.push(written);
@@ -108,7 +116,7 @@ async function sendLive(ids: string[], prepared: Map<string, { section: any; par
           const errors = SECTION_CONTRACT.validate?.(value) || [];
           if (errors.length) return errors;
           if (value.section.id !== section.id || JSON.stringify(value.section.coverage) !== JSON.stringify(section.coverage)) return [{ path: "section", message: "Preserve section id and coverage exactly" }];
-          try { validateChartPlan(section, value.section); return []; } catch (e) { return [{ path: "section", message: String(e) }]; }
+          return [];
         } } });
       attempts = result.attempts;
     } catch (e) {
