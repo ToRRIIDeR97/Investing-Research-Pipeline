@@ -3,6 +3,7 @@ import {useMemo,useRef,useState,type ReactNode,type RefObject} from 'react';
 import {scenarioNames,scenarioTypes,valuationSummary,type PriceTargets,type ScenarioType} from '@/lib/research/reporting/valuation-summary';
 import {moneyMillions,percent,price} from '@/lib/research/reporting/plain-english';
 import styles from './report-panels.module.css';
+import { C } from "@/components/ui/palette";
 type Row=Record<string,any>;
 
 const glyphs:Record<ScenarioType,string>={bear:'▼',base:'●',bull:'▲'};
@@ -11,7 +12,7 @@ const signed=(r:number)=>`${r<0?'−':'+'}${Math.abs(r*100).toFixed(1)}%`;
 const tone=(r:number|null)=>r==null?undefined:r<0?styles.down:styles.up;
 
 function Item({title,open=false,detailsRef,children}:{title:string;open?:boolean;detailsRef?:RefObject<HTMLDetailsElement|null>;children:ReactNode}) {
-  return <details open={open} ref={detailsRef}><summary><svg className={styles.chev} width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5L7.5 6 4 9.5" stroke="#4b5563" strokeWidth="1.6" fill="none" strokeLinecap="round"/></svg><span>{title}</span></summary>{children}</details>;
+  return <details open={open} ref={detailsRef}><summary><svg className={styles.chev} width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5L7.5 6 4 9.5" stroke={C.ink2} strokeWidth="1.6" fill="none" strokeLinecap="round"/></svg><span>{title}</span></summary>{children}</details>;
 }
 
 function PriceTargetTable({targets,currency}:{targets:PriceTargets;currency:string}) {

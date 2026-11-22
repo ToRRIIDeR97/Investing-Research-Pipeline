@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import ui from "@/components/research-ui.module.css";
+import { AssetHero } from "@/components/company/company";
 import styles from "./page.module.css";
 import { STAGE_CONFIG_MAP } from "@/lib/workflow/stages";
 import { FramingEditor, type FramingEdits } from "@/components/framing-editor";
@@ -825,14 +826,14 @@ export default function RunResearchPage() {
 
   return <div className={`${ui.page} ${ui.withBack}`}>
     <Link href={`/assets/${assetId}/view${runId ? `?run=${runId}` : ""}`} className={ui.back}><ArrowLeft size={14} />Research brief</Link>
-    <header className={ui.heading}>
-      <div className={ui.titleGroup}><h1>{assetName || "Research"}</h1>{phase === "intake" ? <span className={ui.muted}>New research run</span> : progress && <><span className={ui.mono}>{progress.runId.slice(0, 8)}</span><StatusBadge status={progress.status} /></>}</div>
-      {runId && progress && phase === "pipeline" && <div className={ui.headActions}>
+    <AssetHero assetId={assetId} name={assetName || "Research"}
+      meta={[phase === "intake" ? "New research run" : progress ? `Run ${progress.runId.slice(0, 8)}` : null]}
+      status={phase !== "intake" && progress ? <StatusBadge status={progress.status} /> : undefined}
+      actions={runId && progress && phase === "pipeline" ? <>
         <Link href={`/assets/${assetId}/view?run=${runId}`} className={ui.secondary}>Read research</Link>
         {!["completed", "cancelled"].includes(progress.status) && <button className={ui.secondary} onClick={handleCancelRun} disabled={isProcessing}>Cancel run</button>}
         <button className={ui.primary} onClick={startNew}>New research</button>
-      </div>}
-    </header>
+      </> : undefined} />
     {loadError && <p className={ui.error} role="alert">{loadError}{runId && <button onClick={() => fetchProgress(runId)}>Try again</button>}</p>}
     {lastMessage && !lastMessage.content.startsWith("Loaded research run") && <p className={`${ui.banner} ${ui.notes} ${ui.muted}`} role="status">{lastMessage.content}</p>}
 

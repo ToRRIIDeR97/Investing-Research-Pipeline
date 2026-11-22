@@ -3,9 +3,10 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import ui from "@/components/research-ui.module.css";
+import { CompanyLogo } from "@/components/company/company";
 import styles from "./themes.module.css";
 
-type Theme = { id: string; theme: string; status: string; created_at: string; shortlist: { ticker: string }[]; error: string | null };
+type Theme = { id: string; theme: string; status: string; created_at: string; shortlist: { ticker: string; title?: string }[]; error: string | null };
 const OBJECTIVES = [["growth", "Growth"], ["quality", "Quality (margins)"], ["value", "Value (earnings yield)"], ["balance_sheet", "Balance sheet (debt payback)"]] as const;
 const ROLES = [["supplier", "Suppliers (picks and shovels)"], ["operator", "Operators"], ["other", "Other"]] as const;
 
@@ -73,6 +74,7 @@ export default function ThemesPage() {
         <div className={ui.tileHead}><h2 id="theme-past">Past themes</h2><span className={ui.muted}>{themes.length}</span></div>
         {themes.length ? <div className={ui.list}>{themes.map((t) => <Link key={t.id} href={`/themes/${t.id}`} className={ui.row}>
           <div><div className={ui.rowTitle}>{t.theme}</div><div className={ui.rowMeta}>{t.status}{t.shortlist.length ? ` · ${t.shortlist.map((s) => s.ticker).join(", ")}` : ""} · {t.created_at.slice(0, 10)}</div></div>
+          {t.shortlist.length > 0 && <div className={styles.logoStack} aria-hidden="true">{t.shortlist.slice(0, 4).map((s) => <CompanyLogo key={s.ticker} subject={{ name: s.title || s.ticker, ticker: s.ticker, kind: "equity" }} name={s.title || s.ticker} ticker={s.ticker} size={30} shape="round" />)}</div>}
         </Link>)}</div> : <p className={ui.empty}>No themes yet.</p>}
       </section>
     </div>

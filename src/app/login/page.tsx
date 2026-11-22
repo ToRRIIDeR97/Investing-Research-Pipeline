@@ -28,10 +28,10 @@ export default function LoginPage() {
     }
   }
 
-  return <div className={ui.page}><section className={`${ui.tile} mx-auto mt-16 max-w-[400px]`}>
-    <div className="flex items-center gap-2.5 px-3.5 pt-5"><PragmaMark size={28} /><span className="font-[family-name:var(--font-display)] text-[20px] text-[var(--navy)]">Pragma Research</span></div>
+  return <div className={ui.page}><section className={`${ui.tile} mx-auto mt-20 max-w-[420px] overflow-hidden`}>
+    <div className="flex items-center gap-3 border-b border-[var(--line-soft)] bg-[var(--navy-soft)] px-[18px] py-5"><PragmaMark size={32} /><div><div className="text-[18px] font-bold tracking-[-0.01em] text-[var(--ink)]">Pragma Research</div><div className="text-[12px] text-[var(--ink-2)]">Evidence-backed research with human review gates</div></div></div>
     <form onSubmit={submit} className={`${ui.form} ${ui.tileBody}`}>
-      <h1 className="text-[15px] font-semibold">Sign in</h1>
+      <h1 className="text-[18px] font-bold tracking-[-0.01em]">Sign in</h1>
       <p className={ui.muted}>Enter the operator token set in RESEARCH_OS_API_TOKEN.</p>
       <label className={ui.field}>Token<input required type="password" autoComplete="current-password" value={token} onChange={(e) => setToken(e.target.value)} /></label>
       {error && <p role="alert" className={ui.error}>{error}</p>}

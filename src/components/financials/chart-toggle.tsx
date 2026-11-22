@@ -2,6 +2,7 @@
 
 import type { MouseEvent } from 'react';
 import styles from './financials.module.css';
+import { C } from "@/components/ui/palette";
 
 /** The per-row chart button. `color` is set while the row is on the chart. */
 export function ChartToggle({ name, color, disabled, reason, hint, icon = 'bars', onToggle }: {
@@ -12,7 +13,7 @@ export function ChartToggle({ name, color, disabled, reason, hint, icon = 'bars'
   const title = disabled ? reason ?? undefined : on ? `Remove ${name} from the chart` : reason ? `${hint ?? 'Chart this row'} (${reason.toLowerCase()})` : hint ?? 'Chart this row';
   return <button type="button" className={styles.rowChart} aria-pressed={on} disabled={disabled} title={title}
     aria-label={disabled ? `${name}: ${reason}` : `${on ? 'Remove' : 'Chart'} ${name}`}
-    style={on ? { background: color, borderColor: color, color: '#fff' } : undefined}
+    style={on ? { background: color, borderColor: color, color: C.tile } : undefined}
     onClick={(e) => onToggle(e.shiftKey, e)}>
     <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
       {icon === 'bars'

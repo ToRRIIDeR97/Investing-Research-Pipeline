@@ -15,6 +15,7 @@ import { ChartsBoard, type SeriesOptionGroup } from './financials/charts-board';
 import { useSavedCharts, type SavedChartsApi } from './financials/use-saved-charts';
 import styles from './financial-statements.module.css';
 import fin from './financials/financials.module.css';
+import { C } from "@/components/ui/palette";
 
 type Row = Record<string, any>;
 const statements = {all:'All statements', income:'Income statement', balance:'Balance sheet', cashflow:'Cash flow', metrics:'Metrics', charts:'My charts'};
@@ -195,6 +196,6 @@ function StatementWorkspace({group, rows, periods, chartPeriods, frequency, obse
 
 function Trend({series,metric}:{series:ReturnType<typeof financialSeries>;metric:string}) {
   return <figure className={styles.trend}>{series.reason?<p className={styles.note}>{series.reason}</p>:<div role="img" aria-label={`${label(metric)} trend. ${series.points.map(p=>`${periodLabel(p.period)}: ${number(p.value,3)}`).join('; ')}. ${series.unit}.`}>
-    <ResponsiveContainer width="100%" height={70}><LineChart data={series.points} margin={{left:8,right:8,top:8,bottom:8}}><YAxis hide domain={['dataMin','dataMax']}/><Line type="linear" dataKey="value" stroke="#596b88" strokeWidth={1.7} dot={{r:2.5}} connectNulls={false} isAnimationActive={false}/></LineChart></ResponsiveContainer>
+    <ResponsiveContainer width="100%" height={70}><LineChart data={series.points} margin={{left:8,right:8,top:8,bottom:8}}><YAxis hide domain={['dataMin','dataMax']}/><Line type="linear" dataKey="value" stroke={C.navy3} strokeWidth={1.7} dot={{r:2.5}} connectNulls={false} isAnimationActive={false}/></LineChart></ResponsiveContainer>
   </div>}<figcaption>{label(metric)} trend</figcaption></figure>;
 }

@@ -5,11 +5,12 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { PragmaMark } from "@/components/brand/logo";
+import { CompanyLogo } from "@/components/company/company";
 import styles from "./app-shell.module.css";
 
 interface Asset { id: string; canonical_name: string; slug: string; }
 
-/** Pragma Research chrome: wordmark, three plain links (current one underlined), inline asset search, Start research. */
+/** Pragma Research chrome: wordmark, the main links as soft pills (current one navy), asset search with logos, Start research. */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -59,7 +60,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className={styles.shell}>
       <header className={styles.header}>
         <div className={styles.bar}>
-          <Link href="/" className={styles.brand} aria-label="Pragma Research home"><PragmaMark size={24} /><span>Pragma Research</span></Link>
+          <Link href="/" className={styles.brand} aria-label="Pragma Research home"><PragmaMark size={26} /><span>Pragma Research</span></Link>
           <nav className={styles.nav} aria-label="Main">
             <Link href="/" aria-current={current("/")}>Home</Link>
             <Link href="/assets" aria-current={current("/assets")}>Research</Link>
@@ -84,7 +85,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   : !assets ? <p role="status">Loading assets…</p>
                   : !matches.length ? <p>No assets found.</p>
                   : matches.map((asset, index) => <button type="button" role="option" aria-selected={index === active} key={asset.id} onMouseEnter={() => setActive(index)} onClick={() => go(asset)}>
-                    <span>{asset.canonical_name}</span><span className={styles.ticker}>{asset.slug}</span>
+                    <CompanyLogo subject={{ asset_id: asset.id }} name={asset.canonical_name} size={26} /><span className={styles.resultName}>{asset.canonical_name}</span><span className={styles.ticker}>{asset.slug}</span>
                   </button>)}
               </div>}
             </div>

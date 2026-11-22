@@ -394,6 +394,48 @@ The **Workbench** tab of `/assets/:id/view` recomputes the selected run's stored
 
 Routes (`src/app/api/research-runs/[id]/workbench/**`, logic in `src/lib/api/workbench.ts`): `GET …/workbench` returns `{ available, reason?, inputs, baseline, scenarios }` (200 also when unavailable); `POST …/workbench` `{ change }` returns the recomputed `WhatIfResult` and writes nothing; `GET`/`POST …/workbench/scenarios` list and save; `DELETE …/workbench/scenarios/:scenarioId` removes one, scoped to the run. `scripts/valuation-whatif.ts` is the command-line counterpart.
 
+## Interface: design system, key numbers and company profiles
+
+The pages follow one design system, "Slate and navy" (Implementations/ui-remaster):
+
+- **Colour.** Neutral slate surfaces, with navy as the only accent. Green, red and amber appear only to say good, bad or caution.
+- **Type and shape.** Inter throughout, 16px card corners and 10px control corners.
+- **Where the values live.** Colours are tokens in `src/app/globals.css`. Charts and SVGs, which can't read CSS variables reliably, take the same values from `src/components/ui/palette.ts`. A test (`Implementations/ui-remaster/acceptance/ac1-tokens.test.ts`) fails on any other raw hex colour in `src/app` or `src/components`.
+
+Every asset page opens with its identity and its numbers:
+
+- **The hero** (`AssetHero`): the company's logo, name, ticker, kind and status.
+- **The key-numbers strip** (`KeyNumbers`), with these tiles:
+  - price, marked verified or unverified;
+  - base, bull and bear value per share, with the gap to price;
+  - the probability-weighted value;
+  - the first monitored KPIs, with a good or bad tone.
+
+The numbers come from `assetSnapshot` (`src/lib/research/asset-snapshot.ts`, pure), which reads a run's code-computed artifacts and never re-derives a figure:
+
+- **Case values and price**: `report_facts` first (`cases.pv_per_share` found by column name, `market_price` and `weighted.pv_per_share`), else the `value_today_<case>` fields of `valuation_scenario_set`. A `report_facts.valuation_status` other than `complete` withholds the case values.
+- **Yearly targets**: `annual_price_target_path`.
+- **KPIs**: `monitoring_dashboard` items with a numeric level. Each KPI is "good" on or past its bull threshold and "bad" on or past its bear threshold.
+
+The overview shows these on a value ruler, a price fan with the target table, KPI gauges and a risk heat list. The risk heat ranks risks by likelihood × severity from `risk_register`.
+
+`GET /api/assets/overview` (`listAssetOverviews`) gives the home feed and the Research list every research asset in one call. Each entry has its primary ticker, its newest run, and the snapshot of its newest run that has `report_facts`. The call reads only those small artifacts, plus the two price fields of `valuation_scenario_set`.
+
+**Company profiles** add each company's logo and its founders and executives with photos. They are display only and never a report input.
+
+- **The lookup** (`resolveCompanyProfile`, `src/lib/company-profiles/resolve.ts`):
+  1. It searches Wikidata for the cleaned company name. With a ticker, it accepts only an entity whose listing (P414) carries that ticker (P249; `.` and `-` match), so a namesake never lends its logo. Without a ticker, the label must match.
+  2. The logo comes from Wikidata P154, else the article infobox's `logo`.
+  3. People come from the English Wikipedia infobox: `key_people` with their roles, then `founders` or `founder` as Co-founder or Founder. When the infobox names nobody, Wikidata's CEO (P169), founders (P112) and chair (P488) are used instead.
+  4. Photos come from Wikipedia's page images for linked people, or Wikidata P18. Unlinked people get initials.
+- **Untrusted data.** Names and roles are stripped to plain text. Logo URLs are rebuilt from validated Commons file names (`commonsFileUrl`). Photo URLs must be https on `upload.wikimedia.org`, `thumb.wikimedia.org` or `commons.wikimedia.org`, and lose their query (`safeImageUrl`).
+- **Cache.** Results are cached in the `company_profiles` table, keyed `ticker:<TICKER>` or `name:<name>` (`getCompanyProfiles`, `cache.ts`). A resolved row lasts 30 days, not found 7 days and failed 1 hour. A failed refresh keeps the last good profile.
+- **API.** `POST /api/company-profiles` takes 1–40 subjects, each an `asset_id` or a name with an optional ticker. It answers within 2.5 s (`getCompanyProfilesWithin`) with the known profiles, the keys still `pending` and `throttled` (true while keys are pending and lookups run unidentified, `lookupThrottled`). Those lookups finish in the background and land in the cache. The browser store (`useCompanyProfile`) batches every logo on a page into one call and asks again for pending keys every 7 s. While `throttled`, `Leadership` shows a quiet slow-lookup note under its placeholder and the logo monogram carries it as its tooltip (`SLOW_LOOKUP_NOTE`).
+- **Rate limits.** Wikimedia rate-limits its APIs (2026 rules: a User-Agent without contact details gets 10 requests a minute; 3 or fewer concurrent requests; honour Retry-After). So `wikimediaFetchJson` sends one request at a time, spaced 6.5 s apart, or 0.4 s when `WIKIMEDIA_CONTACT` puts contact details in the User-Agent (`wikimediaIdentified`, `wikimediaSpacingMs`). The first unidentified request logs one server line (`createUnidentifiedNotice`) naming the setting and [operations](operations.md#company-profiles-logos-and-leadership), never a value. A 429 or 503 pauses all lookups for its Retry-After, at least 60 s, and is not cached (`RateLimitedError`).
+- **Client.** It uses undici's `request`, because Wikipedia refuses Node's global `fetch` (its browser-style headers trip the bot filter).
+- **Off switch.** With `COMPANY_PROFILES=off`, only cached profiles are served.
+
+
 ## Invariants
 
 - PostgreSQL owns all research state. Files under `storage/` are referenced from database rows by path and hash. Each machine has its own database; `npm run store:sync` copies rows and files between machines through the `research-store` branch ([operations](operations.md#sync-research-between-machines)).

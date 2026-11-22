@@ -3,6 +3,7 @@ import {Fragment,useId,useMemo,useState} from 'react';
 import {kpiHealth,quarterLabel,statusLabels,type KpiStatus} from '@/lib/research/reporting/kpi-health';
 import {label,readerText} from '@/lib/research/reporting/presentation.mjs';
 import styles from './report-panels.module.css';
+import { C } from "@/components/ui/palette";
 type Row=Record<string,any>;
 type Shown=KpiStatus|'stale'|'single'|'none';
 /** A count without a noun ("16M") takes one from the KPI name: members, shares, products, accounts. */
@@ -11,7 +12,7 @@ const shownLabels:Record<Shown,string>={...statusLabels,stale:'Stale',single:'On
 const shownTitles:Partial<Record<Shown,string>>={stale:'The latest reading is from an earlier quarter, so it says nothing about now.',single:'Only one reading has been captured, so there is no trend to judge.'};
 const shownOf=(r:{status:KpiStatus|null;stale:boolean;hasHistory:boolean}):Shown=>r.status==null?'none':r.stale?'stale':!r.hasHistory?'single':r.status;
 
-const Chevron=()=><svg className={styles.chev} width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5L7.5 6 4 9.5" stroke="#6b7280" strokeWidth="1.6" fill="none" strokeLinecap="round"/></svg>;
+const Chevron=()=><svg className={styles.chev} width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5L7.5 6 4 9.5" stroke={C.ink3} strokeWidth="1.6" fill="none" strokeLinecap="round"/></svg>;
 
 export function KpiHealthTable({artifacts,compact=false,onRefresh,refreshing=false}:{artifacts:Row[];compact?:boolean;onRefresh?:()=>void;refreshing?:boolean}) {
   const model=useMemo(()=>kpiHealth(artifacts),[artifacts]);

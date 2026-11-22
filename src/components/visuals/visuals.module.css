@@ -1,0 +1,51 @@
+/* Valuation visuals (design round 7: W06 visuals in Slate and navy). Navy marks value, ink marks price, and green,
+   red and amber appear only when a number is good, bad or worth watching. */
+.strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(138px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.tileNum { min-width: 0; padding: 12px 14px; background: var(--tile); border: 1px solid var(--line); border-radius: 14px; }
+.tileNum[data-emphasis="true"] { border-color: var(--navy-2); background: var(--navy-soft); }
+.label { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.value { margin-top: 4px; font-size: 22px; font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.sub { margin-top: 3px; font-size: 12px; line-height: 1.35; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+[data-tone="good"] > .sub, .sub[data-tone="good"] { color: var(--positive); }
+[data-tone="bad"] > .sub, .sub[data-tone="bad"] { color: var(--critical); }
+[data-tone="watch"] > .sub, .sub[data-tone="watch"] { color: var(--caution); }
+.stripEmpty { margin-bottom: 16px; padding: 12px 16px; border: 1px dashed var(--line-strong); border-radius: 14px; color: var(--ink-2); font-size: 13px; }
+
+.ruler { padding: 16px 18px 12px; }
+.ruler svg { display: block; width: 100%; height: auto; overflow: visible; }
+.rulerCaption { margin-top: 10px; color: var(--ink-2); font-size: 13px; line-height: 1.55; }
+.rulerCaption strong { color: var(--ink); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 0 18px 14px; color: var(--ink-3); font-size: 12px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 14px; height: 8px; border-radius: 3px; display: inline-block; }
+
+.fan { padding: 12px 18px 6px; }
+.fan svg { display: block; width: 100%; height: auto; }
+
+.gauges { display: grid; gap: 14px; padding: 16px 18px; }
+.gauge { display: grid; gap: 6px; }
+.gaugeHead { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.gaugeHead strong { font-weight: 600; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+.gaugeHead span { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gauge[data-tone="good"] .gaugeHead span { color: var(--positive); }
+.gauge[data-tone="bad"] .gaugeHead span { color: var(--critical); }
+.gauge svg { display: block; width: 100%; height: 22px; }
+.gaugeFoot { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--ink-3); }
+
+.heat { display: grid; }
+.heatRow { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 11px 18px; border-top: 1px solid var(--line-soft); text-align: left; width: 100%; }
+.heatRow:first-child { border-top: 0; }
+.heatCell { display: grid; place-items: center; width: 44px; height: 32px; border-radius: 8px; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.heatCell[data-level="3"] { background: var(--critical-bg); color: var(--critical); }
+.heatCell[data-level="2"] { background: var(--caution-bg); color: var(--caution); }
+.heatCell[data-level="1"] { background: var(--soft); color: var(--ink-2); }
+.heatName { font-size: 13px; font-weight: 600; line-height: 1.4; color: var(--ink); }
+.heatMeta { margin-top: 2px; font-size: 12px; line-height: 1.45; color: var(--ink-2); }
+.heatScore { font-size: 12px; color: var(--ink-3); white-space: nowrap; text-align: right; }
+
+.pillars { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 14px 18px 18px; counter-reset: pillar; }
+.pillar { position: relative; padding: 12px 14px 12px 44px; border: 1px solid var(--line); border-radius: 12px; background: var(--tile); font-size: 13px; line-height: 1.5; color: var(--ink); }
+.pillar::before { counter-increment: pillar; content: counter(pillar); position: absolute; left: 12px; top: 12px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 999px; background: var(--navy); color: var(--tile); font-size: 11px; font-weight: 700; }
+@media (max-width: 700px) { .pillars { grid-template-columns: minmax(0, 1fr); } }
+
+.mini { display: block; width: 100%; height: 34px; }

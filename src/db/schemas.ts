@@ -20,6 +20,7 @@ import * as notebookSchema from "./schema/notebook";
 import * as workbenchSchema from "./schema/workbench";
 import * as checklistsSchema from "./schema/checklists";
 import * as themesSchema from "./schema/themes";
+import * as companyProfilesSchema from "./schema/company-profiles";
 
 export const schema = {
   ...coreSchema,
@@ -43,4 +44,5 @@ export const schema = {
   ...workbenchSchema,
   ...checklistsSchema,
   ...themesSchema,
+  ...companyProfilesSchema,
 };

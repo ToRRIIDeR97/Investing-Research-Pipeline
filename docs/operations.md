@@ -117,3 +117,22 @@ For each asset's latest `completed` pipeline-v3 run, it:
 A refresh is due when a new 10-Q or 10-K exists, a KPI is past its danger line, or the run's `refresh_schedule.next_refresh_at` has passed. To act on it, start a new run of the asset from the UI or with `POST /api/assets/<id>/research-runs`. The new run links to the last completed run by default, and queuing it is a separate, explicit step. To schedule the check, run the command from cron or launchd. It needs only `DATABASE_URL`, which it reads from `.env.local` when the variable isn't set. Rows accumulate, and nothing prunes them. They are deleted with their asset.
 
 Recovery: a `failed` row usually means the SEC was unreachable or rate-limited it. Run the command again later. SEC asks for a descriptive User-Agent, and the script sends the same placeholder as the pipeline (AR-SEC-6).
+
+## Company profiles (logos and leadership)
+
+Pages show each company's logo and its founders and executives from Wikidata and Wikipedia ([system](system.md#interface-design-system-key-numbers-and-company-profiles)). The first view of a company starts the lookup, and later views read the `company_profiles` table (migration `0024`).
+
+- **Throughput.** Wikimedia's API limits (2026) allow 10 requests a minute for a User-Agent with no contact details and 200 with one. Lookups run one request at a time.
+  - Without `WIKIMEDIA_CONTACT`, requests are spaced 6.5 s apart (about 9 a minute). A new company needs about 4 requests, so its logo and leadership take about 30 seconds and appear when the lookup finishes.
+  - With `WIKIMEDIA_CONTACT` set, the spacing is 0.4 s and a new company takes 2 to 3 seconds.
+- **Speeding lookups up.** Add `WIKIMEDIA_CONTACT=<value>` to `.env.local` and restart the app server (`npm run dev` or `npm start`). The research worker does no lookups.
+  - The value is a URL or email address that you, the operator, choose, for example a project page or a role mailbox. It goes into the User-Agent, as Wikimedia's policy asks.
+  - Leave it unset if you don't want to send any contact detail. Lookups still work, only slower.
+  - The value is sanitised (only letters, digits and `@ . : / + ~ - _` are kept, 120 characters at most). A value with no usable characters counts as unset.
+- **How to tell.**
+  - The first time lookups run unidentified, the server logs one line, once per process: `[company-profiles] Wikimedia lookups are unidentified: WIKIMEDIA_CONTACT is not set …`. It names the setting and this section, never a value.
+  - While a company is still pending and lookups are unidentified, `POST /api/company-profiles` answers `throttled: true`. The page then shows a quiet note under the leadership placeholder ("Still looking up this company…"), and the same text as the logo monogram's tooltip.
+  - After you set `WIKIMEDIA_CONTACT` and restart, neither the line nor the note appears.
+- **Switching off.** Set `COMPANY_PROFILES=off` to stop all lookups. Pages then show cached logos, monograms and initials.
+- **Refreshing.** Rows refresh on their own after their TTL: 30 days when resolved, 7 days when not found, 1 hour when failed. To force a refresh, delete the row: `DELETE FROM company_profiles WHERE key = 'ticker:SOFI';`.
+- **Rate limited.** A 429 from Wikimedia pauses all lookups for its Retry-After, at least 60 seconds. Nothing is cached for it, and the next view tries again.
