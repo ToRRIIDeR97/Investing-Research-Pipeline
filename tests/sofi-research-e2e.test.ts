@@ -14,6 +14,8 @@ import { POST as refreshRun } from "../src/app/api/research-runs/[id]/refresh/ro
 import {POST as askResearch, GET as loadChat} from '../src/app/api/research-runs/[id]/chat/route';
 import {loadReportInputs} from '../src/lib/research/reporting/store';
 import {loadWhatIfData} from '../src/lib/research/valuation/whatif-data';
+import {GET as listChecklists} from '../src/app/api/checklists/route';
+import {POST as evaluateChecklistRoute} from '../src/app/api/assets/[id]/checklist-evaluations/route';
 import {scenarioProposalErrors,whatIfAvailability} from '../src/lib/research/valuation/whatif';
 import { processNextResearchRunJob } from "../src/workers/research-worker";
 import { getLatestResearchRunJob, claimNextResearchRun, requeueExpiredResearchRunJobs } from "../src/lib/research/run-queue";
@@ -523,6 +525,20 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
     else assert.deepEqual(proposals,[]);
     assert.equal((await askResearch(request({message:'x',passage:{quote:'q',section_id:'no-such-chapter'}}),paramsFor(runId))).status,400);
     assert.equal((await askResearch(request({message:'x',passage:{quote:'q'.repeat(301),section_id:chapter.id}}),paramsFor(runId))).status,400);
+    // C-6: the default checklist evaluated on this run: measures by code, judgements by the mock model, evidence from the run.
+    const [{asset_id:runAssetId}]=await sql`SELECT asset_id FROM research_runs WHERE id=${runId}`;
+    const defaultList=(await (await listChecklists()).json()).find((c:any)=>c.is_default);
+    assert.ok(defaultList,'the default checklist is seeded on first listing');
+    const evaluated=await evaluateChecklistRoute(new NextRequest(`http://localhost/api/assets/${runAssetId}/checklist-evaluations`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({checklist_id:defaultList.id})}),paramsFor(String(runAssetId)));
+    assert.equal(evaluated.status,201,JSON.stringify(await evaluated.clone().json()));
+    const evaluation=await evaluated.json();
+    assert.equal(evaluation.research_run_id,runId,'defaults to the asset\'s newest run with a report');
+    assert.equal(evaluation.judged_by,'model');
+    const judgedItems=evaluation.results.filter((r:any)=>r.kind==='judgement');
+    assert.ok(judgedItems.length>0&&judgedItems.some((r:any)=>r.status!=='unknown'));
+    const runEvidence=new Set(draft.content_json.evidence.map((e:any)=>e.id));
+    assert.ok(judgedItems.every((r:any)=>r.evidence.every((e:any)=>runEvidence.has(e.id))));
+    assert.equal(evaluation.max,evaluation.results.filter((r:any)=>r.status!=='unknown').reduce((n:number,r:any)=>n+r.weight,0));
     assert.equal((await loadReportInputs(sql,runId,cutoffAt)).input_hash,inputsBeforeChat.input_hash,'Chat must not change report inputs or invalidate approval');
     const maliciousOrigin=new NextRequest('http://localhost/api/test',{method:'POST',headers:{origin:'https://unrelated.example'},body:JSON.stringify({message:'Test'})});
     assert.equal((await askResearch(maliciousOrigin,paramsFor(runId))).status,403);
