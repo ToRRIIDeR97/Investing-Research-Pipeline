@@ -105,7 +105,8 @@ export function depthDataSupport(artifacts: Row[]): Record<string, boolean> {
   if (facts) {
     const cases = columnRows(facts.cases);
     support.no_rerating_return = cases.some((row) => typeof row.no_rerating_return === "number");
-    support.fcf_yield_cross_check = typeof facts.market?.fcf_yield === "number" || typeof facts.market?.ev_to_nopat_ttm === "number";
+    support.fcf_yield_cross_check = typeof facts.market?.fcf_yield === "number" || typeof facts.market?.ev_to_nopat_ttm === "number"
+      || typeof facts.market?.earnings_yield === "number";
   }
   return support;
 }

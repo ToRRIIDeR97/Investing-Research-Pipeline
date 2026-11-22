@@ -1,13 +1,13 @@
 import { callResearchAgent, exactJsonPrompt, type ResearchRunContext, type Sql } from "../run-context";
 import { AI_REVIEWER_CONTRACT } from "../stage-contracts";
-import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Outline, Section, normalizeOutlineStructure, validateProductOutline, validateChartPlan, outputContract, type ReportOutline, type ReportSection, type CoverageCheck } from "./contracts";
+import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Outline, Section, normalizeOutlineStructure, validateProductOutline, validateChartPlan, fillChartPlanGap, outputContract, type ReportOutline, type ReportSection, type CoverageCheck } from "./contracts";
 import { composeDraft, draftDocument, reviewDraftedReport, checkFinalCoverage, type CompositionActions, type ReportReview, type WrittenSection, REQUIRED_COVERAGE } from "./compose";
 import { z } from "zod/v4";
 import { DEPTH_CHECKS, DEPTH_CHECK_RULE, REWORK_STAGES, depthFindings } from "./depth";
 import { loadReportInputs, saveReportArtifact } from "./store";
 import { createReport, reviewDocument } from "./report";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
-import { VISUAL_GUIDELINES } from './visuals';
+import { VISUAL_GUIDELINES, validateVisual } from './visuals';
 import { getTeamRequests, includeUnansweredQuestions, requestMissingResearch, preDraftBatch, preDraftRequests, postReviewAnswers, ResearchRequestsPending } from "../team";
 import { saveVersionChangeLog } from "../lineage/runs";
 import { buildReportFacts } from "./facts";
@@ -185,6 +185,23 @@ function checkedContract(base: AgentOutputFormat, check: (value: any) => void, c
 }
 
 /**
+ * How a section write turns the model's answer into the stored result, in the value validation sees (`outputFormat`,
+ * after `check`) and in the value stored (`finish`). With `visualInput`, a visual that cannot be built from the stored
+ * data (an unknown metric, say) is dropped instead of failing the section; a planned chart left without a visual then
+ * becomes a gap, both in code.
+ */
+export function sectionWriteSteps<V>(section: ReportOutline["sections"][number], contract: AgentOutputFormat,
+  check: (value: V) => V, validate: (value: V) => void, visualInput?: Parameters<typeof validateVisual>[1]) {
+  const buildable = (visual: Parameters<typeof validateVisual>[0]) => { try { validateVisual(visual, visualInput!); return true; } catch { return false; } };
+  const tidy = (written: ReportSection): ReportSection => {
+    const visuals = visualInput && written.visuals ? written.visuals.filter(buildable) : written.visuals;
+    return fillChartPlanGap(section, visuals === written.visuals ? written : { ...written, visuals });
+  };
+  const withChartGap = (value: V): V => (value as any)?.section ? { ...value, section: tidy((value as any).section) } : value;
+  return { outputFormat: checkedContract(contract, validate, value => withChartGap(check(value))), finish: withChartGap };
+}
+
+/**
  * The analysis stages see every accepted claim, but the report may cite only dated, linked evidence
  * and current artifacts. A citation outside that set is dropped, as for team answers, and its ID goes to
  * `dropped` (saved with the review), never to the reader. A fact left without support still fails validation.
@@ -286,15 +303,17 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
     async write(section, outline, feedback, completed, options) {
       const finalCoverage = options?.coverage;
       const { packet, contract, perCallKeys, extraRules } = reportSectionCall(common, packetArtifacts, section, outline, feedback, completed, finalCoverage);
-      const output = usable(await callResearchAgent<{ section: ReportSection; coverage?: WrittenSection["final_coverage"] }>({ sql, ctx, stageKey,
+      type Written = { section: ReportSection; coverage?: WrittenSection["final_coverage"] };
+      const steps = sectionWriteSteps<Written>(section, contract, check, result => {
+        if (result.section.id !== section.id || JSON.stringify(result.section.coverage) !== JSON.stringify(section.coverage)) throw new Error("Preserve section id and coverage exactly");
+        validateChartPlan(section, result.section);
+        createReport({ ...reportInput, required_coverage: section.coverage, sections: [result.section], questions: [],
+          coverage: section.coverage.map(key => ({ key, status: "qualified", rationale: "Section validation", section_ids: [section.id] })) });
+        if (finalCoverage) checkFinalCoverage(reportInput, outline, [...completed.filter(s => s.id !== section.id), result.section], result.coverage ?? []);
+      }, reportInput);
+      const output = steps.finish(usable(await callResearchAgent<Written>({ sql, ctx, stageKey,
         taskKey: `report:section:${section.id}`, taskType: "report_section", agentName: "export-writer", modelTier: "mid", packet,
-        perCallKeys, outputFormat: checkedContract(contract, (result: { section: ReportSection; coverage?: WrittenSection["final_coverage"] }) => {
-          if (result.section.id !== section.id || JSON.stringify(result.section.coverage) !== JSON.stringify(section.coverage)) throw new Error("Preserve section id and coverage exactly");
-          validateChartPlan(section, result.section);
-          createReport({ ...reportInput, required_coverage: section.coverage, sections: [result.section], questions: [],
-            coverage: section.coverage.map(key => ({ key, status: "qualified", rationale: "Section validation", section_ids: [section.id] })) });
-          if (finalCoverage) checkFinalCoverage(reportInput, outline, [...completed.filter(s => s.id !== section.id), result.section], result.coverage ?? []);
-        }, check), promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: contract.requiredKeys, packet: p, extraRules }) }));
+        perCallKeys, outputFormat: steps.outputFormat, promptFactory: p => exactJsonPrompt({ agentName: "export-writer", requiredKeys: contract.requiredKeys, packet: p, extraRules }) })));
       return finalCoverage ? { ...output.section, final_coverage: output.coverage } : output.section;
     },
     async review(document) {

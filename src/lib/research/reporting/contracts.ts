@@ -61,12 +61,13 @@ export type CoverageCheck = z.infer<typeof CoverageResult>;
  * a history/evidence-only section also covers business, and the one valuation section after the opening summary
  * also covers forecasts and downside. Other sections lose the valuation key, and the coverage map follows.
  * An outline it can't fix this way, such as valuation only in the summary, is left for validation.
+ * The valuation rule runs first: dropping valuation from a [history, valuation] section leaves it history-only,
+ * which the history rule then repairs (SoFi run 3c3fc4ce failed its review on that order).
  */
 export function normalizeOutlineStructure(outline: ReportOutline): ReportOutline {
   const sections = outline.sections.map(s => ({ ...s, coverage: [...s.coverage] }));
   const coverage = outline.coverage.map(c => ({ ...c, section_ids: [...c.section_ids] }));
   const link = (key: string, id: string) => { const check = coverage.find(c => c.key === key); if (check && !check.section_ids.includes(id)) check.section_ids.push(id); };
-  for (const s of sections) if (s.coverage.length && s.coverage.every((k): boolean => k === 'history' || k === 'evidence')) { s.coverage.push('business'); link('business', s.id); }
   const listed = sections.filter(s => s.coverage.includes('valuation'));
   const candidates = listed.filter(s => s !== sections[0]);
   const score = (s: { coverage: string[] }) => ['forecasts', 'downside'].filter(k => s.coverage.includes(k)).length;
@@ -77,6 +78,7 @@ export function normalizeOutlineStructure(outline: ReportOutline): ReportOutline
     const check = coverage.find(c => c.key === 'valuation');
     if (check) check.section_ids = [keep.id];
   }
+  for (const s of sections) if (s.coverage.length && s.coverage.every((k): boolean => k === 'history' || k === 'evidence')) { s.coverage.push('business'); link('business', s.id); }
   return { ...outline, sections, coverage };
 }
 
@@ -90,10 +92,25 @@ export function validateProductOutline(outline:ReportOutline) {
   if(errors.length)throw new Error(errors.join(' '));
 }
 
+/** No chart is planned, or the planned chart is drawn, or a gap says why it is not. */
+const chartPlanMet = (plan: { chart_plan?: string }, section: ReportSection) => !plan.chart_plan?.trim()
+  || (section.visuals ?? []).some(v => QUANTITATIVE_VISUALS.includes(v.kind)) || section.gaps.some(g => /\bcharts?\b/i.test(g));
+
+/** The reader-facing gap code adds when a writer drops its planned chart. It names no stored data: chart_plan does. */
+export const CHART_PLAN_GAP = "The planned chart is not shown because it could not be built from the stored data.";
+
+/**
+ * A writer that drops its planned chart without saying why gets a plain gap from code instead of another model
+ * attempt (SoFi run 3c3fc4ce failed its review on this rule). The section is returned unchanged when the plan is met.
+ */
+export function fillChartPlanGap<S extends ReportSection>(plan: { chart_plan?: string }, section: S): S {
+  return chartPlanMet(plan, section) ? section : { ...section, gaps: [...section.gaps, CHART_PLAN_GAP] };
+}
+
 /** A planned chart is drawn, or a gap says why it is not. */
 export function validateChartPlan(plan: { chart_plan?: string }, section: ReportSection) {
-  if (!plan.chart_plan?.trim() || (section.visuals ?? []).some(v => QUANTITATIVE_VISUALS.includes(v.kind)) || section.gaps.some(g => /\bcharts?\b/i.test(g))) return;
-  throw new Error(`section_plan.chart_plan plans a chart ("${plan.chart_plan.trim()}"). Add it as a history, series, ratio, scenarios or valuation_bridge visual from stored data, or state in gaps why the chart is omitted.`);
+  if (chartPlanMet(plan, section)) return;
+  throw new Error(`section_plan.chart_plan plans a chart ("${(plan.chart_plan ?? "").trim()}"). Add it as a history, series, ratio, scenarios or valuation_bridge visual from stored data, or state in gaps why the chart is omitted.`);
 }
 
 export function outputContract(shape: Record<string, z.ZodType>): AgentOutputFormat {

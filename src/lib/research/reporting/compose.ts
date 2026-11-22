@@ -3,8 +3,29 @@ import { createReport, type ReportInput, type ReportDocument } from "./report";
 import { mapWithConcurrency } from "../pipeline-helpers";
 import { checkReportSubstance } from "./substance";
 import { deriveReview, depthFindings, isPassing, type DepthCheck, type DerivedReview } from "./depth";
+import { ResearchAgentRunError } from "../../agent-harness/errors";
 
 const isConclusion = (plan: { coverage: string[] }) => plan.coverage.includes("conclusion");
+
+/** Model-output failures: the call ran, but what came back never met the contract. Retrying the stage won't fix them. */
+const CONTENT_FAILURES = new Set(["schema_validation", "output_exhausted", "response_limit"]);
+/**
+ * Whether a repair-round error is a content failure (through its cause chain, as isTransientAgentError reads it).
+ * Transient provider errors, authentication, quota and budget stops, and code errors are not: they still fail the stage.
+ */
+export function isRepairContentFailure(error: unknown): boolean {
+  for (let current = error, depth = 0; current && depth < 5; current = (current as { cause?: unknown }).cause, depth += 1) {
+    if (current instanceof ResearchAgentRunError) return CONTENT_FAILURES.has(String(current.responseMetadata.error_type));
+  }
+  return false;
+}
+
+/**
+ * A body section's repair feedback: findings and answers that name it, plus those that name no section.
+ * Conclusions synthesise every chapter, so they keep the full feedback.
+ */
+const feedbackFor = (sectionId: string, feedback: Record<string, any>[]) =>
+  feedback.filter(f => !f.section_id || f.section_id === sectionId);
 
 export interface ReportReview extends Record<string, unknown> {
   review_summary: string; findings: Record<string, any>[]; quality_score: number;
@@ -173,37 +194,62 @@ export async function reviewDraftedReport(input: CompositionInput, actions: Comp
     const answers = !passed && actions.rework ? await actions.rework(review) : [];
     const findings = [...review.findings.filter(f => f.source !== "substance_check" || f.section_id), ...depthFindings(review.depth_checks, outline.sections)];
     const feedback = [...findings, ...answers];
-    // A passed review repairs only the substance findings: no outline re-plan, only the flagged sections and conclusions.
-    const researchFindings = passed ? [] : findings.filter(f => f.category === "research_gap");
-    if (researchFindings.length) {
-      // Re-investigate the existing corpus once. Missing disclosures must become
-      // qualified/blocked questions, not facts invented by the section writer.
-      state.outline = Outline.parse(await actions.plan(researchFindings));
-      const replanned = state.outline;
-      await actions.save("report_outline", "outline", replanned);
-      await actions.save("question_register", "questions", { questions: replanned.questions });
-      const revised: ReportSection[] = await mapWithConcurrency(body(replanned.sections), plan => {
-        const prior = sections.find(s => s.id === plan.id);
-        const affected = findings.some(f => !f.section_id || f.section_id === plan.id);
-        return prior && !affected && JSON.stringify(prior.coverage) === JSON.stringify(plan.coverage)
-          ? Promise.resolve(prior) : write(plan, feedback, []);
-      });
-      await writeConclusions(replanned.sections, feedback, revised);
-      c.inOutlineOrder(revised);
-      sections.splice(0, sections.length, ...revised);
-      continue;
+    try {
+      // A passed review repairs only the substance findings: no outline re-plan, only the flagged sections and conclusions.
+      const researchFindings = passed ? [] : findings.filter(f => f.category === "research_gap");
+      if (researchFindings.length) {
+        // Re-investigate the existing corpus once. Missing disclosures must become
+        // qualified/blocked questions, not facts invented by the section writer.
+        state.outline = Outline.parse(await actions.plan(researchFindings));
+        const replanned = state.outline;
+        await actions.save("report_outline", "outline", replanned);
+        await actions.save("question_register", "questions", { questions: replanned.questions });
+        const revised: ReportSection[] = await mapWithConcurrency(body(replanned.sections), plan => {
+          const prior = sections.find(s => s.id === plan.id);
+          const affected = findings.some(f => !f.section_id || f.section_id === plan.id);
+          return prior && !affected && JSON.stringify(prior.coverage) === JSON.stringify(plan.coverage)
+            ? Promise.resolve(prior) : write(plan, feedbackFor(plan.id, feedback), []);
+        });
+        await writeConclusions(replanned.sections, feedback, revised);
+        c.inOutlineOrder(revised);
+        sections.splice(0, sections.length, ...revised);
+        continue;
+      }
+      const writingFindings = passed ? substance : findings;
+      const affected = new Set(writingFindings.map(f => f.section_id).filter(Boolean));
+      const planOf = (i: number) => outline.sections.find(s => s.id === sections[i].id)!;
+      const indexes = sections.map((_, i) => i);
+      const repairBody = indexes.filter(i => !isConclusion(sections[i]) && (!affected.size || affected.has(sections[i].id)));
+      const repairFeedback = passed ? substance : feedback;
+      (await mapWithConcurrency(repairBody, i => write(planOf(i), feedbackFor(sections[i].id, repairFeedback), []))).forEach((section, k) => { sections[repairBody[k]] = section; });
+      const last = indexes.filter(i => isConclusion(sections[i])).at(-1);
+      for (const i of indexes.filter(i => isConclusion(sections[i]))) sections[i] = await write(planOf(i), repairFeedback, sections, i === last);
+    } catch (error) {
+      if (!isRepairContentFailure(error)) throw error;
+      return keepDraft(review, error);
     }
-    const writingFindings = passed ? substance : findings;
-    const affected = new Set(writingFindings.map(f => f.section_id).filter(Boolean));
-    const planOf = (i: number) => outline.sections.find(s => s.id === sections[i].id)!;
-    const indexes = sections.map((_, i) => i);
-    const repairBody = indexes.filter(i => !isConclusion(sections[i]) && (!affected.size || affected.has(sections[i].id)));
-    const repairFeedback = passed ? substance : feedback;
-    (await mapWithConcurrency(repairBody, i => write(planOf(i), repairFeedback, []))).forEach((section, k) => { sections[repairBody[k]] = section; });
-    const last = indexes.filter(i => isConclusion(sections[i])).at(-1);
-    for (const i of indexes.filter(i => isConclusion(sections[i]))) sections[i] = await write(planOf(i), repairFeedback, sections, i === last);
   }
   throw new Error("Report review did not finish");
+
+  /**
+   * The repair round's model output never met the contract. The draft is still a valid report: make it current again
+   * (mapWithConcurrency has let every sibling rewrite settle, so none saves after this), and save the round-0 review,
+   * its verdict and findings unchanged, marked repair failed. The run goes on to human review instead of stopping.
+   */
+  async function keepDraft(review: ReportReview & DerivedReview, error: unknown) {
+    state.outline = draft.outline;
+    state.finalCoverage = draft.finalCoverage;
+    sections.splice(0, sections.length, ...draft.sections);
+    await actions.save("report_outline", "outline", draft.outline);
+    await actions.save("question_register", "questions", { questions: draft.outline.questions });
+    for (const section of draft.sections) await actions.save("report_section", section.id, section);
+    await actions.retain?.("report_section", draft.sections.map(section => section.id));
+    await actions.save("report_document", "document", draft.document);
+    const kept = { ...review, repair: { status: "failed" as const, error: error instanceof Error ? error.message : String(error) } };
+    await actions.save("report_review", `review-${draft.document.content_hash}`,
+      { ...kept, report_hash: draft.document.content_hash, input_hash: draft.document.input_hash, round: 0 });
+    return { document: draft.document, review: kept };
+  }
 }
 
 export const REQUIRED_COVERAGE = Object.keys(COVERAGE);

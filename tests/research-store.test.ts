@@ -3,6 +3,7 @@ import assert from "node:assert";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { symlinkSkip } from "./helpers/platform";
 import { decideRow, fileLines, importFiles, mirrorFiles, orderTables, parentFirst, rowHash, shardWriter, storeShards } from "@/lib/maintenance/research-store";
 
 const store = '{"id":"a","v":2}';
@@ -77,7 +78,7 @@ describe("research store self-references", () => {
   });
 });
 
-describe("research store files", () => {
+describe("research store files", { skip: symlinkSkip }, () => {
   it("skips links that leave storage/ on export, in a referenced folder or named directly", async () => {
     const t = scratch();
     try {
@@ -169,7 +170,7 @@ describe("research store table shards", () => {
     } finally { t.done(); }
   });
 
-  it("reads one-character shards from older stores and skips linked shards", async () => {
+  it("reads one-character shards from older stores and skips linked shards", { skip: symlinkSkip }, async () => {
     const t = scratch();
     try {
       t.put("store/tables/assets/0.jsonl");

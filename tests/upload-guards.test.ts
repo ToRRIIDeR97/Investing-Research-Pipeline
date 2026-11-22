@@ -8,6 +8,7 @@ import postgres from "postgres";
 import { NextRequest } from "next/server";
 import { isSourceUrl, MAX_UPLOAD_BYTES, storedExtension } from "../src/lib/ingestion/upload";
 import { invokeDoclingParser } from "../src/lib/ingestion/parser";
+import { posixShellSkip } from "./helpers/platform";
 
 function loadLocalEnv() {
   if (!existsSync(".env.local")) return;
@@ -31,7 +32,7 @@ test("stored upload extensions are lowercased and allowlisted, and url fields mu
   }
 });
 
-test("Docling parsing runs without blocking the event loop (#24)", async () => {
+test("Docling parsing runs without blocking the event loop (#24)", { skip: posixShellSkip }, async () => {
   // A stand-in python3 that takes a second, as a real parse of a large PDF would.
   const bin = await mkdtemp(join(tmpdir(), "research-os-python-"));
   await writeFile(join(bin, "python3"), `#!/bin/sh\nsleep 1\necho '{"chunks":[],"tables":[],"metadata":{"parser":"docling"},"warnings":[]}'\n`);
