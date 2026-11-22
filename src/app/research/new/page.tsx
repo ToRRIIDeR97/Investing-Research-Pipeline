@@ -1,13 +1,20 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import ui from "@/components/research-ui.module.css";
 
 export default function NewResearchPage() {
+  return <Suspense fallback={null}><NewResearch /></Suspense>;
+}
+
+/** Start research. `?ticker=&name=` (from a theme's shortlist) prefills the new-company form and marks a matching asset. */
+function NewResearch() {
+  const params = useSearchParams();
+  const prefillTicker = (params.get("ticker") ?? "").replace(/[^A-Za-z0-9-]/g, "").slice(0, 30);
   const [assets, setAssets] = useState<{ id: string; canonical_name: string; slug: string }[]>([]);
-  const [name, setName] = useState("");
-  const [ticker, setTicker] = useState("");
+  const [name, setName] = useState((params.get("name") ?? "").slice(0, 500));
+  const [ticker, setTicker] = useState(prefillTicker);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const router = useRouter();
@@ -28,7 +35,7 @@ export default function NewResearchPage() {
       <section className={`${ui.tile} ${ui.s7}`}>
         <div className={ui.tileHead}><h2>Existing assets</h2><span className={ui.muted}>{assets.length}</span></div>
         {assets.length ? <div className={ui.table}><table><thead><tr><th>Asset</th><th>Slug</th><th className={ui.num}></th></tr></thead><tbody>
-          {assets.map((a) => <tr key={a.id}><td className="font-medium">{a.canonical_name}</td><td className={ui.mono}>{a.slug}</td><td className={ui.num}><Link className={ui.textLink} href={`/assets/${a.id}/run?new=1`}>Start</Link></td></tr>)}
+          {assets.map((a) => <tr key={a.id} aria-current={prefillTicker && a.slug === prefillTicker.toLowerCase() ? "true" : undefined}><td className="font-medium">{a.canonical_name}{prefillTicker && a.slug === prefillTicker.toLowerCase() ? " (from your theme)" : ""}</td><td className={ui.mono}>{a.slug}</td><td className={ui.num}><Link className={ui.textLink} href={`/assets/${a.id}/run?new=1`}>Start</Link></td></tr>)}
         </tbody></table></div> : <p className={ui.empty}>No assets yet.</p>}
       </section>
       <section className={`${ui.tile} ${ui.s5}`}>
