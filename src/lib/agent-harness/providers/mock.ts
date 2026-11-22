@@ -129,6 +129,13 @@ function adaptiveReportResponse(packet: Record<string, any>) {
       ], counterevidence: "The fixture cannot establish actual customer retention, competitive responses or future capital allocation.",
       implication: "Reassess the relevant operating assumptions when evidence changes; the fixture is not an investment recommendation.",
       gaps: ["Synthetic data cannot establish live investment quality."],
+      // A conclusion also returns its key reasons, citing evidence the packet shows.
+      ...(Array.isArray(section.coverage) && section.coverage.includes("conclusion") ? { key_reasons: [
+        { headline: "The core business funds its own growth.", explanation: "Operating cash covers reinvestment before any new capital is raised.",
+          figure: "$186 million quarterly revenue", evidence_ids: evidence.slice(0, 1).map(e => e.id) },
+        { headline: "Value depends on how much cash reaches shareholders.", explanation: "Reinvestment can absorb the cash the business generates.",
+          figure: "93% of modeled cash reinvested", evidence_ids: (evidence.length > 1 ? evidence.slice(1, 2) : evidence.slice(0, 1)).map(e => e.id) },
+      ] } : {}),
     }, ...(packet.provisional_coverage ? { coverage: packet.provisional_coverage } : {}) };
   }
   return STATIC["research-reviewer"];

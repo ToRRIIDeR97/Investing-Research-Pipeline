@@ -58,7 +58,27 @@ export function readerProse(text: string): string {
   return out.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+([,.;:])(?=\s|$)/g, "$1").replace(/^[ \t]+|[ \t]+$/g, "");
 }
 
-const clean = (value: unknown) => typeof value === "string" ? readerProse(value) : value;
+/** A number written in thousands ("240,989 thousand"), with its optional decimals. */
+const IN_THOUSANDS = /\b(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?[ \t]*thousands?\b/gi;
+/**
+ * Rewrites amounts written in thousands as millions or billions ("240,989 thousand" is "241.0 million",
+ * "9,520,479 thousand" is "9.52 billion"); one under a million is written in full ("512 thousand" is "512,000").
+ * Applied to newly written answers only (cleanReaderFields), so stored reports render and hash as before. Idempotent.
+ */
+export function withoutThousands(text: string): string {
+  if (typeof text !== "string" || !text) return text;
+  return text.replace(IN_THOUSANDS, (_match, whole: string, decimals = "") => {
+    const value = Number(whole.replace(/,/g, "") + decimals) * 1000;
+    if (!Number.isFinite(value)) return _match;
+    const millions = value / 1e6;
+    if (value >= 1e9 || Number(millions.toFixed(1)) >= 1000) return `${(value / 1e9).toFixed(2)} billion`;
+    if (value >= 1e6) return `${millions.toFixed(1)} million`;
+    return Math.round(value).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  });
+}
+
+/** Write-time cleaning of one reader-facing string: readerProse, then amounts in thousands rewritten. */
+const clean = (value: unknown) => typeof value === "string" ? withoutThousands(readerProse(value)) : value;
 const each = <T>(list: T[] | undefined, fn: (item: T) => T) => Array.isArray(list) ? list.map(fn) : list;
 const withText = (item: any, keys: string[]) => item && typeof item === "object"
   ? { ...item, ...Object.fromEntries(keys.filter(key => typeof item[key] === "string").map(key => [key, clean(item[key])])) } : item;
@@ -68,6 +88,7 @@ function cleanSection(section: any) {
   const out = withText(section, ["title", "counterevidence", "implication"]);
   if (Array.isArray(section.paragraphs)) out.paragraphs = section.paragraphs.map((p: any) => withText(p, ["text"]));
   if (Array.isArray(section.gaps)) out.gaps = section.gaps.map(clean);
+  if (Array.isArray(section.key_reasons)) out.key_reasons = section.key_reasons.map((r: any) => withText(r, ["headline", "explanation", "figure"]));
   if (Array.isArray(section.visuals)) out.visuals = section.visuals.map((visual: any) => {
     const v = withText(visual, ["title", "caption"]);
     if (Array.isArray(visual?.lanes)) v.lanes = visual.lanes.map((lane: any) => {

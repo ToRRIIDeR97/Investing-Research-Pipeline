@@ -132,6 +132,7 @@ export function createReport(input: ReportInput): ReportDocument {
     for (const visual of section.visuals ?? []) {
       try { validateVisual(visual, input); } catch (error) { errors.push(String(error)); }
     }
+    for (const reason of section.key_reasons ?? []) refs(reason.evidence_ids, []);
   }
   for (const key of input.required_coverage) if (!coverage.some(c => c.key === key)) errors.push(`Missing coverage ${key}`);
   for (const check of coverage) {
@@ -151,7 +152,10 @@ export function createReport(input: ReportInput): ReportDocument {
   if (errors.length) throw new Error(errors.join("; "));
   const withheld = coverage.some(c => c.status === "blocked") || questions.some(q => q.status === "blocked" && q.materiality !== "supporting");
   const qualified = coverage.some(c => c.status === "qualified") || questions.some(q => q.status !== "answered");
-  const usedIds = [...new Set([...sections.flatMap(s => s.paragraphs.flatMap(p => p.evidence_ids)), ...questions.flatMap(q => q.evidence_ids), ...sections.flatMap(s=>(s.visuals??[]).flatMap(v=>v.kind==='process'?v.lanes.flatMap(l=>l.evidence_ids):v.kind==='organization'?v.people.flatMap(p=>p.evidence_ids):[]))])];
+  const usedIds = [...new Set([...sections.flatMap(s => s.paragraphs.flatMap(p => p.evidence_ids)), ...questions.flatMap(q => q.evidence_ids), ...sections.flatMap(s=>(s.visuals??[]).flatMap(v=>v.kind==='process'?v.lanes.flatMap(l=>l.evidence_ids):v.kind==='organization'?v.people.flatMap(p=>p.evidence_ids):[])),
+    // A conclusion's key reasons are not rendered, but their evidence joins Sources (after everything else cited, so
+    // a report without key reasons numbers and hashes as before) and report_document.evidence keeps their quotes.
+    ...sections.flatMap(s => (s.key_reasons ?? []).flatMap(r => r.evidence_ids))])];
   const citation = (id: string) => `[${usedIds.indexOf(id) + 1}]`;
   const lines = [`# ${plainMarkdown(input.asset_name)}: investment research`, "", `Research cutoff: ${input.cutoff}`, ""];
   if (input.is_test) lines.push("> TEST WATERMARK: Synthetic research. Not for investment decisions.", "");

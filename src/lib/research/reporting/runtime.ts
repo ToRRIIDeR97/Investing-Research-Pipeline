@@ -1,6 +1,6 @@
 import { callResearchAgent, exactJsonPrompt, type ResearchRunContext, type Sql } from "../run-context";
 import { AI_REVIEWER_CONTRACT } from "../stage-contracts";
-import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Outline, Section, WrittenSectionAnswer, normalizeOutlineStructure, validateProductOutline, storedSection, writerContract, type ReportOutline, type ReportSection, type CoverageCheck, type WriterSection } from "./contracts";
+import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Outline, Section, ConclusionSectionAnswer, normalizeOutlineStructure, validateProductOutline, storedSection, writerContract, type ReportOutline, type ReportSection, type CoverageCheck, type WriterSection } from "./contracts";
 import { buildExhibits, isAvailable, placeExhibits, type BuiltExhibit } from "./exhibits";
 import { composeDraft, draftDocument, reviewDraftedReport, checkFinalCoverage, type CompositionActions, type ReportReview, type WrittenSection, REQUIRED_COVERAGE } from "./compose";
 import { z } from "zod/v4";
@@ -47,7 +47,7 @@ export function includeFramingQuestions(outline: ReportOutline, framing: Record<
   if (!missing.length) return outline;
   return { ...outline, questions: [...outline.questions, ...missing.map(q => ({ id: q.id, question: q.question, materiality: "material" as const,
     status: "qualified" as const, answer: "This report does not answer this framing question.", evidence_ids: [], artifact_ids: [],
-    follow_up: q.falsifier ? `Test the falsifier: ${q.falsifier}` : "Answer the framing question from the analysis." }))] };
+    follow_up: q.falsifier ? `Test what would disprove it: ${q.falsifier}` : "Answer the framing question from the analysis." }))] };
 }
 
 /** Instructions for each report section writer, after the doctrine. */
@@ -160,7 +160,8 @@ export function reportSectionCall<A extends { id: string; content_json: any }>(c
   exhibits?: BuiltExhibit[]) {
   const selected = packetArtifacts.filter(a => section.artifact_ids.includes(a.id));
   const conclusion = section.coverage.includes("conclusion") ? conclusionInputs(completed, common.evidence_claims) : null;
-  const contract = finalCoverage ? CONCLUSION_CONTRACT : SECTION_CONTRACT;
+  // A conclusion may return key_reasons; the last one also returns the final coverage. Body sections keep SECTION_CONTRACT.
+  const contract = conclusion ? (finalCoverage ? CONCLUSION_CONTRACT : CONCLUSION_SECTION_CONTRACT) : SECTION_CONTRACT;
   const artifacts = selected.length ? selected : packetArtifacts;
   const placed = !conclusion && exhibits ? exhibits : null;
   const packet = { ...common, ...(conclusion ? { evidence_claims: conclusion.evidence, filing_passages: [] } : {}),
@@ -171,7 +172,7 @@ export function reportSectionCall<A extends { id: string; content_json: any }>(c
     visual_guidelines: VISUAL_GUIDELINES, output_contract: "report_section", output_schema: contract.schema };
   // Sections of one round share everything but these keys, so the shared part is read from cache.
   return { packet, contract, perCallKeys: ["artifacts", "section_plan", "section_exhibits", "completed_sections", "provisional_coverage"],
-    extraRules: [REPORT_FACTS_RULE, ...SECTION_RULES, ...(placed ? [SECTION_EXHIBITS_RULE] : []), ...(conclusion ? [CONCLUSION_DIGEST_RULE] : []), ...(finalCoverage ? [FINAL_COVERAGE_RULE] : [])] };
+    extraRules: [REPORT_FACTS_RULE, ...SECTION_RULES, ...(placed ? [SECTION_EXHIBITS_RULE] : []), ...(conclusion ? [CONCLUSION_DIGEST_RULE, KEY_REASONS_RULE, PLAIN_LANGUAGE_RULE] : []), ...(finalCoverage ? [FINAL_COVERAGE_RULE] : [])] };
 }
 
 /** Save report_facts from the current valuation and analytics, so writers can cite it like any artifact. */
@@ -229,7 +230,8 @@ export function keepUsableReferences<T>(value: T, artifacts: { id: string }[], e
   const refs = (item: any) => item && ({ ...item,
     ...(item.evidence_ids ? { evidence_ids: keep(item.evidence_ids, usableEvidence) } : {}),
     ...(item.artifact_ids ? { artifact_ids: keep(item.artifact_ids, usableArtifacts) } : {}) });
-  const section = (s: any) => ({ ...refs(s), ...(s.paragraphs ? { paragraphs: s.paragraphs.map(refs) } : {}) });
+  const section = (s: any) => ({ ...refs(s), ...(s.paragraphs ? { paragraphs: s.paragraphs.map(refs) } : {}),
+    ...(Array.isArray(s.key_reasons) ? { key_reasons: s.key_reasons.map(refs) } : {}) });
   const v = value as any;
   if (v?.outline) return { ...v, outline: { ...v.outline, sections: (v.outline.sections || []).map(section),
     questions: (v.outline.questions || []).map(refs) } };
@@ -238,7 +240,13 @@ export function keepUsableReferences<T>(value: T, artifacts: { id: string }[], e
 }
 
 /** The last conclusion also returns the report's coverage, reconciled with what the chapters actually did. */
-export const CONCLUSION_CONTRACT = writerContract({ section: WrittenSectionAnswer, coverage: z.array(CoverageResult) });
+export const CONCLUSION_CONTRACT = writerContract({ section: ConclusionSectionAnswer, coverage: z.array(CoverageResult) });
+/** A conclusion that is not the last: its section with optional key_reasons, and no coverage. */
+export const CONCLUSION_SECTION_CONTRACT = writerContract({ section: ConclusionSectionAnswer });
+/** Conclusion sections only, so body prompts (and their cache) are unchanged. */
+export const KEY_REASONS_RULE = "Write section.key_reasons: up to three reasons a reader should take away from this report, most important first. headline is one plain sentence stating the claim; explanation is one sentence saying why it holds; figure is the single number the reason rests on, with its unit (for example \"16.9% CET1\" or \"-$8.8bn free cash flow\"), written in millions or billions or as a percentage, never in thousands; evidence_ids are the evidence tokens from the packet that support it, cited like paragraph evidence_ids. Use plain words a reader outside the research team understands.";
+/** Conclusion sections only: the reader-facing vocabulary rule the substance check enforces after the fact. */
+export const PLAIN_LANGUAGE_RULE = "Plain language: never use pipeline vocabulary in reader-facing text (packet, falsifier, artifact, record ids, snake_case names or field names); say what would disprove a claim instead of naming a falsifier. Write amounts in millions or billions, never thousands.";
 export const CONCLUSION_DIGEST_RULE = "completed_sections are code-built digests of the finished chapters: each chapter's implication, one key point per paragraph, its counterevidence and gaps, and every evidence_id and artifact_id it cites. Synthesize from them and refer to a chapter by title; cite the IDs a digest lists for the point you use. Figures not in a digest, report_facts or financial_analytics stay with their chapter. An artifact's omitted_fields were analysed in the chapters that cite it.";
 export const FINAL_COVERAGE_RULE ="packet.provisional_coverage is the planner's coverage, set before any chapter was written. Return coverage with one entry per key, keeping key and section_ids, and set status and rationale to what the completed chapters actually deliver: downgrade a status the chapters do not support. The rationale is reader-facing.";
 /** Review finding categories that may send work back to the specialists after the review. */
