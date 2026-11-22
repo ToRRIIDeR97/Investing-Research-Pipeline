@@ -1,0 +1,23 @@
+/* Today (design F01): greeting, the newest valuation as a featured card, then cards and the review queue. */
+.header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin-bottom: 20px; }
+.header h1 { margin-top: 6px; font-size: 28px; font-weight: 700; line-height: 1.2; letter-spacing: -0.02em; color: var(--ink); max-width: 860px; }
+.featured { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 8px 24px; align-items: center; margin-bottom: 14px; padding: 22px 24px; background: var(--tile); border: 1px solid var(--line); border-radius: var(--radius-card); }
+.featuredText { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.featuredHead { display: flex; align-items: center; gap: 14px; }
+.featuredHead h2 { margin-top: 2px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+.verdict { font-size: 15px; line-height: 1.65; color: var(--ink-2); max-width: 620px; }
+.verdict strong { color: var(--ink); font-weight: 700; }
+.verdict strong[data-tone="bad"] { color: var(--critical); }
+.verdict strong[data-tone="good"] { color: var(--positive); }
+.featuredActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.featuredVisual { min-width: 0; padding: 8px 0; border-radius: 14px; background: var(--hover); }
+.sectionHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 2px 10px; }
+.sectionHead h2 { font-size: 16px; font-weight: 700; letter-spacing: -0.01em; }
+.queue { display: grid; }
+.queueRow { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 18px; border-top: 1px solid var(--line-soft); color: var(--ink); }
+.queueRow:first-child { border-top: 0; }
+.queueRow:hover { background: var(--hover); }
+.queueRow > span:nth-child(2) { display: grid; min-width: 0; line-height: 1.3; }
+.queueRow strong { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queueRow em { font-style: normal; font-size: 12px; color: var(--ink-3); }
+@media (max-width: 900px) { .featured { grid-template-columns: minmax(0, 1fr); } }

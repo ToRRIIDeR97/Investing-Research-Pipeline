@@ -1,6 +1,7 @@
 "use client";
 
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from "recharts";
+import { C } from "@/components/ui/palette";
 
 interface StageInfo {
   stage_key: string;
@@ -13,12 +14,12 @@ interface PipelineProgressChartProps {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  completed: "#2d7d46",
-  running: "#2e5fa3",
-  pending: "#e5e7eb",
-  failed: "#c9302c",
-  skipped: "#f3f4f6",
-  waiting_for_human: "#b8860b",
+  completed: C.positiveMid,
+  running: C.navy,
+  pending: C.line,
+  failed: C.criticalMid,
+  skipped: C.lineSoft,
+  waiting_for_human: C.cautionMid,
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -53,7 +54,7 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 export function PipelineProgressChart({ data }: PipelineProgressChartProps) {
-  if (!data || data.length === 0) return <p className="py-8 text-sm text-[#6b7280]">No pipeline data yet.</p>;
+  if (!data || data.length === 0) return <p className="py-8 text-sm text-[var(--ink-3)]">No pipeline data yet.</p>;
 
   // Sort by stage_order and build chart data
   const sorted = [...data].sort((a, b) => a.stage_order - b.stage_order);
@@ -72,7 +73,7 @@ export function PipelineProgressChart({ data }: PipelineProgressChartProps) {
     <div className="flex flex-col" style={{ height: Math.max(220, data.length * 28 + 40) }}>
       {/* Summary line */}
       <div className="flex items-center justify-between px-1 mb-2">
-        <span className="text-xs text-gray-500 font-medium">
+        <span className="text-xs text-[var(--ink-3)] font-medium">
           {completedCount}/{totalRelevant} stages complete
         </span>
         <div className="flex gap-2">
@@ -82,7 +83,7 @@ export function PipelineProgressChart({ data }: PipelineProgressChartProps) {
             return (
               <span
                 key={status}
-                className="flex items-center gap-1 text-xs text-gray-500"
+                className="flex items-center gap-1 text-xs text-[var(--ink-3)]"
               >
                 <span
                   className="h-1.5 w-1.5 rounded-full"
@@ -108,7 +109,7 @@ export function PipelineProgressChart({ data }: PipelineProgressChartProps) {
               type="category"
               dataKey="name"
               width={150}
-              tick={{ fontSize: 12, fill: "#6b7280" }}
+              tick={{ fontSize: 12, fill: C.ink3 }}
               tickLine={false}
               interval={0}
               axisLine={false}
@@ -119,7 +120,7 @@ export function PipelineProgressChart({ data }: PipelineProgressChartProps) {
                 fontSize: 12,
                 fontFamily: "inherit",
                 borderRadius: 8,
-                border: "1px solid #e5e7eb",
+                border: `1px solid ${C.line}`,
                 boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
               }}
               formatter={(_value: number, _name: string, item: any) => {
@@ -137,7 +138,7 @@ export function PipelineProgressChart({ data }: PipelineProgressChartProps) {
               {chartData.map((entry, i) => (
                 <Cell
                   key={i}
-                  fill={STATUS_COLORS[entry.status] ?? "#e5e7eb"}
+                  fill={STATUS_COLORS[entry.status] ?? C.line}
                   fillOpacity={entry.status === "pending" ? 0.4 : 0.85}
                 />
               ))}

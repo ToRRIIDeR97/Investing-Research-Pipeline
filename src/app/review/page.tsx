@@ -10,6 +10,9 @@ import type { ReportDocument } from "@/lib/research/reporting/report";
 import { ReviewFindings } from "@/components/review-findings";
 import { reviewGate } from "@/lib/research/reporting/depth";
 import { RUBRIC_DIMENSIONS, RUBRIC_LEVELS } from "@/lib/research/scoring/rubric";
+import { assetSnapshot, type AssetSnapshot } from "@/lib/research/asset-snapshot";
+import { AssetHero, CompanyLogo } from "@/components/company/company";
+import { KeyNumbers, RiskHeat } from "@/components/visuals/valuation-visuals";
 
 interface ReviewItem {
   run_id: string;
@@ -51,16 +54,24 @@ function ReviewQueue() {
   const [aiReview, setAiReview] = useState<Record<string, any> | null>(null);
   const [ratings, setRatings] = useState(emptyRatings);
   const [acknowledged, setAcknowledged] = useState(false);
+  // The run's key numbers and risks, read from the same report the reviewer is deciding on.
+  const [snapshot, setSnapshot] = useState<AssetSnapshot | null>(null);
+  const [risks, setRisks] = useState<{ name: string; probability: number | null; severity: number | null; detail: string | null }[]>([]);
 
   useEffect(() => {
     let cancelled = false;
-    setReportDocument(null); setReportReady(false); setAiReview(null);
+    setReportDocument(null); setReportReady(false); setAiReview(null); setSnapshot(null); setRisks([]);
     if (!selectedItem) return;
     fetch(`/api/research-runs/${selectedItem.run_id}/report`).then(async response => {
       if (!response.ok) throw new Error("Unable to load the report for review.");
       const report = await response.json();
       if (cancelled) return;
       setReportDocument(report.report_document || null);
+      const artifacts = Array.isArray(report.artifacts) ? report.artifacts : [];
+      setSnapshot(assetSnapshot(artifacts));
+      const register = artifacts.find((a: any) => a.type === "risk_register")?.content_json?.risks;
+      setRisks(Array.isArray(register) ? register.map((r: any) => ({ name: String(r?.risk_name ?? "Risk"), probability: typeof r?.probability === "number" ? r.probability : null,
+        severity: typeof r?.severity === "number" ? r.severity : null, detail: typeof r?.leading_indicator === "string" ? `Watch: ${r.leading_indicator}` : null })) : []);
       const hash = report.report_document?.content_hash;
       setAiReview(report.artifacts?.find((a: any) => a.type === "report_review" && hash && a.content_json?.report_hash === hash)?.content_json || null);
       const required = report.artifacts?.some((a: any) => a.type === "research_plan" && a.content_json?.report_standard);
@@ -120,13 +131,15 @@ function ReviewQueue() {
 
   if (selectedItem) return <div className={`${ui.page} ${ui.withBack}`}>
     <button className={ui.back} onClick={() => selectItem(null)} disabled={submitting}><ArrowLeft size={14} />Reviews</button>
-    <header className={ui.heading}>
-      <div className={ui.titleGroup}><h1>{selectedItem.asset_name}</h1><span className={ui.muted}>{words(selectedItem.run_type)}</span><span className={ui.mono}>{selectedItem.run_id.slice(0, 8)}</span><span className={ui.status} data-status="waiting_for_human">Review pending</span></div>
-      <div className={ui.headActions}><Link href={`/assets/${selectedItem.asset_id}/view?run=${selectedItem.run_id}`} className={ui.secondary}>Read research<ArrowUpRight size={14} /></Link></div>
-    </header>
+    <AssetHero assetId={selectedItem.asset_id} name={selectedItem.asset_name} eyebrow={<div className={ui.eyebrow}>Gate 2 of 2 · final report review</div>}
+      meta={[words(selectedItem.run_type), `Run ${selectedItem.run_id.slice(0, 8)}`]}
+      status={<span className={ui.status} data-status="waiting_for_human">Review pending</span>}
+      actions={<Link href={`/assets/${selectedItem.asset_id}/view?run=${selectedItem.run_id}`} className={ui.secondary}>Read research<ArrowUpRight size={14} /></Link>} />
+    {reportDocument && <KeyNumbers snapshot={snapshot} kpis={3} label="Key numbers under review" />}
     <div className={ui.grid}>
       <div className={`${ui.s8} flex min-w-0 flex-col gap-4`}>
         {selectedItem.research_question && <section className={ui.tile}><div className={ui.tileHead}><h2>Research question</h2></div><p className={ui.tileBody}>{selectedItem.research_question}</p></section>}
+        {risks.length > 0 && <section className={ui.tile}><div className={ui.tileHead}><h2>Risk heat</h2><span className={ui.muted}>Likelihood × severity, from the risk register</span></div><RiskHeat risks={risks} /></section>}
         {reportDocument ? <>
           <ReviewFindings review={aiReview} />
           <h2 className="mt-2 text-[13px] font-semibold">Report under review</h2><ResearchReport document={reportDocument} />
@@ -168,11 +181,11 @@ function ReviewQueue() {
         {visible.length ? <div className={ui.table}><table>
           <thead><tr><th>Asset</th><th>Run</th><th>Id</th><th>Question</th><th className={ui.num}>Priority</th></tr></thead>
           <tbody>{visible.map((item) => <tr key={item.run_id}>
-            <td><button className="font-medium hover:underline" onClick={() => selectItem(item)}>{item.asset_name}</button></td>
+            <td><button className="inline-flex items-center gap-2.5 text-left font-semibold hover:underline" onClick={() => selectItem(item)}><CompanyLogo subject={{ asset_id: item.asset_id }} name={item.asset_name} size={30} />{item.asset_name}</button></td>
             <td className={ui.muted}>{words(item.run_type)}</td>
             <td className={ui.mono}>{item.run_id.slice(0, 8)}</td>
             <td className={`${ui.muted} max-w-[420px] truncate`}>{item.research_question || "—"}</td>
-            <td className={ui.num}>{words(item.priority) || "Medium"}</td>
+            <td className={ui.num}><span className={ui.status} data-status={item.priority === "high" ? "critical" : "waiting_for_human"}>{words(item.priority) || "Medium"}</span></td>
           </tr>)}</tbody>
         </table></div> : <p className={ui.empty}>{query ? "No reviews match your search." : "No reviews waiting."}</p>}
       </>}

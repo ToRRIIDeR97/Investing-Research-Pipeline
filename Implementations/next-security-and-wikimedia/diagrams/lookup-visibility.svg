@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 300" font-family="Inter, Arial, sans-serif" font-size="12">
+  <style>.box{fill:#f1f5f9;stroke:#334155}.new{fill:#e0e7ff;stroke:#1e3a8a}.t{fill:#0f172a}.n{fill:#1e3a8a;font-weight:600}</style>
+  <text x="10" y="18" class="t" font-weight="700">Logo lookup path; new pieces in navy</text>
+  <rect class="box" x="10" y="40" width="170" height="54" rx="6"/><text x="20" y="62" class="t">CompanyLogo / Leadership</text><text x="20" y="80" class="n">note while throttled</text>
+  <rect class="box" x="200" y="40" width="170" height="54" rx="6"/><text x="210" y="62" class="t">useCompanyProfile</text><text x="210" y="80" class="n">ProfileState.throttled</text>
+  <rect class="box" x="390" y="40" width="170" height="54" rx="6"/><text x="400" y="62" class="t">POST /api/company-profiles</text><text x="400" y="80" class="t">lookupCompanyProfiles</text>
+  <rect class="box" x="580" y="40" width="170" height="54" rx="6"/><text x="590" y="62" class="t">cache.ts</text><text x="590" y="80" class="n">lookupThrottled()</text>
+  <rect class="box" x="390" y="150" width="360" height="70" rx="6"/><text x="400" y="172" class="t">resolve.ts: wikimediaFetchJson (one at a time, Retry-After)</text>
+  <text x="400" y="192" class="n">wikimediaIdentified(), wikimediaSpacingMs() 6.5 s / 0.4 s</text><text x="400" y="210" class="n">createUnidentifiedNotice: one server log line</text>
+  <rect class="new" x="10" y="150" width="340" height="70" rx="6"/><text x="20" y="172" class="t">Operator</text><text x="20" y="192" class="t">docs/operations.md, .env.example</text><text x="20" y="210" class="t">sets WIKIMEDIA_CONTACT in .env.local (own value)</text>
+  <path d="M180 67h20M370 67h20M560 67h20M570 94v56" stroke="#334155" fill="none"/>
+  <path d="M350 185h40" stroke="#1e3a8a" stroke-dasharray="4 3" fill="none"/>
+  <rect class="box" x="390" y="245" width="360" height="40" rx="6"/><text x="400" y="270" class="t">Next 16.4.1 to 16.4.5 (seven advisories): local node_modules</text>
+</svg>

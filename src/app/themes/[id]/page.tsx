@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import ui from "@/components/research-ui.module.css";
+import { CompanyLogo } from "@/components/company/company";
 import styles from "../themes.module.css";
 import type { ThemeResult } from "@/lib/research/themes/pipeline";
 
@@ -51,7 +52,8 @@ export default function ThemePage() {
       <section className={ui.tile} aria-labelledby="t-shortlist">
         <div className={ui.tileHead}><h2 id="t-shortlist">Shortlist</h2><span className={ui.muted}>Ranked by your objectives · model cost ${theme.cost_usd.toFixed(4)}</span></div>
         <div className={styles.shortlist}>{r.shortlist.length ? r.shortlist.map((s, i) => <div key={s.ticker} className={styles.pick}>
-          <span className={ui.muted}>#{i + 1} · score {s.score}</span><strong>{s.ticker}</strong><span>{s.title}</span>
+          <div className={styles.pickHead}><CompanyLogo subject={{ name: s.title, ticker: s.ticker, kind: "equity" }} name={s.title} ticker={s.ticker} size={44} /><span className={styles.rank}>#{i + 1}</span></div>
+          <strong>{s.ticker}</strong><span>{s.title}</span><span className={ui.muted}>Score {s.score}</span>
           <Link className={ui.textLink} href={`/research/new?ticker=${encodeURIComponent(s.ticker)}&name=${encodeURIComponent(s.title)}`}>Start research</Link>
         </div>) : <p className={ui.empty}>No candidate could be scored.</p>}</div>
         <div className={ui.tileBody}><h3>Ways to own the theme</h3><ul>{r.ownership.map((o) => <li key={o.kind}><strong>{o.title}.</strong> {o.text}</li>)}</ul>
@@ -80,7 +82,7 @@ export default function ThemePage() {
       <section className={`${ui.tile} ${ui.section}`} aria-labelledby="t-candidates">
         <div className={ui.tileHead}><h2 id="t-candidates">Candidates and source agreement</h2><span className={ui.muted}>Exposure and role are model estimates</span></div>
         <div className={ui.table}><table><thead><tr><th>Ticker</th><th>Company</th><th className={ui.num}>Sources</th><th>Named by</th><th>Role</th><th className={ui.num}>Exposure</th><th>Status</th></tr></thead>
-          <tbody>{r.candidates.map((c) => <tr key={c.ticker}><td className={ui.mono}>{c.ticker}</td><td>{c.name}<div className={styles.note}>{c.reasons[0] ?? ""}</div></td>
+          <tbody>{r.candidates.map((c) => <tr key={c.ticker}><td><span className="inline-flex items-center gap-2"><CompanyLogo subject={{ name: c.name, ticker: c.ticker, kind: "equity" }} name={c.name} ticker={c.ticker} size={26} /><span className={ui.mono}>{c.ticker}</span></span></td><td>{c.name}<div className={styles.note}>{c.reasons[0] ?? ""}</div></td>
             <td className={ui.num}>{c.count}</td><td>{c.sources.map((s) => <span key={s} className={styles.pill}>{s}</span>)}</td><td>{c.role ?? "—"}</td>
             <td className={ui.num}>{pct(c.exposure)}</td><td>{c.status}{c.flags.length ? ` (${c.flags.join("; ")})` : ""}</td></tr>)}</tbody></table></div>
       </section>

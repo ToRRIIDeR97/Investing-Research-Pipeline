@@ -10,6 +10,7 @@ import {
   Tooltip,
   Cell,
 } from "recharts";
+import { C } from "@/components/ui/palette";
 
 interface ValuationSignal {
   signal_name: string;
@@ -24,13 +25,13 @@ interface ValuationSignalChartProps {
 }
 
 const SIGNAL_COLORS: Record<string, string> = {
-  very_cheap: "#065f46",
-  cheap: "#2d7d46",
-  neutral: "#6b7280",
-  expensive: "#c9302c",
-  very_expensive: "#991b1b",
-  inconclusive: "#d1d5db",
-  not_applicable: "#e5e7eb",
+  very_cheap: C.positive,
+  cheap: C.positiveMid,
+  neutral: C.ink3,
+  expensive: C.criticalMid,
+  very_expensive: C.critical,
+  inconclusive: C.lineStrong,
+  not_applicable: C.line,
 };
 
 const SIGNAL_LABELS: Record<string, string> = {
@@ -44,7 +45,7 @@ const SIGNAL_LABELS: Record<string, string> = {
 };
 
 export function ValuationSignalChart({ data }: ValuationSignalChartProps) {
-  if (!data || data.length === 0) return <p className="py-8 text-sm text-[#6b7280]">No valuation signals yet.</p>;
+  if (!data || data.length === 0) return <p className="py-8 text-sm text-[var(--ink-3)]">No valuation signals yet.</p>;
 
   // Sort by cheapness_score descending (cheapest first)
   const chartData = data
@@ -62,7 +63,7 @@ export function ValuationSignalChart({ data }: ValuationSignalChartProps) {
     }))
     .sort((a, b) => b.score - a.score);
 
-  if (chartData.length === 0) return <p className="py-8 text-sm text-[#6b7280]">No applicable valuation signals.</p>;
+  if (chartData.length === 0) return <p className="py-8 text-sm text-[var(--ink-3)]">No applicable valuation signals.</p>;
 
   const barHeight = Math.max(28, Math.min(40, 220 / chartData.length));
 
@@ -77,22 +78,22 @@ export function ValuationSignalChart({ data }: ValuationSignalChartProps) {
         >
           <CartesianGrid
             strokeDasharray="3 3"
-            stroke="#f3f4f6"
+            stroke={C.lineSoft}
             horizontal={false}
           />
           <XAxis
             type="number"
             domain={[0, 100]}
-            tick={{ fontSize: 12, fill: "#6b7280" }}
+            tick={{ fontSize: 12, fill: C.ink3 }}
             tickLine={false}
-            axisLine={{ stroke: "#e5e7eb" }}
+            axisLine={{ stroke: C.line }}
             tickFormatter={(v) => `${v}`}
           />
           <YAxis
             type="category"
             dataKey="name"
             width={100}
-            tick={{ fontSize: 12, fill: "#6b7280" }}
+            tick={{ fontSize: 12, fill: C.ink3 }}
             tickLine={false}
             axisLine={false}
           />
@@ -102,7 +103,7 @@ export function ValuationSignalChart({ data }: ValuationSignalChartProps) {
               fontSize: 12,
               fontFamily: "inherit",
               borderRadius: 8,
-              border: "1px solid #e5e7eb",
+              border: `1px solid ${C.line}`,
               boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
             }}
             formatter={(_value: number, _name: string, item: any) => {
@@ -111,15 +112,15 @@ export function ValuationSignalChart({ data }: ValuationSignalChartProps) {
               return [
                 <div key="tooltip" className="space-y-0.5">
                   <div className="font-semibold">{d.fullName}</div>
-                  <div className="text-gray-500">
+                  <div className="text-[var(--ink-3)]">
                     {SIGNAL_LABELS[d.signal] ?? d.signal} · Score: {d.score}
                   </div>
                   {d.value != null && (
-                    <div className="text-gray-500">
+                    <div className="text-[var(--ink-3)]">
                       Value: {d.value.toLocaleString()}
                     </div>
                   )}
-                  <div className="text-gray-500 text-xs">{d.lens}</div>
+                  <div className="text-[var(--ink-3)] text-xs">{d.lens}</div>
                 </div>,
                 "",
               ];
@@ -129,7 +130,7 @@ export function ValuationSignalChart({ data }: ValuationSignalChartProps) {
             {chartData.map((entry, i) => (
               <Cell
                 key={i}
-                fill={SIGNAL_COLORS[entry.signal] ?? "#d1d5db"}
+                fill={SIGNAL_COLORS[entry.signal] ?? C.lineStrong}
                 fillOpacity={0.85}
               />
             ))}

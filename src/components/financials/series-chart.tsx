@@ -4,8 +4,9 @@ import { Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveConta
 import { formatAxis, formatSeriesValue, type BuiltChart } from '@/lib/research/reporting/chart-series';
 import { periodName } from '@/lib/research/reporting/metric-catalogue';
 import styles from './financials.module.css';
+import { C } from "@/components/ui/palette";
 
-const TICK = { fontSize: 11, fill: '#6b7280' };
+const TICK = { fontSize: 11, fill: C.ink3 };
 
 /** Bars and lines over fiscal periods; missing values are gaps, never zero. */
 export function SeriesChart({ chart, height = 230, compact = false, dashedRight = false, empty = 'Nothing to chart yet.' }: { chart: BuiltChart; height?: number; compact?: boolean; dashedRight?: boolean; empty?: string }) {
@@ -16,15 +17,15 @@ export function SeriesChart({ chart, height = 230, compact = false, dashedRight 
   return <div className={styles.chartCanvas} style={{ height }} role="img" aria-label={`Chart of ${summary}`}>
     <ResponsiveContainer width="100%" height="100%">
       <ComposedChart data={chart.data} margin={{ top: 10, right: compact ? 2 : 6, bottom: 0, left: compact ? -6 : 0 }} barGap={3} barCategoryGap="24%" accessibilityLayer={false}>
-        <CartesianGrid vertical={false} stroke="#f3f4f6" />
-        <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: '#d1d5db' }} tick={{ ...TICK, fontSize: compact ? 10 : 11 }} interval="preserveStartEnd" minTickGap={6} />
+        <CartesianGrid vertical={false} stroke={C.lineSoft} />
+        <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: C.lineStrong }} tick={{ ...TICK, fontSize: compact ? 10 : 11 }} interval="preserveStartEnd" minTickGap={6} />
         <YAxis yAxisId="left" width={compact ? 48 : 58} axisLine={false} tickLine={false} tick={{ ...TICK, fontSize: compact ? 10 : 11 }}
           domain={chart.left ? [chart.left.scale.lo, chart.left.scale.hi] : [0, 1]} ticks={chart.left?.scale.ticks} interval={0}
           tickFormatter={(v: number) => chart.left ? formatAxis(v, chart.left.kind, chart.left.currency) : String(v)} />
         {chart.right && <YAxis yAxisId="right" orientation="right" width={compact ? 40 : 48} axisLine={false} tickLine={false} tick={{ ...TICK, fontSize: compact ? 10 : 11 }}
           domain={[chart.right.scale.lo, chart.right.scale.hi]} ticks={chart.right.scale.ticks} interval={0}
           tickFormatter={(v: number) => formatAxis(v, chart.right!.kind, chart.right!.currency)} />}
-        {negative && <ReferenceLine yAxisId="left" y={0} stroke="#9ca3af" />}
+        {negative && <ReferenceLine yAxisId="left" y={0} stroke={C.ink4} />}
         <Tooltip cursor={{ fill: 'rgba(81,93,112,.07)' }} isAnimationActive={false} content={({ active, label }) => {
           if (!active) return null;
           const index = chart.data.findIndex((d) => d.label === label);
@@ -37,7 +38,7 @@ export function SeriesChart({ chart, height = 230, compact = false, dashedRight 
         {chart.series.map((s, i) => s.as === 'bar'
           ? <Bar key={s.key} yAxisId={s.axis} dataKey={`s${i}`} name={s.label} fill={s.color} stackId={s.stack} radius={s.stack ? 0 : [2, 2, 0, 0]} maxBarSize={compact ? 22 : 30} isAnimationActive={false} />
           : <Line key={s.key} yAxisId={s.axis} dataKey={`s${i}`} name={s.label} type="linear" stroke={s.color} strokeWidth={2} strokeDasharray={dashedRight && s.axis === 'right' ? '5 4' : undefined}
-              dot={{ r: compact ? 2.5 : 3.5, fill: '#fff', stroke: s.color, strokeWidth: 2 }} activeDot={{ r: 4.5 }} connectNulls={false} isAnimationActive={false} />)}
+              dot={{ r: compact ? 2.5 : 3.5, fill: C.tile, stroke: s.color, strokeWidth: 2 }} activeDot={{ r: 4.5 }} connectNulls={false} isAnimationActive={false} />)}
       </ComposedChart>
     </ResponsiveContainer>
   </div>;

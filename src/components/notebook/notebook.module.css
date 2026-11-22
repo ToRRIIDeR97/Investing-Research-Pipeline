@@ -11,9 +11,9 @@
 .entry h3 { font-size: 14px; font-weight: 600; color: var(--ink); }
 .label { display: block; margin-top: 10px; color: var(--ink-2); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 .pill { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 12px; font-weight: 500; border: 1px solid var(--line); }
-.pill[data-status="healthy"] { color: #166534; background: #f0fdf4; border-color: #bbf7d0; }
-.pill[data-status="caution"] { color: #854d0e; background: #fefce8; border-color: #fde68a; }
-.pill[data-status="danger"] { color: #991b1b; background: #fef2f2; border-color: #fecaca; }
-.error { color: #991b1b; font-size: 13px; }
+.pill[data-status="healthy"] { color: var(--positive); background: var(--positive-bg); border-color: var(--positive-line); }
+.pill[data-status="caution"] { color: var(--caution); background: var(--caution-bg); border-color: var(--caution-line); }
+.pill[data-status="danger"] { color: var(--critical); background: var(--critical-bg); border-color: var(--critical-line); }
+.error { color: var(--critical); font-size: 13px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .quote { margin: 6px 0 0; padding-left: 10px; border-left: 2px solid var(--line); color: var(--ink-2); font-size: 12px; }

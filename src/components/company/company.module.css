@@ -1,0 +1,35 @@
+/* Company identity: logo tiles, monograms, leadership cards and the asset hero (design round 7, Slate and navy). */
+.logo { position: relative; display: inline-grid; place-items: center; flex-shrink: 0; overflow: hidden; background: var(--tile); border: 1px solid var(--line); border-radius: 12px; }
+.logo img { width: 100%; height: 100%; object-fit: contain; padding: 14%; }
+.logo[data-shape="round"] { border-radius: 999px; }
+.monogram { background: var(--navy-soft); border-color: var(--navy-2); color: var(--navy); font-weight: 700; letter-spacing: -0.02em; }
+.logo[data-loading="true"] { background: var(--soft); }
+
+.hero { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px 24px; margin-bottom: 16px; }
+.heroMain { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.heroText { min-width: 0; }
+.heroText h1 { font-size: 26px; font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; color: var(--ink); overflow-wrap: anywhere; }
+.heroMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 6px; color: var(--ink-2); font-size: 13px; }
+.ticker { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 6px; background: var(--navy); color: var(--tile); font-family: var(--font-mono); font-size: 11px; font-weight: 600; letter-spacing: .02em; }
+.dot { color: var(--ink-4); }
+.heroActions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.heroLink { color: var(--navy); font-weight: 600; }
+.heroLink:hover { text-decoration: underline; }
+
+.people { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 10px; padding: 16px 18px; }
+.person { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 14px 10px 12px; border: 1px solid var(--line-soft); border-radius: 14px; background: var(--hover); text-align: center; min-width: 0; }
+.avatar { width: 64px; height: 64px; border-radius: 999px; overflow: hidden; display: grid; place-items: center; background: var(--navy-soft); color: var(--navy); font-size: 22px; font-weight: 700; border: 2px solid var(--tile); box-shadow: 0 0 0 1px var(--line); flex-shrink: 0; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 25%; }
+.personName { font-size: 14px; font-weight: 600; line-height: 1.3; color: var(--ink); overflow-wrap: anywhere; }
+.personName a:hover { text-decoration: underline; }
+.personRole { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; background: var(--navy-soft); color: var(--navy); font-size: 11px; font-weight: 600; }
+.credit { padding: 0 18px 14px; color: var(--ink-3); font-size: 11px; line-height: 1.5; }
+.credit a { text-decoration: underline; text-underline-offset: 2px; }
+.peopleRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.peopleRow .avatar { width: 36px; height: 36px; font-size: 13px; border-width: 1.5px; }
+.miniPerson { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.miniPerson span { display: grid; line-height: 1.25; font-size: 12px; }
+.miniPerson strong { font-weight: 600; color: var(--ink); }
+.miniPerson em { font-style: normal; color: var(--ink-3); }
+.skeleton { height: 160px; margin: 16px 18px; border-radius: 14px; background: var(--soft); }
+@media (max-width: 600px) { .heroText h1 { font-size: 22px; } .people { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

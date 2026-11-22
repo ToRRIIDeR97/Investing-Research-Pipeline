@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import ui from "@/components/research-ui.module.css";
+import { AssetHero, Leadership } from "@/components/company/company";
 import {
   MetricHistoryChart,
   ValuationSignalChart,
@@ -183,23 +184,24 @@ export default function AssetDetailPage() {
 
   return <div className={`${ui.page} ${ui.withBack}`}>
     <Link href={`/assets/${assetId}/view`} className={ui.back}><ArrowLeft size={14} />Research brief</Link>
-    <header className={ui.heading}>
-      <div className={ui.titleGroup}><h1>{asset.canonical_name}</h1><span className={ui.muted}>{listing?.symbol || asset.asset_kind.replace(/_asset/g, "")}</span></div>
-      <div className={ui.headActions}>
+    <AssetHero assetId={assetId} name={asset.canonical_name} ticker={asset.asset_kind === "equity" ? listing?.symbol : null}
+      meta={[words(asset.asset_kind.replace(/_asset/g, "")), asset.sector, listing?.exchange ?? null]}
+      status={<span className={ui.status} data-status={asset.status}>{words(asset.status || "active")}</span>}
+      actions={<>
         <Link href={`/assets/${assetId}/view`} className={ui.secondary}>Read research</Link>
         <Link href={`/assets/${assetId}/run`} className={ui.primary}>{runs.length ? "Open run" : "Start research"}</Link>
-      </div>
-    </header>
+      </>} />
     {monitor && <MonitorStatus monitor={monitor} />}
     <div className={ui.grid}>
       <section className={`${ui.tile} ${ui.s7}`}>
         <div className={ui.tileHead}><h2>Asset details</h2></div>
         {asset.description && <p className={`${ui.tileBody} ${ui.muted}`}>{asset.description}</p>}
-        <dl className={`${ui.metadata} px-3.5 pb-3`}>
+        <dl className={`${ui.metadata} px-[18px] pb-3`}>
           {[["Sector", asset.sector], ["Industry", asset.industry], ["Country", asset.home_country], ["Currency", asset.base_currency], ["Profile", asset.profile_name], ["Status", asset.status ? words(asset.status) : null], ["Exchange", listing?.exchange], ["Last run", runs[0] ? new Date(runs[0].created_at).toLocaleDateString() : "None"]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || "Not set"}</dd></div>)}
         </dl>
       </section>
-      <section className={`${ui.tile} ${ui.s5}`}>
+      <Leadership subject={{ asset_id: assetId }} className={ui.s5} />
+      <section className={`${ui.tile} ${ui.s12}`}>
         <div className={ui.tileHead}><h2>Pipeline progress</h2></div>
         <div className={ui.tileBody}><PipelineProgressChart data={stages} /></div>
       </section>
