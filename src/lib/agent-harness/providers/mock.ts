@@ -815,7 +815,12 @@ export class MockProvider implements ModelProvider {
         "  return out;",
         "}"].join("\n") };
     } else if (packet.output_contract === "research_chat") {
-      response = {answer:"This is a synthetic chat response for workflow testing. The selected research and cited source provide the context.", evidence_ids:((packet.evidence as any[])||[]).slice(0,1).map(e=>e.id),proposals:[]};
+      // One typed what-if when the workbench can recompute this run: two points off the base case's first-year margin.
+      const workbench = packet.workbench as { available?: boolean; inputs?: { drivers?: Record<string, { fiscal_year: number; operating_margin: number }[]> } } | undefined;
+      const first = workbench?.available ? workbench.inputs?.drivers?.base?.[0] : undefined;
+      const scenario_proposals = first ? [{ name: "Margin squeeze", rationale: "Synthetic proposal: competition takes two points off the base case's first forecast-year operating margin.",
+        change: { drivers: { base: [{ fiscal_year: first.fiscal_year, operating_margin: Number(Math.max(-0.5, first.operating_margin - 0.02).toFixed(4)) }] } } }] : [];
+      response = {answer:"This is a synthetic chat response for workflow testing. The selected research and cited source provide the context.", evidence_ids:((packet.evidence as any[])||[]).slice(0,1).map(e=>e.id),proposals:[],scenario_proposals};
     } else if (["report_outline", "report_section", "report_review"].includes(String(packet.output_contract))) {
       response = adaptiveReportResponse(packet);
     } else if (request.agentName === "source-reader") {

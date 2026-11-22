@@ -1,13 +1,14 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { NotebookPen, X } from "lucide-react";
+import { MessageSquareText, NotebookPen, X } from "lucide-react";
 import ui from "@/components/research-ui.module.css";
 import styles from "./notebook-drawer.module.css";
 import notes from "./notebook.module.css";
 import type { ReportDocument } from "@/lib/research/reporting/report";
 import { kpiSnapshot, placeAnnotations } from "@/lib/research/notebook/readings";
 import type { NotebookApi } from "./use-notebook";
+import { askResearchChat } from "@/components/research-chat";
 
 type Row = Record<string, any>;
 /** A passage the reader selected in the report: its chapter and the paragraph or exhibit it sits in. */
@@ -65,6 +66,11 @@ export function NotebookDrawer({ api, document, runId, artifacts, notebookHref, 
   const chapterNotes = current && placed ? placed.bySection(current.id) : [];
 
   function noteHighlight() { setPending(highlight); setSaved(null); setOpen(true); }
+  /** Opens the research chat with the passage attached (ResearchChat listens for the research-chat:ask event). */
+  function askAbout(passage: Highlight) {
+    askResearchChat({ quote: passage.text, section_id: passage.sectionId, section_title: sections.find((s) => s.id === passage.sectionId)?.title });
+  }
+  const canAsk = Boolean(runId && document);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -81,6 +87,9 @@ export function NotebookDrawer({ api, document, runId, artifacts, notebookHref, 
     {!open && <button type="button" className={styles.tab} onClick={highlight ? noteHighlight : () => setOpen(true)} aria-expanded={false} aria-controls="notebook-drawer">
       <NotebookPen size={15} aria-hidden="true" />{highlight ? "Note this" : "Notebook"}
     </button>}
+    {!open && highlight && canAsk && <button type="button" className={`${styles.tab} ${styles.ask}`} onMouseDown={(e) => e.preventDefault()} onClick={() => askAbout(highlight)}>
+      <MessageSquareText size={15} aria-hidden="true" />Ask about this
+    </button>}
     <aside id="notebook-drawer" className={styles.drawer} data-open={open || undefined} aria-label={`Notebook for ${assetName}`} hidden={!open}>
       <header className={styles.head}>
         <h2>Notebook</h2>
@@ -93,6 +102,7 @@ export function NotebookDrawer({ api, document, runId, artifacts, notebookHref, 
             <span className={notes.label}>On this passage</span>
             <blockquote className={notes.quote}>{pending.text}</blockquote>
             <button type="button" className={notes.link} onClick={() => setPending(null)}>Write a general note instead</button>
+            {canAsk && <> · <button type="button" className={notes.link} onClick={() => askAbout(pending)}>Ask about this</button></>}
           </div> : highlight ? <button type="button" className={notes.link} onClick={() => setPending(highlight)}>Note the selected passage</button> : null}
           <label className={ui.field}>{pending ? "Your note" : "A thought about this stock"}
             <textarea ref={field} rows={5} maxLength={pending ? 4000 : 8000} value={text} onChange={(e) => setText(e.target.value)} /></label>
