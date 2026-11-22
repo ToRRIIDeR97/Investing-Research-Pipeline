@@ -1,6 +1,10 @@
 # Research memo: one reading view per run
 
-Status: phases 1 and 2 merged (PR 148, PR 149). Phase 3 built on `claude/research-memo-p3`. Phase 4 not started.
+Status: phases 1–3 merged (PR 148, PR 149, PR 150). Phase 4 built on `claude/research-memo-p4`, and its paid live test passed:
+- run with approval on Claude Haiku 5.5, $0.11, 2 calls, both accepted on the first attempt;
+- the main conclusion returned 3 key reasons, each with 3 sources;
+- no reader-language findings in either replayed conclusion, against 3 each in the stored ones;
+- no "falsifier" or "thousand" in the replayed text.
 
 - Open decision 1 was taken as proposed: the lead sentences of the conclusion's evidence-bearing paragraphs.
 - Open decision 2: the earlier overview stays at `?view=overview` for one release, outside the tab bar.
@@ -11,6 +15,11 @@ Status: phases 1 and 2 merged (PR 148, PR 149). Phase 3 built on `claude/researc
   - Financials and Audit keep their sub-tabs instead of one long page; the report already has its own chapter contents.
   - Model is one page.
   - No adaptive-3 run exists in the local database, so the no-raw-text scan covered SoFi runs only.
+- Phase 4 deviations:
+  - Pipeline terms are a soft finding (the existing substance check, one writing repair), not a hard reject. A reject at draft time would fail the stage.
+  - Thousands are rewritten in code when an answer is written, not left to the model.
+  - `key_reasons` is optional and is not rendered into the Markdown, so the report standard and older reports' hashes are unchanged.
+  - The before/after measure is the substance check on replayed conclusion chapters. A replay is not stored, so `eval:score` can't score it, and re-scoring stored runs only adds "falsifier" hits.
 - Found in phase 3 and fixed in the same branch: for run `9cd97f72` (preview database) the workbench showed a valuation stored three days after the report (v2: base $11.13, weights 25/50/25), while the report showed the one it was built on (v1: base $8.80, weights 30/50/20). The workbench, the chat packet and the memo now read the versions the report recorded (`report-pins.ts`) and note a newer validated valuation instead of using it. Mockup: [prototype/workshop/memo-sofi.html](../../prototype/workshop/memo-sofi.html)
 (static, SoFi run `0c9a2731`). Review of the current page: see "Evidence" below.
 

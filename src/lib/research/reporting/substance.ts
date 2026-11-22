@@ -25,7 +25,14 @@ export interface SubstanceFinding {
 }
 
 const REPAIR = "Rewrite in an analyst's voice: name the filing or disclosure, say plainly what is unknown, and omit IDs, field names, confidence scores and drafting history.";
-const leaks = (text: string) => INTERNAL_TERMS.filter(([pattern]) => pattern.test(text)).map(([, label]) => label);
+/**
+ * Terms checked in conclusion chapters only: their prompts carry the plain-language rule (runtime.ts PLAIN_LANGUAGE_RULE)
+ * and the research memo shows their text. Body chapters aren't told to avoid these, so flagging them there would force
+ * paid rewrites of chapters for a word their prompt never mentioned.
+ */
+const CONCLUSION_TERMS: [RegExp, string][] = [[/\bfalsifiers?\b/i, "falsifier"]];
+const leaks = (text: string, conclusion = false) => [...INTERNAL_TERMS, ...(conclusion ? CONCLUSION_TERMS : [])]
+  .filter(([pattern]) => pattern.test(text)).map(([, label]) => label);
 
 /**
  * A deterministic floor under the AI review: an analysis paragraph must carry a figure or a citation, and
@@ -48,9 +55,12 @@ export function checkReportSubstance(sections: ReportSection[],
       ["counterevidence", s.counterevidence], ["implication", s.implication],
       ...s.gaps.map((g, i): [string, string] => [`gap ${i + 1}`, g]),
       ...s.tables.map((t, i): [string, string] => [`table ${i + 1} title`, t.title]),
-      ...(s.visuals ?? []).flatMap((v, i): [string, string][] => [[`visual ${i + 1} title`, v.title], [`visual ${i + 1} caption`, v.caption]])];
+      ...(s.visuals ?? []).flatMap((v, i): [string, string][] => [[`visual ${i + 1} title`, v.title], [`visual ${i + 1} caption`, v.caption]]),
+      ...(s.key_reasons ?? []).flatMap((r, i): [string, string][] => [[`key reason ${i + 1} headline`, r.headline],
+        [`key reason ${i + 1} explanation`, r.explanation], [`key reason ${i + 1} figure`, r.figure]])];
+    const conclusion = s.coverage.includes("conclusion");
     for (const [where, text] of texts) {
-      const leaked = leaks(text);
+      const leaked = leaks(text, conclusion);
       if (leaked.length) add(s.id, `The ${where} uses internal pipeline terms (${leaked.join(", ")}).`, REPAIR);
     }
   }

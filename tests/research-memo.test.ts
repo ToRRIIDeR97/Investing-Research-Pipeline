@@ -237,3 +237,18 @@ test('the memo carries a valuation stored after the report without using it', ()
   assert.equal(m.verdict.values.base, 1.13, 'values stay the report\'s');
   assert.equal(memo().newerValuation, null);
 });
+
+test('stored key reasons are used as written; older reports fall back to lead sentences', () => {
+  const doc = structuredClone(fixture.report_document);
+  doc.sections[0].key_reasons = [
+    { headline: 'Growth is using up bank capital.', explanation: 'The core capital ratio fell from 22.8% to 16.9% in nine months.', figure: '16.9% CET1', evidence_ids: ['e1'] },
+    { headline: 'Profit is not turning into cash.', explanation: 'Free cash flow was negative over the last twelve months.', figure: '−$8.8bn free cash flow', evidence_ids: [] },
+  ];
+  const m = buildResearchMemo(fixture.artifacts, doc)!;
+  assert.deepEqual(m.reasons.map((r) => r.headline), ['Growth is using up bank capital.', 'Profit is not turning into cash.']);
+  assert.equal(m.reasons[0].detail, 'The core capital ratio fell from 22.8% to 16.9% in nine months.');
+  assert.equal(m.reasons[0].figure, '16.9% CET1');
+  assert.equal(memo().reasons[0].figure, null);
+  assert.deepEqual(m.reasons[0].evidenceIds, ['e1']);
+  assert.equal(memo().reasons[0].headline, 'Capital has absorbed much of the growth.', 'reports without key_reasons keep the lead-sentence reasons');
+});

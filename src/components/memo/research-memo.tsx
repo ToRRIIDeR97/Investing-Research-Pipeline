@@ -187,10 +187,10 @@ export function ResearchMemoView({ memo, assetId, runId, reportHash, links, onDe
         <p className={styles.eyebrow}>Why</p>
         <h2 id="memo-why-title">The main reasons</h2>
         <p className={styles.lede}>From the report&apos;s conclusion. The numbered chips open each point&apos;s sources.</p>
-        <div className={styles.reasons}>{memo.reasons.map((r) => <div key={r.headline} className={styles.reason}><div>
+        <div className={styles.reasons}>{memo.reasons.map((r) => <div key={r.headline} className={`${styles.reason} ${r.figure ? styles.withFigure : ""}`}><div>
           <h3>{r.headline}<Cites ids={r.evidenceIds} onOpen={open} /></h3>
           {r.detail && <p>{r.detail}</p>}
-        </div></div>)}</div>
+        </div>{r.figure && <strong className={styles.figure}>{r.figure}</strong>}</div>)}</div>
         {memo.otherSide && <div className={styles.otherSide}><h3>The other side</h3>{memo.otherSide}</div>}
       </section>}
 

@@ -35,7 +35,9 @@ export interface MemoDiscount {rate:number;riskFree:number|null;beta:number|null
 export interface MemoRisk {name:string;probability:number|null;severity:number|null;score:number|null;watch:string|null}
 export interface MemoSnapshotRow {label:string;latest:number;prior:number;latestDisplay:string;priorDisplay:string;change:number|null;better:boolean|null}
 export interface MemoQuestion {question:string;status:string;followUp:string|null;evidenceIds:string[]}
-export interface MemoReason {headline:string;detail:string|null;evidenceIds:string[]}
+export interface MemoReason {headline:string;detail:string|null;
+  /** The one figure the reason rests on ("16.9% CET1"), when the conclusion stored key reasons. */
+  figure:string|null;evidenceIds:string[]}
 export interface MemoEvidence {id:string;claim:string|null;quote:string|null;url:string|null;title:string|null;publishedAt:string|null}
 
 export interface ResearchMemo {
@@ -252,13 +254,20 @@ function conclusionSection(document:Row|null):Row|null {
 }
 
 /**
- * Reasons until the writing contract stores them: the lead sentence of the conclusion's evidence-bearing fact or
- * analysis paragraphs, after its opening paragraph, at most three, each with that paragraph's sources.
+ * The memo's reasons. A conclusion written under the key-reasons contract stores them (`key_reasons`: headline,
+ * explanation, figure, evidence ids), and those are used as written. Older reports fall back to the lead sentence of
+ * the conclusion's evidence-bearing fact or analysis paragraphs, after its opening paragraph, at most three.
  */
 function reasons(section:Row|null):MemoReason[] {
+  const stored:Row[]=Array.isArray(section?.key_reasons)?section!.key_reasons:[];
+  const written=stored.filter(r=>text(r?.headline)).slice(0,3).map(r=>{
+    const explanation=text(r.explanation),figure=text(r.figure);
+    return {headline:tidyProse(String(r.headline)),detail:explanation?tidyProse(explanation):null,figure:figure?tidyProse(figure):null,evidenceIds:ids(r.evidence_ids)};
+  });
+  if(written.length)return written;
   const paragraphs:Row[]=Array.isArray(section?.paragraphs)?section!.paragraphs:[];
   return paragraphs.slice(1).filter(p=>['fact','analysis'].includes(p?.kind)&&ids(p.evidence_ids).length&&text(p.text))
-    .slice(0,3).map(p=>{const {lead,rest}=splitLead(tidyProse(String(p.text)));return {headline:lead,detail:firstSentences(rest),evidenceIds:ids(p.evidence_ids)};});
+    .slice(0,3).map(p=>{const {lead,rest}=splitLead(tidyProse(String(p.text)));return {headline:lead,detail:firstSentences(rest),figure:null,evidenceIds:ids(p.evidence_ids)};});
 }
 
 function questions(register:Row):MemoQuestion[] {

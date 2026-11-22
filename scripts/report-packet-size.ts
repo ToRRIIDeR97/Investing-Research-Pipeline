@@ -16,7 +16,10 @@ import { ResearchAgentRunError } from "../src/lib/agent-harness/errors";
 import type { AgentAttempt } from "../src/lib/agent-harness/types";
 import { exactJsonPrompt, loadRunContext, prepareResearchCall } from "../src/lib/research/run-context";
 import { loadReportInputs } from "../src/lib/research/reporting/store";
-import { COVERAGE, SECTION_CONTRACT } from "../src/lib/research/reporting/contracts";
+import { COVERAGE, storedSection } from "../src/lib/research/reporting/contracts";
+import { cleanReaderFields } from "../src/lib/research/reporting/reader-prose";
+import { checkReportSubstance } from "../src/lib/research/reporting/substance";
+import { writeFileSync } from "node:fs";
 import { buildExhibits, isAvailable, placeExhibits } from "../src/lib/research/reporting/exhibits";
 import { reportEvidenceView, reportSectionCall, splitReportArtifacts } from "../src/lib/research/reporting/runtime";
 import { buildReportFacts } from "../src/lib/research/reporting/facts";
@@ -70,7 +73,7 @@ async function main() {
   console.log(`Calibration: ${ratio.toFixed(3)} tokens/byte from ${logged.length} logged report-section calls`);
   console.log(["section", "bytes", "est_tokens", "logged_tokens_max", "largest keys (KB)"].join("\t"));
   let worst = 0;
-  const prepared = new Map<string, { section: any; params: Awaited<ReturnType<typeof prepareResearchCall>>["params"] }>();
+  const prepared = new Map<string, { section: any; params: Awaited<ReturnType<typeof prepareResearchCall>>["params"]; contract: any; stored: any }>();
   // Like the runtime: body chapters first, then each conclusion reads every section before it; the last returns coverage.
   const isConclusion = (s: any) => s.coverage?.includes("conclusion");
   const completed: any[] = (document?.sections ?? []).filter((s: any) => !isConclusion(s));
@@ -87,7 +90,12 @@ async function main() {
       promptFactory: (p) => exactJsonPrompt({ agentName: "export-writer", requiredKeys: call.contract.requiredKeys, packet: p, extraRules: call.extraRules }) });
     const written = (document?.sections ?? []).find((s: any) => s.id === section.id);
     if (isConclusion(section) && written) completed.push(written);
-    prepared.set(section.id, { section, params });
+    // The stored section to compare a replay with: the same id, else (for a conclusion of a newer outline) the stored
+    // report's conclusion in the same position.
+    const storedConclusions = (document?.sections ?? []).filter(isConclusion);
+    const position = outline.sections.filter(isConclusion).findIndex((s: any) => s.id === section.id);
+    const stored = written ?? (isConclusion(section) && position >= 0 ? storedConclusions[position] ?? null : null);
+    prepared.set(section.id, { section, params, contract: call.contract, stored });
     const bytes = Buffer.byteLength(params.promptFactory!(params.packet));
     const tokens = Math.round(bytes * ratio);
     worst = Math.max(worst, tokens);
@@ -97,28 +105,39 @@ async function main() {
     console.log([section.id, bytes, tokens, before || "-", keys].join("\t"));
   }
   console.log(`Largest estimated report-section prompt: ${worst} tokens`);
-  if (live.length) await sendLive(live, prepared);
+  if (live.length) await sendLive(live, prepared, refs);
 }
 
-/** Sends the named sections to the provider and checks each output the way the report runtime does, minus the full-report assembly. */
-async function sendLive(ids: string[], prepared: Map<string, { section: any; params: any }>) {
+/**
+ * Sends the named sections to the provider and checks each output the way the report runtime does, minus the full-report
+ * assembly: each section's own contract (a conclusion's includes key_reasons), then the runtime's resolve-and-clean step.
+ * Prints each section's key reasons and the reader-language findings (checkReportSubstance) of the replayed section next to
+ * the stored one. --out <file> also writes the cleaned answers as JSON. Nothing is written to the database.
+ */
+async function sendLive(ids: string[], prepared: Map<string, { section: any; params: any; contract: any; stored: any }>, refs: ReturnType<typeof citationRefs>) {
   const scope = `report-replay-${randomUUID()}`;
   const rows: Record<string, unknown>[] = [];
+  const outputs: Record<string, any>[] = [];
   for (const id of ids) {
     const entry = prepared.get(id);
     if (!entry) throw new Error(`No section ${id} in the outline`);
-    const { section, params } = entry;
+    const { section, params, contract } = entry;
     let attempts: AgentAttempt[] = [], status = "pass", error = "";
     try {
-      const result = await runResearchAgent<{ section: any }>({ agentName: params.agentName, title: `report replay ${id}`, taskPacket: params.packet,
+      const result = await runResearchAgent<{ section: any; coverage?: unknown }>({ agentName: params.agentName, title: `report replay ${id}`, taskPacket: params.packet,
         promptFactory: params.promptFactory, perCallKeys: params.perCallKeys, cacheScope: scope,
-        outputFormat: { ...SECTION_CONTRACT, validate(value: any) {
-          const errors = SECTION_CONTRACT.validate?.(value) || [];
+        outputFormat: { ...contract, validate(value: any) {
+          const errors = contract.validate?.(value) || [];
           if (errors.length) return errors;
           if (value.section.id !== section.id || JSON.stringify(value.section.coverage) !== JSON.stringify(section.coverage)) return [{ path: "section", message: "Preserve section id and coverage exactly" }];
           return [];
         } } });
       attempts = result.attempts;
+      const cleaned = cleanReaderFields(refs.resolve(result.structured)) as { section: any };
+      const replayed = storedSection(cleaned.section, []);
+      const findings = (s: any) => s ? checkReportSubstance([{ ...s, tables: s.tables ?? [], gaps: s.gaps ?? [] }]).map((f) => f.issue) : [];
+      outputs.push({ section: id, key_reasons: replayed.key_reasons ?? [], implication: replayed.implication,
+        findings_replayed: findings(replayed), findings_stored: findings(entry.stored), answer: cleaned });
     } catch (e) {
       status = "fail";
       error = e instanceof Error ? e.message.slice(0, 200) : String(e);
@@ -130,6 +149,15 @@ async function sendLive(ids: string[], prepared: Map<string, { section: any; par
     rows.push({ section: id, result: status, attempts: attempts.length, ...(error ? { error } : {}) });
   }
   console.log(JSON.stringify(rows, null, 2));
+  for (const o of outputs) {
+    console.log(`
+== ${o.section}: ${o.key_reasons.length} key reasons; reader-language findings replayed ${o.findings_replayed.length} vs stored ${o.findings_stored.length}`);
+    for (const r of o.key_reasons) console.log(`- ${r.headline} [${r.figure}] (${r.evidence_ids.length} sources)
+  ${r.explanation}`);
+    for (const f of o.findings_replayed) console.log(`  finding: ${f}`);
+  }
+  const outAt = process.argv.indexOf("--out");
+  if (outAt > 0 && process.argv[outAt + 1]) writeFileSync(process.argv[outAt + 1], JSON.stringify(outputs, null, 2));
   const passes = rows.filter((r) => "cost_usd" in r);
   console.log(JSON.stringify({ calls: passes.length, cost_usd: Number(passes.reduce((n, r) => n + Number(r.cost_usd), 0).toFixed(6)) }));
 }

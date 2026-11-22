@@ -62,6 +62,16 @@ export const QualitativeVisual = z.discriminatedUnion("kind", [ReportVisual.opti
 /** A section as its writer returns it (adaptive-3): plan fields, prose and optional qualitative visuals. */
 export const WrittenSectionAnswer = PlanFields.extend({ ...prose, visuals: z.array(QualitativeVisual).max(2).optional() });
 /**
+ * One reason a reader should take away from a conclusion: the claim, why it holds, the one number it rests on and
+ * the evidence behind it. The research memo shows them; the Markdown report does not render them.
+ */
+export const KeyReason = z.object({ headline: id, explanation: id, figure: id, evidence_ids: z.array(id) });
+export type ReportKeyReason = z.infer<typeof KeyReason>;
+/** Most key reasons a conclusion keeps. Capped in code (storedSection), not the schema, so a fourth costs no repair. */
+export const MAX_KEY_REASONS = 3;
+/** A conclusion section as its writer returns it: a written section with optional key_reasons. */
+export const ConclusionSectionAnswer = WrittenSectionAnswer.extend({ key_reasons: z.array(KeyReason).optional() });
+/**
  * A stored section: a superset that parses every earlier stored section (model-requested tables, every visual kind,
  * chart_plan). Sections written under adaptive-3 store tables as [] and the keys of the exhibits code placed in them.
  */
@@ -71,6 +81,8 @@ export const Section = SectionPlan.extend({
   visuals: z.array(ReportVisual).max(2).optional(),
   // Keys of the code-built exhibits (exhibits.ts EXHIBITS) placed in this chapter, in order. adaptive-3 only.
   exhibits: z.array(id).optional(),
+  // A conclusion's key reasons (at most MAX_KEY_REASONS); absent on every other section and on older reports.
+  key_reasons: z.array(KeyReason).optional(),
 });
 export type ReportSection = z.infer<typeof Section>;
 export type ReportOutline = z.infer<typeof Outline>;
@@ -142,8 +154,12 @@ const qualitativeVisuals = (visuals: unknown) => Array.isArray(visuals)
  * A section as a writer may send it. Tables, a chart plan, exhibit keys and charts are not part of the writer
  * contract any more; an answer that still carries them is accepted and storedSection strips them.
  */
-export type WriterSection = Omit<ReportSection, "tables" | "visuals" | "exhibits" | "chart_plan">
-  & { tables?: unknown; chart_plan?: unknown; exhibits?: unknown; visuals?: unknown[] };
+export type WriterSection = Omit<ReportSection, "tables" | "visuals" | "exhibits" | "chart_plan" | "key_reasons">
+  & { tables?: unknown; chart_plan?: unknown; exhibits?: unknown; visuals?: unknown[]; key_reasons?: unknown };
+
+/** The key reasons kept from a conclusion writer's answer: those with a headline, at most MAX_KEY_REASONS. */
+const keptKeyReasons = (reasons: unknown) => Array.isArray(reasons)
+  ? reasons.filter(r => r && typeof r === "object" && typeof r.headline === "string" && r.headline.trim()).slice(0, MAX_KEY_REASONS) as ReportKeyReason[] : undefined;
 
 /**
  * The section stored from a writer's answer (adaptive-3): tables stored as [], no chart plan, no visual other than a
@@ -151,9 +167,11 @@ export type WriterSection = Omit<ReportSection, "tables" | "visuals" | "exhibits
  */
 export function storedSection(written: WriterSection, exhibitKeys: string[]): ReportSection {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { tables, chart_plan, exhibits, visuals, ...rest } = written;
+  const { tables, chart_plan, exhibits, visuals, key_reasons, ...rest } = written;
   const kept = qualitativeVisuals(visuals);
-  return { ...rest, tables: [], ...(kept ? { visuals: kept } : {}), exhibits: [...exhibitKeys] };
+  // Only a conclusion keeps key reasons; any other section, or one without them, stores exactly as before.
+  const reasons = rest.coverage.includes("conclusion") ? keptKeyReasons(key_reasons) : undefined;
+  return { ...rest, tables: [], ...(kept ? { visuals: kept } : {}), exhibits: [...exhibitKeys], ...(reasons?.length ? { key_reasons: reasons } : {}) };
 }
 
 export function outputContract(shape: Record<string, z.ZodType>): AgentOutputFormat {
