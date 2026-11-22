@@ -1,7 +1,12 @@
 # Research memo: one reading view per run
 
-Status: phase 1 built on `claude/research-memo-p1`. Phases 2–4 not started. Open decision 1 was taken as proposed
-(lead sentences of the conclusion's evidence-bearing paragraphs). Mockup: [prototype/workshop/memo-sofi.html](../../prototype/workshop/memo-sofi.html)
+Status: phase 1 merged (PR 148). Phase 2 built on `claude/research-memo-p2`. Phases 3–4 not started.
+
+- Open decision 1 was taken as proposed: the lead sentences of the conclusion's evidence-bearing paragraphs.
+- Open decision 2: the earlier overview stays at `?view=overview` for one release, outside the tab bar.
+- Phase 2 deviations:
+  - Instead of redirecting old `?view=` values, the four tabs group them as sub-tabs, so every saved link still opens unchanged.
+  - The memo's decision panel records Reject, Watchlist and Needs more work. Approval opens the full review form, so open findings are still read and acknowledged there. Mockup: [prototype/workshop/memo-sofi.html](../../prototype/workshop/memo-sofi.html)
 (static, SoFi run `0c9a2731`). Review of the current page: see "Evidence" below.
 
 ## Problem

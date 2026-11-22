@@ -32,6 +32,9 @@ import { assetSnapshot } from "@/lib/research/asset-snapshot";
 import { AssetHero, Leadership } from "@/components/company/company";
 import { KeyNumbers, KpiGauges, PriceFan, RiskHeat, ThesisPillars, ValueRuler, money, signedPercent } from "@/components/visuals/valuation-visuals";
 import { C } from "@/components/ui/palette";
+import { ResearchMemoView } from "@/components/memo/research-memo";
+import type { ResearchMemo } from "@/lib/research/reporting/research-memo";
+import { REPORT_TABS, VIEW_LABELS, tabOf, viewFromQuery, viewQuery, type ReportView } from "@/lib/research/report-tabs";
 
 type JsonRecord = Record<string, unknown>;
 type ResearchRecord = Record<string, any>;
@@ -88,9 +91,8 @@ const emptyResearchData: ResearchData = {
   artifacts: [],
 };
 
-type TabId = "overview" | "evidence" | "metrics" | "valuation" | "workbench" | "thesis" | "financials" | "kpis" | "notebook" | "backtests" | "sources" | "runs";
-const tabLabels: Partial<Record<TabId, string>> = { thesis: "Report", financials: "Financials", kpis: "KPIs", notebook: "Notebook", runs: "Run history" };
-const tabLabel = (tab: TabId) => tabLabels[tab] ?? tab.charAt(0).toUpperCase() + tab.slice(1);
+type TabId = ReportView;
+const tabLabel = (tab: TabId) => VIEW_LABELS[tab];
 // Views that read large artifact bodies or the report document's artifacts. The others render from the summary report.
 const fullReportTabs: readonly TabId[] = ["thesis", "financials", "kpis", "notebook"];
 
@@ -120,7 +122,7 @@ function ViewResearch() {
   const [data, setData] = useState<ResearchData>(emptyResearchData);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const activeTab:TabId = requestedView === 'report' ? 'thesis' : ['evidence','metrics','valuation','workbench','financials','kpis','notebook','backtests','sources','runs'].includes(requestedView ?? '') ? requestedView as TabId : 'overview';
+  const activeTab:TabId = viewFromQuery(requestedView);
   const [searchQuery, setSearchQuery] = useState("");
   const loadVersion = useRef(0);
   // The run row behind the report on screen. A quiet refresh skips the report (megabytes) while that row is unchanged.
@@ -264,7 +266,7 @@ function ViewResearch() {
 
   function sectionHref(section:TabId, runId?:string) {
     const query = new URLSearchParams(searchParams.toString());
-    query.set('view',section === 'thesis' ? 'report' : section);
+    query.set('view',viewQuery(section));
     // A chat proposal reference only means something on the Workbench tab it opened.
     query.delete('proposal');
     if (runId ?? data.activeRun?.id) query.set('run',runId ?? data.activeRun!.id);
@@ -281,13 +283,13 @@ function ViewResearch() {
   const header = <>
     <AssetHero assetId={assetId} name={asset.canonical_name} ticker={ticker}
       meta={[cleanWords(asset.asset_kind.replace(/_asset/g, "")), asset.sector, asset.industry]}
-      status={activeTab !== "thesis" ? <span className={ui.status} data-status={action.tone}>{action.label}</span> : undefined}
+      status={activeTab !== "thesis" && activeTab !== "memo" ? <span className={ui.status} data-status={action.tone}>{action.label}</span> : undefined}
       actions={<>
         <Link href={`/assets/${assetId}`} className={ui.secondary}>Asset details</Link>
         {data.activeRun&&<ResearchChat key={data.activeRun.id} runId={data.activeRun.id} evidence={data.report?.report_document?.evidence??[]} workbenchHref={(proposal)=>`${sectionHref('workbench')}&proposal=${encodeURIComponent(proposal)}`}/>}
         <Link href={`/assets/${assetId}/run?new=1`} className={ui.primary}>New research</Link>
       </>} />
-    {data.activeRun && <KeyNumbers snapshot={snapshot} kpis={3} label={`${asset.canonical_name} key numbers`} />}
+    {data.activeRun && activeTab !== "memo" && <KeyNumbers snapshot={snapshot} kpis={0} label={`${asset.canonical_name} key numbers`} />}
     <AssetTabs activeTab={activeTab} hrefFor={sectionHref} />
   </>;
   const viewArtifacts = [...data.artifacts, ...(data.report?.report_document?.artifacts ?? []).filter((a:ResearchRecord)=>!data.artifacts.some(b=>b.id===a.id))];
@@ -297,6 +299,21 @@ function ViewResearch() {
     {wrap ? <section className={`${ui.tile} ${styles.wide}`}>{body}</section> : body}
   </div>{activeTab !== "notebook" && <NotebookDrawer api={notebookApi} assetId={assetId} document={reportDocument} runId={data.activeRun?.id ?? null} artifacts={viewArtifacts}
     notebookHref={sectionHref("notebook")} assetName={asset.canonical_name} />}</div>;
+  if (activeTab === 'memo') {
+    const memo = (data.report?.memo ?? null) as ResearchMemo | null;
+    if (!data.activeRun) return view(<div className={ui.grid}>
+      <section className={`${ui.tile} ${ui.s7}`}>
+        <div className={ui.tileHead}><h2>No research yet</h2></div>
+        <div className={`${ui.tileBody} flex flex-wrap items-center justify-between gap-3`}><p className={ui.muted}>Start a run to build the thesis, valuation and risk register for this asset.</p><Link className={ui.primary} href={action.href}>{action.action}</Link></div>
+      </section>
+      <Leadership subject={{ asset_id: assetId }} className={ui.s5} />
+    </div>);
+    if (!memo) return view(<section className={ui.tile}><div className={ui.tileHead}><h2>No memo for this run yet</h2></div>
+      <p className={ui.empty}>The memo appears once the run has stored its valuation or report. {runProgressIsLive(String(data.activeRun.status)) ? "The run is still in progress." : ""} <Link className={ui.textLink} href={sectionHref("thesis")}>Open the report</Link></p></section>);
+    return view(<ResearchMemoView key={data.activeRun.id} memo={memo} assetId={assetId} runId={String(data.activeRun.id)}
+      reportHash={typeof data.report?.report_document?.content_hash === "string" ? data.report.report_document.content_hash : null}
+      links={{ model: sectionHref("valuation"), financials: sectionHref("financials"), audit: sectionHref("thesis") }} onDecided={() => void loadResearch(true)} />);
+  }
   if (activeTab === 'notebook') return view(<InvestingNotebook api={notebookApi} assetId={assetId} artifacts={viewArtifacts} document={reportDocument} runId={data.activeRun?.id ?? null}
     runDate={data.activeRun?.created_at ? String(data.activeRun.created_at).slice(0, 10) : null} reportHref={(id) => `${sectionHref("thesis")}#report-${id}`} />);
   if (activeTab === 'workbench') return view(data.activeRun ? <ValuationWorkbench key={data.activeRun.id} runId={String(data.activeRun.id)} proposalRef={searchParams.get('proposal')} />
@@ -409,12 +426,17 @@ function RunHistory({ runs, activeRun, stages, assetId, onSelect }: { runs: Rese
   </>;
 }
 
-const tabViews: TabId[] = ["overview", "thesis", "financials", "kpis", "notebook", "valuation", "workbench", "evidence", "metrics", "backtests", "sources", "runs"];
-
+/** Four tabs (Memo, Model, Financials, Audit); the active tab's earlier views appear as sub-tabs under it. */
 function AssetTabs({ activeTab, hrefFor }: { activeTab: TabId; hrefFor: (view: TabId) => string }) {
-  return <nav aria-label="Asset views" className={styles.tabs}>
-    {tabViews.map((view) => <Link key={view} href={hrefFor(view)} aria-current={activeTab === view ? "page" : undefined}>{tabLabel(view)}</Link>)}
-  </nav>;
+  const current = tabOf(activeTab);
+  return <>
+    <nav aria-label="Asset views" className={styles.tabs}>
+      {REPORT_TABS.map((tab) => <Link key={tab.key} href={hrefFor(tab.views[0])} aria-current={current?.key === tab.key ? "page" : undefined}>{tab.label}</Link>)}
+    </nav>
+    {current && current.views.length > 1 && <nav aria-label={`${current.label} views`} className={styles.subTabs}>
+      {current.views.map((view) => <Link key={view} href={hrefFor(view)} aria-current={activeTab === view ? "page" : undefined}>{tabLabel(view)}</Link>)}
+    </nav>}
+  </>;
 }
 
 interface MonitorCheck { status: string; refresh_due: boolean; reasons: string[]; checked_at: string; newer_run: boolean; }

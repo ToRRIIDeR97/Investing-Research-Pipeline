@@ -10,7 +10,7 @@ import styles from "./visuals.module.css";
 type Tone = "good" | "bad" | "watch" | undefined;
 
 /** The rendered width of a box, so an SVG can draw in real pixels and keep its text at its stated size. */
-function useWidth<T extends HTMLElement>(fallback: number) {
+export function useWidth<T extends HTMLElement>(fallback: number) {
   const ref = useRef<T>(null);
   const [width, setWidth] = useState(fallback);
   useEffect(() => {
