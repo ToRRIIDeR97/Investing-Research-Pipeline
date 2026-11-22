@@ -7,6 +7,8 @@ import type { ReportSection } from '@/lib/research/reporting/contracts';
 import { resolveTable } from '@/lib/research/reporting/tables';
 import { sectionVisuals } from '@/lib/research/reporting/visual-trial';
 import { valuationSummary, scenarioNames } from '@/lib/research/reporting/valuation-summary';
+import { assetSnapshot } from '@/lib/research/asset-snapshot';
+import { columnTable } from '@/lib/research/reporting/grid-table';
 import { price, formatInUnit } from '@/lib/research/reporting/plain-english';
 import { label, readerText, readerValue, safeUrl, historyMatrix, pricePath, exhibitTitle, railName, tidyDecimals, compactNumber } from '@/lib/research/reporting/presentation.mjs';
 import { ReportVisual } from './report-visual';
@@ -25,7 +27,6 @@ const pad=(n:number)=>String(n).padStart(2,'0');
 const hiddenPaths=['observations','ttm_series','coverage.cells','coverage.gaps'];
 const nameKeys=['Scenario','Scenario name','Method','Claimed moat','Process node','Segment name','Segment','Risk name','Catalyst name','Name','Measure','Metric','Question','Event','Claim','Driver key','Driver','Indicator','Strategy name','Combination key','Year','Dataset','Title'];
 const isLong=(v:unknown)=>typeof v==='string'&&v.length>90||(!!v&&typeof v==='object');
-
 /** Display name for a record: "bear" in a Scenario field reads "Bear case"; a bare key such as "fcfe" reads "FCFE". */
 function recordName(row:RecordValue,index:number):{key?:string;name:string} {
   const key=nameKeys.find(k=>typeof row[k]==='string')??Object.keys(row).find(k=>typeof row[k]==='string'&&row[k].length<80);
@@ -135,6 +136,9 @@ function RecordMatrix({rows,title,lead=[]}:{rows:RecordValue[];title:string;lead
   </>;
 }
 function ExhibitData({value,title,lead,proper}:{value:any;title:string;lead?:LeadRow[];proper?:string[]}) {
+  // A code-computed { columns, rows } table (report_facts cases, analytics series) reads as a table.
+  const grid=columnTable(value);
+  if(grid)return <RecordTable rows={grid} title={title} proper={proper}/>;
   // An artifact root that only wraps one list (for example { bottlenecks: [...] }) shows that list.
   if(value&&typeof value==='object'&&!Array.isArray(value)){
     const fields=Object.entries(value).filter(([k])=>k!=='artifact_type');
@@ -221,18 +225,36 @@ function Exhibit({table,document,id}:{table:ReportSection['tables'][number];docu
   }
   return <section id={id} className={styles.tile} data-tile data-exhibit><header className={styles.tileHead}><h3 data-tile-title>{title}</h3></header><div className={styles.tileBody}>{content}</div></section>;
 }
-/** The report's answer on every chapter: stance, price, weighted target and the three scenarios. */
-function Verdict({document}:{document:ReportDocument}) {
-  const s=useMemo(()=>valuationSummary(document.artifacts,{conclusionStatus:document.conclusion_status}),[document]);
-  const decision=document.artifacts.find(a=>((a as RecordValue).type??a.artifact_type)==='decision_record')?.content_json as RecordValue|undefined;
+/**
+ * The report's answer on every chapter: stance, price, value today and the three scenarios. "Value" is value per
+ * share today from report_facts (the figure the asset header shows); terminal-year prices are labelled as targets.
+ * Runs without report_facts keep the terminal targets, labelled with their year.
+ */
+function Verdict({document,artifacts}:{document:ReportDocument;artifacts:Record<string,any>[]}) {
+  const s=useMemo(()=>valuationSummary(artifacts,{conclusionStatus:document.conclusion_status}),[artifacts,document.conclusion_status]);
+  const today=useMemo(()=>assetSnapshot(artifacts),[artifacts]);
+  const decision=artifacts.find(a=>((a as RecordValue).type??a.artifact_type)==='decision_record')?.content_json as RecordValue|undefined;
   const stance=typeof decision?.decision==='string'?label(decision.decision):document.conclusion_status==='withheld'?'Withheld':label(document.conclusion_status);
-  const c=s?.currency??'USD';
-  const gap=s?.weightedReturn;
+  const c=s?.currency??today?.currency??'USD';
+  const last=s?.price??today?.price??null;
+  const pct=(r:number|null|undefined)=>r==null?null:<span className={r<0?styles.down:styles.up}>{r<0?'−':'+'}{Math.abs(r*100).toFixed(1)}% vs price</span>;
+  const target=(t:string)=>s?.scenarios.find(x=>x.type===t)?.value;
+  const year=s?.terminalYear?` ${s.terminalYear}`:'';
+  const valued=today!=null&&today.values.base!=null;
   return <section className={`${styles.tile} ${styles.verdict}`} data-tile data-verdict aria-label="Report verdict">
     <div><span className={styles.statLabel}>Status</span><strong>{statusWord(document.conclusion_status)}</strong><span className={styles.statNote}>Decision: {stance}</span></div>
-    <div><span className={styles.statLabel}>Last price</span><strong>{price(s?.price,c,true)}</strong><span className={styles.statNote}>{s?.priceVerified?'Verified close':'Unverified'}</span></div>
-    <div><span className={styles.statLabel}>Weighted target{s?.terminalYear?` ${s.terminalYear}`:''}</span><strong>{price(s?.weighted,c,true)}</strong>{gap!=null&&<span className={gap<0?styles.down:styles.up}>{gap<0?'−':'+'}{Math.abs(gap*100).toFixed(1)}% vs price</span>}</div>
-    {(s?.scenarios??[]).map(x=><div key={x.type}><span className={styles.statLabel}>{scenarioNames[x.type]}{x.probability!=null?` · ${Math.round(x.probability*100)}%`:''}</span><strong>{price(x.value,c,true)}</strong>{x.return!=null&&<span className={x.return<0?styles.down:styles.up}>{x.return<0?'−':'+'}{Math.abs(x.return*100).toFixed(1)}%</span>}</div>)}
+    <div><span className={styles.statLabel}>Last price</span><strong>{price(last,c,true)}</strong><span className={styles.statNote}>{s?.priceVerified||today?.price_verified?'Verified close':'Unverified'}</span></div>
+    {valued?<>
+      <div><span className={styles.statLabel}>Value today · weighted</span><strong>{price(today.weighted,c,true)}</strong>{pct(today.weighted!=null&&last?today.weighted/last-1:null)}</div>
+      {(['bear','base','bull'] as const).filter(t=>today.values[t]!=null).map(t=><div key={t}>
+        <span className={styles.statLabel}>{scenarioNames[t]} value today{today.probabilities[t]!=null?` · ${Math.round(today.probabilities[t]!*100)}%`:''}</span>
+        <strong>{price(today.values[t],c,true)}</strong>{pct(today.gap[t])}
+        {target(t)!=null&&<span className={styles.statNote}>{year.trim()||'Terminal'} target {price(target(t),c,true)}</span>}
+      </div>)}
+    </>:<>
+      <div><span className={styles.statLabel}>Weighted target{year}</span><strong>{price(s?.weighted,c,true)}</strong>{pct(s?.weightedReturn)}</div>
+      {(s?.scenarios??[]).map(x=><div key={x.type}><span className={styles.statLabel}>{scenarioNames[x.type]} target{year}{x.probability!=null?` · ${Math.round(x.probability*100)}%`:''}</span><strong>{price(x.value,c,true)}</strong>{pct(x.return)}</div>)}
+    </>}
   </section>;
 }
 const statusWord=(s:string)=>s==='withheld'?'Conclusion withheld':s==='qualified'?'Qualified research':'Ready for review';
@@ -305,7 +327,7 @@ export function ResearchReport({document,financialsHref,liveArtifacts}:{document
 
       <div className={styles.main} id="report-content" data-report-chapter={section?.id}>
         {document.is_test&&<p className={styles.notice}>Synthetic test report. Not for investment decisions.</p>}
-        <Verdict document={document}/>
+        <Verdict document={document} artifacts={liveArtifacts?.length?liveArtifacts:document.artifacts}/>
         <header className={`${styles.tile} ${styles.chapterHead}`} data-tile>
           <div className={styles.chapterTop}>
             <p className={styles.eyebrow} data-chapter-eyebrow>{section?`Chapter ${index+1} of ${sections.length}`:'Appendix'}{section?.coverage.length?` · ${section.coverage.map(c=>label(c)).join(', ')}`:''}</p>

@@ -1,5 +1,6 @@
 import postgres from "postgres";
 import { pipelineSql } from "@/db/pipeline-sql";
+import { buildResearchMemo, SNAPSHOT_METRIC_KEYS } from "@/lib/research/reporting/research-memo";
 
 export interface ResearchArtifactReadModel {
   id: string;
@@ -27,6 +28,13 @@ export interface ResearchArtifactReadModel {
 const SUMMARY_BODY_LIMIT_BYTES = 64 * 1024;
 // Bodies the report view's overview and summary read are always sent, whatever their size.
 const SUMMARY_BODY_TYPES = ["investment_thesis", "risk_register", "annual_price_target_path", "company_genesis", "founder_profile"];
+
+// The artifacts the research memo reads. All are small except financial_statement_set, whose observations are
+// filtered in the database to the memo's quarterly snapshot metrics before they are sent.
+const MEMO_ARTIFACT_TYPES = [
+  "report_facts", "valuation_scenario_set", "monitoring_dashboard", "thesis_breakers", "question_register",
+  "confidence_assessment", "risk_register", "decision_record", "financial_statement_set",
+];
 
 function objectValue(value: unknown): Record<string, unknown> {
   let current = value;
@@ -118,7 +126,7 @@ export async function getResearchRunReport(
   if (!run) return null;
   const omitBody = sql`artifact_type <> 'report_document' AND artifact_type <> ALL(${SUMMARY_BODY_TYPES})
     AND pg_column_size(content_json) > ${SUMMARY_BODY_LIMIT_BYTES}`;
-  const [artifactRows, evidence, metrics, valuationSignals, scenarios, backtests, sources, roleCoverage, modelCalls, exports, reviews, theses, risks, catalysts, stageRows] = await Promise.all([
+  const [artifactRows, evidence, metrics, valuationSignals, scenarios, backtests, sources, roleCoverage, modelCalls, exports, reviews, theses, risks, catalysts, stageRows, memoRows] = await Promise.all([
     options.summary
       ? sql`
         SELECT DISTINCT ON (artifact_type, scope_key)
@@ -158,6 +166,22 @@ export async function getResearchRunReport(
     sql`SELECT * FROM risks WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM catalysts WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT stage_key, status FROM research_stages WHERE research_run_id = ${runId}`,
+    sql`
+      SELECT DISTINCT ON (artifact_type) artifact_type, artifact_version,
+        CASE
+          WHEN artifact_type = 'financial_statement_set' AND jsonb_typeof(content_json -> 'observations') = 'array'
+            THEN jsonb_build_object('observations', COALESCE((
+              SELECT jsonb_agg(o) FROM jsonb_array_elements(content_json -> 'observations') o
+              WHERE o ->> 'metric_key' = ANY(${SNAPSHOT_METRIC_KEYS}) AND o ->> 'periodicity' = 'quarterly'
+                AND COALESCE(o ->> 'segment', '') = '' AND COALESCE(o ->> 'geography', '') = ''
+            ), '[]'::jsonb))
+          WHEN artifact_type = 'financial_statement_set' THEN '{}'::jsonb
+          ELSE content_json
+        END AS content_json
+      FROM research_artifacts
+      WHERE research_run_id = ${runId} AND status <> 'superseded' AND artifact_type = ANY(${MEMO_ARTIFACT_TYPES})
+      ORDER BY artifact_type, artifact_version DESC, created_at DESC
+    `,
   ]);
   const artifacts = artifactRows.map((row) => normalizeArtifact(row as Record<string, unknown>));
   const byType: Record<string, ResearchArtifactReadModel[]> = {};
@@ -200,8 +224,23 @@ export async function getResearchRunReport(
     })
     .map((section) => ({ type: section.type, label: section.label, status: "incomplete" }));
 
+  // The memo: one reading view built here, so large artifact bodies never reach the browser for it.
+  const reportDocument = (byType.report_document?.[0]?.content_json || null) as Record<string, unknown> | null;
+  // A memo that can't be built (unexpected artifact shapes) is left out; the rest of the report still loads.
+  let memo: ReturnType<typeof buildResearchMemo> = null;
+  try {
+    memo = buildResearchMemo(
+      memoRows.map((row) => ({ artifact_type: row.artifact_type, artifact_version: row.artifact_version, content_json: objectValue(row.content_json) })),
+      reportDocument,
+      { runStatus: run.status, humanReviewStatus: stageStatus.get("human_review") ?? null, latestDecision: reviews[0]?.status ?? null },
+    );
+  } catch (error) {
+    console.error(`Research memo for run ${runId} could not be built`, error);
+  }
+
   return {
     summary: Boolean(options.summary),
+    memo,
     run: run,
     asset: {
       id: run.asset_id,

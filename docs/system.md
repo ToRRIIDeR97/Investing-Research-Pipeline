@@ -417,7 +417,21 @@ The numbers come from `assetSnapshot` (`src/lib/research/asset-snapshot.ts`, pur
 - **Yearly targets**: `annual_price_target_path`.
 - **KPIs**: `monitoring_dashboard` items with a numeric level. Each KPI is "good" on or past its bull threshold and "bad" on or past its bear threshold.
 
-The overview shows these on a value ruler, a price fan with the target table, KPI gauges and a risk heat list. The risk heat ranks risks by likelihood × severity from `risk_register`.
+The overview shows these on a value ruler, a price fan with the target table, KPI gauges and a risk heat list. The risk heat ranks risks by likelihood × severity from `risk_register`. KPI gauges run on a bad-to-good scale: the bear threshold is always on the left and the bull threshold on the right, whichever direction the metric improves in.
+
+"Value" on every surface means value per share today. The report's verdict bar shows value today from `report_facts` (the figure the header shows) and labels each `valuation_scenario_set.terminal_anchor_<case>` as the terminal-year price target. Runs without `report_facts` keep the terminal targets, labelled with their year.
+
+**The research memo** (`src/lib/research/reporting/research-memo.ts:buildResearchMemo`, pure) is one reading view of a run. `getResearchRunReport` builds it on the server and returns it as `memo` with both the summary and the full report. A separate query loads the memo's inputs: `report_facts`, `valuation_scenario_set`, `monitoring_dashboard`, `thesis_breakers`, `question_register`, `confidence_assessment`, `risk_register`, `decision_record`, and the quarterly snapshot metrics of `financial_statement_set`, which are filtered in the database (`SNAPSHOT_METRIC_KEYS`). Large artifact bodies therefore never reach the browser for it. The memo holds:
+
+- **verdict**: price, value today per case, weighted value, gap, confidence (from `confidence_assessment.valuation` and the number of open questions), the conclusion's implication, and one run status (`memoStatus`: Researching, Needs your decision, Needs more work, Decided or Failed);
+- **reasons**: until the report contract stores them, the lead sentence of up to three evidence-bearing fact or analysis paragraphs in the conclusion chapter, after its opening paragraph, with their sources;
+- **signals**: `monitoring_dashboard` items placed on the same bad-to-good scale, with their base range; blocked `question_register` entries are listed as untestable;
+- **valuation**: the case table (value today, probability, terminal-year target, exit valuation in words), the discount rate with the beta's verification flag, and a base-case bridge (terminal present value plus forecast-year present value, per diluted share). The bridge is shown only when its parts reproduce value today within one cent;
+- **risks**, a same-quarter-last-year **snapshot**, **open questions** (blocked first) and the cited **evidence** (quote, URL, source title) for a source drawer.
+
+A withheld valuation gives a verdict without numbers and no valuation section. Amounts written in thousands in model prose are restated in millions or billions (`tidyProse`); no other wording changes. Phase 2 of `Implementations/research-memo/implementation.md` draws the memo as the default tab.
+
+Code-computed `{ columns, rows }` tables in older reports (for example `report_facts.cases`) render as record tables through `src/lib/research/reporting/grid-table.ts:columnTable`, with plain column names, ratios as percentages and years without separators.
 
 `GET /api/assets/overview` (`listAssetOverviews`) gives the home feed and the Research list every research asset in one call. Each entry has its primary ticker, its newest run, and the snapshot of its newest run that has `report_facts`. The call reads only those small artifacts, plus the two price fields of `valuation_scenario_set`.
 

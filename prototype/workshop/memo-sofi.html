@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SoFi Research Memo</title>
+<!-- Static mockup of a one-page research memo. Numbers come from SoFi run 0c9a2731 (18 Nov 2026).
+     Tokens match src/app/globals.css (slate and navy). Nothing here talks to the app. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+:root {
+  --page: #F5F6F8; --tile: #FFFFFF; --soft: #F1F3F6; --hover: #F7F8FA;
+  --line: #E2E5EA; --line-soft: #EEF0F3; --line-strong: #D1D5DB;
+  --ink: #111827; --ink-2: #4B5563; --ink-3: #6B7280; --ink-4: #9CA3AF;
+  --navy: #1E3A5F; --navy-hover: #172E4B; --navy-soft: #EDF0F4; --navy-2: #B9C7D9; --navy-3: #6B8CB5;
+  --positive: #166534; --positive-bg: #E6F4EA; --positive-line: #B7DFC3;
+  --critical: #B42318; --critical-bg: #FDECEC; --critical-line: #F3C1BC;
+  --caution: #7A5300; --caution-bg: #FFF4D6; --caution-line: #F0D9A0;
+  --note: #5B4BB0; --note-bg: #F1EFFB; --note-line: #D6D0F3;
+  --radius-card: 16px; --radius-control: 10px;
+  --shadow-pop: 0 8px 24px rgb(17 24 39 / 10%);
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page); color: var(--ink); font: 400 15px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; cursor: pointer; }
+a { color: var(--navy); }
+.num { font-variant-numeric: tabular-nums; }
+:focus-visible { outline: 2px solid var(--navy-3); outline-offset: 2px; }
+
+/* Top bar */
+.topbar { position: sticky; top: 0; z-index: 20; background: var(--tile); border-bottom: 1px solid var(--line); }
+.topbar-in { max-width: 1180px; margin: 0 auto; padding: 10px 24px; display: flex; align-items: center; gap: 20px; }
+.brand { font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+.brand-mark { width: 22px; height: 22px; border-radius: 6px; background: var(--navy); color: #fff; display: grid; place-items: center; font-size: 11px; }
+.nav { display: flex; gap: 4px; font-size: 13px; color: var(--ink-2); }
+.nav span { padding: 5px 10px; border-radius: 8px; }
+.nav .on { background: var(--navy-soft); color: var(--navy); font-weight: 600; }
+.spacer { flex: 1; }
+.mockflag { font-size: 12px; color: var(--ink-3); }
+.btn { border: 1px solid var(--line-strong); background: var(--tile); border-radius: var(--radius-control); padding: 7px 12px; font-size: 13px; font-weight: 500; }
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--navy); border-color: var(--navy); color: #fff; }
+.btn.primary:hover { background: var(--navy-hover); }
+.btn.note-toggle[aria-pressed="true"] { background: var(--note-bg); border-color: var(--note-line); color: var(--note); }
+
+/* Hero */
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px 80px; }
+.hero { display: flex; align-items: center; gap: 16px; padding: 24px 0 14px; flex-wrap: wrap; }
+.logo { width: 52px; height: 52px; border-radius: 12px; background: var(--tile); border: 1px solid var(--line); display: grid; place-items: center; font-weight: 700; color: #00A9CE; font-size: 15px; }
+.hero h1 { margin: 0; font-size: 24px; line-height: 1.2; font-weight: 700; }
+.hero-meta { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-3); margin-top: 4px; flex-wrap: wrap; }
+.ticker { background: var(--navy); color: #fff; font-weight: 600; font-size: 11px; padding: 1px 7px; border-radius: 5px; letter-spacing: .03em; }
+.chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid; white-space: nowrap; }
+.chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.chip.caution { background: var(--caution-bg); color: var(--caution); border-color: var(--caution-line); }
+.chip.critical { background: var(--critical-bg); color: var(--critical); border-color: var(--critical-line); }
+.chip.positive { background: var(--positive-bg); color: var(--positive); border-color: var(--positive-line); }
+.chip.neutral { background: var(--soft); color: var(--ink-2); border-color: var(--line); }
+.chip.plain::before { display: none; }
+.hero-actions { margin-left: auto; display: flex; gap: 8px; }
+
+/* Tabs: four, not twelve */
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 24px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.tab { padding: 10px 14px; font-size: 14px; color: var(--ink-3); border: 0; background: none; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.tab.on { color: var(--ink); font-weight: 600; border-bottom-color: var(--navy); }
+.tab small { color: var(--ink-4); font-weight: 400; margin-left: 4px; }
+
+/* Layout */
+.layout { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 32px; align-items: start; }
+.toc { position: sticky; top: 76px; font-size: 13px; }
+.toc-title { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-4); font-weight: 600; margin-bottom: 8px; }
+.toc a { display: flex; gap: 8px; padding: 6px 10px; border-radius: 8px; color: var(--ink-2); text-decoration: none; }
+.toc a:hover { background: var(--hover); }
+.toc a.on { background: var(--navy-soft); color: var(--navy); font-weight: 600; }
+.toc a .n { color: var(--ink-4); width: 14px; }
+.toc hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+
+section.block { background: var(--tile); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 26px 30px; margin-bottom: 18px; scroll-margin-top: 80px; }
+.eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-4); font-weight: 600; margin: 0 0 6px; }
+h2 { font-size: 19px; line-height: 1.3; margin: 0 0 4px; font-weight: 650; }
+.lede { color: var(--ink-2); margin: 0 0 18px; font-size: 14px; }
+p { margin: 0 0 12px; }
+
+/* Verdict */
+.verdict { border-color: var(--navy-2); box-shadow: 0 1px 0 var(--line); }
+.verdict-head { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.verdict-line { font-size: 24px; line-height: 1.3; font-weight: 650; margin: 2px 0 10px; max-width: 34ch; letter-spacing: -.01em; }
+.verdict-sub { color: var(--ink-2); max-width: 66ch; margin: 0; }
+.facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin: 22px 0 6px; }
+.fact { background: var(--tile); padding: 12px 16px; }
+.fact .k { font-size: 12px; color: var(--ink-3); }
+.fact .v { font-size: 22px; font-weight: 650; line-height: 1.25; }
+.fact .s { font-size: 12px; color: var(--ink-3); }
+.fact .v.bad, .s.bad { color: var(--critical); }
+.ruler { margin: 18px 0 4px; }
+.ruler svg { width: 100%; height: auto; display: block; overflow: visible; }
+.ruler-legend { display: flex; gap: 16px; font-size: 12px; color: var(--ink-3); flex-wrap: wrap; }
+.ruler-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+
+.decision { margin-top: 20px; padding: 14px 16px; background: var(--soft); border-radius: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.decision strong { font-size: 14px; margin-right: 6px; }
+.decision .hint { font-size: 12px; color: var(--ink-3); width: 100%; margin-top: -2px; }
+.btn.choice[aria-pressed="true"] { background: var(--navy); color: #fff; border-color: var(--navy); }
+
+/* Reasons */
+.reasons { display: grid; gap: 12px; counter-reset: r; }
+.reason { display: grid; grid-template-columns: 30px 1fr auto; gap: 14px; align-items: start; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; }
+.reason::before { counter-increment: r; content: counter(r); width: 26px; height: 26px; border-radius: 50%; background: var(--navy-soft); color: var(--navy); font-weight: 650; font-size: 13px; display: grid; place-items: center; }
+.reason h3 { font-size: 15px; margin: 0 0 4px; font-weight: 650; }
+.reason p { margin: 0; color: var(--ink-2); font-size: 14px; }
+.reason .stat { text-align: right; min-width: 120px; }
+.reason .stat b { display: block; font-size: 18px; font-weight: 650; }
+.reason .stat span { font-size: 12px; color: var(--ink-3); }
+.counter { margin-top: 14px; padding: 16px 18px; border-radius: 12px; background: var(--positive-bg); border: 1px solid var(--positive-line); }
+.counter h3 { font-size: 14px; margin: 0 0 6px; color: var(--positive); }
+.counter ul { margin: 0; padding-left: 18px; color: var(--ink-2); font-size: 14px; }
+.counter li { margin: 2px 0; }
+
+/* Citation chips */
+.cite { display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 4px; margin-left: 2px; border-radius: 5px; border: 1px solid var(--line-strong); background: var(--tile); color: var(--ink-3); font-size: 10.5px; font-weight: 600; vertical-align: 2px; line-height: 1; }
+.cite:hover { border-color: var(--navy-3); color: var(--navy); background: var(--navy-soft); }
+.tag { display: inline-block; font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 5px; vertical-align: 1px; border: 1px solid; }
+.tag.verified { color: var(--positive); background: var(--positive-bg); border-color: var(--positive-line); }
+.tag.derived { color: var(--navy); background: var(--navy-soft); border-color: var(--navy-2); }
+.tag.unverified { color: var(--caution); background: var(--caution-bg); border-color: var(--caution-line); }
+
+/* Monitors */
+.monitors { width: 100%; border-collapse: collapse; font-size: 14px; }
+.monitors th { text-align: left; font-size: 12px; color: var(--ink-3); font-weight: 500; padding: 0 10px 8px; border-bottom: 1px solid var(--line); }
+.monitors td { padding: 14px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+.monitors tr:last-child td { border-bottom: 0; }
+.monitors .name b { display: block; font-weight: 600; }
+.monitors .name span { font-size: 12px; color: var(--ink-3); }
+.monitors .now { font-weight: 650; font-size: 16px; white-space: nowrap; }
+.gauge { width: 100%; min-width: 160px; }
+.gauge-svg { width: 100%; height: 34px; }
+.gauge svg { max-width: 100%; display: block; overflow: visible; }
+.gauge-ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+.untested td { color: var(--ink-3); }
+.direction-key { display: flex; justify-content: flex-end; gap: 6px; font-size: 12px; color: var(--ink-3); margin: -6px 0 10px; }
+
+/* Valuation */
+.two { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 24px; }
+.bridge svg { width: 100%; height: auto; display: block; }
+.explain { background: var(--soft); border-radius: 12px; padding: 16px 18px; font-size: 14px; color: var(--ink-2); }
+.explain h3 { margin: 0 0 6px; font-size: 14px; color: var(--ink); }
+.explain p:last-child { margin: 0; }
+table.cases { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 22px; }
+table.cases th, table.cases td { padding: 10px 12px; border-bottom: 1px solid var(--line-soft); text-align: right; }
+table.cases th:first-child, table.cases td:first-child { text-align: left; color: var(--ink-2); }
+table.cases thead th { font-size: 12px; color: var(--ink-3); font-weight: 500; border-bottom: 1px solid var(--line); }
+table.cases .hl td { font-weight: 650; background: var(--navy-soft); color: var(--ink); }
+table.cases .sub td { font-size: 13px; color: var(--ink-3); }
+.casehead { display: inline-flex; align-items: center; gap: 6px; }
+.casehead i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.rate { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; margin-top: 18px; padding: 14px 16px; border: 1px dashed var(--line-strong); border-radius: 12px; }
+.rate .op { color: var(--ink-4); }
+.rate .term { padding: 4px 10px; border-radius: 8px; background: var(--soft); }
+.rate .term b { font-weight: 650; }
+.foot { font-size: 12px; color: var(--ink-3); margin-top: 10px; }
+
+/* Risks */
+.risks { display: grid; gap: 8px; }
+.risk { display: grid; grid-template-columns: 1fr 160px 90px; gap: 16px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
+.risk b { font-weight: 600; font-size: 14px; }
+.risk .watch { display: block; font-size: 12.5px; color: var(--ink-3); }
+.meter { height: 6px; background: var(--soft); border-radius: 3px; overflow: hidden; }
+.meter i { display: block; height: 100%; border-radius: 3px; }
+.risk .lbl { font-size: 11px; color: var(--ink-3); margin-top: 4px; }
+
+/* Snapshot */
+table.snap { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.snap th, table.snap td { padding: 10px 12px; border-bottom: 1px solid var(--line-soft); text-align: right; }
+table.snap th:first-child, table.snap td:first-child { text-align: left; }
+table.snap thead th { font-size: 12px; color: var(--ink-3); font-weight: 500; border-bottom: 1px solid var(--line); }
+.up { color: var(--positive); font-weight: 600; }
+.down { color: var(--critical); font-weight: 600; }
+
+/* Open questions */
+.gaps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.gaps li { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; font-size: 14px; }
+.gaps li span { font-size: 12px; color: var(--ink-3); white-space: nowrap; }
+.more { margin-top: 10px; font-size: 13px; color: var(--navy); background: none; border: 0; padding: 0; font-weight: 600; }
+
+/* Appendix */
+.appendix { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.app-card { background: var(--tile); border: 1px solid var(--line); border-radius: 14px; padding: 16px; text-align: left; }
+.app-card:hover { border-color: var(--navy-2); background: var(--hover); }
+.app-card b { display: block; font-size: 14px; }
+.app-card span { font-size: 12.5px; color: var(--ink-3); }
+
+/* Evidence drawer */
+.scrim { position: fixed; inset: 0; background: rgb(17 24 39 / 18%); opacity: 0; pointer-events: none; transition: opacity .18s; z-index: 40; }
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); background: var(--tile); border-left: 1px solid var(--line); box-shadow: var(--shadow-pop); transform: translateX(100%); visibility: hidden; transition: transform .2s cubic-bezier(.2,0,0,1), visibility 0s .2s; z-index: 41; padding: 22px 24px; overflow-y: auto; }
+body.drawer-open .scrim { opacity: 1; pointer-events: auto; }
+body.drawer-open .drawer { transform: none; visibility: visible; transition: transform .2s cubic-bezier(.2,0,0,1); }
+html { overflow-x: clip; }
+.drawer-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.drawer h3 { margin: 0; font-size: 16px; }
+.drawer .close { border: 0; background: var(--soft); width: 30px; height: 30px; border-radius: 8px; font-size: 16px; }
+.drawer .claim { font-size: 15px; padding: 14px 16px; border-radius: 12px; background: var(--soft); margin: 0 0 14px; }
+.drawer dl { display: grid; grid-template-columns: 110px 1fr; gap: 8px 12px; font-size: 13.5px; margin: 0 0 16px; }
+.drawer dt { color: var(--ink-3); }
+.drawer dd { margin: 0; }
+.drawer .mocknote { font-size: 12px; color: var(--ink-3); border-top: 1px solid var(--line); padding-top: 12px; }
+
+/* Design notes (toggle) */
+.dnote { display: none; margin: 12px 0 0; padding: 10px 14px; border-radius: 10px; background: var(--note-bg); border: 1px solid var(--note-line); color: var(--note); font-size: 13px; line-height: 1.5; }
+.dnote b { font-weight: 650; }
+body.notes .dnote { display: block; }
+
+@media (max-width: 980px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .toc { display: none; }
+  .two { grid-template-columns: 1fr; }
+  .appendix { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 680px) {
+  .wrap, .topbar-in { padding-left: 16px; padding-right: 16px; }
+  .nav, .mockflag { display: none; }
+  section.block { padding: 20px 18px; }
+  .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .verdict-line { font-size: 20px; }
+  .reason { grid-template-columns: 30px 1fr; }
+  .reason .stat { grid-column: 2; text-align: left; }
+  .risk { grid-template-columns: 1fr; gap: 6px; }
+  .hero-actions { margin-left: 0; }
+  .monitors thead { display: none; }
+  .monitors tr { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+  .monitors td { border: 0; padding: 2px 0; }
+  .monitors td.g { grid-column: 1 / -1; }
+  .appendix { grid-template-columns: 1fr; }
+  table.cases, table.snap { font-size: 13px; }
+  table.cases th, table.cases td, table.snap th, table.snap td { padding: 8px 6px; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <div class="brand"><span class="brand-mark">P</span>Pragma Research</div>
+    <nav class="nav"><span>Home</span><span class="on">Research</span><span>Themes</span><span>Reviews</span></nav>
+    <div class="spacer"></div>
+    <span class="mockflag">Mockup · SoFi run 0c9a2731</span>
+    <button class="btn note-toggle" id="noteToggle" aria-pressed="false">Show design notes</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <div class="logo">SoFi</div>
+    <div>
+      <h1>SoFi Technologies</h1>
+      <div class="hero-meta">
+        <span class="ticker">SOFI</span><span>US bank and fintech</span><span>·</span>
+        <span class="num">$14.28</span><span>last price, unverified</span><span>·</span><span>Research as of 18 Nov 2026</span>
+      </div>
+    </div>
+    <div class="hero-actions">
+      <button class="btn">Ask AI</button>
+      <button class="btn">Re-run research</button>
+    </div>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab on" role="tab" aria-selected="true">Memo</button>
+    <button class="tab" role="tab" title="Valuation, scenarios and the editable workbench in one place">Model</button>
+    <button class="tab" role="tab" title="Statements, KPI history, metrics">Financials</button>
+    <button class="tab" role="tab" title="Full 16-chapter report, evidence, sources, backtests, run history">Audit <small>168 sources</small></button>
+  </div>
+  <div class="dnote"><b>Four tabs instead of twelve.</b> Memo is the reading view. Model merges Valuation and Workbench. Financials absorbs KPIs and Metrics. Audit holds the full report, Evidence, Sources, Backtests and Run history: the material you check, not the material you read first.</div>
+
+  <div class="layout" style="margin-top:20px">
+    <nav class="toc" aria-label="Memo sections">
+      <div class="toc-title">Memo</div>
+      <a href="#verdict" class="on"><span class="n">1</span>Verdict</a>
+      <a href="#why"><span class="n">2</span>Why</a>
+      <a href="#change"><span class="n">3</span>What would change it</a>
+      <a href="#value"><span class="n">4</span>How we got $1.13</a>
+      <a href="#risks"><span class="n">5</span>Risks</a>
+      <a href="#business"><span class="n">6</span>The business now</a>
+      <a href="#gaps"><span class="n">7</span>Open questions</a>
+      <hr>
+      <a href="#appendix"><span class="n">→</span>Go deeper</a>
+    </nav>
+
+    <div>
+      <!-- 1. Verdict -->
+      <section class="block verdict" id="verdict">
+        <div class="verdict-head">
+          <p class="eyebrow">Verdict</p>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="chip caution">Awaiting your decision</span>
+            <span class="chip neutral plain">Confidence: low</span>
+          </div>
+        </div>
+        <p class="verdict-line">At $14.28, SoFi's price is not supported. Even our bull case is worth less.</p>
+        <p class="verdict-sub">SoFi is growing profit fast, but growth is consuming bank capital and shares faster than it produces cash. Our model values a share at <b class="num">$1.13</b> today. The research is not finished: 11 questions are still open, mainly the funding advantage and the payments platform's true profit.</p>
+
+        <div class="facts">
+          <div class="fact"><div class="k">Value per share today</div><div class="v num">$1.13</div><div class="s">base case</div></div>
+          <div class="fact"><div class="k">Market price</div><div class="v num">$14.28</div><div class="s">unverified</div></div>
+          <div class="fact"><div class="k">Price vs value</div><div class="v num bad">−92%</div><div class="s">value below price</div></div>
+          <div class="fact"><div class="k">Range across cases</div><div class="v num">−$1.79 to $6.74</div><div class="s">bear to bull</div></div>
+        </div>
+
+        <div class="ruler" id="ruler"></div>
+        <div class="ruler-legend">
+          <span><i style="background:var(--navy-2)"></i>Bear to bull range</span>
+          <span><i style="background:var(--navy)"></i>Base value</span>
+          <span><i style="background:var(--critical)"></i>Market price</span>
+        </div>
+        <div class="dnote"><b>One number, one meaning.</b> "Value" always means value per share <i>today</i>. On the current page "Base" is $1.13, $3.34 or $9.36 depending on the tab. Future price targets appear only in section 4, labelled as 2030 targets.</div>
+
+        <div class="decision">
+          <strong>Your decision</strong>
+          <button class="btn choice" aria-pressed="false">Reject</button>
+          <button class="btn choice" aria-pressed="false">Watchlist</button>
+          <button class="btn choice" aria-pressed="false">Needs more work</button>
+          <button class="btn choice" aria-pressed="false">Approve for tracking</button>
+          <span class="hint">The research doesn't decide. This is the human gate, kept here instead of on a separate Reviews page.</span>
+        </div>
+      </section>
+
+      <!-- 2. Why -->
+      <section class="block" id="why">
+        <p class="eyebrow">Why</p>
+        <h2>Three reasons the price isn't supported</h2>
+        <p class="lede">Each figure links to its source. Click a number chip to see where it came from.</p>
+        <div class="reasons">
+          <div class="reason">
+            <div>
+              <h3>Growth is using up capital and shares</h3>
+              <p>Loans rose from $38.0bn to $53.7bn in nine months. That pushed the holding company's core capital ratio down from 22.8% to 16.9%<button class="cite" data-src="1">1</button>. Shares outstanding are up 7.6% in a year, and stock pay equals 39% of net income<button class="cite" data-src="2">2</button>.</p>
+            </div>
+            <div class="stat"><b class="num">22.8% → 16.9%</b><span>core capital ratio, 9 months</span></div>
+          </div>
+          <div class="reason">
+            <div>
+              <h3>Profit isn't turning into cash</h3>
+              <p>Net income over the last twelve months was $738m, but free cash flow was −$8.8bn. The gap is mostly loans originated for sale faster than they were sold<button class="cite" data-src="3">3</button>. If those sales catch up this could reverse, but it hasn't yet.</p>
+            </div>
+            <div class="stat"><b class="num">−$8.8bn</b><span>free cash flow, last 12 months</span></div>
+          </div>
+          <div class="reason">
+            <div>
+              <h3>Returns look below what shareholders require</h3>
+              <p>SoFi earns roughly 8.7% on its invested capital, against a 13.1% cost of equity<button class="cite" data-src="4">4</button>. The gap is indicative: the cost of equity rests on a beta that hasn't been verified <span class="tag unverified">unverified</span>.</p>
+            </div>
+            <div class="stat"><b class="num">8.7% vs 13.1%</b><span>return vs required return</span></div>
+          </div>
+        </div>
+        <div class="counter">
+          <h3>The other side</h3>
+          <ul>
+            <li>Capital is well above the minimums. The bank's ratio is 14.9% against a 6.5% "well capitalised" level, and $15.9bn of liquidity is available<button class="cite" data-src="1">1</button>.</li>
+            <li>Credit is improving: total net charge-offs fell from 2.63% in 2024 to 1.62% in Q3 2026<button class="cite" data-src="5">5</button>.</li>
+            <li>Net interest income grew 52% year on year in Q2 2026, at a 5.98% margin.</li>
+          </ul>
+        </div>
+        <div class="dnote"><b>Plain English, capped at three.</b> The current report opens with 12 dense paragraphs ("on the packet's bank-capital-constrained cash-flow method…"). Here each reason is one claim, one number and a link to its source. The full chapters move to Audit.</div>
+      </section>
+
+      <!-- 3. What would change it -->
+      <section class="block" id="change">
+        <p class="eyebrow">What would change our view</p>
+        <h2>Signals to watch, and where they stand</h2>
+        <p class="lede">These are the tests that would move the verdict. Every bar reads the same way: worse on the left, better on the right.</p>
+        <div class="direction-key"><span>← worse</span><span>·</span><span>better →</span></div>
+        <table class="monitors" id="monitors">
+          <thead><tr><th>Signal</th><th>Now</th><th style="width:40%">Bear trigger · base range · bull</th><th>Status</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="dnote"><b>Fixes the flipped bars.</b> The current KPI bars put "Bear" on the left by label but by value for lower-is-better metrics, so credit losses and share count read backwards. Here bars run from bad to good regardless of the metric's direction. "Must be true" conditions and KPI targets are merged into this one list, and data gaps move to Open questions.</div>
+      </section>
+
+      <!-- 4. Valuation -->
+      <section class="block" id="value">
+        <p class="eyebrow">How we got $1.13</p>
+        <h2>The valuation in one picture</h2>
+        <p class="lede">Bank valuation: the cash shareholders can take out after the bank keeps the capital it needs, discounted at 13.1% a year.</p>
+        <div class="two">
+          <div class="bridge" id="bridge"></div>
+          <div class="explain">
+            <h3>Why today's value is far below the 2030 targets</h3>
+            <p>The base case's end-2030 price target is $9.36, but today's value is only $1.13. To keep growing loans, SoFi has to keep back more capital than it earns until 2030. That shortfall, about $5.3bn in today's money, comes off the value before any 2030 payoff.</p>
+            <p>So the two numbers answer different questions. $9.36 is what the stock might trade at in 2030. $1.13 is what that path is worth to you now.</p>
+          </div>
+        </div>
+
+        <table class="cases num">
+          <thead>
+            <tr><th></th>
+              <th><span class="casehead"><i style="background:var(--critical)"></i>Bear</span></th>
+              <th><span class="casehead"><i style="background:var(--navy)"></i>Base</span></th>
+              <th><span class="casehead"><i style="background:var(--positive)"></i>Bull</span></th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Chance we assign</td><td>30%</td><td>50%</td><td>20%</td></tr>
+            <tr class="hl"><td>Value per share today</td><td>−$1.79</td><td>$1.13</td><td>$6.74</td></tr>
+            <tr><td>vs $14.28 price</td><td class="down">wiped out</td><td class="down">−92%</td><td class="down">−53%</td></tr>
+            <tr><td>Exit valuation in 2030</td><td>7× earnings</td><td>9× earnings</td><td>11× earnings</td></tr>
+            <tr class="sub"><td>End-2030 price target</td><td>$2.35</td><td>$9.36</td><td>$20.50</td></tr>
+            <tr class="sub"><td>Return if the stock reaches that target</td><td>−84%</td><td>−34%</td><td>+44%</td></tr>
+          </tbody>
+        </table>
+        <p class="foot">Probability-weighted value today: <b class="num">$1.38</b>. Targets are future prices, not today's value.</p>
+
+        <div class="rate num">
+          <span>Discount rate</span><span class="term"><b>13.1%</b></span><span class="op">=</span>
+          <span class="term">10-yr Treasury <b>5.12%</b> <span class="tag verified">verified</span></span><span class="op">+</span>
+          <span class="term">beta <b>1.88</b> <span class="tag unverified">unverified</span></span><span class="op">×</span>
+          <span class="term">equity premium <b>4.23%</b></span>
+        </div>
+        <p class="foot">A lower discount rate raises every case but does not make the bear case positive. <a href="#">Change assumptions in Model →</a></p>
+        <div class="dnote"><b>Exhibits become real tables.</b> The current report renders this as "bear; 0.3; fcfe; 0.1309; 7x Net income 2030; −1.79; …; 2,030". The Valuation tab shows "9.35520481127344" and a residual-income lens that contradicts the report. Here one summary object feeds the bridge, the table and the verdict, so they can't disagree.</div>
+      </section>
+
+      <!-- 5. Risks -->
+      <section class="block" id="risks">
+        <p class="eyebrow">Risks</p>
+        <h2>What could go wrong, ranked</h2>
+        <p class="lede">Likelihood × severity. The full list and how each would show up are in Audit.</p>
+        <div class="risks" id="riskList"></div>
+      </section>
+
+      <!-- 6. Business snapshot -->
+      <section class="block" id="business">
+        <p class="eyebrow">The business now</p>
+        <h2>A year of growth in five lines</h2>
+        <p class="lede">Q3 2026 against Q3 2025, from the 10-Q. US$.</p>
+        <table class="snap num">
+          <thead><tr><th></th><th>Q3 2025</th><th>Q3 2026</th><th>Change</th></tr></thead>
+          <tbody>
+            <tr><td>Revenue</td><td>$962m</td><td>$1,385m</td><td class="up">+44%</td></tr>
+            <tr><td>Net interest income</td><td>$585m</td><td>$929m</td><td class="up">+59%</td></tr>
+            <tr><td>Net income</td><td>$139m</td><td>$241m</td><td class="up">+73%</td></tr>
+            <tr><td>Deposits</td><td>$32.9bn</td><td>$51.3bn</td><td class="up">+56%</td></tr>
+            <tr><td>Cash from operations</td><td>−$1.3bn</td><td>−$3.0bn</td><td class="down">worse</td></tr>
+          </tbody>
+        </table>
+        <p class="foot">Full statements, 20 quarters of KPIs and the metric explorer are under Financials.</p>
+        <div class="dnote"><b>Consistent units.</b> The current pages mix "240,989 thousand", "1,025.051" (millions to three decimals) and "1357811000". Here money is always $m or $bn with sensible rounding.</div>
+      </section>
+
+      <!-- 7. Open questions -->
+      <section class="block" id="gaps">
+        <p class="eyebrow">Open questions</p>
+        <h2>What the research couldn't establish</h2>
+        <p class="lede">These are why confidence is low. Re-running research targets them first.</p>
+        <ul class="gaps">
+          <li>Is SoFi's deposit cost actually below market? Only a comparison against its own warehouse lines (156 bp) was found; no market benchmark.<span>blocks a signal</span></li>
+          <li>Does Galileo/Technisys make money after corporate costs? Contribution fell from $47.9m to $11.8m a quarter, and reported revenue figures don't reconcile.<span>blocks a signal</span></li>
+          <li>Bank-level capital and risk-weighted assets by quarter, needed to test the capital path.<span>weakens valuation</span></li>
+          <li>Q3 2026 operating income, capex and working capital, needed to confirm the cash-flow inputs.<span>weakens valuation</span></li>
+        </ul>
+        <button class="more">Show 7 more</button>
+        <div class="dnote"><b>Gaps are separated from the thesis.</b> Items like "beta is verified" and "Q3 operating income is supplied" currently sit in "Must be true" next to real business conditions. They are research to-dos, so they live here.</div>
+      </section>
+
+      <!-- Appendix -->
+      <div id="appendix" style="scroll-margin-top:80px">
+        <p class="eyebrow" style="margin:28px 0 10px">Go deeper</p>
+        <div class="appendix">
+          <button class="app-card"><b>Full report</b><span>16 chapters with exhibits</span></button>
+          <button class="app-card"><b>Model</b><span>Scenarios and assumptions you can edit</span></button>
+          <button class="app-card"><b>Financials</b><span>Statements and KPI history</span></button>
+          <button class="app-card"><b>Evidence and sources</b><span>168 sources, run history, backtests</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true" aria-label="Source">
+  <div class="drawer-head"><h3>Where this comes from</h3><button class="close" id="drawerClose" aria-label="Close">×</button></div>
+  <p class="claim" id="dClaim"></p>
+  <dl>
+    <dt>Source</dt><dd id="dSource"></dd>
+    <dt>Status</dt><dd id="dStatus"></dd>
+    <dt>Used in</dt><dd id="dUsed"></dd>
+  </dl>
+  <p class="mocknote">Mockup: in the app this panel shows the exact passage from the filing, a link to the document, and the evidence record behind it. It replaces the separate Evidence and Sources tabs.</p>
+</aside>
+
+<script>
+const fmt = (v) => (v < 0 ? "−$" : "$") + Math.abs(v).toFixed(2);
+
+/* Charts draw at their real pixel width so text never shrinks below its set size. */
+const widthOf = (id) => Math.max(240, document.getElementById(id).clientWidth);
+
+/* Value ruler */
+function ruler() {
+  const W = widthOf("ruler"), H = 78, pad = 34, lo = -3, hi = 16, narrow = W < 560;
+  const x = (v) => pad + (v - lo) / (hi - lo) * (W - 2 * pad);
+  const pts = { bear: -1.79, base: 1.13, bull: 6.74, price: 14.28 };
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Bear minus $1.79, base $1.13, bull $6.74, all below the $14.28 price">`;
+  s += `<line x1="${pad}" x2="${W - pad}" y1="40" y2="40" stroke="var(--line)" stroke-width="6" stroke-linecap="round"/>`;
+  s += `<line x1="${x(pts.bear)}" x2="${x(pts.bull)}" y1="40" y2="40" stroke="var(--navy-2)" stroke-width="10" stroke-linecap="round"/>`;
+  s += `<line x1="${x(0)}" x2="${x(0)}" y1="30" y2="50" stroke="var(--ink-4)" stroke-width="1" stroke-dasharray="2 2"/>`;
+  if (!narrow) s += `<text x="${x(0) - 8}" y="66" font-size="11" text-anchor="end" fill="var(--ink-4)">$0</text>`;
+  for (const [k, lbl] of [["bear", "Bear"], ["bull", "Bull"]]) {
+    s += `<circle cx="${x(pts[k])}" cy="40" r="5" fill="var(--tile)" stroke="var(--navy-3)" stroke-width="2"/>`;
+    s += `<text x="${x(pts[k])}" y="20" font-size="12" text-anchor="middle" fill="var(--ink-2)">${lbl} ${fmt(pts[k])}</text>`;
+  }
+  s += `<circle cx="${x(pts.base)}" cy="40" r="8" fill="var(--navy)"/>`;
+  s += `<text x="${x(pts.base)}" y="68" font-size="13" font-weight="650" text-anchor="middle" fill="var(--navy)">Base ${fmt(pts.base)}</text>`;
+  s += `<line x1="${x(pts.price)}" x2="${x(pts.price)}" y1="22" y2="58" stroke="var(--critical)" stroke-width="2.5"/>`;
+  s += `<text x="${x(pts.price) + 6}" y="14" font-size="12" font-weight="650" text-anchor="end" fill="var(--critical)">Price $14.28</text>`;
+  s += `<line x1="${x(pts.bull) + 12}" x2="${x(pts.price) - 10}" y1="40" y2="40" stroke="var(--critical)" stroke-width="1" stroke-dasharray="3 3" opacity=".55"/>`;
+  if (!narrow) s += `<text x="${(x(pts.bull) + x(pts.price)) / 2}" y="62" font-size="11.5" text-anchor="middle" fill="var(--critical)">price is $7.54 above even the bull case</text>`;
+  document.getElementById("ruler").innerHTML = s + "</svg>";
+}
+
+/* Monitors: bars always run worse → better */
+const monitors = [
+  { name: "Holding-company capital ratio", note: "core capital (CET1)", now: 16.9, unit: "%", dp: 1, bear: 10, base: [14.5, 17], bull: 16.9 },
+  { name: "Bank capital ratio", note: "SoFi Bank CET1", now: 14.9, unit: "%", dp: 1, bear: 8, base: [13, 16], bull: 16.4 },
+  { name: "Credit losses, all loans", note: "net charge-offs, Q3 2026", now: 1.62, unit: "%", dp: 2, bear: 2.5, base: [1.6, 2.1], bull: 1.5 },
+  { name: "Credit losses, cards", note: "annualised, Q1 2026", now: 6.68, unit: "%", dp: 2, bear: 9, base: [6, 8], bull: 5.5 },
+  { name: "Lending margin", note: "net interest margin, Q2 2026", now: 5.98, unit: "%", dp: 2, bear: 5, base: [5.5, 6.2], bull: 6.2 },
+  { name: "Shares outstanding", note: "dilution", now: 1.30, unit: "bn", dp: 2, bear: 1.40, base: [1.30, 1.36], bull: 1.30 },
+  { name: "Deposit cost vs market", note: "no market benchmark found", untested: true },
+  { name: "Payments platform profit", note: "after corporate costs, not reported", untested: true },
+];
+(function renderMonitors() {
+  const tb = document.querySelector("#monitors tbody");
+  const t = (m, v) => Math.max(0, Math.min(1, (v - m.bear) / (m.bull - m.bear)));
+  const show = (m, v) => v.toFixed(m.dp) + m.unit;
+  const showT = (m, v) => (m.unit === "bn" ? v.toFixed(2) : String(+v.toFixed(m.dp))) + m.unit;
+  for (const m of monitors) {
+    const tr = document.createElement("tr");
+    if (m.untested) {
+      tr.className = "untested";
+      tr.innerHTML = `<td class="name"><b>${m.name}</b><span>${m.note}</span></td><td class="now">—</td><td class="g">Can't be measured yet. See Open questions.</td><td><span class="chip neutral">Can't test</span></td>`;
+      tb.appendChild(tr); continue;
+    }
+    const u = t(m, m.now), b0 = t(m, m.base[0]), b1 = t(m, m.base[1]);
+    const lo = Math.min(b0, b1), hi = Math.max(b0, b1);
+    let chip = `<span class="chip neutral">In line with base</span>`;
+    if (u < 0.15) chip = `<span class="chip critical">Near bear trigger</span>`;
+    else if (u < lo - 0.001) chip = `<span class="chip caution">Weaker than base</span>`;
+    else if (u > hi + 0.001) chip = `<span class="chip positive">Better than base</span>`;
+    tr.innerHTML = `<td class="name"><b>${m.name}</b><span>${m.note}</span></td>
+      <td class="now num">${show(m, m.now)}</td>
+      <td class="g"><div class="gauge"><div class="gauge-svg" data-u="${u}" data-lo="${lo}" data-hi="${hi}" role="img" aria-label="${m.name}: ${show(m, m.now)}"></div><div class="gauge-ends num"><span>bear ${showT(m, m.bear)}</span><span>base ${showT(m, m.base[0])}–${showT(m, m.base[1])}</span><span>bull ${showT(m, m.bull)}</span></div></div></td>
+      <td>${chip}</td>`;
+    tb.appendChild(tr);
+  }
+})();
+function gauges() {
+  document.querySelectorAll(".gauge-svg").forEach(el => {
+    const W = Math.max(140, el.clientWidth), pad = 8, X = (u) => pad + u * (W - 2 * pad);
+    const u = +el.dataset.u, lo = +el.dataset.lo, hi = +el.dataset.hi;
+    el.innerHTML = `<svg viewBox="0 0 ${W} 34" width="${W}" height="34">
+      <rect x="${pad}" y="14" width="${W - 2 * pad}" height="6" rx="3" fill="var(--soft)"/>
+      <rect x="${X(lo)}" y="12" width="${Math.max(3, X(hi) - X(lo))}" height="10" rx="3" fill="var(--navy-2)"/>
+      <rect x="${X(0) - 1}" y="8" width="2.5" height="18" rx="1" fill="var(--critical)"/>
+      <rect x="${X(1) - 1.5}" y="8" width="2.5" height="18" rx="1" fill="var(--positive)"/>
+      <circle cx="${X(u)}" cy="17" r="6.5" fill="var(--navy)" stroke="var(--tile)" stroke-width="2"/></svg>`;
+  });
+}
+
+/* Valuation bridge: labels sit beside the bars when there's room, above them when narrow */
+function bridge() {
+  const W = widthOf("bridge"), stacked = W < 400, right = 64, max = 15;
+  const left = stacked ? 0 : 200, rowH = stacked ? 70 : 54, top = 10, barY = stacked ? 40 : 8;
+  const sx = (v) => left + v / max * (W - left - right);
+  const rows = [
+    { label: "2030 payoff, in today's money", sub: "terminal value", from: 0, to: 5.06, fill: "var(--navy-3)", txt: "+$5.06" },
+    { label: "Capital kept back to grow loans", sub: "2026–2030, net of earnings", from: 5.06, to: 1.13, fill: "var(--critical)", txt: "−$3.93" },
+    { label: "Value per share today", sub: "base case", from: 0, to: 1.13, fill: "var(--navy)", txt: "$1.13", bold: true },
+    { label: "Market price", sub: "unverified", from: 0, to: 14.28, fill: "none", stroke: "var(--ink-3)", txt: "$14.28" },
+  ];
+  const H = top + rows.length * rowH + 14;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Terminal value plus $5.06, capital kept back minus $3.93, value today $1.13, against a price of $14.28">`;
+  rows.forEach((r, i) => {
+    const y = top + i * rowH;
+    const x0 = sx(Math.min(r.from, r.to)), x1 = sx(Math.max(r.from, r.to));
+    s += `<text x="0" y="${y + 18}" font-size="13" font-weight="${r.bold ? 650 : 500}" fill="var(--ink)">${r.label}</text>`;
+    s += `<text x="0" y="${y + 35}" font-size="11.5" fill="var(--ink-3)">${r.sub}</text>`;
+    s += `<rect x="${x0}" y="${y + barY}" width="${Math.max(2, x1 - x0)}" height="22" rx="4" fill="${r.fill}" ${r.stroke ? `stroke="${r.stroke}" stroke-dasharray="4 3" stroke-width="1.3"` : ""}/>`;
+    s += `<text x="${x1 + 8}" y="${y + barY + 16}" font-size="13" font-weight="650" fill="var(--ink)">${r.txt}</text>`;
+    if (i < 2 && !stacked) {
+      const nx = sx(r.to);
+      s += `<line x1="${nx}" x2="${nx}" y1="${y + barY + 22}" y2="${y + rowH + barY}" stroke="var(--ink-4)" stroke-dasharray="2 2"/>`;
+    }
+  });
+  if (!stacked) s += `<line x1="${sx(0)}" x2="${sx(0)}" y1="${top}" y2="${H - 10}" stroke="var(--line-strong)"/>`;
+  document.getElementById("bridge").innerHTML = s.replace(`viewBox="0 0 ${W} ${H}"`, `viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"`) + "</svg>";
+}
+function drawCharts() { ruler(); gauges(); bridge(); }
+drawCharts();
+let resizeTimer;
+addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(drawCharts, 80); });
+
+/* Risks */
+const risks = [
+  { t: "Earnings don't reach distributable cash", w: "Watch free cash flow against net income", p: 70, s: 4 },
+  { t: "Capital consumption and dilution", w: "Watch the capital ratio and any new share issues", p: 60, s: 4.5 },
+  { t: "Card and personal-loan losses rise", w: "Watch card charge-offs and loan-loss reserves", p: 45, s: 4 },
+  { t: "Deposit costs rise, squeezing the margin", w: "Watch deposit rates against online-bank peers", p: 40, s: 4 },
+];
+document.getElementById("riskList").innerHTML = risks.map(r => {
+  const score = r.p / 100 * r.s, c = score >= 2.5 ? "var(--critical)" : score >= 1.7 ? "var(--caution)" : "var(--ink-4)";
+  return `<div class="risk"><div><b>${r.t}</b><span class="watch">${r.w}</span></div>
+    <div><div class="meter"><i style="width:${r.p}%;background:${c}"></i></div><div class="lbl num">${r.p}% likely</div></div>
+    <div><div class="meter"><i style="width:${r.s / 5 * 100}%;background:${c}"></i></div><div class="lbl num">severity ${r.s}/5</div></div></div>`;
+}).join("");
+
+/* Evidence drawer */
+const sources = {
+  1: { claim: "Holding-company CET1 ratio fell from 22.8% to 16.9% as loans rose from $38.0bn to $53.7bn (31 Dec 2025 to 30 Sep 2026).", src: "SoFi 10-Q, quarter ended 30 Sep 2026: regulatory capital", status: '<span class="tag verified">verified</span>', used: "Reason 1, capital signal, bear case" },
+  2: { claim: "Period-end shares up 7.6% year on year to 1,296.6m; trailing stock-based pay $288m, about 39% of net income.", src: "SoFi 10-Q, Q3 2026, and quarterly history", status: '<span class="tag verified">verified</span> share count · <span class="tag derived">derived</span> ratio', used: "Reason 1, dilution signal" },
+  3: { claim: "Trailing free cash flow −$8,793m at Q2 2026, driven by loans held for sale.", src: "Cash-flow statements, 20 quarters", status: '<span class="tag derived">derived</span>', used: "Reason 2, risk 1" },
+  4: { claim: "Return on invested capital about 8.7% against a 13.09% cost of equity.", src: "Trailing net income ÷ invested capital; CAPM with 5.12% Treasury, beta 1.88, 4.23% premium", status: '<span class="tag derived">derived</span> · beta <span class="tag unverified">unverified</span>', used: "Reason 3, discount rate" },
+  5: { claim: "Total net charge-off ratio 2.63% (FY2024), 2.07% (FY2025), 1.62% (Q3 2026).", src: "SoFi 10-K FY2025 and 10-Q Q3 2026: credit quality", status: '<span class="tag verified">verified</span>', used: "Counterpoint, credit signal" },
+};
+const body = document.body;
+function openDrawer(id) {
+  const s = sources[id]; if (!s) return;
+  document.getElementById("dClaim").textContent = s.claim;
+  document.getElementById("dSource").textContent = s.src;
+  document.getElementById("dStatus").innerHTML = s.status;
+  document.getElementById("dUsed").textContent = s.used;
+  body.classList.add("drawer-open");
+  document.getElementById("drawer").setAttribute("aria-hidden", "false");
+  document.getElementById("drawerClose").focus();
+}
+function closeDrawer() { body.classList.remove("drawer-open"); document.getElementById("drawer").setAttribute("aria-hidden", "true"); }
+document.querySelectorAll(".cite").forEach(b => b.addEventListener("click", () => openDrawer(b.dataset.src)));
+document.getElementById("scrim").addEventListener("click", closeDrawer);
+document.getElementById("drawerClose").addEventListener("click", closeDrawer);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
+
+/* Decision buttons (mock) */
+document.querySelectorAll(".choice").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll(".choice").forEach(o => o.setAttribute("aria-pressed", "false"));
+  b.setAttribute("aria-pressed", "true");
+}));
+
+/* Design notes toggle */
+const nt = document.getElementById("noteToggle");
+nt.addEventListener("click", () => {
+  const on = body.classList.toggle("notes");
+  nt.setAttribute("aria-pressed", String(on));
+  nt.textContent = on ? "Hide design notes" : "Show design notes";
+});
+
+/* Table of contents follows scroll */
+const links = [...document.querySelectorAll(".toc a")];
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(en => {
+    if (en.isIntersecting) links.forEach(a => a.classList.toggle("on", a.getAttribute("href") === "#" + en.target.id));
+  });
+}, { rootMargin: "-30% 0px -60% 0px" });
+document.querySelectorAll("section.block, #appendix").forEach(s => obs.observe(s));
+</script>
+</body>
+</html>
