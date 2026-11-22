@@ -149,7 +149,10 @@ export async function getResearchRunReport(
         ORDER BY artifact_type, scope_key, artifact_version DESC, created_at DESC
       `,
     sql`SELECT * FROM evidence_claims WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
-    sql`SELECT * FROM metric_observations WHERE research_run_id = ${runId} ORDER BY period_end DESC NULLS LAST, created_at DESC`,
+    // Each observation carries its definition's key and reader name, so views never fall back to an id.
+    sql`SELECT mo.*, md.metric_key, md.display_name AS metric_display_name, md.metric_category
+        FROM metric_observations mo LEFT JOIN metric_definitions md ON md.id = mo.metric_definition_id
+        WHERE mo.research_run_id = ${runId} ORDER BY mo.period_end DESC NULLS LAST, mo.created_at DESC`,
     sql`SELECT * FROM valuation_signals WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM scenarios WHERE research_run_id = ${runId} ORDER BY created_at DESC`,
     sql`SELECT * FROM backtest_runs WHERE research_run_id = ${runId} ORDER BY created_at DESC`,

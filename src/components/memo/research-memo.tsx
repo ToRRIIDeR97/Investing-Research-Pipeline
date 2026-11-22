@@ -87,6 +87,43 @@ function Bridge({ bridge, price: market, currency }: { bridge: MemoBridge; price
   </div>;
 }
 
+/** How the value is reached: the bridge, the case table and the discount rate. Shared by the Memo and Model tabs. */
+export function MemoValuation({ memo, modelHref }: { memo: ResearchMemo; modelHref?: string }) {
+  const v = memo.verdict, c = memo.currency, val = memo.valuation;
+  return <>
+        {val ? <>
+      <p className={styles.lede}>{val.discount ? `Cash shareholders can take out, discounted at ${percent(val.discount.rate, 1)} a year.` : "Value per share today in each case."}</p>
+      {val.bridge && <div className={styles.two}>
+        <Bridge bridge={val.bridge} price={v.price} currency={c} />
+        {val.bridge.explicit < 0 && <div className={styles.explain}>
+          <h3>Why value today is below the {val.bridge.terminalYear ?? "terminal"} target</h3>
+          <p>Until {val.bridge.terminalYear ?? "the terminal year"}, the company keeps back more than it earns to fund growth. That shortfall, {price(-val.bridge.explicit, c, true)} a share in today&apos;s money, comes off the value before the later payoff.</p>
+          <p>So the two numbers answer different questions: the target is what the stock might trade at then; value today is what that path is worth now.</p>
+        </div>}
+      </div>}
+      <table className={styles.table}>
+        <thead><tr><th scope="col"><span className="sr-only">Measure</span></th>{val.cases.map((x) => <th key={x.type} scope="col">{x.type[0].toUpperCase() + x.type.slice(1)}</th>)}</tr></thead>
+        <tbody>
+          <tr><td>Chance we assign</td>{val.cases.map((x) => <td key={x.type}>{x.probability != null ? percent(x.probability, 0) : "—"}</td>)}</tr>
+          <tr className={styles.strong}><td>Value per share today</td>{val.cases.map((x) => <td key={x.type}>{price(x.valueToday, c, true)}</td>)}</tr>
+          <tr><td>vs {price(v.price, c, true)} price</td>{val.cases.map((x) => <td key={x.type} className={x.gap != null && x.gap < 0 ? styles.down : styles.up}>{x.valueToday != null && x.valueToday < 0 ? "wiped out" : signed(x.gap)}</td>)}</tr>
+          {val.cases.some((x) => x.exit) && <tr><td>Exit valuation</td>{val.cases.map((x) => <td key={x.type}>{x.exit ?? "—"}</td>)}</tr>}
+          <tr className={styles.quiet}><td>{val.cases[0]?.targetYear ?? "Terminal"} price target</td>{val.cases.map((x) => <td key={x.type}>{price(x.target, c, true)}</td>)}</tr>
+          {val.cases.some((x) => x.targetReturn != null) && <tr className={styles.quiet}><td>Return if the stock reaches it</td>{val.cases.map((x) => <td key={x.type}>{signed(x.targetReturn)}</td>)}</tr>}
+        </tbody>
+      </table>
+      {val.weighted != null && <p className={styles.foot}>Probability-weighted value today: <strong>{price(val.weighted, c, true)}</strong>. Price targets are future prices, not today&apos;s value.</p>}
+      {val.discount && <div className={styles.rate}>
+        <span>Discount rate</span><span className={styles.term}><strong>{percent(val.discount.rate, 1)}</strong></span><span className={styles.op}>=</span>
+        {val.discount.riskFree != null && <><span className={styles.term}>risk-free {percent(val.discount.riskFree, 2)}</span><span className={styles.op}>+</span></>}
+        {val.discount.beta != null && <span className={styles.term}>beta {val.discount.beta}<span className={`${styles.tag} ${val.discount.betaVerified ? styles.verified : styles.unverified}`}>{val.discount.betaVerified ? "verified" : "unverified"}</span></span>}
+        {val.discount.premium != null && <><span className={styles.op}>×</span><span className={styles.term}>equity premium {percent(val.discount.premium, 2)}</span></>}
+      </div>}
+      {modelHref && <p className={styles.foot}><Link className={ui.textLink} href={modelHref}>Open the model →</Link></p>}
+    </> : <p className={styles.lede}>{v.withheldReason ?? "No valuation was stored for this run."}</p>}
+  </>;
+}
+
 function useActiveSection(ids: readonly string[]) {
   const [active, setActive] = useState<string>(ids[0]);
   useEffect(() => {
@@ -110,7 +147,7 @@ export function ResearchMemoView({ memo, assetId, runId, reportHash, links, onDe
   const active = useActiveSection(ids);
   const open = (list: string[], id: string) => setSources({ ids: list, active: id });
   const closeSources = useCallback(() => setSources(null), []);
-  const v = memo.verdict, c = memo.currency, val = memo.valuation;
+  const v = memo.verdict, c = memo.currency;
   const confidence = v.confidence.level ? `Confidence: ${v.confidence.level}` : null;
   const statusTone = memo.status?.key === "needs_decision" || memo.status?.key === "needs_more_work" || memo.status?.key === "needs_plan_approval" ? "waiting_for_human"
     : memo.status?.key === "decided" ? "completed" : memo.status?.key === "failed" ? "failed" : "running";
@@ -186,37 +223,8 @@ export function ResearchMemoView({ memo, assetId, runId, reportHash, links, onDe
 
       <section id="memo-value" className={styles.block} aria-labelledby="memo-value-title">
         <p className={styles.eyebrow}>How the value is reached</p>
-        <h2 id="memo-value-title">{val?.method ? val.method : "The valuation"}</h2>
-        {val ? <>
-          <p className={styles.lede}>{val.discount ? `Cash shareholders can take out, discounted at ${percent(val.discount.rate, 1)} a year.` : "Value per share today in each case."}</p>
-          {val.bridge && <div className={styles.two}>
-            <Bridge bridge={val.bridge} price={v.price} currency={c} />
-            {val.bridge.explicit < 0 && <div className={styles.explain}>
-              <h3>Why value today is below the {val.bridge.terminalYear ?? "terminal"} target</h3>
-              <p>Until {val.bridge.terminalYear ?? "the terminal year"}, the company keeps back more than it earns to fund growth. That shortfall, {price(-val.bridge.explicit, c, true)} a share in today&apos;s money, comes off the value before the later payoff.</p>
-              <p>So the two numbers answer different questions: the target is what the stock might trade at then; value today is what that path is worth now.</p>
-            </div>}
-          </div>}
-          <table className={styles.table}>
-            <thead><tr><th scope="col"><span className="sr-only">Measure</span></th>{val.cases.map((x) => <th key={x.type} scope="col">{x.type[0].toUpperCase() + x.type.slice(1)}</th>)}</tr></thead>
-            <tbody>
-              <tr><td>Chance we assign</td>{val.cases.map((x) => <td key={x.type}>{x.probability != null ? percent(x.probability, 0) : "—"}</td>)}</tr>
-              <tr className={styles.strong}><td>Value per share today</td>{val.cases.map((x) => <td key={x.type}>{price(x.valueToday, c, true)}</td>)}</tr>
-              <tr><td>vs {price(v.price, c, true)} price</td>{val.cases.map((x) => <td key={x.type} className={x.gap != null && x.gap < 0 ? styles.down : styles.up}>{x.valueToday != null && x.valueToday < 0 ? "wiped out" : signed(x.gap)}</td>)}</tr>
-              {val.cases.some((x) => x.exit) && <tr><td>Exit valuation</td>{val.cases.map((x) => <td key={x.type}>{x.exit ?? "—"}</td>)}</tr>}
-              <tr className={styles.quiet}><td>{val.cases[0]?.targetYear ?? "Terminal"} price target</td>{val.cases.map((x) => <td key={x.type}>{price(x.target, c, true)}</td>)}</tr>
-              {val.cases.some((x) => x.targetReturn != null) && <tr className={styles.quiet}><td>Return if the stock reaches it</td>{val.cases.map((x) => <td key={x.type}>{signed(x.targetReturn)}</td>)}</tr>}
-            </tbody>
-          </table>
-          {val.weighted != null && <p className={styles.foot}>Probability-weighted value today: <strong>{price(val.weighted, c, true)}</strong>. Price targets are future prices, not today&apos;s value.</p>}
-          {val.discount && <div className={styles.rate}>
-            <span>Discount rate</span><span className={styles.term}><strong>{percent(val.discount.rate, 1)}</strong></span><span className={styles.op}>=</span>
-            {val.discount.riskFree != null && <><span className={styles.term}>risk-free {percent(val.discount.riskFree, 2)}</span><span className={styles.op}>+</span></>}
-            {val.discount.beta != null && <span className={styles.term}>beta {val.discount.beta}<span className={`${styles.tag} ${val.discount.betaVerified ? styles.verified : styles.unverified}`}>{val.discount.betaVerified ? "verified" : "unverified"}</span></span>}
-            {val.discount.premium != null && <><span className={styles.op}>×</span><span className={styles.term}>equity premium {percent(val.discount.premium, 2)}</span></>}
-          </div>}
-          <p className={styles.foot}><Link className={ui.textLink} href={links.model}>Open the model →</Link></p>
-        </> : <p className={styles.lede}>{v.withheldReason ?? "No valuation was stored for this run."}</p>}
+        <h2 id="memo-value-title">{memo.valuation?.method ? memo.valuation.method : "The valuation"}</h2>
+        <MemoValuation memo={memo} modelHref={links.model} />
       </section>
 
       {memo.risks.length > 0 && <section id="memo-risks" className={styles.block} aria-labelledby="memo-risks-title">

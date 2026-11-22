@@ -224,3 +224,9 @@ test('report tabs group the earlier views and keep their links', () => {
   assert.equal(tabOf('notebook'), null);
   assert.equal(tabOf('overview'), null);
 });
+
+test('the Model tab renders its views on one page', () => {
+  const model = REPORT_TABS.find((t) => t.key === 'model')!;
+  assert.equal(model.onePage, true);
+  assert.ok(REPORT_TABS.filter((t) => t.key !== 'model').every((t) => !t.onePage));
+});

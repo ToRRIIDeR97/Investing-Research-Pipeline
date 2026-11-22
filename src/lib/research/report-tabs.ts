@@ -1,14 +1,14 @@
 // The asset report page's four tabs. Each groups the earlier views, which stay addressable by `?view=` so every saved
-// link still opens; a tab with more than one view shows them as sub-tabs. The notebook opens from its drawer and the
+// link still opens; a tab with more than one view shows them as sub-tabs, except Model, whose views share one page. The notebook opens from its drawer and the
 // earlier overview stays at `?view=overview` for one release, outside the tab bar.
 
 export type ReportView = "memo" | "overview" | "evidence" | "metrics" | "valuation" | "workbench" | "thesis" | "financials" | "kpis" | "notebook" | "backtests" | "sources" | "runs";
 
-export interface ReportTab { key: "memo" | "model" | "financials" | "audit"; label: string; views: readonly ReportView[] }
+export interface ReportTab { key: "memo" | "model" | "financials" | "audit"; label: string; views: readonly ReportView[]; /** Its views render as one page, without sub-tabs. */ onePage?: boolean }
 
 export const REPORT_TABS: readonly ReportTab[] = [
   { key: "memo", label: "Memo", views: ["memo"] },
-  { key: "model", label: "Model", views: ["valuation", "workbench"] },
+  { key: "model", label: "Model", views: ["valuation", "workbench"], onePage: true },
   { key: "financials", label: "Financials", views: ["financials", "kpis", "metrics"] },
   { key: "audit", label: "Audit", views: ["thesis", "evidence", "sources", "backtests", "runs"] },
 ];

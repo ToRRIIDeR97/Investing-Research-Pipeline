@@ -5,16 +5,6 @@ import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { runProgressIsLive } from "@/lib/research/run-polling";
 import { ChevronDown, ChevronRight, RefreshCw, Search } from "lucide-react";
-import {
-  Bar,
-  BarChart as ReBarChart,
-  CartesianGrid,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 
 import styles from "./page.module.css";
 import ui from "@/components/research-ui.module.css";
@@ -26,13 +16,13 @@ import { ResearchReport } from "@/components/research-report";
 import { FinancialStatements } from "@/components/financial-statements";
 import { KPIDashboard } from '@/components/research-dashboards';
 import { ResearchChat } from '@/components/research-chat';
-import { ValuationWorkbench } from "@/components/workbench/valuation-workbench";
 import { artifactContent, researchObservations } from '@/lib/research/reporting/data-views';
 import { assetSnapshot } from "@/lib/research/asset-snapshot";
 import { AssetHero, Leadership } from "@/components/company/company";
 import { KeyNumbers, KpiGauges, PriceFan, RiskHeat, ThesisPillars, ValueRuler, money, signedPercent } from "@/components/visuals/valuation-visuals";
-import { C } from "@/components/ui/palette";
 import { ResearchMemoView } from "@/components/memo/research-memo";
+import { ModelView } from "@/components/memo/model-view";
+import { backtestLines, metricName, metricValue, providerLabel, sourceTypeLabel, words } from "@/lib/research/reporting/audit-format";
 import type { ResearchMemo } from "@/lib/research/reporting/research-memo";
 import { REPORT_TABS, VIEW_LABELS, tabOf, viewFromQuery, viewQuery, type ReportView } from "@/lib/research/report-tabs";
 
@@ -96,15 +86,6 @@ const tabLabel = (tab: TabId) => VIEW_LABELS[tab];
 // Views that read large artifact bodies or the report document's artifacts. The others render from the summary report.
 const fullReportTabs: readonly TabId[] = ["thesis", "financials", "kpis", "notebook"];
 
-const signalColors: Record<string, string> = {
-  very_cheap: C.positive,
-  cheap: C.positiveMid,
-  neutral: C.ink3,
-  expensive: C.cautionMid,
-  very_expensive: C.criticalMid,
-  inconclusive: C.ink4,
-  not_applicable: C.lineStrong,
-};
 
 export default function ViewResearchPage() {
   return <Suspense fallback={<div className={styles.message}>Loading research…</div>}><ViewResearch /></Suspense>;
@@ -254,9 +235,6 @@ function ViewResearch() {
   const action = researchBriefAction(run ? { id: String(run.id), status: String(run.status), stages: run.stages } : null, assetId);
   // The key numbers every tab leads with, from the run's code-computed artifacts (the summary report carries them).
   const snapshot = useMemo(() => assetSnapshot(data.artifacts), [data.artifacts]);
-  const valuationChartData = data.signals
-    .filter((signal) => signal.cheapness_score != null && Number.isFinite(Number(signal.cheapness_score)))
-    .map((signal) => ({ name: shortLabel(signal.signal_name || signal.signal_key || "Signal", 18), score: Number(signal.cheapness_score), signal: signal.signal }));
 
   function openSection(section: TabId) {
     setSearchQuery("");
@@ -316,8 +294,10 @@ function ViewResearch() {
   }
   if (activeTab === 'notebook') return view(<InvestingNotebook api={notebookApi} assetId={assetId} artifacts={viewArtifacts} document={reportDocument} runId={data.activeRun?.id ?? null}
     runDate={data.activeRun?.created_at ? String(data.activeRun.created_at).slice(0, 10) : null} reportHref={(id) => `${sectionHref("thesis")}#report-${id}`} />);
-  if (activeTab === 'workbench') return view(data.activeRun ? <ValuationWorkbench key={data.activeRun.id} runId={String(data.activeRun.id)} proposalRef={searchParams.get('proposal')} />
-    : <section className={ui.tile}><p className={ui.empty}>Run research first; the workbench recomputes a run&apos;s stored valuation.</p></section>);
+  if (activeTab === 'valuation' || activeTab === 'workbench') return view(data.activeRun
+    ? <ModelView key={data.activeRun.id} memo={(data.report?.memo ?? null) as ResearchMemo | null} snapshot={snapshot} runId={String(data.activeRun.id)}
+      signals={data.signals} focus={activeTab} proposalRef={searchParams.get('proposal')} />
+    : <section className={ui.tile}><p className={ui.empty}>Run research first. The Model tab shows a run&apos;s valuation and lets you recompute it.</p></section>);
   if (activeTab === 'kpis') return view(<>
     {snapshot && snapshot.kpis.length > 0 && <section className={`${ui.tile} mb-4`}>
       <div className={ui.tileHead}><h2>Where each KPI sits</h2><span className={ui.muted}>Current level between its bear and bull thresholds</span></div>
@@ -400,7 +380,6 @@ function ViewResearch() {
     <div className={styles.supporting}>
       {activeTab === "evidence" && <EvidenceSection evidence={filtered.evidence} />}
       {activeTab === "metrics" && <MetricsSection metrics={filtered.metrics} />}
-      {activeTab === "valuation" && <ValuationSection signals={filtered.signals} scenarios={filtered.scenarios} valuationChartData={valuationChartData} />}
       {activeTab === "thesis" && (data.report?.report_document ? <ResearchReport document={data.report.report_document} /> : <><CanonicalReportSummary report={data.report} artifacts={data.artifacts} /><ThesisSection theses={filtered.theses} risks={filtered.risks} catalysts={filtered.catalysts} /></>)}
       {activeTab === "backtests" && <BacktestsSection backtests={filtered.backtests} />}
       {activeTab === "sources" && <SourcesSection sources={filtered.sources} modelCalls={filtered.modelCalls} runDetail={data.runDetail} />}
@@ -433,7 +412,7 @@ function AssetTabs({ activeTab, hrefFor }: { activeTab: TabId; hrefFor: (view: T
     <nav aria-label="Asset views" className={styles.tabs}>
       {REPORT_TABS.map((tab) => <Link key={tab.key} href={hrefFor(tab.views[0])} aria-current={current?.key === tab.key ? "page" : undefined}>{tab.label}</Link>)}
     </nav>
-    {current && current.views.length > 1 && <nav aria-label={`${current.label} views`} className={styles.subTabs}>
+    {current && current.views.length > 1 && !current.onePage && <nav aria-label={`${current.label} views`} className={styles.subTabs}>
       {current.views.map((view) => <Link key={view} href={hrefFor(view)} aria-current={activeTab === view ? "page" : undefined}>{tabLabel(view)}</Link>)}
     </nav>}
   </>;
@@ -539,93 +518,26 @@ function EvidenceSection({ evidence }: { evidence: ResearchRecord[] }) {
 
 function MetricsSection({ metrics }: { metrics: ResearchRecord[] }) {
   return (
-    <div className="flex flex-col">
-      <details className={ui.section} open><summary>Metric comparison</summary>
-        <div className="h-[420px] p-3.5">
-          <MetricBarChart metrics={metrics} />
-        </div>
-      </details>
-
-      <section className={styles.dataSection}>
-        <SectionHeader title="Metric observations" count={metrics.length} />
-        <DataTable
-          columns={["Metric", "Value", "Period", "Provider", "Confidence", "Review"]}
-          rows={metrics.map((metric) => [
-            <div key="metric" className="min-w-[220px]">
-              <div className="font-medium">
-                {metric.metric_display_name ?? metric.metric_key ?? shortId(metric.metric_definition_id)}
-              </div>
-              <div className={ui.mono}>{metric.metric_category ?? "uncategorized"}</div>
-            </div>,
-            formatMetricValue(metric),
-            formatDate(metric.period_end ?? metric.as_of_date),
-            metric.data_provider ?? "n/a",
-            formatPercent(metric.confidence),
-            <StatusPill key="status" value={metric.review_status} />,
-          ])}
-        />
-      </section>
-    </div>
+    <section className={styles.dataSection}>
+      <SectionHeader title="Metric observations" count={metrics.length} />
+      <DataTable
+        columns={["Metric", "Value", "Period", "Source", "Confidence", "Review"]}
+        rows={metrics.map((metric) => [
+          <div key="metric" className="min-w-[220px]">
+            <div className="font-medium">{metricName(metric)}</div>
+            {metric.metric_category && <div className={ui.muted}>{words(metric.metric_category)}</div>}
+          </div>,
+          metric.value_numeric != null ? metricValue(metric.value_numeric, metric.unit, metric.currency) : safeText(metric.value_text, "—"),
+          formatDate(metric.period_end ?? metric.as_of_date),
+          providerLabel(metric.data_provider),
+          formatPercent(metric.confidence),
+          <StatusPill key="status" value={metric.review_status} />,
+        ])}
+      />
+    </section>
   );
 }
 
-function ValuationSection({
-  signals,
-  scenarios,
-  valuationChartData,
-}: {
-  signals: ResearchRecord[];
-  scenarios: ResearchRecord[];
-  valuationChartData: ResearchRecord[];
-}) {
-  return (
-    <div className="flex flex-col">
-      <div className="flex flex-col">
-        <section className={styles.dataSection}>
-          <SectionHeader title="Cheapness scores" count={valuationChartData.length} />
-          <div className="h-[360px] p-3.5">
-            <ValuationScoreChart data={valuationChartData} />
-          </div>
-        </section>
-
-        <section className={styles.dataSection}>
-          <SectionHeader title="Valuation signals" count={signals.length} />
-          <DataTable
-            columns={["Signal", "Lens", "Current", "Cheapness", "Call", "Confidence"]}
-            rows={signals.map((signal) => [
-              <div key="signal" className="min-w-[220px]">
-                <div className="font-medium">{signal.signal_name}</div>
-                <div className={ui.mono}>{signal.signal_key}</div>
-              </div>,
-              cleanLabel(signal.lens_family),
-              signal.current_value_text ?? formatNumber(signal.current_value),
-              formatNumber(signal.cheapness_score),
-              <SignalPill key="signal-pill" value={signal.signal} />,
-              formatPercent(signal.confidence),
-            ])}
-          />
-        </section>
-      </div>
-
-      <section className={styles.dataSection}>
-        <SectionHeader title="Scenarios" count={scenarios.length} />
-        <DataTable
-          columns={["Scenario", "Type", "Probability", "Value Anchor", "Assumptions", "Review"]}
-          rows={scenarios.map((scenario) => [
-            <div key="scenario" className="min-w-[180px] font-medium">
-              {scenario.scenario_name}
-            </div>,
-            cleanLabel(scenario.scenario_type),
-            formatPercent(scenario.probability),
-            formatCurrency(scenario.value_anchor, scenario.currency),
-            <JsonPreview key="json" value={scenario.assumptions_json} />,
-            <StatusPill key="status" value={scenario.review_status} />,
-          ])}
-        />
-      </section>
-    </div>
-  );
-}
 
 function ThesisSection({
   theses,
@@ -706,24 +618,19 @@ function BacktestsSection({ backtests }: { backtests: ResearchRecord[] }) {
   return (
     <section className={styles.dataSection}>
       <SectionHeader title="Backtests" count={backtests.length} />
-      <DataTable
-        columns={["Name", "Status", "Return", "Sharpe", "Max Drawdown", "Period", "Metrics"]}
-        rows={backtests.map((backtest) => {
-          const metrics = asRecord(backtest.metrics_json);
-          return [
-            <div key="name" className="min-w-[220px]">
-              <div className="font-medium">{backtest.name ?? backtest.strategy_name ?? "Backtest"}</div>
-              <div className={ui.mono}>{shortId(backtest.id)}</div>
-            </div>,
-            <StatusPill key="status" value={backtest.status} />,
-            formatPercent(metrics.total_return),
-            formatNumber(metrics.sharpe_ratio ?? metrics.sharpe),
-            formatPercent(metrics.max_drawdown),
-            `${formatDate(backtest.start_date)} to ${formatDate(backtest.end_date)}`,
-            <JsonPreview key="json" value={metrics} />,
-          ];
-        })}
-      />
+      <p className={`${ui.muted} px-[18px] pb-2`}>Each strategy is tested on history before the split date (in sample) and after it (out of sample). Out-of-sample results are the honest test.</p>
+      {backtests.length === 0 ? <EmptyState title="No backtests" body="This run stored no backtests." /> : backtests.map((backtest) => {
+        const { lines, splitDate, verdict } = backtestLines(backtest.metrics_json);
+        const split = lines.some((l) => l.inSample != null || l.outOfSample != null);
+        return <details key={backtest.id} className={ui.section}>
+          <summary>{backtest.strategy_name ?? backtest.name ?? "Backtest"} <span className={ui.muted}>{verdict ?? cleanWords(backtest.status)} · {formatDate(backtest.start_date)} to {formatDate(backtest.end_date)}</span></summary>
+          <div className={ui.sectionBody}>
+            {backtest.strategy_prompt && <p className={ui.muted}>{String(backtest.strategy_prompt).replace(/\b[a-z]+(?:_[a-z0-9]+)+\b/g, (key) => key.replace(/_/g, ' '))}</p>}
+            {lines.length ? <DataTable columns={split ? ["Measure", "Whole period", `In sample${splitDate ? ` (to ${formatDate(splitDate)})` : ""}`, "Out of sample"] : ["Measure", "Whole period"]}
+              rows={lines.map((l) => split ? [l.label, l.full, l.inSample ?? "—", l.outOfSample ?? "—"] : [l.label, l.full])} /> : <p className={ui.empty}>No results stored.</p>}
+          </div>
+        </details>;
+      })}
     </section>
   );
 }
@@ -746,7 +653,7 @@ function SourcesSection({
           rows={sources.map((source) => [
             <div key="source" className="min-w-[240px]">
               <div className="font-medium">{source.title ?? source.document_title ?? "Source"}</div>
-              <div className={ui.mono}>{source.source_type ?? source.document_type}</div>
+              <div className={ui.muted}>{sourceTypeLabel(source.source_type ?? source.document_type)}</div>
             </div>,
             source.publisher ?? source.source_name ?? "n/a",
             source.document_date ?? source.published_at ?? "n/a",
@@ -775,7 +682,7 @@ function SourcesSection({
           columns={["Stage", "Status", "Started", "Completed", "Notes"]}
           rows={(runDetail?.stages ?? []).map((stage: ResearchRecord) => [
             <div key="stage" className="min-w-[220px] font-medium">
-              {stage.stage_name ?? stage.stage_key}
+              {stage.stage_name ?? words(stage.stage_key)}
             </div>,
             <StatusPill key="status" value={stage.status} />,
             formatDateTime(stage.started_at),
@@ -804,64 +711,7 @@ function SourcesSection({
   );
 }
 
-function MetricBarChart({ metrics }: { metrics: ResearchRecord[] }) {
-  const chartData = metrics
-    .filter((metric) => Number.isFinite(Number(metric.value_numeric)))
-    .slice(0, 12)
-    .map((metric) => ({
-      name: shortLabel(
-        metric.metric_display_name ?? metric.metric_key ?? shortId(metric.metric_definition_id),
-        16
-      ),
-      value: Number(metric.value_numeric),
-    }));
 
-  if (chartData.length === 0) {
-    return <EmptyChart label="No numeric metric values" />;
-  }
-
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <ReBarChart data={chartData} layout="vertical" margin={{ left: 18, right: 12, top: 8, bottom: 8 }}>
-        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={C.lineSoft} />
-        <XAxis type="number" tick={{ fontSize: 11 }} stroke={C.ink4} />
-        <YAxis dataKey="name" type="category" width={120} tick={{ fontSize: 11 }} stroke={C.ink4} />
-        <Tooltip
-          cursor={{ fill: C.soft }}
-          formatter={(value) => formatNumber(value)}
-          contentStyle={{ borderRadius: 8, borderColor: C.line, fontSize: 12 }}
-        />
-        <Bar dataKey="value" fill={C.navy} radius={[0, 4, 4, 0]} />
-      </ReBarChart>
-    </ResponsiveContainer>
-  );
-}
-
-function ValuationScoreChart({ data }: { data: ResearchRecord[] }) {
-  if (data.length === 0) {
-    return <EmptyChart label="No valuation scores" />;
-  }
-
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <ReBarChart data={data} margin={{ left: 12, right: 12, top: 8, bottom: 42 }}>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={C.lineSoft} />
-        <XAxis dataKey="name" angle={-28} textAnchor="end" interval={0} tick={{ fontSize: 11 }} stroke={C.ink4} />
-        <YAxis domain={[0, 1]} tick={{ fontSize: 11 }} stroke={C.ink4} />
-        <Tooltip
-          cursor={{ fill: C.soft }}
-          formatter={(value) => formatNumber(value)}
-          contentStyle={{ borderRadius: 8, borderColor: C.line, fontSize: 12 }}
-        />
-        <Bar dataKey="score" radius={[4, 4, 0, 0]}>
-          {data.map((entry) => (
-            <Cell key={entry.name} fill={signalColors[String(entry.signal)] ?? C.navy} />
-          ))}
-        </Bar>
-      </ReBarChart>
-    </ResponsiveContainer>
-  );
-}
 
 function DataTable({ columns, rows }: { columns: string[]; rows: Array<Array<React.ReactNode>> }) {
   if (rows.length === 0) return <div className={ui.empty}>No rows for this section.</div>;
@@ -883,16 +733,14 @@ function EmptyState({ title, body }: { title: string; body: string }) {
   return <div className={ui.empty}><p className="font-medium text-[var(--ink)]">{title}</p><p>{body}</p></div>;
 }
 
-function EmptyChart({ label }: { label: string }) {
-  return <div className={`${ui.muted} flex h-full items-center justify-center`}>{label}</div>;
-}
 
 function LongText({ value }: { value: unknown }) {
   return <div className={styles.longText}>{safeText(value)}</div>;
 }
 
 function JsonPreview({ value }: { value: unknown }) {
-  return <details className="max-w-[420px]"><summary className={ui.textLink}>Details</summary><div className="mt-2 whitespace-normal break-words">{stringifyCompact(value)}</div></details>;
+  if (Array.isArray(value)) return value.length ? <ul className="list-disc pl-4">{value.map((item, i) => <li key={i}>{typeof item === "string" ? item : stringifyCompact(item)}</li>)}</ul> : <>—</>;
+  return <>{typeof value === "string" ? value : "—"}</>;
 }
 
 function StatusPill({ value }: { value: unknown }) {
@@ -901,9 +749,6 @@ function StatusPill({ value }: { value: unknown }) {
   return <span className={ui.status} data-status={status}>{cleanWords(value)}</span>;
 }
 
-function SignalPill({ value }: { value: unknown }) {
-  return <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12px] font-medium"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: signalColors[String(value)] ?? C.ink3 }} />{cleanWords(value)}</span>;
-}
 
 function SeverityPill({ value }: { value: unknown }) {
   const label = cleanLabel(value);
@@ -971,19 +816,7 @@ function shortId(value: unknown) {
   return text === "n/a" ? text : text.slice(0, 8);
 }
 
-function shortLabel(value: unknown, length: number) {
-  const text = safeText(value);
-  return text.length > length ? `${text.slice(0, length - 1)}...` : text;
-}
 
-function formatMetricValue(metric: ResearchRecord) {
-  if (metric.value_numeric !== null && metric.value_numeric !== undefined) {
-    const value = formatNumber(metric.value_numeric);
-    const unit = metric.unit ?? metric.currency ?? "";
-    return `${value}${unit ? ` ${unit}` : ""}`;
-  }
-  return safeText(metric.value_text);
-}
 
 function formatNumber(value: unknown) {
   if (value === null || value === undefined || value === "") return "n/a";

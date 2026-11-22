@@ -436,11 +436,23 @@ While the run's `human_review` stage waits (`memo.reviewOpen`), the verdict carr
 The page has four tabs (`src/lib/research/report-tabs.ts`):
 
 - **Memo**.
-- **Model**: Valuation and Workbench.
+- **Model** (`src/components/memo/model-view.tsx`), one page for both `?view=valuation` and `?view=workbench` (the latter scrolls to the workbench):
+  - the memo's valuation section (`MemoValuation`);
+  - the year-end targets from `annual_price_target_path`, labelled as future prices;
+  - the stored valuation signals as "other valuation checks", with plain names, a 0–1 cheapness score and rounded readings;
+  - the valuation workbench.
 - **Financials**: Statements, KPIs and Metrics.
 - **Audit**: Report, Evidence, Sources, Backtests and Run history.
 
-The active tab's earlier views appear as sub-tabs, and every earlier `?view=` value still opens its view. No `?view=` opens the memo. The notebook opens from its drawer. The earlier overview stays at `?view=overview` for one release, outside the tab bar. The key-numbers strip is hidden on the Memo tab and shows no KPI tiles on the others.
+The active tab's earlier views appear as sub-tabs (Model has none), and every earlier `?view=` value still opens its view.
+
+The Audit and Financials views use `src/lib/research/reporting/audit-format.ts`, so no view shows snake_case keys, raw floats or JSON:
+
+- Metric values read in their stored unit: money, %, bp, scaled currency.
+- Metric names come from the definition, joined in `getResearchRunReport`.
+- Providers and source types read as plain names.
+- Backtests show each measure for the whole period, in sample and out of sample, instead of the metrics JSON.
+- The Metrics view drops the mixed-unit bar chart. No `?view=` opens the memo. The notebook opens from its drawer. The earlier overview stays at `?view=overview` for one release, outside the tab bar. The key-numbers strip is hidden on the Memo tab and shows no KPI tiles on the others.
 
 Run status uses one vocabulary on the cards, the asset hero and the memo: Researching, Needs plan approval, Needs your decision, Needs more work, Decided, Failed.
 
