@@ -120,6 +120,13 @@
       "when": 1792281600000,
       "tag": "0018_report_draft_stage",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792368000000,
+      "tag": "0019_investing_notebook",
+      "breakpoints": true
     }
   ]
 }
