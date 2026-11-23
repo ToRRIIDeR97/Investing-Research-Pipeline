@@ -3,6 +3,7 @@
 .title { font-size: 14px; font-weight: 600; color: var(--ink); font-family: var(--font-sans); }
 .empty { padding: 18px 0; color: var(--ink-2); font-size: 13px; line-height: 1.6; }
 .quiet { color: var(--ink-2); }
+.srOnly { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .note { margin-top: 14px; padding: 12px 14px; border-radius: 14px; background: var(--soft); color: var(--ink-2); font-size: 13px; line-height: 1.5; }
 
 /* Price chart */

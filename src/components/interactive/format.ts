@@ -21,6 +21,13 @@ export function wholeOrCents(value: number, currency = "USD"): string {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/** "2026-08-18" → "18 Aug 2026". */
+export function fullDay(day: string): string {
+  const [y, m, d] = day.slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d) return day;
+  return `${d} ${MONTHS[m - 1]} ${y}`;
+}
+
 /** "2026-05-20" → "20 May 26". */
 export function shortDay(day: string): string {
   const [y, m, d] = day.slice(0, 10).split("-").map(Number);
