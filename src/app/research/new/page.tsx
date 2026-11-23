@@ -15,7 +15,7 @@ export default function NewResearchPage() {
 function NewResearch() {
   const params = useSearchParams();
   const prefillTicker = (params.get("ticker") ?? "").replace(/[^A-Za-z0-9-]/g, "").slice(0, 30);
-  const [assets, setAssets] = useState<{ id: string; canonical_name: string; slug: string }[]>([]);
+  const [assets, setAssets] = useState<{ id: string; canonical_name: string; slug: string; asset_kind?: string }[]>([]);
   const [name, setName] = useState((params.get("name") ?? "").slice(0, 500));
   const [ticker, setTicker] = useState(prefillTicker);
   // Only a company passed in from a theme is looked up (once); typing in the form never triggers lookups.
@@ -46,7 +46,7 @@ function NewResearch() {
           {assets.map((a) => { const fromTheme = !!prefillTicker && a.slug === prefillTicker.toLowerCase();
             return <Link key={a.id} href={`/assets/${a.id}/run?new=1`} className={styles.pick} aria-current={fromTheme ? "true" : undefined}>
               <CompanyLogo subject={{ asset_id: a.id }} name={a.canonical_name} size={36} />
-              <span className={styles.pickName}><strong>{a.canonical_name}</strong><span>{a.slug.toUpperCase()}</span></span>
+              <span className={styles.pickName}><strong>{a.canonical_name}</strong>{a.asset_kind === "equity" && <span>{a.slug.toUpperCase()}</span>}</span>
               {fromTheme && <Tag tone="neutral">From your theme</Tag>}
               <span className={styles.pickAction}>Start</span>
             </Link>; })}

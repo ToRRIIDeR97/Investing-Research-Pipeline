@@ -22,7 +22,7 @@ export function researchBriefAction(run: BriefRun | null, assetId: string) {
   }
   // The one status vocabulary (run-status.ts), shared with the asset cards and Home.
   return {
-    label: runStatusWord(run.status),
+    label: runStatusWord(run.status, run.stages?.find((stage) => stage.status === "waiting_for_human")?.stage_key),
     tone: ["completed", "approved"].includes(run.status) ? "complete" : run.status === "failed" ? "error" : ["needs_more_work", "running", "queued", "pending", "planning"].includes(run.status) ? run.status : "neutral",
     action: "Run details",
     href: pipelineHref,

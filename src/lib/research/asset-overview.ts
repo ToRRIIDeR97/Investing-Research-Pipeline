@@ -7,7 +7,8 @@ import { assetSnapshot, type AssetSnapshot } from "./asset-snapshot";
 export interface AssetOverview {
   id: string; canonical_name: string; slug: string; asset_kind: string; sector: string | null; status: string | null;
   ticker: string | null;
-  latest_run: { id: string; status: string; run_type: string; created_at: string } | null;
+  /** `waiting_stage_key`: the stage the latest run waits at for a person (prefers research_plan or human_review), else null. */
+  latest_run: { id: string; status: string; run_type: string; created_at: string; waiting_stage_key: string | null } | null;
   snapshot: AssetSnapshot | null;
   snapshot_run: { id: string; status: string; created_at: string } | null;
 }
@@ -18,6 +19,8 @@ export async function listAssetOverviews(): Promise<AssetOverview[]> {
       (SELECT l.symbol FROM listings l JOIN instruments i ON i.id = l.instrument_id WHERE i.asset_id = a.id
        ORDER BY l.is_primary DESC, l.created_at ASC LIMIT 1) AS ticker,
       latest.id AS run_id, latest.status AS run_status, latest.run_type, latest.created_at AS run_created_at,
+      (SELECT s.stage_key FROM research_stages s WHERE s.research_run_id = latest.id AND s.status = 'waiting_for_human'
+       ORDER BY (s.stage_key IN ('research_plan', 'human_review')) DESC, s.stage_order ASC LIMIT 1) AS waiting_stage_key,
       valued.id AS valued_id, valued.status AS valued_status, valued.created_at AS valued_created_at
     FROM assets a
     LEFT JOIN LATERAL (SELECT rr.id, rr.status, rr.run_type, rr.created_at FROM research_runs rr WHERE rr.asset_id = a.id
@@ -49,7 +52,8 @@ export async function listAssetOverviews(): Promise<AssetOverview[]> {
     id: String(a.id), canonical_name: String(a.canonical_name), slug: String(a.slug), asset_kind: String(a.asset_kind),
     sector: (a.sector as string | null) ?? null, status: (a.status as string | null) ?? null,
     ticker: a.asset_kind === "equity" && a.ticker ? String(a.ticker) : null,
-    latest_run: a.run_id ? { id: String(a.run_id), status: String(a.run_status), run_type: String(a.run_type), created_at: iso(a.run_created_at) } : null,
+    latest_run: a.run_id ? { id: String(a.run_id), status: String(a.run_status), run_type: String(a.run_type), created_at: iso(a.run_created_at),
+    waiting_stage_key: a.waiting_stage_key == null ? null : String(a.waiting_stage_key) } : null,
     snapshot: a.valued_id ? assetSnapshot(byRun.get(String(a.valued_id)) ?? []) : null,
     snapshot_run: a.valued_id ? { id: String(a.valued_id), status: String(a.valued_status), created_at: iso(a.valued_created_at) } : null,
   }));

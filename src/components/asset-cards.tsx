@@ -5,20 +5,14 @@ import type { AssetOverview } from "@/lib/research/asset-overview";
 import { CompanyLogo } from "@/components/company/company";
 import { MiniRuler, money, signedPercent } from "@/components/visuals/valuation-visuals";
 import { Tag } from "@/components/ui/primitives";
-import { runStatusWord, statusTone } from "@/lib/research/run-status";
+import { stageOf } from "@/lib/research/run-status";
+
+export { stageOf, STAGE_KEY } from "@/lib/research/run-status";
 import styles from "./asset-cards.module.css";
 
 export type { AssetOverview };
 export const words = (value?: string | null) => value ? value.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()) : "";
 export const kindLabel = (kind: string) => kind.replace(/_asset/g, "").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
-
-/** Where an asset stands, in the words of the research river. Any run of it in the review queue means "needs your
- *  decision", even when a newer run exists. */
-export function stageOf(asset: AssetOverview, reviewing?: ReadonlySet<string>): { key: string; label: string; tone: ReturnType<typeof statusTone> } {
-  const label = reviewing?.has(asset.id) ? "Needs your decision" : runStatusWord(asset.latest_run?.status);
-  const key = { "Not started": "idea", Researching: "running", "Needs your decision": "review", "Needs plan approval": "review", Decided: "done", Completed: "done", Stopped: "stopped" }[label];
-  return { key, label, tone: statusTone(label) };
-}
 
 export function AssetCard({ asset, reviewing }: { asset: AssetOverview; reviewing?: ReadonlySet<string> }) {
   const stage = stageOf(asset, reviewing);

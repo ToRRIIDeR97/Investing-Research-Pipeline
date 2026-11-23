@@ -13,7 +13,7 @@ import { Card, Segmented, Tag } from "@/components/ui/primitives";
 const kinds = [["", "All"], ["equity", "Equity"], ["crypto_asset", "Crypto"], ["commodity", "Commodity"]];
 const KIND_LABELS = kinds.map(([, label]) => label);
 const kindLabelOf = (value: string) => kinds.find(([v]) => v === value)?.[1] ?? "All";
-const stages = [["review", "Needs your decision"], ["running", "Researching"], ["done", "Decided"], ["idea", "Not started"], ["stopped", "Stopped"]] as const;
+const stages = [["review", "Needs your decision"], ["plan", "Needs plan approval"], ["running", "Researching"], ["done", "Decided"], ["idea", "Not started"], ["stopped", "Stopped"]] as const;
 
 /** Research: one row per company with its stage and value, filtered by stage (with counts), type and search. */
 export default function AssetsPage() {
@@ -53,9 +53,9 @@ export default function AssetsPage() {
 
     <div className={styles.toolbar}>
       <div className={styles.stages} role="group" aria-label="Where research stands">
-        <button type="button" aria-pressed={stage === ""} onClick={() => setStage("")}>All<span>{loading ? "–" : assets.length}</span></button>
-        {stages.filter(([key]) => key !== "stopped" || counts.stopped).map(([key, label]) => <button key={key} type="button" aria-pressed={stage === key}
-          onClick={() => setStage(stage === key ? "" : key)}>{label}<span>{loading ? "–" : counts[key]}</span></button>)}
+        <button type="button" aria-pressed={stage === ""} onClick={() => setStage("")} aria-label={loading ? "All" : `All, ${assets.length}`}>All<span aria-hidden="true">{loading ? "–" : assets.length}</span></button>
+        {stages.filter(([key]) => (key !== "stopped" && key !== "plan") || counts[key]).map(([key, label]) => <button key={key} type="button" aria-pressed={stage === key}
+          aria-label={loading ? label : `${label}, ${counts[key]}`} onClick={() => setStage(stage === key ? "" : key)}>{label}<span aria-hidden="true">{loading ? "–" : counts[key]}</span></button>)}
       </div>
       <div className={styles.controls}>
         <div className={ui.search}><Search size={14} aria-hidden="true" /><input type="search" aria-label="Filter assets" placeholder="Search by name, ticker or sector" value={query} onChange={(event) => setQuery(event.target.value)} /></div>

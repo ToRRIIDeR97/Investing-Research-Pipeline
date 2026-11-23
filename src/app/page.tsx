@@ -14,7 +14,7 @@ import { currentReviews } from "@/lib/review/queue-rules";
 
 interface ReviewItem { run_id: string; asset_id: string; asset_name: string; run_type: string; priority?: string | null; research_question?: string | null }
 
-const STAGES = [["review", "Needs your decision"], ["running", "Researching"], ["done", "Decided"], ["stopped", "Stopped"], ["idea", "Not started"]] as const;
+const STAGES = [["review", "Needs your decision"], ["plan", "Needs plan approval"], ["running", "Researching"], ["done", "Decided"], ["stopped", "Stopped"], ["idea", "Not started"]] as const;
 
 const greeting = (hour: number) => hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 

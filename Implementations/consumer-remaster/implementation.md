@@ -107,7 +107,7 @@ Each criterion names its phase. Tests live in `acceptance/` (visible to the impl
 
 ### P5 Home, Research list, Themes, Start research
 
-- **AC-16 Pages.** Home, `/assets`, `/themes` and `/research/new` use `Card`/`Tag`/`BigNumber` from the primitives; their tile heads have no subtitle spans (no `ui.muted` sibling text longer than a count or a link); status tags use the single status vocabulary (`Needs your decision`, `Needs plan approval`, `Researching`, `Decided`, `Completed`, `Stopped`, `Not started`). Static check: the four page files import from `@/components/ui/primitives`.
+- **AC-16 Pages.** Home, `/assets`, `/themes` and `/research/new` use `Card`/`Tag`/`BigNumber` from the primitives; their tile heads have no subtitle spans (no `ui.muted` sibling text longer than a count or a link); status tags use the single status vocabulary (an asset whose latest run waits at `research_plan` reads `Needs plan approval` and is not counted as a decision; `listAssetOverviews` gives the latest run a read-only `waiting_stage_key`, added after the P5 review) (`Needs your decision`, `Needs plan approval`, `Researching`, `Decided`, `Completed`, `Stopped`, `Not started`). Static check: the four page files import from `@/components/ui/primitives`.
 
 ### P6 Run page and report reader
 
