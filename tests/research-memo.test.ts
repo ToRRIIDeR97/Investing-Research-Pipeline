@@ -166,6 +166,9 @@ test('a run status maps to one vocabulary', () => {
   assert.equal(memoStatus({ runStatus: 'completed' })!.label, 'Decided');
   assert.equal(memoStatus({ runStatus: 'waiting_for_human', latestDecision: 'watchlist' })!.label, 'Decided');
   assert.equal(memoStatus({ runStatus: 'failed' })!.label, 'Stopped');
+  // A reviewer's send-back (a needs_more_work decision) is neither Stopped nor Decided: the run and the gate decide.
+  assert.equal(memoStatus({ runStatus: 'running', latestDecision: 'needs_more_work' })!.label, 'Researching');
+  assert.equal(memoStatus({ runStatus: 'waiting_for_human', humanReviewStatus: 'waiting_for_human', latestDecision: 'needs_more_work' })!.label, 'Needs your decision');
   assert.equal(memoStatus({}), null);
 });
 
