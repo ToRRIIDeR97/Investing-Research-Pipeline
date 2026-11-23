@@ -22,6 +22,7 @@ import { AssetHero, Leadership } from "@/components/company/company";
 import { KeyNumbers, KpiGauges } from "@/components/visuals/valuation-visuals";
 import { Tag, type TagTone } from "@/components/ui/primitives";
 import { CompanyOverview } from "./company-overview";
+import { statusTone } from "@/lib/research/run-status";
 import { ResearchMemoView } from "@/components/memo/research-memo";
 import { ModelView } from "@/components/memo/model-view";
 import { backtestLines, metricName, metricValue, providerLabel, sourceTypeLabel, words } from "@/lib/research/reporting/audit-format";
@@ -374,15 +375,8 @@ interface MonitorCheck { status: string; refresh_due: boolean; reasons: string[]
 
 /** The run's state in the one status vocabulary (Needs your decision, Needs plan approval, Researching, Decided, Stopped, Not started). */
 function heroStatus(label: string): [string, TagTone] {
-  switch (label) {
-    case "No research": return ["Not started", "neutral"];
-    case "Needs plan approval": return ["Needs plan approval", "waiting"];
-    case "Needs your decision": case "Awaiting input": case "Needs more work": return ["Needs your decision", "waiting"];
-    case "Decided": return ["Decided", "good"];
-    case "Researching": return ["Researching", "neutral"];
-    case "Failed": case "Cancelled": return ["Stopped", "bad"];
-    default: return [label ? label[0].toUpperCase() + label.slice(1) : "Not started", "neutral"];
-  }
+  // researchBriefAction already speaks the shared vocabulary (run-status.ts); the tone comes from the same place.
+  return [label, statusTone(label)];
 }
 
 function monitorLabel(monitor: MonitorCheck) {
