@@ -422,7 +422,7 @@ The pages follow one design system, the "consumer remaster" (Implementations/con
 
 Every asset page opens with its identity and its numbers:
 
-- **The hero** (`AssetHero`): the company's logo, name, ticker, kind and status.
+- **The hero** (`AssetHero`): the company's logo, name, ticker, kind and status (a `Tag` in the one status vocabulary).
 - **The key-numbers strip** (`KeyNumbers`), with these tiles:
   - price, marked verified or unverified;
   - base, bull and bear value per share, with the gap to price;
@@ -472,7 +472,7 @@ The Audit and Financials views use `src/lib/research/reporting/audit-format.ts`,
 - Metric names come from the definition, joined in `getResearchRunReport`.
 - Providers and source types read as plain names.
 - Backtests show each measure for the whole period, in sample and out of sample, instead of the metrics JSON.
-- The Metrics view drops the mixed-unit bar chart. No `?view=` opens the memo. The notebook opens from its drawer. The earlier overview stays at `?view=overview` for one release, outside the tab bar. The key-numbers strip is hidden on the Memo tab and shows no KPI tiles on the others.
+- The Metrics view drops the mixed-unit bar chart. No `?view=` opens the memo. The notebook opens from its drawer. The earlier overview stays at `?view=overview` for one release, outside the tab bar. The key-numbers strip is hidden on the Memo and Overview tabs and shows no KPI tiles on the others. The Overview (`src/app/assets/[id]/view/company-overview.tsx`) shows, in order: the price chart from `GET /api/assets/[id]/prices` (1M to 1Y, the base value as a dashed line) beside "What it's worth" (`ValueMeter`, `ScenarioPicker` from `assetSnapshot`; "Value withheld" with the reason when the valuation was withheld); "Your blend" (`BlendSlider`, the report's weighted value as a pin) beside every run's real cost (`RunsBars` fed by `runBars`, `src/lib/research/run-bars.ts`, with the newest run's budget as the cap); "The report says" and "The other side" from the memo; then leadership, KPIs and risks.
 
 Run status uses one vocabulary on the cards, the asset hero and the memo: Researching, Needs plan approval, Needs your decision, Needs more work, Decided, Failed.
 
