@@ -5,6 +5,7 @@ import styles from "./workbench.module.css";
 import { CASES, DRIVER_FIELDS, SET_FIELDS, draftChange, draftFromChange, draftFromInputs, type Draft, type WorkbenchInputs } from "@/lib/research/valuation/workbench-draft";
 import type { WhatIfResult, WorkbenchChange } from "@/lib/research/valuation/whatif";
 import { RESEARCH_CHAT_ANSWERED } from "@/components/research-chat";
+import { Card, Tag } from "@/components/ui/primitives";
 
 type Case = (typeof CASES)[number];
 type Summary = Pick<WhatIfResult, "value_today" | "return_today" | "anchors" | "probabilities">;
@@ -143,23 +144,21 @@ export function ValuationWorkbench({ runId, proposalRef }: { runId: string; prop
     } catch (error) { setStatus(error instanceof Error ? error.message : "The scenario could not be deleted."); }
   }
 
-  if (loadError) return <section className={ui.tile}><div className={ui.tileBody}><p role="alert">{loadError}</p><button type="button" className={ui.secondary} onClick={() => void load()}>Try again</button></div></section>;
+  if (loadError) return <Card flush><div className={ui.tileBody}><p role="alert">{loadError}</p><button type="button" className={ui.secondary} onClick={() => void load()}>Try again</button></div></Card>;
   if (!workbench) return <p className={ui.empty} role="status">Loading the workbench…</p>;
-  if (!workbench.available) return <section className={ui.tile} aria-labelledby="wb-unavailable">
-    <header className={ui.tileHead}><h2 id="wb-unavailable">Valuation workbench</h2></header>
+  if (!workbench.available) return <Card flush aria-labelledby="wb-unavailable" title="Workbench" titleId="wb-unavailable">
     <div className={ui.tileBody}><p>{workbench.reason}</p><NewerValuation source={workbench} /></div>
-  </section>;
+  </Card>;
 
   const baseline = workbench.baseline, shown = unchanged ? baseline : result ?? baseline, currency = baseline.currency;
   const years = (c: Case) => workbench.inputs.drivers[c] ?? [];
   const sum = CASES.reduce((total, c) => total + (Number(draft[`prob.${c}`]) || 0), 0);
 
   return <div className={ui.grid}>
-    <section className={`${ui.tile} ${ui.s12}`} aria-labelledby="wb-results">
-      <header className={ui.tileHead}><h2 id="wb-results">Results</h2>
-        <span className={ui.muted} role="status">{unchanged ? (workbench.pinned_to_report ? "The report's valuation" : "The stored valuation") : computing ? "Recomputing…" : "Your what-if, computed in code"}</span></header>
+    <Card flush className={ui.s12} aria-labelledby="wb-results" title="Results" titleId="wb-results"
+      action={<span role="status"><Tag tone={unchanged ? "neutral" : computing ? "waiting" : "good"}>{unchanged ? (workbench.pinned_to_report ? "Report's valuation" : "Stored valuation") : computing ? "Recomputing" : "Your what-if"}</Tag></span>}>
       {problem && <p className={styles.problem} role="alert">{problem}</p>}
-      {workbench.newer_valuation && <div className="px-[18px] pt-3"><NewerValuation source={workbench} /></div>}
+      {workbench.newer_valuation && <div className={styles.inset}><NewerValuation source={workbench} /></div>}
       <div className={ui.table}><table>
         <thead><tr><th>Case</th><th className={styles.num}>Weight</th><th className={styles.num}>Value today</th><th className={styles.num}>Return vs {money(shown.price, currency)}</th>
           <th className={styles.num}>Change vs stored</th><th className={styles.num}>Terminal-year anchor</th></tr></thead>
@@ -173,10 +172,10 @@ export function ValuationWorkbench({ runId, proposalRef }: { runId: string; prop
         </tr>)}</tbody>
       </table></div>
       {shown.flags.length ? <div className={ui.tileBody}><span className={styles.label}>Sanity flags</span><ul>{shown.flags.map((f, i) => <li key={i}>{f}</li>)}</ul></div> : null}
-    </section>
+    </Card>
 
-    <section className={`${ui.tile} ${ui.s7}`} aria-labelledby="wb-sets">
-      <header className={ui.tileHead}><h2 id="wb-sets">Valuation sets</h2><span className={ui.muted}>Terminal year FY{shown.terminal_year ?? "—"}</span></header>
+    <Card flush className={ui.s7} aria-labelledby="wb-sets" title="Valuation sets" titleId="wb-sets"
+      action={<span className={styles.count}>Terminal FY{shown.terminal_year ?? "—"}</span>}>
       <div className={ui.table}><table>
         <thead><tr><th>Set</th>{SET_FIELDS.map((f) => <th key={f}>{fieldLabel[f]}</th>)}</tr></thead>
         <tbody>{workbench.inputs.sets.map((set) => <tr key={set.set}>
@@ -185,16 +184,15 @@ export function ValuationWorkbench({ runId, proposalRef }: { runId: string; prop
             value={draft[`set.${set.set}.${f}`] ?? ""} onChange={(e) => edit(`set.${set.set}.${f}`, e.target.value)} /></td>)}
         </tr>)}</tbody>
       </table></div>
-    </section>
+    </Card>
 
-    <section className={`${ui.tile} ${ui.s5}`} aria-labelledby="wb-probabilities">
-      <header className={ui.tileHead}><h2 id="wb-probabilities">Case probabilities</h2><span className={`${ui.muted} ${Math.abs(sum - 100) > 0.1 ? styles.off : ""}`}>Total {Number(sum.toFixed(2))}%</span></header>
+    <Card flush className={ui.s5} aria-labelledby="wb-probabilities" title="Case weights" titleId="wb-probabilities"
+      action={<span className={`${styles.count} ${Math.abs(sum - 100) > 0.1 ? styles.off : ""}`}>Total {Number(sum.toFixed(2))}%</span>}>
       <div className={`${ui.tileBody} ${styles.row}`}>{CASES.map((c) => <label key={c} className={ui.field}>{caseLabel(c)} %
         <input inputMode="decimal" value={draft[`prob.${c}`] ?? ""} onChange={(e) => edit(`prob.${c}`, e.target.value)} /></label>)}</div>
-    </section>
+    </Card>
 
-    {CASES.map((c) => <section key={c} className={`${ui.tile} ${ui.s4}`} aria-labelledby={`wb-drivers-${c}`}>
-      <header className={ui.tileHead}><h2 id={`wb-drivers-${c}`}>{caseLabel(c)} case drivers</h2></header>
+    {CASES.map((c) => <Card flush key={c} className={ui.s4} aria-labelledby={`wb-drivers-${c}`} title={`${caseLabel(c)} drivers`} titleId={`wb-drivers-${c}`}>
       <div className={ui.table}><table>
         <thead><tr><th>Year</th>{DRIVER_FIELDS.map((f) => <th key={f}>{fieldLabel[f]}</th>)}</tr></thead>
         <tbody>{years(c).map((y) => <tr key={y.fiscal_year}>
@@ -203,10 +201,10 @@ export function ValuationWorkbench({ runId, proposalRef }: { runId: string; prop
             value={draft[`driver.${c}.${y.fiscal_year}.${f}`] ?? ""} onChange={(e) => edit(`driver.${c}.${y.fiscal_year}.${f}`, e.target.value)} /></td>)}
         </tr>)}</tbody>
       </table></div>
-    </section>)}
+    </Card>)}
 
-    <section className={`${ui.tile} ${ui.s6}`} aria-labelledby="wb-saved">
-      <header className={ui.tileHead}><h2 id="wb-saved">Saved scenarios</h2><span className={ui.muted}>{workbench.scenarios.length} saved</span></header>
+    <Card flush className={ui.s6} aria-labelledby="wb-saved" title="Saved scenarios" titleId="wb-saved"
+      action={<span className={styles.count}>{workbench.scenarios.length}</span>}>
       <form className={`${ui.tileBody} ${ui.form}`} onSubmit={save} aria-label="Save this scenario">
         <label className={ui.field}>Name<input value={name} maxLength={80} required onChange={(e) => setName(e.target.value)} /></label>
         <label className={ui.field}>Why (optional)<textarea rows={2} maxLength={1000} value={rationale} onChange={(e) => setRationale(e.target.value)} /></label>
@@ -215,19 +213,19 @@ export function ValuationWorkbench({ runId, proposalRef }: { runId: string; prop
           {status && <span className={ui.muted} role="status">{status}</span>}</div>
       </form>
       {workbench.scenarios.length ? <div className={ui.list}>{workbench.scenarios.map((s) => <div key={s.id} className={ui.row}>
-        <div><div className={ui.rowTitle}>{s.name}{s.source === "assistant" ? <span className={styles.tag}>From the assistant</span> : null}</div>
+        <div><div className={ui.rowTitle}>{s.name}{s.source === "assistant" ? <span className={styles.tag}><Tag>From the assistant</Tag></span> : null}</div>
           <div className={ui.rowMeta}>Weighted {money(s.result.value_today.weighted, currency)} ({percent(s.result.return_today.weighted)}){s.rationale ? ` · ${s.rationale}` : ""}</div></div>
         <div className={styles.row}><button type="button" className={ui.secondary} onClick={() => apply(s.change, { source: s.source, name: s.name, rationale: s.rationale })}>Load</button>
           <button type="button" className={ui.secondary} onClick={() => void remove(s)} aria-label={`Delete ${s.name}`}>Delete</button></div>
       </div>)}</div> : <p className={ui.empty}>No saved scenarios yet.</p>}
-    </section>
+    </Card>
 
-    <section className={`${ui.tile} ${ui.s6}`} aria-labelledby="wb-suggested">
-      <header className={ui.tileHead}><h2 id="wb-suggested">Suggested by the assistant</h2><span className={ui.muted}>{proposals.length}</span></header>
+    <Card flush className={ui.s6} aria-labelledby="wb-suggested" title="Assistant's what-ifs" titleId="wb-suggested"
+      action={<span className={styles.count}>{proposals.length}</span>}>
       {proposals.length ? <div className={ui.list}>{proposals.map((p) => <div key={p.ref} className={`${ui.row} ${p.ref === proposalRef ? styles.active : ""}`}>
         <div><div className={ui.rowTitle}>{p.name}</div><div className={ui.rowMeta}>{p.rationale}</div></div>
         <button type="button" className={ui.secondary} onClick={() => apply(p.change, { source: "assistant", name: p.name, rationale: p.rationale })}>Apply</button>
       </div>)}</div> : <p className={ui.empty}>Ask the assistant a what-if question (for example “What if margins compress?”) and its proposals appear here.</p>}
-    </section>
+    </Card>
   </div>;
 }

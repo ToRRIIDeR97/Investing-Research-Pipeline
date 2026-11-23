@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import ui from "@/components/research-ui.module.css";
 import notes from "./notebook.module.css";
 import styles from "./checklist.module.css";
+import { Tag } from "@/components/ui/primitives";
 import { MEASURES, MEASURE_KEYS, type ChecklistItem, type ItemResult, type MeasureKey } from "@/lib/research/checklist";
 
 type Stored = { id: string; name: string; items: ChecklistItem[]; is_default: boolean };
@@ -101,7 +102,7 @@ function EvaluationView({ evaluation, compact }: { evaluation: Evaluation; compa
     {evaluation.judgement_note && <p className={notes.meta}>{evaluation.judgement_note}</p>}
     <ol className={styles.items}>{evaluation.results.map((r) => <li key={r.id} className={styles.item}>
       <div className={styles.itemHead}>
-        <span className={notes.pill} data-status={r.status === "met" ? "healthy" : r.status === "not_met" ? "danger" : "caution"}>{statusText[r.status]}</span>
+        <Tag tone={r.status === "met" ? "good" : r.status === "not_met" ? "bad" : "waiting"}>{statusText[r.status]}</Tag>
         <span className={styles.itemLabel}>{r.label}</span>
         <span className={notes.meta}>{r.kind === "measure" ? r.display : "Judged"} · weight {r.weight}</span>
       </div>

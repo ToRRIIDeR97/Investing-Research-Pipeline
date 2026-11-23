@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { runProgressIsLive } from "@/lib/research/run-polling";
-import { ChevronDown, ChevronRight, RefreshCw, Search } from "lucide-react";
+import { ChevronRight, RefreshCw, Search } from "lucide-react";
 
 import styles from "./page.module.css";
 import ui from "@/components/research-ui.module.css";
@@ -19,7 +19,11 @@ import { ResearchChat } from '@/components/research-chat';
 import { artifactContent, researchObservations } from '@/lib/research/reporting/data-views';
 import { assetSnapshot } from "@/lib/research/asset-snapshot";
 import { AssetHero, Leadership } from "@/components/company/company";
-import { KeyNumbers, KpiGauges, PriceFan, RiskHeat, ThesisPillars, ValueRuler, money, signedPercent } from "@/components/visuals/valuation-visuals";
+import { KeyNumbers, KpiGauges } from "@/components/visuals/valuation-visuals";
+import { Tag, type TagTone } from "@/components/ui/primitives";
+import { CompanyOverview } from "./company-overview";
+import { companyStatusWord, statusTone } from "@/lib/research/run-status";
+import { isStoppedRun, primaryRunChoice, type PrimaryRunInput } from "@/lib/research/primary-run";
 import { ResearchMemoView } from "@/components/memo/research-memo";
 import { ModelView } from "@/components/memo/model-view";
 import { backtestLines, metricName, metricValue, providerLabel, sourceTypeLabel, words } from "@/lib/research/reporting/audit-format";
@@ -137,7 +141,8 @@ function ViewResearch() {
       );
       if (version !== loadVersion.current) return;
       const targetRunId = requestedRunId;
-      const activeRun = targetRunId ? sortedRuns.find((run) => run.id === targetRunId) : sortedRuns[0] ?? null;
+      // A ?run= wins; otherwise primaryRun's choice (the report waiting for the decision before a later stopped draft).
+      const activeRun = targetRunId ? sortedRuns.find((run) => run.id === targetRunId) : primaryRunChoice(sortedRuns as (ResearchRecord & PrimaryRunInput)[])?.run ?? null;
       if (targetRunId && !activeRun) throw new Error("Research run not found.");
 
       if (!activeRun) {
@@ -226,11 +231,8 @@ function ViewResearch() {
     return asRecord(artifact?.content_json);
   };
   const thesis = content("investment_thesis");
-  const conditions = Array.isArray(thesis.must_be_true) ? thesis.must_be_true.filter((value): value is string => typeof value === "string") : [];
   const riskContent = content("risk_register");
   const risks = Array.isArray(riskContent.risks) ? riskContent.risks.map(asRecord) : [];
-  const targets = content("annual_price_target_path");
-  const targetRows = [targets.price_target_path, targets.price_target_paths, targets.annual_price_targets].find(Array.isArray) as ResearchRecord[] | undefined;
   const run = data.activeRun ? { ...data.activeRun, ...data.runDetail } : null;
   const action = researchBriefAction(run ? { id: String(run.id), status: String(run.status), stages: run.stages } : null, assetId);
   // The key numbers every tab leads with, from the run's code-computed artifacts (the summary report carries them).
@@ -255,19 +257,22 @@ function ViewResearch() {
   if (error || !data.asset) return <div className={styles.message} role="alert">{error ?? "Asset not found."}<button onClick={()=>void loadResearch()}>Try again</button></div>;
 
   const asset = data.asset;
-  const currency = targets.currency ?? asset.base_currency;
   const primaryListing = (asset.listings?.find((item) => item.is_primary) ?? asset.listings?.[0])?.symbol ?? null;
   const ticker = asset.asset_kind === "equity" ? primaryListing : null;
+  // A run waiting at the final review wins over a later stopped run; otherwise the shown run's own state.
+  const heroLabel = companyStatusWord(data.runs.map((r) => ({ status: String(r.status), created_at: r.created_at, waiting_stage_key: r.waiting_stage_key ?? null, latest_decision: r.latest_decision ?? null }))) === "Needs your decision" ? "Needs your decision" : action.label;
   const header = <>
     <AssetHero assetId={assetId} name={asset.canonical_name} ticker={ticker}
       meta={[cleanWords(asset.asset_kind.replace(/_asset/g, "")), asset.sector, asset.industry]}
-      status={activeTab !== "thesis" && activeTab !== "memo" ? <span className={ui.status} data-status={action.tone}>{action.label}</span> : undefined}
+      status={activeTab !== "thesis" && activeTab !== "memo" ? <Tag tone={heroStatus(heroLabel)[1]}>{heroStatus(heroLabel)[0]}</Tag> : undefined}
       actions={<>
         <Link href={`/assets/${assetId}`} className={ui.secondary}>Asset details</Link>
         {data.activeRun&&<ResearchChat key={data.activeRun.id} runId={data.activeRun.id} evidence={data.report?.report_document?.evidence??[]} workbenchHref={(proposal)=>`${sectionHref('workbench')}&proposal=${encodeURIComponent(proposal)}`}/>}
         <Link href={`/assets/${assetId}/run?new=1`} className={ui.primary}>New research</Link>
       </>} />
-    {data.activeRun && activeTab !== "memo" && <KeyNumbers snapshot={snapshot} kpis={0} label={`${asset.canonical_name} key numbers`} />}
+    {isStoppedRun(data.activeRun ? { status: String(data.activeRun.status), latest_decision: data.activeRun.latest_decision ?? null } : null)
+      && <p className={styles.runNote}>From a run that stopped before review</p>}
+    {data.activeRun && activeTab !== "memo" && activeTab !== "overview" && <KeyNumbers snapshot={snapshot} kpis={0} label={`${asset.canonical_name} key numbers`} />}
     <AssetTabs activeTab={activeTab} hrefFor={sectionHref} />
   </>;
   const viewArtifacts = [...data.artifacts, ...(data.report?.report_document?.artifacts ?? []).filter((a:ResearchRecord)=>!data.artifacts.some(b=>b.id===a.id))];
@@ -300,7 +305,7 @@ function ViewResearch() {
     : <section className={ui.tile}><p className={ui.empty}>Run research first. The Model tab shows a run&apos;s valuation and lets you recompute it.</p></section>);
   if (activeTab === 'kpis') return view(<>
     {snapshot && snapshot.kpis.length > 0 && <section className={`${ui.tile} mb-4`}>
-      <div className={ui.tileHead}><h2>Where each KPI sits</h2><span className={ui.muted}>Current level between its bear and bull thresholds</span></div>
+      <div className={ui.tileHead}><h2>Where each KPI sits</h2></div>
       <div className="grid gap-x-6 md:grid-cols-2"><KpiGauges kpis={snapshot.kpis.slice(0, Math.ceil(snapshot.kpis.length / 2))} /><KpiGauges kpis={snapshot.kpis.slice(Math.ceil(snapshot.kpis.length / 2))} /></div>
     </section>}
     <section className={`${ui.tile} ${styles.wide}`}><KPIDashboard key={data.activeRun?.id} artifacts={viewArtifacts} onRefresh={()=>void loadResearch()} refreshing={loading}/></section>
@@ -313,66 +318,20 @@ function ViewResearch() {
 
   if (activeTab === "overview") {
     const heatRisks = risks.map((risk) => ({ name: safeText(risk.risk_name, "Risk"), probability: typeof risk.probability === "number" ? risk.probability : null,
-      severity: typeof risk.severity === "number" ? risk.severity : null, detail: typeof risk.leading_indicator === "string" ? `Watch: ${risk.leading_indicator}` : null }));
-    const grouped = targetRows?.length ? groupPriceTargets(targetRows) : [];
-    const price = snapshot?.price ?? null;
+      severity: typeof risk.severity === "number" ? risk.severity : null, detail: typeof risk.leading_indicator === "string" ? `Watch: ${risk.leading_indicator}` : null,
+      question: <RiskQuestion risk={risk} /> }));
+    const statement = thesis.thesis_statement ?? thesis.thesis ?? thesis.investment_thesis;
     return view(!data.activeRun ? <div className={ui.grid}>
       <section className={`${ui.tile} ${ui.s7}`}>
         <div className={ui.tileHead}><h2>No research yet</h2></div>
         <div className={`${ui.tileBody} flex flex-wrap items-center justify-between gap-3`}><p className={ui.muted}>Start a run to build the thesis, valuation and risk register for this asset.</p><Link className={ui.primary} href={action.href}>{action.action}</Link></div>
       </section>
       <Leadership subject={{ asset_id: assetId }} className={ui.s5} />
-    </div> : <div className={ui.grid} key={data.activeRun.id}>
-      <section className={`${ui.tile} ${ui.s8}`}>
-        <div className={ui.tileHead}><h2>The thesis</h2><button className={ui.textLink} onClick={() => openSection("thesis")}>Full report</button></div>
-        <p className={styles.statement}>{safeText(thesis.thesis_statement ?? thesis.thesis ?? thesis.investment_thesis, "The research summary is not available yet.")}</p>
-        {conditions.length > 0 && <><h3 className="px-[18px] pt-3 text-[11px] font-semibold uppercase tracking-[.04em] text-[var(--ink-3)]">Must be true</h3><ThesisPillars items={conditions.slice(0, 6)} /></>}
-        {(conditions.length > 6 || typeof thesis.causal_chain === "string" || typeof thesis.market_mispricing === "string") && <details className={`${styles.more} px-[18px] pb-4`}>
-          <summary>Read more</summary>
-          {conditions.length > 6 && <ul className="list-disc pl-5">{conditions.slice(6).map((condition) => <li key={condition}>{condition}</li>)}</ul>}
-          {typeof thesis.causal_chain === "string" && <p>{thesis.causal_chain}</p>}
-          {typeof thesis.market_mispricing === "string" && <p>{thesis.market_mispricing}</p>}
-        </details>}
-      </section>
-      <section className={`${ui.tile} ${ui.s4}`}>
-        <div className={ui.tileHead}><h2>Value against price</h2><button className={ui.textLink} onClick={() => openSection("valuation")}>Valuation</button></div>
-        {snapshot ? <ValueRuler snapshot={snapshot} /> : <p className={ui.empty}>No valuation saved for this run yet.</p>}
-        <dl className={styles.statusList}>
-          <dt>Run</dt><dd>{cleanWords(data.activeRun.run_type)}</dd>
-          <dt>Run id</dt><dd className={ui.mono}>{shortId(data.activeRun.id)}</dd>
-          <dt>Started</dt><dd>{formatDate(data.activeRun.created_at)}</dd>
-          <dt>Monitor</dt><dd>{monitor ? monitorLabel(monitor) : "Not checked"}</dd>
-        </dl>
-        {data.report?.incomplete && <details className={`${styles.missing} px-[18px]`}>
-          <summary>Research incomplete<ChevronDown size={14} /></summary>
-          <ul>{(data.report.missing_sections ?? []).map((item: ResearchRecord) => <li key={item.type}>{item.label}</li>)}</ul>
-        </details>}
-        <div className={ui.actions}><button className={ui.textLink} onClick={() => openSection("evidence")}>Evidence</button><Link className={ui.primary} href={action.href}>{action.action}</Link></div>
-      </section>
-      <section className={`${ui.tile} ${ui.s7}`}>
-        <div className={ui.tileHead}><h2>Price targets</h2><span className={ui.muted}>Value per share at each year end</span></div>
-        {snapshot && <PriceFan snapshot={snapshot} />}
-        {grouped.length ? <div className={`${ui.table} ${styles.targetTable}`}><table>
-          <thead><tr><th>Year</th><th className={ui.num}>Bear</th><th className={ui.num}>Base</th><th className={ui.num}>Bull</th><th className={ui.num}>Base vs {price != null ? money(price, String(currency ?? "USD")) : "price"}</th></tr></thead>
-          <tbody>{grouped.map((row) => {
-            const base = Number(row.base);
-            const gap = price && row.base != null && Number.isFinite(base) ? base / price - 1 : null;
-            return <tr key={row.year}><td>{row.year}</td><td className={ui.num}>{formatCurrency(row.bear, currency)}</td><td className={`${ui.num} font-semibold`}>{formatCurrency(row.base, currency)}</td><td className={ui.num}>{formatCurrency(row.bull, currency)}</td>
-              <td className={ui.num} style={{ color: gap == null ? undefined : gap < 0 ? "var(--critical)" : "var(--positive)", fontWeight: 600 }}>{signedPercent(gap)}</td></tr>;
-          })}</tbody>
-        </table></div> : <p className={ui.empty}>No annual price targets yet.</p>}
-      </section>
-      <section className={`${ui.tile} ${ui.s5}`}>
-        <div className={ui.tileHead}><h2>KPIs against targets</h2><button className={ui.textLink} onClick={() => openSection("kpis")}>All KPIs</button></div>
-        <KpiGauges kpis={snapshot?.kpis ?? []} />
-      </section>
-      <section className={`${ui.tile} ${ui.s7}`}>
-        <div className={ui.tileHead}><h2>Risks</h2><span className={ui.muted}>Ranked by likelihood × severity</span></div>
-        {heatRisks.length ? <RiskHeat risks={heatRisks} /> : <p className={ui.empty}>No risk register yet.</p>}
-        {risks.length > 0 && <details className={styles.moreRisks}><summary>How each risk would show up<ChevronDown size={14} /></summary>{risks.map((risk, index) => <RiskQuestion key={index} risk={risk} />)}</details>}
-      </section>
-      <Leadership subject={{ asset_id: assetId }} className={ui.s5} />
-    </div>);
+    </div> : <CompanyOverview key={data.activeRun.id} assetId={assetId} snapshot={snapshot} memo={(data.report?.memo ?? null) as ResearchMemo | null}
+      runs={data.runs.map((r) => ({ id: String(r.id), created_at: r.created_at, status: String(r.status), actual_cost_usd: r.actual_cost_usd, budget_limit_usd: r.budget_limit_usd, waiting_stage_key: r.waiting_stage_key ?? null, latest_decision: r.latest_decision ?? null }))}
+      fallbackStatement={typeof statement === "string" && statement.trim() ? statement : null} risks={heatRisks}
+      missing={data.report?.incomplete ? (data.report.missing_sections ?? []).map((item: ResearchRecord) => String(item.label)) : null}
+      monitorNote={monitor ? monitorLabel(monitor) : null} onOpenReport={() => openSection("thesis")} />);
   }
 
   return view(<section className={ui.tile}>
@@ -419,6 +378,12 @@ function AssetTabs({ activeTab, hrefFor }: { activeTab: TabId; hrefFor: (view: T
 }
 
 interface MonitorCheck { status: string; refresh_due: boolean; reasons: string[]; checked_at: string; newer_run: boolean; }
+
+/** The run's state in the one status vocabulary (Needs your decision, Needs plan approval, Researching, Decided, Stopped, Not started). */
+function heroStatus(label: string): [string, TagTone] {
+  // researchBriefAction already speaks the shared vocabulary (run-status.ts); the tone comes from the same place.
+  return [label, statusTone(label)];
+}
 
 function monitorLabel(monitor: MonitorCheck) {
   if (monitor.refresh_due) return "Refresh due";
@@ -479,7 +444,7 @@ function CanonicalReportSummary({ report, artifacts }: { report: ResearchRecord 
 }
 
 function IncompleteState({ label }: { label: string }) {
-  return <div className="rounded-md border border-dashed border-[var(--caution-line)] bg-[var(--caution-bg)] px-3 py-3 text-sm text-[var(--caution)]">{label} is incomplete: no canonical artifact was persisted.</div>;
+  return <div className="rounded-md border border-dashed border-[var(--caution-line)] bg-[var(--caution-bg)] px-3 py-3 text-sm text-[var(--caution-ink)]">{label} is incomplete: no canonical artifact was persisted.</div>;
 }
 
 function groupPriceTargets(rows: ResearchRecord[]) {

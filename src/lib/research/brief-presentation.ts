@@ -1,3 +1,5 @@
+import { runStatusWord } from "./run-status";
+
 interface BriefRun {
   id: string;
   status: string;
@@ -7,7 +9,7 @@ interface BriefRun {
 /** Display the persisted gate, never infer an approval from generated prose. */
 export function researchBriefAction(run: BriefRun | null, assetId: string) {
   const pipelineHref = `/assets/${assetId}/run${run ? `?run=${encodeURIComponent(run.id)}` : ""}`;
-  if (!run) return { label: "No research", tone: "neutral", action: "Start research", href: pipelineHref };
+  if (!run) return { label: "Not started", tone: "neutral", action: "Start research", href: pipelineHref };
   if (run.status === "waiting_for_human") {
     const gate = run.stages?.find((stage) => stage.status === "waiting_for_human");
     if (gate?.stage_key === "research_plan") {
@@ -16,12 +18,11 @@ export function researchBriefAction(run: BriefRun | null, assetId: string) {
     if (gate?.stage_key === "human_review") {
       return { label: "Needs your decision", tone: "pending", action: "Review", href: `/review?run=${encodeURIComponent(run.id)}` };
     }
-    return { label: "Awaiting input", tone: "pending", action: "Run details", href: pipelineHref };
+    return { label: "Needs your decision", tone: "pending", action: "Run details", href: pipelineHref };
   }
-  // The same words as the asset cards and the research memo.
-  const labels: Record<string, string> = { completed: "Decided", approved: "Decided", running: "Researching", queued: "Researching", pending: "Researching", planning: "Researching", needs_more_work: "Needs more work", failed: "Failed", cancelled: "Cancelled" };
+  // The one status vocabulary (run-status.ts), shared with the asset cards and Home.
   return {
-    label: labels[run.status] ?? run.status.replace(/_/g, " "),
+    label: runStatusWord(run.status, run.stages?.find((stage) => stage.status === "waiting_for_human")?.stage_key),
     tone: ["completed", "approved"].includes(run.status) ? "complete" : run.status === "failed" ? "error" : ["needs_more_work", "running", "queued", "pending", "planning"].includes(run.status) ? run.status : "neutral",
     action: "Run details",
     href: pipelineHref,

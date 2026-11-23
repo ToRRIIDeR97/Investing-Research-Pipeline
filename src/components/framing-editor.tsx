@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import ui from "@/components/research-ui.module.css";
 import { businessArchetypes, archetypeOverlays } from "@/lib/research/archetypes/registry";
+import { Tag } from "@/components/ui/primitives";
 
 type Row = Record<string, any>;
 export interface FramingEdits { framing?: Row; archetypes?: string[]; overlays?: string[] }
@@ -51,7 +52,7 @@ export function FramingEditor({ plan, disabled, onChange }: { plan: Row; disable
   const toggle = (list: string[], update: (next: string[]) => void, key: string) => update(list.includes(key) ? list.filter(k => k !== key) : [...list, key]);
   const feedback: Row[] = Array.isArray(plan.plan_feedback) ? plan.plan_feedback : [];
   return <section className={ui.section} aria-label="Research framing">
-    <div className={ui.sectionHead}><h2>Framing</h2><span className={ui.muted}>{original ? (plan.framing_source === "reviewer" ? "Edited by reviewer" : "Drafted; hypotheses until you approve") : "No framing drafted"}</span></div>
+    <div className={ui.sectionHead}><h2>Framing</h2><Tag tone="neutral">{original ? (plan.framing_source === "reviewer" ? "Edited by reviewer" : "Draft") : "Not drafted"}</Tag></div>
     {framing ? <div className={ui.form}>
       {TEXTS.map(t => <label key={t.key} className={ui.field}>{t.label}<textarea rows={t.rows} value={framing[t.key] ?? ""} disabled={disabled} onChange={e => set(t.key, e.target.value)} /></label>)}
       {LISTS.map(list => <fieldset key={list.key} className={ui.field}><legend>{list.label}</legend>

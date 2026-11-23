@@ -6,11 +6,12 @@ import { usePathname, useRouter } from "next/navigation";
 import { Search } from "lucide-react";
 import { PragmaMark } from "@/components/brand/logo";
 import { CompanyLogo } from "@/components/company/company";
+import { reviewCount } from "@/lib/review/queue-rules";
 import styles from "./app-shell.module.css";
 
 interface Asset { id: string; canonical_name: string; slug: string; }
 
-/** Pragma Research chrome: wordmark, the main links as soft pills (current one navy), asset search with logos, Start research. */
+/** Pragma Research chrome: wordmark, the main links as one pill group (current one a white pill), a pill asset search with logos, a navy pill Start research. */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -20,7 +21,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  const [reviewCount, setReviewCount] = useState<number | null>(null);
+  const [pendingReviews, setPendingReviews] = useState<number | null>(null);
 
   useEffect(() => { setOpen(false); setQuery(""); }, [pathname]);
   useEffect(() => {
@@ -34,7 +35,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (pathname === "/login") return;
     let cancelled = false;
-    fetch("/api/review/queue").then((res) => res.ok ? res.json() : null).then((data) => { if (!cancelled && Array.isArray(data)) setReviewCount(data.length); }).catch(() => {});
+    fetch("/api/review/queue?summary=0").then((res) => res.ok ? res.json() : null).then((data) => { if (!cancelled && Array.isArray(data)) setPendingReviews(reviewCount(data)); }).catch(() => {});
     return () => { cancelled = true; };
   }, [pathname]);
 
@@ -65,7 +66,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link href="/" aria-current={current("/")}>Home</Link>
             <Link href="/assets" aria-current={current("/assets")}>Research</Link>
             <Link href="/themes" aria-current={current("/themes")}>Themes</Link>
-            <Link href="/review" aria-current={current("/review")}>Reviews{reviewCount ? <span className={styles.count}>{reviewCount}</span> : null}</Link>
+            <Link href="/review" aria-current={current("/review")}>Reviews{pendingReviews ? <span className={styles.count}>{pendingReviews}</span> : null}</Link>
           </nav>
           <div className={styles.tools}>
             <div className={styles.search} ref={box}>

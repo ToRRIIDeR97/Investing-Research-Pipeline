@@ -5,6 +5,15 @@ import { useRouter } from "next/navigation";
 import ui from "@/components/research-ui.module.css";
 import { CompanyLogo } from "@/components/company/company";
 import styles from "./themes.module.css";
+import { Card, Tag, type TagTone } from "@/components/ui/primitives";
+
+/** A theme run's state in the shared words. */
+function themeStatus(status: string): [string, TagTone] {
+  if (status === "completed") return ["Completed", "good"];
+  if (status === "failed" || status === "cancelled") return ["Stopped", "bad"];
+  if (status === "running" || status === "queued" || status === "pending") return ["Researching", "neutral"];
+  return ["Not started", "neutral"];
+}
 
 type Theme = { id: string; theme: string; status: string; created_at: string; shortlist: { ticker: string; title?: string }[]; error: string | null };
 const OBJECTIVES = [["growth", "Growth"], ["quality", "Quality (margins)"], ["value", "Value (earnings yield)"], ["balance_sheet", "Balance sheet (debt payback)"]] as const;
@@ -43,13 +52,11 @@ export default function ThemesPage() {
   }
 
   return <div className={ui.page}>
-    <header className={ui.heading}><div className={ui.titleGroup}><h1>Theme research</h1>
-      <span className={ui.muted}>A demand driver, candidates from independent sources counted for agreement, exclusions with reasons, a scorecard and a shortlist of four</span></div></header>
+    <header className={ui.heading}><div className={ui.titleGroup}><h1>Themes</h1></div></header>
     {error && <p role="alert" className={ui.error}>{error}</p>}
     <div className={ui.grid}>
-      <section className={`${ui.tile} ${ui.s7}`} aria-labelledby="theme-new">
-        <div className={ui.tileHead}><h2 id="theme-new">New theme</h2></div>
-        <form onSubmit={create} className={`${ui.form} ${ui.tileBody}`}>
+      <Card title="New theme" className={ui.s7}>
+        <form onSubmit={create} className={ui.form}>
           <label className={ui.field}>Theme<input required minLength={3} maxLength={200} placeholder="The future of electricity" value={theme} onChange={(e) => setTheme(e.target.value)} /></label>
           <div className={styles.row}>
             <label className={ui.field}>Horizon (years)<input type="number" min={3} max={30} value={horizon} onChange={(e) => setHorizon(Number(e.target.value))} /></label>
@@ -63,20 +70,19 @@ export default function ThemesPage() {
           <fieldset className={styles.fieldset}><legend>Objectives (weights)</legend>
             {OBJECTIVES.map(([key, label]) => <label key={key} className={styles.slider}><span>{label}</span>
               <input type="range" min={0} max={1} step={0.25} value={objectives[key]} onChange={(e) => setObjectives((o) => ({ ...o, [key]: Number(e.target.value) }))} />
-              <span className={ui.mono}>{objectives[key].toFixed(2)}</span></label>)}
+              <span>{objectives[key].toFixed(2)}</span></label>)}
           </fieldset>
           <label className={ui.field}>Your tickers (optional, e.g. an ETF&apos;s holdings)<textarea rows={2} placeholder="PWR, HUBB, ETN" value={tickers} onChange={(e) => setTickers(e.target.value)} /></label>
           <div><button className={ui.primary} disabled={busy || !roles.length}>{busy ? "Creating…" : "Create theme"}</button></div>
           <p className={ui.muted}>Running a theme makes a few model calls (within a budget) and reads SEC data; nothing is bought or traded.</p>
         </form>
-      </section>
-      <section className={`${ui.tile} ${ui.s5}`} aria-labelledby="theme-past">
-        <div className={ui.tileHead}><h2 id="theme-past">Past themes</h2><span className={ui.muted}>{themes.length}</span></div>
+      </Card>
+      <Card title="Past themes" action={<span>{themes.length}</span>} className={ui.s5}>
         {themes.length ? <div className={ui.list}>{themes.map((t) => <Link key={t.id} href={`/themes/${t.id}`} className={ui.row}>
-          <div><div className={ui.rowTitle}>{t.theme}</div><div className={ui.rowMeta}>{t.status}{t.shortlist.length ? ` · ${t.shortlist.map((s) => s.ticker).join(", ")}` : ""} · {t.created_at.slice(0, 10)}</div></div>
+          <div><div className={ui.rowTitle}>{t.theme}</div><div className={styles.meta}><Tag tone={themeStatus(t.status)[1]}>{themeStatus(t.status)[0]}</Tag>{t.shortlist.length ? <span>{t.shortlist.map((s) => s.ticker).join(", ")}</span> : null}<span>{t.created_at.slice(0, 10)}</span></div></div>
           {t.shortlist.length > 0 && <div className={styles.logoStack} aria-hidden="true">{t.shortlist.slice(0, 4).map((s) => <CompanyLogo key={s.ticker} subject={{ name: s.title || s.ticker, ticker: s.ticker, kind: "equity" }} name={s.title || s.ticker} ticker={s.ticker} size={30} shape="round" />)}</div>}
         </Link>)}</div> : <p className={ui.empty}>No themes yet.</p>}
-      </section>
+      </Card>
     </div>
   </div>;
 }

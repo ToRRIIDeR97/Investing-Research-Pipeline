@@ -5,6 +5,7 @@ import { handleApiError, successResponse, createdResponse } from "@/lib/api/erro
 import { createAssetSchema } from "@/lib/api/validation";
 import { ApiError } from "@/lib/api/errors";
 import { and, eq, asc, ne } from "drizzle-orm";
+import { isTestAsset } from "@/lib/research/test-assets";
 
 export async function GET(request: NextRequest) {
   try {
@@ -27,7 +28,8 @@ export async function GET(request: NextRequest) {
         .orderBy(asc(assets.canonical_name));
     }
 
-    return successResponse(results);
+    // Test assets (end-to-end fixtures) stay out of search and the Start research list; a direct URL still opens them.
+    return successResponse(results.filter((asset) => !isTestAsset(asset)));
   } catch (error) {
     return handleApiError(error);
   }

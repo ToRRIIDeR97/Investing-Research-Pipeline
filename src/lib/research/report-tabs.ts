@@ -1,12 +1,14 @@
-// The asset report page's four tabs. Each groups the earlier views, which stay addressable by `?view=` so every saved
-// link still opens; a tab with more than one view shows them as sub-tabs, except Model, whose views share one page. The notebook opens from its drawer and the
-// earlier overview stays at `?view=overview` for one release, outside the tab bar.
+// The asset report page's five tabs. Overview (the company overview: prices, value, blend, runs) comes first, and the
+// page opens on it when no `?view=` is given (`view=memo` opens the Memo). Each tab groups the earlier views, which stay addressable by `?view=`
+// so every saved link still opens; a tab with more than one view shows them as sub-tabs, except Model, whose views share
+// one page. The notebook opens from its drawer, outside the tab bar.
 
 export type ReportView = "memo" | "overview" | "evidence" | "metrics" | "valuation" | "workbench" | "thesis" | "financials" | "kpis" | "notebook" | "backtests" | "sources" | "runs";
 
-export interface ReportTab { key: "memo" | "model" | "financials" | "audit"; label: string; views: readonly ReportView[]; /** Its views render as one page, without sub-tabs. */ onePage?: boolean }
+export interface ReportTab { key: "overview" | "memo" | "model" | "financials" | "audit"; label: string; views: readonly ReportView[]; /** Its views render as one page, without sub-tabs. */ onePage?: boolean }
 
 export const REPORT_TABS: readonly ReportTab[] = [
+  { key: "overview", label: "Overview", views: ["overview"] },
   { key: "memo", label: "Memo", views: ["memo"] },
   { key: "model", label: "Model", views: ["valuation", "workbench"], onePage: true },
   { key: "financials", label: "Financials", views: ["financials", "kpis", "metrics"] },
@@ -20,15 +22,18 @@ export const VIEW_LABELS: Record<ReportView, string> = {
 
 const KNOWN: readonly ReportView[] = ["memo", "overview", "evidence", "metrics", "valuation", "workbench", "thesis", "financials", "kpis", "notebook", "backtests", "sources", "runs"];
 
-/** The view a `?view=` value opens: none opens the memo, `report` is the full report, anything unknown the memo. */
+/**
+ * The view a `?view=` value opens: none opens the company overview (the user's chosen landing view), `report` is the
+ * full report, anything unknown the overview. Links meant to open the memo pass `view=memo`.
+ */
 export function viewFromQuery(value: string | null | undefined): ReportView {
-  if (!value) return "memo";
+  if (!value) return "overview";
   if (value === "report") return "thesis";
-  return (KNOWN as readonly string[]).includes(value) ? value as ReportView : "memo";
+  return (KNOWN as readonly string[]).includes(value) ? value as ReportView : "overview";
 }
 
 /** The `?view=` value for a view (the full report keeps its earlier `report` spelling). */
 export const viewQuery = (view: ReportView) => view === "thesis" ? "report" : view;
 
-/** The tab a view belongs to, or null for views outside the tab bar (overview, notebook). */
+/** The tab a view belongs to, or null for views outside the tab bar (the notebook). */
 export const tabOf = (view: ReportView): ReportTab | null => REPORT_TABS.find((tab) => tab.views.includes(view)) ?? null;

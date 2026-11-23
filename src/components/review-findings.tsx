@@ -1,38 +1,41 @@
-import ui from "@/components/research-ui.module.css";
-import { reviewGate } from "@/lib/research/reporting/depth";
+import styles from "@/app/review/review.module.css";
+import { Tag, type TagTone } from "@/components/ui/primitives";
+import { SEVERITY_LABEL, SEVERITY_ORDER, groupFindingsByChapter, plainIdentifiers, verdictWords, type Severity } from "@/lib/review/review-view";
 
 type Row = Record<string, any>;
-const SEVERITIES = ["critical", "high", "medium", "low"];
-const label = (value: unknown) => String(value ?? "").replace(/_/g, " ");
-const text = (finding: Row) => String(finding.issue ?? finding.message ?? finding.description ?? finding.summary ?? "");
+const tone: Record<Severity, TagTone> = { critical: "bad", high: "bad", medium: "waiting", low: "neutral", other: "neutral" };
+const CHECK_STATUS: Record<string, [string, TagTone]> = { met: ["Met", "good"], partial: ["Partly met", "waiting"], missing: ["Missing", "waiting"],
+  data_unavailable: ["No data to check", "neutral"], not_applicable: ["Not applicable", "neutral"] };
+const checkStatus = (c: Row): [string, TagTone] => c.status === "missing" && c.critical ? ["Missing", "bad"] : CHECK_STATUS[String(c.status)] ?? [verdictWords(c.status), "neutral"];
 
-/** The AI review the human gate decides on: verdicts, what blocks a position, depth checks and findings by severity. */
-export function ReviewFindings({ review }: { review: Row | null }) {
-  if (!review) return <section className={`${ui.section} !mt-0`}><div className={ui.sectionHead}><h2>AI review</h2></div><p className={ui.empty}>No AI review is stored for this report version.</p></section>;
-  const gate = reviewGate(review);
-  const findings: Row[] = Array.isArray(review.findings) ? review.findings : [];
+/**
+ * The AI review's findings, grouped by report chapter (collapsed; most severe first), then its depth checks and summary.
+ * What the gate allows is decided by reviewGate and the review route; the page explains it beside this list.
+ */
+export function ReviewFindings({ review, sections }: { review: Row | null; sections: { id: string; title: string }[] }) {
+  if (!review) return <p className={styles.empty}>No AI review is stored for this version of the report.</p>;
+  const groups = groupFindingsByChapter(review, sections);
   const checks: Row[] = Array.isArray(review.depth_checks) ? review.depth_checks : [];
-  const bySeverity = SEVERITIES.map(severity => [severity, findings.filter(f => String(f.severity ?? "").toLowerCase() === severity)] as const)
-    .filter(([, list]) => list.length);
-  const other = findings.filter(f => !SEVERITIES.includes(String(f.severity ?? "").toLowerCase()));
-  const verdict = String(gate.verdict ?? "");
-  return <section id="ai-review" className={`${ui.section} !mt-0`}>
-    <div className={ui.sectionHead}><h2>AI review</h2><span className={ui.status} data-status={verdict === "pass" ? "pass" : verdict === "fail" ? "fail" : "needs_more_work"}>{label(verdict)}</span></div>
-    <dl className={`${ui.metadata} px-3.5 pt-1`}>
-      <div><dt>Reviewer verdict</dt><dd>{label(review.model_verdict ?? review.review_verdict)}</dd></div>
-      <div><dt>Verdict for a position</dt><dd>{label(gate.verdict)}</dd></div>
-      <div><dt>Open high or critical findings</dt><dd>{gate.open_severe}</dd></div>
-      <div><dt>Depth checks missing</dt><dd>{checks.length ? `${checks.filter(c => c.status === "missing").length} of ${checks.length}` : "Not checked"}</dd></div>
-    </dl>
-    {gate.blocking.length > 0 && <div className="px-3.5"><p className={ui.error} role="status">Position approval is blocked: {gate.blocking.join("; ")}.</p></div>}
-    {review.review_summary && <p className={`${ui.tileBody} ${ui.muted}`}>{String(review.review_summary)}</p>}
-    {checks.length > 0 && <details className={ui.fold}><summary>Depth checks</summary><div className={ui.table}><table><thead><tr><th>Check</th><th>Status</th><th>Section</th><th>Why</th></tr></thead><tbody>
-      {checks.map(c => <tr key={c.id}><td>{c.label ?? c.id}{c.critical ? " (decision-critical)" : ""}</td><td>{label(c.status)}{c.code_note ? ` (code: ${c.code_note})` : ""}</td><td>{c.section_id || "-"}</td><td>{c.why}</td></tr>)}
-    </tbody></table></div></details>}
-    {[...bySeverity, ...(other.length ? [["other", other] as const] : [])].map(([severity, list]) =>
-      <details key={severity} className={ui.fold} open={severity === "critical" || severity === "high"}><summary><span className="first-letter:uppercase">{label(severity)} findings <span className={ui.muted}>{list.length}</span></span></summary>
-        <div className={ui.table}><table><thead><tr><th>Section</th><th>Category</th><th>Issue</th><th>Repair</th></tr></thead><tbody>
-          {list.map((f, i) => <tr key={i}><td>{f.section_id || "-"}</td><td>{label(f.category)}</td><td>{text(f)}</td><td>{String(f.repair ?? "")}</td></tr>)}
-        </tbody></table></div></details>)}
-  </section>;
+  const missing = checks.filter((c) => c.status === "missing").length;
+  return <div className={styles.findingsList} id="ai-review-findings">
+    {groups.map((g) => <details key={g.id || "report"} className={styles.group}>
+      <summary><span className={styles.groupTitle}>{g.title}</span><span className={styles.counts}>
+        {SEVERITY_ORDER.filter((s) => g.counts[s]).map((s) => <span key={s} className={styles.count} data-severity={s}>{g.counts[s]} {SEVERITY_LABEL[s].toLowerCase()}</span>)}
+      </span></summary>
+      <ol className={styles.findings}>{g.findings.map((f, i) => <li key={i}>
+        <div className={styles.findingHead}><Tag tone={tone[f.severity]}>{SEVERITY_LABEL[f.severity]}</Tag>{f.category && <span>{f.category}</span>}</div>
+        <p>{f.issue}</p>
+        {f.repair && <p className={styles.fix}><strong>Suggested fix:</strong> {f.repair}</p>}
+      </li>)}</ol>
+    </details>)}
+    {checks.length > 0 && <details className={styles.group}>
+      <summary><span className={styles.groupTitle}>Depth checks</span><span className={styles.counts}><span className={styles.count}>{missing} missing of {checks.length}</span></span></summary>
+      <ul className={styles.findings}>{checks.map((c) => <li key={c.id}>
+        <div className={styles.findingHead}><Tag tone={checkStatus(c)[1]}>{checkStatus(c)[0]}</Tag><span>{c.label ?? verdictWords(c.id)}{c.critical ? " (decision-critical)" : ""}</span></div>
+        {c.why && <p>{plainIdentifiers(String(c.why))}</p>}
+      </li>)}</ul>
+    </details>}
+    {review.review_summary && <details className={styles.group}><summary><span className={styles.groupTitle}>The reviewer&apos;s summary</span></summary>
+      <p className={styles.summaryText}>{plainIdentifiers(String(review.review_summary))}</p></details>}
+  </div>;
 }

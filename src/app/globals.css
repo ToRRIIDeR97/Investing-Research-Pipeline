@@ -1,58 +1,67 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
-/* Pragma Research design tokens: "Slate and navy" (design canvas round 7). Neutral slate surfaces, one navy accent;
-   green, red and amber only ever signal status. Every colour in a page or component comes from here or from
-   src/components/ui/palette.ts (charts), never a raw hex in a component. */
+/* Pragma Research design tokens: the "consumer remaster" (prototype/workshop/pragma-remaster). A cream page with a faint
+   diamond grid, white 24px cards, navy as the one accent over warm greys, Plus Jakarta Sans for headings and big numbers,
+   Inter for text and figures. Red, green and amber appear only on small numbers and status dots, never as fills. Every
+   colour in a page or component comes from here or from src/components/ui/palette.ts (charts), never a raw hex. */
 @theme {
   --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
-  --color-bg-base: #F5F6F8;
+  --font-mono: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --color-bg-base: #F8F8F4;
   --color-bg-surface: #FFFFFF;
-  --color-border-subtle: #E2E5EA;
+  --color-border-subtle: #E7E5DF;
 }
 
 :root {
   --ease-nav: cubic-bezier(.2,0,0,1);
+  /* Display face for headings and big numbers (in :root so it is always emitted) */
+  --font-display: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   /* Surfaces and lines */
-  --page: #F5F6F8;
+  --page: #F8F8F4;
   --tile: #FFFFFF;
-  --soft: #F1F3F6;
-  --hover: #F7F8FA;
-  --line: #E2E5EA;
-  --line-soft: #EEF0F3;
-  --line-strong: #D1D5DB;
+  --soft: #F5F4EF;
+  --hover: #F3F2EC;
+  --line: #E7E5DF;
+  --line-soft: #EEEDE7;
+  --line-strong: #D6D3CC;
   /* Text */
-  --ink: #111827;
-  --ink-2: #4B5563;
-  --ink-3: #6B7280;
-  --ink-4: #9CA3AF;
-  /* The one accent */
-  --navy: #1E3A5F;
-  --navy-hover: #172E4B;
-  --navy-soft: #EDF0F4;
-  --navy-2: #B9C7D9;
-  --navy-3: #6B8CB5;
+  --ink: #0D1B2A;
+  --ink-2: #44403C;
+  --ink-3: #78716C;
+  --ink-4: #A8A29E;
+  /* The one accent, and the logo's sage */
+  --navy: #0A2642;
+  --navy-hover: #071E33;
+  --navy-soft: #EEF1F5;
+  --navy-2: #B4C0CC;
+  --navy-3: #3D5A78;
   --blue: var(--navy);
-  /* Status only */
-  --positive: #166534;
-  --positive-bg: #E6F4EA;
-  --positive-line: #B7DFC3;
-  --critical: #B42318;
-  --critical-bg: #FDECEC;
-  --critical-line: #F3C1BC;
-  --caution: #7A5300;
-  --caution-bg: #FFF4D6;
-  --caution-line: #F0D9A0;
+  --sage: #75937D;
+  /* Status: colour on text and dots only; the backgrounds and lines stay neutral */
+  --positive: #2D7D46;
+  --positive-bg: #F5F4EF;
+  --positive-line: #E7E5DF;
+  --critical: #C9302C;
+  --critical-bg: #F5F4EF;
+  --critical-line: #E7E5DF;
+  --caution: #B8860B;
+  /* Amber fails AA on white for small text: --caution only for dots, bars and rules, --caution-ink for caution text */
+  --caution-ink: #7A5300;
+  --caution-bg: #F5F4EF;
+  --caution-line: #E7E5DF;
   /* Shape */
-  --radius-card: 16px;
-  --radius-control: 10px;
-  --shadow-pop: 0 8px 24px rgb(17 24 39 / 10%);
+  --radius-card: 24px;
+  --radius-control: 12px;
+  --radius-pill: 999px;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 4%), 0 8px 28px -12px rgb(13 27 42 / 14%);
+  --shadow-pop: 0 12px 32px -8px rgb(13 27 42 / 18%);
+  --shadow-navy: 0 6px 16px -6px rgb(10 38 66 / 50%);
 }
 
 @layer base {
-  body { background: var(--page); color: var(--ink); font-family: var(--font-sans); font-size: 13px; line-height: 1.5; font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
-  h1, h2, h3 { letter-spacing: -0.01em; }
+  body { background-color: var(--page); background-image: linear-gradient(45deg, rgb(26 42 58 / 4%) 1px, transparent 1px), linear-gradient(-45deg, rgb(26 42 58 / 4%) 1px, transparent 1px); background-size: 44px 44px; color: var(--ink); font-family: var(--font-sans); font-size: 13px; line-height: 1.5; font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1, "cv11" 1; -webkit-font-smoothing: antialiased; }
+  h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.02em; }
   html { accent-color: var(--navy); }
   button, summary, select { cursor: pointer; }
   button:disabled { cursor: not-allowed; opacity: .4; }

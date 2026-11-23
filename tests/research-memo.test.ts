@@ -160,11 +160,15 @@ test('a run status maps to one vocabulary', () => {
   assert.equal(memoStatus({ runStatus: 'waiting_for_human' })!.label, 'Needs your decision');
   assert.equal(memoStatus({ runStatus: 'waiting_for_human', humanReviewStatus: 'waiting_for_human' })!.label, 'Needs your decision');
   assert.equal(memoStatus({ runStatus: 'waiting_for_human', humanReviewStatus: 'pending' })!.label, 'Needs plan approval');
-  assert.equal(memoStatus({ runStatus: 'needs_more_work' })!.label, 'Needs more work');
+  // One status vocabulary: a needs_more_work run is one the pipeline stopped (failed stage, quality gate or budget), so it reads Stopped.
+  assert.equal(memoStatus({ runStatus: 'needs_more_work' })!.label, 'Stopped');
   assert.equal(memoStatus({ runStatus: 'running' })!.label, 'Researching');
   assert.equal(memoStatus({ runStatus: 'completed' })!.label, 'Decided');
   assert.equal(memoStatus({ runStatus: 'waiting_for_human', latestDecision: 'watchlist' })!.label, 'Decided');
-  assert.equal(memoStatus({ runStatus: 'failed' })!.label, 'Failed');
+  assert.equal(memoStatus({ runStatus: 'failed' })!.label, 'Stopped');
+  // A reviewer's send-back (a needs_more_work decision) is neither Stopped nor Decided: the run and the gate decide.
+  assert.equal(memoStatus({ runStatus: 'running', latestDecision: 'needs_more_work' })!.label, 'Researching');
+  assert.equal(memoStatus({ runStatus: 'waiting_for_human', humanReviewStatus: 'waiting_for_human', latestDecision: 'needs_more_work' })!.label, 'Needs your decision');
   assert.equal(memoStatus({}), null);
 });
 
@@ -210,19 +214,20 @@ test('the verdict sentence is built from the numbers', () => {
 });
 
 test('report tabs group the earlier views and keep their links', () => {
-  assert.equal(viewFromQuery(null), 'memo');
+  assert.equal(viewFromQuery(null), 'overview');
   assert.equal(viewFromQuery('report'), 'thesis');
-  assert.equal(viewFromQuery('overview'), 'overview');
-  assert.equal(viewFromQuery('nonsense'), 'memo');
+  assert.equal(viewFromQuery('memo'), 'memo');
+  assert.equal(viewFromQuery('nonsense'), 'overview');
   assert.equal(viewQuery('thesis'), 'report');
-  assert.deepEqual(REPORT_TABS.map((t) => t.label), ['Memo', 'Model', 'Financials', 'Audit']);
+  // The company overview is the first tab and the page opens on it (viewFromQuery(null) above).
+  assert.deepEqual(REPORT_TABS.map((t) => t.label), ['Overview', 'Memo', 'Model', 'Financials', 'Audit']);
   for (const view of ['valuation', 'workbench', 'financials', 'kpis', 'metrics', 'thesis', 'evidence', 'sources', 'backtests', 'runs'] as const)
     assert.ok(tabOf(view), `${view} sits under a tab`);
   assert.equal(tabOf('workbench')!.key, 'model');
   assert.equal(tabOf('kpis')!.key, 'financials');
   assert.equal(tabOf('runs')!.key, 'audit');
   assert.equal(tabOf('notebook'), null);
-  assert.equal(tabOf('overview'), null);
+  assert.equal(tabOf('overview')!.key, 'overview');
 });
 
 test('the Model tab renders its views on one page', () => {

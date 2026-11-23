@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="380" viewBox="0 0 680 380" font-family="Inter, sans-serif" role="img"><title>Implementation detail</title><desc>Each interactive component sits on pure functions in chart-math and price-series; the review decision card sits on decisionOptions and reviewBody; acceptance criteria per box.</desc>
+<rect width="680" height="380" fill="#FFFFFF"/>
+<g font-size="12">
+<rect x="20" y="20" width="200" height="150" rx="12" fill="#F5F4EF" stroke="#D6D3CC"/><text x="34" y="42" font-weight="600" font-size="13">src/lib/ui/chart-math.ts</text>
+<text x="34" y="64">formatGap, gapPct</text><text x="34" y="84">blendValue</text><text x="34" y="104">nearestIndex, cursorStep</text><text x="34" y="124">donutSegments</text><text x="34" y="154" fill="#78716C">AC-6 (new, pure)</text>
+<rect x="240" y="20" width="200" height="150" rx="12" fill="#F5F4EF" stroke="#D6D3CC"/><text x="254" y="42" font-weight="600" font-size="13">price-series.ts + route</text>
+<text x="254" y="64">pricePoints(bars, range)</text><text x="254" y="84">seriesChange(points)</text><text x="254" y="104">GET /api/assets/[id]/prices</text><text x="254" y="124">400 INVALID_RANGE / _ID</text><text x="254" y="154" fill="#78716C">AC-7, AC-8 (new)</text>
+<rect x="460" y="20" width="200" height="150" rx="12" fill="#F5F4EF" stroke="#D6D3CC"/><text x="474" y="42" font-weight="600" font-size="13">components/interactive</text>
+<text x="474" y="64">PriceChart, ValueMeter</text><text x="474" y="84">ScenarioPicker, BlendSlider</text><text x="474" y="104">FindingsDonut, RunsBars</text><text x="474" y="124">keyboard + text labels</text><text x="474" y="154" fill="#78716C">AC-9 (new)</text>
+<rect x="20" y="200" width="200" height="150" rx="12" fill="#F5F4EF" stroke="#D6D3CC"/><text x="34" y="222" font-weight="600" font-size="13">review-queue.ts (WIP)</text>
+<text x="34" y="244">groupReviewQueue</text><text x="34" y="264">reviewCount (new)</text><text x="34" y="284">summary + trackable,</text><text x="34" y="304">positionable, conclusion</text><text x="34" y="334" fill="#78716C">AC-10 (modified)</text>
+<rect x="240" y="200" width="200" height="150" rx="12" fill="#F5F4EF" stroke="#D6D3CC"/><text x="254" y="222" font-weight="600" font-size="13">review-view.ts</text>
+<text x="254" y="244">decisionOptions(summary)</text><text x="254" y="264">reviewBody(choice, …)</text><text x="254" y="284">→ POST …/review (as is)</text><text x="254" y="304">refusals shown in words</text><text x="254" y="334" fill="#78716C">AC-11, AC-12</text>
+<rect x="460" y="200" width="200" height="150" rx="12" fill="#F5F4EF" stroke="#D6D3CC"/><text x="474" y="222" font-weight="600" font-size="13">run-bars.ts + pages</text>
+<text x="474" y="244">runBars(runs) → RunsBars</text><text x="474" y="264">ReviewDecision card</text><text x="474" y="284">company overview tab</text><text x="474" y="304">Home, list, themes, new</text><text x="474" y="334" fill="#78716C">AC-13 to AC-17</text>
+</g></svg>

@@ -90,7 +90,7 @@ export function ResearchCostChart({ data }: ResearchCostChartProps) {
           <div className="text-[13px] font-bold text-black">
             ${totalCost.toFixed(2)}
           </div>
-          <div className="text-xs text-[var(--ink-3)] uppercase tracking-wider">
+          <div className="text-xs text-[var(--ink-3)]">
             Total
           </div>
         </div>

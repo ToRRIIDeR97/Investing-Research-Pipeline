@@ -13,6 +13,8 @@ import ui from "@/components/research-ui.module.css";
 import { DecisionPanel } from "./decision-panel";
 import { SourceDrawer } from "./source-drawer";
 import styles from "./memo.module.css";
+import { Tag } from "@/components/ui/primitives";
+import { statusTone as tagTone } from "@/lib/research/run-status";
 
 export interface MemoLinks { model: string; financials: string; audit: string }
 
@@ -124,6 +126,34 @@ export function MemoValuation({ memo, modelHref }: { memo: ResearchMemo; modelHr
   </>;
 }
 
+/** The verdict sentence, the four headline facts and the value ruler. Shared by the Memo tab and the review page. */
+export function MemoVerdict({ memo }: { memo: ResearchMemo }) {
+  const v = memo.verdict, c = memo.currency;
+  return <>
+    <p className={styles.verdictLine}>{verdictLine(memo)}</p>
+    {v.summary && <p className={styles.summary}>{v.summary}</p>}
+    <div className={styles.facts}>
+      <div className={styles.fact}><span>Value per share today</span><strong>{price(v.values.base, c, true)}</strong><span>base case</span></div>
+      <div className={styles.fact}><span>Market price</span><strong>{price(v.price, c, true)}</strong><span>{v.priceVerified ? "verified" : "unverified"}{v.priceDate ? `, ${v.priceDate}` : ""}</span></div>
+      <div className={styles.fact}><span>Price vs value</span><strong className={v.gap == null ? undefined : v.gap < 0 ? styles.bad : styles.good}>{signed(v.gap)}</strong><span>{v.gap == null ? "no comparison" : v.gap < 0 ? "value below price" : "value above price"}</span></div>
+      <div className={styles.fact}><span>Range across cases</span><strong>{v.values.bear != null && v.values.bull != null ? `${price(v.values.bear, c, true)} to ${price(v.values.bull, c, true)}` : "—"}</strong><span>bear to bull{v.weighted != null ? `, weighted ${price(v.weighted, c, true)}` : ""}</span></div>
+    </div>
+    {v.valuationComplete ? <ValueRuler snapshot={rulerSnapshot(memo)} /> : v.withheldReason && <p className={styles.withheld}>{v.withheldReason}</p>}
+    {memo.newerValuation && <p className={styles.withheld} role="note" data-newer-valuation>A newer valuation (version {memo.newerValuation.version}, stored {new Date(memo.newerValuation.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}) exists, but this report was built on an earlier one. Every number here is the report&apos;s; regenerate the report to use the newer valuation.</p>}
+  </>;
+}
+
+/** The conclusion's key reasons with their source chips, then the other side. */
+export function MemoReasons({ memo, onOpen }: { memo: ResearchMemo; onOpen: (ids: string[], id: string) => void }) {
+  return <>
+    <div className={styles.reasons}>{memo.reasons.map((r) => <div key={r.headline} className={`${styles.reason} ${r.figure ? styles.withFigure : ""}`}><div>
+      <h3>{r.headline}<Cites ids={r.evidenceIds} onOpen={onOpen} /></h3>
+      {r.detail && <p>{r.detail}</p>}
+    </div>{r.figure && <strong className={styles.figure}>{r.figure}</strong>}</div>)}</div>
+    {memo.otherSide && <div className={styles.otherSide}><h3>The other side</h3>{memo.otherSide}</div>}
+  </>;
+}
+
 function useActiveSection(ids: readonly string[]) {
   const [active, setActive] = useState<string>(ids[0]);
   useEffect(() => {
@@ -149,8 +179,6 @@ export function ResearchMemoView({ memo, assetId, runId, reportHash, links, onDe
   const closeSources = useCallback(() => setSources(null), []);
   const v = memo.verdict, c = memo.currency;
   const confidence = v.confidence.level ? `Confidence: ${v.confidence.level}` : null;
-  const statusTone = memo.status?.key === "needs_decision" || memo.status?.key === "needs_more_work" || memo.status?.key === "needs_plan_approval" ? "waiting_for_human"
-    : memo.status?.key === "decided" ? "completed" : memo.status?.key === "failed" ? "failed" : "running";
   const questions = allQuestions ? memo.openQuestions : memo.openQuestions.slice(0, 4);
 
   return <div className={styles.layout}>
@@ -162,42 +190,25 @@ export function ResearchMemoView({ memo, assetId, runId, reportHash, links, onDe
     </nav>
 
     <div className={styles.body}>
-      <section id="memo-verdict" className={`${styles.block} ${styles.verdictBlock}`} aria-labelledby="memo-verdict-title">
+      <section id="memo-verdict" className={styles.block} aria-labelledby="memo-verdict-title">
         <div className={styles.headRow}>
-          <p className={styles.eyebrow} id="memo-verdict-title">Verdict</p>
+          <h2 id="memo-verdict-title" className={styles.verdictTitle}>Verdict</h2>
           <div className={styles.chips}>
-            {memo.status && <span className={ui.status} data-status={statusTone}>{memo.status.label}</span>}
+            {memo.status && <Tag tone={tagTone(memo.status.label)}>{memo.status.label}</Tag>}
             {confidence && <span className={ui.status}>{confidence}</span>}
           </div>
         </div>
-        <p className={styles.verdictLine}>{verdictLine(memo)}</p>
-        {v.summary && <p className={styles.summary}>{v.summary}</p>}
-        <div className={styles.facts}>
-          <div className={styles.fact}><span>Value per share today</span><strong>{price(v.values.base, c, true)}</strong><span>base case</span></div>
-          <div className={styles.fact}><span>Market price</span><strong>{price(v.price, c, true)}</strong><span>{v.priceVerified ? "verified" : "unverified"}{v.priceDate ? `, ${v.priceDate}` : ""}</span></div>
-          <div className={styles.fact}><span>Price vs value</span><strong className={v.gap == null ? undefined : v.gap < 0 ? styles.bad : styles.good}>{signed(v.gap)}</strong><span>{v.gap == null ? "no comparison" : v.gap < 0 ? "value below price" : "value above price"}</span></div>
-          <div className={styles.fact}><span>Range across cases</span><strong>{v.values.bear != null && v.values.bull != null ? `${price(v.values.bear, c, true)} to ${price(v.values.bull, c, true)}` : "—"}</strong><span>bear to bull{v.weighted != null ? `, weighted ${price(v.weighted, c, true)}` : ""}</span></div>
-        </div>
-        {v.valuationComplete ? <ValueRuler snapshot={rulerSnapshot(memo)} /> : v.withheldReason && <p className={styles.withheld}>{v.withheldReason}</p>}
-        {memo.newerValuation && <p className={styles.withheld} role="note" data-newer-valuation>A newer valuation (version {memo.newerValuation.version}, stored {new Date(memo.newerValuation.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })}) exists, but this report was built on an earlier one. Every number here is the report&apos;s; regenerate the report to use the newer valuation.</p>}
+        <MemoVerdict memo={memo} />
         {memo.reviewOpen && <DecisionPanel runId={runId} assetId={assetId} reportHash={reportHash} onDecided={onDecided} />}
       </section>
 
       {(memo.reasons.length > 0 || memo.otherSide) && <section id="memo-why" className={styles.block} aria-labelledby="memo-why-title">
-        <p className={styles.eyebrow}>Why</p>
         <h2 id="memo-why-title">The main reasons</h2>
-        <p className={styles.lede}>From the report&apos;s conclusion. The numbered chips open each point&apos;s sources.</p>
-        <div className={styles.reasons}>{memo.reasons.map((r) => <div key={r.headline} className={`${styles.reason} ${r.figure ? styles.withFigure : ""}`}><div>
-          <h3>{r.headline}<Cites ids={r.evidenceIds} onOpen={open} /></h3>
-          {r.detail && <p>{r.detail}</p>}
-        </div>{r.figure && <strong className={styles.figure}>{r.figure}</strong>}</div>)}</div>
-        {memo.otherSide && <div className={styles.otherSide}><h3>The other side</h3>{memo.otherSide}</div>}
+        <MemoReasons memo={memo} onOpen={open} />
       </section>}
 
       <section id="memo-change" className={styles.block} aria-labelledby="memo-change-title">
-        <p className={styles.eyebrow}>What would change the view</p>
         <h2 id="memo-change-title">Signals to watch, and where they stand</h2>
-        <p className={styles.lede}>Every bar reads the same way: worse on the left, better on the right.</p>
         {memo.signals.length > 0 || memo.untestable.length > 0 ? <>
           <div className={styles.direction}><span>← worse</span><span>·</span><span>better →</span></div>
           <table className={styles.signals}>
@@ -223,22 +234,17 @@ export function ResearchMemoView({ memo, assetId, runId, reportHash, links, onDe
       </section>
 
       <section id="memo-value" className={styles.block} aria-labelledby="memo-value-title">
-        <p className={styles.eyebrow}>How the value is reached</p>
         <h2 id="memo-value-title">{memo.valuation?.method ? memo.valuation.method : "The valuation"}</h2>
         <MemoValuation memo={memo} modelHref={links.model} />
       </section>
 
       {memo.risks.length > 0 && <section id="memo-risks" className={styles.block} aria-labelledby="memo-risks-title">
-        <p className={styles.eyebrow}>Risks</p>
         <h2 id="memo-risks-title">What could go wrong, ranked</h2>
-        <p className={styles.lede}>Likelihood × severity, from the risk register.</p>
         <RiskHeat risks={memo.risks.map((r) => ({ name: r.name, probability: r.probability, severity: r.severity, detail: r.watch ? `Watch: ${r.watch}` : null }))} />
       </section>}
 
       {memo.snapshot && <section id="memo-business" className={styles.block} aria-labelledby="memo-business-title">
-        <p className={styles.eyebrow}>The business now</p>
         <h2 id="memo-business-title">{memo.snapshot.period} against {memo.snapshot.prior}</h2>
-        <p className={styles.lede}>From the filed statements.</p>
         <table className={styles.table}>
           <thead><tr><th scope="col"><span className="sr-only">Measure</span></th><th scope="col">{memo.snapshot.prior}</th><th scope="col">{memo.snapshot.period}</th><th scope="col">Change</th></tr></thead>
           <tbody>{memo.snapshot.rows.map((r) => <tr key={r.label}>
@@ -250,7 +256,6 @@ export function ResearchMemoView({ memo, assetId, runId, reportHash, links, onDe
       </section>}
 
       {memo.openQuestions.length > 0 && <section id="memo-questions" className={styles.block} aria-labelledby="memo-questions-title">
-        <p className={styles.eyebrow}>Open questions</p>
         <h2 id="memo-questions-title">What the research couldn&apos;t establish</h2>
         <p className={styles.lede}>{v.confidence.openQuestions} open. A new run targets these first.</p>
         <ul className={styles.questions}>{questions.map((q) => <li key={q.question}>
@@ -261,7 +266,7 @@ export function ResearchMemoView({ memo, assetId, runId, reportHash, links, onDe
       </section>}
 
       <div id="memo-deeper">
-        <p className={styles.eyebrow} style={{ margin: "12px 0 10px" }}>Go deeper</p>
+        <h2 className={styles.deeperTitle}>Go deeper</h2>
         <div className={styles.appendix}>
           <Link href={links.model}><strong>Model</strong><span>Scenarios, valuation signals and the workbench</span></Link>
           <Link href={links.financials}><strong>Financials</strong><span>Statements, KPIs and metrics</span></Link>

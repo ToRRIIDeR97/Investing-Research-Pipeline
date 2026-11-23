@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="360" viewBox="0 0 680 360" font-family="Inter, sans-serif" role="img"><title>Proposed UI data flow</title><desc>New tokens and type feed a primitives layer and an interactive kit. A new price API reads stored bars; the queue summary gains allowed decisions. Pages compose the kit. Phases P1 to P6 marked.</desc>
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M2 1L8 5L2 9" fill="none" stroke="#0A2642" stroke-width="1.5"/></marker></defs>
+<rect width="680" height="360" fill="#F8F8F4"/>
+<g font-size="13">
+<rect x="30" y="30" width="190" height="56" rx="12" fill="#FFFFFF" stroke="#0A2642"/><text x="125" y="54" text-anchor="middle" font-weight="600">Tokens + type (P1)</text><text x="125" y="72" text-anchor="middle" font-size="11" fill="#78716C">cream, navy, Jakarta + Inter</text>
+<rect x="250" y="30" width="190" height="56" rx="12" fill="#FFFFFF" stroke="#0A2642"/><text x="345" y="54" text-anchor="middle" font-weight="600">Primitives + shell (P1)</text><text x="345" y="72" text-anchor="middle" font-size="11" fill="#78716C">Card, Tag, Segmented</text>
+<rect x="250" y="130" width="190" height="56" rx="12" fill="#FFFFFF" stroke="#0A2642"/><text x="345" y="154" text-anchor="middle" font-weight="600">Interactive kit (P2)</text><text x="345" y="172" text-anchor="middle" font-size="11" fill="#78716C">chart, meter, slider, donut, runs</text>
+<rect x="30" y="130" width="190" height="56" rx="12" fill="#FFFFFF" stroke="#0A2642"/><text x="125" y="154" text-anchor="middle" font-weight="600">GET …/prices (P2)</text><text x="125" y="172" text-anchor="middle" font-size="11" fill="#78716C">market_price_bars, read only</text>
+<rect x="30" y="230" width="190" height="56" rx="12" fill="#FFFFFF" stroke="#0A2642"/><text x="125" y="254" text-anchor="middle" font-weight="600">Queue summary (P3)</text><text x="125" y="272" text-anchor="middle" font-size="11" fill="#78716C">decisionOptions, reviewCount</text>
+<rect x="470" y="30" width="180" height="40" rx="12" fill="#FFFFFF" stroke="#D6D3CC"/><text x="560" y="55" text-anchor="middle">Reviews (P3)</text>
+<rect x="470" y="85" width="180" height="40" rx="12" fill="#FFFFFF" stroke="#D6D3CC"/><text x="560" y="110" text-anchor="middle">Company overview (P4)</text>
+<rect x="470" y="140" width="180" height="40" rx="12" fill="#FFFFFF" stroke="#D6D3CC"/><text x="560" y="165" text-anchor="middle">Home, list, themes (P5)</text>
+<rect x="470" y="195" width="180" height="40" rx="12" fill="#FFFFFF" stroke="#D6D3CC"/><text x="560" y="220" text-anchor="middle">Run page, reader (P6)</text>
+</g>
+<line x1="220" y1="58" x2="248" y2="58" stroke="#0A2642" marker-end="url(#a)"/>
+<line x1="345" y1="86" x2="345" y2="128" stroke="#0A2642" marker-end="url(#a)"/>
+<line x1="220" y1="158" x2="248" y2="158" stroke="#0A2642" marker-end="url(#a)"/>
+<path d="M440 50 H468" stroke="#0A2642" fill="none" marker-end="url(#a)"/>
+<path d="M440 158 L455 158 L455 105 L468 105" stroke="#0A2642" fill="none" marker-end="url(#a)"/>
+<path d="M440 70 L452 70 L452 160 L468 160" stroke="#0A2642" fill="none" marker-end="url(#a)"/>
+<path d="M440 80 L448 80 L448 215 L468 215" stroke="#0A2642" fill="none" marker-end="url(#a)"/>
+<path d="M220 258 L460 258 L460 50 L468 50" stroke="#0A2642" fill="none" stroke-dasharray="4 3" marker-end="url(#a)"/>
+<text x="30" y="320" font-size="11" fill="#78716C">Unchanged: pipeline, review route rules, artifacts as source of truth, schema (no migration).</text>
+</svg>
