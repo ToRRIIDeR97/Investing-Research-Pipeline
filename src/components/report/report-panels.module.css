@@ -41,11 +41,11 @@
 .latest { display:inline-block;min-width:76px;text-align:right;padding:2px 0;font-weight:600;color:var(--ink); }
 .latest small { display:block;font-size:10px;font-weight:500;opacity:.8; }
 .latest[data-status=healthy] { color:var(--ink); }
-.latest[data-status=caution] { color:var(--caution); }
+.latest[data-status=caution] { color:var(--caution-ink); }
 .latest[data-status=danger] { color:var(--critical); }
 .status { display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:500;color:var(--ink-3); }
 .status[data-status=healthy] { color:var(--positive); }
-.status[data-status=caution] { color:var(--caution); }
+.status[data-status=caution] { color:var(--caution-ink); }
 .status[data-status=danger] { color:var(--critical); }
 .detailRow td { padding:2px 20px 16px 38px;background:var(--tile);border-top:1px solid var(--hover);font-size:13px;color:var(--ink-2);white-space:normal; }
 .detailRow p { margin:8px 0 4px;max-width:760px; }
@@ -60,13 +60,13 @@
 .heroLine b { font-weight:600; }
 .down { color:var(--critical); }
 .up { color:var(--positive); }
-.pending { color:var(--caution); }
-.valuation .pendingLink { border:0;background:transparent;padding:0;color:var(--caution);text-decoration:underline;text-decoration-color:rgba(134,93,10,.4);text-underline-offset:3px; }
+.pending { color:var(--caution-ink); }
+.valuation .pendingLink { border:0;background:transparent;padding:0;color:var(--caution-ink);text-decoration:underline;text-decoration-color:rgba(134,93,10,.4);text-underline-offset:3px; }
 .valuation .pendingLink:hover { text-decoration-color:currentColor; }
-.heroNote { margin:14px 0 0;max-width:620px;font-size:14px;color:var(--caution);background:var(--caution-bg);border-radius: var(--radius-control);padding:8px 12px; }
+.heroNote { margin:14px 0 0;max-width:620px;font-size:14px;color:var(--caution-ink);background:var(--caution-bg);border-radius: var(--radius-control);padding:8px 12px; }
 .cases { display:flex;flex-wrap:wrap;gap:12px 40px;margin:14px 0 0;padding:0;list-style:none; }
 .caseToday { font-size:13px;color:var(--ink-3);margin-top:2px; }
-.caseOff { font-size:13px;color:var(--caution); }
+.caseOff { font-size:13px;color:var(--caution-ink); }
 .implies { margin:0 0 8px;max-width:680px; }
 .implies:last-child { margin-bottom:0; }
 
@@ -104,7 +104,7 @@
 .valuation .steps { list-style:decimal;margin:16px 0 0;padding-left:18px;display:flex;flex-direction:column;gap:4px; }
 .valuation :is(.steps,.issues) li { margin:0; }
 .steps b { color:var(--ink);font-weight:600; }
-.note { margin:12px 0 0;font-size:13px;color:var(--caution);background:var(--caution-bg);border-radius: var(--radius-control);padding:8px 12px; }
+.note { margin:12px 0 0;font-size:13px;color:var(--caution-ink);background:var(--caution-bg);border-radius: var(--radius-control);padding:8px 12px; }
 .valuation .issues { list-style:disc;margin:0;padding:0 20px 20px 62px;color:var(--ink-2);font-size:14px;display:flex;flex-direction:column;gap:6px; }
 .notes h4 { font-size:13px;font-weight:600;color:var(--ink);margin:18px 0 6px; }
 .notes h4:first-child { margin-top:0; }

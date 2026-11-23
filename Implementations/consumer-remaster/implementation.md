@@ -59,7 +59,7 @@ Each criterion names its phase. Tests live in `acceptance/` (visible to the impl
 
 ### P1 Foundation
 
-- **AC-1 Tokens.** `globals.css` defines exactly: `--page: #F8F8F4`, `--tile: #FFFFFF`, `--soft: #F5F4EF`, `--hover: #F3F2EC`, `--line: #E7E5DF`, `--line-soft: #EEEDE7`, `--line-strong: #D6D3CC`, `--ink: #0D1B2A`, `--ink-2: #44403C`, `--ink-3: #78716C`, `--ink-4: #A8A29E`, `--navy: #0A2642`, `--navy-hover: #071E33`, `--navy-soft: #EEF1F5`, `--navy-2: #B4C0CC`, `--navy-3: #3D5A78`, `--sage: #75937D`, `--positive: #2D7D46`, `--critical: #C9302C`, `--caution: #B8860B`; the status background tokens `--positive-bg`, `--critical-bg`, `--caution-bg` all equal `#F5F4EF` (neutral: colour only on text and dots); `--radius-card: 24px`, `--radius-pill: 999px`. `palette.ts` `C` mirrors them: `ink`, `ink2`, `ink3`, `ink4`, `line`, `soft`, `tile`, `navy`, `navy2`, `navy3`, `positive`, `critical`, `caution` equal the token values. Raw hex appears only in `globals.css`, `palette.ts` and `brand/logo.tsx`.
+- **AC-1 Tokens.** `globals.css` defines exactly: `--page: #F8F8F4`, `--tile: #FFFFFF`, `--soft: #F5F4EF`, `--hover: #F3F2EC`, `--line: #E7E5DF`, `--line-soft: #EEEDE7`, `--line-strong: #D6D3CC`, `--ink: #0D1B2A`, `--ink-2: #44403C`, `--ink-3: #78716C`, `--ink-4: #A8A29E`, `--navy: #0A2642`, `--navy-hover: #071E33`, `--navy-soft: #EEF1F5`, `--navy-2: #B4C0CC`, `--navy-3: #3D5A78`, `--sage: #75937D`, `--positive: #2D7D46`, `--critical: #C9302C`, `--caution: #B8860B` (dots, bars and rules only), `--caution-ink: #7A5300` (caution text: `#B8860B` is about 3.3:1 on white, below AA for small text; no CSS sets `color: var(--caution)`); the status background tokens `--positive-bg`, `--critical-bg`, `--caution-bg` all equal `#F5F4EF` (neutral: colour only on text and dots); `--radius-card: 24px`, `--radius-pill: 999px`. `palette.ts` `C` mirrors them: `ink`, `ink2`, `ink3`, `ink4`, `line`, `soft`, `tile`, `navy`, `navy2`, `navy3`, `positive`, `critical`, `caution` equal the token values. Raw hex appears only in `globals.css`, `palette.ts` and `brand/logo.tsx`.
 - **AC-2 Type.** `globals.css` loads Plus Jakarta Sans and Inter; `--font-sans` starts with `"Inter"`, `--font-display` starts with `"Plus Jakarta Sans"`, `--font-mono` starts with `"Inter"`; base `h1, h2, h3` use `var(--font-display)`. No file under `src/app` or `src/components` mentions `JetBrains Mono`, `DM Serif` or `Georgia`.
 - **AC-3 Labels.** No CSS or TSX under `src/app` or `src/components` sets `text-transform: uppercase` (or `textTransform: "uppercase"`, or Tailwind `uppercase`). The page background is the cream with the diamond grid (a `linear-gradient(45deg` and `linear-gradient(-45deg` on `body` in `globals.css`).
 - **AC-4 Shell.** The shell keeps `nav[aria-label="Main"]`, `aria-current` on the current link, the asset search combobox and the Start research link; nav links, search box and Start research use `var(--radius-pill)`; the logo mark uses navy `#0A2642` and sage `#75937D`.
@@ -121,7 +121,7 @@ Each criterion names its phase. Tests live in `acceptance/` (visible to the impl
 
 | ID | Outcome | ACs | Edit scope | Depends on |
 | --- | --- | --- | --- | --- |
-| P1 | Every page renders in the new palette, type and shell | AC-1–5, 18 | `src/app/globals.css`, `src/components/ui/palette.ts`, `src/components/ui/primitives.tsx` (+ `.module.css`), `src/components/app-shell.*`, `src/components/brand/logo.tsx`, CSS/TSX touched only to remove uppercase or mono | — |
+| P1 | Every page renders in the new palette, type and shell | AC-1–5, 18 | `src/app/globals.css`, `src/components/ui/palette.ts`, `src/components/ui/primitives.tsx` (+ `.module.css`), `src/components/app-shell.*`, `src/components/brand/logo.tsx`, `src/components/research-ui.module.css` (shared tiles, buttons, chips: added after the P1 review), CSS/TSX touched only to remove uppercase or mono | — |
 | P2 | Interactive chart kit and price API exist and are tested | AC-6–9, 18 | `src/lib/ui/chart-math.ts`, `src/lib/market-data/price-series.ts`, `src/app/api/assets/[id]/prices/route.ts`, `src/components/interactive/*`, `docs/system.md`, `docs/architecture.md` | P1 |
 | P3 | Reviews decision page in the remaster | AC-10–13, 18 | WIP files (copy in), `src/app/review/*`, `src/lib/review/*`, `src/components/review-findings.tsx`, `src/app/api/review/queue/route.ts`, nav badge in `app-shell.tsx`, Home and `/assets` queue counts, `docs/system.md` | P2 |
 | P4 | Company overview in the remaster with real prices and runs | AC-14–15, 18 | `src/lib/research/run-bars.ts`, `src/app/assets/[id]/view/page.tsx` (overview tab), `src/components/company/*` | P2 |
@@ -148,9 +148,14 @@ npx tsx --test Implementations/consumer-remaster/verification/v*.test.ts*
 npm run lint && npx tsc --noEmit && npm run test:unit && npm run build
 ```
 
+Each phase commits only its own acceptance file (plus `support.ts`): `tsconfig` includes `**/*.ts`, so a test that imports a module from a later phase would break `tsc` and the build. Phase N copies in `pN-*` from the reviewer-held package. Verification files are never committed.
+
 Runtime: Node with `tsx`; React server rendering (`react-dom/server`) for component tests; no database (API tests set an unreachable `DATABASE_URL` and only exercise validation). Manual: screenshots of each phase's pages at 1440px and 375px against the baseline mockup.
 
-Baseline (base SHA, before any phase): recorded below after the first run.
+Baseline (base SHA `94dcb55` plus the uncommitted Reviews WIP, 23 Nov 2026):
+
+- Acceptance: 1 pass, 40 fail. The pass is AC-1's raw-hex rule (already true). Every failure is the intended assertion: old token values, JetBrains Mono present, uppercase labels present, or a module that doesn't exist yet (`primitives`, `chart-math`, `price-series`, `prices/route`, `interactive`, `review-decision`, `run-bars`, `reviewCount`, `decisionOptions`).
+- Verification: 3 pass (series start navy, reduced motion kept, logo mark exported), 19 fail for the same reasons.
 
 ## Completion evidence
 

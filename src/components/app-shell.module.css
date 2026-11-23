@@ -13,14 +13,14 @@
 .search { position: relative; display: flex; align-items: center; color: var(--ink-4); }
 .search > svg { position: absolute; left: 14px; pointer-events: none; }
 .search input { height: 38px; width: 240px; border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--tile); padding: 0 14px 0 34px; font-size: 13px; color: var(--ink); }
-.search input:focus { border-color: var(--ink-4); outline: none; }
+.search input:focus-visible { border-color: var(--navy); outline: 2px solid var(--navy); outline-offset: 2px; }
 .results { position: absolute; top: 46px; right: 0; width: 340px; max-height: 60vh; overflow: auto; background: var(--tile); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow-pop); padding: 6px; }
 .results button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; text-align: left; font-size: 13px; color: var(--ink); }
 .results button[aria-selected="true"] { background: var(--hover); }
 .resultName { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .results p { padding: 10px; color: var(--ink-2); }
 .results p button { display: inline; width: auto; padding: 0; text-decoration: underline; }
-.ticker { color: var(--ink-3); font-size: 11px; font-weight: 500; }
+.ticker { color: var(--ink-2); font-size: 11px; font-weight: 500; }
 .start { display: inline-flex; align-items: center; height: 40px; padding: 0 20px; border-radius: var(--radius-pill); background: var(--navy); color: var(--tile); font-size: 13.5px; font-weight: 600; white-space: nowrap; box-shadow: var(--shadow-navy); }
 .start:hover { background: var(--navy-hover); }
 @media (max-width: 760px) {

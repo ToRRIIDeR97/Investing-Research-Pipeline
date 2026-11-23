@@ -8,7 +8,7 @@
 .sub { margin-top: 3px; font-size: 12px; line-height: 1.35; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 [data-tone="good"] > .sub, .sub[data-tone="good"] { color: var(--positive); }
 [data-tone="bad"] > .sub, .sub[data-tone="bad"] { color: var(--critical); }
-[data-tone="watch"] > .sub, .sub[data-tone="watch"] { color: var(--caution); }
+[data-tone="watch"] > .sub, .sub[data-tone="watch"] { color: var(--caution-ink); }
 .stripEmpty { margin-bottom: 16px; padding: 12px 16px; border: 1px dashed var(--line-strong); border-radius: 14px; color: var(--ink-2); font-size: 13px; }
 
 .ruler { padding: 16px 18px 12px; }
@@ -37,7 +37,7 @@
 .heatRow:first-child { border-top: 0; }
 .heatCell { display: grid; place-items: center; width: 44px; height: 32px; border-radius: 8px; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .heatCell[data-level="3"] { background: var(--critical-bg); color: var(--critical); }
-.heatCell[data-level="2"] { background: var(--caution-bg); color: var(--caution); }
+.heatCell[data-level="2"] { background: var(--caution-bg); color: var(--caution-ink); }
 .heatCell[data-level="1"] { background: var(--soft); color: var(--ink-2); }
 .heatName { font-size: 13px; font-weight: 600; line-height: 1.4; color: var(--ink); }
 .heatMeta { margin-top: 2px; font-size: 12px; line-height: 1.45; color: var(--ink-2); }

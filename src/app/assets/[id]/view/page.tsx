@@ -479,7 +479,7 @@ function CanonicalReportSummary({ report, artifacts }: { report: ResearchRecord 
 }
 
 function IncompleteState({ label }: { label: string }) {
-  return <div className="rounded-md border border-dashed border-[var(--caution-line)] bg-[var(--caution-bg)] px-3 py-3 text-sm text-[var(--caution)]">{label} is incomplete: no canonical artifact was persisted.</div>;
+  return <div className="rounded-md border border-dashed border-[var(--caution-line)] bg-[var(--caution-bg)] px-3 py-3 text-sm text-[var(--caution-ink)]">{label} is incomplete: no canonical artifact was persisted.</div>;
 }
 
 function groupPriceTargets(rows: ResearchRecord[]) {

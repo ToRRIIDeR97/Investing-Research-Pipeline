@@ -8,7 +8,7 @@ const TOKENS: Record<string, string> = {
   "--page": "#F8F8F4", "--tile": "#FFFFFF", "--soft": "#F5F4EF", "--hover": "#F3F2EC", "--line": "#E7E5DF", "--line-soft": "#EEEDE7",
   "--line-strong": "#D6D3CC", "--ink": "#0D1B2A", "--ink-2": "#44403C", "--ink-3": "#78716C", "--ink-4": "#A8A29E", "--navy": "#0A2642",
   "--navy-hover": "#071E33", "--navy-soft": "#EEF1F5", "--navy-2": "#B4C0CC", "--navy-3": "#3D5A78", "--sage": "#75937D",
-  "--positive": "#2D7D46", "--critical": "#C9302C", "--caution": "#B8860B",
+  "--positive": "#2D7D46", "--critical": "#C9302C", "--caution": "#B8860B", "--caution-ink": "#7A5300",
   "--positive-bg": "#F5F4EF", "--critical-bg": "#F5F4EF", "--caution-bg": "#F5F4EF",
 };
 
@@ -45,6 +45,11 @@ test("AC-2: Plus Jakarta Sans for display, Inter for text and figures", () => {
 
 test("AC-2: no monospace or serif face anywhere in the UI", () => {
   const bad = uiFiles().filter((p) => /JetBrains Mono|DM Serif|Georgia/i.test(read(p)));
+  assert.deepEqual(bad, []);
+});
+
+test("AC-1: caution text uses --caution-ink, never the amber", () => {
+  const bad = uiFiles().filter((p) => /color:\s*var\(--caution\)/.test(read(p)));
   assert.deepEqual(bad, []);
 });
 

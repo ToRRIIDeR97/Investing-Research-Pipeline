@@ -46,6 +46,8 @@
   --critical-bg: #F5F4EF;
   --critical-line: #E7E5DF;
   --caution: #B8860B;
+  /* Amber fails AA on white for small text: --caution only for dots, bars and rules, --caution-ink for caution text */
+  --caution-ink: #7A5300;
   --caution-bg: #F5F4EF;
   --caution-line: #E7E5DF;
   /* Shape */

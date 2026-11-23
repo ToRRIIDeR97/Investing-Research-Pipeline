@@ -129,7 +129,7 @@ tr:hover .rowChart:not(:disabled), .rowChart:focus-visible { opacity: 1; }
 .metricValue[data-missing] { color: var(--ink-3); }
 .metricValue[data-negative] { color: var(--fin-neg); }
 .metricValue[aria-pressed=true] { background: var(--fin-ink); color: var(--tile); }
-.metricValue sup { font-size: 9px; color: var(--caution); margin-left: 2px; }
+.metricValue sup { font-size: 9px; color: var(--caution-ink); margin-left: 2px; }
 .metricValue[aria-pressed=true] sup { color: var(--caution-line); }
 .change { padding: 0 16px !important; white-space: nowrap; font-size: 12px; color: var(--fin-muted); }
 .change[data-tone=good] { color: var(--fin-good); }
@@ -142,9 +142,9 @@ tr:hover .rowChart:not(:disabled), .rowChart:focus-visible { opacity: 1; }
 .detailValue { font-size: 32px; margin: 0 0 12px; font-variant-numeric: tabular-nums; letter-spacing: -.5px; }
 .detailValue[data-missing] { color: var(--ink-3); }
 .detailMissing { font-size: 13px; color: var(--ink-2); margin: -6px 0 12px; }
-.badge.detailBadge, .detail .badge { display: block; background: var(--caution-bg); color: var(--caution); border-radius: var(--radius-control); padding: 8px 10px; font-size: 12px; margin-bottom: 12px; text-align: left; line-height: 1.5; }
+.badge.detailBadge, .detail .badge { display: block; background: var(--caution-bg); color: var(--caution-ink); border-radius: var(--radius-control); padding: 8px 10px; font-size: 12px; margin-bottom: 12px; text-align: left; line-height: 1.5; }
 .formula { background: var(--hover); border-radius: var(--radius-control); padding: 10px 12px; font-size: 13px; margin-bottom: 14px; }
-.formula span { display: block; font-size: 12px; color: var(--fin-muted); margin-bottom: 3px; }
+.formula span { display: block; font-size: 12px; color: var(--ink-2); margin-bottom: 3px; }
 .inputs { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; margin-bottom: 12px; }
 .inputs th { text-align: left; font-weight: 400; padding: 6px 0; border-top: 1px solid var(--fin-border); }
 .inputs th small { display: block; font-size: 11px; color: var(--fin-muted); }

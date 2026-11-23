@@ -1,7 +1,7 @@
 /* The research memo: one reading view of a run (Implementations/research-memo). Tokens from src/app/globals.css. */
 .layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 28px; align-items: start; }
 .toc { position: sticky; top: 76px; font-size: 13px; }
-.tocTitle { font-size: 12px; font-weight: 600; color: var(--ink-3); margin: 0 0 8px 10px; }
+.tocTitle { font-size: 12px; font-weight: 600; color: var(--ink-2); margin: 0 0 8px 10px; }
 .toc a { display: flex; gap: 8px; padding: 6px 10px; border-radius: 8px; color: var(--ink-2); }
 .toc a:hover { background: var(--hover); color: var(--ink); }
 .toc a[aria-current] { background: var(--navy-soft); color: var(--navy); font-weight: 600; }
@@ -74,7 +74,7 @@
 .op { color: var(--ink-4); }
 .tag { display: inline-block; margin-left: 4px; padding: 1px 6px; border: 1px solid; border-radius: 5px; font-size: 10.5px; font-weight: 600; vertical-align: 1px; }
 .verified { color: var(--positive); background: var(--positive-bg); border-color: var(--positive-line); }
-.unverified { color: var(--caution); background: var(--caution-bg); border-color: var(--caution-line); }
+.unverified { color: var(--caution-ink); background: var(--caution-bg); border-color: var(--caution-line); }
 
 .questions { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .questions li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; font-size: 13.5px; line-height: 1.55; }
@@ -113,7 +113,7 @@
 .sourceList button { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--tile); text-align: left; font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
 .sourceList button[aria-current] { border-color: var(--navy-2); background: var(--navy-soft); color: var(--navy); }
 
-.withheld { margin-top: 16px; padding: 14px 16px; border-radius: 12px; background: var(--caution-bg); border: 1px solid var(--caution-line); font-size: 13.5px; line-height: 1.55; color: var(--caution); }
+.withheld { margin-top: 16px; padding: 14px 16px; border-radius: 12px; background: var(--caution-bg); border: 1px solid var(--caution-line); font-size: 13.5px; line-height: 1.55; color: var(--caution-ink); }
 
 @media (max-width: 1100px) {
   .layout { grid-template-columns: minmax(0, 1fr); }
