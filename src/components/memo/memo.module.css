@@ -1,7 +1,7 @@
 /* The research memo: one reading view of a run (Implementations/research-memo). Tokens from src/app/globals.css. */
 .layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 28px; align-items: start; }
 .toc { position: sticky; top: 76px; font-size: 13px; }
-.tocTitle { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-4); margin: 0 0 8px 10px; }
+.tocTitle { font-size: 12px; font-weight: 600; color: var(--ink-3); margin: 0 0 8px 10px; }
 .toc a { display: flex; gap: 8px; padding: 6px 10px; border-radius: 8px; color: var(--ink-2); }
 .toc a:hover { background: var(--hover); color: var(--ink); }
 .toc a[aria-current] { background: var(--navy-soft); color: var(--navy); font-weight: 600; }
@@ -11,7 +11,7 @@
 
 .block { background: var(--tile); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 24px 28px; scroll-margin-top: 80px; min-width: 0; }
 .verdictBlock { border-color: var(--navy-2); }
-.eyebrow { margin: 0 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-4); }
+.eyebrow { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--ink-3); }
 .block h2 { margin: 0 0 4px; font-size: 18px; line-height: 1.3; font-weight: 650; color: var(--ink); }
 .lede { margin: 0 0 16px; font-size: 13.5px; color: var(--ink-2); line-height: 1.55; }
 .headRow { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }

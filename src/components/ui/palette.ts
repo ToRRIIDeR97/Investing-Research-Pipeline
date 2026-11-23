@@ -1,14 +1,15 @@
-// Chart and SVG colours, the "Slate and navy" palette as values (SVG attributes and chart libraries can't read CSS
-// variables reliably). Keep in step with the tokens in src/app/globals.css. Navy is the only accent; green, red and
-// amber mean good, bad and caution, nothing else.
+// Chart and SVG colours, the "consumer remaster" palette as values (SVG attributes and chart libraries can't read CSS
+// variables reliably). Keep in step with the tokens in src/app/globals.css. Navy is the only accent over warm greys;
+// green, red and amber mean good, bad and caution, nothing else, and only on small numbers and dots (their
+// backgrounds are the neutral soft grey).
 export const C = {
-  ink: "#111827", ink2: "#4B5563", ink3: "#6B7280", ink4: "#9CA3AF",
-  line: "#E2E5EA", lineSoft: "#EEF0F3", lineStrong: "#D1D5DB", soft: "#F1F3F6", hover: "#F7F8FA", tile: "#FFFFFF",
-  navy: "#1E3A5F", navy2: "#B9C7D9", navy3: "#6B8CB5", navySoft: "#EDF0F4",
-  positive: "#166534", positiveMid: "#3E8E5A", positiveBg: "#E6F4EA",
-  critical: "#B42318", criticalMid: "#D0533F", criticalBg: "#FDECEC",
-  caution: "#7A5300", cautionMid: "#B7791F", cautionBg: "#FFF4D6",
+  ink: "#0D1B2A", ink2: "#44403C", ink3: "#78716C", ink4: "#A8A29E",
+  line: "#E7E5DF", lineSoft: "#EEEDE7", lineStrong: "#D6D3CC", soft: "#F5F4EF", hover: "#F3F2EC", tile: "#FFFFFF",
+  navy: "#0A2642", navy2: "#B4C0CC", navy3: "#3D5A78", navySoft: "#EEF1F5", sage: "#75937D",
+  positive: "#2D7D46", positiveMid: "#5E9C70", positiveBg: "#F5F4EF",
+  critical: "#C9302C", criticalMid: "#D9645F", criticalBg: "#F5F4EF",
+  caution: "#B8860B", cautionMid: "#CDA349", cautionBg: "#F5F4EF",
 } as const;
 
-/** Series colours for multi-line charts: navy first, then lighter navy and slate steps. */
+/** Series colours for multi-line charts: navy first, then lighter navy and warm grey steps. Never a status colour. */
 export const SERIES = [C.navy, C.navy3, C.ink3, C.navy2, C.ink4] as const;

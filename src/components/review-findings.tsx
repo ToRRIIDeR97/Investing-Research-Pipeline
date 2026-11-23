@@ -30,7 +30,7 @@ export function ReviewFindings({ review }: { review: Row | null }) {
       {checks.map(c => <tr key={c.id}><td>{c.label ?? c.id}{c.critical ? " (decision-critical)" : ""}</td><td>{label(c.status)}{c.code_note ? ` (code: ${c.code_note})` : ""}</td><td>{c.section_id || "-"}</td><td>{c.why}</td></tr>)}
     </tbody></table></div></details>}
     {[...bySeverity, ...(other.length ? [["other", other] as const] : [])].map(([severity, list]) =>
-      <details key={severity} className={ui.fold} open={severity === "critical" || severity === "high"}><summary><span className="first-letter:uppercase">{label(severity)} findings <span className={ui.muted}>{list.length}</span></span></summary>
+      <details key={severity} className={ui.fold} open={severity === "critical" || severity === "high"}><summary><span className="first-letter:capitalize">{label(severity)} findings <span className={ui.muted}>{list.length}</span></span></summary>
         <div className={ui.table}><table><thead><tr><th>Section</th><th>Category</th><th>Issue</th><th>Repair</th></tr></thead><tbody>
           {list.map((f, i) => <tr key={i}><td>{f.section_id || "-"}</td><td>{label(f.category)}</td><td>{text(f)}</td><td>{String(f.repair ?? "")}</td></tr>)}
         </tbody></table></div></details>)}

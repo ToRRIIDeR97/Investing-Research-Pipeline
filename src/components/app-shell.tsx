@@ -10,7 +10,7 @@ import styles from "./app-shell.module.css";
 
 interface Asset { id: string; canonical_name: string; slug: string; }
 
-/** Pragma Research chrome: wordmark, the main links as soft pills (current one navy), asset search with logos, Start research. */
+/** Pragma Research chrome: wordmark, the main links as one pill group (current one a white pill), a pill asset search with logos, a navy pill Start research. */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();

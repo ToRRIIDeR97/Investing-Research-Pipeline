@@ -138,13 +138,13 @@ tr:hover .rowChart:not(:disabled), .rowChart:focus-visible { opacity: 1; }
 @media (min-width: 1100px) and (min-height: 900px) { .detail { position: sticky; top: 340px; } }
 .detailMeta { margin: 0; font-size: 12px; color: var(--fin-muted); }
 .detail h2 { font-family: var(--fin-heading); font-weight: 400; font-size: 24px; line-height: 1.25; margin: 2px 0 6px; }
-.detail h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--fin-muted); margin: 0 0 4px; font-weight: 500; }
+.detail h3 { font-size: 12px; color: var(--fin-muted); margin: 0 0 4px; font-weight: 500; }
 .detailValue { font-size: 32px; margin: 0 0 12px; font-variant-numeric: tabular-nums; letter-spacing: -.5px; }
 .detailValue[data-missing] { color: var(--ink-3); }
 .detailMissing { font-size: 13px; color: var(--ink-2); margin: -6px 0 12px; }
 .badge.detailBadge, .detail .badge { display: block; background: var(--caution-bg); color: var(--caution); border-radius: var(--radius-control); padding: 8px 10px; font-size: 12px; margin-bottom: 12px; text-align: left; line-height: 1.5; }
 .formula { background: var(--hover); border-radius: var(--radius-control); padding: 10px 12px; font-size: 13px; margin-bottom: 14px; }
-.formula span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--fin-muted); margin-bottom: 3px; }
+.formula span { display: block; font-size: 12px; color: var(--fin-muted); margin-bottom: 3px; }
 .inputs { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; margin-bottom: 12px; }
 .inputs th { text-align: left; font-weight: 400; padding: 6px 0; border-top: 1px solid var(--fin-border); }
 .inputs th small { display: block; font-size: 11px; color: var(--fin-muted); }

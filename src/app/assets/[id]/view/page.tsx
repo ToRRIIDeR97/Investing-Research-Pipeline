@@ -326,7 +326,7 @@ function ViewResearch() {
       <section className={`${ui.tile} ${ui.s8}`}>
         <div className={ui.tileHead}><h2>The thesis</h2><button className={ui.textLink} onClick={() => openSection("thesis")}>Full report</button></div>
         <p className={styles.statement}>{safeText(thesis.thesis_statement ?? thesis.thesis ?? thesis.investment_thesis, "The research summary is not available yet.")}</p>
-        {conditions.length > 0 && <><h3 className="px-[18px] pt-3 text-[11px] font-semibold uppercase tracking-[.04em] text-[var(--ink-3)]">Must be true</h3><ThesisPillars items={conditions.slice(0, 6)} /></>}
+        {conditions.length > 0 && <><h3 className="px-[18px] pt-3 text-[12px] font-semibold text-[var(--ink-3)]">Must be true</h3><ThesisPillars items={conditions.slice(0, 6)} /></>}
         {(conditions.length > 6 || typeof thesis.causal_chain === "string" || typeof thesis.market_mispricing === "string") && <details className={`${styles.more} px-[18px] pb-4`}>
           <summary>Read more</summary>
           {conditions.length > 6 && <ul className="list-disc pl-5">{conditions.slice(6).map((condition) => <li key={condition}>{condition}</li>)}</ul>}

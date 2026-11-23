@@ -3,7 +3,7 @@
 .num { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .row > label { flex: 1 1 90px; }
-.label { display: block; color: var(--ink-2); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+.label { display: block; color: var(--ink-2); font-size: 12px; font-weight: 600; margin-bottom: 6px; }
 .problem { margin: 0; padding: 10px 14px; color: var(--critical); font-size: 13px; border-bottom: 1px solid var(--line-soft); }
 .tag { margin-left: 8px; border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; font-size: 11px; font-weight: 500; color: var(--ink-2); }
 .off { color: var(--critical) !important; }

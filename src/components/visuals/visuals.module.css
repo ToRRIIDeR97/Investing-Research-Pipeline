@@ -3,7 +3,7 @@
 .strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(138px, 1fr)); gap: 10px; margin-bottom: 16px; }
 .tileNum { min-width: 0; padding: 12px 14px; background: var(--tile); border: 1px solid var(--line); border-radius: 14px; }
 .tileNum[data-emphasis="true"] { border-color: var(--navy-2); background: var(--navy-soft); }
-.label { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.label { font-size: 12px; font-weight: 600; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .value { margin-top: 4px; font-size: 22px; font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
 .sub { margin-top: 3px; font-size: 12px; line-height: 1.35; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 [data-tone="good"] > .sub, .sub[data-tone="good"] { color: var(--positive); }

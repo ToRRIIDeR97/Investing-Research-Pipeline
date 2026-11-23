@@ -1,0 +1,22 @@
+/* Shared consumer-remaster primitives: card, status tag, segmented toggle, big number. Tokens from globals.css only. */
+.card { background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); border-radius: var(--radius-card); box-shadow: var(--shadow-card); padding: 22px 24px; min-width: 0; }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.head h2 { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
+.action { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-3); }
+
+.tag { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 11px; border-radius: var(--radius-pill); background: var(--soft); color: var(--ink-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-4); flex-shrink: 0; }
+.tag[data-tone="waiting"] .dot { background: var(--caution); }
+.tag[data-tone="good"] .dot { background: var(--positive); }
+.tag[data-tone="bad"] .dot { background: var(--critical); }
+
+.segmented { display: inline-flex; gap: 2px; padding: 4px; border-radius: var(--radius-pill); background: var(--hover); }
+.segmented button { height: 30px; padding: 0 14px; border-radius: var(--radius-pill); font-size: 12.5px; font-weight: 600; color: var(--ink-3); background: transparent; }
+.segmented button:hover { color: var(--ink); }
+.segmented button[aria-pressed="true"] { background: var(--tile); color: var(--navy); box-shadow: 0 1px 3px rgb(0 0 0 / 10%); }
+@media (prefers-reduced-motion: no-preference) { .segmented button { transition: background-color 150ms ease-out, color 150ms ease-out; } }
+
+.big { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.bigLabel { font-size: 13px; font-weight: 600; color: var(--ink); }
+.bigValue { font-family: var(--font-display); font-size: 44px; font-weight: 700; line-height: 1; letter-spacing: -0.03em; color: var(--ink); }
+@media (max-width: 600px) { .bigValue { font-size: 34px; } }
