@@ -321,7 +321,7 @@ function ViewResearch() {
       </section>
       <Leadership subject={{ asset_id: assetId }} className={ui.s5} />
     </div> : <CompanyOverview key={data.activeRun.id} assetId={assetId} snapshot={snapshot} memo={(data.report?.memo ?? null) as ResearchMemo | null}
-      runs={data.runs.map((r) => ({ id: String(r.id), created_at: r.created_at, status: String(r.status), actual_cost_usd: r.actual_cost_usd, budget_limit_usd: r.budget_limit_usd }))}
+      runs={data.runs.map((r) => ({ id: String(r.id), created_at: r.created_at, status: String(r.status), actual_cost_usd: r.actual_cost_usd, budget_limit_usd: r.budget_limit_usd, waiting_stage_key: r.waiting_stage_key ?? null }))}
       fallbackStatement={typeof statement === "string" && statement.trim() ? statement : null} risks={heatRisks}
       missing={data.report?.incomplete ? (data.report.missing_sections ?? []).map((item: ResearchRecord) => String(item.label)) : null}
       monitorNote={monitor ? monitorLabel(monitor) : null} onOpenReport={() => openSection("thesis")} />);

@@ -22,6 +22,17 @@ test("AC-14: SoFi runs map to labelled, costed bars", async () => {
   assert.equal(Number(bars.total.toFixed(2)), 27.01);
 });
 
+test("AC-14: a run waiting for plan approval says so and is not the decision", async () => {
+  const { runBars } = await import("../../../src/lib/research/run-bars");
+  const bars = runBars([
+    { ...run("a", "2026-11-01T10:00:00Z", "needs_more_work", "4.00"), waiting_stage_key: null },
+    { ...run("b", "2026-11-20T10:00:00Z", "waiting_for_human", "0.21"), waiting_stage_key: "research_plan" },
+  ]);
+  assert.deepEqual(bars.runs.map((b) => b.outcome), ["Needs your decision", "Needs plan approval"]);
+  assert.equal(bars.runs[0].current, true, "the older final-report run is still the decision to make");
+  assert.ok(!bars.runs[1].current);
+});
+
 test("AC-14: no runs, no bars", async () => {
   const { runBars } = await import("../../../src/lib/research/run-bars");
   const bars = runBars([]);

@@ -4,11 +4,15 @@
  * browser label a run the same way.
  */
 
-export interface RunRow { id: string; created_at: string | Date; status: string; actual_cost_usd?: unknown; budget_limit_usd?: unknown }
+export interface RunRow {
+  id: string; created_at: string | Date; status: string; actual_cost_usd?: unknown; budget_limit_usd?: unknown;
+  /** The stage the run waits at for a person (GET /api/assets/[id]/research-runs), e.g. "research_plan" or "human_review". */
+  waiting_stage_key?: string | null;
+}
 export interface RunBarItem { id: string; label: string; outcome: string; cost: number; current: boolean }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-/** Statuses that wait on a person (the run's own status, or a requested revision that is waiting on the decision). */
+/** Statuses that wait on a person; unless the run waits at the plan gate, that person owes the final decision. */
 const WAITING = new Set(["needs_more_work", "waiting_for_human"]);
 const RESEARCHING = new Set(["running", "queued", "pending", "planning"]);
 
@@ -23,7 +27,12 @@ export function runLabel(created: Date, sameDay: boolean): string {
   return sameDay ? `${base} ${pad(created.getUTCHours())}:${pad(created.getUTCMinutes())}` : base;
 }
 
-function outcome(status: string, isCurrent: boolean): string {
+/** A run waiting at the plan gate is not a final decision: it never becomes current and never supersedes one. */
+const atPlanGate = (r: RunRow) => r.waiting_stage_key === "research_plan";
+const awaitsDecision = (r: RunRow) => WAITING.has(r.status) && !atPlanGate(r);
+
+function outcome(status: string, isCurrent: boolean, planGate: boolean): string {
+  if (planGate) return "Needs plan approval";
   if (status === "completed" || status === "approved") return "Completed";
   if (status === "failed" || status === "cancelled") return "Stopped";
   if (WAITING.has(status)) return isCurrent ? "Needs your decision" : "Superseded";
@@ -37,11 +46,11 @@ export function runBars(rows: readonly RunRow[] | null | undefined): { runs: Run
   const sorted = [...(rows ?? [])].sort((a, b) => time(a.created_at) - time(b.created_at) || String(a.id).localeCompare(String(b.id)));
   const perDay = new Map<string, number>();
   for (const r of sorted) { const k = dayKey(new Date(time(r.created_at))); perDay.set(k, (perDay.get(k) ?? 0) + 1); }
-  const newestWaiting = [...sorted].reverse().find((r) => WAITING.has(r.status))?.id ?? null;
+  const newestWaiting = [...sorted].reverse().find(awaitsDecision)?.id ?? null;
   const runs = sorted.map((r) => {
     const created = new Date(time(r.created_at));
     const current = r.id === newestWaiting;
-    return { id: String(r.id), label: runLabel(created, (perDay.get(dayKey(created)) ?? 0) > 1), outcome: outcome(String(r.status ?? ""), current), cost: money(r.actual_cost_usd), current };
+    return { id: String(r.id), label: runLabel(created, (perDay.get(dayKey(created)) ?? 0) > 1), outcome: outcome(String(r.status ?? ""), current, atPlanGate(r)), cost: money(r.actual_cost_usd), current };
   });
   return { runs, total: runs.reduce((sum, r) => sum + r.cost, 0) };
 }

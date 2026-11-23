@@ -2,10 +2,12 @@ import { NextRequest } from "next/server";
 import { db } from "@/db";
 import { assets } from "@/db/schema/core";
 import { asset_profile_assignments, research_profiles } from "@/db/schema/profiles";
-import { research_runs } from "@/db/schema/workflow";
+import { research_runs, research_stages } from "@/db/schema/workflow";
 import { handleApiError, successResponse, createdResponse, ApiError } from "@/lib/api/errors";
 import { createResearchRunSchema } from "@/lib/api/validation";
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+
+const HUMAN_GATES = new Set(["research_plan", "human_review"]);
 import { createResearchRunWithStages } from "@/lib/research/run-service";
 import { CURRENT_PIPELINE_VERSION } from "@/lib/research/version";
 import { PriorRunError } from "@/lib/research/lineage/runs";
@@ -23,7 +25,18 @@ export async function GET(
       .where(eq(research_runs.asset_id, assetId))
       .orderBy(asc(research_runs.created_at));
 
-    return successResponse(runs);
+    // Which gate each run waits at (read only): the stage waiting for a human, preferring the two human gates.
+    const waiting = runs.length ? await db
+      .select({ run_id: research_stages.research_run_id, stage_key: research_stages.stage_key })
+      .from(research_stages)
+      .where(and(inArray(research_stages.research_run_id, runs.map((run) => run.id)), eq(research_stages.status, "waiting_for_human"))) : [];
+    const gateOf = new Map<string, string>();
+    for (const row of waiting) {
+      const current = gateOf.get(row.run_id);
+      if (!current || (!HUMAN_GATES.has(current) && HUMAN_GATES.has(row.stage_key))) gateOf.set(row.run_id, row.stage_key);
+    }
+
+    return successResponse(runs.map((run) => ({ ...run, waiting_stage_key: gateOf.get(run.id) ?? null })));
   } catch (error) {
     return handleApiError(error);
   }

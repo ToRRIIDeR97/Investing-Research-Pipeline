@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import styles from "./page.module.css";
-import { Card } from "@/components/ui/primitives";
+import { Card, Segmented } from "@/components/ui/primitives";
 import { BlendSlider, PriceChart, RunsBars, ScenarioPicker, ValueMeter, type CaseKey } from "@/components/interactive";
 import { KpiGauges, RiskHeat } from "@/components/visuals/valuation-visuals";
 import { Leadership } from "@/components/company/company";
@@ -36,6 +36,7 @@ export function CompanyOverview({ assetId, snapshot, memo, runs, fallbackStateme
   const [range, setRange] = useState<Range>("6M");
   const [prices, setPrices] = useState<Prices>({ state: "loading" });
   const [selected, setSelected] = useState<CaseKey>("base");
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,7 +45,7 @@ export function CompanyOverview({ assetId, snapshot, memo, runs, fallbackStateme
       .then((data) => { if (!cancelled) setPrices({ state: "ready", currency: String(data.currency ?? "USD"), points: Array.isArray(data.points) ? data.points : [] }); })
       .catch(() => { if (!cancelled) setPrices({ state: "error" }); });
     return () => { cancelled = true; };
-  }, [assetId, range]);
+  }, [assetId, range, attempt]);
 
   const bars = useMemo(() => runBars(runs), [runs]);
   const newest = [...runs].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
@@ -61,9 +62,12 @@ export function CompanyOverview({ assetId, snapshot, memo, runs, fallbackStateme
     <div className={styles.overviewRow}>
       <Card className={styles.priceCard}>
         {prices.state === "loading" ? <><h2 className={styles.cardTitle}>Price</h2><p className={styles.quiet} role="status">Loading prices…</p></>
-          : prices.state === "error" ? <><h2 className={styles.cardTitle}>Price</h2><p className={styles.quiet} role="alert">Prices couldn&apos;t be loaded.</p></>
-          : <PriceChart points={prices.points} currency={prices.currency} ranges={RANGES} range={range} onRange={setRange}
-            valueLine={hasValue ? { label: "Base value", value: values.base as number } : null} />}
+          : prices.state === "error" ? <>
+            <div className={styles.priceHead}><h2 className={styles.cardTitle}>Price</h2><Segmented label="Price range" options={RANGES} value={range} onChange={setRange} /></div>
+            <p className={styles.quiet} role="alert">Prices couldn&apos;t be loaded. <button type="button" className={styles.link} onClick={() => setAttempt((n) => n + 1)}>Try again</button></p>
+          </>
+          : <>{prices.points.length > 0 && <h2 className="sr-only">Price</h2>}<PriceChart points={prices.points} currency={prices.currency} ranges={RANGES} range={range} onRange={setRange}
+            valueLine={hasValue ? { label: "Base value", value: values.base as number } : null} /></>}
         {prices.state === "ready" && prices.points.length > 1 && <p className={styles.footnote}>Prices from stored daily closes</p>}
       </Card>
       <Card title="What it's worth" className={styles.worthCard}>
@@ -80,10 +84,11 @@ export function CompanyOverview({ assetId, snapshot, memo, runs, fallbackStateme
     <div className={styles.overviewRow}>
       <Card className={styles.half}>
         {hasValue && values.bear != null && values.bull != null
-          ? <BlendSlider values={values} price={price} reportWeighted={snapshot?.weighted ?? null} currency={currency} />
+          ? <><h2 className="sr-only">Your blend</h2><BlendSlider values={values} price={price} reportWeighted={snapshot?.weighted ?? null} currency={currency} /></>
           : <><h2 className={styles.cardTitle}>Your blend</h2><p className={styles.quiet}>{withheld ? "Value withheld, so there is nothing to blend." : "Needs bear, base and bull values to blend."}</p></>}
       </Card>
       <Card className={styles.half}>
+        <h2 className="sr-only">Research runs</h2>
         <RunsBars runs={bars.runs} budget={Number.isFinite(budget) && budget > 0 ? budget : null} />
         {monitorNote && <p className={styles.footnote}>{monitorNote}</p>}
       </Card>

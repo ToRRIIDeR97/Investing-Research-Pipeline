@@ -16,11 +16,7 @@
 .message { min-height: 60vh; display: flex; justify-content: center; align-items: center; gap: 10px; color: var(--ink-2); }
 .message button { cursor: pointer; text-decoration: underline; }
 
-.more { margin-top: 10px; }
-.more > summary { list-style: none; width: fit-content; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--blue); }
-.more > summary::-webkit-details-marker, .question > summary::-webkit-details-marker, .moreRisks > summary::-webkit-details-marker { display: none; }
-.more[open] > summary { margin-bottom: 8px; }
-.more p { margin-top: 8px; }
+.question > summary::-webkit-details-marker, .moreRisks > summary::-webkit-details-marker { display: none; }
 
 .question { border-top: 1px solid var(--line-soft); }
 .question:first-child { border-top: 0; }
@@ -67,3 +63,5 @@
 .otherSide h3 { font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
 .otherSide p { font-size: 13.5px; line-height: 1.55; color: var(--ink-2); }
 .missing { margin-top: 14px; }
+.priceHead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.priceHead .cardTitle { margin-bottom: 0; }
