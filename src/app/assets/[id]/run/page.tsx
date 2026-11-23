@@ -9,7 +9,9 @@ import { AssetHero } from "@/components/company/company";
 import styles from "./page.module.css";
 import { STAGE_CONFIG_MAP } from "@/lib/workflow/stages";
 import { FramingEditor, type FramingEdits } from "@/components/framing-editor";
-import { pollTick, runProgressIsLive } from "@/lib/research/run-polling";
+import { pollTick, runProgressIsLive } from "@/lib/research/run-polling";
+import { Tag } from "@/components/ui/primitives";
+import { runStatusWord, statusTone } from "@/lib/research/run-status";
 
 interface Message {
   role: "user" | "assistant" | "system";
@@ -255,6 +257,12 @@ function buildTimeline(
 function stageLabel(key: string) {
   const name = STAGE_CONFIG_MAP[key]?.name ?? humanize(key);
   return name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+}
+
+/** The run's state in the one status vocabulary (run-status.ts). */
+function RunStatusTag({ status, waiting }: { status: string; waiting?: string | null }) {
+  const word = runStatusWord(status, waiting);
+  return <Tag tone={statusTone(word)}>{word}</Tag>;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -828,7 +836,7 @@ export default function RunResearchPage() {
     <Link href={`/assets/${assetId}/view${runId ? `?run=${runId}` : ""}`} className={ui.back}><ArrowLeft size={14} />Research brief</Link>
     <AssetHero assetId={assetId} name={assetName || "Research"}
       meta={[phase === "intake" ? "New research run" : progress ? `Run ${progress.runId.slice(0, 8)}` : null]}
-      status={phase !== "intake" && progress ? <StatusBadge status={progress.status} /> : undefined}
+      status={phase !== "intake" && progress ? <RunStatusTag status={progress.status} waiting={progress.stages.find((s) => s.status === "waiting_for_human")?.key} /> : undefined}
       actions={runId && progress && phase === "pipeline" ? <>
         <Link href={`/assets/${assetId}/view?run=${runId}`} className={ui.secondary}>Read research</Link>
         {!["completed", "cancelled"].includes(progress.status) && <button className={ui.secondary} onClick={handleCancelRun} disabled={isProcessing}>Cancel run</button>}
@@ -857,7 +865,7 @@ export default function RunResearchPage() {
       </section>
     </form> : phase === "plan" ? <div className={ui.grid}>
       <section className={`${ui.tile} ${ui.s8}`}>
-        <div className={ui.tileHead}><h2>Gate 1 of 2: review research plan</h2><span className={ui.status} data-status="waiting_for_human">Waiting for you</span></div>
+        <div className={ui.tileHead}><h2>Gate 1 of 2: review research plan</h2><Tag tone="waiting">Needs plan approval</Tag></div>
         {researchPlan && <div className="border-b border-[var(--line-soft)] [&>section]:m-0 [&>section]:rounded-none [&>section]:border-0"><FramingEditor key={`${researchPlan.generated_at}`} plan={researchPlan} disabled={isProcessing} onChange={setPlanEdits} /></div>}
         <ResearchPlanCard plan={researchPlan} />
       </section>
@@ -874,11 +882,11 @@ export default function RunResearchPage() {
       </section>
     </div> : progress ? <div className={ui.grid}>
       {finalReviewWaiting && <section className={`${ui.tile} ${ui.s12}`}>
-        <div className={ui.tileHead}><h2>Gate 2 of 2: human review</h2><span className={ui.status} data-status="waiting_for_human">Waiting for you</span></div>
+        <div className={ui.tileHead}><h2>Gate 2 of 2: human review</h2><Tag tone="waiting">Needs your decision</Tag></div>
         <div className={`${ui.tileBody} flex flex-wrap items-center justify-between gap-3`}><p className={ui.muted}>The report and AI review are ready. Record a verdict to export the report and schedule refreshes.</p><Link className={ui.primary} href={`/review?run=${runId}`}>Review research</Link></div>
       </section>}
       {progress.requestReset && <section className={`${ui.tile} ${ui.s12}`} aria-label="Re-run approval">
-        <div className={ui.tileHead}><h2>Approve a re-run?</h2><span className={ui.status} data-status="waiting_for_human">Waiting for you</span></div>
+        <div className={ui.tileHead}><h2>Approve a re-run?</h2><Tag tone="waiting">Needs your decision</Tag></div>
         <div className={ui.tileBody}>
           <p className={ui.muted}>A specialist asked to recompute its analysis to answer {progress.requestReset.request_ids.length === 1 ? "one report question" : `${progress.requestReset.request_ids.length} report questions`}. Re-running reopens {progress.requestReset.stages.length} stages; their earlier model calls cost {formatMoney(progress.requestReset.estimated_cost_usd)}. Skipping keeps the current analysis and lists the requests as open questions.</p>
           <ul className="mt-2">{progress.requestReset.stages.map((stage) => <li key={stage}>{stageLabel(stage)}</li>)}</ul>

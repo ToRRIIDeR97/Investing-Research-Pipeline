@@ -299,7 +299,7 @@ function ViewResearch() {
     : <section className={ui.tile}><p className={ui.empty}>Run research first. The Model tab shows a run&apos;s valuation and lets you recompute it.</p></section>);
   if (activeTab === 'kpis') return view(<>
     {snapshot && snapshot.kpis.length > 0 && <section className={`${ui.tile} mb-4`}>
-      <div className={ui.tileHead}><h2>Where each KPI sits</h2><span className={ui.muted}>Current level between its bear and bull thresholds</span></div>
+      <div className={ui.tileHead}><h2>Where each KPI sits</h2></div>
       <div className="grid gap-x-6 md:grid-cols-2"><KpiGauges kpis={snapshot.kpis.slice(0, Math.ceil(snapshot.kpis.length / 2))} /><KpiGauges kpis={snapshot.kpis.slice(Math.ceil(snapshot.kpis.length / 2))} /></div>
     </section>}
     <section className={`${ui.tile} ${styles.wide}`}><KPIDashboard key={data.activeRun?.id} artifacts={viewArtifacts} onRefresh={()=>void loadResearch()} refreshing={loading}/></section>

@@ -35,13 +35,11 @@ export function ModelView({ memo, snapshot, runId, signals, focus, proposalRef }
 
   return <div className={styles.body}>
     <section className={styles.block} aria-labelledby="model-value-title">
-      <p className={styles.eyebrow}>Valuation</p>
       <h2 id="model-value-title">{memo?.valuation?.method ?? "How the value is reached"}</h2>
       {memo ? <MemoValuation memo={memo} /> : <p className={styles.lede}>This run has no stored valuation summary yet.</p>}
     </section>
 
     {targets.length > 0 && <section className={styles.block} aria-labelledby="model-targets-title">
-      <p className={styles.eyebrow}>Price targets</p>
       <h2 id="model-targets-title">Where each case puts the price at each year end</h2>
       <p className={styles.lede}>Future prices along each case&apos;s path, not today&apos;s value. Value today is in the table above.</p>
       {snapshot && <PriceFan snapshot={snapshot} />}
@@ -56,7 +54,6 @@ export function ModelView({ memo, snapshot, runId, signals, focus, proposalRef }
     </section>}
 
     {checks.length > 0 && <section className={styles.block} aria-labelledby="model-checks-title">
-      <p className={styles.eyebrow}>Other valuation checks</p>
       <h2 id="model-checks-title">What other lenses say</h2>
       <p className={styles.lede}>Each check scores cheapness from 0 (expensive) to 1 (cheap).</p>
       <table className={styles.table}>
@@ -76,7 +73,6 @@ export function ModelView({ memo, snapshot, runId, signals, focus, proposalRef }
     </section>}
 
     <section id="model-workbench" className={styles.block} aria-labelledby="model-workbench-title" style={{ scrollMarginTop: 80 }}>
-      <p className={styles.eyebrow}>Workbench</p>
       <h2 id="model-workbench-title">Change the assumptions</h2>
       <p className={styles.lede}>Recomputes this run&apos;s stored valuation in code with your own inputs. Named scenarios are saved with the run; the report keeps its own numbers.</p>
       <ValuationWorkbench key={runId} runId={runId} proposalRef={proposalRef} />

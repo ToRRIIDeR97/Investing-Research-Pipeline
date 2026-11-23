@@ -23,7 +23,7 @@
 .miniToggle button:disabled { opacity: .4; cursor: not-allowed; }
 .primaryButton { border: 1px solid var(--navy); background: var(--navy); color: var(--tile); border-radius: var(--radius-control); padding: 6px 14px; font-size: 13px; min-height: 34px; cursor: pointer; display: inline-flex; align-items: center; text-decoration: none; white-space: nowrap; }
 .primaryButton:disabled { opacity: .45; cursor: not-allowed; }
-.ghostButton { border: 1px solid var(--fin-border); background: var(--tile); border-radius: var(--radius-control); padding: 6px 12px; font-size: 13px; min-height: 34px; cursor: pointer; }
+.ghostButton { border: 1px solid var(--fin-border); background: var(--tile); border-radius: var(--radius-pill); padding: 6px 14px; font-size: 13px; min-height: 34px; cursor: pointer; }
 .ghostButton:hover:not(:disabled) { background: var(--soft); }
 .ghostButton:disabled { color: var(--ink-4); cursor: not-allowed; }
 .iconButton { border: 0; background: transparent; width: 34px; height: 34px; border-radius: var(--radius-control); display: grid; place-items: center; color: var(--ink-2); cursor: pointer; list-style: none; }
@@ -41,7 +41,7 @@
 .windowNav select { font: inherit; font-size: 13px; background: transparent; padding: 6px; max-width: 210px; cursor: pointer; color: var(--ink-2); }
 
 /* Sticky chart panel. */
-.panel { position: sticky; top: 0; z-index: 3; background: var(--tile); border: 1px solid var(--fin-border); border-radius: 12px; padding: 14px 20px; margin-bottom: 18px; box-shadow: 0 8px 24px rgba(24,24,24,.05); }
+.panel { position: sticky; top: 0; z-index: 3; background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); border-radius: var(--radius-card); box-shadow: var(--shadow-card); padding: 14px 20px; margin-bottom: 18px; box-shadow: 0 8px 24px rgba(24,24,24,.05); }
 .panelHead { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 10px; }
 .titleInput { flex: 1 1 260px; min-width: 0; border: 1px solid transparent; border-radius: var(--radius-control); padding: 2px 8px; margin-left: -8px; font-family: var(--fin-heading); font-size: 22px; line-height: 1.3; background: transparent; color: var(--fin-ink); }
 .titleInput:hover { background: var(--hover); }
@@ -77,7 +77,7 @@
 .legend small { color: var(--ink-3); }
 
 /* Statement table with chart buttons. */
-.statementScroll { background: var(--tile); border: 1px solid var(--fin-border); border-radius: 12px; overflow-x: auto; }
+.statementScroll { background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); border-radius: var(--radius-card); box-shadow: var(--shadow-card); overflow-x: auto; }
 .statementTable { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
 .statementTable :is(th,td) { padding: 7px 12px; border-top: 1px solid var(--fin-border); text-align: right; white-space: nowrap; }
 .statementTable thead th { background: var(--fin-soft); color: var(--fin-muted); font-weight: 500; font-size: 12px; border-top: 0; }
@@ -104,11 +104,11 @@ tr:hover .rowChart:not(:disabled), .rowChart:focus-visible { opacity: 1; }
 .metricsToolbar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .metricsToolbar .panelNote { margin: 0; }
 .filters { display: inline-flex; gap: 6px; }
-.filters button { border: 1px solid var(--fin-border); background: var(--tile); color: var(--ink-2); border-radius: 20px; padding: 4px 12px; font-size: 12px; min-height: 32px; cursor: pointer; }
+.filters button { border: 1px solid var(--fin-border); background: var(--tile); color: var(--ink-2); border-radius: var(--radius-pill); padding: 4px 12px; font-size: 12px; min-height: 32px; cursor: pointer; }
 .filters button[aria-pressed=true] { border-color: var(--fin-ink); background: var(--fin-ink); color: var(--tile); }
 .metricsLayout { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
 .metricGroups { flex: 999 1 720px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-.metricGroup { background: var(--tile); border: 1px solid var(--fin-border); border-radius: 12px; overflow: hidden; }
+.metricGroup { background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); border-radius: var(--radius-card); box-shadow: var(--shadow-card); overflow: hidden; }
 .metricGroup h2 { margin: 0; font-size: inherit; }
 .metricGroup h2 button { display: flex; width: 100%; align-items: center; gap: 10px; border: 0; background: var(--tile); padding: 12px 16px; text-align: left; min-height: 48px; cursor: pointer; }
 .metricGroup h2 button:hover { background: var(--hover); }
@@ -134,7 +134,7 @@ tr:hover .rowChart:not(:disabled), .rowChart:focus-visible { opacity: 1; }
 .change { padding: 0 16px !important; white-space: nowrap; font-size: 12px; color: var(--fin-muted); }
 .change[data-tone=good] { color: var(--fin-good); }
 .change[data-tone=bad] { color: var(--fin-neg); }
-.detail { flex: 1 1 300px; max-width: 380px; min-width: 0; background: var(--tile); border: 1px solid var(--fin-border); border-radius: 12px; padding: 18px 18px 16px; }
+.detail { flex: 1 1 300px; max-width: 380px; min-width: 0; background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); border-radius: var(--radius-card); box-shadow: var(--shadow-card); padding: 18px 18px 16px; }
 @media (min-width: 1100px) and (min-height: 900px) { .detail { position: sticky; top: 340px; } }
 .detailMeta { margin: 0; font-size: 12px; color: var(--fin-muted); }
 .detail h2 { font-family: var(--fin-heading); font-weight: 400; font-size: 24px; line-height: 1.25; margin: 2px 0 6px; }

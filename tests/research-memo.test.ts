@@ -160,11 +160,12 @@ test('a run status maps to one vocabulary', () => {
   assert.equal(memoStatus({ runStatus: 'waiting_for_human' })!.label, 'Needs your decision');
   assert.equal(memoStatus({ runStatus: 'waiting_for_human', humanReviewStatus: 'waiting_for_human' })!.label, 'Needs your decision');
   assert.equal(memoStatus({ runStatus: 'waiting_for_human', humanReviewStatus: 'pending' })!.label, 'Needs plan approval');
-  assert.equal(memoStatus({ runStatus: 'needs_more_work' })!.label, 'Needs more work');
+  // One status vocabulary across the app (consumer remaster): a revision request reads Needs your decision, a failed run Stopped.
+  assert.equal(memoStatus({ runStatus: 'needs_more_work' })!.label, 'Needs your decision');
   assert.equal(memoStatus({ runStatus: 'running' })!.label, 'Researching');
   assert.equal(memoStatus({ runStatus: 'completed' })!.label, 'Decided');
   assert.equal(memoStatus({ runStatus: 'waiting_for_human', latestDecision: 'watchlist' })!.label, 'Decided');
-  assert.equal(memoStatus({ runStatus: 'failed' })!.label, 'Failed');
+  assert.equal(memoStatus({ runStatus: 'failed' })!.label, 'Stopped');
   assert.equal(memoStatus({}), null);
 });
 

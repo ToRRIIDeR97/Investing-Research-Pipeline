@@ -12,7 +12,7 @@
 .main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 
 /* Tile */
-.tile { background: var(--tile); border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
+.tile { background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); border-radius: var(--radius-card); box-shadow: var(--shadow-card); min-width: 0; }
 .tileHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; padding: 8px 14px; border-bottom: 1px solid var(--line-soft); }
 .tileHead h3 { margin: 0; font-size: 13px; font-weight: 600; line-height: 1.4; color: var(--ink); }
 .tileBody { padding: 12px 14px; }

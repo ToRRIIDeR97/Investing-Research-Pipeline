@@ -1,7 +1,7 @@
 /* Valuation visuals (design round 7: W06 visuals in Slate and navy). Navy marks value, ink marks price, and green,
    red and amber appear only when a number is good, bad or worth watching. */
 .strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(138px, 1fr)); gap: 10px; margin-bottom: 16px; }
-.tileNum { min-width: 0; padding: 12px 14px; background: var(--tile); border: 1px solid var(--line); border-radius: 14px; }
+.tileNum { min-width: 0; padding: 14px 16px; background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); border-radius: 18px; box-shadow: var(--shadow-card); }
 .tileNum[data-emphasis="true"] { border-color: var(--navy-2); background: var(--navy-soft); }
 .label { font-size: 12px; font-weight: 600; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .value { margin-top: 4px; font-size: 22px; font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; color: var(--ink); font-variant-numeric: tabular-nums; }

@@ -41,7 +41,7 @@ export function InvestingNotebook({ api, assetId, artifacts, document, runId, ru
         <KpiPanel api={api} readings={readings} observations={observations} />
         <PinPanel api={api} artifacts={artifacts} />
         <section className={ui.tile} aria-labelledby="nb-checklist">
-          <header className={ui.tileHead}><h2 id="nb-checklist">Investment checklist</h2><span className={ui.muted}>Measured by code, judged by the model</span></header>
+          <header className={ui.tileHead}><h2 id="nb-checklist">Investment checklist</h2></header>
           <div className={ui.tileBody}><ChecklistPanel assetId={assetId} runId={runId} /></div>
         </section>
       </div>
