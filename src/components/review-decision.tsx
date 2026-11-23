@@ -30,13 +30,14 @@ export function ReviewDecision({ options, onSubmit, submitting = false, disabled
   const [ratings, setRatings] = useState<Record<string, string>>({});
 
   const noReview = options.position.reasons.includes(NO_REVIEW);
-  const trackingReason = noReview ? NO_REVIEW : REVIEW_FAILED;
+  const trackingReason = options.tracking.reason ?? (noReview ? NO_REVIEW : REVIEW_FAILED);
+  const backAllowed = options.back?.allowed ?? true;
   const positionReason = options.position.reasons.length > 1 ? `${options.position.reasons[0]}, and ${options.position.reasons.length - 1} more` : options.position.reasons[0] ?? "";
   const cards: { key: ReviewChoice; title: string; note: string; icon: ReactNode; allowed: boolean }[] = [
     { key: "position", title: "Approve for a position", note: options.position.allowed ? "Ready to size a position" : positionReason, icon: <Lock size={16} />, allowed: options.position.allowed },
     { key: "tracking", title: "Approve for tracking", note: options.tracking.allowed ? "Follow it, no position yet" : trackingReason, icon: <Activity size={16} />, allowed: options.tracking.allowed },
     { key: "watch", title: "Watchlist", note: "Revisit later", icon: <Eye size={16} />, allowed: true },
-    { key: "back", title: "Send back for more work", note: "The report is redrafted", icon: <Undo2 size={16} />, allowed: true },
+    { key: "back", title: "Send back for more work", note: backAllowed ? "The report is redrafted" : options.back?.reason ?? "", icon: <Undo2 size={16} />, allowed: backAllowed },
     { key: "reject", title: "Reject", note: "Close it", icon: <X size={16} />, allowed: true },
   ];
   const approving = choice === "position" || choice === "tracking";

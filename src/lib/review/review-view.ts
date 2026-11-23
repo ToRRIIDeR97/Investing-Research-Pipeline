@@ -58,7 +58,30 @@ export function groupFindingsByChapter(review: Row | null | undefined, sections:
 }
 
 export type ReviewChoice = "position" | "tracking" | "watch" | "back" | "reject";
-export interface DecisionOptions { position: { allowed: boolean; reasons: string[] }; tracking: { allowed: boolean }; ackRequired: boolean }
+export interface DecisionOptions {
+  position: { allowed: boolean; reasons: string[] };
+  tracking: { allowed: boolean; reason?: string };
+  /** Sending back for more work; allowed unless the loaded report can't be named to the route (see withReportCheck). */
+  back?: { allowed: boolean; reason?: string };
+  ackRequired: boolean;
+}
+
+export const REPORT_UNCHECKED = "This report version hasn't passed its checks yet";
+
+/**
+ * The review route names the report by the newest validated or accepted document (getReportState). When the report
+ * the page loaded is not one of those, the route refuses approvals and sending back (STALE_REPORT) whatever the page
+ * sends, so they are blocked here with the reason. `unchecked` is false when the run needs no report.
+ */
+export function withReportCheck(options: DecisionOptions, unchecked: boolean): DecisionOptions {
+  if (!unchecked) return options;
+  return {
+    ...options,
+    position: { allowed: false, reasons: [REPORT_UNCHECKED, ...options.position.reasons.filter((r) => r !== REPORT_UNCHECKED)] },
+    tracking: { allowed: false, reason: REPORT_UNCHECKED },
+    back: { allowed: false, reason: REPORT_UNCHECKED },
+  };
+}
 
 export const NO_REVIEW = "No AI review stored for this report";
 export const REVIEW_FAILED = "The AI review didn't pass";
@@ -94,7 +117,8 @@ export function reviewBody(choice: ReviewChoice, { ack, reportHash }: { ack: boo
 }
 
 /** The review route's refusals in words. Unknown codes fall back to the server's message with identifiers as words. */
-export function refusalWords(code: unknown, message?: unknown): string {
+export function refusalWords(code: unknown, message?: unknown, context: { reportUnchecked?: boolean } = {}): string {
+  if (code === "STALE_REPORT" && context.reportUnchecked) return `${REPORT_UNCHECKED}, so it can't be approved or sent back yet. You can still put it on the watchlist or reject it.`;
   switch (code) {
     case "REPORT_REVIEW_FAILED": return "The AI review didn't pass, so this report can't be approved. Send it back for more work, put it on the watchlist or reject it.";
     case "REVIEW_BLOCKS_POSITION": return "The AI review blocks approval for a position. You can approve it for tracking or send it back for more work.";

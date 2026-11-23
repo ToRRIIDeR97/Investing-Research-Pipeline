@@ -26,7 +26,7 @@ export default function HomePage() {
     setLoading(true);
     setError("");
     try {
-      const [assetsRes, queueRes] = await Promise.all([fetch("/api/assets/overview"), fetch("/api/review/queue")]);
+      const [assetsRes, queueRes] = await Promise.all([fetch("/api/assets/overview"), fetch("/api/review/queue?summary=0")]);
       if (!assetsRes.ok || !queueRes.ok) throw new Error();
       setAssets(await assetsRes.json());
       // One decision per company: older waiting runs of a company (replaced_by) are not counted or listed.

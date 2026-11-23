@@ -27,7 +27,7 @@ export default function AssetsPage() {
     setLoading(true);
     setError("");
     try {
-      const [res, queueRes] = await Promise.all([fetch("/api/assets/overview"), fetch("/api/review/queue")]);
+      const [res, queueRes] = await Promise.all([fetch("/api/assets/overview"), fetch("/api/review/queue?summary=0")]);
       if (!res.ok) throw new Error();
       const data = await res.json();
       setAssets(Array.isArray(data) ? data : []);

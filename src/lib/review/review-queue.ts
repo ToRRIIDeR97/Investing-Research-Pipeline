@@ -68,7 +68,21 @@ export async function loadReviewSummary(sql: Sql, runId: string): Promise<Review
     valuation_complete: v.valuationComplete, withheld_reason: v.withheldReason, conclusion_status, review };
 }
 
-export async function loadReviewQueue(sql: Sql): Promise<ReviewQueueItem[]> {
+/**
+ * Group the waiting runs and, only when a loader is given, attach a summary to each company's current run. The light
+ * path (the nav badge, Home, the Research list) passes null and makes no summary query.
+ */
+export async function assembleReviewQueue(rows: ReviewQueueRow[], loadSummary: ((runId: string) => Promise<ReviewSummary | null>) | null): Promise<ReviewQueueItem[]> {
+  const grouped = groupReviewQueue(rows);
+  if (!loadSummary) return grouped.map((item) => ({ ...item, summary: null }));
+  // A summary that can't be built (unexpected artifact shapes) is left out; the row still shows.
+  const summaries = await Promise.all(grouped.map((item) => item.replaced_by ? null
+    : loadSummary(item.run_id).catch((error) => { console.error(`Review summary for run ${item.run_id} could not be built`, error); return null; })));
+  return grouped.map((item, i) => ({ ...item, summary: summaries[i] }));
+}
+
+/** The review queue; `summaries: false` runs only the waiting-runs query (for counts and plain lists). */
+export async function loadReviewQueue(sql: Sql, { summaries = true }: { summaries?: boolean } = {}): Promise<ReviewQueueItem[]> {
   const rows = await sql`
     SELECT rr.id AS run_id, rr.asset_id, rr.run_type, rr.research_question, rr.created_at, rr.completed_at,
       a.canonical_name AS asset_name, a.slug AS asset_slug, a.asset_kind,
@@ -85,13 +99,9 @@ export async function loadReviewQueue(sql: Sql): Promise<ReviewQueueItem[]> {
     ORDER BY rr.created_at DESC
     LIMIT 50
   `;
-  const grouped = groupReviewQueue(rows.map((r) => ({
+  return assembleReviewQueue(rows.map((r) => ({
     run_id: String(r.run_id), asset_id: String(r.asset_id), run_type: String(r.run_type), research_question: r.research_question ?? null,
     asset_name: String(r.asset_name), asset_slug: String(r.asset_slug), asset_kind: String(r.asset_kind), priority: r.priority ?? null,
     created_at: iso(r.created_at)!, completed_at: iso(r.completed_at),
-  })));
-  // A summary that can't be built (unexpected artifact shapes) is left out; the row still shows.
-  const summaries = await Promise.all(grouped.map((item) => item.replaced_by ? null
-    : loadReviewSummary(sql, item.run_id).catch((error) => { console.error(`Review summary for run ${item.run_id} could not be built`, error); return null; })));
-  return grouped.map((item, i) => ({ ...item, summary: summaries[i] }));
+  })), summaries ? (runId) => loadReviewSummary(sql, runId) : null);
 }

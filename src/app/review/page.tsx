@@ -16,7 +16,7 @@ import { verdictLine, type ResearchMemo } from "@/lib/research/reporting/researc
 import type { ReportDocument } from "@/lib/research/reporting/report";
 import { currentReviews, reviewCount } from "@/lib/review/queue-rules";
 import type { ReviewQueueItem, ReviewSummary } from "@/lib/review/review-queue";
-import { decisionOptions, groupFindingsByChapter, refusalWords, reviewBody, type ReviewChoice } from "@/lib/review/review-view";
+import { decisionOptions, groupFindingsByChapter, refusalWords, reviewBody, withReportCheck, type ReviewChoice } from "@/lib/review/review-view";
 import { formatGap } from "@/lib/ui/chart-math";
 
 type Row = Record<string, any>;
@@ -32,6 +32,9 @@ function reviewOutcome(review: ReviewSummary["review"] | null | undefined): [str
   if (review.trackable) return ["Passed for tracking", "waiting"];
   return ["Review didn't pass", "bad"];
 }
+
+/** The slug shown as a ticker only for equities; other kinds have no ticker to show. */
+const ticker = (item: { asset_kind: string; asset_slug: string }) => item.asset_kind === "equity" ? item.asset_slug.toUpperCase() : null;
 
 async function fetchQueue(): Promise<ReviewQueueItem[]> {
   const res = await fetch("/api/review/queue");
@@ -74,17 +77,23 @@ function Reviews() {
         return <section key={item.run_id} className={styles.queueCard} aria-label={item.asset_name}>
           <div className={styles.who}>
             <CompanyLogo subject={{ asset_id: item.asset_id }} name={item.asset_name} size={44} />
-            <div><h2>{item.asset_name}</h2><span>{item.asset_slug.toUpperCase()}{older ? ` · replaces ${older} older ${older === 1 ? "run" : "runs"}` : ""}</span></div>
+            <div><h2>{item.asset_name}</h2>{(ticker(item) || older > 0) && <span>{[ticker(item), older ? `replaces ${older} older ${older === 1 ? "run" : "runs"}` : null].filter(Boolean).join(" · ")}</span>}</div>
           </div>
           <div className={styles.stat}><strong data-tone={s?.gap == null ? undefined : s.gap < 0 ? "bad" : "good"}>{formatGap(s?.gap ?? null)}</strong><span>vs price</span></div>
           <div className={styles.outcome}><Tag tone={tone}>{outcome}</Tag></div>
-          <Link href={`/review?run=${item.run_id}`} className={ui.primary}>Open</Link>
+          <Link href={`/review?run=${item.run_id}`} className={ui.primary} aria-label={`Open ${item.asset_name} review`}>Open</Link>
         </section>;
       })}</div>}
   </div>;
 }
 
-interface LoadedReport { document: ReportDocument | null; memo: ResearchMemo | null; review: Row | null }
+interface LoadedReport {
+  document: ReportDocument | null; memo: ResearchMemo | null; review: Row | null;
+  /** The run needs a report and the loaded one is not a validated or accepted version, so the route would refuse it. */
+  unchecked: boolean;
+}
+
+const CHECKED_REPORT = new Set(["validated", "accepted"]);
 
 /** Serious findings by chapter for the donut: the biggest four, the rest folded into "N more". */
 function donutGroups(review: Row | null, sections: { id: string; title: string }[]): FindingsGroup[] {
@@ -114,7 +123,10 @@ function ReviewRun({ item, onDecided }: { item: ReviewQueueItem; onDecided: (mes
       const hash = document?.content_hash;
       const artifacts: Row[] = Array.isArray(data.artifacts) ? data.artifacts : [];
       const review = artifacts.find((a) => a.type === "report_review" && hash && a.content_json?.report_hash === hash)?.content_json ?? null;
-      setReport({ document, memo: data.memo ?? null, review });
+      // Like the route (getReportState): a run whose plan sets a report standard is decided on its newest validated or accepted report.
+      const required = artifacts.some((a) => a.type === "research_plan" && a.content_json?.report_standard);
+      const status = String(artifacts.find((a) => a.type === "report_document")?.status ?? "");
+      setReport({ document, memo: data.memo ?? null, review, unchecked: required && (!document || !CHECKED_REPORT.has(status)) });
     }).catch(() => { if (!cancelled) setLoadError("The report couldn't be loaded."); });
     return () => { cancelled = true; };
   }, [item.run_id]);
@@ -122,10 +134,10 @@ function ReviewRun({ item, onDecided }: { item: ReviewQueueItem; onDecided: (mes
   const document = report?.document ?? null;
   const gate = report?.review ? reviewGate(report.review) : null;
   // The gate is worked out from the report being decided on, the same way the review route works it out.
-  const options = decisionOptions(report ? {
+  const options = withReportCheck(decisionOptions(report ? {
     conclusion_status: document?.conclusion_status ?? null,
     review: gate ? { verdict: gate.verdict == null ? null : String(gate.verdict), open_severe: gate.open_severe, blocking: gate.blocking, trackable: gate.trackable, positionable: gate.positionable } : null,
-  } : null);
+  } : null), Boolean(report?.unchecked));
   const sections = (document?.sections ?? []).map((s: Row) => ({ id: String(s.id ?? ""), title: String(s.title ?? s.id ?? "") }));
   const memo = report?.memo ?? null;
   const v = memo?.verdict;
@@ -149,7 +161,7 @@ function ReviewRun({ item, onDecided }: { item: ReviewQueueItem; onDecided: (mes
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        setSubmitError(refusalWords(body?.code, body?.error));
+        setSubmitError(refusalWords(body?.code, body?.error, { reportUnchecked: Boolean(report?.unchecked) }));
         return;
       }
       onDecided(choice === "back" ? `${item.asset_name} is sent back for more work.` : `Decision recorded for ${item.asset_name}.`);
@@ -163,7 +175,7 @@ function ReviewRun({ item, onDecided }: { item: ReviewQueueItem; onDecided: (mes
       <div className={styles.who}>
         <CompanyLogo subject={{ asset_id: item.asset_id }} name={item.asset_name} size={56} />
         <div><h1>{item.asset_name}</h1>
-          <p className={styles.meta}><span>{item.asset_slug.toUpperCase()}</span>{item.replaced_by ? <Tag tone="neutral">Replaced by a newer run</Tag> : <Tag tone="waiting">Needs your decision</Tag>}</p></div>
+          <p className={styles.meta}>{ticker(item) && <span>{ticker(item)}</span>}{item.replaced_by ? <Tag tone="neutral">Replaced by a newer run</Tag> : <Tag tone="waiting">Needs your decision</Tag>}</p></div>
       </div>
       <Link href={`/assets/${item.asset_id}/view?run=${item.run_id}`} className={ui.secondary}>Open full report<ArrowUpRight size={14} /></Link>
     </header>

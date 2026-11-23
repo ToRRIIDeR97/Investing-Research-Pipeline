@@ -35,7 +35,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (pathname === "/login") return;
     let cancelled = false;
-    fetch("/api/review/queue").then((res) => res.ok ? res.json() : null).then((data) => { if (!cancelled && Array.isArray(data)) setPendingReviews(reviewCount(data)); }).catch(() => {});
+    fetch("/api/review/queue?summary=0").then((res) => res.ok ? res.json() : null).then((data) => { if (!cancelled && Array.isArray(data)) setPendingReviews(reviewCount(data)); }).catch(() => {});
     return () => { cancelled = true; };
   }, [pathname]);
 
