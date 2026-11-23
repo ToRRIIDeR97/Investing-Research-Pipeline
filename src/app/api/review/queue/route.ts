@@ -1,56 +1,15 @@
-import { NextRequest } from "next/server";
 import { pipelineSql } from "@/db/pipeline-sql";
 import { handleApiError, successResponse } from "@/lib/api/errors";
-import { CURRENT_PIPELINE_VERSION } from "@/lib/research/version";
+import { loadReviewQueue } from "@/lib/review/review-queue";
 
 /**
  * GET /api/review/queue
- * Returns the review queue — runs pending human review.
+ * Runs waiting for the final human review, newest first. Older waiting runs of a company carry `replaced_by`
+ * (the newer run); the newest run of each company carries `summary` (value against price and the AI review).
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const sql = pipelineSql();
-
-    const runs = await sql`
-      SELECT
-        rr.id as run_id,
-        rr.asset_id,
-        rr.run_type,
-        rr.status as run_status,
-        rr.research_question,
-        rr.completed_at,
-        a.canonical_name as asset_name,
-        a.slug as asset_slug,
-        a.asset_kind,
-        rd.id as review_id,
-        rd.status as review_status,
-        rd.conviction,
-        rd.priority,
-        rd.reviewed_at,
-        rr.pipeline_version,
-        hs.status as human_review_status
-      FROM research_runs rr
-      JOIN assets a ON rr.asset_id = a.id
-      LEFT JOIN review_decisions rd ON rd.research_run_id = rr.id
-      JOIN research_stages hs
-        ON hs.research_run_id = rr.id
-       AND hs.stage_key = 'human_review'
-       AND hs.status = 'waiting_for_human'
-      WHERE rr.pipeline_version = ${CURRENT_PIPELINE_VERSION}
-        AND rr.status = 'waiting_for_human'
-        AND NOT EXISTS (
-          SELECT 1 FROM review_decisions approved
-          WHERE approved.research_run_id = rr.id
-            AND approved.status IN ('approved_for_tracking', 'approved_for_position')
-        )
-      ORDER BY
-        CASE WHEN rd.id IS NULL THEN 0 ELSE 1 END,
-        rr.completed_at DESC NULLS LAST,
-        rr.created_at DESC
-      LIMIT 50
-    `;
-
-    return successResponse(runs);
+    return successResponse(await loadReviewQueue(pipelineSql()));
   } catch (error) {
     return handleApiError(error);
   }

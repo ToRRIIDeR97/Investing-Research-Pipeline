@@ -7,6 +7,7 @@ import ui from "@/components/research-ui.module.css";
 import cards from "@/components/asset-cards.module.css";
 import styles from "./assets.module.css";
 import { AssetCard, AssetRow, stageOf, type AssetOverview } from "@/components/asset-cards";
+import { currentReviews } from "@/lib/review/queue-rules";
 
 const kinds = [["", "All"], ["equity", "Equity"], ["crypto_asset", "Crypto"], ["commodity", "Commodity"]];
 const stages = [["review", "Needs your decision"], ["rework", "Needs more work"], ["running", "Researching"], ["done", "Decided"], ["idea", "Not started"], ["stopped", "Stopped"]] as const;
@@ -31,7 +32,7 @@ export default function AssetsPage() {
       const data = await res.json();
       setAssets(Array.isArray(data) ? data : []);
       const queue = queueRes.ok ? await queueRes.json() : [];
-      setReviewing(new Set((Array.isArray(queue) ? queue : []).map((item: { asset_id: string }) => item.asset_id)));
+      setReviewing(new Set((Array.isArray(queue) ? currentReviews<{ asset_id: string; replaced_by?: string | null }>(queue) : []).map((item) => item.asset_id)));
     } catch { setError("Unable to load assets."); }
     finally { setLoading(false); }
   }

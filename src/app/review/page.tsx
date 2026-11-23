@@ -1,194 +1,206 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { ArrowLeft, ArrowUpRight, Search } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, ArrowUpRight, Lock } from "lucide-react";
 import ui from "@/components/research-ui.module.css";
-import { ResearchReport } from "@/components/research-report";
-import type { ReportDocument } from "@/lib/research/reporting/report";
+import styles from "./review.module.css";
+import { CompanyLogo } from "@/components/company/company";
+import { Card, Tag, type TagTone } from "@/components/ui/primitives";
+import { FindingsDonut, ScenarioPicker, ValueMeter, type CaseKey, type FindingsGroup } from "@/components/interactive";
 import { ReviewFindings } from "@/components/review-findings";
+import { ReviewDecision, type DecisionExtras } from "@/components/review-decision";
 import { reviewGate } from "@/lib/research/reporting/depth";
-import { RUBRIC_DIMENSIONS, RUBRIC_LEVELS } from "@/lib/research/scoring/rubric";
-import { assetSnapshot, type AssetSnapshot } from "@/lib/research/asset-snapshot";
-import { AssetHero, CompanyLogo } from "@/components/company/company";
-import { KeyNumbers, RiskHeat } from "@/components/visuals/valuation-visuals";
+import { verdictLine, type ResearchMemo } from "@/lib/research/reporting/research-memo";
+import type { ReportDocument } from "@/lib/research/reporting/report";
+import { currentReviews, reviewCount } from "@/lib/review/queue-rules";
+import type { ReviewQueueItem, ReviewSummary } from "@/lib/review/review-queue";
+import { decisionOptions, groupFindingsByChapter, refusalWords, reviewBody, type ReviewChoice } from "@/lib/review/review-view";
+import { formatGap } from "@/lib/ui/chart-math";
 
-interface ReviewItem {
-  run_id: string;
-  asset_id: string;
-  run_type: string;
-  research_question: string | null;
-  asset_name: string;
-  asset_slug: string;
-  asset_kind: string;
-  priority: string | null;
-}
-const verdicts = [
-  ["approved_for_position", "Approved for position"],
-  ["approved_for_tracking", "Approved for tracking"],
-  ["watchlist", "Watchlist"],
-  ["needs_more_work", "Needs more work"],
-  ["reject", "Reject"],
-];
-const emptyForm = { status: "approved_for_tracking", conviction: "", priority: "medium", watchlistReason: "", positionSizingNote: "", whatWouldChangeMind: "", openQuestions: "" };
-const emptyRatings: Record<string, string> = {};
+type Row = Record<string, any>;
 
-export default function ReviewQueuePage() {
-  return <Suspense fallback={<div className={ui.page} role="status">Loading reviews…</div>}><ReviewQueue /></Suspense>;
+export default function ReviewsPage() {
+  return <Suspense fallback={<div className={ui.page} role="status">Loading reviews…</div>}><Reviews /></Suspense>;
 }
 
-function ReviewQueue() {
-  const requestedRunId = useSearchParams().get("run");
-  const [items, setItems] = useState<ReviewItem[]>([]);
-  const [loading, setLoading] = useState(true);
+/** The AI review's outcome in words, from the summary's gate. */
+function reviewOutcome(review: ReviewSummary["review"] | null | undefined): [string, TagTone] {
+  if (!review) return ["No AI review", "neutral"];
+  if (review.positionable) return ["Review passed", "good"];
+  if (review.trackable) return ["Passed for tracking", "waiting"];
+  return ["Review didn't pass", "bad"];
+}
+
+async function fetchQueue(): Promise<ReviewQueueItem[]> {
+  const res = await fetch("/api/review/queue");
+  if (!res.ok) throw new Error("queue");
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+function Reviews() {
+  const runId = useSearchParams().get("run");
+  const router = useRouter();
+  const [items, setItems] = useState<ReviewQueueItem[] | null>(null);
   const [error, setError] = useState("");
-  const [submitError, setSubmitError] = useState("");
+  const [decided, setDecided] = useState<string | null>(null);
+
+  const load = useCallback(() => fetchQueue().then((data) => { setError(""); setItems(data); }, () => setError("The review queue couldn't be loaded.")), []);
+  useEffect(() => { void load(); }, [load]);
+
+  if (runId) {
+    const item = items?.find((i) => i.run_id === runId);
+    if (items && !item) return <div className={`${ui.page} ${ui.withBack}`}>
+      <Link href="/review" className={ui.back}><ArrowLeft size={14} />Reviews</Link>
+      <p className={ui.banner}>This run isn&apos;t waiting for a decision any more.</p>
+    </div>;
+    if (!item) return <div className={ui.page} role="status">{error || "Loading the review…"}</div>;
+    return <ReviewRun key={item.run_id} item={item} onDecided={(message) => { setDecided(message); void load(); router.push("/review"); }} />;
+  }
+
+  const current = items ? currentReviews(items) : [];
+  return <div className={ui.page}>
+    <header className={ui.heading}><div className={ui.titleGroup}><h1>Reviews</h1>{items && reviewCount(items) > 0 && <Tag tone="waiting">{reviewCount(items)} waiting</Tag>}</div></header>
+    {decided && <p className={ui.banner} role="status">{decided}</p>}
+    {error ? <p className={ui.error} role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></p>
+      : !items ? <p className={ui.empty} role="status">Loading reviews…</p>
+      : !current.length ? <Card><p className={styles.empty}>No reviews waiting.</p></Card>
+      : <div className={styles.queue}>{current.map((item) => {
+        const s = item.summary;
+        const [outcome, tone] = reviewOutcome(s?.review);
+        const older = items.filter((other) => other.replaced_by === item.run_id).length;
+        return <section key={item.run_id} className={styles.queueCard} aria-label={item.asset_name}>
+          <div className={styles.who}>
+            <CompanyLogo subject={{ asset_id: item.asset_id }} name={item.asset_name} size={44} />
+            <div><h2>{item.asset_name}</h2><span>{item.asset_slug.toUpperCase()}{older ? ` · replaces ${older} older ${older === 1 ? "run" : "runs"}` : ""}</span></div>
+          </div>
+          <div className={styles.stat}><strong data-tone={s?.gap == null ? undefined : s.gap < 0 ? "bad" : "good"}>{formatGap(s?.gap ?? null)}</strong><span>vs price</span></div>
+          <div className={styles.outcome}><Tag tone={tone}>{outcome}</Tag></div>
+          <Link href={`/review?run=${item.run_id}`} className={ui.primary}>Open</Link>
+        </section>;
+      })}</div>}
+  </div>;
+}
+
+interface LoadedReport { document: ReportDocument | null; memo: ResearchMemo | null; review: Row | null }
+
+/** Serious findings by chapter for the donut: the biggest four, the rest folded into "N more". */
+function donutGroups(review: Row | null, sections: { id: string; title: string }[]): FindingsGroup[] {
+  const groups = groupFindingsByChapter(review, sections).filter((g) => g.findings.length).sort((a, b) => b.serious - a.serious);
+  const rows = groups.map((g) => ({ title: g.title, serious: g.serious, counts: g.counts as Record<string, number> }));
+  if (rows.length <= 5) return rows;
+  const rest = rows.slice(4);
+  const counts: Record<string, number> = {};
+  for (const r of rest) for (const [k, v] of Object.entries(r.counts)) counts[k] = (counts[k] ?? 0) + (v ?? 0);
+  return [...rows.slice(0, 4), { title: `${rest.length} more`, serious: rest.reduce((n, r) => n + r.serious, 0), counts }];
+}
+
+function ReviewRun({ item, onDecided }: { item: ReviewQueueItem; onDecided: (message: string) => void }) {
+  const [report, setReport] = useState<LoadedReport | null>(null);
+  const [loadError, setLoadError] = useState("");
+  const [selected, setSelected] = useState<CaseKey>("base");
   const [submitting, setSubmitting] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<ReviewItem | null>(null);
-  const [query, setQuery] = useState("");
-  const [reviewForm, setReviewForm] = useState(emptyForm);
-  const [reportDocument, setReportDocument] = useState<ReportDocument | null>(null);
-  const [reportReady, setReportReady] = useState(false);
-  const [aiReview, setAiReview] = useState<Record<string, any> | null>(null);
-  const [ratings, setRatings] = useState(emptyRatings);
-  const [acknowledged, setAcknowledged] = useState(false);
-  // The run's key numbers and risks, read from the same report the reviewer is deciding on.
-  const [snapshot, setSnapshot] = useState<AssetSnapshot | null>(null);
-  const [risks, setRisks] = useState<{ name: string; probability: number | null; severity: number | null; detail: string | null }[]>([]);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setReportDocument(null); setReportReady(false); setAiReview(null); setSnapshot(null); setRisks([]);
-    if (!selectedItem) return;
-    fetch(`/api/research-runs/${selectedItem.run_id}/report`).then(async response => {
-      if (!response.ok) throw new Error("Unable to load the report for review.");
-      const report = await response.json();
-      if (cancelled) return;
-      setReportDocument(report.report_document || null);
-      const artifacts = Array.isArray(report.artifacts) ? report.artifacts : [];
-      setSnapshot(assetSnapshot(artifacts));
-      const register = artifacts.find((a: any) => a.type === "risk_register")?.content_json?.risks;
-      setRisks(Array.isArray(register) ? register.map((r: any) => ({ name: String(r?.risk_name ?? "Risk"), probability: typeof r?.probability === "number" ? r.probability : null,
-        severity: typeof r?.severity === "number" ? r.severity : null, detail: typeof r?.leading_indicator === "string" ? `Watch: ${r.leading_indicator}` : null })) : []);
-      const hash = report.report_document?.content_hash;
-      setAiReview(report.artifacts?.find((a: any) => a.type === "report_review" && hash && a.content_json?.report_hash === hash)?.content_json || null);
-      const required = report.artifacts?.some((a: any) => a.type === "research_plan" && a.content_json?.report_standard);
-      setReportReady(!required || Boolean(report.report_document));
-      if (required && !report.report_document) setSubmitError("The report is not ready for review yet.");
-    }).catch(error => { if (!cancelled) setSubmitError(String(error.message)); });
-    return () => { cancelled = true; };
-  }, [selectedItem?.run_id]);
-
-  function selectItem(item: ReviewItem | null) {
-    setSelectedItem(item);
-    setReviewForm(emptyForm);
-    setRatings(emptyRatings);
-    setAcknowledged(false);
-    setSubmitError("");
-    setSaved(false);
-  }
-  async function fetchQueue(selectRequested = false) {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/review/queue");
+    fetch(`/api/research-runs/${item.run_id}/report`).then(async (res) => {
       if (!res.ok) throw new Error();
       const data = await res.json();
-      const queue: ReviewItem[] = Array.isArray(data) ? data : [];
-      setItems(queue);
-      if (selectRequested) selectItem(queue.find((item) => item.run_id === requestedRunId) ?? null);
-    } catch { setError("Unable to load reviews."); }
-    finally { setLoading(false); }
-  }
-  useEffect(() => { fetchQueue(true); }, [requestedRunId]);
+      if (cancelled) return;
+      const document: ReportDocument | null = data.report_document ?? null;
+      const hash = document?.content_hash;
+      const artifacts: Row[] = Array.isArray(data.artifacts) ? data.artifacts : [];
+      const review = artifacts.find((a) => a.type === "report_review" && hash && a.content_json?.report_hash === hash)?.content_json ?? null;
+      setReport({ document, memo: data.memo ?? null, review });
+    }).catch(() => { if (!cancelled) setLoadError("The report couldn't be loaded."); });
+    return () => { cancelled = true; };
+  }, [item.run_id]);
 
-  async function handleSubmitReview(event: React.FormEvent) {
-    event.preventDefault();
-    if (!selectedItem || submitting || !reportReady) return;
+  const document = report?.document ?? null;
+  const gate = report?.review ? reviewGate(report.review) : null;
+  // The gate is worked out from the report being decided on, the same way the review route works it out.
+  const options = decisionOptions(report ? {
+    conclusion_status: document?.conclusion_status ?? null,
+    review: gate ? { verdict: gate.verdict == null ? null : String(gate.verdict), open_severe: gate.open_severe, blocking: gate.blocking, trackable: gate.trackable, positionable: gate.positionable } : null,
+  } : null);
+  const sections = (document?.sections ?? []).map((s: Row) => ({ id: String(s.id ?? ""), title: String(s.title ?? s.id ?? "") }));
+  const memo = report?.memo ?? null;
+  const v = memo?.verdict;
+  const currency = memo?.currency ?? item.summary?.currency ?? "USD";
+  const price = v?.price ?? item.summary?.price ?? null;
+  const values = v?.valuationComplete ? v.values : { bear: null, base: item.summary?.value ?? null, bull: null };
+  const [outcome, tone] = reviewOutcome(report ? (gate ? { verdict: null, open_severe: gate.open_severe, blocking: gate.blocking, trackable: gate.trackable, positionable: gate.positionable } : null) : item.summary?.review);
+
+  async function submit(choice: ReviewChoice, extras: DecisionExtras) {
+    // Watchlist and reject need no report; approving or sending back must name the report that was read.
+    if (!document && choice !== "watch" && choice !== "reject") { setSubmitError(refusalWords("REPORT_NOT_READY")); return; }
     setSubmitting(true);
-    setSubmitError("");
+    setSubmitError(null);
     try {
-      const res = await fetch(`/api/research-runs/${selectedItem.run_id}/review`, {
+      const ratings = Object.fromEntries(Object.entries(extras.ratings).filter(([, value]) => value !== ""));
+      const res = await fetch(`/api/research-runs/${item.run_id}/review`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...reviewForm, assetId: selectedItem.asset_id, reviewedBy: "user", reportHash: reportDocument?.content_hash,
-          rubricRatings: ratings, acknowledgeFindings: acknowledged }),
+        body: JSON.stringify({ ...reviewBody(choice, { ack: extras.ack, reportHash: document?.content_hash ?? null }), reviewedBy: "user",
+          ...(extras.conviction ? { conviction: extras.conviction } : {}), ...(extras.whatWouldChangeMind.trim() ? { whatWouldChangeMind: extras.whatWouldChangeMind.trim() } : {}),
+          ...(Object.keys(ratings).length ? { rubricRatings: ratings } : {}) }),
       });
       if (!res.ok) {
-        const body = await res.json();
-        throw new Error(typeof body.error === "string" ? body.error : "Unable to save the decision.");
+        const body = await res.json().catch(() => ({}));
+        setSubmitError(refusalWords(body?.code, body?.error));
+        return;
       }
-      setSelectedItem(null);
-      setSaved(true);
-      await fetchQueue();
-    } catch (error) { setSubmitError(error instanceof Error ? error.message : "Unable to save the decision."); }
+      onDecided(choice === "back" ? `${item.asset_name} is sent back for more work.` : `Decision recorded for ${item.asset_name}.`);
+    } catch { setSubmitError(refusalWords(null)); }
     finally { setSubmitting(false); }
   }
-  const visible = items.filter((item) => [item.asset_name, item.asset_slug, item.asset_kind, item.run_type, item.research_question || "", item.priority || ""].some((value) => value.toLowerCase().includes(query.trim().toLowerCase())));
-  const words = (value: string | null | undefined) => value ? value.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()) : "";
-  const gate = reviewGate(aiReview);
 
-  if (selectedItem) return <div className={`${ui.page} ${ui.withBack}`}>
-    <button className={ui.back} onClick={() => selectItem(null)} disabled={submitting}><ArrowLeft size={14} />Reviews</button>
-    <AssetHero assetId={selectedItem.asset_id} name={selectedItem.asset_name} eyebrow={<div className={ui.eyebrow}>Gate 2 of 2 · final report review</div>}
-      meta={[words(selectedItem.run_type), `Run ${selectedItem.run_id.slice(0, 8)}`]}
-      status={<span className={ui.status} data-status="waiting_for_human">Needs your decision</span>}
-      actions={<Link href={`/assets/${selectedItem.asset_id}/view?run=${selectedItem.run_id}`} className={ui.secondary}>Read research<ArrowUpRight size={14} /></Link>} />
-    {reportDocument && <KeyNumbers snapshot={snapshot} kpis={3} label="Key numbers under review" />}
-    <div className={ui.grid}>
-      <div className={`${ui.s8} flex min-w-0 flex-col gap-4`}>
-        {selectedItem.research_question && <section className={ui.tile}><div className={ui.tileHead}><h2>Research question</h2></div><p className={ui.tileBody}>{selectedItem.research_question}</p></section>}
-        {risks.length > 0 && <section className={ui.tile}><div className={ui.tileHead}><h2>Risk heat</h2><span className={ui.muted}>Likelihood × severity, from the risk register</span></div><RiskHeat risks={risks} /></section>}
-        {reportDocument ? <>
-          <ReviewFindings review={aiReview} />
-          <h2 className="mt-2 text-[13px] font-semibold">Report under review</h2><ResearchReport document={reportDocument} />
-        </> : !submitError && <p className={ui.muted} role="status">Loading the report…</p>}
+  return <div className={`${ui.page} ${ui.withBack}`}>
+    <Link href="/review" className={ui.back}><ArrowLeft size={14} />Reviews</Link>
+    <header className={styles.hero}>
+      <div className={styles.who}>
+        <CompanyLogo subject={{ asset_id: item.asset_id }} name={item.asset_name} size={56} />
+        <div><h1>{item.asset_name}</h1>
+          <p className={styles.meta}><span>{item.asset_slug.toUpperCase()}</span>{item.replaced_by ? <Tag tone="neutral">Replaced by a newer run</Tag> : <Tag tone="waiting">Needs your decision</Tag>}</p></div>
       </div>
-      <form onSubmit={handleSubmitReview} className={`${ui.s4} flex min-w-0 flex-col gap-4 lg:sticky lg:top-[68px]`}>
-        <section className={ui.tile}>
-          <div className={ui.tileHead}><h2>Gate 2 of 2: your decision</h2></div>
-          <div className={`${ui.form} ${ui.tileBody}`}>
-            <label className={ui.field}>Verdict<select value={reviewForm.status} disabled={submitting} onChange={(event) => setReviewForm({ ...reviewForm, status: event.target.value })}>{verdicts.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-            <div className={ui.formGrid}>
-              <label className={ui.field}>Conviction<select value={reviewForm.conviction} disabled={submitting} onChange={(event) => setReviewForm({ ...reviewForm, conviction: event.target.value })}><option value="">Unset</option>{["high", "medium", "low", "speculative"].map((value) => <option value={value} key={value}>{value[0].toUpperCase() + value.slice(1)}</option>)}</select></label>
-              <label className={ui.field}>Priority<select value={reviewForm.priority} disabled={submitting} onChange={(event) => setReviewForm({ ...reviewForm, priority: event.target.value })}>{["high", "medium", "low"].map((value) => <option value={value} key={value}>{value[0].toUpperCase() + value.slice(1)}</option>)}</select></label>
-            </div>
-            <label className={ui.field}>What would change your mind?<textarea rows={3} value={reviewForm.whatWouldChangeMind} disabled={submitting} onChange={(event) => setReviewForm({ ...reviewForm, whatWouldChangeMind: event.target.value })} /></label>
-            {gate.open_severe > 0 && <label className={ui.check}><input type="checkbox" checked={acknowledged} disabled={submitting} onChange={(event) => setAcknowledged(event.target.checked)} /><span>I have read the <a href="#ai-review" className="text-[var(--blue)] underline">{gate.open_severe} open high or critical review findings</a>. Approval needs this.</span></label>}
-          </div>
-          <details className={ui.fold}><summary>Depth ratings (optional, 0-4)</summary><div className={`${ui.form} ${ui.tileBody}`}>
-            <p className={ui.muted}>{RUBRIC_LEVELS.join(" · ")}</p>
-            <div className={ui.formGrid}>{RUBRIC_DIMENSIONS.map(d => <label key={d.id} className={ui.field} title={`3 = ${d.anchor3}`}>{d.label}<select value={ratings[d.id] ?? ""} disabled={submitting} onChange={(event) => setRatings({ ...ratings, [d.id]: event.target.value })}><option value="">Unrated</option>{[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}</select></label>)}</div>
-          </div></details>
-          <details className={ui.fold}><summary>Additional notes</summary><div className={`${ui.form} ${ui.tileBody}`}>
-            {[["watchlistReason", "Watchlist reason"], ["positionSizingNote", "Position sizing"], ["openQuestions", "Open questions"]].map(([key, label]) => <label key={key} className={ui.field}>{label}<textarea rows={3} disabled={submitting} value={reviewForm[key as keyof typeof reviewForm]} onChange={(event) => setReviewForm({ ...reviewForm, [key]: event.target.value })} /></label>)}
-          </div></details>
-          {submitError && <p className={`${ui.error} px-3.5`} role="alert">{submitError}</p>}
-          <div className={ui.actions}><button type="button" className={ui.secondary} disabled={submitting} onClick={() => selectItem(null)}>Cancel</button><button className={ui.primary} type="submit" disabled={submitting || !reportReady}>{submitting ? "Saving…" : "Submit decision"}</button></div>
-        </section>
-      </form>
-    </div>
-  </div>;
+      <Link href={`/assets/${item.asset_id}/view?run=${item.run_id}`} className={ui.secondary}>Open full report<ArrowUpRight size={14} /></Link>
+    </header>
+    {loadError && <p className={ui.error} role="alert">{loadError}</p>}
+    <div className={styles.layout}>
+      <div className={styles.main}>
+        <Card title="What it's worth">
+          {!report && !loadError ? <p className={styles.empty} role="status">Loading…</p>
+            : v && !v.valuationComplete ? <p className={styles.empty}>{v.withheldReason ?? "The valuation was withheld."}</p>
+            : <>
+              <ValueMeter price={price} values={values} selected={values[selected] == null ? "base" : selected} currency={currency} />
+              {values.bear != null && values.bull != null && <ScenarioPicker values={values} price={price} selected={selected} onSelect={setSelected} currency={currency} />}
+              {memo && <p className={styles.note}>{verdictLine(memo)}</p>}
+            </>}
+        </Card>
 
-  return <div className={ui.page}>
-    <header className={ui.heading}><div className={ui.titleGroup}><h1>Reviews</h1><span className={ui.muted}>{loading ? "" : `${items.length} awaiting a human decision`}</span></div></header>
-    {saved && <p className={`${ui.banner} text-[var(--positive)]`} role="status">Decision saved.</p>}
-    <section className={ui.tile}>
-      <div className={ui.toolbar}><div className={ui.search}><Search size={14} aria-hidden="true" /><input type="search" aria-label="Search reviews" placeholder="Search reviews" value={query} onChange={(event) => setQuery(event.target.value)} /></div></div>
-      {loading ? <p className={ui.empty} role="status">Loading reviews…</p> : error ? <p className={`${ui.error} px-3.5`} role="alert">{error}<button onClick={() => fetchQueue(true)}>Try again</button></p> : <>
-        {requestedRunId && !items.some((item) => item.run_id === requestedRunId) && !saved && <p className={ui.notice}>This run is no longer awaiting review.</p>}
-        {visible.length ? <div className={ui.table}><table>
-          <thead><tr><th>Asset</th><th>Run</th><th>Id</th><th>Question</th><th className={ui.num}>Priority</th></tr></thead>
-          <tbody>{visible.map((item) => <tr key={item.run_id}>
-            <td><button className="inline-flex items-center gap-2.5 text-left font-semibold hover:underline" onClick={() => selectItem(item)}><CompanyLogo subject={{ asset_id: item.asset_id }} name={item.asset_name} size={30} />{item.asset_name}</button></td>
-            <td className={ui.muted}>{words(item.run_type)}</td>
-            <td className={ui.mono}>{item.run_id.slice(0, 8)}</td>
-            <td className={`${ui.muted} max-w-[420px] truncate`}>{item.research_question || "—"}</td>
-            <td className={ui.num}><span className={ui.status} data-status={item.priority === "high" ? "critical" : "waiting_for_human"}>{words(item.priority) || "Medium"}</span></td>
-          </tr>)}</tbody>
-        </table></div> : <p className={ui.empty}>{query ? "No reviews match your search." : "No reviews waiting."}</p>}
-      </>}
-    </section>
+        <section id="ai-review" aria-labelledby="ai-review-title" className={styles.cardSection}>
+          <div className={styles.cardHead}><h2 id="ai-review-title">AI review</h2><Tag tone={tone}>{outcome}</Tag></div>
+          {report ? <>
+            {report.review && <FindingsDonut groups={donutGroups(report.review, sections)} />}
+            {!options.position.allowed && <div className={styles.blocked} role="note">
+              <h3><Lock size={14} aria-hidden="true" />Why it&apos;s blocked</h3>
+              <ul>{options.position.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+            </div>}
+            <ReviewFindings review={report.review} sections={sections} />
+          </> : !loadError && <p className={styles.empty} role="status">Loading…</p>}
+        </section>
+
+        <Card title="The report says">
+          {memo?.verdict.summary ? <blockquote className={styles.quote}>“{memo.verdict.summary}”</blockquote>
+            : <p className={styles.empty}>{report ? "The report gives no conclusion to quote." : "Loading…"}</p>}
+          {memo?.otherSide && <div className={styles.otherSide}><h3>The other side</h3><p>{memo.otherSide}</p></div>}
+        </Card>
+      </div>
+      <aside className={styles.side}>
+        <ReviewDecision options={options} onSubmit={submit} submitting={submitting} disabled={!report} error={submitError} />
+      </aside>
+    </div>
   </div>;
 }

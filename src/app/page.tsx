@@ -8,6 +8,7 @@ import styles from "./home.module.css";
 import { AssetCard, stageOf, words, type AssetOverview } from "@/components/asset-cards";
 import { CompanyLogo, Leadership } from "@/components/company/company";
 import { KeyNumbers, ValueRuler, money, signedPercent } from "@/components/visuals/valuation-visuals";
+import { currentReviews } from "@/lib/review/queue-rules";
 
 interface ReviewItem { run_id: string; asset_id: string; asset_name: string; run_type: string; priority?: string | null; research_question?: string | null }
 
@@ -28,7 +29,9 @@ export default function HomePage() {
       const [assetsRes, queueRes] = await Promise.all([fetch("/api/assets/overview"), fetch("/api/review/queue")]);
       if (!assetsRes.ok || !queueRes.ok) throw new Error();
       setAssets(await assetsRes.json());
-      setQueue(await queueRes.json());
+      // One decision per company: older waiting runs of a company (replaced_by) are not counted or listed.
+      const queueData = await queueRes.json();
+      setQueue(Array.isArray(queueData) ? currentReviews<ReviewItem & { replaced_by?: string | null }>(queueData) : []);
     } catch { setError("Unable to load your workspace."); }
     finally { setLoading(false); }
   }
