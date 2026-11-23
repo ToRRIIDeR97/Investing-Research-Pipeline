@@ -1,19 +1,21 @@
-/* Investing notebook: tiles from research-ui.module.css plus the few pieces the notebook adds. */
+/* Investing notebook: Card primitives (flush) with research-ui bodies and tables, plus the few pieces the notebook adds.
+   States are Tags (colour only on the dot); counts sit in the card head as small figures. */
 .stack { display: flex; flex-direction: column; gap: 16px; }
 .inline { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
 .inline > .grow { flex: 1 1 220px; }
 .small { flex: 0 1 120px; }
+.count { font-size: 13px; font-weight: 600; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .note { margin: 8px 0 0; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; }
 .meta { color: var(--ink-2); font-size: 12px; }
-.link { background: none; border: 0; padding: 0; color: var(--ink-2); font-size: 12px; text-decoration: underline; cursor: pointer; }
-.link:hover { color: var(--ink); }
-.entry + .entry { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
+.link { background: none; border: 0; padding: 0; color: var(--navy); font-size: 13px; font-weight: 600; cursor: pointer; }
+.link:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.entry + .entry { border-top: 1px solid var(--line-soft); margin-top: 14px; padding-top: 14px; }
 .entry h3 { font-size: 14px; font-weight: 600; color: var(--ink); }
-.label { display: block; margin-top: 10px; color: var(--ink-2); font-size: 12px; font-weight: 600; }
-.pill { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 12px; font-weight: 500; border: 1px solid var(--line); }
-.pill[data-status="healthy"] { color: var(--positive); background: var(--positive-bg); border-color: var(--positive-line); }
-.pill[data-status="caution"] { color: var(--caution-ink); background: var(--caution-bg); border-color: var(--caution-line); }
-.pill[data-status="danger"] { color: var(--critical); background: var(--critical-bg); border-color: var(--critical-line); }
+.label { display: block; margin-top: 10px; color: var(--ink-2); font-size: 13px; font-weight: 600; }
+/* A pinned metric inside the pinboard card: a plain block with a rule, not a card in a card. */
+.pinned { border-top: 1px solid var(--line-soft); padding-top: 10px; }
+.pinnedHead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.pinnedHead h3 { font-size: 14px; font-weight: 600; color: var(--ink); }
 .error { color: var(--critical); font-size: 13px; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .quote { margin: 6px 0 0; padding-left: 10px; border-left: 2px solid var(--line); color: var(--ink-2); font-size: 12px; }

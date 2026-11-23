@@ -12,14 +12,17 @@ import type { ReportDocument } from "@/lib/research/reporting/report";
 import { isFilingNote, kpiReading, kpiSnapshot, pinViews, placeAnnotations, reportNotes, type KpiReading } from "@/lib/research/notebook/readings";
 import type { NotebookApi } from "./use-notebook";
 import { ChecklistPanel } from "./checklist-panel";
+import { Card, Tag } from "@/components/ui/primitives";
 
 type Row = Record<string, any>;
 const statusText = { healthy: "Healthy", caution: "Caution", danger: "In danger" } as const;
 const today = () => new Date().toISOString().slice(0, 10);
 const num = (text: string) => text.trim() === "" ? null : Number.isFinite(Number(text)) ? Number(text) : NaN;
 
+const TONE = { healthy: "good", caution: "waiting", danger: "bad" } as const;
+
 function Status({ status }: { status: KpiReading["status"] }) {
-  return status ? <span className={styles.pill} data-status={status}>{statusText[status]}</span> : <span className={styles.meta}>No line set</span>;
+  return status ? <Tag tone={TONE[status]}>{statusText[status]}</Tag> : <span className={styles.meta}>No line set</span>;
 }
 
 /**
@@ -40,10 +43,9 @@ export function InvestingNotebook({ api, assetId, artifacts, document, runId, ru
       <div className={`${ui.s7} ${styles.stack}`}>
         <KpiPanel api={api} readings={readings} observations={observations} />
         <PinPanel api={api} artifacts={artifacts} />
-        <section className={ui.tile} aria-labelledby="nb-checklist">
-          <header className={ui.tileHead}><h2 id="nb-checklist">Investment checklist</h2></header>
+        <Card flush aria-labelledby="nb-checklist" title="Checklist" titleId="nb-checklist">
           <div className={ui.tileBody}><ChecklistPanel assetId={assetId} runId={runId} /></div>
-        </section>
+        </Card>
       </div>
       <div className={`${ui.s5} ${styles.stack}`}>
         <JournalPanel api={api} artifacts={artifacts} readings={readings} runId={runId} />
@@ -66,8 +68,7 @@ function KpiPanel({ api, readings, observations }: { api: NotebookApi; readings:
     if (await api.create("kpis", { label: form.label.trim() || metricName || form.metric_key, metric_key: form.metric_key, bear_line: bear, bull_line: bull }))
       setForm({ ...form, label: "", bear: "", bull: "" });
   }
-  return <section className={ui.tile} aria-labelledby="nb-kpis">
-    <header className={ui.tileHead}><h2 id="nb-kpis">My KPIs</h2><span className={ui.muted}>{readings.length} tracked</span></header>
+  return <Card flush aria-labelledby="nb-kpis" title="My KPIs" titleId="nb-kpis" action={<span className={styles.count}>{readings.length}</span>}>
     <div className={ui.tileBody}>
       {readings.length ? <div className={ui.table}><table>
         <thead><tr><th scope="col">KPI</th><th scope="col" className={styles.num}>Latest</th><th scope="col">Status</th><th scope="col" className={styles.num}>Danger line</th><th scope="col" className={styles.num}>Target</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
@@ -91,7 +92,7 @@ function KpiPanel({ api, readings, observations }: { api: NotebookApi; readings:
       </form>
       <p className={styles.meta}>Lines use the KPI&apos;s unit: percent for margins and ratios, currency millions for amounts.</p>
     </div>
-  </section>;
+  </Card>;
 }
 
 function PinPanel({ api, artifacts }: { api: NotebookApi; artifacts: Row[] }) {
@@ -103,8 +104,7 @@ function PinPanel({ api, artifacts }: { api: NotebookApi; artifacts: Row[] }) {
     const [kind, key] = choice.split(":");
     await api.create("pins", kind === "exhibit" ? { kind, ref_key: key } : { kind, ref_key: key, frequency });
   }
-  return <section className={ui.tile} aria-labelledby="nb-pins">
-    <header className={ui.tileHead}><h2 id="nb-pins">Pinboard</h2><span className={ui.muted}>{views.length} pinned</span></header>
+  return <Card flush aria-labelledby="nb-pins" title="Pinboard" titleId="nb-pins" action={<span className={styles.count}>{views.length}</span>}>
     <div className={ui.tileBody}>
       <form className={styles.inline} onSubmit={add} aria-label="Pin a table or metric">
         <label className={`${ui.field} ${styles.grow}`}>Table, chart or metric<select value={choice} onChange={(e) => setChoice(e.target.value)}>
@@ -119,14 +119,14 @@ function PinPanel({ api, artifacts }: { api: NotebookApi; artifacts: Row[] }) {
     </div>
     {views.map((v) => <div key={v.pin.id} className={ui.tileBody} data-pin={v.pin.id}>
       {v.kind === "exhibit" ? <ExhibitTile exhibit={v.exhibit} id={`pin-${v.pin.id}`} />
-        : v.kind === "metric" ? <section className={ui.tile} aria-label={v.title}><header className={ui.tileHead}><h3>{v.title}</h3><span className={ui.muted}>{v.series.unit}</span></header>
+        : v.kind === "metric" ? <section className={styles.pinned} aria-label={v.title}><div className={styles.pinnedHead}><h3>{v.title}</h3><span className={styles.meta}>{v.series.unit}</span></div>
           <div className={ui.table}><table><thead><tr>{v.series.points.map((p) => <th key={p.period} scope="col" className={styles.num}>{p.period}</th>)}</tr></thead>
             <tbody><tr>{v.series.points.map((p) => <td key={p.period} className={styles.num}>{p.display}</td>)}</tr></tbody></table></div>
-          <p className={styles.meta} style={{ padding: "0 14px 10px" }}>{v.series.formula}</p></section>
+          <p className={styles.meta} style={{ padding: "4px 0 0" }}>{v.series.formula}</p></section>
         : <p className={ui.muted}><strong>{v.title}</strong>: {v.reason}</p>}
       <PinNote api={api} id={v.pin.id} note={v.pin.note} title={v.title} />
     </div>)}
-  </section>;
+  </Card>;
 }
 
 function PinNote({ api, id, note, title }: { api: NotebookApi; id: string; note: string; title: string }) {
@@ -156,8 +156,7 @@ function JournalPanel({ api, artifacts, readings, runId }: { api: NotebookApi; a
     if (ok) setForm({ entry_date: today(), thesis: "", change_my_mind: "", body: "", price: "" });
   }
   const entries = [...api.notebook.journal].reverse();
-  return <section className={ui.tile} aria-labelledby="nb-journal">
-    <header className={ui.tileHead}><h2 id="nb-journal">Thesis journal</h2><span className={ui.muted}>{entries.length} entries</span></header>
+  return <Card flush aria-labelledby="nb-journal" title="Thesis journal" titleId="nb-journal" action={<span className={styles.count}>{entries.length}</span>}>
     <div className={ui.tileBody}>
       <form className={ui.form} onSubmit={add} aria-label="Write a journal entry">
         <div className={ui.formGrid}>
@@ -184,15 +183,14 @@ function JournalPanel({ api, artifacts, readings, runId }: { api: NotebookApi; a
       </table></div>}
       <button className={styles.link} onClick={() => { if (window.confirm("Delete this journal entry?")) void api.remove("journal", e.id); }}>Delete entry</button>
     </article>)}</div>}
-  </section>;
+  </Card>;
 }
 
 function NotesPanel({ api, document, runId, reportHref }: { api: NotebookApi; document: ReportDocument | null; runId: string | null; reportHref: (sectionId: string) => string }) {
   const placed = useMemo(() => document ? placeAnnotations(api.notebook.annotations, document, runId) : null, [api.notebook.annotations, document, runId]);
   const sections = document?.sections ?? [];
   const onReport = reportNotes(api.notebook.annotations), onFilings = api.notebook.annotations.filter(isFilingNote);
-  return <section className={ui.tile} aria-labelledby="nb-notes">
-    <header className={ui.tileHead}><h2 id="nb-notes">Report notes</h2><span className={ui.muted}>{onReport.length} notes</span></header>
+  return <Card flush aria-labelledby="nb-notes" title="Report notes" titleId="nb-notes" action={<span className={styles.count}>{onReport.length}</span>}>
     <div className={ui.tileBody}>
       {!onReport.length && <p className={ui.muted}>Add notes from any chapter of the report. They follow their chapter or exhibit to newer runs.</p>}
       {placed && sections.map((s) => { const notes = placed.bySection(s.id); return notes.length ? <div key={s.id} className={styles.entry}>
@@ -214,5 +212,5 @@ function NotesPanel({ api, document, runId, reportHref }: { api: NotebookApi; do
           <button className={styles.link} onClick={() => void api.remove("annotations", a.id)}>Delete note</button>
         </div>)}</div>}
     </div>
-  </section>;
+  </Card>;
 }

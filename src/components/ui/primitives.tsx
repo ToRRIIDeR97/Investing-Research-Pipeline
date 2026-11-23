@@ -3,10 +3,17 @@
 import type { ReactNode } from "react";
 import styles from "./primitives.module.css";
 
-/** A white rounded card. With a title, a short sentence-case `h2` heads it and `action` sits on the right. */
-export function Card({ title, action, children, className }: { title?: ReactNode; action?: ReactNode; children?: ReactNode; className?: string }) {
-  return <section className={className ? `${styles.card} ${className}` : styles.card}>
-    {title || action ? <div className={styles.head}>{title ? <h2>{title}</h2> : <span />}{action ? <div className={styles.action}>{action}</div> : null}</div> : null}
+/**
+ * A white rounded card. With a title, a short sentence-case `h2` heads it and `action` sits on the right. `flush` drops
+ * the body padding for content that brings its own (rows, tables, tile bodies from research-ui.module.css); `titleId`
+ * sets the heading's id for `aria-labelledby`. Other section attributes (aria-label, aria-labelledby) pass through.
+ */
+export function Card({ title, action, children, className, flush, titleId, ...rest }: {
+  title?: ReactNode; action?: ReactNode; children?: ReactNode; className?: string; flush?: boolean; titleId?: string;
+  "aria-label"?: string; "aria-labelledby"?: string;
+}) {
+  return <section className={className ? `${styles.card} ${className}` : styles.card} data-flush={flush ? "" : undefined} {...rest}>
+    {title || action ? <div className={styles.head}>{title ? <h2 id={titleId}>{title}</h2> : <span />}{action ? <div className={styles.action}>{action}</div> : null}</div> : null}
     {children}
   </section>;
 }
