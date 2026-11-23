@@ -159,4 +159,38 @@ Baseline (base SHA `94dcb55` plus the uncommitted Reviews WIP, 23 Nov 2026):
 
 ## Completion evidence
 
-(Filled in at close-out. Implementor reports and verifier results are kept apart.)
+Branch `worktree-agent-aed684a892319cd1d` (implementor worktree), base `94dcb55`, final verified SHA `48c4a79`. 16 commits, 88 files, +2921 / −704. Not merged.
+
+### Phases (verifier results)
+
+| Phase | First candidate | Verified SHA | Correction rounds | What the reviews changed |
+| --- | --- | --- | --- | --- |
+| P1 | `ecaa7cd` | `b76e022` | 1 | `--caution-ink` added (amber failed AA as text); visible search focus; `--ink-2` on soft fills; `research-ui.module.css` added to scope |
+| P2 | `e2a4807` | `025e837` | 1 | real route count in the diagram; one tick for a flat series; scrub announces the close; unknown asset → 404 (plan addition) |
+| P3 | `90e545b` | `f0aee0e` | 1 | `?summary=0` light queue path for badge/Home/list; unchecked report versions block approvals in words; named Open links; tickers only for equities |
+| P4 | `c631df0` | `4d1b020` | 1 | runs API adds `waiting_stage_key`; plan-approval runs labelled; price card recovers after an error; card headings |
+| P5 | `df245b6` | `9318da0` | 1 | `listAssetOverviews` adds `waiting_stage_key`; plan approval has its own stage; labelled filter pills |
+| P6 | `1f63fd9` | `48c4a79` | 2 | LF re-normalised; CSS leftovers; plan-author correction: run `needs_more_work` = Stopped (pipeline stop), only `waiting_for_human` waits, a waiting final decision wins the company status; Overview added as the first tab; memo send-back status; `next-env.d.ts` restored |
+
+### Checks on the final SHA
+
+- Verifier: acceptance 46/46, verification 22/22, `npm run lint` 0 errors (117 pre-existing warnings), `npx tsc --noEmit` exit 0, `npm run test:unit` 707 pass / 0 fail / 64 skipped (database- and provider-gated; not counted as passing), `npm run build` exit 0, no CR bytes in any changed file, `next-env.d.ts` identical to base.
+- Plan author (orchestrator), same SHA: both sets together 68/68 pass. `git diff 94dcb555..48c4a79` touches no review route, workflow, pipeline-runner or `src/db` file.
+
+### Manual evidence (plan author, branch running against the local `research_os` database)
+
+- Home, Reviews queue, Reviews decision page (SoFi: −38%, Bear $1.04 / Base $8.80 / Bull $14.92, donut of 16 serious, five decision cards with position blocked in words), memo tab and company overview (real stored closes 18 May–17 Nov, $14.28) render in the remaster with no console errors; 375px: no horizontal scroll.
+- After the status correction, SoFi reads "Needs your decision" in the hero and the navy runs bar is the 18 Nov 11:05 UTC (19:05 SGT) run.
+
+### Diagrams against the diff
+
+The proposed and detail diagrams hold. Deviations: the queue rules split into `src/lib/review/queue-rules.ts` (pure, client-safe); `src/lib/research/run-status.ts` became the one status helper (runStatusWord, stageOf, companyStatusWord) shared by hero, cards, counts, runs bars and memo; the runs API and asset overviews gained a read-only `waiting_stage_key`.
+
+### Known limits (not verified or out of scope)
+
+- The company overview and Home show the active run's numbers; the active run defaults to the newest run, which for SoFi is the stopped over-budget draft (base $1.13), not the report under review ($8.80). Pre-existing run selection.
+- The overview is the first tab but the page still opens on the Memo (default left for the user).
+- Run labels in the runs chart are in UTC.
+- A run waiting at `human_review` whose latest decision is watchlist or reject reads "Decided" in the memo but "Needs your decision" elsewhere (pre-existing contract, pinned by an existing test).
+- Test asset "SoFi test" still shows on Home and the Research list.
+- The run page, report, workbench, notebook and chat modules rely mostly on the shared tokens and tile classes; they weren't restyled rule by rule.
