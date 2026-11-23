@@ -12,8 +12,8 @@ test("the brief opens the correct persisted human gate and selected run", () => 
   assert.equal(final.href, "/review?run=older-run");
   assert.equal(researchBriefAction({ ...run, stages: [] }, "asset").action, "Run details");
   assert.equal(researchBriefAction({ ...run, status: "completed" }, "asset").label, "Decided");
-  // The consumer remaster has one status vocabulary: a requested revision waits on the reader ("Needs your decision"), failed reads "Stopped".
-  assert.equal(researchBriefAction({ ...run, status: "needs_more_work" }, "asset").label, "Needs your decision");
+  // One status vocabulary: needs_more_work is a run the pipeline stopped (failed stage, quality gate or budget), so it reads "Stopped" like failed.
+  assert.equal(researchBriefAction({ ...run, status: "needs_more_work" }, "asset").label, "Stopped");
   assert.equal(researchBriefAction({ ...run, status: "failed" }, "asset").label, "Stopped");
   assert.equal(researchBriefAction({ ...run, status: "running" }, "asset").label, "Researching");
   assert.equal(plan.label, "Needs plan approval");

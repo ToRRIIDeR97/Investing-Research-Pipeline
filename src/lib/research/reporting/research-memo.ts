@@ -86,7 +86,7 @@ export function memoStatus(state:MemoRunState):MemoStatus|null {
   const decision=String(state.latestDecision??'').toLowerCase();
   if(!run)return null;
   if(['failed','cancelled','canceled'].includes(run))return {key:'failed',label:'Stopped'};
-  if(decision==='needs_more_work'||run==='needs_more_work')return {key:'needs_more_work',label:'Needs your decision'};
+  if(decision==='needs_more_work'||run==='needs_more_work')return {key:'needs_more_work',label:'Stopped'};
   if(decision&&decision!=='pending')return {key:'decided',label:'Decided'};
   if(state.humanReviewStatus==='waiting_for_human')return {key:'needs_decision',label:'Needs your decision'};
   // Waiting at a gate other than the final review: the research plan.

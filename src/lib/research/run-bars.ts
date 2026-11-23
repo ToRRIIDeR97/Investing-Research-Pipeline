@@ -12,8 +12,9 @@ export interface RunRow {
 export interface RunBarItem { id: string; label: string; outcome: string; cost: number; current: boolean }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-/** Statuses that wait on a person; unless the run waits at the plan gate, that person owes the final decision. */
-const WAITING = new Set(["needs_more_work", "waiting_for_human"]);
+/** Only waiting_for_human waits on a person. needs_more_work is a run the pipeline stopped (failRun on a failed stage,
+ *  the quality gate or the budget); a reviewer's send-back sets the run to waiting_for_human. */
+const WAITING = new Set(["waiting_for_human"]);
 const RESEARCHING = new Set(["running", "queued", "pending", "planning"]);
 
 const time = (value: string | Date) => { const t = new Date(value).getTime(); return Number.isFinite(t) ? t : 0; };
@@ -34,7 +35,7 @@ const awaitsDecision = (r: RunRow) => WAITING.has(r.status) && !atPlanGate(r);
 function outcome(status: string, isCurrent: boolean, planGate: boolean): string {
   if (planGate) return "Needs plan approval";
   if (status === "completed" || status === "approved") return "Completed";
-  if (status === "failed" || status === "cancelled") return "Stopped";
+  if (status === "failed" || status === "cancelled" || status === "needs_more_work") return "Stopped";
   if (WAITING.has(status)) return isCurrent ? "Needs your decision" : "Superseded";
   if (RESEARCHING.has(status)) return "Researching";
   const words = status.replace(/[_-]+/g, " ").trim();

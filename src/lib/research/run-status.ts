@@ -17,11 +17,22 @@ const TONE: Record<StatusWord, StatusTone> = {
  */
 export function runStatusWord(status: string | null | undefined, waitingStageKey?: string | null): StatusWord {
   if (!status) return "Not started";
-  if (waitingStageKey === "research_plan" && ["waiting_for_human", "needs_more_work"].includes(status)) return "Needs plan approval";
+  if (waitingStageKey === "research_plan" && status === "waiting_for_human") return "Needs plan approval";
   if (["completed", "approved"].includes(status)) return "Decided";
-  if (["failed", "cancelled"].includes(status)) return "Stopped";
-  if (["waiting_for_human", "needs_more_work"].includes(status)) return "Needs your decision";
+  // needs_more_work is a run the pipeline stopped (failed stage, quality gate or budget), not a wait on the reader.
+  if (["failed", "cancelled", "needs_more_work"].includes(status)) return "Stopped";
+  if (status === "waiting_for_human") return "Needs your decision";
   return "Researching";
+}
+
+/**
+ * A company's status from its runs: a run waiting at the final review (waiting_for_human at human_review) means
+ * Needs your decision even when a later run stopped; otherwise the latest run's word.
+ */
+export function companyStatusWord(runs: readonly { status: string; created_at: string | Date; waiting_stage_key?: string | null }[]): StatusWord {
+  if (runs.some((r) => r.status === "waiting_for_human" && r.waiting_stage_key === "human_review")) return "Needs your decision";
+  const latest = [...runs].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+  return runStatusWord(latest?.status, latest?.waiting_stage_key);
 }
 
 /** The Tag tone for a status word. */

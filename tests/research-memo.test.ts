@@ -160,8 +160,8 @@ test('a run status maps to one vocabulary', () => {
   assert.equal(memoStatus({ runStatus: 'waiting_for_human' })!.label, 'Needs your decision');
   assert.equal(memoStatus({ runStatus: 'waiting_for_human', humanReviewStatus: 'waiting_for_human' })!.label, 'Needs your decision');
   assert.equal(memoStatus({ runStatus: 'waiting_for_human', humanReviewStatus: 'pending' })!.label, 'Needs plan approval');
-  // One status vocabulary across the app (consumer remaster): a revision request reads Needs your decision, a failed run Stopped.
-  assert.equal(memoStatus({ runStatus: 'needs_more_work' })!.label, 'Needs your decision');
+  // One status vocabulary: a needs_more_work run is one the pipeline stopped (failed stage, quality gate or budget), so it reads Stopped.
+  assert.equal(memoStatus({ runStatus: 'needs_more_work' })!.label, 'Stopped');
   assert.equal(memoStatus({ runStatus: 'running' })!.label, 'Researching');
   assert.equal(memoStatus({ runStatus: 'completed' })!.label, 'Decided');
   assert.equal(memoStatus({ runStatus: 'waiting_for_human', latestDecision: 'watchlist' })!.label, 'Decided');

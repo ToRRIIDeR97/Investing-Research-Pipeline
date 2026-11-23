@@ -22,7 +22,7 @@ import { AssetHero, Leadership } from "@/components/company/company";
 import { KeyNumbers, KpiGauges } from "@/components/visuals/valuation-visuals";
 import { Tag, type TagTone } from "@/components/ui/primitives";
 import { CompanyOverview } from "./company-overview";
-import { statusTone } from "@/lib/research/run-status";
+import { companyStatusWord, statusTone } from "@/lib/research/run-status";
 import { ResearchMemoView } from "@/components/memo/research-memo";
 import { ModelView } from "@/components/memo/model-view";
 import { backtestLines, metricName, metricValue, providerLabel, sourceTypeLabel, words } from "@/lib/research/reporting/audit-format";
@@ -257,10 +257,12 @@ function ViewResearch() {
   const asset = data.asset;
   const primaryListing = (asset.listings?.find((item) => item.is_primary) ?? asset.listings?.[0])?.symbol ?? null;
   const ticker = asset.asset_kind === "equity" ? primaryListing : null;
+  // A run waiting at the final review wins over a later stopped run; otherwise the shown run's own state.
+  const heroLabel = companyStatusWord(data.runs.map((r) => ({ status: String(r.status), created_at: r.created_at, waiting_stage_key: r.waiting_stage_key ?? null }))) === "Needs your decision" ? "Needs your decision" : action.label;
   const header = <>
     <AssetHero assetId={assetId} name={asset.canonical_name} ticker={ticker}
       meta={[cleanWords(asset.asset_kind.replace(/_asset/g, "")), asset.sector, asset.industry]}
-      status={activeTab !== "thesis" && activeTab !== "memo" ? <Tag tone={heroStatus(action.label)[1]}>{heroStatus(action.label)[0]}</Tag> : undefined}
+      status={activeTab !== "thesis" && activeTab !== "memo" ? <Tag tone={heroStatus(heroLabel)[1]}>{heroStatus(heroLabel)[0]}</Tag> : undefined}
       actions={<>
         <Link href={`/assets/${assetId}`} className={ui.secondary}>Asset details</Link>
         {data.activeRun&&<ResearchChat key={data.activeRun.id} runId={data.activeRun.id} evidence={data.report?.report_document?.evidence??[]} workbenchHref={(proposal)=>`${sectionHref('workbench')}&proposal=${encodeURIComponent(proposal)}`}/>}

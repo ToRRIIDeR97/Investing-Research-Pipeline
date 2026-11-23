@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { STAGE_KEY, runStatusWord, stageOf, statusTone } from "../src/lib/research/run-status";
+import { STAGE_KEY, companyStatusWord, runStatusWord, stageOf, statusTone } from "../src/lib/research/run-status";
 import type { AssetOverview } from "../src/lib/research/asset-overview";
 import { researchBriefAction } from "../src/lib/research/brief-presentation";
 import { runBars } from "../src/lib/research/run-bars";
@@ -11,6 +11,8 @@ test("runStatusWord: the plan gate reads Needs plan approval only with its stage
   assert.equal(runStatusWord("waiting_for_human", "research_plan"), "Needs plan approval");
   assert.equal(runStatusWord("completed", "research_plan"), "Decided");
   assert.equal(runStatusWord("cancelled"), "Stopped");
+  assert.equal(runStatusWord("needs_more_work"), "Stopped");
+  assert.equal(runStatusWord("needs_more_work", "research_plan"), "Stopped");
   assert.equal(runStatusWord(null), "Not started");
   assert.equal(runStatusWord("running"), "Researching");
   assert.equal(statusTone("Needs plan approval"), "waiting");
@@ -27,10 +29,24 @@ test("stageOf: every asset counts under exactly one stage, plan approval apart f
     asset("d", "running"), asset("e", "completed"), asset("f", "failed"), asset("g", null)];
   const reviewing = new Set(["b"]);
   const keys = assets.map((a) => stageOf(a, reviewing).key);
-  assert.deepEqual(keys, ["plan", "review", "review", "running", "done", "stopped", "idea"]);
+  assert.deepEqual(keys, ["plan", "review", "stopped", "running", "done", "stopped", "idea"]);
   const stageKeys = [...new Set(Object.values(STAGE_KEY))];
   const counted = stageKeys.reduce((n, key) => n + assets.filter((a) => stageOf(a, reviewing).key === key).length, 0);
   assert.equal(counted, assets.length);
+});
+
+test("a waiting final decision wins over a later stopped run, for the hero and the cards", () => {
+  const runs = [
+    { status: "waiting_for_human", created_at: "2026-11-18T19:05:00Z", waiting_stage_key: "human_review" },
+    { status: "needs_more_work", created_at: "2026-11-18T21:12:00Z", waiting_stage_key: null },
+  ];
+  assert.equal(companyStatusWord(runs), "Needs your decision");
+  assert.equal(companyStatusWord(runs.slice(1)), "Stopped");
+  assert.equal(companyStatusWord([{ status: "waiting_for_human", created_at: "2026-11-20T00:00:00Z", waiting_stage_key: "research_plan" }]), "Needs plan approval");
+  assert.equal(companyStatusWord([]), "Not started");
+  const sofi = asset("sofi", "needs_more_work");
+  assert.equal(stageOf(sofi).label, "Stopped");
+  assert.equal(stageOf(sofi, new Set(["sofi"])).label, "Needs your decision", "a current review in the queue wins on cards and counts");
 });
 
 test("the hero, the cards and the runs chart agree on a run waiting for plan approval", () => {
