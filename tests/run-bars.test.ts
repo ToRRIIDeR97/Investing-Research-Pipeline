@@ -25,7 +25,27 @@ test("runBars: an older run waiting for plan approval says so and never supersed
 });
 
 test("runBars: unknown statuses read as words and a lone run on a day has no time", () => {
-  const { runs, total } = runBars([{ id: "x", created_at: "2026-01-05T23:59:00Z", status: "paused_by_user", actual_cost_usd: 2 }]);
+  const { runs, total } = runBars([{ id: "x", created_at: "2026-01-05T23:59:00Z", status: "paused_by_user", actual_cost_usd: 2 }], { timeZone: "UTC" });
   assert.deepEqual(runs[0], { id: "x", label: "5 Jan", outcome: "Paused by user", cost: 2, current: false });
   assert.equal(total, 2);
+});
+
+test("runBars: a final decision reads Decided and hands current to the next waiting run; a send-back changes nothing", () => {
+  const { runs } = runBars([
+    { id: "old", created_at: "2026-11-01T09:00:00Z", status: "waiting_for_human", waiting_stage_key: "human_review", latest_decision: null },
+    { id: "w", created_at: "2026-11-05T09:00:00Z", status: "waiting_for_human", waiting_stage_key: "human_review", latest_decision: "reject" },
+    { id: "s", created_at: "2026-11-09T09:00:00Z", status: "waiting_for_human", waiting_stage_key: "human_review", latest_decision: "needs_more_work" },
+  ], { timeZone: "UTC" });
+  assert.deepEqual(runs.map((r) => [r.id, r.outcome, r.current]), [
+    ["old", "Superseded", false], ["w", "Decided", false], ["s", "Needs your decision", true],
+  ]);
+});
+
+test("runBars: same-day detection follows the zone", () => {
+  const rows = [
+    { id: "a", created_at: "2026-11-18T15:00:00Z", status: "completed" },
+    { id: "b", created_at: "2026-11-18T17:00:00Z", status: "completed" },
+  ];
+  assert.deepEqual(runBars(rows, { timeZone: "UTC" }).runs.map((r) => r.label), ["18 Nov 15:00", "18 Nov 17:00"]);
+  assert.deepEqual(runBars(rows, { timeZone: "Asia/Singapore" }).runs.map((r) => r.label), ["18 Nov", "19 Nov"]);
 });

@@ -2,6 +2,7 @@ import {artifactContent} from './data-views';
 import {kpiCandidateKeys} from './dashboard-series';
 import {money,percent,plainLabel,price} from './plain-english';
 import {withheldValuationReason} from '../valuation/contracts';
+import {isFinalDecision} from '../run-status';
 
 /**
  * The research memo: one reading view of a run, built on the server from stored, code-computed artifacts.
@@ -85,11 +86,12 @@ export function memoStatus(state:MemoRunState):MemoStatus|null {
   const run=String(state.runStatus??'').toLowerCase();
   const decision=String(state.latestDecision??'').toLowerCase();
   if(!run)return null;
+  // A final decision (approved, watchlist, reject) settles the run, the same rule as runStatusWord.
+  if(isFinalDecision(decision))return {key:'decided',label:'Decided'};
   if(['failed','cancelled','canceled'].includes(run))return {key:'failed',label:'Stopped'};
   // The run's own needs_more_work means the pipeline stopped it. A needs_more_work decision is a reviewer's send-back:
   // the run redrafts or waits again, so the run status and the human-review gate decide, not the decision.
   if(run==='needs_more_work')return {key:'needs_more_work',label:'Stopped'};
-  if(decision&&decision!=='pending'&&decision!=='needs_more_work')return {key:'decided',label:'Decided'};
   if(state.humanReviewStatus==='waiting_for_human')return {key:'needs_decision',label:'Needs your decision'};
   // Waiting at a gate other than the final review: the research plan.
   if(run==='waiting_for_human')return state.humanReviewStatus==null?{key:'needs_decision',label:'Needs your decision'}:{key:'needs_plan_approval',label:'Needs plan approval'};

@@ -86,22 +86,22 @@ export async function loadReviewQueue(sql: Sql, { summaries = true }: { summarie
   const rows = await sql`
     SELECT rr.id AS run_id, rr.asset_id, rr.run_type, rr.research_question, rr.created_at, rr.completed_at,
       a.canonical_name AS asset_name, a.slug AS asset_slug, a.asset_kind,
-      (SELECT rd.priority FROM review_decisions rd WHERE rd.research_run_id = rr.id ORDER BY rd.reviewed_at DESC LIMIT 1) AS priority
+      latest.priority, latest.status AS latest_decision
     FROM research_runs rr
     JOIN assets a ON rr.asset_id = a.id
     JOIN research_stages hs ON hs.research_run_id = rr.id AND hs.stage_key = 'human_review' AND hs.status = 'waiting_for_human'
+    LEFT JOIN LATERAL (SELECT rd.priority, rd.status FROM review_decisions rd WHERE rd.research_run_id = rr.id
+      ORDER BY rd.reviewed_at DESC, rd.created_at DESC LIMIT 1) latest ON true
     WHERE rr.pipeline_version = ${CURRENT_PIPELINE_VERSION}
       AND rr.status = 'waiting_for_human'
-      AND NOT EXISTS (
-        SELECT 1 FROM review_decisions approved
-        WHERE approved.research_run_id = rr.id AND approved.status IN ('approved_for_tracking', 'approved_for_position')
-      )
     ORDER BY rr.created_at DESC
     LIMIT 50
   `;
+  // A run whose latest decision is final (approved, watchlist, reject) has nothing to decide: groupReviewQueue drops
+  // it, and the whole company when it is that company's newest waiting run, so older versions don't resurface.
   return assembleReviewQueue(rows.map((r) => ({
     run_id: String(r.run_id), asset_id: String(r.asset_id), run_type: String(r.run_type), research_question: r.research_question ?? null,
     asset_name: String(r.asset_name), asset_slug: String(r.asset_slug), asset_kind: String(r.asset_kind), priority: r.priority ?? null,
-    created_at: iso(r.created_at)!, completed_at: iso(r.completed_at),
+    created_at: iso(r.created_at)!, completed_at: iso(r.completed_at), latest_decision: r.latest_decision == null ? null : String(r.latest_decision),
   })), summaries ? (runId) => loadReviewSummary(sql, runId) : null);
 }

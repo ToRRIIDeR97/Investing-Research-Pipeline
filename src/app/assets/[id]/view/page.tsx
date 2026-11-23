@@ -23,6 +23,7 @@ import { KeyNumbers, KpiGauges } from "@/components/visuals/valuation-visuals";
 import { Tag, type TagTone } from "@/components/ui/primitives";
 import { CompanyOverview } from "./company-overview";
 import { companyStatusWord, statusTone } from "@/lib/research/run-status";
+import { isStoppedRun, primaryRunChoice, type PrimaryRunInput } from "@/lib/research/primary-run";
 import { ResearchMemoView } from "@/components/memo/research-memo";
 import { ModelView } from "@/components/memo/model-view";
 import { backtestLines, metricName, metricValue, providerLabel, sourceTypeLabel, words } from "@/lib/research/reporting/audit-format";
@@ -140,7 +141,8 @@ function ViewResearch() {
       );
       if (version !== loadVersion.current) return;
       const targetRunId = requestedRunId;
-      const activeRun = targetRunId ? sortedRuns.find((run) => run.id === targetRunId) : sortedRuns[0] ?? null;
+      // A ?run= wins; otherwise primaryRun's choice (the report waiting for the decision before a later stopped draft).
+      const activeRun = targetRunId ? sortedRuns.find((run) => run.id === targetRunId) : primaryRunChoice(sortedRuns as (ResearchRecord & PrimaryRunInput)[])?.run ?? null;
       if (targetRunId && !activeRun) throw new Error("Research run not found.");
 
       if (!activeRun) {
@@ -258,7 +260,7 @@ function ViewResearch() {
   const primaryListing = (asset.listings?.find((item) => item.is_primary) ?? asset.listings?.[0])?.symbol ?? null;
   const ticker = asset.asset_kind === "equity" ? primaryListing : null;
   // A run waiting at the final review wins over a later stopped run; otherwise the shown run's own state.
-  const heroLabel = companyStatusWord(data.runs.map((r) => ({ status: String(r.status), created_at: r.created_at, waiting_stage_key: r.waiting_stage_key ?? null }))) === "Needs your decision" ? "Needs your decision" : action.label;
+  const heroLabel = companyStatusWord(data.runs.map((r) => ({ status: String(r.status), created_at: r.created_at, waiting_stage_key: r.waiting_stage_key ?? null, latest_decision: r.latest_decision ?? null }))) === "Needs your decision" ? "Needs your decision" : action.label;
   const header = <>
     <AssetHero assetId={assetId} name={asset.canonical_name} ticker={ticker}
       meta={[cleanWords(asset.asset_kind.replace(/_asset/g, "")), asset.sector, asset.industry]}
@@ -268,6 +270,8 @@ function ViewResearch() {
         {data.activeRun&&<ResearchChat key={data.activeRun.id} runId={data.activeRun.id} evidence={data.report?.report_document?.evidence??[]} workbenchHref={(proposal)=>`${sectionHref('workbench')}&proposal=${encodeURIComponent(proposal)}`}/>}
         <Link href={`/assets/${assetId}/run?new=1`} className={ui.primary}>New research</Link>
       </>} />
+    {isStoppedRun(data.activeRun ? { status: String(data.activeRun.status), latest_decision: data.activeRun.latest_decision ?? null } : null)
+      && <p className={styles.runNote}>From a run that stopped before review</p>}
     {data.activeRun && activeTab !== "memo" && activeTab !== "overview" && <KeyNumbers snapshot={snapshot} kpis={0} label={`${asset.canonical_name} key numbers`} />}
     <AssetTabs activeTab={activeTab} hrefFor={sectionHref} />
   </>;
@@ -324,7 +328,7 @@ function ViewResearch() {
       </section>
       <Leadership subject={{ asset_id: assetId }} className={ui.s5} />
     </div> : <CompanyOverview key={data.activeRun.id} assetId={assetId} snapshot={snapshot} memo={(data.report?.memo ?? null) as ResearchMemo | null}
-      runs={data.runs.map((r) => ({ id: String(r.id), created_at: r.created_at, status: String(r.status), actual_cost_usd: r.actual_cost_usd, budget_limit_usd: r.budget_limit_usd, waiting_stage_key: r.waiting_stage_key ?? null }))}
+      runs={data.runs.map((r) => ({ id: String(r.id), created_at: r.created_at, status: String(r.status), actual_cost_usd: r.actual_cost_usd, budget_limit_usd: r.budget_limit_usd, waiting_stage_key: r.waiting_stage_key ?? null, latest_decision: r.latest_decision ?? null }))}
       fallbackStatement={typeof statement === "string" && statement.trim() ? statement : null} risks={heatRisks}
       missing={data.report?.incomplete ? (data.report.missing_sections ?? []).map((item: ResearchRecord) => String(item.label)) : null}
       monitorNote={monitor ? monitorLabel(monitor) : null} onOpenReport={() => openSection("thesis")} />);

@@ -113,6 +113,14 @@ Each criterion names its phase. Tests live in `acceptance/` (visible to the impl
 
 - **AC-17 Restyle.** The run page, the report reader tabs and the memo use the new tokens and type with no layout or behaviour change; AC-1 to AC-3 hold over the whole tree.
 
+### P7 Fixes from the first close-out (asked for by the user on 23 Nov 2026, before the Overview default)
+
+- **AC-19 The run a company page shows.** `primaryRun(runs)` (new, pure, `src/lib/research/primary-run.ts`) takes runs `{ id, created_at, status, waiting_stage_key?, latest_decision? }` in any order and returns the id of the run to show, or null for none, by this rule, first match wins: (1) the newest run waiting for the final decision (`waiting_for_human`, waiting stage not `research_plan`, and no final decision); (2) the newest decided or finished run (`completed`/`approved`, or a final decision: `approved_for_tracking`, `approved_for_position`, `watchlist`, `reject`); (3) the newest run that didn't stop (status not `failed`, `cancelled`, `needs_more_work`); (4) the newest run. The company page uses it when no `?run=` is given (a `?run=` still wins), and `listAssetOverviews` applies the same order to the run whose valuation it shows (that run must still have `report_facts`). When the run shown is a stopped run (rule 4), the page says so in a short line ("From a run that stopped before review"). SoFi: `9cd97f72` (base $8.80), not the stopped `0c9a2731` ($1.13).
+- **AC-20 Watchlist and reject are decisions.** A run whose latest review decision is `watchlist`, `reject`, `approved_for_tracking` or `approved_for_position` reads "Decided" everywhere (`runStatusWord(status, waitingStageKey, latestDecision)`, `companyStatusWord`, `runBars`, `memoStatus`) and is not in the review queue; a `needs_more_work` decision is a send-back and changes nothing. `groupReviewQueue` drops a company entirely when its newest waiting run carries a final decision, so older versions don't resurface. The runs API and `listAssetOverviews` add a read-only `latest_decision` per run; the queue query adds `latest_decision` to each row. The review route is unchanged.
+- **AC-21 Local times.** `runBars(runs, { timeZone? })` labels and same-day detection use the given IANA zone, defaulting to the viewer's zone (`Intl.DateTimeFormat().resolvedOptions().timeZone`). SoFi in `Asia/Singapore`: "18 Nov 19:05", not 11:05.
+- **AC-22 Test assets hidden.** `isTestAsset({ slug, canonical_name, status })` (in `src/lib/research/asset-overview.ts` or a pure sibling) is true for status `test` or a slug matching `-e2e-` followed by 6+ hex characters; `listAssetOverviews`, `GET /api/assets` (search) and the Start research list leave them out. A direct URL to a test asset still opens.
+- **AC-23 Operational screens restyled.** The run page (`src/app/assets/[id]/run/page.tsx`), the workbench (`src/components/workbench/*`) and the investing notebook (`src/components/notebook/*`) use the primitives (`Card`, `Tag`, `Segmented` where a toggle exists), short sentence-case headings, no tile-head subtitles, no tinted panels, pill buttons; behaviour, handlers, fetches and gates unchanged. Static check: each of the three areas imports from `@/components/ui/primitives`.
+
 ### All phases
 
 - **AC-18 Checks.** `npm run lint`, `npx tsc --noEmit`, `npm run test:unit`, `npm run build` pass, and this task's acceptance tests for the phase and every earlier phase pass.
@@ -129,6 +137,8 @@ Each criterion names its phase. Tests live in `acceptance/` (visible to the impl
 | P6 | Run page, report reader and memo restyled | AC-17, 18 | CSS modules of `src/app/assets/[id]/run`, `src/app/assets/[id]/view`, `src/components/memo`, `src/components/research-report*`, `src/components/report`, `src/components/visuals`, `src/components/financials`, `src/components/notebook`, `src/components/workbench`; TSX only to drop subtitles | P1 |
 
 TOR-2 runs them in this order on one branch: P1 → P2 → P3 → P4 → P5 → P6.
+
+| P7 | Fixes from the first close-out | AC-19–23, 18 | `src/lib/research/primary-run.ts`, `run-status.ts`, `run-bars.ts`, `asset-overview.ts`, `reporting/research-memo.ts`, `src/lib/review/*`, `src/app/api/review/queue/route.ts`, `src/app/api/assets/route.ts`, `src/app/api/assets/[id]/research-runs/route.ts` (GET), the company page, Home, `/assets`, `/research/new`, the run page, workbench and notebook components, their CSS, `docs/system.md` | P6 |
 
 ## Verification
 

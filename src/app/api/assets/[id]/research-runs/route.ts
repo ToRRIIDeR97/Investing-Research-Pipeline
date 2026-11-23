@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { assets } from "@/db/schema/core";
 import { asset_profile_assignments, research_profiles } from "@/db/schema/profiles";
 import { research_runs, research_stages } from "@/db/schema/workflow";
+import { review_decisions } from "@/db/schema/thesis";
 import { handleApiError, successResponse, createdResponse, ApiError } from "@/lib/api/errors";
 import { createResearchRunSchema } from "@/lib/api/validation";
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
@@ -36,7 +37,16 @@ export async function GET(
       if (!current || (!HUMAN_GATES.has(current) && HUMAN_GATES.has(row.stage_key))) gateOf.set(row.run_id, row.stage_key);
     }
 
-    return successResponse(runs.map((run) => ({ ...run, waiting_stage_key: gateOf.get(run.id) ?? null })));
+    // The newest review decision per run (read only): a final one (approved, watchlist, reject) reads Decided.
+    const decisions = runs.length ? await db
+      .select({ run_id: review_decisions.research_run_id, status: review_decisions.status })
+      .from(review_decisions)
+      .where(inArray(review_decisions.research_run_id, runs.map((run) => run.id)))
+      .orderBy(desc(review_decisions.reviewed_at), desc(review_decisions.created_at)) : [];
+    const decisionOf = new Map<string, string>();
+    for (const row of decisions) if (!decisionOf.has(row.run_id)) decisionOf.set(row.run_id, row.status);
+
+    return successResponse(runs.map((run) => ({ ...run, waiting_stage_key: gateOf.get(run.id) ?? null, latest_decision: decisionOf.get(run.id) ?? null })));
   } catch (error) {
     return handleApiError(error);
   }
