@@ -214,12 +214,12 @@ test('the verdict sentence is built from the numbers', () => {
 });
 
 test('report tabs group the earlier views and keep their links', () => {
-  assert.equal(viewFromQuery(null), 'memo');
+  assert.equal(viewFromQuery(null), 'overview');
   assert.equal(viewFromQuery('report'), 'thesis');
-  assert.equal(viewFromQuery('overview'), 'overview');
-  assert.equal(viewFromQuery('nonsense'), 'memo');
+  assert.equal(viewFromQuery('memo'), 'memo');
+  assert.equal(viewFromQuery('nonsense'), 'overview');
   assert.equal(viewQuery('thesis'), 'report');
-  // The company overview is the first tab; the page still opens on the Memo (viewFromQuery(null) above).
+  // The company overview is the first tab and the page opens on it (viewFromQuery(null) above).
   assert.deepEqual(REPORT_TABS.map((t) => t.label), ['Overview', 'Memo', 'Model', 'Financials', 'Audit']);
   for (const view of ['valuation', 'workbench', 'financials', 'kpis', 'metrics', 'thesis', 'evidence', 'sources', 'backtests', 'runs'] as const)
     assert.ok(tabOf(view), `${view} sits under a tab`);

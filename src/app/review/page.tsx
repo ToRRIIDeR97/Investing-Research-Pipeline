@@ -177,7 +177,7 @@ function ReviewRun({ item, onDecided }: { item: ReviewQueueItem; onDecided: (mes
         <div><h1>{item.asset_name}</h1>
           <p className={styles.meta}>{ticker(item) && <span>{ticker(item)}</span>}{item.replaced_by ? <Tag tone="neutral">Replaced by a newer run</Tag> : <Tag tone="waiting">Needs your decision</Tag>}</p></div>
       </div>
-      <Link href={`/assets/${item.asset_id}/view?run=${item.run_id}`} className={ui.secondary}>Open full report<ArrowUpRight size={14} /></Link>
+      <Link href={`/assets/${item.asset_id}/view?view=memo&run=${item.run_id}`} className={ui.secondary}>Open full report<ArrowUpRight size={14} /></Link>
     </header>
     {loadError && <p className={ui.error} role="alert">{loadError}</p>}
     <div className={styles.layout}>

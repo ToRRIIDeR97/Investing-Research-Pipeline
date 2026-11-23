@@ -11,7 +11,7 @@
 .subTabs a[aria-current] { border-color: var(--navy-2); background: var(--navy-soft); color: var(--navy); font-weight: 600; }
 
 /* The short line under the hero when the run shown stopped before review. */
-.runNote { margin: -6px 0 14px; color: var(--ink-3); font-size: 13px; }
+.runNote { margin: -6px 0 14px; color: var(--ink-2); font-size: 13px; }
 
 /* Full-width tile around the report, financials and KPI views. */
 .wide { padding: 4px 18px 18px; overflow-wrap: break-word; }

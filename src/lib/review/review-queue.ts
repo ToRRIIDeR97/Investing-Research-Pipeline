@@ -94,11 +94,25 @@ export async function loadReviewQueue(sql: Sql, { summaries = true }: { summarie
       ORDER BY rd.reviewed_at DESC, rd.created_at DESC LIMIT 1) latest ON true
     WHERE rr.pipeline_version = ${CURRENT_PIPELINE_VERSION}
       AND rr.status = 'waiting_for_human'
+      -- Settled runs (a final decision keeps the run waiting_for_human) don't take places under the limit.
+      -- Keep this list in step with FINAL_DECISIONS in src/lib/research/run-status.ts.
+      AND (latest.status IS NULL OR latest.status NOT IN ('approved_for_tracking', 'approved_for_position', 'watchlist', 'reject'))
+      -- Nor do runs older than a settled waiting run of the same company: with the settled run filtered out above,
+      -- they would otherwise resurface as the company's current review.
+      AND NOT EXISTS (
+        SELECT 1 FROM research_runs newer
+        JOIN research_stages ns ON ns.research_run_id = newer.id AND ns.stage_key = 'human_review' AND ns.status = 'waiting_for_human'
+        WHERE newer.asset_id = rr.asset_id AND newer.pipeline_version = rr.pipeline_version AND newer.status = 'waiting_for_human'
+          AND newer.created_at > rr.created_at
+          AND (SELECT nd.status FROM review_decisions nd WHERE nd.research_run_id = newer.id
+               ORDER BY nd.reviewed_at DESC, nd.created_at DESC LIMIT 1) IN ('approved_for_tracking', 'approved_for_position', 'watchlist', 'reject')
+      )
     ORDER BY rr.created_at DESC
     LIMIT 50
   `;
-  // A run whose latest decision is final (approved, watchlist, reject) has nothing to decide: groupReviewQueue drops
-  // it, and the whole company when it is that company's newest waiting run, so older versions don't resurface.
+  // A run whose latest decision is final (approved, watchlist, reject) has nothing to decide: the query leaves it, and
+  // the older waiting runs of its company, out before the limit. groupReviewQueue applies the same drop-the-company
+  // rule to any rows it is given, so older versions don't resurface either way.
   return assembleReviewQueue(rows.map((r) => ({
     run_id: String(r.run_id), asset_id: String(r.asset_id), run_type: String(r.run_type), research_question: r.research_question ?? null,
     asset_name: String(r.asset_name), asset_slug: String(r.asset_slug), asset_kind: String(r.asset_kind), priority: r.priority ?? null,

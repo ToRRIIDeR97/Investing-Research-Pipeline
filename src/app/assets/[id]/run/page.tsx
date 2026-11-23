@@ -834,7 +834,7 @@ export default function RunResearchPage() {
       meta={[phase === "intake" ? "New research run" : progress ? `Run ${progress.runId.slice(0, 8)}` : null]}
       status={phase !== "intake" && progress ? <RunStatusTag status={progress.status} waiting={progress.stages.find((s) => s.status === "waiting_for_human")?.key} /> : undefined}
       actions={runId && progress && phase === "pipeline" ? <>
-        <Link href={`/assets/${assetId}/view?run=${runId}`} className={ui.secondary}>Read research</Link>
+        <Link href={`/assets/${assetId}/view?view=memo&run=${runId}`} className={ui.secondary}>Read research</Link>
         {!["completed", "cancelled"].includes(progress.status) && <button className={ui.secondary} onClick={handleCancelRun} disabled={isProcessing}>Cancel run</button>}
         <button className={ui.primary} onClick={startNew}>New research</button>
       </> : undefined} />
@@ -858,7 +858,7 @@ export default function RunResearchPage() {
         <div className={ui.actions}><span className={ui.muted}>Stops first at the plan gate</span><button className={ui.primary} disabled={isProcessing || !input.trim()}>{isProcessing ? "Creating…" : "Create research plan"}</button></div>
       </Card>
     </form> : phase === "plan" ? <div className={ui.grid}>
-      <Card flush className={ui.s8} title="Research plan" action={<Tag tone="waiting">Needs plan approval</Tag>}>
+      <Card flush className={ui.s8} title="Gate 1 of 2: research plan" action={<Tag tone="waiting">Needs plan approval</Tag>}>
         {researchPlan && <div className="border-b border-[var(--line-soft)] [&>section]:m-0 [&>section]:rounded-none [&>section]:border-0"><FramingEditor key={`${researchPlan.generated_at}`} plan={researchPlan} disabled={isProcessing} onChange={setPlanEdits} /></div>}
         <ResearchPlanCard plan={researchPlan} />
       </Card>
@@ -873,7 +873,7 @@ export default function RunResearchPage() {
         </div>
       </Card>
     </div> : progress ? <div className={ui.grid}>
-      {finalReviewWaiting && <Card flush className={ui.s12} title="Final review" action={<Tag tone="waiting">Needs your decision</Tag>}>
+      {finalReviewWaiting && <Card flush className={ui.s12} title="Gate 2 of 2: final review" action={<Tag tone="waiting">Needs your decision</Tag>}>
         <div className={`${ui.tileBody} flex flex-wrap items-center justify-between gap-3`}><p className={ui.muted}>The report and AI review are ready. Record a verdict to export the report and schedule refreshes.</p><Link className={ui.primary} href={`/review?run=${runId}`}>Review research</Link></div>
       </Card>}
       {progress.requestReset && <Card flush className={ui.s12} aria-label="Re-run approval" title="Approve a re-run?" action={<Tag tone="waiting">Needs your decision</Tag>}>

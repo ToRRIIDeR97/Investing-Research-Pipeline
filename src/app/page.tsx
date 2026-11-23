@@ -71,7 +71,7 @@ export default function HomePage() {
         </div>
         <p className={styles.verdict}>The base case values a share at {money(fs.values.base, fs.currency)} against a {money(fs.price, fs.currency)} price{fs.price_verified ? "" : " (unverified)"}.{fs.values.bull != null && <> The hopeful case is {money(fs.values.bull, fs.currency)}.</>}</p>
         <div className={styles.featuredActions}>
-          <Link className={ui.primary} href={`/assets/${featured.id}/view?run=${featured.snapshot_run?.id}`}>Read the research</Link>
+          <Link className={ui.primary} href={`/assets/${featured.id}/view?view=memo&run=${featured.snapshot_run?.id}`}>Read the research</Link>
           {featuredReview ? <Link className={ui.secondary} href={`/review?run=${featuredReview.run_id}`}>Review the report</Link>
             : <Link className={ui.secondary} href={`/assets/${featured.id}/view?view=valuation&run=${featured.snapshot_run?.id}`}>Valuation details</Link>}
         </div>

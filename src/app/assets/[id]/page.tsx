@@ -188,7 +188,7 @@ export default function AssetDetailPage() {
       meta={[words(asset.asset_kind.replace(/_asset/g, "")), asset.sector, listing?.exchange ?? null]}
       status={<span className={ui.status} data-status={asset.status}>{words(asset.status || "active")}</span>}
       actions={<>
-        <Link href={`/assets/${assetId}/view`} className={ui.secondary}>Read research</Link>
+        <Link href={`/assets/${assetId}/view?view=memo`} className={ui.secondary}>Read research</Link>
         <Link href={`/assets/${assetId}/run`} className={ui.primary}>{runs.length ? "Open run" : "Start research"}</Link>
       </>} />
     {monitor && <MonitorStatus monitor={monitor} />}
