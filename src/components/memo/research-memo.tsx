@@ -190,7 +190,7 @@ export function ResearchMemoView({ memo, assetId, runId, reportHash, links, onDe
     </nav>
 
     <div className={styles.body}>
-      <section id="memo-verdict" className={`${styles.block} ${styles.verdictBlock}`} aria-labelledby="memo-verdict-title">
+      <section id="memo-verdict" className={styles.block} aria-labelledby="memo-verdict-title">
         <div className={styles.headRow}>
           <h2 id="memo-verdict-title" className={styles.verdictTitle}>Verdict</h2>
           <div className={styles.chips}>

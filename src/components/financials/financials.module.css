@@ -41,7 +41,7 @@
 .windowNav select { font: inherit; font-size: 13px; background: transparent; padding: 6px; max-width: 210px; cursor: pointer; color: var(--ink-2); }
 
 /* Sticky chart panel. */
-.panel { position: sticky; top: 0; z-index: 3; background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); border-radius: var(--radius-card); box-shadow: var(--shadow-card); padding: 14px 20px; margin-bottom: 18px; box-shadow: 0 8px 24px rgba(24,24,24,.05); }
+.panel { position: sticky; top: 0; z-index: 3; background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); border-radius: var(--radius-card); box-shadow: var(--shadow-card); padding: 14px 20px; margin-bottom: 18px; }
 .panelHead { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 10px; }
 .titleInput { flex: 1 1 260px; min-width: 0; border: 1px solid transparent; border-radius: var(--radius-control); padding: 2px 8px; margin-left: -8px; font-family: var(--fin-heading); font-size: 22px; line-height: 1.3; background: transparent; color: var(--fin-ink); }
 .titleInput:hover { background: var(--hover); }

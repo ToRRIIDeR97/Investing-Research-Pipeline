@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import ui from "@/components/research-ui.module.css";
-import { businessArchetypes, archetypeOverlays } from "@/lib/research/archetypes/registry";
+import { businessArchetypes, archetypeOverlays } from "@/lib/research/archetypes/registry";
 import { Tag } from "@/components/ui/primitives";
 
 type Row = Record<string, any>;

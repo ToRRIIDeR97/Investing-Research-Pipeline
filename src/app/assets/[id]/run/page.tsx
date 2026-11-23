@@ -9,7 +9,7 @@ import { AssetHero } from "@/components/company/company";
 import styles from "./page.module.css";
 import { STAGE_CONFIG_MAP } from "@/lib/workflow/stages";
 import { FramingEditor, type FramingEdits } from "@/components/framing-editor";
-import { pollTick, runProgressIsLive } from "@/lib/research/run-polling";
+import { pollTick, runProgressIsLive } from "@/lib/research/run-polling";
 import { Tag } from "@/components/ui/primitives";
 import { runStatusWord, statusTone } from "@/lib/research/run-status";
 
