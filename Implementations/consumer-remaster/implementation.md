@@ -182,7 +182,17 @@ Branch `worktree-agent-aed684a892319cd1d` (implementor worktree), base `94dcb55`
 | P5 | `df245b6` | `9318da0` | 1 | `listAssetOverviews` adds `waiting_stage_key`; plan approval has its own stage; labelled filter pills |
 | P6 | `1f63fd9` | `48c4a79` | 2 | LF re-normalised; CSS leftovers; plan-author correction: run `needs_more_work` = Stopped (pipeline stop), only `waiting_for_human` waits, a waiting final decision wins the company status; Overview added as the first tab; memo send-back status; `next-env.d.ts` restored |
 
-### Checks on the final SHA
+| P7 | `637cea9` (fresh implementor, branch `consumer-remaster-p7` from `6aeeb60`) | `a643f1a` | 2 | P4 test pinned to UTC after AC-21; queue filters settled runs before its limit; "Gate 1 of 2" / "Gate 2 of 2" headings restored; contrast; then the user's choice: company pages open on Overview, memo links carry `view=memo` |
+
+**Final branch:** `consumer-remaster-p7`, verified SHA `a643f1a` (P1–P6 history plus P7). The earlier branch `worktree-agent-aed684a892319cd1d` stops at `6aeeb60`.
+
+### P7 checks (verifier, `a643f1a`, default zone Asia/Singapore)
+
+Acceptance 55/55, verification 27/27, lint 0 errors (117 pre-existing warnings), tsc exit 0, unit tests 715 pass / 0 fail / 64 skipped (not counted as passing), build exit 0, no CR bytes, `next-env.d.ts` and `AGENTS.md` identical to base. Plan author on the same SHA: both sets together 82/82.
+
+Manual (plan author, `fb3fb01` against `research_os`): Home and the SoFi overview show the report under review (base $8.80, −38%, blend $8.39), the test asset is gone, the runs chart's current bar is 18 Nov 19:05 local, the restyled run page renders; no console errors.
+
+### Checks on the P6 SHA
 
 - Verifier: acceptance 46/46, verification 22/22, `npm run lint` 0 errors (117 pre-existing warnings), `npx tsc --noEmit` exit 0, `npm run test:unit` 707 pass / 0 fail / 64 skipped (database- and provider-gated; not counted as passing), `npm run build` exit 0, no CR bytes in any changed file, `next-env.d.ts` identical to base.
 - Plan author (orchestrator), same SHA: both sets together 68/68 pass. `git diff 94dcb555..48c4a79` touches no review route, workflow, pipeline-runner or `src/db` file.
@@ -198,9 +208,9 @@ The proposed and detail diagrams hold. Deviations: the queue rules split into `s
 
 ### Known limits (not verified or out of scope)
 
-- The company overview and Home show the active run's numbers; the active run defaults to the newest run, which for SoFi is the stopped over-budget draft (base $1.13), not the report under review ($8.80). Pre-existing run selection.
-- The overview is the first tab but the page still opens on the Memo (default left for the user).
-- Run labels in the runs chart are in UTC.
-- A run waiting at `human_review` whose latest decision is watchlist or reject reads "Decided" in the memo but "Needs your decision" elsewhere (pre-existing contract, pinned by an existing test).
-- Test asset "SoFi test" still shows on Home and the Research list.
-- The run page, report, workbench, notebook and chat modules rely mostly on the shared tokens and tile classes; they weren't restyled rule by rule.
+Resolved in P7: the company page and Home showed the stopped draft's numbers; watchlist/reject disagreed between memo and queue; UTC run labels; the test asset in lists; the operational screens' partial restyle; Overview not the landing view.
+
+Still open:
+- The run page keeps operator detail (a run id in its hero, provider names in the model-call table, cost to four decimals); it's an operator screen, left as is.
+- The workbench "unavailable" state sits as a card inside the model view's card.
+- When a company has an old undecided run, a decided run and a newer undecided run, the queue's "replaces N older runs" count is smaller than before; the current run and all counts are unchanged.
