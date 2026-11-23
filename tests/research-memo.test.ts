@@ -216,14 +216,15 @@ test('report tabs group the earlier views and keep their links', () => {
   assert.equal(viewFromQuery('overview'), 'overview');
   assert.equal(viewFromQuery('nonsense'), 'memo');
   assert.equal(viewQuery('thesis'), 'report');
-  assert.deepEqual(REPORT_TABS.map((t) => t.label), ['Memo', 'Model', 'Financials', 'Audit']);
+  // The company overview is the first tab; the page still opens on the Memo (viewFromQuery(null) above).
+  assert.deepEqual(REPORT_TABS.map((t) => t.label), ['Overview', 'Memo', 'Model', 'Financials', 'Audit']);
   for (const view of ['valuation', 'workbench', 'financials', 'kpis', 'metrics', 'thesis', 'evidence', 'sources', 'backtests', 'runs'] as const)
     assert.ok(tabOf(view), `${view} sits under a tab`);
   assert.equal(tabOf('workbench')!.key, 'model');
   assert.equal(tabOf('kpis')!.key, 'financials');
   assert.equal(tabOf('runs')!.key, 'audit');
   assert.equal(tabOf('notebook'), null);
-  assert.equal(tabOf('overview'), null);
+  assert.equal(tabOf('overview')!.key, 'overview');
 });
 
 test('the Model tab renders its views on one page', () => {
