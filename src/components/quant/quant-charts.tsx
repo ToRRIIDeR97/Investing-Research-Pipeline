@@ -73,18 +73,22 @@ export function ValuePathChart({ history, projection, selected, current }: {
   const at = (k: Case) => proj.map((p) => ({ x: xp(p.year), y: y(p[k]) }));
   const band = [...at("bull"), ...at("bear").reverse()];
   const end = proj[proj.length - 1];
-  const caseColor = selected === "bull" ? C.positive : selected === "bear" ? C.critical : C.navy3;
+  const caseColor = selected === "bull" ? C.bull : selected === "bear" ? C.bear : C.base;
   const label = `Price over the last five years, weekly from ${history[0].day} (${money(history[0].close)}) to ${money(current)} today; forward value in year ${years}: bear ${money(end?.bear)}, base ${money(end?.base)}, bull ${money(end?.bull)}.`;
   return <figure style={{ margin: 0 }}>
     <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img" aria-label={label}>
       <text x={0} y={y(dataHi) + 4} fontSize="11" fill={C.ink3}>{money(dataHi)}</text>
       {Math.abs(y(dataLo) - y(dataHi)) >= 12 && <text x={0} y={y(dataLo) + 4} fontSize="11" fill={C.ink3}>{money(dataLo)}</text>}
       {proj.length > 1 && <path d={`${path(band)} Z`} fill={C.navySoft} />}
+      {/* The band's edges in their case colours, so bear and bull read at a glance. */}
+      {proj.length > 1 && selected !== "bull" && <path d={path(at("bull"))} fill="none" stroke={C.bull} strokeWidth="1.5" strokeDasharray="5 4" opacity="0.7" />}
+      {proj.length > 1 && selected !== "bear" && <path d={path(at("bear"))} fill="none" stroke={C.bear} strokeWidth="1.5" strokeDasharray="5 4" opacity="0.7" />}
       <line x1={split} y1={top} x2={split} y2={bottom} stroke={C.lineStrong} strokeDasharray="4 4" />
       <text x={split - 4} y={bottom - 6} fontSize="12" fill={C.ink3} textAnchor="end">today {money(current)}</text>
       <path d={path(hist)} fill="none" stroke={C.navy} strokeWidth="2.5" />
       {proj.length > 1 && <path d={path(at(selected))} fill="none" stroke={caseColor} strokeWidth="3" />}
-      {end && <text x={right + 6} y={clamp(y(end[selected]) + 4, top + 8, bottom)} fontSize="12" fill={C.ink}>{money(end[selected])}</text>}
+      {proj.length > 1 && end && <circle cx={xp(end.year)} cy={y(end[selected])} r="5" fill={caseColor} stroke={C.tile} strokeWidth="2" />}
+      {end && <text x={right + 10} y={clamp(y(end[selected]) + 4, top + 8, bottom)} fontSize="13" fontWeight="700" fill={caseColor}>{money(end[selected])}</text>}
       <text x={left} y={H - 8} fontSize="11" fill={C.ink3}>{history[0].day.slice(0, 7)}</text>
       <text x={split} y={H - 8} fontSize="11" fill={C.ink3} textAnchor="middle">now</text>
       <text x={right} y={H - 8} fontSize="11" fill={C.ink3} textAnchor="end">year {years}</text>
@@ -93,6 +97,7 @@ export function ValuePathChart({ history, projection, selected, current }: {
       <span><i style={{ background: C.navy }} />Weekly close</span>
       <span><i style={{ background: caseColor }} />{selected[0].toUpperCase() + selected.slice(1)} forward value</span>
       <span><i style={{ background: C.navySoft, height: 10 }} />Bear to bull range</span>
+      <span><i style={{ background: C.bear }} />Bear</span><span><i style={{ background: C.bull }} />Bull</span>
     </div>
   </figure>;
 }

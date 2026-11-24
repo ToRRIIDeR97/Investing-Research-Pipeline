@@ -40,6 +40,19 @@ code that can't read variables uses `C` and `SERIES` from `palette.ts`, kept in 
 
 Charts: navy first, then `navy3`, `ink3`, `navy2`, `ink4` (`SERIES`). Never a status colour for a series.
 
+### Quant colour
+
+The Quant page uses colour more freely, because colour is the fastest way to read a grade or a scenario.
+
+- **Grades:** five tones by letter, A green, B lime, C amber, D orange-red, F red (`gradeTone` in
+  `src/components/quant/tones.ts`). Set `data-grade` on an element and use `var(--g-bg)` and `var(--g-ink)`: a tint
+  behind, the strong colour on the letter. Used for the rail's grade tiles and the finder's grade pills.
+- **Scenarios:** bear red (`--case-bear`), base slate navy (`--case-base`), bull green (`--case-bull`), everywhere a
+  case appears: the scenario tiles, the chart's path and band edges, and the table's row dots. Set `data-case` to get
+  `--case-color` and `--case-tint`.
+- **Signals:** the PulseScore gauge runs red (overvalued) to green (undervalued); trend and stage facts carry a dot;
+  unmet trend conditions are red, met ones green; returns and "vs price" figures are green or red.
+
 ## Type
 
 | Use | Face | Size and weight |

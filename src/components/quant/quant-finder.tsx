@@ -13,6 +13,7 @@ import ui from "@/components/research-ui.module.css";
 import type { FinderResult, FinderSnapshot } from "@/lib/quant/directory";
 import { TICKER_PATTERN } from "@/lib/quant/ticker";
 import { Sparkline } from "./quant-charts";
+import { gradeTone } from "./tones";
 import styles from "./finder.module.css";
 
 const QUICK_PICKS = ["AAPL", "MSFT", "NVDA", "GOOGL", "KO", "JPM", "NEM", "BRK-B"] as const;
@@ -24,8 +25,8 @@ type Option = { kind: "result"; result: FinderResult } | { kind: "open"; ticker:
 function Grades({ s }: { s: FinderSnapshot }) {
   if (!s.pulse_grade && !s.pq_grade) return null;
   return <span className={styles.grades}>
-    {s.pulse_grade && <span className={styles.grade} title="PulseGrade (value)"><small>Pulse</small>{s.pulse_grade}</span>}
-    {s.pq_grade && <span className={styles.grade} title="PQ-Grade (quality)"><small>PQ</small>{s.pq_grade}</span>}
+    {s.pulse_grade && <span className={styles.grade} data-grade={gradeTone(s.pulse_grade)} title="PulseGrade (value)"><small>Pulse</small>{s.pulse_grade}</span>}
+    {s.pq_grade && <span className={styles.grade} data-grade={gradeTone(s.pq_grade)} title="PQ-Grade (quality)"><small>PQ</small>{s.pq_grade}</span>}
   </span>;
 }
 

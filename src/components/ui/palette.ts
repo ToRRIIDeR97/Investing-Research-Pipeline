@@ -9,6 +9,8 @@ export const C = {
   positive: "#2D7D46", positiveMid: "#5E9C70", positiveBg: "#F5F4EF",
   critical: "#C9302C", criticalMid: "#D9645F", criticalBg: "#F5F4EF",
   caution: "#B8860B", cautionInk: "#7A5300", cautionMid: "#CDA349", cautionBg: "#F5F4EF",
+  // Scenario colours (globals.css --case-*): bear red, base navy, bull green.
+  bear: "#C9302C", base: "#3D5A78", bull: "#2D7D46", bearSoft: "#F9E2E1", bullSoft: "#E5F1E8",
 } as const;
 
 /** Series colours for multi-line charts: navy first, then lighter navy and warm grey steps. Never a status colour. */

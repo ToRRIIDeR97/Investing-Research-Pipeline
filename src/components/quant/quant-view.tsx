@@ -8,7 +8,8 @@ import Link from "next/link";
 import { Card, Segmented, Tag } from "@/components/ui/primitives";
 import ui from "@/components/research-ui.module.css";
 import type { QuantSnapshot } from "@/lib/api/quant";
-import { MultipleBand, PriceVolumeChart, RebasedChart, Sparkline, StageStrip, ValueBuild, ValuePathChart, VcpDepths, type Case } from "./quant-charts";
+import { MultipleBand, PriceVolumeChart, RebasedChart, STAGE_FILL, Sparkline, StageStrip, ValueBuild, ValuePathChart, VcpDepths, type Case } from "./quant-charts";
+import { gradeTone } from "./tones";
 import styles from "./quant.module.css";
 
 export type QuantTab = "value" | "trend";
@@ -26,6 +27,13 @@ export function researchHref(s: QuantSnapshot): string {
   return s.research ? `/assets/${s.research.asset_id}/view` : `/research/new?ticker=${encodeURIComponent(s.ticker)}&name=${encodeURIComponent(s.name)}`;
 }
 
+/** Share of trend conditions met as a tone: two thirds or more good, a third or more caution, else bad. */
+function trendTone(passed: number, evaluated: number): "good" | "caution" | "bad" | undefined {
+  if (!evaluated) return undefined;
+  const r = passed / evaluated;
+  return r >= 2 / 3 ? "good" : r >= 1 / 3 ? "caution" : "bad";
+}
+
 function Rail({ s }: { s: QuantSnapshot }) {
   const v = s.value, t = s.trend;
   const pulse = v?.pulse_score ?? null;
@@ -38,11 +46,11 @@ function Rail({ s }: { s: QuantSnapshot }) {
     <Sparkline points={t.charts.sparkline} />
     {v ? <>
       <div className={styles.grades}>
-        <div className={styles.grade}><span>PulseGrade</span><b>{v.pulse_grade.grade}</b><span>{v.pulse_grade.label}</span></div>
-        <div className={styles.grade}><span>PQ-Grade</span><b>{v.pq_grade.grade}</b><span>{v.pq_grade.label}</span></div>
+        <div className={styles.grade} data-grade={gradeTone(v.pulse_grade.grade)}><span>PulseGrade</span><b>{v.pulse_grade.grade}</b><span>{v.pulse_grade.label}</span></div>
+        <div className={styles.grade} data-grade={gradeTone(v.pq_grade.grade)}><span>PQ-Grade</span><b>{v.pq_grade.grade}</b><span>{v.pq_grade.label}</span></div>
       </div>
       <div>
-        <span className={styles.sub}>PulseScore {pulse === null ? "unavailable" : pulse.toFixed(2)}</span>
+        <span className={styles.sub}>PulseScore <b className={styles.pulse} data-tone={pulse === null ? undefined : pulse > 0.25 ? "good" : pulse < -0.25 ? "bad" : undefined}>{pulse === null ? "unavailable" : `${pulse > 0 ? "+" : ""}${pulse.toFixed(2)}`}</b></span>
         <div className={styles.gauge} role="img" aria-label={pulse === null ? "PulseScore unavailable" : `PulseScore ${pulse.toFixed(2)} on a scale from −3 (overvalued) to +3 (undervalued)`}>
           <span className={styles.gaugeMid} />{pulse !== null && <span className={styles.gaugePin} style={{ left: `${((Math.max(-3, Math.min(3, pulse)) + 3) / 6) * 100}%` }} />}
         </div>
@@ -50,8 +58,8 @@ function Rail({ s }: { s: QuantSnapshot }) {
       </div>
     </> : <p className={styles.unavailable}>PragValue unavailable: {s.value_reason}</p>}
     <dl className={styles.facts}>
-      <div><dt>Trend</dt><dd>{t.conditions.score_label}</dd></div>
-      <div><dt>Stage</dt><dd>{t.stage ? `${t.stage.stage_number} · ${weeks(t.stage.weeks_in_stage)}` : "—"}</dd></div>
+      <div><dt>Trend</dt><dd><i className={styles.dot} data-tone={trendTone(t.conditions.passed, t.conditions.evaluated)} aria-hidden="true" />{t.conditions.score_label}</dd></div>
+      <div><dt>Stage</dt><dd>{t.stage && <i className={styles.dot} style={{ background: STAGE_FILL[t.stage.stage_number] ?? STAGE_FILL[0] }} aria-hidden="true" />}{t.stage ? `${t.stage.stage_number} · ${weeks(t.stage.weeks_in_stage)}` : "—"}</dd></div>
       <div><dt>RS rating</dt><dd>{t.rs.combined ?? "—"}</dd></div>
       {v && <div><dt>Confidence</dt><dd>{v.confidence}</dd></div>}
       <div><dt>Research</dt><dd>{s.research ? <Link href={researchHref(s)}>{s.research.status ? `Open (${s.research.status.replace(/_/g, " ")})` : "Open"}</Link> : "Not started"}</dd></div>
@@ -74,7 +82,19 @@ function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick:
   }));
   return <>
     <div className={styles.toolbar}><p>{v.engine_result.engine_note}</p></div>
-    <Card title="Price and value paths" action={<Segmented label="Scenario" options={["Bear", "Base", "Bull"] as const} value={caseLabel[pick] as "Bear" | "Base" | "Bull"} onChange={(o) => setPick(o.toLowerCase() as Case)} />}>
+    {/* The three scenarios as tiles: bear red, base navy, bull green. Picking one drives the chart below. */}
+    <div className={styles.cases} role="group" aria-label="Scenario">
+      {rows.map((r) => {
+        const vs = r.value && s.price ? r.value / s.price - 1 : null;
+        return <button type="button" key={r.k} className={styles.caseTile} data-case={r.k} aria-pressed={pick === r.k} onClick={() => setPick(r.k)}>
+          <span className={styles.caseName}><i aria-hidden="true" />{caseLabel[r.k]} case</span>
+          <b>{money(r.value)}</b>
+          <span className={styles.caseVs} data-tone={vs === null ? undefined : vs >= 0 ? "good" : "bad"}>{vs === null ? "—" : `${pct(vs)} vs price`}</span>
+          <span className={styles.caseMeta}>Growth {pct(r.growth)} · exit {r.exit ? `${r.exit.toFixed(1)}x` : "—"}</span>
+        </button>;
+      })}
+    </div>
+    <Card title="Price and value paths" action={<span className={styles.caseKey} data-case={pick}><i aria-hidden="true" />{caseLabel[pick]} case</span>}>
       <ValuePathChart history={s.price_history_5y} projection={v.charts.projection} selected={pick} current={s.price} />
       <p className={styles.caption}>The line shows forward values (the case&apos;s value in each year, before discounting). Intrinsic value (Pragma: the five-year DCF discounted to today): bear {money(d.intrinsic_value_bear)}, base {money(d.intrinsic_value_base)}, bull {money(d.intrinsic_value_bull)}. {d.dcf_skipped ? d.dcf_skip_reason : `Discount rate ${rate(d.discount_rate)}; growth fades to ${rate(d.terminal_growth_rate)}.`}</p>
     </Card>
@@ -94,9 +114,9 @@ function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick:
       <div className={styles.tableBox}>
         <table className={styles.table}>
           <thead><tr><th scope="col">Case</th><th scope="col">Growth</th><th scope="col">Exit multiple</th><th scope="col">Intrinsic value</th><th scope="col">Year-{fwd?.year || 5} value (forward)</th><th scope="col">Return a year</th></tr></thead>
-          <tbody>{rows.map((r) => <tr key={r.k}>
+          <tbody>{rows.map((r) => <tr key={r.k} data-case={r.k} aria-current={pick === r.k ? "true" : undefined}>
             <th scope="row">{caseLabel[r.k]}</th><td>{pct(r.growth)}</td><td>{r.exit ? `${r.exit.toFixed(1)}x` : "—"}</td>
-            <td>{money(r.value)}</td><td>{money(r.forward)}</td><td>{pct(r.ret)}</td>
+            <td>{money(r.value)}</td><td>{money(r.forward)}</td><td data-tone={r.ret == null ? undefined : r.ret >= 0 ? "good" : "bad"}>{pct(r.ret)}</td>
           </tr>)}</tbody>
         </table>
       </div>

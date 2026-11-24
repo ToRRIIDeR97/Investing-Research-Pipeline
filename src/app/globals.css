@@ -59,6 +59,13 @@
   --caution-ink: #7A5300;
   --caution-bg: #F5F4EF;
   --caution-line: #E7E5DF;
+  /* Quant colour (DESIGN.md): the grade scale, A green through F red, as ink on a tint, and the scenario colours. */
+  --grade-a-ink: #1F6A38; --grade-a-bg: #E5F1E8;
+  --grade-b-ink: #3E6A1F; --grade-b-bg: #EDF4E3;
+  --grade-c-ink: #7A5300; --grade-c-bg: #FAF0D9;
+  --grade-d-ink: #A1401C; --grade-d-bg: #FBE8DF;
+  --grade-f-ink: #A32420; --grade-f-bg: #F9E2E1;
+  --case-bear: #C9302C; --case-base: #3D5A78; --case-bull: #2D7D46;
   /* Shape */
   --radius-card: 24px;
   --radius-control: 12px;
@@ -88,6 +95,17 @@
   html[data-input=pointer] dialog[open], html[data-input=pointer] details[open]>:not(summary) { animation:research-fade 140ms ease-out; }
   button, a, summary { transition:background-color var(--dur-fast) ease-out,color var(--dur-fast) ease-out,border-color var(--dur-fast) ease-out,box-shadow var(--dur-base) var(--ease-out),transform var(--dur-base) var(--ease-spring); }
 }
+
+/* Grade chips: [data-grade] on any element tints it by grade tone (src/components/quant/tones.ts). */
+[data-grade="a"] { --g-ink: var(--grade-a-ink); --g-bg: var(--grade-a-bg); }
+[data-grade="b"] { --g-ink: var(--grade-b-ink); --g-bg: var(--grade-b-bg); }
+[data-grade="c"] { --g-ink: var(--grade-c-ink); --g-bg: var(--grade-c-bg); }
+[data-grade="d"] { --g-ink: var(--grade-d-ink); --g-bg: var(--grade-d-bg); }
+[data-grade="f"] { --g-ink: var(--grade-f-ink); --g-bg: var(--grade-f-bg); }
+/* Scenario colour: [data-case] sets --case-color and --case-tint for bear, base and bull. */
+[data-case="bear"] { --case-color: var(--case-bear); --case-tint: var(--grade-f-bg); }
+[data-case="base"] { --case-color: var(--case-base); --case-tint: var(--navy-soft); }
+[data-case="bull"] { --case-color: var(--case-bull); --case-tint: var(--grade-a-bg); }
 
 /* Sliding selector (src/components/ui/sliding.tsx). The hook marks a bar data-slide once it has measured it; the bar's
    own selected background then gives way to one pill that glides between items, plus a faint ghost under the pointer. */
