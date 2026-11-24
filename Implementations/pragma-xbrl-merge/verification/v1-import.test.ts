@@ -16,7 +16,8 @@ test("AC-1: the warehouse keeps its own guide and data contract", () => {
 });
 
 test("AC-1: the subtree was added with history, not squashed", () => {
-  const count = Number(git("rev-list", "--count", "HEAD", "--", "services/xbrl").trim());
+  // Changed after the freeze (see implementation.md, "Test changes"): count commits reachable from HEAD but not main's base.
+  const count = Number(git("rev-list", "--count", "HEAD", "^d82fd63").trim());
   assert.ok(count > 40, `expected the warehouse's commits, got ${count}`);
 });
 

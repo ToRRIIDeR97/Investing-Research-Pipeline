@@ -251,6 +251,14 @@ edits, so they are run only if that environment exists.
 Baseline: before implementation, every acceptance and verification test fails because the modules,
 paths and scripts don't exist (import/ENOENT failures are expected for new modules).
 
+## Test changes after the freeze
+
+- AC-1 (`acceptance/p1-warehouse-import.test.ts`, `verification/v1-import.test.ts`): the plan said the
+  upstream commit would show in `git log -- services/xbrl`. A subtree merge keeps upstream commits on
+  their original root paths, so a path-limited log shows only the merge commit, though the history is
+  present. The checks now assert what AC-1 means: upstream commit `b0ff599` is an ancestor of HEAD, and
+  more than 40 commits are reachable from HEAD but not from the base `d82fd63`. The assertion is no weaker.
+
 ## Completion evidence
 
 Filled in after implementation.

@@ -15,8 +15,11 @@ test("AC-1: warehouse sources are present", () => {
 });
 
 test("AC-1: warehouse history came with it", () => {
-  const log = git("log", "--format=%s", "--", "services/xbrl");
+  // Changed after the freeze (see implementation.md, "Test changes"): subtree history keeps the upstream
+  // root paths, so a path-limited log shows only the merge. The upstream commit must be reachable from HEAD.
+  const log = git("log", "--format=%s", "HEAD");
   assert.match(log, /Pin the public IFRS 2019 and 2020 taxonomy packages for ESEF/);
+  execFileSync("git", ["merge-base", "--is-ancestor", "b0ff599", "HEAD"], { cwd: root });
 });
 
 test("AC-2: no .DS_Store or .env tracked under services/xbrl", () => {
