@@ -1,5 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
+/* The XBRL warehouse's static UI is not part of this app. */
+@source not "../../services";
 
 /* Pragma Research design tokens: the "consumer remaster" (prototype/workshop/pragma-remaster). A cream page with a faint
    diamond grid, white 24px cards, navy as the one accent over warm greys, Plus Jakarta Sans for headings and big numbers,

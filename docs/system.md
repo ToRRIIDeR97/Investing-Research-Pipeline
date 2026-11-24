@@ -181,15 +181,15 @@ The XBRL warehouse in `services/xbrl/` (formerly the `XBRL-Parser` repository) p
 
 - Without `XBRL_WAREHOUSE_URL` it fetches SEC companyfacts as before.
 - With it (a loopback or private http(s) URL, no credentials or query, checked by `validateEndpointUrl(..., { local: true })`):
-  - It lists the warehouse's filings for the CIK.
-  - It requires the newest 10-K, 10-Q, 20-F or 40-F (amendments included) that SEC submissions show filed by the market-data cutoff. Accessions are compared without dashes.
-  - It reads `/v1/facts` for every loaded filing filed by the cutoff, 10,000 rows a page.
-  - `warehouseFactsToCompanyFacts` rebuilds SEC's companyfacts shape from non-dimensional, non-nil numeric facts in `us-gaap`, `dei`, `ifrs-full` and `srt`:
+  - It lists the warehouse's filings for the CIK, sending `XBRL_WAREHOUSE_API_KEY` as a Bearer key when set (the warehouse's `XBRL_API_KEY`).
+  - It requires every 10-K, 10-Q, 20-F or 40-F (amendments included) that SEC submissions show filed in the run's 66-month window up to the market-data cutoff. Accessions are compared without dashes.
+  - It reads `/v1/facts` for each loaded periodic filing filed by the cutoff, 10,000 rows a page. A 503 (the API's 16 MiB result cap) retries the page with 2,000, then 400 rows.
+  - `warehouseFactsToCompanyFacts` rebuilds SEC's companyfacts shape from non-dimensional (`dimensions_json` `[]`), non-nil numeric facts, keeping the first of each duplicate set (`duplicate_ordinal` 1), in `us-gaap`, `dei`, `ifrs-full` and `srt`:
     - units such as `USD`, `shares` and `USD/shares`;
     - `start`/`end` for durations and `end` for instants;
     - one row per concept, unit, period and accession, sorted by end, filed and accession.
   - SEC's `frame` field isn't reproduced. Quarter detection already falls back to the 80-100-day duration rule.
-- Any warehouse failure falls back to SEC companyfacts and never fails the run. That covers no filings, the newest filing missing, an HTTP error, bad JSON, or more than 20,000 facts in one filing.
+- Any warehouse failure falls back to SEC companyfacts and never fails the run. That covers no filings, a periodic filing in the window missing, an HTTP error (a 401 when the API key is wrong or missing), bad JSON, facts that rebuild to no `us-gaap` or `ifrs-full` concept, or more than about 20,000 facts in one filing.
 
 `secContext.companyFactsOrigin` records `{ provider: xbrl_warehouse | sec_companyfacts, url, reason?, accessions? }`, and `secContext.source` names the origin. Every companyfacts reader is unchanged.
 

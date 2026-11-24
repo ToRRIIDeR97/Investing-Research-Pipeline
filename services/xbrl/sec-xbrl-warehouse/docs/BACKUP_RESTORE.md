@@ -27,7 +27,7 @@ Example control-plane backup (supply credentials through the environment or a pa
 
 ```bash
 install -d -m 0700 /srv/backups/xbrl/2026-09-04
-pg_dump --dbname=postgresql://xbrl@127.0.0.1:5432/xbrl_control \
+pg_dump --dbname=postgresql://xbrl@127.0.0.1:5434/xbrl_control \
   --format=custom --no-owner \
   --file=/srv/backups/xbrl/2026-09-04/control.dump
 sha256sum /srv/backups/xbrl/2026-09-04/control.dump

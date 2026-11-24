@@ -6,6 +6,7 @@ import { createArtifactRepository } from "../artifacts/repository";
 import postgres from "postgres";
 import { pipelineDb, pipelineSql } from "@/db/pipeline-sql";
 import { reviewReport } from "../reporting/runtime";
+import { modelVisibleArtifacts } from "../reporting/store";
 import { DEPTH_CHECKS, DEPTH_CHECK_RULE } from "../reporting/depth";
 
 /**
@@ -55,7 +56,8 @@ export const aiReviewerHandler: StageHandler<Record<string, unknown>> = {
         profileKey: ctx.profileKey,
       },
       artifacts: Object.fromEntries(
-        artifacts.map((artifact) => [artifact.artifact_type, artifact.content_json])
+        modelVisibleArtifacts(artifacts.map((artifact) => ({ artifact_type: String(artifact.artifact_type), content_json: artifact.content_json })))
+          .map((artifact) => [artifact.artifact_type, artifact.content_json])
       ),
       depth_checks: DEPTH_CHECKS.map(({ id, label, ask, critical }) => ({ id, label, ask, decision_critical: critical })),
     };

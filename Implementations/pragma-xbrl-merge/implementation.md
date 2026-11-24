@@ -299,3 +299,36 @@ Not run, and why:
 - AC-0 is done, with the user's approval (2026-11-24).
   - The deprecation README was pushed to `ToRRIIDeR97/Pragma` (`97ebcaf1`) and `ToRRIIDeR97/pragma-lite` (`d4998b6`).
   - Both repos are archived: `gh repo view` reports `isArchived: true`.
+
+## Second review round (three read-only reviewer subagents, findings checked against source)
+
+Defects fixed:
+- **AC-5, AC-7 (blocker): real warehouse rows were all dropped.** The fixtures had been built from assumed field shapes.
+  - Duplicate ordinals count from 1 (`arelle_adapter.py:1445`), so `duplicate_ordinal > 0` dropped every row.
+  - `dimension_hash` is always a 64-character hex string, even with no dimensions (`040_views.sql:18`), so every row looked dimensional.
+  - The empty result was then reported as success.
+  - Fix: decide dimensions from `dimensions_json`, keep `duplicate_ordinal` ≤ 1, treat `is_nil` 1 as nil, and fall back to SEC when no `us-gaap`/`ifrs-full` facts result.
+  - Regression tests on the real shapes: `acceptance/p2b-real-shapes.test.ts`.
+- **AC-7: no API key.** `XBRL_WAREHOUSE_API_KEY` is now sent as a Bearer key, so a warehouse with `XBRL_API_KEY` set doesn't always return 401.
+- **AC-7: 16 MiB result cap.** A 503 page is retried with 2,000, then 400 rows. Only periodic filings' facts are read (no 8-Ks).
+- **AC-8: partial loads.** Coverage now requires every periodic filing SEC lists in the 66-month window, not only the newest. This also covers filings without cover pages, which `/filings` omits.
+- **Conflict: host ports.** Both compose stacks published Postgres on 127.0.0.1:5432, and the warehouse's Grafana took 3000, which Next dev uses. The warehouse defaults are now 5434 and 3001, in compose, `.env.example`, `alembic.ini`, the `config.py` default DSN and its docs.
+- **AC-16: one more model path.** The legacy reviewer packet (`handlers/ai-reviewer.ts`, plans without `report_standard`) now applies `modelVisibleArtifacts`.
+- **Tooling.**
+  - Tailwind no longer scans `services/` (`@source not` in `globals.css`).
+  - Next file tracing excludes `services/**`. Before, API route traces included warehouse files.
+  - `tests/pragma-xbrl-merge.test.ts` runs the acceptance set in `npm run test:unit`.
+- **Docs.** The warehouse guide's merge section now names the root checks and marks its nested CI workflow as reference only. `operations.md` covers the new ports and shared `POSTGRES_*` variable names.
+
+Risks recorded, not changed here:
+- SEC rate limits are per IP. The pipeline has no SEC throttle and uses several placeholder User-Agents; the warehouse throttles itself to 8 requests a second.
+- `valuation_signals` (per-lens cheap/expensive labels, also shown on the asset view and in memo exports) and the new grade can read differently. Exports don't include the grade.
+- The rating reads live `market_price_bars`. A later price sync that backfills bars before this run's cutoff would change a re-run's rating.
+
+Checks after this round:
+- `npx tsc --noEmit`: pass.
+- `npm run lint`: 0 errors.
+- `npm run test:unit`: 748 pass, 0 fail, 64 skipped; the acceptance set is now included.
+- Verification: 23/23 pass.
+- `npm run build`: pass, and 0 traces include `services/xbrl`.
+- Warehouse `compileall`: pass.

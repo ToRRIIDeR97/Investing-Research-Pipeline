@@ -19,7 +19,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-xbrl}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-xbrl_dev_password}
     ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5434}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -302,7 +302,7 @@ services:
       - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     ports:
-      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
     depends_on:
       - prometheus
     logging: *bounded-logging

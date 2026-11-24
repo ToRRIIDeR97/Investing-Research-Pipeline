@@ -86,7 +86,7 @@ class Settings(BaseSettings):
 
     # Secrets are SecretStr so settings reprs, dumps, and tracebacks never print them.
     postgres_dsn: SecretStr = SecretStr(
-        "postgresql+asyncpg://xbrl:xbrl_dev_password@localhost:5432/xbrl_control"
+        "postgresql+asyncpg://xbrl:xbrl_dev_password@localhost:5434/xbrl_control"
     )
 
     clickhouse_host: str = "localhost"

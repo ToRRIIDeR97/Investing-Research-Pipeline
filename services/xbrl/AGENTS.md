@@ -114,8 +114,11 @@ databases and bucket. In PowerShell, set `$env:RUN_XBRL_INTEGRATION = "1"` first
 
 - Target branch is `main`. Work on a feature branch and merge through a pull request.
   Never push directly to `main` or force-push it.
-- Required checks run locally, not in CI. `.github/workflows/ci.yml` is manual-only
-  (`workflow_dispatch`) to avoid Actions charges. Merge only after every command in
+- This service lives in `services/xbrl/` of Investing-Research-Pipeline. Changes merge through that
+  repository's PRs, and its root `AGENTS.md` checks (`npm run lint`, `npx tsc --noEmit`,
+  `npm run test:unit`, `npm run build`) apply too. `services/xbrl/.github/workflows/ci.yml` is kept
+  for reference only; GitHub doesn't run nested workflows.
+- Required checks run locally, not in CI. Merge only after every command in
   **Validate** passes on the branch and the user explicitly approves. Don't wait on or
   re-run GitHub Actions. If branch protection requires a CI status check that blocks the
   merge, report it to the user instead of bypassing it.

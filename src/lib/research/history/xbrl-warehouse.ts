@@ -47,6 +47,8 @@ const PERIODIC_FORM = /^(10-K|10-Q|20-F|40-F)(\/A)?$/;
 const FILINGS_PAGE = 1_000;
 const FACTS_PAGE = 10_000;
 const MAX_OFFSET = 10_000; // the warehouse API caps offset at 10,000
+const MIN_FACTS_PAGE = 400;
+const WINDOW_MONTHS = 66; // the filing window fetchSecContext uses
 
 /** `XBRL_WAREHOUSE_URL` as a loopback or private URL, or null when unset. */
 export function warehouseUrlFromEnv(env: NodeJS.ProcessEnv = process.env): URL | null {
@@ -60,8 +62,11 @@ function parseJson(value: unknown): unknown {
   try { return JSON.parse(value); } catch { return value; }
 }
 
+/**
+ * Decided from `dimensions_json` alone: the warehouse stores "[]" for a fact without dimensions, and its
+ * `dimension_hash` is the SHA-256 of that JSON, so the hash is never empty.
+ */
 function isEmptyDimensions(row: Row): boolean {
-  if (row.dimension_hash) return false;
   const dims = parseJson(row.dimensions_json);
   if (dims == null || dims === "") return true;
   if (Array.isArray(dims)) return dims.length === 0;
@@ -95,7 +100,8 @@ export function warehouseFactsToCompanyFacts(rows: Row[], entity: { cik: string 
   const facts: CompanyFacts["facts"] = {};
   const seen = new Set<string>();
   for (const row of rows) {
-    if (row.is_nil === true || Number(row.duplicate_ordinal ?? 0) > 0 || !isEmptyDimensions(row)) continue;
+    // is_nil is a UInt8 (0/1); duplicate facts are numbered from 1, so the first of a duplicate set is kept.
+    if (row.is_nil === true || Number(row.is_nil) === 1 || Number(row.duplicate_ordinal ?? 1) > 1 || !isEmptyDimensions(row)) continue;
     const taxonomy = taxonomyOf(row);
     const concept = String(row.concept_name ?? "");
     const unit = unitOf(row);
@@ -135,79 +141,117 @@ export function warehouseFactsToCompanyFacts(rows: Row[], entity: { cik: string 
 
 const bareAccession = (value: unknown) => String(value ?? "").replace(/-/g, "");
 
-/** The newest 10-K, 10-Q, 20-F or 40-F (amendments included) filed on or before the cutoff. */
-function newestPeriodicFiling(submissions: unknown, cutoffDate: string): { accession: string; filed: string } | null {
+/** Periodic filings (10-K, 10-Q, 20-F, 40-F, amendments included) that SEC submissions list, filed in the window. */
+function periodicFilings(submissions: unknown, fromDate: string, cutoffDate: string): { accession: string; filed: string }[] {
   const recent = (submissions as Row)?.filings?.recent ?? {};
   const forms: unknown[] = Array.isArray(recent.form) ? recent.form : [];
-  let best: { accession: string; filed: string } | null = null;
+  const out: { accession: string; filed: string }[] = [];
   forms.forEach((form, i) => {
     const filed = day(recent.filingDate?.[i]);
     const accession = String(recent.accessionNumber?.[i] ?? "");
-    if (!PERIODIC_FORM.test(String(form)) || !filed || filed > cutoffDate || !accession) return;
-    if (!best || filed > best.filed) best = { accession, filed };
+    if (PERIODIC_FORM.test(String(form)) && filed && filed >= fromDate && filed <= cutoffDate && accession) out.push({ accession, filed });
   });
-  return best;
+  return out.sort((a, b) => b.filed.localeCompare(a.filed));
+}
+
+/** The first day of the source window: five and a half years before the cutoff, as fetchSecContext selects filings. */
+function windowStart(cutoffDate: string): string {
+  const d = new Date(`${cutoffDate}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return "0000-01-01";
+  d.setUTCMonth(d.getUTCMonth() - WINDOW_MONTHS);
+  return d.toISOString().slice(0, 10);
 }
 
 function apiUrl(base: URL, path: string): string {
   return `${base.origin}${base.pathname.replace(/\/+$/, "")}${path}`;
 }
 
-async function getJson(fetchImpl: FetchLike, url: string): Promise<Row> {
-  const response = await fetchImpl(url, { headers: { Accept: "application/json" } });
-  if (!response.ok) throw new Error(`HTTP ${response.status} from ${new URL(url).pathname}`);
+class WarehouseHttpError extends Error {
+  constructor(readonly status: number, path: string) { super(`HTTP ${status} from ${path}`); }
+}
+
+async function getJson(fetchImpl: FetchLike, url: string, apiKey: string | null): Promise<Row> {
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const response = await fetchImpl(url, { headers });
+  if (!response.ok) throw new WarehouseHttpError(response.status, new URL(url).pathname);
   const body = await response.json() as Row;
   if (!body || typeof body !== "object" || !Array.isArray(body.items)) throw new Error(`unexpected response from ${new URL(url).pathname}`);
   return body;
 }
 
+/** Every fact row of one filing. A 503 (the API's result-size cap) retries the page with fewer rows. */
+async function filingFacts(input: { base: URL; cik: number; accession: string; fetchImpl: FetchLike; apiKey: string | null }): Promise<Row[]> {
+  const rows: Row[] = [];
+  let limit = FACTS_PAGE;
+  for (let offset = 0; ;) {
+    let page: Row;
+    try {
+      page = await getJson(input.fetchImpl, apiUrl(input.base,
+        `/v1/facts?cik=${input.cik}&accession=${encodeURIComponent(input.accession)}&limit=${limit}&offset=${offset}`), input.apiKey);
+    } catch (error) {
+      if (error instanceof WarehouseHttpError && error.status === 503 && limit > MIN_FACTS_PAGE) {
+        limit = Math.max(MIN_FACTS_PAGE, Math.floor(limit / 5));
+        continue;
+      }
+      throw error;
+    }
+    rows.push(...page.items);
+    if (page.items.length < limit) return rows;
+    offset += limit;
+    if (offset > MAX_OFFSET) throw new Error(`has more than ${offset} facts in ${input.accession}`);
+  }
+}
+
 async function warehouseCompanyFacts(input: {
-  base: URL; cik: number; submissions: unknown; cutoffDate: string; fetchImpl: FetchLike;
+  base: URL; cik: number; submissions: unknown; cutoffDate: string; fetchImpl: FetchLike; apiKey: string | null;
 }): Promise<{ companyFacts: CompanyFacts; accessions: number }> {
   const filings: Row[] = [];
   for (let offset = 0; ; offset += FILINGS_PAGE) {
-    const page = await getJson(input.fetchImpl, apiUrl(input.base, `/v1/companies/${input.cik}/filings?limit=${FILINGS_PAGE}&offset=${offset}`));
+    const page = await getJson(input.fetchImpl, apiUrl(input.base, `/v1/companies/${input.cik}/filings?limit=${FILINGS_PAGE}&offset=${offset}`), input.apiKey);
     filings.push(...page.items);
     if (page.items.length < FILINGS_PAGE) break;
     if (offset + FILINGS_PAGE > MAX_OFFSET) throw new Error(`more than ${MAX_OFFSET + FILINGS_PAGE} filings for CIK ${input.cik}`);
   }
   if (!filings.length) throw new Error(`has no filings for CIK ${input.cik}`);
-  const newest = newestPeriodicFiling(input.submissions, input.cutoffDate);
-  if (!newest) throw new Error(`cannot be checked: SEC submissions list no periodic filing by ${input.cutoffDate}`);
-  if (!filings.some((f) => bareAccession(f.accession) === bareAccession(newest.accession))) {
-    throw new Error(`lacks the newest periodic filing ${newest.accession} (filed ${newest.filed})`);
+  // Every periodic filing SEC lists in the run's window must be loaded: a partial load would silently drop history.
+  const required = periodicFilings(input.submissions, windowStart(input.cutoffDate), input.cutoffDate);
+  if (!required.length) throw new Error(`cannot be checked: SEC submissions list no periodic filing by ${input.cutoffDate}`);
+  const loaded = new Set(filings.map((f) => bareAccession(f.accession)));
+  const missing = required.filter((f) => !loaded.has(bareAccession(f.accession)));
+  if (missing.length) {
+    throw new Error(`lacks ${missing.length} of ${required.length} periodic filings in the window (newest missing ${missing[0].accession}, filed ${missing[0].filed})`);
   }
-  const readable = filings.filter((f) => f.accession && day(f.filed_date) && day(f.filed_date) <= input.cutoffDate);
+  // Only periodic filings by the cutoff: companyfacts readers use 10-K, 10-Q, 20-F and 40-F facts.
+  const readable = filings.filter((f) => f.accession && PERIODIC_FORM.test(String(f.form ?? "")) && day(f.filed_date) && day(f.filed_date) <= input.cutoffDate);
   const rows: Row[] = [];
-  let entityName: string | null = null;
   for (const filing of readable) {
-    const accession = encodeURIComponent(String(filing.accession));
-    for (let offset = 0; ; offset += FACTS_PAGE) {
-      const page = await getJson(input.fetchImpl, apiUrl(input.base, `/v1/facts?cik=${input.cik}&accession=${accession}&limit=${FACTS_PAGE}&offset=${offset}`));
-      rows.push(...page.items);
-      entityName ??= page.items.find((r: Row) => r.company_name)?.company_name ?? null;
-      if (page.items.length < FACTS_PAGE) break;
-      if (offset + FACTS_PAGE > MAX_OFFSET) throw new Error(`has more than ${MAX_OFFSET + FACTS_PAGE} facts in ${filing.accession}`);
-    }
+    rows.push(...await filingFacts({ base: input.base, cik: input.cik, accession: String(filing.accession), fetchImpl: input.fetchImpl, apiKey: input.apiKey }));
   }
-  entityName ??= readable.find((f) => f.registrant_name)?.registrant_name ?? null;
-  return { companyFacts: warehouseFactsToCompanyFacts(rows, { cik: input.cik, entityName }), accessions: readable.length };
+  const entityName = rows.find((r) => r.company_name)?.company_name ?? readable.find((f) => f.registrant_name)?.registrant_name ?? null;
+  const companyFacts = warehouseFactsToCompanyFacts(rows, { cik: input.cik, entityName });
+  const standard = ["us-gaap", "ifrs-full"].some((taxonomy) => Object.keys(companyFacts.facts[taxonomy] ?? {}).length > 0);
+  if (!standard) throw new Error(`returned no us-gaap or ifrs-full facts for ${readable.length} periodic filings (${rows.length} rows)`);
+  return { companyFacts, accessions: readable.length };
 }
 
 /**
- * The run's companyfacts: from the warehouse when `XBRL_WAREHOUSE_URL` is set and it holds the newest
- * periodic filing by the cutoff, otherwise from SEC. A warehouse failure never fails the run.
+ * The run's companyfacts: from the warehouse when `XBRL_WAREHOUSE_URL` is set and it holds every periodic
+ * filing SEC lists in the run's window, otherwise from SEC. A warehouse failure never fails the run.
+ * `XBRL_WAREHOUSE_API_KEY`, when set, is sent as the warehouse's Bearer key (its `XBRL_API_KEY`).
  */
 export async function loadCompanyFacts(input: {
   cik: string; submissions: unknown; cutoffDate: string; userAgent: string;
   env?: NodeJS.ProcessEnv; fetchImpl?: FetchLike;
 }): Promise<{ companyFacts: any; origin: CompanyFactsOrigin }> {
   const fetchImpl = input.fetchImpl ?? fetchCapped;
-  const base = warehouseUrlFromEnv(input.env ?? process.env);
+  const env = input.env ?? process.env;
+  const base = warehouseUrlFromEnv(env);
   let reason: string | undefined;
   if (base) {
     try {
-      const { companyFacts, accessions } = await warehouseCompanyFacts({ base, cik: Number(input.cik), submissions: input.submissions, cutoffDate: input.cutoffDate, fetchImpl });
+      const apiKey = String(env.XBRL_WAREHOUSE_API_KEY ?? "").trim() || null;
+      const { companyFacts, accessions } = await warehouseCompanyFacts({ base, cik: Number(input.cik), submissions: input.submissions, cutoffDate: input.cutoffDate, fetchImpl, apiKey });
       return { companyFacts, origin: { provider: "xbrl_warehouse", url: base.href, accessions } };
     } catch (error) {
       reason = `XBRL warehouse ${error instanceof Error ? error.message : String(error)}; used SEC companyfacts`;

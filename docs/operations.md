@@ -145,6 +145,9 @@ The warehouse in `services/xbrl/` is optional. Without `XBRL_WAREHOUSE_URL`, run
    - `npm run xbrl:compose -- up -d postgres clickhouse minio minio-init`
    - then `npm run xbrl:compose -- up -d api`.
    - Copy `.env.example` to `.env` in `services/xbrl/sec-xbrl-warehouse/` only on a fresh install, and set a real `XBRL_SEC_USER_AGENT`.
+   - Host ports differ from the pipeline's. The warehouse publishes Postgres on 127.0.0.1:5434 (the pipeline uses 5432, the test database 5433) and Grafana on 3001 (Next dev uses 3000).
+     - A `.env` carried over from the old XBRL-Parser checkout may still say `POSTGRES_PORT=5432` or `GRAFANA_PORT=3000`; change both values.
+     - Don't export `POSTGRES_PASSWORD`, `POSTGRES_USER` or `POSTGRES_DB` in your shell. Both compose files read those names, and a shell value overrides each stack's own setting.
    - Never run `down -v`: it deletes the data volumes.
 2. **Load an issuer.** The pipeline never writes to the warehouse.
    - Queue one company with `npm run xbrl:compose -- run --rm admin filing discover --cik <CIK>`.

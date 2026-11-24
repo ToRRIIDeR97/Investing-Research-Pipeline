@@ -22,3 +22,7 @@ test("AC-16: report packets drop stock_rating; other artifacts keep their order"
 test("AC-16: the team-requests packet filters report inputs", () => {
   assert.match(read("src/lib/research/team.ts"), /artifacts: modelVisibleArtifacts\(inputs\.artifacts\)/);
 });
+
+test("AC-16: the legacy reviewer packet (plans without report_standard) filters its artifacts", () => {
+  assert.match(read("src/lib/research/handlers/ai-reviewer.ts"), /modelVisibleArtifacts\(artifacts\.map/);
+});
