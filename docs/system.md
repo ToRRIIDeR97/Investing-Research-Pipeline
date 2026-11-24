@@ -173,6 +173,28 @@ The historical-record stage reads the filed statements and the SEC companyfacts 
 
 If a readable filing still lacks a primary statement, the historical-record stage calls the repair specialist (`src/lib/research/repair/`). It writes a JavaScript `locateStatements(filings)` module from table summaries (surrounding text, tag names, row labels; no values). The module runs in a sandbox described in [security](security.md) and returns only table locations; the normal extractor then reads the facts. A repair is accepted only when every filing has all three statements, no unresolved facts and reconciling balance sheets. There are at most three attempts, each given the earlier errors. Every attempt's source, SHA-256 and errors are saved in a `statement_repair` artifact; nothing is written to the codebase. An unresolved repair leaves the stage failed with the original message and a summary.
 
+## Companyfacts source: SEC or the XBRL warehouse
+
+The XBRL warehouse in `services/xbrl/` (formerly the `XBRL-Parser` repository) parses filings with Arelle into its own PostgreSQL, ClickHouse and MinIO stores and serves them through a read-only FastAPI. Its data contract, sources (SEC, ESEF, EDINET, DART and operator inbox sources) and checks are in `services/xbrl/AGENTS.md`. It runs as its own compose project (`npm run xbrl:compose`); the pipeline never writes to it.
+
+`fetchSecContext` (`src/lib/research/sources/corpus.ts`) fetches SEC submissions, then calls `loadCompanyFacts` (`src/lib/research/history/xbrl-warehouse.ts`):
+
+- Without `XBRL_WAREHOUSE_URL` it fetches SEC companyfacts as before.
+- With it (a loopback or private http(s) URL, no credentials or query, checked by `validateEndpointUrl(..., { local: true })`):
+  - It lists the warehouse's filings for the CIK.
+  - It requires the newest 10-K, 10-Q, 20-F or 40-F (amendments included) that SEC submissions show filed by the market-data cutoff. Accessions are compared without dashes.
+  - It reads `/v1/facts` for every loaded filing filed by the cutoff, 10,000 rows a page.
+  - `warehouseFactsToCompanyFacts` rebuilds SEC's companyfacts shape from non-dimensional, non-nil numeric facts in `us-gaap`, `dei`, `ifrs-full` and `srt`:
+    - units such as `USD`, `shares` and `USD/shares`;
+    - `start`/`end` for durations and `end` for instants;
+    - one row per concept, unit, period and accession, sorted by end, filed and accession.
+  - SEC's `frame` field isn't reproduced. Quarter detection already falls back to the 80-100-day duration rule.
+- Any warehouse failure falls back to SEC companyfacts and never fails the run. That covers no filings, the newest filing missing, an HTTP error, bad JSON, or more than 20,000 facts in one filing.
+
+`secContext.companyFactsOrigin` records `{ provider: xbrl_warehouse | sec_companyfacts, url, reason?, accessions? }`, and `secContext.source` names the origin. Every companyfacts reader is unchanged.
+
+Only companyfacts moves. Submissions, filing documents, peers, themes and monitor-check still call SEC directly. The warehouse enforces one SEC-active process for its own workers only, so run its SEC fetch worker when no research run is collecting sources. The filing-statement extractor and the repair specialist still read statements from filing HTML. Retiring them needs parity runs against a loaded warehouse.
+
 ## Foreign private issuers (20-F, 40-F and 6-K filers)
 
 A foreign issuer files no 10-Q: its annual report is a 20-F or 40-F, and its quarters arrive as 6-K results releases (an Ex-99.1 press release with no inline XBRL). JD.com is the reference case (`tests/fixtures/jd/`, trimmed from real EDGAR filings).
@@ -332,6 +354,40 @@ Each call keeps only the keys it owns. If the registers call fails and its last 
 
 Company genesis follows the same rule for citations: IDs still unknown after its citation-repair call are dropped and listed in `company_genesis.citation_adjustments.dropped_citation_ids`, and an entry left with no supporting citation is removed rather than failing the artifact contract. Its prompt asks for at least one founder motivation other than `unknown`, citing the founder/origin claim that evidence extraction guarantees, which is what `validateGenesisArtifact` and `validateFounderProfile` require.
 
+## Stock rating
+
+After its sub-artifacts, `decision_synthesis` writes a code-built `stock_rating` artifact (`saveStockRating` in `handlers/decision-synthesis.ts`, pure functions in `src/lib/research/rating/`). These methods come from the deprecated Pragma platform (PragValue's deviation bands and PragTrend). No model writes or sees the rating. It is information, not a gate. If building it throws, a withheld rating with `withheld_reason: "Rating failed: …"` is stored and the stage continues.
+
+- **Inputs.**
+  - From `valuation_scenario_set`: `current_market_price`, `value_today_{bear,base,bull}`, `valuation_status` and `sanity.flags`.
+  - From `market_price_history`: whether the valuation price and the beta were verified.
+  - From `historical_record`: the number of consolidated annual fiscal years.
+  - The stock's and ^GSPC's stored daily bars by the market-data cutoff, restated on the latest bar's split basis (`splitAdjustedCloses`).
+- **Confidence** (`confidence.ts`):
+  - Base 85 when both the price and the beta are verified, 65 when one is, 40 when neither.
+  - +8 for 5+ fiscal years, +3 for 3+.
+  - −3 per sanity flag, at most −10.
+- **Valuation grade** (`grade.ts`):
+  - Deviation = price ÷ base value today − 1. Adjusted deviation = deviation × √(confidence ÷ 100).
+  - Bands from A+ to F: −40%, −25%, −15%, −8%, −3%, +3%, +8%, +15%, +25%, +40%, each exclusive.
+- **Combined grade.**
+  - 0.55 × adjusted deviation + 0.25 × asymmetry + 0.20 × macro.
+  - Asymmetry: the bull upside ÷ |bear downside| ratio, clamped to 0-5, scored up to ±0.30.
+  - Macro: −0.10 × the credit z-score, clamped to ±2. Runs collect no credit-spread series yet, so `macro.status` is `unavailable` and the term is 0.
+- **Trend** (`trend.ts`): nine conditions, each `pass`, `fail` or `unavailable`:
+  - price above the 150-, 200- and 50-day averages;
+  - 150-day above 200-day;
+  - 200-day rising for two months;
+  - 50-day above the 150- and 200-day;
+  - at least 30% above the 52-week low;
+  - within 25% of the 52-week high;
+  - RS rating above 70 vs the S&P 500.
+  - Mansfield RS on weekly closes is reported alongside.
+  - A condition without enough history is unavailable and leaves the denominator.
+- **Withheld.** The rating is withheld, with nulls for every grade, deviation and confidence field, when there is no accepted valuation, the valuation is withheld, or the price or base value is not positive. The trend is still reported.
+
+The valuation summary shows it as **Rating and trend** (`src/components/report/stock-rating.tsx`). Two checklist measures read it: `trend_score_pct` and `valuation_deviation_pct`.
+
 ## Research across runs
 
 ![Run A feeds run creation, which saves prior_research; analysis and report calls of run B read it; version_change_log diffs run B against run A before the report; monitor:check reads EDGAR, stores asset_monitor_checks and the asset page shows Refresh due](diagrams/research-across-runs.svg)
@@ -385,7 +441,7 @@ Model outputs are checked by contracts (`FRAMING_CONTRACT`, `CANDIDATES_CONTRACT
 
 A checklist is a named list of up to 30 weighted items (weight 1-3), each either **measured** by code (`measure`, `op` `>=` or `<=`, `threshold` in the measure's display unit) or **judged** by the model (`question`). Contracts and scoring are pure (`src/lib/research/checklist/index.ts`, `measures.ts`).
 
-- **Measures** (`MEASURES`, `measureValue`) read the run's newest validated or accepted `financial_analytics` and `report_facts`: the medians of revenue growth, operating margin, FCF margin and ROIC (`statistics`, in percent); net-debt payback years (−`net_cash` of the latest `capital_allocation.quarterly` row ÷ the latest `cash_conversion.quarterly.fcf_ttm`; net cash is 0 years; no value when trailing FCF is not positive); the latest year-over-year share change (percent); trailing P/E (`report_facts.market.pe_ttm`); and the base case's terminal-value share of EV (percent). A missing input gives a reason, never a number.
+- **Measures** (`MEASURES`, `measureValue`) read the run's newest validated or accepted `financial_analytics`, `report_facts` and `stock_rating`: the medians of revenue growth, operating margin, FCF margin and ROIC (`statistics`, in percent); net-debt payback years (−`net_cash` of the latest `capital_allocation.quarterly` row ÷ the latest `cash_conversion.quarterly.fcf_ttm`; net cash is 0 years; no value when trailing FCF is not positive); the latest year-over-year share change (percent); trailing P/E (`report_facts.market.pe_ttm`); the base case's terminal-value share of EV (percent); the share of evaluated trend conditions met (`trend_score_pct`); and the confidence-adjusted price-to-value deviation (`valuation_deviation_pct`, negative below value), both from the newest [stock rating](#stock-rating). A missing input gives a reason, never a number.
 - **Judgements**: one cheap-tier `asset-analyst` call per evaluation (task type `checklist_judgement`, stage `ai_reviewer` like the chat) with a digest of the run's report (each chapter's title, implication, counterevidence, gaps and first key points) and its evidence, under the untrusted-data rule. The output is `{ results: { id, status: met | not_met | unclear, rationale, evidence_ids }[] }`, checked by `judgementErrors` (every judgement item once, only this run's evidence), so bad output goes through repair. It runs only behind the paid gate (`RUN_PAID_RESEARCH=1` or the mock provider) and the run's budget; otherwise, or when the run has no report or the call fails, judgement items are `unknown` with that reason. `unclear` scores as unknown.
 - **Score** (`scoreChecklist`): met weight over evaluated weight; unknown items count in neither, and `percent` (one decimal) is null when nothing was evaluated.
 - **Default checklist** (`DEFAULT_CHECKLIST`, after the Nanalyze theme method): pure-play exposure, net debt repaid within three years of FCF, revenue growth of at least 10%, an investment-grade balance sheet, a segment that tracks the theme, management that met its targets, a dividend record, trailing P/E at most 30x and terminal value at most 75% of EV. It is stored (`is_default`) the first time `GET /api/checklists` finds no checklist, and can be edited like any other.
@@ -524,5 +580,10 @@ Verified in source on 2026-10-05 and tracked as GitHub issues:
 
 - One shared operator, no per-user accounts ([#8](https://github.com/ToRRIIDeR97/Investing-Research-Pipeline/issues/8)). With `RESEARCH_OS_API_TOKEN` unset (the default) any local process can call the API; with it set, every caller needs the token, and anyone holding it has full access, including all saved charts.
 - Only model calls observe a run's abort signal. A shutdown or cancellation waits for other in-flight work, such as source fetches, to finish.
+- XBRL warehouse and stock rating (2026-11-24):
+  - Only companyfacts can come from the warehouse. The filing-statement extractor and the repair specialist aren't retired yet; that needs parity runs against a loaded warehouse.
+  - The warehouse has no write path for the pipeline, so issuers are loaded by an operator (`filing discover --cik`).
+  - The rating's credit term is unavailable until a credit-spread series is collected.
+  - RS compares with the S&P 500 only.
 - Research across runs (2026-10-22): monitor-check does not store the new filings as `source_documents`, so the next run downloads them again. Most model-written dashboard `metric_key`s match no statement line and are reported `not_checkable`. Thesis breakers are still free text. Genesis and claims are not reused across runs (GAP-2-5). The review route does not yet write `follow_up_date`.
 - Security findings are listed in [security.md](security.md).

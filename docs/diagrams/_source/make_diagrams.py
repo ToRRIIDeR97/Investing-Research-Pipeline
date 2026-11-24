@@ -44,6 +44,8 @@ s.line([(600, 470), (600, 505), (110, 505), (110, 560)], "execFile / spawn", lx=
 s.line([(510, 470), (510, 490), (580, 490), (580, 545), (650, 545), (650, 560)], None)
 s.line([(940, 470), (760, 560)], None)
 s.line([(310, 125), (280, 125), (280, 560)], "Drizzle / SQL", lx=276, ly=458, dashed=True, lanchor="end")
+s.box(30, 195, 240, 105, "XBRL warehouse", ["services/xbrl (Python, Arelle)", "read API at XBRL_WAREHOUSE_URL", "own Postgres · ClickHouse · MinIO"], "ext", stereo="service")
+s.line([(300, 370), (240, 300)], "companyfacts\n(else SEC)", lx=205, ly=325, dashed=True)
 s.text(16, 690, "Solid: call/dependency · Dashed: network or DB access. All library components also read/write Postgres (omitted for clarity).", 11, fill="#555")
 s.save(P("component.svg"))
 
@@ -75,6 +77,8 @@ s.text(345, 112, "DB-mediated", 10, fill="#555")
 s.box(40, 505, 300, 90, "Folder ./research-store", ["worktree of branch research-store", "npm run store:sync · gitignored"], "store", stereo="artifact")
 s.box(760, 510, 280, 80, "GitHub (private repo)", ["branch research-store", "other machines sync here"], "ext", stereo="external node")
 s.line([(340, 550), (760, 550)], "git fetch / push", lx=550, ly=542)
+s.box(380, 495, 320, 50, "XBRL warehouse (optional)", ["npm run xbrl:compose · api 127.0.0.1:8080"], "ext", stereo="docker compose project", dashed=True)
+s.line([(700, 180), (712, 180), (712, 520), (700, 520)], "HTTP", lx=716, ly=500, dashed=True, lanchor="start")
 s.save(P("deployment.svg"))
 
 # ---------------------------------------------------------------- class
