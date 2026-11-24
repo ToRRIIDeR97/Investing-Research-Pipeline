@@ -9,6 +9,7 @@ import { loadQuantInputs, QuantInputError, TICKER_PATTERN, type QuantInputs } fr
 import { computePragValue, type PragValue } from "@/lib/quant/value";
 import { toPragmaData } from "@/lib/quant/value/adapter";
 import { computePragTrend, type PragTrend } from "@/lib/quant/trend";
+import { weeklyCloses } from "@/lib/quant/trend/stage";
 
 type Sql = ReturnType<typeof postgres>;
 
@@ -23,6 +24,8 @@ export type QuantSnapshot = {
   sector_etf: string | null;
   as_of: string;
   price: number;
+  /** Weekly closes (last close of each week) over the last five years, for the Value tab's price-and-value chart. */
+  price_history_5y: { day: string; close: number }[];
   value: PragValue | null;
   value_reason: string | null;
   trend: PragTrend;
@@ -74,6 +77,7 @@ export function buildQuantSnapshot(inputs: QuantInputs, research: QuantSnapshot[
     ticker: inputs.ticker, name: inputs.name, cik: inputs.cik, sic: inputs.sic, sic_description: inputs.sic_description,
     sector: inputs.sector.sector, industry: inputs.sector.industry, sector_etf: inputs.sector.etf,
     as_of: inputs.as_of, price: inputs.bars[inputs.bars.length - 1].close,
+    price_history_5y: weeklyCloses(inputs.bars.slice(-1260)).map((w) => ({ day: w.week, close: w.close })),
     value, value_reason: value ? null : valueReason ?? "PragValue unavailable.", trend,
     fundamentals: inputs.fundamentals ? {
       years: inputs.fundamentals.years.map((y) => y.period_end), currency: inputs.fundamentals.currency,

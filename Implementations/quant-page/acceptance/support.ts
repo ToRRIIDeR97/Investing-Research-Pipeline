@@ -58,3 +58,32 @@ export function submissions(rows: Array<{ form: string; accessionNumber: string;
     form: rows.map((r) => r.form), accessionNumber: rows.map((r) => r.accessionNumber), filingDate: rows.map((r) => r.filingDate),
   } } };
 }
+
+/** QuantInputs for the engine A fixture, as loadQuantInputs would return them. */
+const fixture = JSON.parse(readFileSync(join(__dirname, "../fixtures/cases/engine_a_software.json"), "utf8"));
+
+
+export function fixtureInputs(overrides: Record<string, unknown> = {}) {
+  const inc = fixture.data.income.rows, bal = fixture.data.balance.rows, cf = fixture.data.cashflow.rows;
+  const years = fixture.data.income.periods.map((period_end: string, i: number) => ({
+    period_end, fiscal_year: Number(period_end.slice(0, 4)),
+    values: {
+      revenue: inc["Total Revenue"][i], gross_profit: inc["Gross Profit"][i], ebit: inc["EBIT"][i], net_income: inc["Net Income"][i],
+      da: inc["Depreciation And Amortization"][i], rnd: inc["Research Development"][i], interest_expense: null,
+      ocf: cf["Operating Cash Flow"][i], capex: Math.abs(cf["Capital Expenditure"][i]), dividends: null,
+      cash: bal["Cash And Cash Equivalents"][i], debt: bal["Total Debt"][i], equity: bal["Total Stockholders Equity"][i],
+      goodwill: null, intangibles: null, tangible_book: bal["Tangible Book Value"][i], diluted_shares: inc["Diluted Average Shares"][i],
+    },
+    concepts: {},
+  }));
+  const bars = fixture.data.history.map((h: any) => ({ day: h.day, close: h.close, volume: h.volume }));
+  return {
+    ticker: "FIXA", name: "Fixture Software", cik: "0000000001", sic: "7372", sic_description: "Prepackaged software",
+    sector: { sector: "Technology", industry: "Software—Application", etf: "XLK" }, instrument_type: "EQUITY",
+    fundamentals: { currency: "USD", taxonomy: "us-gaap", years, missing: {}, shares_outstanding: { value: 15e9, as_of: "2025-10-17", concept: "dei" } },
+    fundamentals_reason: null, company_facts_origin: { provider: "sec_companyfacts", url: "x" },
+    bars, benchmark: { symbol: "^GSPC", bars }, sector_etf: { symbol: "XLK", bars },
+    asset: { id: "asset-1", researched: false }, as_of: bars[bars.length - 1].day, notes: [], ...overrides,
+  } as any;
+}
+

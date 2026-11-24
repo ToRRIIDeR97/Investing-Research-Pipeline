@@ -267,6 +267,7 @@ function ViewResearch() {
       status={activeTab !== "thesis" && activeTab !== "memo" ? <Tag tone={heroStatus(heroLabel)[1]}>{heroStatus(heroLabel)[0]}</Tag> : undefined}
       actions={<>
         <Link href={`/assets/${assetId}`} className={ui.secondary}>Asset details</Link>
+        {ticker && <Link href={`/quant/${encodeURIComponent(ticker)}`} className={ui.secondary}>Quant</Link>}
         {data.activeRun&&<ResearchChat key={data.activeRun.id} runId={data.activeRun.id} evidence={data.report?.report_document?.evidence??[]} workbenchHref={(proposal)=>`${sectionHref('workbench')}&proposal=${encodeURIComponent(proposal)}`}/>}
         <Link href={`/assets/${assetId}/run?new=1`} className={ui.primary}>New research</Link>
       </>} />

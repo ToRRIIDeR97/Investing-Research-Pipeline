@@ -64,6 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Link href="/" className={styles.brand} aria-label="Pragma Research home"><PragmaMark size={26} /><span>Pragma Research</span></Link>
           <nav className={styles.nav} aria-label="Main">
             <Link href="/" aria-current={current("/")}>Home</Link>
+            <Link href="/quant" aria-current={current("/quant")}>Quant</Link>
             <Link href="/assets" aria-current={current("/assets")}>Research</Link>
             <Link href="/themes" aria-current={current("/themes")}>Themes</Link>
             <Link href="/review" aria-current={current("/review")}>Reviews{pendingReviews ? <span className={styles.count}>{pendingReviews}</span> : null}</Link>
