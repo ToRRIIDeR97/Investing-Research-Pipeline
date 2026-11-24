@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "50mb",
     },
   },
+  // The XBRL warehouse (services/xbrl) is a separate Python service; keep it out of server file traces.
+  outputFileTracingExcludes: { "*": ["services/**"] },
   // No page may be framed, so the approval buttons can't be overlaid by another site.
   async headers() {
     return [{

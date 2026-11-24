@@ -125,7 +125,7 @@ async function evaluationRun(assetId: string, runId: string | undefined) {
 /** The newest version of each artifact the measures read. */
 async function measureArtifacts(runId: string): Promise<ChecklistArtifact[]> {
   const rows = await pipelineSql()`SELECT DISTINCT ON (artifact_type) artifact_type, artifact_version, content_json FROM research_artifacts
-    WHERE research_run_id = ${runId} AND artifact_type IN ('financial_analytics', 'report_facts') AND status IN ('validated', 'accepted')
+    WHERE research_run_id = ${runId} AND artifact_type IN ('financial_analytics', 'report_facts', 'stock_rating') AND status IN ('validated', 'accepted')
     ORDER BY artifact_type, artifact_version DESC, created_at DESC`;
   return rows.map((r) => ({ artifact_type: String(r.artifact_type), artifact_version: Number(r.artifact_version), content_json: r.content_json }));
 }

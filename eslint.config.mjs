@@ -10,6 +10,7 @@ const config = [
       "storage/**",
       "prototype/**",
       "python/**",
+      "services/**",
       "Implementations/**",
       "Research References/**",
       "handover files/**",

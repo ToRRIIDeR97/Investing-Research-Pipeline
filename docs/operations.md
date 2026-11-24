@@ -136,3 +136,24 @@ Pages show each company's logo and its founders and executives from Wikidata and
 - **Switching off.** Set `COMPANY_PROFILES=off` to stop all lookups. Pages then show cached logos, monograms and initials.
 - **Refreshing.** Rows refresh on their own after their TTL: 30 days when resolved, 7 days when not found, 1 hour when failed. To force a refresh, delete the row: `DELETE FROM company_profiles WHERE key = 'ticker:SOFI';`.
 - **Rate limited.** A 429 from Wikimedia pauses all lookups for its Retry-After, at least 60 seconds. Nothing is cached for it, and the next view tries again.
+
+## XBRL warehouse
+
+The warehouse in `services/xbrl/` is optional. Without `XBRL_WAREHOUSE_URL`, runs use SEC companyfacts. Its own procedures are the source of truth: `services/xbrl/AGENTS.md` ("Run locally") and `services/xbrl/sec-xbrl-warehouse/docs/OPERATIONS.md`. Check `services/xbrl/sec-xbrl-warehouse/HANDOFF.md` before starting a worker or enqueueing jobs.
+
+1. **Start it.** From the repository root, `npm run xbrl:compose -- <args>` runs `docker compose` on the warehouse's compose file and project directory, for example:
+   - `npm run xbrl:compose -- up -d postgres clickhouse minio minio-init`
+   - then `npm run xbrl:compose -- up -d api`.
+   - Copy `.env.example` to `.env` in `services/xbrl/sec-xbrl-warehouse/` only on a fresh install, and set a real `XBRL_SEC_USER_AGENT`.
+   - Host ports differ from the pipeline's. The warehouse publishes Postgres on 127.0.0.1:5434 (the pipeline uses 5432, the test database 5433) and Grafana on 3001 (Next dev uses 3000).
+     - A `.env` carried over from the old XBRL-Parser checkout may still say `POSTGRES_PORT=5432` or `GRAFANA_PORT=3000`; change both values.
+     - Don't export `POSTGRES_PASSWORD`, `POSTGRES_USER` or `POSTGRES_DB` in your shell. Both compose files read those names, and a shell value overrides each stack's own setting.
+   - Never run `down -v`: it deletes the data volumes.
+2. **Load an issuer.** The pipeline never writes to the warehouse.
+   - Queue one company with `npm run xbrl:compose -- run --rm admin filing discover --cik <CIK>`.
+   - Then run one SEC fetch worker (`worker run --job-type fetch_filing`) and parse workers, as its guide describes.
+   - Run the SEC fetch worker when no research run is collecting sources. The warehouse's SEC lock covers its own processes only.
+3. **Point runs at it.** Set `XBRL_WAREHOUSE_URL=http://127.0.0.1:8080` in `.env.local` and restart the worker.
+   - A run then reads the warehouse when it holds the issuer's newest periodic filing by the cutoff.
+   - Check which source a run used in its primary source context: `companyFactsOrigin.provider`, and `reason` when it fell back to SEC.
+4. **Turn it off.** Unset `XBRL_WAREHOUSE_URL`. Stored runs keep the companyfacts they were built from.

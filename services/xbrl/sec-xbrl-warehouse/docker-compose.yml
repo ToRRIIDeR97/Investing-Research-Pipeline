@@ -1,0 +1,323 @@
+name: sec-xbrl-warehouse
+
+x-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-2g}
+    cpus: ${POSTGRES_CPUS:-2}
+    image: postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    # Compressed, smaller WAL: the control plane is small, and the 1 GB default
+    # max_wal_size kept more WAL than data.
+    command: ["postgres", "-c", "wal_compression=on", "-c", "max_wal_size=256MB", "-c", "min_wal_size=64MB"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-xbrl_control}
+      POSTGRES_USER: ${POSTGRES_USER:-xbrl}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-xbrl_dev_password}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-xbrl} -d ${POSTGRES_DB:-xbrl_control}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [default, backend]
+    logging: *bounded-logging
+    restart: unless-stopped
+
+  clickhouse:
+    mem_limit: ${CLICKHOUSE_MEMORY_LIMIT:-4g}
+    cpus: ${CLICKHOUSE_CPUS:-2}
+    image: clickhouse/clickhouse-server@sha256:1719fc741a47bdb3827e7a28c1104561efbef6e5e0fbd8a7b023bc5ccd035542
+    environment:
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-xbrl}
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-xbrl}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-xbrl_dev_password}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "127.0.0.1:${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "127.0.0.1:${CLICKHOUSE_NATIVE_PORT:-9000}:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+      - ./docker/clickhouse/config.d/xbrl-memory.xml:/etc/clickhouse-server/config.d/xbrl-memory.xml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    networks: [default, backend]
+    logging: *bounded-logging
+    restart: unless-stopped
+
+  minio:
+    mem_limit: ${MINIO_MEMORY_LIMIT:-2g}
+    cpus: ${MINIO_CPUS:-2}
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-xbrl_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-xbrl_minio_dev_password}
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9002}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9003}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [default, backend]
+    logging: *bounded-logging
+    restart: unless-stopped
+
+  # Bucket, versioning, and the worker's object-store identity. Every step is
+  # idempotent and fails closed. The server image ships `mc`.
+  minio-init:
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      HOME: /tmp
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-xbrl_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-xbrl_minio_dev_password}
+      XBRL_OBJECT_STORE_BUCKET: ${XBRL_OBJECT_STORE_BUCKET:-sec-xbrl}
+      XBRL_RETAIN_FILING_SOURCE_FILES: ${XBRL_RETAIN_FILING_SOURCE_FILES:-true}
+      XBRL_WORKER_OBJECT_STORE_ACCESS_KEY: ${XBRL_WORKER_OBJECT_STORE_ACCESS_KEY:-xbrl_worker}
+      XBRL_WORKER_OBJECT_STORE_SECRET_KEY: ${XBRL_WORKER_OBJECT_STORE_SECRET_KEY:-xbrl_worker_dev_password}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        mc mb --ignore-existing "local/$${XBRL_OBJECT_STORE_BUCKET}"
+        mc anonymous set none "local/$${XBRL_OBJECT_STORE_BUCKET}"
+        mc version enable "local/$${XBRL_OBJECT_STORE_BUCKET}"
+        mc ilm rule ls "local/$${XBRL_OBJECT_STORE_BUCKET}" >/dev/null 2>&1 || mc ilm rule add --noncurrent-expire-days 30 "local/$${XBRL_OBJECT_STORE_BUCKET}"
+        policy="$$(mktemp)"
+        printf '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetBucketLocation","s3:ListBucket","s3:ListBucketMultipartUploads"],"Resource":["arn:aws:s3:::%s"]},{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:AbortMultipartUpload","s3:ListMultipartUploadParts"],"Resource":["arn:aws:s3:::%s/*"]}' "$${XBRL_OBJECT_STORE_BUCKET}" "$${XBRL_OBJECT_STORE_BUCKET}" > "$$policy"
+        if [ "$${XBRL_RETAIN_FILING_SOURCE_FILES}" = "false" ]; then
+          printf ',{"Effect":"Allow","Action":["s3:DeleteObject"],"Resource":["arn:aws:s3:::%s/bronze/*/filings/*/*/packages/sha256=*/package.zip"]}' "$${XBRL_OBJECT_STORE_BUCKET}" >> "$$policy"
+        fi
+        printf ']}' >> "$$policy"
+        mc admin policy create local xbrl-worker "$$policy"
+        mc admin user add local "$${XBRL_WORKER_OBJECT_STORE_ACCESS_KEY}" "$${XBRL_WORKER_OBJECT_STORE_SECRET_KEY}"
+        mc admin policy attach local xbrl-worker --user "$${XBRL_WORKER_OBJECT_STORE_ACCESS_KEY}"
+    networks: [backend]
+
+  api:
+    profiles: ["application", "monitoring"]
+    mem_limit: ${API_MEMORY_LIMIT:-2g}
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    environment:
+      XBRL_POSTGRES_DSN: ${XBRL_API_POSTGRES_DSN:-postgresql+asyncpg://xbrl_api:xbrl_api_dev_password@postgres:5432/xbrl_control}
+      XBRL_CLICKHOUSE_HOST: clickhouse
+      XBRL_CLICKHOUSE_PORT: 8123
+      XBRL_ENV: ${XBRL_ENV:-development}
+      XBRL_API_KEY: ${XBRL_API_KEY:-}
+      XBRL_API_MAX_CONCURRENCY: ${XBRL_API_MAX_CONCURRENCY:-4}
+      XBRL_API_QUERY_TIMEOUT_SECONDS: ${XBRL_API_QUERY_TIMEOUT_SECONDS:-30}
+      XBRL_API_QUERY_MAX_MEMORY_BYTES: ${XBRL_API_QUERY_MAX_MEMORY_BYTES:-536870912}
+      XBRL_API_QUERY_MAX_ROWS: ${XBRL_API_QUERY_MAX_ROWS:-5000000}
+      XBRL_API_QUERY_MAX_BYTES: ${XBRL_API_QUERY_MAX_BYTES:-1073741824}
+      XBRL_API_RESULT_MAX_BYTES: ${XBRL_API_RESULT_MAX_BYTES:-16777216}
+      XBRL_CLICKHOUSE_DATABASE: ${CLICKHOUSE_DB:-xbrl}
+      XBRL_API_CLICKHOUSE_USERNAME: ${XBRL_API_CLICKHOUSE_USERNAME:-xbrl_api}
+      XBRL_API_CLICKHOUSE_PASSWORD: ${XBRL_API_CLICKHOUSE_PASSWORD:-xbrl_api_dev_password}
+      XBRL_API_HOST: 0.0.0.0
+      XBRL_API_PORT: 8080
+      # The container port is published on 127.0.0.1 only; production requires a key.
+      XBRL_API_ALLOW_UNAUTHENTICATED_REMOTE: ${XBRL_API_ALLOW_UNAUTHENTICATED_REMOTE:-true}
+    command: ["api", "serve"]
+    ports:
+      - "127.0.0.1:${XBRL_API_PORT:-8080}:8080"
+    networks: [default, backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    logging: *bounded-logging
+    restart: unless-stopped
+
+  worker:
+    profiles: ["application", "monitoring"]
+    mem_limit: ${WORKER_MEMORY_LIMIT:-4g}
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    env_file: .env
+    environment: &worker-identity
+      # Least privilege: DML-only PostgreSQL role, SELECT/INSERT ClickHouse user,
+      # and an object-store user with scoped source cleanup when enabled. The
+      # owner, admin, and root credentials that `.env` carries are blanked here.
+      XBRL_POSTGRES_DSN: postgresql+asyncpg://xbrl_worker:${XBRL_WORKER_POSTGRES_PASSWORD:-xbrl_worker_dev_password}@postgres:5432/${POSTGRES_DB:-xbrl_control}
+      XBRL_CLICKHOUSE_HOST: clickhouse
+      XBRL_CLICKHOUSE_PORT: 8123
+      XBRL_CLICKHOUSE_USERNAME: xbrl_writer
+      XBRL_CLICKHOUSE_PASSWORD: ${XBRL_WRITER_CLICKHOUSE_PASSWORD:-xbrl_writer_dev_password}
+      XBRL_OBJECT_STORE_ENDPOINT: http://minio:9000
+      XBRL_OBJECT_STORE_ACCESS_KEY: ${XBRL_WORKER_OBJECT_STORE_ACCESS_KEY:-xbrl_worker}
+      XBRL_OBJECT_STORE_SECRET_KEY: ${XBRL_WORKER_OBJECT_STORE_SECRET_KEY:-xbrl_worker_dev_password}
+      POSTGRES_PASSWORD: ""
+      CLICKHOUSE_PASSWORD: ""
+      MINIO_ROOT_PASSWORD: ""
+      XBRL_API_KEY: ""
+      XBRL_API_CLICKHOUSE_PASSWORD: ""
+      XBRL_API_POSTGRES_DSN: ""
+      XBRL_WORKER_METRICS_HOST: 0.0.0.0
+    volumes:
+      - app_data:/app/data
+    command: ["worker", "run"]
+    networks: [default, backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    logging: *bounded-logging
+    restart: unless-stopped
+
+  # Optional parse-only worker (profile "parse"): runs Arelle, validation, and loading
+  # for parse_filing jobs. It builds no SEC client and, with offline Arelle, never takes
+  # the SEC egress lock, so it can run beside the SEC-active worker. Memory:
+  # XBRL_WORKER_CONCURRENCY x XBRL_ARELLE_MEMORY_LIMIT_BYTES must fit mem_limit
+  # (`doctor` checks this).
+  worker-parse:
+    profiles: ["parse"]
+    mem_limit: ${WORKER_PARSE_MEMORY_LIMIT:-8g}
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    env_file: .env
+    environment:
+      <<: *worker-identity
+      XBRL_WORKER_ID: worker-parse
+      XBRL_WORKER_CONCURRENCY: ${XBRL_PARSE_WORKER_CONCURRENCY:-2}
+      XBRL_ARELLE_OFFLINE: "true"
+      XBRL_WORKER_METRICS_HOST: 0.0.0.0
+      # Parse-only: it sends no regulator traffic, so it holds no regulator API keys.
+      XBRL_EDINET_API_KEY: ""
+      XBRL_DART_API_KEY: ""
+    volumes:
+      - app_data:/app/data
+    command: ["worker", "run", "--job-type", "parse_filing"]
+    # Internal network only: offline Arelle needs no internet, so it gets none.
+    networks: [backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    logging: *bounded-logging
+    restart: unless-stopped
+
+  # Operator service with the owner/admin credentials from `.env`: migrations,
+  # ClickHouse DDL and upgrades, taxonomy sync, doctor, and storage maintenance.
+  # Run on demand (`docker compose run --rm admin ...`); never long-running.
+  admin:
+    profiles: ["admin"]
+    mem_limit: ${WORKER_MEMORY_LIMIT:-4g}
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    env_file: .env
+    environment:
+      XBRL_POSTGRES_DSN: postgresql+asyncpg://${POSTGRES_USER:-xbrl}:${POSTGRES_PASSWORD:-xbrl_dev_password}@postgres:5432/${POSTGRES_DB:-xbrl_control}
+      XBRL_CLICKHOUSE_HOST: clickhouse
+      XBRL_CLICKHOUSE_PORT: 8123
+      XBRL_OBJECT_STORE_ENDPOINT: http://minio:9000
+    volumes:
+      - app_data:/app/data
+    command: ["doctor"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    networks: [default, backend]
+    logging: *bounded-logging
+
+  prometheus:
+    profiles: ["monitoring"]
+    image: prom/prometheus@sha256:49214755b6153f90a597adcbff0252cc61069f8ab69ce8411285cd4a560e8038
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"]
+    volumes:
+      - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      - api
+      - worker
+    logging: *bounded-logging
+    restart: unless-stopped
+
+  grafana:
+    profiles: ["monitoring"]
+    image: grafana/grafana@sha256:35c41e0fd0295f5d0ee5db7e780cf33506abfaf47686196f825364889dee878b
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+    depends_on:
+      - prometheus
+    logging: *bounded-logging
+    restart: unless-stopped
+
+networks:
+  # Storage and parse traffic. `internal` means no route to the internet.
+  backend:
+    internal: true
+
+volumes:
+  postgres_data:
+  clickhouse_data:
+  clickhouse_logs:
+  minio_data:
+  app_data:
+  prometheus_data:
+  grafana_data:

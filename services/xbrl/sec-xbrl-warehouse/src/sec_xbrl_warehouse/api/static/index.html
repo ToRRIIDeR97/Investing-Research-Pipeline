@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XBRL Warehouse · Stock & filing explorer</title>
+<link rel="stylesheet" href="./style.css">
+<script type="module" src="./app.mjs"></script>
+</head>
+<body>
+<header><a href="./" class="brand"><span class="mark" aria-hidden="true">X</span> XBRL Warehouse</a><span class="muted">Company research / Filing explorer</span><details class="access"><summary>API access</summary><label for="key">API key</label><input id="key" type="password" placeholder="Only if required" autocomplete="off"><p class="faint">Saved in this browser. Used only for warehouse requests.</p></details></header>
+<main>
+  <div class="intro"><div class="eyebrow">STOCK & FILING EXPLORER</div><h1>Start with a company.<br>Get to the filing.</h1><p class="muted">Search your warehouse, explore filing history, or continue to a regional source for reports you haven’t imported yet.</p></div>
+  <section class="search-panel" aria-label="Find a company">
+    <form id="search-form">
+      <div class="search-grid">
+        <div><label for="market">Market / filing source</label><select id="market"><option value="">All source regions</option></select></div>
+        <div><label for="exchange">Exchange</label><input id="exchange" list="exchange-options" placeholder="All exchanges" maxlength="64"><datalist id="exchange-options"></datalist></div>
+        <div class="search"><label for="q">Stock symbol or company</label><input id="q" placeholder="e.g. AAPL, Apple, or company ID" autocomplete="off" maxlength="64" aria-describedby="search-help"></div>
+        <button type="submit" class="primary">Search warehouse</button>
+      </div>
+      <p id="search-help" class="faint">Warehouse results contain imported companies. Outside the US, search by company name; most adapters do not import ticker or exchange metadata.</p>
+    </form>
+    <div class="examples"><span class="faint">Try a search</span><button type="button" data-query="AAPL">AAPL</button><button type="button" data-query="MSFT">MSFT</button><button type="button" data-query="Toyota">Toyota</button><button type="button" data-query="DBS">DBS</button></div>
+    <div id="status" role="alert"></div>
+    <div id="search-status" role="status" aria-live="polite"></div>
+    <div id="results" aria-label="Warehouse search results"></div>
+  </section>
+  <section class="coverage" aria-label="Find reports outside the warehouse">
+    <div class="section-head"><div><h2>Find reports outside the warehouse</h2><p class="faint" id="coverage-help">Choose a region to see its filing source and acquisition requirements.</p></div><span class="badge">7 source adapters</span></div>
+    <div id="source-cards" class="source-grid"></div>
+    <p class="faint">Source links open external sites; they do not import files. A supported region does not mean every exchange or company is covered.</p>
+  </section>
+  <section id="empty" class="empty"><h2>Your research starts here</h2><p class="muted">Choose a market and search for a company. Select a warehouse result to browse its financials and filings.</p></section>
+  <section id="company" hidden aria-label="Selected company">
+    <div class="head"><div><div class="eyebrow">SELECTED COMPANY</div><h2 id="name"></h2><div id="ticker" class="muted"></div></div><span id="source" class="faint"></span></div>
+    <div id="company-status" role="status"></div>
+    <div class="cards" id="cards"></div>
+    <div class="panel"><h3 id="chart-label">Revenue</h3><svg id="chart" role="img" aria-label="Revenue by fiscal year"></svg>
+      <div class="tabs" role="tablist" aria-label="Financial statements"><button data-tab="income" class="on" role="tab" aria-selected="true">Income</button><button data-tab="cash" role="tab" aria-selected="false">Cash flow</button><button data-tab="balance" role="tab" aria-selected="false">Balance sheet</button><span id="unit" class="faint"></span></div>
+      <div class="scroll"><table id="table" aria-label="Financial statement values"></table></div>
+    </div>
+    <div class="panel">
+      <div class="section-head"><div><h2>Filing library</h2><p class="faint">Original source links and warehouse records, newest first.</p></div><span id="filing-count" class="badge"></span></div>
+      <div class="filing-controls"><div><label for="filing-form">Filing type</label><select id="filing-form"><option value="">All types</option></select></div><div><label for="filing-year">Filed year</label><select id="filing-year"><option value="">All years</option></select></div><div><label for="filing-text">Find in loaded filings</label><input id="filing-text" placeholder="Accession, form, or period"></div></div>
+      <p id="filing-status" class="faint" role="status"></p>
+      <div class="scroll"><table id="filings"><thead><tr><th>Report</th><th>Period ended</th><th>Filed</th><th>Source / actions</th></tr></thead><tbody></tbody></table></div>
+      <button id="more-filings" type="button" hidden>Load more filings</button>
+    </div>
+    <section class="panel" id="filing-detail" hidden aria-label="Filing details"><div class="section-head"><h2 id="detail-title"></h2><button id="close-detail" type="button">Close</button></div><p id="detail-status" role="status"></p><dl id="detail-content"></dl></section>
+  </section>
+</main>
+<footer>As-filed reports and traceable financial data · Warehouse coverage depends on imported filings.</footer>
+</body>
+</html>

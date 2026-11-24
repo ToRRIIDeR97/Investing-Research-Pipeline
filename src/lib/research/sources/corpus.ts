@@ -11,6 +11,7 @@ import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
 import { fetchCapped } from "@/lib/net";
 import { isResultsRelease } from "@/lib/research/history/press-release";
 import { dominantCurrency, reportingTaxonomy } from "@/lib/research/history/sec-companyfacts";
+import { loadCompanyFacts } from "@/lib/research/history/xbrl-warehouse";
 import { fxSeriesFor } from "@/lib/research/valuation/v2";
 import { SourceRole } from "@/lib/research/sources/roles";
 import { syncAssetPriceHistory, syncBenchmarkPriceHistory, type PriceHistorySync } from "@/lib/market-data/price-history";
@@ -822,16 +823,12 @@ async function fetchSecContext(ctx: RunContext) {
   });
   if (!cik) return fetchExorIssuerContext(ctx);
 
-  const [companyFactsRes, submissionsRes] = await Promise.all([
-    fetchCapped(`https://data.sec.gov/api/xbrl/companyfacts/CIK${cik}.json`, { headers: { "User-Agent": SEC_USER_AGENT } }),
-    fetchCapped(`https://data.sec.gov/submissions/CIK${cik}.json`, { headers: { "User-Agent": SEC_USER_AGENT } }),
-  ]);
-  if (!companyFactsRes.ok) throw new Error(`SEC companyfacts failed: ${companyFactsRes.status}`);
+  const submissionsRes = await fetchCapped(`https://data.sec.gov/submissions/CIK${cik}.json`, { headers: { "User-Agent": SEC_USER_AGENT } });
   if (!submissionsRes.ok) throw new Error(`SEC submissions failed: ${submissionsRes.status}`);
-
-  const companyFacts = await companyFactsRes.json();
   const submissions = await submissionsRes.json();
   const cutoffDate = ctx.marketDataCutoffAt?.slice(0, 10) || new Date().toISOString().slice(0, 10);
+  // The XBRL warehouse (XBRL_WAREHOUSE_URL) supplies companyfacts when it holds the newest periodic filing; else SEC.
+  const { companyFacts, origin: companyFactsOrigin } = await loadCompanyFacts({ cik, submissions, cutoffDate, userAgent: SEC_USER_AGENT });
   // Five years and a half: the oldest 10-Q of the 20-quarter window can be filed up to a quarter before cutoff - 5 years.
   const earliestDate = new Date(cutoffDate);
   earliestDate.setMonth(earliestDate.getMonth() - 66);
@@ -854,8 +851,11 @@ async function fetchSecContext(ctx: RunContext) {
 
   return {
     cik,
-    source: "SEC companyfacts and submissions APIs",
-    entityName: companyFacts.entityName,
+    source: companyFactsOrigin.provider === "xbrl_warehouse"
+      ? "XBRL warehouse facts and SEC submissions API"
+      : "SEC companyfacts and submissions APIs",
+    companyFactsOrigin,
+    entityName: companyFacts.entityName || submissions.name || null,
     website: submissions.website || null,
     investorWebsite: submissions.investorWebsite || null,
     // Foreign issuers report in their own currency (CNY for JD); the valuation converts with an FX series.

@@ -32,7 +32,8 @@
     "db:studio": "drizzle-kit studio",
     "store:sync": "tsx scripts/research-store.ts sync",
     "store:export": "tsx scripts/research-store.ts export",
-    "store:import": "tsx scripts/research-store.ts import"
+    "store:import": "tsx scripts/research-store.ts import",
+    "xbrl:compose": "docker compose -f services/xbrl/sec-xbrl-warehouse/docker-compose.yml --project-directory services/xbrl/sec-xbrl-warehouse"
   },
   "dependencies": {
     "@types/pg": "^8.11.14",

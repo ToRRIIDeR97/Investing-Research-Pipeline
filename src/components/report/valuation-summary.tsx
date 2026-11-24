@@ -3,6 +3,7 @@ import {useMemo,useRef,useState,type ReactNode,type RefObject} from 'react';
 import {scenarioNames,scenarioTypes,valuationSummary,type PriceTargets,type ScenarioType} from '@/lib/research/reporting/valuation-summary';
 import {moneyMillions,percent,price} from '@/lib/research/reporting/plain-english';
 import styles from './report-panels.module.css';
+import {StockRatingPanel} from './stock-rating';
 import { C } from "@/components/ui/palette";
 type Row=Record<string,any>;
 
@@ -83,6 +84,9 @@ export function ValuationSummaryView({artifacts,conclusionStatus,hideHero=false}
           {!!calc.steps.length&&<ol className={styles.steps}>{calc.steps.map((step,i)=><li key={i}>{step.text}: <b>{step.value}</b>.</li>)}</ol>}
           {calc.note&&<p className={styles.note}>{calc.note}</p>}
         </div>
+      </Item>}
+      {artifacts.some(a=>a?.artifact_type==='stock_rating')&&<Item title="Rating and trend" open>
+        <div className={styles.panel}><StockRatingPanel artifacts={artifacts}/></div>
       </Item>}
       {!!s.assumptions.length&&<Item title={`Key assumptions${s.terminalYear?` for ${s.terminalYear}`:''}`}>
         <div className={styles.panel}>

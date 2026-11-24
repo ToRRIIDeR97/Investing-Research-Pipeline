@@ -5,7 +5,7 @@ import { buildExhibits, isAvailable, placeExhibits, type BuiltExhibit } from "./
 import { composeDraft, draftDocument, reviewDraftedReport, checkFinalCoverage, type CompositionActions, type ReportReview, type WrittenSection, REQUIRED_COVERAGE } from "./compose";
 import { z } from "zod/v4";
 import { DEPTH_CHECKS, DEPTH_CHECK_RULE, REWORK_STAGES, depthFindings } from "./depth";
-import { loadReportInputs, saveReportArtifact } from "./store";
+import { loadReportInputs, modelVisibleArtifacts, saveReportArtifact } from "./store";
 import { createReport, reviewDocument } from "./report";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { VISUAL_GUIDELINES, validateVisual } from './visuals';
@@ -189,7 +189,7 @@ export function splitReportArtifacts<T extends { id: string; artifact_type: stri
     const artifact = artifacts.find(a => a.artifact_type === type);
     return artifact ? [[type, { artifact_id: artifact.id, ...artifact.content_json }]] : [];
   }));
-  return { shared, packetArtifacts: artifacts.filter(a => !SHARED_REPORT_TYPES.includes(a.artifact_type)) };
+  return { shared, packetArtifacts: modelVisibleArtifacts(artifacts).filter(a => !SHARED_REPORT_TYPES.includes(a.artifact_type)) };
 }
 
 function checkedContract(base: AgentOutputFormat, check: (value: any) => void, clean: (value: any) => any = (value) => value): AgentOutputFormat {

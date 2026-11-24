@@ -1,7 +1,7 @@
 import { z } from "zod/v4";
 import { callResearchAgent, exactJsonPrompt, type ResearchRunContext, type Sql } from "./run-context";
 import { outputContract, type ReportOutline } from "./reporting/contracts";
-import { loadReportInputs, saveReportArtifact } from "./reporting/store";
+import { loadReportInputs, modelVisibleArtifacts, saveReportArtifact } from "./reporting/store";
 import { TEAM_ROLES, BRIEF_ROLES, GAP_OWNER_STAGES, STAGE_DEPENDENCIES, STAGE_OWNERS, dependentStages, stageNeedsBriefs } from "./team-plan";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { SOURCE_ROLES } from "./sources/roles";
@@ -210,7 +210,7 @@ export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, 
   // Persisted limit survives worker restarts. Unavailable material answers stay blocked.
   if (!roundAvailable(previous, phase)) return;
   const inputs = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
-  const packet = { asset: { name: ctx.assetName, symbol: ctx.symbol }, ...inputs, previous_requests: previous?.requests || [],
+  const packet = { asset: { name: ctx.assetName, symbol: ctx.symbol }, ...inputs, artifacts: modelVisibleArtifacts(inputs.artifacts), previous_requests: previous?.requests || [],
     findings, role: "report", output_contract: "team_requests" };
   const result = await callResearchAgent<{ requests: Request[] }>({ sql, ctx, stageKey,
     taskKey: `team:requests:${previous?.round || 0}`, taskType: "team_requests", agentName: "export-writer", modelTier: "cheap",

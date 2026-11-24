@@ -7,7 +7,7 @@ type Row = Record<string, any>;
 export type ChecklistArtifact = { artifact_type: string; artifact_version?: number | null; content_json: unknown };
 
 export const MEASURE_KEYS = ["revenue_yoy_median", "operating_margin_median", "fcf_margin_median", "roic_median", "net_debt_payback_years",
-  "share_change_yoy", "pe_ttm", "tv_share_of_ev"] as const;
+  "share_change_yoy", "pe_ttm", "tv_share_of_ev", "trend_score_pct", "valuation_deviation_pct"] as const;
 export type MeasureKey = typeof MEASURE_KEYS[number];
 export type MeasureUnit = "%" | "x" | "years" | "ratio";
 
@@ -21,6 +21,8 @@ export const MEASURES: Record<MeasureKey, { label: string; unit: MeasureUnit; so
   share_change_yoy: { label: "Change in share count, year over year", unit: "%", source: "latest capital_allocation.quarterly shares_yoy" },
   pe_ttm: { label: "Price ÷ trailing earnings", unit: "x", source: "report_facts.market.pe_ttm" },
   tv_share_of_ev: { label: "Terminal value share of enterprise value (base case)", unit: "%", source: "report_facts.cases base row tv_share_of_ev" },
+  trend_score_pct: { label: "Trend conditions met (share of those evaluated)", unit: "%", source: "stock_rating.trend passed ÷ evaluated" },
+  valuation_deviation_pct: { label: "Price vs base value, confidence-adjusted (negative: below value)", unit: "%", source: "stock_rating.adjusted_deviation" },
 };
 
 export type MeasureResult = { value: number; display: string } | { value: null; reason: string };
@@ -83,6 +85,19 @@ export function measureValue(key: MeasureKey, artifacts: ChecklistArtifact[]): M
     const capital = rows(analytics.capital_allocation?.quarterly).at(-1);
     if (!capital || !finite(capital.shares_yoy)) return none("The latest quarter has no year-over-year share change.");
     return ok(key, round(capital.shares_yoy * 100, 4));
+  }
+  if (key === "trend_score_pct" || key === "valuation_deviation_pct") {
+    const rating = latest(artifacts, "stock_rating");
+    if (!rating) return none("This run has no stock rating (written by decision synthesis).");
+    if (key === "trend_score_pct") {
+      const { passed, evaluated } = rating.trend ?? {};
+      if (!finite(evaluated) || evaluated <= 0 || !finite(passed)) return none("No trend condition had enough price history to evaluate.");
+      return ok(key, round((passed / evaluated) * 100, 4));
+    }
+    if (rating.status !== "rated" || !finite(rating.adjusted_deviation)) {
+      return none(`The rating was withheld${rating.withheld_reason ? `: ${rating.withheld_reason}` : "."}`);
+    }
+    return ok(key, round(rating.adjusted_deviation * 100, 4));
   }
   const facts = latest(artifacts, "report_facts");
   if (!facts) return none("This run has no report facts (computed when the report is drafted).");
