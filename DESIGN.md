@@ -66,9 +66,9 @@ The Quant page uses colour more freely, because colour is the fastest way to rea
 - **Exit multiples:** the card always shows the three exits the scenarios use, as case-coloured columns with bars;
   the multiple's own history chart sits under them only when there are two or more years, otherwise one quiet line
   says why.
-- **Engine strip reveal:** hovering, focusing or tapping the context strip grows the badge's navy across the card
-  (a clip-path circle from the badge), flips the badge to white and shows one plain sentence on how that engine values
-  a company (`explainEngine`); the sentence is also the strip's screen-reader description.
+- **Engine strip reveal:** the badge is a button. Clicking it grows its navy across the card (a clip-path circle from
+  the badge), flips the badge to white and shows one plain sentence on how that engine values a company
+  (`explainEngine`). Clicking it again, Escape or a click elsewhere closes it; hover does nothing.
 - **Signals:** the PulseScore gauge runs red (overvalued) to green (undervalued); trend and stage facts carry a dot;
   unmet trend conditions are red, met ones green; returns and "vs price" figures are green or red.
 

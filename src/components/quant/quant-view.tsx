@@ -3,7 +3,7 @@
  * The Quant page (Implementations/quant-page, layout Q2): a summary rail and Value / Trend tabs over one snapshot.
  * Built by code from SEC facts and stored prices; no model calls. Separate from Research, with links across.
  */
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Card, Segmented, Tag } from "@/components/ui/primitives";
 import ui from "@/components/research-ui.module.css";
@@ -39,17 +39,29 @@ function trendTone(passed: number, evaluated: number): "good" | "caution" | "bad
 
 /**
  * The first card of each tab: what the numbers below are built from, as a badge, a line, and a few figures. With an
- * `explain` sentence, hovering or focusing the strip grows the badge's navy across the whole card and shows that one
- * plain sentence in its place (tap on touch screens; the sentence is also the strip's description for screen readers).
+ * `explain` sentence the badge is a button: clicking it grows its navy across the whole card and shows that one plain
+ * sentence in place of the line and figures. Clicking it again, pressing Escape or clicking elsewhere closes it.
  */
 function ContextStrip({ label, badge, title, line, figures, explain }: { label: string; badge: string; title: string; line: string; figures: { label: string; value: string }[]; explain?: string | null }) {
   const id = `ctx-${label.replace(/\W+/g, "-").toLowerCase()}`;
-  return <section className={styles.context} aria-label={label} tabIndex={explain ? 0 : undefined} aria-describedby={explain ? id : undefined} data-explain={explain ? "" : undefined}>
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (e: PointerEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    window.addEventListener("pointerdown", outside);
+    window.addEventListener("keydown", esc);
+    return () => { window.removeEventListener("pointerdown", outside); window.removeEventListener("keydown", esc); };
+  }, [open]);
+  return <section ref={box} className={styles.context} aria-label={label} data-open={open ? "" : undefined}>
     {explain && <span className={styles.contextFill} aria-hidden="true" />}
-    <span className={styles.contextBadge}>{badge}</span>
+    {explain ? <button type="button" className={styles.contextBadge} aria-expanded={open} aria-controls={id}
+      title={open ? "Hide explanation" : "What does this mean?"} onClick={() => setOpen((o) => !o)}>{badge}</button>
+      : <span className={styles.contextBadge}>{badge}</span>}
     <div className={styles.contextText}><strong>{title}</strong><span>{line}</span></div>
     {figures.length > 0 && <dl className={styles.contextFigures}>{figures.map((f) => <div key={f.label}><dt>{f.label}</dt><dd>{f.value}</dd></div>)}</dl>}
-    {explain && <p className={styles.contextExplain} id={id}>{explain}</p>}
+    {explain && <p className={styles.contextExplain} id={id} aria-hidden={!open}>{explain}</p>}
   </section>;
 }
 
