@@ -71,7 +71,8 @@ function pqBand(adjDev: number, price: number, bear: number, bull: number, cisZ:
   return band(adjDev * 0.55 + asymScore * 0.25 + -clamp(cisZ, -2, 2) * 0.1 * 0.2);
 }
 
-export function computePragValue(data: PragmaData, meta: { sector: string; industry: string; companyName?: string | null; creditZ?: number | null }): PragValue {
+/** `engine` overrides the router (the Quant page uses it for SIC-level routing the plan fixes; see sic.ts). */
+export function computePragValue(data: PragmaData, meta: { sector: string; industry: string; companyName?: string | null; creditZ?: number | null; engine?: Engine | null }): PragValue {
   const { info } = data;
   const notes: string[] = [];
   let price = safeFloat(info, "currentPrice", "regularMarketPrice") || 0;
@@ -79,7 +80,7 @@ export function computePragValue(data: PragmaData, meta: { sector: string; indus
   let ebitTtm = safeFloat(info, "ebit") || null;
   if (ebitTtm === null) { const v = data.income.rows["EBIT"]?.[0]; if (typeof v === "number" && Number.isFinite(v)) ebitTtm = v; }
   const revenueTtm = safeFloat(info, "totalRevenue") || null;
-  const engine = routeEngine(meta.sector, meta.industry, ebitTtm, revenueTtm, meta.companyName ?? null);
+  const engine = meta.engine ?? routeEngine(meta.sector, meta.industry, ebitTtm, revenueTtm, meta.companyName ?? null);
   const er = runEngine(engine, data, meta.sector, meta.industry);
   const confidence = confidenceScore(data, er);
 

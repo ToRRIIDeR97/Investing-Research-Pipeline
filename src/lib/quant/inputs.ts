@@ -51,7 +51,8 @@ export type QuantInputs = {
   transient: string[];
 };
 
-export const TICKER_PATTERN = /^[A-Z][A-Z0-9.-]{0,9}$/;
+import { TICKER_PATTERN } from "./ticker";
+export { TICKER_PATTERN };
 
 /** Daily bars restated on the latest bar's split basis, with volume rescaled the opposite way. */
 export function quantBars(bars: StoredBar[], splits: SplitEvent[]): QuantBar[] {
@@ -91,7 +92,7 @@ async function quantAsset(sql: Sql, ticker: string, name: string): Promise<{ id:
 }
 
 /** A reference asset for a benchmark ETF, created on first use (like the S&P 500 benchmark). */
-async function syncEtf(sql: Sql, symbol: string, fetchImpl: FetchLike | undefined): Promise<{ symbol: string; bars: QuantBar[] } | null> {
+async function syncEtf(sql: Sql, symbol: string, fetchImpl: FetchLike | undefined): Promise<{ etf: { symbol: string; bars: QuantBar[] } | null; synced: boolean }> {
   const slug = `benchmark-${symbol.toLowerCase()}`;
   await sql`
     INSERT INTO assets (canonical_name, slug, asset_kind, base_currency, status, description)
@@ -99,9 +100,27 @@ async function syncEtf(sql: Sql, symbol: string, fetchImpl: FetchLike | undefine
     ON CONFLICT (slug) DO NOTHING`;
   const [row] = await sql`SELECT id FROM assets WHERE slug = ${slug}`;
   const assetId = String(row.id);
-  await syncAssetPriceHistory(sql, { assetId, assetName: `${symbol} sector ETF`, symbol, cutoffAt: null }, fetchImpl ? { fetchImpl: fetchImpl as typeof fetch } : {});
+  const sync = await syncAssetPriceHistory(sql, { assetId, assetName: `${symbol} sector ETF`, symbol, cutoffAt: null }, fetchImpl ? { fetchImpl: fetchImpl as typeof fetch } : {});
   const stored = await loadStoredPriceHistory(sql, assetId, symbol, new Date());
-  return stored.bars.length ? { symbol, bars: quantBars(stored.bars, stored.splits) } : null;
+  return { etf: stored.bars.length ? { symbol, bars: quantBars(stored.bars, stored.splits) } : null, synced: sync.status === "synced" };
+}
+
+/** SEC submissions for a resolved CIK. The issuer is known to file, so any failure means SEC is unreachable (503). */
+export async function fetchSubmissions(cik: string, fetchImpl: FetchLike): Promise<any> {
+  try { return await secJson(fetchImpl, `https://data.sec.gov/submissions/CIK${cik}.json`); }
+  catch { throw new QuantInputError("upstream_unavailable", "SEC filings could not be fetched for this issuer. Try again shortly."); }
+}
+
+/**
+ * What a price sync means for the snapshot. A failed sync with nothing stored is an upstream failure (503); a failed
+ * sync over stored bars uses them but marks the snapshot transient, so a stale day isn't cached. A sync that worked
+ * but stored nothing means the provider has no prices for the ticker (404).
+ */
+export function priceSyncOutcome(ticker: string, synced: boolean, storedBars: number): { notes: string[]; transient: string[] } {
+  if (!synced && !storedBars) throw new QuantInputError("upstream_unavailable", `Prices for ${ticker} could not be fetched. Try again shortly.`);
+  if (!storedBars) throw new QuantInputError("no_prices", `No daily prices are stored for ${ticker}.`);
+  if (!synced) return { notes: ["The price provider could not be reached, so the stored prices were used; Refresh later for today's close."], transient: ["prices"] };
+  return { notes: [], transient: [] };
 }
 
 export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fetchImpl?: FetchLike; now?: Date } = {}): Promise<QuantInputs> {
@@ -119,7 +138,8 @@ export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fe
   let name = ticker, sic: string | null = null, sicDescription: string | null = null;
   let fundamentals: AnnualFundamentals | null = null, fundamentalsReason: string | null = null, origin: CompanyFactsOrigin | null = null;
   if (cik) {
-    const submissions = await secJson(fetchImpl, `https://data.sec.gov/submissions/CIK${cik}.json`);
+    // The CIK resolved, so this is a filer: a submissions failure means SEC is unreachable, not "no filer".
+    const submissions = await fetchSubmissions(cik, fetchImpl);
     name = String(submissions.name || ticker);
     sic = submissions.sic ? String(submissions.sic) : null;
     sicDescription = submissions.sicDescription ? String(submissions.sicDescription) : null;
@@ -139,17 +159,23 @@ export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fe
   const asset = await quantAsset(sql, ticker, name);
   const sync = await syncAssetPriceHistory(sql, { assetId: asset.id, assetName: asset.name, symbol: ticker, cutoffAt: null },
     options.fetchImpl ? { fetchImpl: options.fetchImpl as typeof fetch, now } : { now });
-  if (sync.status !== "synced") notes.push(`Price sync: ${sync.error ?? sync.status}; using stored bars.`);
   const stored = await loadStoredPriceHistory(sql, asset.id, ticker, now);
-  if (!stored.bars.length) throw new QuantInputError("no_prices", `No daily prices are stored for ${ticker}.`);
+  const priced = priceSyncOutcome(ticker, sync.status === "synced", stored.bars.length);
+  notes.push(...priced.notes);
+  transient.push(...priced.transient);
 
-  await syncBenchmarkPriceHistory(sql, null, options.fetchImpl ? { fetchImpl: options.fetchImpl as typeof fetch } : {});
+  const benchSync = await syncBenchmarkPriceHistory(sql, null, options.fetchImpl ? { fetchImpl: options.fetchImpl as typeof fetch } : {});
+  if (benchSync.status !== "synced") { notes.push("S&P 500 prices could not be refreshed; relative strength uses the stored series."); transient.push("benchmark"); }
   const benchmark = await loadBenchmarkPriceHistory(sql, now);
   const sector = sectorFromSic(sic);
   let sectorEtf: QuantInputs["sector_etf"] = null;
   if (sector.etf) {
-    try { sectorEtf = await syncEtf(sql, sector.etf, options.fetchImpl); }
-    catch { notes.push(`Sector ETF ${sector.etf} prices could not be synced; RS uses the S&P 500 only.`); transient.push("sector_etf"); }
+    let synced = false;
+    try { const r = await syncEtf(sql, sector.etf, options.fetchImpl); sectorEtf = r.etf; synced = r.synced; } catch { /* reported below */ }
+    if (!synced) {
+      notes.push(sectorEtf ? `Sector ETF ${sector.etf} prices could not be refreshed; RS uses the stored series.` : `Sector ETF ${sector.etf} prices could not be synced; RS uses the S&P 500 only.`);
+      transient.push("sector_etf");
+    }
   }
 
   return {

@@ -18,7 +18,9 @@ export function parseQuantTab(raw: string | null | undefined): QuantTab {
 }
 const pct = (v: number | null | undefined, digits = 1) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v * 100).toFixed(digits)}%`);
 const rate = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(1)}%`);
-const money = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `$${v.toFixed(2)}`);
+/** Two decimals in text (chart labels round to whole dollars above $100); negatives as −$x. */
+const money = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `${v < 0 ? "−" : ""}$${Math.abs(v).toFixed(2)}`);
+const weeks = (n: number) => `${n} week${n === 1 ? "" : "s"}`;
 
 export function researchHref(s: QuantSnapshot): string {
   return s.research ? `/assets/${s.research.asset_id}/view` : `/research/new?ticker=${encodeURIComponent(s.ticker)}&name=${encodeURIComponent(s.name)}`;
@@ -49,7 +51,7 @@ function Rail({ s }: { s: QuantSnapshot }) {
     </> : <p className={styles.unavailable}>PragValue unavailable: {s.value_reason}</p>}
     <dl className={styles.facts}>
       <div><dt>Trend</dt><dd>{t.conditions.score_label}</dd></div>
-      <div><dt>Stage</dt><dd>{t.stage ? `${t.stage.stage_number} · ${t.stage.weeks_in_stage} weeks` : "—"}</dd></div>
+      <div><dt>Stage</dt><dd>{t.stage ? `${t.stage.stage_number} · ${weeks(t.stage.weeks_in_stage)}` : "—"}</dd></div>
       <div><dt>RS rating</dt><dd>{t.rs.combined ?? "—"}</dd></div>
       {v && <div><dt>Confidence</dt><dd>{v.confidence}</dd></div>}
       <div><dt>Research</dt><dd>{s.research ? <Link href={researchHref(s)}>{s.research.status ? `Open (${s.research.status.replace(/_/g, " ")})` : "Open"}</Link> : "Not started"}</dd></div>
@@ -60,8 +62,7 @@ function Rail({ s }: { s: QuantSnapshot }) {
   </aside>;
 }
 
-function ValueTab({ s }: { s: QuantSnapshot }) {
-  const [pick, setPick] = useState<Case>("base");
+function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick: (c: Case) => void }) {
   const v = s.value;
   if (!v) return <Card title="PragValue"><p className={styles.unavailable}>{s.value_reason}</p></Card>;
   const d = v.dcf, y5 = d.price_targets[d.price_targets.length - 1];
@@ -125,7 +126,7 @@ function TrendTab({ s }: { s: QuantSnapshot }) {
       </Card>
       <Card title="Weinstein stage, last 52 weeks">
         <StageStrip weeks={t.stage_history} />
-        <p className={styles.caption}>{t.stage ? `${t.stage.label}: ${t.stage.weeks_in_stage} weeks · 30-week average ${t.stage.sma_30w_slope_pct > 0 ? "rising" : "falling"} ${Math.abs(t.stage.sma_30w_slope_pct)}% · price ${t.stage.price_vs_sma_30w_pct}% from it. ${t.stage.detail}` : "Stage needs 200 trading days of prices."}</p>
+        <p className={styles.caption}>{t.stage ? `${t.stage.label}: ${weeks(t.stage.weeks_in_stage)} · 30-week average ${t.stage.sma_30w_slope_pct > 0 ? `rising ${t.stage.sma_30w_slope_pct}%` : t.stage.sma_30w_slope_pct < 0 ? `falling ${Math.abs(t.stage.sma_30w_slope_pct)}%` : "flat"} · price ${t.stage.price_vs_sma_30w_pct === 0 ? "at it" : `${Math.abs(t.stage.price_vs_sma_30w_pct)}% ${t.stage.price_vs_sma_30w_pct > 0 ? "above" : "below"} it`}. ${t.stage.detail}` : "Stage needs 200 trading days of prices."}</p>
       </Card>
     </div>
     <Card title={t.conditions.score_label}>
@@ -149,7 +150,11 @@ function TrendTab({ s }: { s: QuantSnapshot }) {
 }
 
 /** The Quant view for a loaded snapshot. */
-export function QuantView({ snapshot, tab, onTab, onRefresh, refreshing }: { snapshot: QuantSnapshot; tab: QuantTab; onTab: (tab: QuantTab) => void; onRefresh?: () => void; refreshing?: boolean }) {
+export function QuantView({ snapshot, tab, onTab, onRefresh, refreshing, refreshError }: {
+  snapshot: QuantSnapshot; tab: QuantTab; onTab: (tab: QuantTab) => void; onRefresh?: () => void; refreshing?: boolean; refreshError?: string;
+}) {
+  // Held here, not in the Value tab, so the chosen scenario survives a switch to Trend and back.
+  const [pick, setPick] = useState<Case>("base");
   return <div className={styles.layout}>
     <Rail s={snapshot} />
     <main className={styles.main}>
@@ -159,7 +164,8 @@ export function QuantView({ snapshot, tab, onTab, onRefresh, refreshing }: { sna
         <p>Computed {new Date(snapshot.computed_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}</p>
         {onRefresh && <button type="button" className={ui.secondary} onClick={onRefresh} disabled={refreshing}>{refreshing ? "Refreshing…" : "Refresh"}</button>}
       </div>
-      {tab === "value" ? <ValueTab s={snapshot} /> : <TrendTab s={snapshot} />}
+      {refreshError && <p className={styles.unavailable} role="alert">Refresh failed: {refreshError} The figures below are from the last snapshot.</p>}
+      {tab === "value" ? <ValueTab s={snapshot} pick={pick} setPick={setPick} /> : <TrendTab s={snapshot} />}
     </main>
   </div>;
 }

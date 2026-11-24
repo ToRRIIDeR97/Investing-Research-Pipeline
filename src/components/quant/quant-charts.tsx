@@ -15,6 +15,13 @@ export const money = (v: number | null | undefined) => {
   return `${v < 0 ? "−" : ""}$${a >= 100 ? a.toFixed(0) : a.toFixed(2)}`;
 };
 
+/** 1st, 2nd, 3rd, 4th … 11th, 12th, 13th, 21st, 22nd. */
+export function ordinal(n: number): string {
+  const k = Math.abs(Math.trunc(n)), t = k % 100;
+  const suffix = t >= 11 && t <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[k % 10] ?? "th";
+  return `${Math.trunc(n)}${suffix}`;
+}
+
 function scale(min: number, max: number, from: number, to: number) {
   const span = max - min || 1;
   return (v: number) => from + ((v - min) / span) * (to - from);
@@ -70,7 +77,7 @@ export function ValuePathChart({ history, projection, selected, current }: {
   return <figure style={{ margin: 0 }}>
     <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img" aria-label={label}>
       <text x={0} y={top + 4} fontSize="11" fill={C.ink3}>{money(hi)}</text>
-      <text x={0} y={bottom} fontSize="11" fill={C.ink3}>{money(Math.max(lo, 0))}</text>
+      <text x={0} y={bottom} fontSize="11" fill={C.ink3}>{money(lo)}</text>
       {proj.length > 1 && <path d={`${path(band)} Z`} fill={C.navySoft} />}
       <line x1={split} y1={top} x2={split} y2={bottom} stroke={C.lineStrong} strokeDasharray="4 4" />
       <text x={split + 4} y={top + 10} fontSize="12" fill={C.ink3}>today {money(current)}</text>
@@ -129,7 +136,7 @@ export function MultipleBand({ points, metric, p25, p75, current, percentile }: 
   const x = scale(0, pts0.length - 1, left + 8, right - 8);
   const pts = pts0.map((p, i) => ({ x: x(i), y: y(p.multiple) }));
   const lastPt = pts[pts.length - 1];
-  const aria = `${metric} at each fiscal year end from ${pts0[0].period.slice(0, 4)} to ${pts0[pts0.length - 1].period.slice(0, 4)}: ${pts0.map((p) => `${p.multiple.toFixed(1)}x`).join(", ")}${percentile !== null ? `; the latest is at the ${percentile}th percentile of its own history` : ""}.`;
+  const aria = `${metric} at each fiscal year end from ${pts0[0].period.slice(0, 4)} to ${pts0[pts0.length - 1].period.slice(0, 4)}: ${pts0.map((p) => `${p.multiple.toFixed(1)}x`).join(", ")}${percentile !== null ? `; the latest is at the ${ordinal(percentile)} percentile of its own history` : ""}.`;
   const bandTop = finite(p75) ? clamp(y(p75), top, bottom) : null, bandBottom = finite(p25) ? clamp(y(p25), top, bottom) : null;
   return <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img" aria-label={aria}>
     <text x={0} y={top + 4} fontSize="11" fill={C.ink3}>{hi.toFixed(1)}x</text>
@@ -138,7 +145,7 @@ export function MultipleBand({ points, metric, p25, p75, current, percentile }: 
     {lo < 0 && hi > 0 && <line x1={left} y1={y(0)} x2={right} y2={y(0)} stroke={C.lineStrong} strokeDasharray="3 3" />}
     <path d={path(pts)} fill="none" stroke={C.navy} strokeWidth="2.5" />
     {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={i === pts.length - 1 ? 5 : 3} fill={C.navy} />)}
-    {current !== null && <text x={clamp(lastPt.x, left + 110, right)} y={clamp(lastPt.y - 10, top + 10, bottom)} fontSize="12" fill={C.ink} textAnchor="end">{current.toFixed(1)}x{percentile !== null ? ` · ${percentile}th pct` : ""}</text>}
+    {current !== null && <text x={clamp(lastPt.x, left + 110, right)} y={clamp(lastPt.y - 10, top + 10, bottom)} fontSize="12" fill={C.ink} textAnchor="end">{current.toFixed(1)}x{percentile !== null ? ` · ${ordinal(percentile)} percentile` : ""}</text>}
     {pts0.map((p, i) => <text key={p.period} x={x(i)} y={H - 6} fontSize="11" fill={C.ink3} textAnchor={i === 0 ? "start" : i === pts0.length - 1 ? "end" : "middle"}>{p.period.slice(0, 4)}</text>)}
   </svg>;
 }
@@ -150,16 +157,16 @@ export function PriceVolumeChart({ series, pivots }: {
 }) {
   const rows = series.filter((s) => finite(s.close));
   if (rows.length < 2) return <p className={styles.unavailable}>Not enough stored prices to draw the chart.</p>;
-  const W = 880, H = 316, left = 52, top = 12, priceBottom = 222, volTop = 236, volBottom = 290;
+  const W = 880, H = 316, left = 52, right = W - 8, top = 12, priceBottom = 222, volTop = 236, volBottom = 290;
   const [lo, hi] = padded(rows.flatMap((s) => [s.close, s.sma50, s.sma150, s.sma200]).filter(finite));
   const y = scale(lo, hi, priceBottom, top);
-  const x = scale(0, rows.length - 1, left, W);
+  const x = scale(0, rows.length - 1, left, right);
   const line = (k: "close" | "sma50" | "sma150" | "sma200") => path(rows.flatMap((s, i) => (finite(s[k]) ? [{ x: x(i), y: y(s[k]!) }] : [])));
   const maxVol = Math.max(0, ...rows.map((s) => s.volume ?? 0));
   const pivotSet = new Set(pivots);
   const last = rows[rows.length - 1];
   const aria = `One year of daily closes from ${money(rows[0].close)} to ${money(last.close)}; 50-day ${money(last.sma50)}, 150-day ${money(last.sma150)}, 200-day ${money(last.sma200)}; ${pivots.length} pocket pivot${pivots.length === 1 ? "" : "s"} marked.${maxVol > 0 ? "" : " No volume is stored."}`;
-  const barW = Math.max(1, (W - left) / rows.length - 0.5);
+  const barW = Math.max(1, (right - left) / rows.length - 0.5);
   return <figure style={{ margin: 0 }}>
     <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img" aria-label={aria}>
       <text x={0} y={top + 4} fontSize="11" fill={C.ink3}>{money(hi)}</text>
@@ -172,7 +179,7 @@ export function PriceVolumeChart({ series, pivots }: {
       {rows.map((s, i) => pivotSet.has(s.day) ? <circle key={`p${i}`} cx={x(i)} cy={y(s.close)} r="6" fill="none" stroke={C.positive} strokeWidth="2" /> : null)}
       {maxVol > 0 && rows.map((s, i) => s.volume ? <rect key={`v${i}`} x={x(i) - barW / 2} y={volBottom - ((s.volume / maxVol) * (volBottom - volTop))} width={barW} height={(s.volume / maxVol) * (volBottom - volTop)} fill={pivotSet.has(s.day) ? C.positive : C.ink3} opacity={pivotSet.has(s.day) ? 1 : 0.55} /> : null)}
       <text x={left} y={H - 6} fontSize="11" fill={C.ink3}>{rows[0].day}</text>
-      <text x={W} y={H - 6} fontSize="11" fill={C.ink3} textAnchor="end">{last.day}</text>
+      <text x={right} y={H - 6} fontSize="11" fill={C.ink3} textAnchor="end">{last.day}</text>
     </svg>
     <div className={styles.legend}>
       <span><i style={{ background: C.navy }} />Price</span><span><i style={{ background: C.sage }} />50-day</span>
@@ -201,7 +208,7 @@ export function RebasedChart({ stock, spx, sector, sectorSymbol }: {
   const last = (s: typeof st) => (s.length ? s[s.length - 1].value : null);
   const fmt = (v: number | null) => (v === null ? "—" : v.toFixed(0));
   const series = [
-    { name: "Stock", s: st, color: C.ink, show: true },
+    { name: "Stock", s: st, color: C.navy, show: true },
     { name: sectorSymbol ?? "Sector", s: seW, color: C.navy3, show: seW.length > 1 && !!sectorSymbol },
     { name: "S&P", s: spW, color: C.ink3, show: spW.length > 1 },
   ].filter((r) => r.show);

@@ -7,7 +7,7 @@ import postgres from "postgres";
 import { ApiError } from "@/lib/api/errors";
 import { loadQuantInputs, QuantInputError, TICKER_PATTERN, type QuantInputs } from "@/lib/quant/inputs";
 import { computePragValue, type PragValue } from "@/lib/quant/value";
-import { valuationIndustry } from "@/lib/quant/sic";
+import { valuationEngine, valuationIndustry } from "@/lib/quant/sic";
 import { toPragmaData } from "@/lib/quant/value/adapter";
 import { computePragTrend, type PragTrend } from "@/lib/quant/trend";
 import { weeklyCloses } from "@/lib/quant/trend/stage";
@@ -68,7 +68,7 @@ export function buildQuantSnapshot(inputs: QuantInputs, research: QuantSnapshot[
       const industry = valuationIndustry(inputs.sic, inputs.sector.industry, num(data.info.totalRevenue), num(data.info.ebit));
       if (industry !== inputs.sector.industry) notes.push(`SIC ${inputs.sic} is pharma and pre-revenue or loss-making, so PragValue scores it as Biotechnology (engine B2).`);
       value = computePragValue(data, {
-        sector: inputs.sector.sector, industry, companyName: inputs.name, creditZ: null,
+        sector: inputs.sector.sector, industry, companyName: inputs.name, creditZ: null, engine: valuationEngine(inputs.sic),
       });
       notes.push(...value.notes);
       notes.push("Y0 is the latest fiscal year (Pragma used trailing-twelve-month values); analyst forward EPS is not available, so growth blends the company's own history.");

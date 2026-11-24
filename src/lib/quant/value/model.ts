@@ -109,14 +109,32 @@ const median = (xs: number[]) => {
   const mid = Math.floor(s.length / 2);
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 };
-/** Python round(x, n): ties to even at the scaled value. */
+/**
+ * Python round(x, n): rounds the exact binary value, ties to even. For n > 0 the scaled product x·10ⁿ can land on .5
+ * when the true value is just below it (2.675 is 2.67499999…), so digits come from the exact decimal expansion
+ * (`toFixed(100)` is exact for doubles at these magnitudes) rather than from the product.
+ */
 export function pyRound(x: number, n = 0): number {
   if (!Number.isFinite(x)) return x;
-  const f = 10 ** n;
-  const y = x * f;
-  const r = Math.round(y);
-  const tie = Math.abs(y - Math.trunc(y)) === 0.5;
-  return (tie ? (r % 2 === 0 ? r : r - Math.sign(y)) : r) / f;
+  if (n <= 0) {
+    const f = 10 ** n;
+    const y = x * f;
+    const r = Math.round(y);
+    const tie = Math.abs(y - Math.trunc(y)) === 0.5;
+    return (tie ? (r % 2 === 0 ? r : r - Math.sign(y)) : r) / f;
+  }
+  if (Math.abs(x) >= 1e21) return x;
+  const [int, frac] = Math.abs(x).toFixed(100).split(".");
+  const keep = frac.slice(0, n), rest = frac.slice(n);
+  const beyond = /[1-9]/.test(rest.slice(1));
+  const last = Number((int + keep).slice(-1));
+  const up = rest[0] > "5" || (rest[0] === "5" && (beyond || last % 2 === 1));
+  // Add one unit in the last kept place by decimal string arithmetic (no BigInt on the ES2017 target).
+  const digits = (int + keep).split("").map(Number);
+  if (up) { let i = digits.length - 1; while (i >= 0 && digits[i] === 9) digits[i--] = 0; if (i >= 0) digits[i]++; else digits.unshift(1); }
+  const all = digits.join("");
+  const v = Number(`${all.slice(0, all.length - n)}.${all.slice(all.length - n)}`);
+  return x < 0 && v !== 0 ? -v : v;
 }
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 /**

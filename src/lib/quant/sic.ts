@@ -1,6 +1,7 @@
 /**
  * SEC SIC code → the Yahoo-style sector and industry names PragValue's engine router and fair-multiple tables are
- * keyed by, plus the SPDR sector ETF used as the trend benchmark. Ranges are checked in order; the first match wins.
+ * keyed by, plus the SPDR sector ETF used as the trend benchmark. The narrowest range containing the code wins, so a
+ * specific entry (2080–2086 beverages) always beats the broad one around it (2000–2099 packaged foods).
  * An unmapped code is "Unknown", which PragValue routes like Pragma did for an unknown sector (engine A, or B when
  * loss-making) with the default multiples.
  */
@@ -54,6 +55,7 @@ const RANGES: Range[] = [
   [2834, 2834, "Healthcare", "Drug Manufacturers—Specialty & Generic", "XLV"],
   [2833, 2833, "Healthcare", "Drug Manufacturers—General", "XLV"],
   [2835, 2836, "Healthcare", "Biotechnology", "XLV"],
+  [2830, 2839, "Healthcare", "Drug Manufacturers—General", "XLV"],
   [3841, 3851, "Healthcare", "Medical Devices", "XLV"],
   [8000, 8099, "Healthcare", "Medical Care Facilities", "XLV"],
   [8731, 8731, "Healthcare", "Diagnostics & Research", "XLV"],
@@ -107,13 +109,12 @@ const RANGES: Range[] = [
   [7380, 7389, "Industrials", "Specialty Business Services", "XLI"],
 ];
 
-/** Exact single-code entries take precedence over ranges that contain them. */
-const EXACT = new Map<number, Range>(RANGES.filter((r) => r[0] === r[1]).map((r) => [r[0], r]));
 
 export function sectorFromSic(sic: string | number | null | undefined): SectorInfo {
   const code = Number(sic);
   if (!Number.isInteger(code) || code <= 0) return { sector: "Unknown", industry: "Unknown", etf: null };
-  const hit = EXACT.get(code) ?? RANGES.find(([from, to]) => code >= from && code <= to);
+  let hit: Range | undefined;
+  for (const r of RANGES) if (code >= r[0] && code <= r[1] && (!hit || r[1] - r[0] < hit[1] - hit[0])) hit = r;
   return hit ? { sector: hit[2], industry: hit[3], etf: hit[4] } : { sector: "Unknown", industry: "Unknown", etf: null };
 }
 
@@ -126,6 +127,16 @@ export function valuationIndustry(sic: string | number | null | undefined, indus
   const code = Number(sic);
   if (!(code >= 2834 && code <= 2836)) return industry;
   return (revenue ?? 0) < 50_000_000 || (ebit ?? 0) < 0 ? "Biotechnology" : industry;
+}
+
+/**
+ * AC-3 sends mining (SIC 1000–1499) to engine F. Pragma's router only does that for industries naming "mining" or
+ * "metal", which misses "Gold" (the name its own F multiple table uses) and non-metallic minerals, so the page
+ * forces F for the range and keeps the industry for the multiple lookup. Other codes use Pragma's router.
+ */
+export function valuationEngine(sic: string | number | null | undefined): "F" | null {
+  const code = Number(sic);
+  return code >= 1000 && code <= 1499 ? "F" : null;
 }
 
 export const SECTOR_ETFS = ["XLK", "XLF", "XLV", "XLE", "XLU", "XLRE", "XLI", "XLB", "XLY", "XLP", "XLC"] as const;

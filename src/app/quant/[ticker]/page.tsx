@@ -1,5 +1,6 @@
 "use client";
 import { Suspense, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import ui from "@/components/research-ui.module.css";
 import { QuantView, parseQuantTab, type QuantTab } from "@/components/quant/quant-view";
@@ -8,19 +9,21 @@ import type { QuantSnapshot } from "@/lib/api/quant";
 
 /** /quant/:ticker — PragValue and PragTrend for one ticker (Implementations/quant-page). */
 export default function QuantTickerPage() {
-  // useSearchParams needs a Suspense boundary so the route can prerender its shell.
+  const { ticker } = useParams<{ ticker: string }>();
+  // useSearchParams needs a Suspense boundary so the route can prerender its shell. Keyed by ticker, so moving to
+  // another ticker starts from the loading state instead of showing the previous company's snapshot.
   return <Suspense fallback={<div className={ui.page}><p className={styles.state} role="status">Loading…</p></div>}>
-    <QuantTicker />
+    <QuantTicker key={ticker} ticker={ticker} />
   </Suspense>;
 }
 
-function QuantTicker() {
-  const { ticker } = useParams<{ ticker: string }>();
+function QuantTicker({ ticker }: { ticker: string }) {
   const params = useSearchParams();
   const router = useRouter();
   const tab: QuantTab = parseQuantTab(params.get("tab"));
   const [snapshot, setSnapshot] = useState<QuantSnapshot | null>(null);
   const [error, setError] = useState("");
+  const [refreshError, setRefreshError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchSnapshot = useCallback(async (refresh: boolean): Promise<QuantSnapshot> => {
@@ -38,10 +41,11 @@ function QuantTicker() {
     return () => { alive = false; };
   }, [fetchSnapshot]);
 
+  // A failed refresh keeps the snapshot on screen and reports the failure beside it.
   const refresh = async () => {
     setRefreshing(true);
-    try { setSnapshot(await fetchSnapshot(true)); setError(""); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    try { setSnapshot(await fetchSnapshot(true)); setRefreshError(""); }
+    catch (e) { setRefreshError(e instanceof Error ? e.message : String(e)); }
     finally { setRefreshing(false); }
   };
 
@@ -50,8 +54,8 @@ function QuantTicker() {
   try { label = decodeURIComponent(ticker).toUpperCase(); } catch { /* shown as typed */ }
 
   return <div className={ui.page}>
-    {error ? <p className={styles.state} role="alert">{error}</p>
-      : !snapshot ? <p className={styles.state} role="status" aria-busy="true">Computing PragValue and PragTrend for {label}… The first look-up of a ticker fetches its filings and prices.</p>
-      : <QuantView snapshot={snapshot} tab={tab} onTab={setTab} onRefresh={() => void refresh()} refreshing={refreshing} />}
+    {snapshot ? <QuantView snapshot={snapshot} tab={tab} onTab={setTab} onRefresh={() => void refresh()} refreshing={refreshing} refreshError={refreshError} />
+      : error ? <div className={styles.state}><p role="alert">{error}</p><Link href="/quant">Look up another ticker</Link></div>
+      : <p className={styles.state} role="status" aria-busy="true">Computing PragValue and PragTrend for {label}… The first look-up of a ticker fetches its filings and prices.</p>}
   </div>;
 }

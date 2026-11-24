@@ -398,7 +398,7 @@ The valuation summary shows it as **Rating and trend** (`src/components/report/s
   - `loadCompanyFacts` gives companyfacts (warehouse or SEC), and `annualFundamentals` (`fundamentals.ts`) maps PulseValue's yfinance fields to SEC concepts for five fiscal years. A missing field is null with a reason.
   - Daily bars, now including volume, are synced through `syncAssetPriceHistory` onto a researched asset that lists the ticker, else onto a `quant-<ticker>` reference asset. Reference assets stay out of every list.
   - Benchmarks: ^GSPC and the issuer's SPDR sector ETF (`benchmark-<etf>` reference assets).
-- **Sector routing.** `sic.ts` maps SIC codes to the Yahoo-style sector and industry names Pragma's router and fair-multiple tables use.
+- **Sector routing.** `sic.ts` maps SIC codes to the Yahoo-style sector and industry names Pragma's router and fair-multiple tables use. The narrowest range containing a code wins. Two plan rules override Pragma's router: mining (SIC 1000–1499) always uses engine F (`valuationEngine`), and pre-revenue or loss-making pharma (2834–2836) is relabelled Biotechnology so it routes to B2 (`valuationIndustry`).
 - **PragValue** (`src/lib/quant/value/`) is a port of `pulsevalue.py`: engines A, B, B2, C, D, E, F and G, the multi-metric DCF with weighted-median aggregation, PulseScore, confidence, and the PulseGrade and PQ-Grade bands (shared with `rating/grade.ts`). It matches Pragma's Python on eight fixtures, checked by `fixtures/pragma_parity.py`. Known differences:
   - Peer industry growth isn't fetched, so scenario exits are the stock's own historical multiples (Pragma's behaviour when that lookup fails).
   - The Credit Impact Scalar is 1.0 until a credit-spread series is collected.
@@ -411,9 +411,9 @@ The valuation summary shows it as **Rating and trend** (`src/components/report/s
   - Performance is rebased to 100 a year ago.
 - **Snapshot.** `GET /api/quant/:ticker` (`src/lib/api/quant.ts`) caches one snapshot per ticker and UTC day in `quant_snapshots` (migration `0025_quant_snapshots`).
   - `?refresh=1` recomputes, at most once every five minutes per ticker; a sooner refresh returns the cached snapshot.
-  - Errors: malformed 400, unknown or no prices 404, not an equity 422, SEC unreachable 503.
+  - Errors: malformed 400, unknown ticker 404, no prices from a working provider 404, not an equity 422. SEC unreachable (ticker map or submissions) is 503, and so is a failed price sync with no stored prices.
   - A non-SEC issuer gets a partial snapshot with Value unavailable and its reason.
-  - A snapshot built while SEC companyfacts, Yahoo's listing check or a sector-ETF sync failed is served but not cached, so the next request retries.
+  - A snapshot built while SEC companyfacts, Yahoo's listing check, the ticker's price sync, the S&P 500 sync or the sector-ETF sync failed is served from what's stored, but not cached, so the next request retries.
   - Nothing here writes research artifacts. The Quant modules don't load the agent harness: `resolveSecCik` lives in `research/sources/sec-cik.ts` and `ResearchRunQueueError` in `research/run-queue-error.ts`, both re-exported from their old modules. A test checks the loaded modules at runtime.
 - **Fundamentals detail.** IFRS filers use `ifrs-full` concepts. Debt is the combined total if filed, else long-term (total or parts) plus short-term; cash adds marketable securities. The latest four discrete quarters of revenue and operating income (Q4 derived from the year) feed Pragma's falling-margin check. Pharma (SIC 2834–2836) that is pre-revenue or loss-making is valued as Biotechnology, so it routes to engine B2.
 - **Fuzz.** `fixtures/pragma_fuzz.py` mutates the eight fixtures into 400 cases (other engines, credit z, short and null-ridden statements, quarterly margins, forward EPS), and `p2c-fuzz.test.ts` checks each against Pragma's own result. The port sums with Python's compensated `sum()` (`pySum`) so weighted-median ties break the same way.

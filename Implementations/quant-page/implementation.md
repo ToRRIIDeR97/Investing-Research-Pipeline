@@ -102,6 +102,7 @@ Invariants:
   - Banks (6020–6029) route to C, REITs (6798) to D, utilities (4911–4991) to E, oil, gas and mining (1000–1499,
     2911) to F, and pharma and biotech (2834–2836) to B2 when pre-revenue or loss-making.
   - Brokers and asset managers (6211, 6282) route to B or G as in Pragma. Everything else goes to A, or to B when EBIT is negative.
+  - Amended in review: gas transmission (4922–4923) is midstream energy and routes to F; waste management (4950–4959) is Industrials and routes to A or B. Every other 4900–4999 code is a utility (E).
 - **AC-4 (P2).** Parity with Pragma.
   - On fixtures built from the same statement numbers, engines A–G, the DCF targets, PulseScore and confidence
     match the Python results within 0.5%.
@@ -209,6 +210,33 @@ What changed in response, by criterion:
   - `p2c-fuzz.test.ts`: AC-4 fuzz.
   - `p4b-api-review.test.ts`: issuer outcomes, 503, no-cache when transient, route 400, B2 relabel, SIC coverage, pattern volume windows, `safeFloat`.
   - `p5b-page-review.test.tsx`: tab parsing, chart edge cases, forward values, accessible marks, no raw hex, Suspense, and the runtime AC-11 check.
+  - `p4c-review2.test.tsx` (round 2): price-sync and submissions failures, mining routing, the narrowest SIC range, Python-exact rounding, ordinals, money text, and the refresh-error and ticker-change states.
+
+### Review round 2 (scores 8, 7, 8)
+
+- **AC-9 (failures).**
+  - A failed price sync was noted but the snapshot was still cached for the day. It's now transient, with fixed wording rather than the provider's error text.
+  - The S&P 500 and sector-ETF syncs report failure in their return value, which the old `catch` never saw. Both now mark the snapshot transient.
+  - A failed sync with no stored bars is 503, not 404 `NO_PRICES` (`priceSyncOutcome`).
+  - An SEC submissions failure after the CIK resolved was a raw 500 and is now 503 (`fetchSubmissions`).
+- **AC-3 (mining).**
+  - Pragma's router sends Basic Materials to F only when the industry names "mining" or "metal", which misses "Gold" (the key of Pragma's own F multiple table) and non-metallic minerals.
+  - `valuationEngine` now forces F for SIC 1000–1499 as the plan says, and keeps the industry name for the multiple lookup. `computePragValue` takes an optional `engine` override for this; with no override it routes exactly as Pragma did.
+- **AC-5 (SIC map).**
+  - The lookup took the first matching range, so broad ranges shadowed specific ones: beverages, furnishings and healthcare plans were unreachable. The narrowest range now wins.
+  - 2830–2832 and 2837–2839 are mapped.
+- **AC-4 (rounding).** `pyRound(x, n > 0)` rounded the scaled product, so 2.675 went to 2.68 where Python gives 2.67. It now rounds the exact decimal expansion, half to even.
+- **AC-10 (page).**
+  - Percentiles read as ordinals ("22nd").
+  - Money text formats negatives as −$x everywhere.
+  - Moving to another ticker remounts the view instead of showing the previous company's snapshot.
+  - A failed refresh keeps the snapshot and shows the error above it.
+  - The error state links back to `/quant`, and `/quant` validates the ticker before navigating. The pattern moved to `src/lib/quant/ticker.ts` so the client page doesn't import server code.
+  - The value path's bottom label shows the true domain floor.
+  - The price chart no longer clips its last bar.
+  - The stock's label matches its line colour.
+  - Stage text says "flat", "1 week", and "x% above/below it".
+  - The scenario choice survives a tab switch.
 
 ## Completion evidence
 
@@ -216,12 +244,12 @@ The plan, the tests and the code have one author (a single agent). The parity go
 
 | Check | Command (repository root) | Result |
 | --- | --- | --- |
-| Acceptance | `npx tsx --test Implementations/quant-page/acceptance/*.test.ts*` (eight files, after review round 1) | 55 pass, 0 fail |
+| Acceptance | `npx tsx --test Implementations/quant-page/acceptance/*.test.ts*` (nine files, after review round 2) | 62 pass, 0 fail |
 | Value parity | `p2-value.test.ts`: eight engines against `pulsevalue.py` (0.5% tolerance); `p2c-fuzz.test.ts`: 400 mutated cases | 8 of 8 match; 400 of 400 match |
 | Trend parity | `p3-trend.test.ts`: stage, pivots and VCP against `pragtrend.py` and `pattern_detector.py` | 8 of 8 match |
 | Lint | `npm run lint` | 0 errors, 117 warnings (unchanged from main) |
 | Types | `npx tsc --noEmit` | pass |
-| Unit | `npm run test:unit` | 803 pass, 0 fail, 64 skipped |
+| Unit | `npm run test:unit` | 810 pass, 0 fail, 64 skipped |
 | Build | `npm run build` | pass; `/quant`, `/quant/[ticker]`, `/api/quant/[ticker]` listed |
 | Existing UI rules | `Implementations/consumer-remaster/acceptance/*` | pass, after removing uppercase table headers |
 | Live | `/quant/AAPL` on the dev server, after `db:migrate` | Value and Trend tabs render from real SEC and Yahoo data (engine A, six-metric DCF, 9 of 9 conditions, stage 2); no console errors after the dev server rebuilt the shell |
