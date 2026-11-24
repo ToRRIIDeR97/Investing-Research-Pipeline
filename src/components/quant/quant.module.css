@@ -58,23 +58,34 @@
 .table td[data-tone="good"] { color: var(--positive); font-weight: 600; }
 .table td[data-tone="bad"] { color: var(--critical); font-weight: 600; }
 
-/* Scenario tiles: a case-coloured top edge; the picked one tinted with a case-coloured ring. */
+/* Scenario tiles (workshop V6 + door D3): no dots, the case name carries the colour; the upside leads; a meter from
+   today's price to the case value; growth and exit multiple on a case-tinted pocket door that slides in from the left. */
 .cases { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.caseTile { position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 18px 20px 16px; text-align: left; background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); border-radius: 20px; box-shadow: var(--shadow-card); color: var(--ink); }
-.caseTile::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--case-color); }
-.caseTile[aria-pressed="true"] { background: var(--case-tint); box-shadow: 0 0 0 2px var(--case-color), var(--shadow-card); }
-.caseName { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; color: var(--case-color); }
-.caseName i, .caseKey i { width: 9px; height: 9px; border-radius: 50%; background: var(--case-color); }
-.caseTile b { font-family: var(--font-display); font-size: 30px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; }
-.caseVs { font-size: 13px; font-weight: 600; color: var(--ink-2); }
-.caseVs[data-tone="good"] { color: var(--positive); }
-.caseVs[data-tone="bad"] { color: var(--critical); }
-.caseMeta { font-size: 12px; color: var(--ink-3); }
-.caseKey { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px; border-radius: var(--radius-pill); background: var(--case-tint); color: var(--case-color); font-size: 12.5px; font-weight: 600; }
+.caseTile { position: relative; overflow: hidden; display: grid; gap: 10px; padding: 18px 20px; text-align: left; background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); border-radius: 20px; box-shadow: var(--shadow-card); color: var(--ink); }
+.caseTile[aria-pressed="true"] { box-shadow: 0 0 0 1.5px var(--case-color), var(--shadow-card); }
+.caseName { font-size: 12.5px; font-weight: 700; color: var(--case-color); }
+.caseRow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.caseUp { font-family: var(--font-display); font-size: 30px; font-weight: 700; line-height: 1; letter-spacing: -0.03em; color: var(--ink); }
+.caseUp[data-tone="good"] { color: var(--positive); }
+.caseUp[data-tone="bad"] { color: var(--critical); }
+.caseValue { font-family: var(--font-display); font-size: 19px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; text-align: right; }
+.caseValue small { display: block; margin-top: 3px; font: 500 11px var(--font-sans); letter-spacing: 0; color: var(--ink-3); }
+.caseMeter { position: relative; height: 8px; border-radius: var(--radius-pill); background: var(--line-soft); }
+.caseMeter > span { position: absolute; top: 0; bottom: 0; border-radius: var(--radius-pill); background: var(--case-color); }
+.caseMeter > i { position: absolute; top: -3px; width: 2px; height: 14px; margin-left: -1px; border-radius: 1px; background: var(--ink); }
+.caseScale { display: flex; justify-content: space-between; margin-top: -4px; font-size: 11px; color: var(--ink-3); }
+.pocket { position: absolute; left: 0; right: 0; bottom: 0; height: 58px; display: flex; align-items: center; gap: 24px; padding: 0 20px; background: var(--case-tint); border-top: 2px solid var(--case-color); transform: translateX(-101%); }
+.pocket > span { display: grid; font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--case-color); }
+.pocket small { font: 500 11px var(--font-sans); color: var(--ink-3); }
+.caseTile:is(:hover, :focus-visible) .pocket { transform: none; }
+/* No hover on touch screens: the picked tile keeps its door open instead. */
+@media (hover: none) { .caseTile[aria-pressed="true"] .pocket { transform: none; } }
+.caseKey { display: inline-flex; align-items: center; height: 28px; padding: 0 12px; border-radius: var(--radius-pill); background: var(--case-tint); color: var(--case-color); font-size: 12.5px; font-weight: 600; }
 @media (prefers-reduced-motion: no-preference) {
-  .caseTile { transition: transform var(--dur-base) var(--ease-spring), box-shadow var(--dur-base) var(--ease-out), background-color var(--dur-base) var(--ease-out); }
+  .caseTile { transition: transform var(--dur-base) var(--ease-spring), box-shadow var(--dur-base) var(--ease-out); }
   .caseTile:hover { transform: translateY(-2px); }
   .caseTile:active { transform: scale(.98); transition-duration: 80ms; }
+  .pocket { transition: transform 420ms cubic-bezier(.65, 0, .25, 1); }
 }
 @media (max-width: 640px) { .cases { grid-template-columns: 1fr; } }
 .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }

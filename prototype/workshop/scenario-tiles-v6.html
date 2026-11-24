@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Upside tiles workshop</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* V6 "Upside first" with a sliding-door reveal of growth and exit multiple. Tokens from src/app/globals.css. */
+:root {
+  --page:#F8F8F4; --tile:#FFFFFF; --soft:#F5F4EF; --hover:#F3F2EC; --line:#E7E5DF; --line-soft:#EEEDE7;
+  --ink:#0D1B2A; --ink-2:#44403C; --ink-3:#78716C; --navy:#0A2642; --navy-soft:#EEF1F5;
+  --positive:#2D7D46; --critical:#C9302C; --bear:#C9302C; --base:#3D5A78; --bull:#2D7D46;
+  --bear-bg:#F9E2E1; --bull-bg:#E5F1E8; --base-bg:#E3E9F0;
+  --shadow-card:0 1px 2px rgb(0 0 0/4%),0 8px 28px -12px rgb(13 27 42/14%);
+  --spring:cubic-bezier(.3,1.2,.5,1); --door:cubic-bezier(.65,0,.25,1);
+  --display:"Plus Jakarta Sans",Inter,sans-serif;
+}
+* { box-sizing:border-box; margin:0; }
+body { background:var(--page); color:var(--ink); font:13px/1.5 Inter,sans-serif; font-variant-numeric:tabular-nums; padding:28px 32px 60px; }
+h1 { font:700 26px/1.2 var(--display); letter-spacing:-.03em; }
+.lede { color:var(--ink-2); margin:6px 0 24px; max-width:800px; font-size:14px; }
+.variant { margin-bottom:36px; max-width:980px; }
+.vhead { display:flex; align-items:baseline; gap:12px; margin-bottom:10px; }
+.vhead b { font:700 15px var(--display); }
+.vhead span { color:var(--ink-3); font-size:12.5px; }
+.tag { font:700 11px Inter; color:var(--navy); background:var(--navy-soft); border-radius:999px; padding:2px 8px; }
+button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; text-align:left; }
+.up { color:var(--positive); } .down { color:var(--critical); }
+[data-c="bear"] { --c:var(--bear); --cbg:var(--bear-bg); } [data-c="base"] { --c:var(--base); --cbg:var(--base-bg); } [data-c="bull"] { --c:var(--bull); --cbg:var(--bull-bg); }
+
+.grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+.tile { position:relative; overflow:hidden; display:grid; gap:10px; padding:18px 20px; background:var(--tile); border-radius:20px; border:1px solid rgb(0 0 0/3.5%); box-shadow:var(--shadow-card);
+  transition:transform .22s var(--spring), box-shadow .22s; }
+.tile:hover { transform:translateY(-2px); }
+.tile[aria-pressed=true] { box-shadow:0 0 0 1.5px var(--c), var(--shadow-card); }
+.tile:focus-visible { outline:2px solid var(--navy); outline-offset:3px; }
+/* No dots: the case name itself carries the colour. */
+.name { font-size:12.5px; font-weight:700; color:var(--c); }
+.row { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+.pct { font:700 30px/1 var(--display); letter-spacing:-.03em; }
+.val { font:700 19px/1 var(--display); letter-spacing:-.02em; color:var(--ink); }
+.val small { display:block; margin-top:3px; font:500 11px Inter; color:var(--ink-3); letter-spacing:0; text-align:right; }
+/* The meter, fixed: a solid fill in the case colour from today's price, a light track for the rest. */
+.meter { position:relative; height:8px; border-radius:99px; background:var(--line-soft); }
+.meter span { position:absolute; left:0; top:0; bottom:0; border-radius:99px; background:var(--c); }
+.scale { display:flex; justify-content:space-between; font-size:11px; color:var(--ink-3); margin-top:-4px; }
+.facts { display:flex; gap:18px; }
+.facts div { display:grid; }
+.facts dt { font-size:11px; color:var(--ink-3); }
+.facts dd { margin:0; font:700 15px var(--display); color:var(--ink); }
+.hint { font-size:11.5px; color:var(--ink-3); }
+
+/* D1 Door over the meter: the meter row is a door that slides right to reveal growth and exit underneath. */
+.d1 .bay { position:relative; height:48px; }
+.d1 .bay .facts { position:absolute; inset:0; align-items:center; padding-left:2px; }
+.d1 .door { position:absolute; inset:0; display:grid; align-content:center; gap:8px; background:var(--tile); transition:transform .45s var(--door); }
+.d1 .tile:is(:hover,:focus-visible) .door { transform:translateX(calc(100% + 24px)); }
+
+/* D2 Full-face door: the whole face slides right; a case-tinted panel with the drivers sits behind it. */
+.d2 .tile { padding:0; min-height:150px; }
+.d2 .back { position:absolute; inset:0; display:grid; align-content:center; gap:10px; padding:18px 20px; background:var(--cbg); }
+.d2 .back .facts dd { font-size:22px; }
+.d2 .face { position:relative; display:grid; gap:10px; padding:18px 20px; background:var(--tile); border-radius:20px; transition:transform .5s var(--door), box-shadow .5s; }
+.d2 .tile:is(:hover,:focus-visible) .face { transform:translateX(62%); box-shadow:-12px 0 24px -12px rgb(13 27 42/25%); }
+
+/* D3 Pocket door: a case-tinted panel slides in from the left edge over the lower half, then rests. */
+.d3 .pocket { position:absolute; left:0; right:0; bottom:0; height:58px; display:flex; align-items:center; gap:22px; padding:0 20px; background:var(--cbg);
+  border-top:2px solid var(--c); transform:translateX(-101%); transition:transform .42s var(--door); }
+.d3 .tile:is(:hover,:focus-visible) .pocket { transform:none; }
+.d3 .pocket .facts dd { color:var(--c); }
+
+@media (prefers-reduced-motion: reduce) { * { transition-duration:.01ms !important; } }
+</style>
+</head>
+<body>
+<h1>Upside tiles: the door reveal</h1>
+<p class="lede">V6 with the dots dropped (the case name carries the colour) and the meter fixed to a solid fill from today's price. Hover a tile, or tab to it, to open the door onto its growth and exit multiple. Click to select.</p>
+<div id="root"></div>
+<script>
+const price = 100.73;
+const cases = [
+  { k: "bear", name: "Bear case", v: 102.11, g: "+13.0%", x: "7.2x" },
+  { k: "base", name: "Base case", v: 142.15, g: "+18.5%", x: "10.8x" },
+  { k: "bull", name: "Bull case", v: 169.33, g: "+24.1%", x: "12.3x" },
+];
+const hi = Math.max(...cases.map((c) => c.v));
+const up = (v) => v / price - 1;
+const pct = (v) => `${up(v) >= 0 ? "+" : "−"}${Math.abs(up(v) * 100).toFixed(1)}%`;
+const cls = (v) => (v >= price ? "up" : "down");
+const $ = (n) => "$" + n.toFixed(2);
+const fill = (v) => Math.max(3, Math.min(100, ((v - price) / (hi - price)) * 100));
+const head = (c) => `<span class="name">${c.name}</span>
+  <div class="row"><span class="pct ${cls(c.v)}">${pct(c.v)}</span><span class="val">${$(c.v)}<small>a share</small></span></div>`;
+const meter = (c) => `<div class="meter"><span style="width:${fill(c.v)}%"></span></div><div class="scale"><span>${$(price)} today</span><span>${$(hi)}</span></div>`;
+const facts = (c) => `<dl class="facts"><div><dt>Growth</dt><dd>${c.g}</dd></div><div><dt>Exit multiple</dt><dd>${c.x}</dd></div></dl>`;
+
+const variants = [
+  ["D1", "Door over the meter", "Only the meter row moves: it slides right like a door and the growth and exit sit behind it. Smallest motion; the headline numbers never move.", "d1",
+    (c) => `${head(c)}<div class="bay">${facts(c)}<div class="door">${meter(c)}</div></div>`],
+  ["D2", "Full-face door", "The whole face swings right like a sliding door, uncovering a case-tinted panel with the drivers large. Most dramatic; the face stays partly visible.", "d2",
+    (c) => `<div class="back">${facts(c)}<span class="hint">${c.name}</span></div><div class="face">${head(c)}${meter(c)}</div>`],
+  ["D3", "Pocket door", "A case-tinted panel slides in from the left over the meter, edged in the case colour, and slides back out on leave.", "d3",
+    (c) => `${head(c)}${meter(c)}<div class="pocket">${facts(c)}</div>`],
+];
+
+const root = document.getElementById("root");
+for (const [id, name, note, klass, body] of variants) {
+  const sec = document.createElement("section");
+  sec.className = `variant ${klass}`;
+  sec.innerHTML = `<div class="vhead"><span class="tag">${id}</span><b>${name}</b><span>${note}</span></div>`;
+  const grid = document.createElement("div");
+  grid.className = "grid";
+  for (const c of cases) {
+    const b = document.createElement("button");
+    b.className = "tile"; b.dataset.c = c.k; b.dataset.k = c.k;
+    b.setAttribute("aria-pressed", String(c.k === "base"));
+    b.setAttribute("aria-label", `${c.name}: ${$(c.v)} a share, ${pct(c.v)} versus today's price; growth ${c.g}, exit multiple ${c.x}`);
+    b.innerHTML = body(c);
+    grid.append(b);
+  }
+  grid.addEventListener("click", (e) => { const t = e.target.closest(".tile"); if (t) grid.querySelectorAll(".tile").forEach((x) => x.setAttribute("aria-pressed", String(x === t))); });
+  sec.append(grid);
+  root.append(sec);
+}
+</script>
+</body>
+</html>

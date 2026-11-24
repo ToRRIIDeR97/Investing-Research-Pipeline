@@ -50,6 +50,10 @@ The Quant page uses colour more freely, because colour is the fastest way to rea
 - **Scenarios:** bear red (`--case-bear`), base slate navy (`--case-base`), bull green (`--case-bull`), everywhere a
   case appears: the scenario tiles, the chart's path and band edges, and the table's row dots. Set `data-case` to get
   `--case-color` and `--case-tint`.
+- **Scenario tiles:** upside first (workshop `prototype/workshop/scenario-tiles-v6.html`, door D3). No dots: the
+  case name carries the colour. A meter runs from today's price to the case value; growth and exit multiple sit on a
+  case-tinted pocket door that slides in from the left on hover or keyboard focus (on touch screens the picked tile
+  keeps it open). The selected tile gets a fine case-coloured outline.
 - **Signals:** the PulseScore gauge runs red (overvalued) to green (undervalued); trend and stage facts carry a dot;
   unmet trend conditions are red, met ones green; returns and "vs price" figures are green or red.
 

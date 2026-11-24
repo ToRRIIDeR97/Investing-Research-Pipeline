@@ -9,7 +9,7 @@ import { Card, Segmented, Tag } from "@/components/ui/primitives";
 import ui from "@/components/research-ui.module.css";
 import type { QuantSnapshot } from "@/lib/api/quant";
 import { MultipleBand, PriceVolumeChart, RebasedChart, STAGE_FILL, Sparkline, StageStrip, ValueBuild, ValuePathChart, VcpDepths, type Case } from "./quant-charts";
-import { gradeTone } from "./tones";
+import { caseMeter, gradeTone } from "./tones";
 import styles from "./quant.module.css";
 
 export type QuantTab = "value" | "trend";
@@ -82,19 +82,32 @@ function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick:
   }));
   return <>
     <div className={styles.toolbar}><p>{v.engine_result.engine_note}</p></div>
-    {/* The three scenarios as tiles: bear red, base navy, bull green. Picking one drives the chart below. */}
+    {/* The scenarios as upside-first tiles (workshop V6, door D3): the upside leads, a meter runs from today's price
+        to the case value, and growth and exit multiple slide in from the left on hover or keyboard focus. */}
     <div className={styles.cases} role="group" aria-label="Scenario">
       {rows.map((r) => {
         const vs = r.value && s.price ? r.value / s.price - 1 : null;
-        return <button type="button" key={r.k} className={styles.caseTile} data-case={r.k} aria-pressed={pick === r.k} onClick={() => setPick(r.k)}>
-          <span className={styles.caseName}><i aria-hidden="true" />{caseLabel[r.k]} case</span>
-          <b>{money(r.value)}</b>
-          <span className={styles.caseVs} data-tone={vs === null ? undefined : vs >= 0 ? "good" : "bad"}>{vs === null ? "—" : `${pct(vs)} vs price`}</span>
-          <span className={styles.caseMeta}>Growth {pct(r.growth)} · exit {r.exit ? `${r.exit.toFixed(1)}x` : "—"}</span>
+        const meter = caseMeter(s.price, rows.map((x) => x.value), r.value);
+        const exit = r.exit ? `${r.exit.toFixed(1)}x` : "—";
+        return <button type="button" key={r.k} className={styles.caseTile} data-case={r.k} aria-pressed={pick === r.k} onClick={() => setPick(r.k)}
+          aria-label={`${caseLabel[r.k]} case: ${money(r.value)} a share${vs === null ? "" : `, ${pct(vs)} versus today's price`}; growth ${pct(r.growth)}, exit multiple ${exit}`}>
+          <span className={styles.caseName}>{caseLabel[r.k]} case</span>
+          <span className={styles.caseRow}>
+            <span className={styles.caseUp} data-tone={vs === null ? undefined : vs >= 0 ? "good" : "bad"}>{vs === null ? "—" : pct(vs)}</span>
+            <span className={styles.caseValue}>{money(r.value)}<small>a share</small></span>
+          </span>
+          {meter && <>
+            <span className={styles.caseMeter}><span style={{ left: `${meter.left}%`, width: `${meter.width}%` }} /><i style={{ left: `${meter.tick}%` }} /></span>
+            <span className={styles.caseScale}><span>{meter.lo === s.price ? `${money(s.price)} today` : money(meter.lo)}</span><span>{money(meter.hi)}</span></span>
+          </>}
+          <span className={styles.pocket} aria-hidden="true">
+            <span><small>Growth</small>{pct(r.growth)}</span>
+            <span><small>Exit multiple</small>{exit}</span>
+          </span>
         </button>;
       })}
     </div>
-    <Card title="Price and value paths" action={<span className={styles.caseKey} data-case={pick}><i aria-hidden="true" />{caseLabel[pick]} case</span>}>
+    <Card title="Price and value paths" action={<span className={styles.caseKey} data-case={pick}>{caseLabel[pick]} case</span>}>
       <ValuePathChart history={s.price_history_5y} projection={v.charts.projection} selected={pick} current={s.price} />
       <p className={styles.caption}>The line shows forward values (the case&apos;s value in each year, before discounting). Intrinsic value (Pragma: the five-year DCF discounted to today): bear {money(d.intrinsic_value_bear)}, base {money(d.intrinsic_value_base)}, bull {money(d.intrinsic_value_bull)}. {d.dcf_skipped ? d.dcf_skip_reason : `Discount rate ${rate(d.discount_rate)}; growth fades to ${rate(d.terminal_growth_rate)}.`}</p>
     </Card>
