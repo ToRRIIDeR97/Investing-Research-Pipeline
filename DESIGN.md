@@ -15,7 +15,8 @@ The look is the "consumer remaster" (chosen November 2026, PR 147): friendly but
 - **Numbers first.** Lead with the figure that matters (value per share, price, grade), big, in the display face. Put
   the explanation in a sentence under it, and the evidence below that.
 - **Colour means something.** Green, red and amber mean good, bad and caution, and appear only on small numbers, status
-  dots and thin rules. Never as a fill, a background or a decoration.
+  dots and thin rules. Never as a fill, a background or a decoration. One exception: the valuation bar fills the stretch
+  between price and value green (cheap) or red (expensive).
 - **Plain words.** Sentence case everywhere, short headings, no uppercase eyebrows, no jargon in labels. A missing value
   is an em dash (—) and the reason sits nearby.
 - **Physical, quick motion.** Things that move use one gentle spring; presses squeeze slightly; nothing moves for show.
@@ -78,7 +79,9 @@ Reach for these before writing new CSS.
 | Main action | `ui.primary` (navy pill, 38px); one per area |
 | Other actions | `ui.secondary` (white pill, strong border) or `ui.textLink` (navy text) |
 | A list inside a card | `ui.row`, `ui.rowTitle`, `ui.rowMeta` |
-| Company identity | `CompanyLogo` (logo, else ticker or initials monogram) |
+| Company identity | `CompanyLogo`: a real logo stands alone, with no tile or border, filling its square (48px on cards, 64px in a hero); without one, a ticker or initials monogram on a soft navy tile |
+| Price against value | `MiniRuler`: one even 8px track, the price-to-value gap green or red, price as a dark tick, base as a navy dot, bear and bull at the ends |
+| An asset without a valuation | `AssetCard` shows "Open page" and, unless a run is under way, "Run research", never a dead-end sentence. An asset can come from a search or a Quant look-up, not only from a run |
 | A grade | A `--navy-soft` pill with a small label and the letter (see the Quant finder) |
 
 Search fields are pills: a `--soft` resting fill, white with a navy ring (`0 0 0 4px var(--navy-soft)`) on focus, a

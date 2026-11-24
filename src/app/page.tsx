@@ -61,7 +61,7 @@ export default function HomePage() {
     {loading ? <p className={ui.muted} role="status">Loading research…</p> : error ? <p className={ui.error} role="alert">{error}<button onClick={() => void load()}>Try again</button></p> : <>
       {featured && fs && <Card className={styles.featured}>
         <div className={styles.featuredHead}>
-          <CompanyLogo subject={{ asset_id: featured.id }} name={featured.canonical_name} ticker={featured.ticker} size={52} />
+          <CompanyLogo subject={{ asset_id: featured.id }} name={featured.canonical_name} ticker={featured.ticker} size={64} />
           <div><h2>{featured.canonical_name}</h2><Tag tone={stageOf(featured, reviewing).tone}>{stageOf(featured, reviewing).label}</Tag></div>
         </div>
         <div className={styles.featuredNumbers}>

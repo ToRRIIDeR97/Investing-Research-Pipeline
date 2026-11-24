@@ -49,3 +49,16 @@
 @media (max-width: 700px) { .pillars { grid-template-columns: minmax(0, 1fr); } }
 
 .mini { display: block; width: 100%; height: 34px; }
+/* MiniRuler: one 8px track; the price-to-value gap filled green (cheap) or red (expensive), the only status fill allowed. */
+.ruler { display: grid; gap: 6px; }
+.rulerTrack { position: relative; height: 8px; border-radius: var(--radius-pill); background: var(--line-soft); }
+.rulerGap { position: absolute; top: 0; bottom: 0; border-radius: var(--radius-pill); }
+.rulerGap[data-tone="good"] { background: var(--positive); opacity: .75; }
+.rulerGap[data-tone="bad"] { background: var(--critical); opacity: .7; }
+.rulerPrice { position: absolute; top: -5px; width: 3px; height: 18px; margin-left: -1.5px; border-radius: 2px; background: var(--ink); box-shadow: 0 0 0 2px var(--tile); }
+.rulerBase { position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--navy); box-shadow: 0 0 0 2.5px var(--tile); }
+.rulerScale { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.rulerKey { display: inline-flex; align-items: center; gap: 5px; }
+.rulerKey i { display: inline-block; }
+.rulerKey i[data-k="price"] { width: 3px; height: 11px; border-radius: 2px; background: var(--ink); }
+.rulerKey i[data-k="base"] { width: 8px; height: 8px; margin-left: 6px; border-radius: 50%; background: var(--navy); }
