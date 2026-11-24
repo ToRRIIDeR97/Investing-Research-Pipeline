@@ -13,7 +13,27 @@
 
 /* Context strip: the first card of each tab (engine, or price data), so it lines up with the rail. */
 .context { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 16px 22px; background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); border-radius: 20px; box-shadow: var(--shadow-card); }
-.contextBadge { display: inline-grid; place-items: center; height: 30px; padding: 0 12px; border-radius: var(--radius-pill); background: var(--navy); color: var(--tile); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.contextBadge { position: relative; z-index: 1; display: inline-grid; place-items: center; min-width: 96px; height: 30px; padding: 0 12px; border-radius: var(--radius-pill); background: var(--navy); color: var(--tile); font-size: 12px; font-weight: 700; white-space: nowrap; }
+/* Hover reveal: the badge's navy grows from the badge across the card, the badge flips to white, and one plain
+   sentence replaces the line and figures. The fill is a clip-path circle centred on the badge. */
+.context { position: relative; overflow: hidden; isolation: isolate; }
+.context[data-explain] { cursor: help; }
+.context[data-explain]:focus-visible { outline: 2px solid var(--navy); outline-offset: 3px; }
+.contextFill { position: absolute; inset: 0; z-index: 0; background: var(--navy); clip-path: circle(0 at 70px 50%); }
+.contextExplain { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; margin: 0; padding: 0 24px 0 136px; color: var(--tile); font-size: 14px; font-weight: 500; line-height: 1.45; opacity: 0; transform: translateX(-8px); pointer-events: none; }
+.context[data-explain]:is(:hover, :focus-visible, :focus) .contextFill { clip-path: circle(150% at 70px 50%); }
+.context[data-explain]:is(:hover, :focus-visible, :focus) .contextBadge { background: var(--tile); color: var(--navy); }
+.context[data-explain]:is(:hover, :focus-visible, :focus) .contextExplain { opacity: 1; transform: none; }
+.context[data-explain]:is(:hover, :focus-visible, :focus) :is(.contextText, .contextFigures) { opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .contextFill { transition: clip-path 260ms var(--ease-out); }
+  .context[data-explain]:is(:hover, :focus-visible, :focus) .contextFill { transition-duration: 560ms; }
+  .contextBadge { transition: background-color 200ms ease-out, color 200ms ease-out; }
+  .contextExplain { transition: opacity 160ms ease-out, transform 160ms ease-out; }
+  .context[data-explain]:is(:hover, :focus-visible, :focus) .contextExplain { transition: opacity 260ms ease-out 180ms, transform 320ms var(--ease-spring) 180ms; }
+  :is(.contextText, .contextFigures) { transition: opacity 160ms ease-out; }
+}
+@media (max-width: 640px) { .contextExplain { padding-left: 24px; padding-top: 52px; align-items: flex-start; } }
 .contextText { display: grid; flex: 1 1 220px; min-width: 0; line-height: 1.35; }
 .contextText strong { font-family: var(--font-display); font-size: 15px; font-weight: 700; letter-spacing: -0.02em; }
 .contextText span { font-size: 12.5px; color: var(--ink-2); }

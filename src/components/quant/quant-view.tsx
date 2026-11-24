@@ -10,7 +10,7 @@ import ui from "@/components/research-ui.module.css";
 import type { QuantSnapshot } from "@/lib/api/quant";
 import { MultipleBand, PriceVolumeChart, RebasedChart, STAGE_FILL, Sparkline, StageStrip, ValueBuild, ValuePathChart, VcpDepths, type Case } from "./quant-charts";
 import { caseMeter, gradeTone } from "./tones";
-import { parseEngineNote } from "./engine-note";
+import { explainEngine, parseEngineNote } from "./engine-note";
 import { HowItWasBuilt } from "./how-built";
 import { CompanyLogo } from "@/components/company/company";
 import styles from "./quant.module.css";
@@ -37,12 +37,19 @@ function trendTone(passed: number, evaluated: number): "good" | "caution" | "bad
   return r >= 2 / 3 ? "good" : r >= 1 / 3 ? "caution" : "bad";
 }
 
-/** The first card of each tab: what the numbers below are built from, as a label, a line, and a few figures. */
-function ContextStrip({ label, badge, title, line, figures }: { label: string; badge: string; title: string; line: string; figures: { label: string; value: string }[] }) {
-  return <section className={styles.context} aria-label={label}>
+/**
+ * The first card of each tab: what the numbers below are built from, as a badge, a line, and a few figures. With an
+ * `explain` sentence, hovering or focusing the strip grows the badge's navy across the whole card and shows that one
+ * plain sentence in its place (tap on touch screens; the sentence is also the strip's description for screen readers).
+ */
+function ContextStrip({ label, badge, title, line, figures, explain }: { label: string; badge: string; title: string; line: string; figures: { label: string; value: string }[]; explain?: string | null }) {
+  const id = `ctx-${label.replace(/\W+/g, "-").toLowerCase()}`;
+  return <section className={styles.context} aria-label={label} tabIndex={explain ? 0 : undefined} aria-describedby={explain ? id : undefined} data-explain={explain ? "" : undefined}>
+    {explain && <span className={styles.contextFill} aria-hidden="true" />}
     <span className={styles.contextBadge}>{badge}</span>
     <div className={styles.contextText}><strong>{title}</strong><span>{line}</span></div>
     {figures.length > 0 && <dl className={styles.contextFigures}>{figures.map((f) => <div key={f.label}><dt>{f.label}</dt><dd>{f.value}</dd></div>)}</dl>}
+    {explain && <p className={styles.contextExplain} id={id}>{explain}</p>}
   </section>;
 }
 
@@ -141,7 +148,7 @@ function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick:
   return <>
     {(() => {
       const e = parseEngineNote(v.engine_result.engine_note);
-      return <ContextStrip label="Valuation engine" badge={e.code ? `Engine ${e.code}` : "Engine"} title={e.audience ?? "Valuation engine"} line={e.method} figures={e.figures} />;
+      return <ContextStrip label="Valuation engine" badge={e.code ? `Engine ${e.code}` : "Engine"} title={e.audience ?? "Valuation engine"} line={e.method} figures={e.figures} explain={explainEngine(e.code)} />;
     })()}
     {/* The scenarios as upside-first tiles (workshop V6, door D3): the upside leads, a meter runs from today's price
         to the case value, and growth and exit multiple slide in from the left on hover or keyboard focus. */}
@@ -210,7 +217,8 @@ function TrendTab({ s }: { s: QuantSnapshot }) {
   const pivots = t.pocket_pivots.events.map((e) => e.day);
   return <>
     <ContextStrip label="Price data" badge="Daily" title={`Daily closes to ${s.as_of}`} line="Split-adjusted, from stored daily bars"
-      figures={[{ label: "Benchmark", value: "S&P 500" }, ...(s.sector_etf ? [{ label: "Sector", value: s.sector_etf }] : [])]} />
+      figures={[{ label: "Benchmark", value: "S&P 500" }, ...(s.sector_etf ? [{ label: "Sector", value: s.sector_etf }] : [])]}
+      explain={`Every trend signal below uses each day's closing price, adjusted for splits, compared with the S&P 500${s.sector_etf ? ` and the ${s.sector_etf} sector fund` : ""}.`} />
     <Card title="Price, averages and volume"><PriceVolumeChart series={t.charts.price} pivots={pivots} /></Card>
     <div className={styles.cardGrid}>
       <Card title="Rebased to 100 a year ago">

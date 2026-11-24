@@ -34,3 +34,14 @@ test("fieldLabel and weightSegments shape the How it was built card", async () =
   assert.deepEqual(weightSegments({ A: 1, B: 3 }).map((x) => x.pct), [75, 25], "normalised to 100");
   assert.deepEqual(weightSegments(undefined), []);
 });
+
+test("every engine has a one-sentence explanation; sub-engines fall back to their family", async () => {
+  const { explainEngine } = await import("../src/components/quant/engine-note");
+  for (const code of ["A", "B", "B2", "C", "C1", "C2", "D", "E", "F", "G"]) {
+    const s = explainEngine(code);
+    assert.ok(s && s.endsWith(".") && s.split(". ").length === 1, `${code}: one sentence`);
+  }
+  assert.equal(explainEngine("C3"), explainEngine("C"));
+  assert.equal(explainEngine(null), null);
+  assert.equal(explainEngine("Z"), null);
+});
