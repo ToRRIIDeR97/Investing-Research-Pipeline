@@ -8,11 +8,12 @@ mkdirSync(join(here, "cases"), { recursive: true });
 
 function rng(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32); }
 function history(seed, start, drift, vol, days = 1300) {
-  const r = rng(seed); const out = []; let p = start; const d = new Date("2020-11-02T00:00:00Z");
+  // Volume comes from its own stream so the closes (and the value goldens) do not depend on it.
+  const r = rng(seed), rv = rng(seed + 1000); const out = []; let p = start; const d = new Date("2020-11-02T00:00:00Z");
   while (out.length < days) {
     if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) {
       p = p * (1 + drift + vol * (r() - 0.5) * 2);
-      out.push({ day: d.toISOString().slice(0, 10), close: Math.round(p * 100) / 100 });
+      out.push({ day: d.toISOString().slice(0, 10), close: Math.round(p * 100) / 100, volume: Math.round(1_000_000 * (0.5 + rv() * 1.5)) });
     }
     d.setUTCDate(d.getUTCDate() + 1);
   }

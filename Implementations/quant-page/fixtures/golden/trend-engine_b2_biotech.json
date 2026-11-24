@@ -1,0 +1,52 @@
+{
+ "stage": {
+  "stage": "STAGE_4_DECLINE",
+  "stage_number": 4,
+  "confidence": "HIGH",
+  "weeks_in_stage": 23,
+  "sma_30w": 16.9,
+  "sma_30w_slope_pct": -13.92,
+  "price_vs_sma_30w_pct": -30.63
+ },
+ "pocket_pivots": [
+  {
+   "day": "2025-07-14",
+   "volume_ratio": 1.02
+  },
+  {
+   "day": "2025-07-15",
+   "volume_ratio": 1.03
+  },
+  {
+   "day": "2025-08-27",
+   "volume_ratio": 1.24
+  },
+  {
+   "day": "2025-08-29",
+   "volume_ratio": 1.15
+  },
+  {
+   "day": "2025-09-17",
+   "volume_ratio": 1.03
+  },
+  {
+   "day": "2025-09-23",
+   "volume_ratio": 1.04
+  },
+  {
+   "day": "2025-10-10",
+   "volume_ratio": 1.03
+  }
+ ],
+ "vcp": {
+  "quality": "NOT_PRESENT",
+  "is_vcp": false,
+  "above_30w_sma": false,
+  "depths": [
+   11.95,
+   12.76,
+   13.7,
+   6.53
+  ]
+ }
+}

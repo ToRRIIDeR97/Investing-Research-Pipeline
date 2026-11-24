@@ -1,10 +1,13 @@
-"""Run Pragma's real PulseValue (pulsevalue.py) on each fixture and write the golden results.
+"""Run Pragma's real PulseValue (pulsevalue.py), stage analysis (pragtrend.py) and pattern detector
+(pattern_detector.py) on each fixture and write the golden results.
 
-Usage: python -I pragma_parity.py <path-to-Pragma/pragma-web/api/app/services/pulsevalue.py>
+Usage: python pragma_parity.py <path-to-Pragma/pragma-web/api/app/services/pulsevalue.py>
+(pandas and numpy are needed; the services folder of that path must also hold pragtrend.py and pattern_detector.py.)
 
 yfinance is stubbed, the indicator cache is empty (so the Credit Impact Scalar is 1.0, as in Pragma without it),
 and the S&P 500 peer-growth lookup returns None, matching the TypeScript port's documented differences.
 """
+import importlib
 import importlib.util
 import json
 import pathlib
@@ -26,16 +29,12 @@ def load_pulsevalue(source: pathlib.Path):
         "def get_cached_indicators():\n    return None\n\n"
         "def build_all_indicators():\n    raise RuntimeError('no indicators in parity runs')\n"
     )
-    shutil.copy(source, pkg_dir / "pulsevalue.py")
+    for name in ("pulsevalue.py", "pragtrend.py", "pattern_detector.py"):
+        shutil.copy(source.parent / name, pkg_dir / name)
     sys.modules["yfinance"] = types.ModuleType("yfinance")
     sys.path.insert(0, str(pkg_dir.parent))
-    spec = importlib.util.spec_from_file_location("pragma_pkg.pulsevalue", pkg_dir / "pulsevalue.py",
-                                                  submodule_search_locations=None)
-    module = importlib.util.module_from_spec(spec)
-    module.__package__ = "pragma_pkg"
-    sys.modules["pragma_pkg.pulsevalue"] = module
-    spec.loader.exec_module(module)
-    return module
+    return (importlib.import_module("pragma_pkg.pulsevalue"), importlib.import_module("pragma_pkg.pragtrend"),
+            importlib.import_module("pragma_pkg.pattern_detector"))
 
 
 def frame(statement: dict) -> pd.DataFrame:
@@ -47,7 +46,7 @@ def frame(statement: dict) -> pd.DataFrame:
 
 
 def main(source: str) -> None:
-    pv = load_pulsevalue(pathlib.Path(source))
+    pv, trend, patterns = load_pulsevalue(pathlib.Path(source))
     pv._compute_industry_revenue_growth = lambda *a, **k: None
     out_dir = HERE / "golden"
     out_dir.mkdir(exist_ok=True)
@@ -68,6 +67,21 @@ def main(source: str) -> None:
         result.pop("computed_at", None)
         (out_dir / f"{case['name']}.json").write_text(json.dumps(result, indent=1, default=float), encoding="utf-8")
         print(case["name"], result["engine_used"], result["pulse_score"], result["base_target"])
+
+        # Trend: stage, pocket pivots and VCP on the same daily history, with volume.
+        tdf = pd.DataFrame({"Close": [h["close"] for h in d["history"]], "Volume": [h["volume"] for h in d["history"]]},
+                           index=pd.DatetimeIndex([h["day"] for h in d["history"]]))
+        stage = trend.compute_stage(tdf)
+        pp = patterns.detect_pocket_pivot(tdf)
+        vcp = patterns.detect_vcp(tdf)
+        golden = {
+            "stage": None if stage is None else {k: getattr(stage, k) for k in
+                ("stage", "stage_number", "confidence", "weeks_in_stage", "sma_30w", "sma_30w_slope_pct", "price_vs_sma_30w_pct")},
+            "pocket_pivots": [{"day": e.date, "volume_ratio": e.volume_ratio} for e in (pp.recent_events or [])],
+            "vcp": {"quality": vcp.quality, "is_vcp": vcp.is_vcp, "above_30w_sma": vcp.above_30w_sma,
+                    "depths": [c.depth_pct for c in vcp.contractions]},
+        }
+        (out_dir / f"trend-{case['name']}.json").write_text(json.dumps(golden, indent=1, default=float), encoding="utf-8")
 
 
 if __name__ == "__main__":
