@@ -16,28 +16,33 @@ export default function QuantTickerPage() {
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async (refresh: boolean) => {
-    setError("");
-    if (refresh) setRefreshing(true);
-    try {
-      const response = await fetch(`/api/quant/${encodeURIComponent(ticker)}${refresh ? "?refresh=1" : ""}`, { cache: "no-store" });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body?.error ?? `Request failed (${response.status})`);
-      setSnapshot(body);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setRefreshing(false);
-    }
+  const fetchSnapshot = useCallback(async (refresh: boolean): Promise<QuantSnapshot> => {
+    const response = await fetch(`/api/quant/${encodeURIComponent(ticker)}${refresh ? "?refresh=1" : ""}`, { cache: "no-store" });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body?.error ?? `Request failed (${response.status})`);
+    return body;
   }, [ticker]);
 
-  useEffect(() => { void load(false); }, [load]);
+  useEffect(() => {
+    let alive = true;
+    fetchSnapshot(false)
+      .then((s) => { if (alive) { setSnapshot(s); setError(""); } })
+      .catch((e) => { if (alive) setError(e instanceof Error ? e.message : String(e)); });
+    return () => { alive = false; };
+  }, [fetchSnapshot]);
+
+  const refresh = async () => {
+    setRefreshing(true);
+    try { setSnapshot(await fetchSnapshot(true)); setError(""); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setRefreshing(false); }
+  };
 
   const setTab = (next: QuantTab) => router.replace(`/quant/${encodeURIComponent(ticker)}?tab=${next}`, { scroll: false });
 
   return <div className={ui.page}>
     {error ? <p className={styles.state} role="alert">{error}</p>
       : !snapshot ? <p className={styles.state} aria-busy="true">Computing PragValue and PragTrend for {decodeURIComponent(ticker).toUpperCase()}… The first look-up of a ticker fetches its filings and prices.</p>
-      : <QuantView snapshot={snapshot} tab={tab} onTab={setTab} onRefresh={() => void load(true)} refreshing={refreshing} />}
+      : <QuantView snapshot={snapshot} tab={tab} onTab={setTab} onRefresh={() => void refresh()} refreshing={refreshing} />}
   </div>;
 }

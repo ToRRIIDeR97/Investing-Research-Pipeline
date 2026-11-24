@@ -388,6 +388,29 @@ After its sub-artifacts, `decision_synthesis` writes a code-built `stock_rating`
 
 The valuation summary shows it as **Rating and trend** (`src/components/report/stock-rating.tsx`). Two checklist measures read it: `trend_score_pct` and `valuation_deviation_pct`.
 
+## Quant page (PragValue and PragTrend)
+
+`/quant/[ticker]` shows Pragma's quantitative read for any US-listed stock, separate from Research and without a run or a model call (plan: `Implementations/quant-page/`).
+- **Layout.** A summary rail (price, PulseGrade, PQ-Grade, PulseScore gauge, trend score, stage, confidence, research link) and Value and Trend tabs, kept in `?tab=` (`src/components/quant/**`, `src/app/quant/**`). `/quant` takes a ticker; the main nav has a Quant entry, and a researched asset's page links to it.
+- **Inputs** (`src/lib/quant/inputs.ts`):
+  - Yahoo instrument metadata refuses non-equities (422).
+  - `resolveSecCik` and SEC submissions give the issuer and its SIC code.
+  - `loadCompanyFacts` gives companyfacts (warehouse or SEC), and `annualFundamentals` (`fundamentals.ts`) maps PulseValue's yfinance fields to SEC concepts for five fiscal years. A missing field is null with a reason.
+  - Daily bars, now including volume, are synced through `syncAssetPriceHistory` onto a researched asset that lists the ticker, else onto a `quant-<ticker>` reference asset. Reference assets stay out of every list.
+  - Benchmarks: ^GSPC and the issuer's SPDR sector ETF (`benchmark-<etf>` reference assets).
+- **Sector routing.** `sic.ts` maps SIC codes to the Yahoo-style sector and industry names Pragma's router and fair-multiple tables use.
+- **PragValue** (`src/lib/quant/value/`) is a port of `pulsevalue.py`: engines A, B, B2, C, D, E, F and G, the multi-metric DCF with weighted-median aggregation, PulseScore, confidence, and the PulseGrade and PQ-Grade bands (shared with `rating/grade.ts`). It matches Pragma's Python on eight fixtures, checked by `fixtures/pragma_parity.py`. Known differences:
+  - Peer industry growth isn't fetched, so scenario exits are the stock's own historical multiples (Pragma's behaviour when that lookup fails).
+  - The Credit Impact Scalar is 1.0 until a credit-spread series is collected.
+  - Y0 is the latest fiscal year rather than trailing twelve months.
+  - Analyst forward EPS is absent.
+  - Engine B's ramped DCF isn't ported; it never ran in Pragma.
+- **PragTrend** (`src/lib/quant/trend/`):
+  - The nine conditions and Mansfield RS come from `rating/trend.ts`. Rule 9 uses Pragma's combined RS against the S&P 500 and the sector ETF.
+  - Weinstein stage and a 52-week stage history, pocket pivots and VCP are ports of `pragtrend.py` and `pattern_detector.py`, also checked against Pragma's Python.
+  - Performance is rebased to 100 a year ago.
+- **Snapshot.** `GET /api/quant/:ticker` (`src/lib/api/quant.ts`) caches one snapshot per ticker and UTC day in `quant_snapshots` (migration `0025_quant_snapshots`); `?refresh=1` recomputes. Errors: malformed 400, unknown or no prices 404, not an equity 422. A non-SEC issuer gets a partial snapshot with Value unavailable and its reason. Nothing here writes research artifacts.
+
 ## Research across runs
 
 ![Run A feeds run creation, which saves prior_research; analysis and report calls of run B read it; version_change_log diffs run B against run A before the report; monitor:check reads EDGAR, stores asset_monitor_checks and the asset page shows Refresh due](diagrams/research-across-runs.svg)

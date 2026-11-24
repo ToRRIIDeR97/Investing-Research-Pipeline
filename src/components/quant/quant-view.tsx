@@ -13,6 +13,7 @@ import styles from "./quant.module.css";
 
 export type QuantTab = "value" | "trend";
 const pct = (v: number | null | undefined, digits = 1) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v * 100).toFixed(digits)}%`);
+const rate = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(1)}%`);
 const money = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `$${v.toFixed(2)}`);
 
 export function researchHref(s: QuantSnapshot): string {
@@ -69,7 +70,7 @@ function ValueTab({ s }: { s: QuantSnapshot }) {
     <div className={styles.toolbar}><p>{v.engine_result.engine_note}</p></div>
     <Card title="Price and value paths" action={<Segmented label="Scenario" options={["Bear", "Base", "Bull"] as const} value={caseLabel[pick] as "Bear" | "Base" | "Bull"} onChange={(o) => setPick(o.toLowerCase() as Case)} />}>
       <ValuePathChart history={s.price_history_5y} projection={v.charts.projection} selected={pick} current={s.price} />
-      <p className={styles.caption}>Value today: bear {money(d.intrinsic_value_bear)}, base {money(d.intrinsic_value_base)}, bull {money(d.intrinsic_value_bull)}. {d.dcf_skipped ? d.dcf_skip_reason : `Discount rate ${pct(d.discount_rate)}; growth fades to ${pct(d.terminal_growth_rate)}.`}</p>
+      <p className={styles.caption}>Intrinsic value (Pragma: the five-year DCF discounted to today): bear {money(d.intrinsic_value_bear)}, base {money(d.intrinsic_value_base)}, bull {money(d.intrinsic_value_bull)}. {d.dcf_skipped ? d.dcf_skip_reason : `Discount rate ${rate(d.discount_rate)}; growth fades to ${rate(d.terminal_growth_rate)}.`}</p>
     </Card>
     <div className={styles.cardGrid}>
       <Card title={v.charts.value_build ? `From cash flows to ${money(v.charts.value_build.per_share)} a share` : "Value build"}>
@@ -86,7 +87,7 @@ function ValueTab({ s }: { s: QuantSnapshot }) {
     <Card title="Scenarios" flush>
       <div className={styles.tableBox}>
         <table className={styles.table}>
-          <thead><tr><th scope="col">Case</th><th scope="col">Growth</th><th scope="col">Exit multiple</th><th scope="col">Value today</th><th scope="col">Year-5 target</th><th scope="col">Return a year</th></tr></thead>
+          <thead><tr><th scope="col">Case</th><th scope="col">Growth</th><th scope="col">Exit multiple</th><th scope="col">Intrinsic value</th><th scope="col">Year-5 target (discounted)</th><th scope="col">Return a year</th></tr></thead>
           <tbody>{rows.map((r) => <tr key={r.k}>
             <th scope="row">{caseLabel[r.k]}</th><td>{pct(r.growth)}</td><td>{r.exit ? `${r.exit.toFixed(1)}x` : "—"}</td>
             <td>{money(r.value)}</td><td>{money(r.target)}</td><td>{pct(r.ret)}</td>

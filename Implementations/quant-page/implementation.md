@@ -12,7 +12,7 @@ Before: valuation numbers exist only for stocks with a completed research run. A
 `/quant/AAPL`, which shows the following.
 
 - **Rail:** price and a three-month sparkline, PulseGrade, PQ-Grade, the PulseScore gauge, trend score, stage,
-  confidence, research status, Watch and Deep research.
+  confidence, research status and Deep research (Watch arrives with the separate Watching plan).
 - **Value tab:** a five-years-back, five-years-forward price and value chart (bear/base/bull toggle), the DCF value
   build (waterfall), a 10-year band of the engine's multiple, and a scenario table (growth, operating leverage,
   discount rate, exit multiple, 2030 target, return).
@@ -155,6 +155,36 @@ Invariants:
 - Commands: `npx tsx --test Implementations/quant-page/acceptance/*.test.ts*` and the four required checks.
 - Manual: open `/quant/AAPL`, `/quant/JPM` (engine C), `/quant/O` (engine D) and `/quant/SPY` (refused) against the dev server.
 
+## Changes from the plan (recorded during the build)
+
+- **Rail.** There's no Watch button: Watching is a separate, unbuilt plan, so a button here would do nothing. The rail links to Deep research, or Open research for a researched stock.
+- **AC-2 (volume).** The market-data service already wrote `volume`; only the loader dropped it. The change is a loader and type change (`storedBarFromRow`), not a sync change.
+- **AC-4 (parity).** Golden results come from running Pragma's own `pulsevalue.py` on eight fixtures, one per engine, with yfinance stubbed (`fixtures/pragma_parity.py`).
+  - Engine B's ramped DCF isn't ported. In Pragma it never runs: its guard compares against "EV/Revenue", which no metric label matches, and its call passes keyword arguments the function doesn't accept.
+  - A Pragma quirk is kept for parity. `min("High", "Medium")` compares strings, so "R&D unavailable" never downgrades data quality.
+- **AC-7/AC-8.** Beyond the constructed series, stage, pocket pivots and VCP are also checked against Pragma's `pragtrend.py` and `pattern_detector.py` on the same eight histories, with deterministic volume.
+- **AC-8 wording.** Corrected during planning: Pragma's pocket pivot has no 50-day condition.
+- **AC-9 (cache key).** The key is the UTC calendar day of the request, not the exchange trading day. A snapshot made on a weekend is reused until the next UTC day.
+- **AC-11 (separation).** "No model calls" is checked by a source scan of the Quant modules (no agent-harness imports, no research-artifact writes).
+- **Fixture harness encoding.** On Windows, Python's `read_text()` defaults to cp1252, which mangled "Software—Application" and gave a false mismatch. The script now reads and writes UTF-8.
+
 ## Completion evidence
 
-Filled in after implementation.
+The plan, the tests and the code have one author (a single agent). The parity goldens come from Pragma's own Python, not from the port.
+
+| Check | Command (repository root) | Result |
+| --- | --- | --- |
+| Acceptance | `npx tsx --test tests/quant-page.test.ts` (all five acceptance files) | 37 pass, 0 fail |
+| Value parity | `p2-value.test.ts`: eight engines against `pulsevalue.py` (0.5% tolerance) | 8 of 8 match |
+| Trend parity | `p3-trend.test.ts`: stage, pivots and VCP against `pragtrend.py` and `pattern_detector.py` | 8 of 8 match |
+| Lint | `npm run lint` | 0 errors, 117 warnings (unchanged from main) |
+| Types | `npx tsc --noEmit` | pass |
+| Unit | `npm run test:unit` | 785 pass, 0 fail, 64 skipped |
+| Build | `npm run build` | pass; `/quant`, `/quant/[ticker]`, `/api/quant/[ticker]` listed |
+| Existing UI rules | `Implementations/consumer-remaster/acceptance/*` | pass, after removing uppercase table headers |
+| Live | `/quant/AAPL` on the dev server, after `db:migrate` | Value and Trend tabs render from real SEC and Yahoo data (engine A, six-metric DCF, 9 of 9 conditions, stage 2); no console errors after the dev server rebuilt the shell |
+
+Not verified:
+- Live engines C, D and the refused-ETF path (`/quant/JPM`, `/quant/O`, `/quant/SPY`) weren't opened in the browser. They're covered by fixtures and by the 422 path in `p4-api.test.ts`.
+- `npm run test:db` wasn't run.
+- Parity is measured on synthetic fixtures. Real-ticker differences from Pragma also come from SEC data replacing yfinance.

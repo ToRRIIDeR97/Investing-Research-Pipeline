@@ -59,7 +59,7 @@ export function ValueBuild({ build }: { build: { pv_cash_flows: number; pv_termi
   const bars = [
     { label: "Cash flows", value: build.pv_cash_flows, y0: base - h(build.pv_cash_flows), height: h(build.pv_cash_flows), fill: C.navy3 },
     { label: "Terminal", value: build.pv_terminal, y0: base - h(build.pv_cash_flows) - h(build.pv_terminal), height: h(build.pv_terminal), fill: C.navy2 },
-    { label: build.net_debt_per_share >= 0 ? "Net debt" : "Net cash", value: -build.net_debt_per_share,
+    { label: build.net_debt_per_share === 0 ? "No net debt" : build.net_debt_per_share > 0 ? "Net debt" : "Net cash", value: -build.net_debt_per_share,
       y0: base - h(build.pv_cash_flows) - h(build.pv_terminal), height: Math.max(h(build.net_debt_per_share), 2), fill: build.net_debt_per_share >= 0 ? C.critical : C.positive },
     { label: "Per share", value: build.per_share, y0: base - h(build.per_share), height: h(build.per_share), fill: C.navy },
   ];
@@ -67,7 +67,7 @@ export function ValueBuild({ build }: { build: { pv_cash_flows: number; pv_termi
   return <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img" aria-label={aria}>
     {bars.map((b, i) => <g key={b.label}>
       <rect x={10 + i * 102} y={b.y0} width="82" height={b.height} rx="4" fill={b.fill} />
-      <text x={10 + i * 102} y={Math.max(12, b.y0 - 6)} fontSize="12" fill={C.ink}>{i === 2 ? (b.value >= 0 ? "+" : "−") + money(Math.abs(b.value)) : money(b.value)}</text>
+      <text x={10 + i * 102} y={Math.max(12, b.y0 - 6)} fontSize="12" fill={C.ink}>{i === 2 ? (b.value === 0 ? "n/a" : (b.value > 0 ? "+" : "−") + money(Math.abs(b.value))) : money(b.value)}</text>
       <text x={10 + i * 102} y={H - 4} fontSize="11" fill={C.ink3}>{b.label}</text>
     </g>)}
   </svg>;
@@ -172,7 +172,7 @@ export function Sparkline({ points }: { points: { close: number }[] }) {
   const y = scale(Math.min(...points.map((p) => p.close)), Math.max(...points.map((p) => p.close)), H - 4, 4);
   const x = scale(0, points.length - 1, 0, W);
   const up = points[points.length - 1].close >= points[0].close;
-  return <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img"
+  return <svg viewBox={`0 0 ${W} ${H}`} className={styles.spark} preserveAspectRatio="none" role="img"
     aria-label={`Three months: ${money(points[0].close)} to ${money(points[points.length - 1].close)} (${up ? "up" : "down"})`}>
     <path d={path(points.map((p, i) => ({ x: x(i), y: y(p.close) })))} fill="none" stroke={C.navy} strokeWidth="2" />
   </svg>;
