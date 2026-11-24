@@ -13,8 +13,58 @@ import {
 } from "../decision/finalize";
 import { fillMonitoringLevels } from "../decision/monitoring-levels";
 import { FinancialAnalytics } from "../history/analytics";
+import { loadBenchmarkPriceHistory, loadStoredPriceHistory } from "@/lib/market-data/price-history";
+import { buildStockRating, splitAdjustedCloses } from "../rating/build";
 
 type Sql = ReturnType<typeof postgres>;
+
+/**
+ * Write the code-built `stock_rating` (Pragma's grade bands and trend conditions, `src/lib/research/rating`)
+ * from the accepted valuation, the run's market_price_history and the stored daily bars by the market-data
+ * cutoff. The rating is information, not a gate: if building it throws, a withheld rating records why.
+ */
+async function saveStockRating(sql: Sql, ctx: ResearchRunContext, valuation: Record<string, any> | null, historicalRecord: Record<string, any> | null) {
+  const cutoffAt = ctx.marketDataCutoffAt || ctx.cutoffAt;
+  let content: Record<string, unknown>;
+  try {
+    const [priceHistory] = await sql`
+      SELECT content_json FROM research_artifacts
+      WHERE research_run_id = ${ctx.runId} AND artifact_type = 'market_price_history' AND status IN ('validated', 'accepted')
+      ORDER BY artifact_version DESC, created_at DESC LIMIT 1`;
+    const [stock, benchmark] = await Promise.all([
+      loadStoredPriceHistory(sql, ctx.assetId, ctx.symbol, cutoffAt),
+      loadBenchmarkPriceHistory(sql, cutoffAt),
+    ]);
+    const observations: any[] = Array.isArray(historicalRecord?.observations) ? historicalRecord!.observations : [];
+    const years = new Set(observations
+      .filter((o) => !o.segment && !o.geography && o.periodicity === "annual" && Number.isFinite(Number(o.fiscal_year)))
+      .map((o) => Number(o.fiscal_year)));
+    content = buildStockRating({
+      valuation, priceHistory: priceHistory?.content_json ?? null,
+      stockCloses: splitAdjustedCloses(stock.bars, stock.splits),
+      benchmarkCloses: benchmark.bars.length ? splitAdjustedCloses(benchmark.bars, benchmark.splits) : null,
+      yearsCaptured: years.size,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`stock rating failed for run ${ctx.runId}: ${message}`);
+    content = { ...buildStockRating({ valuation: null, priceHistory: null, stockCloses: [], benchmarkCloses: null, yearsCaptured: 0 }),
+      withheld_reason: `Rating failed: ${message}` };
+  }
+  await createArtifactRepository(pipelineDb()).upsertArtifact({
+    research_run_id: ctx.runId,
+    asset_id: ctx.assetId,
+    profile_id: ctx.profileId || undefined,
+    artifact_type: "stock_rating",
+    scope_key: `${ctx.assetSlug}-stock-rating`,
+    status: "validated",
+    content_json: content,
+    schema_version: "1.0.0",
+    validator_version: "1.0.0",
+    prompt_version: "none",
+    created_by: "system-research-os",
+  });
+}
 
 /**
  * Write the thesis, risks and catalysts tables from this attempt's output in one transaction.
@@ -355,6 +405,8 @@ export const decisionSynthesisHandler: StageHandler<Record<string, unknown>> = {
         });
       }
     }
+    await saveStockRating(sql, ctx, acceptedValuation.valuation_scenario_set ?? null, historicalRecord?.content_json ?? null);
+
     // Source-gap and uncited risks are evidence gaps, not operating risks. Gaps an earlier attempt
     // opened and this one no longer produces are resolved, so a re-run converges.
     await reconcileSourceGaps(sql, v2RunContext(ctx), { source_gaps: gaps }, DECISION_GAP_OWNER);

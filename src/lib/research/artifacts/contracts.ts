@@ -151,6 +151,7 @@ export const artifactTypes = {
   monitoring_dashboard: "monitoring_dashboard",
   confidence_assessment: "confidence_assessment",
   decision_record: "decision_record",
+  stock_rating: "stock_rating",
   ai_review_findings: "ai_review_findings",
   export_manifest: "export_manifest",
 } as const;
