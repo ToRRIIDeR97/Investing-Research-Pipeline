@@ -21,6 +21,7 @@ import * as workbenchSchema from "./schema/workbench";
 import * as checklistsSchema from "./schema/checklists";
 import * as themesSchema from "./schema/themes";
 import * as companyProfilesSchema from "./schema/company-profiles";
+import * as quantSchema from "./schema/quant";
 
 export const schema = {
   ...coreSchema,
@@ -45,4 +46,5 @@ export const schema = {
   ...checklistsSchema,
   ...themesSchema,
   ...companyProfilesSchema,
+  ...quantSchema,
 };

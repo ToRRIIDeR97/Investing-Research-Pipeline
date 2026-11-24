@@ -1,0 +1,64 @@
+{
+ "stage": {
+  "stage": "STAGE_1_BASE",
+  "stage_number": 1,
+  "confidence": "MEDIUM",
+  "weeks_in_stage": 4,
+  "sma_30w": 39.11,
+  "sma_30w_slope_pct": -1.59,
+  "price_vs_sma_30w_pct": -1.09
+ },
+ "pocket_pivots": [
+  {
+   "day": "2025-06-23",
+   "volume_ratio": 1.1
+  },
+  {
+   "day": "2025-06-25",
+   "volume_ratio": 1.11
+  },
+  {
+   "day": "2025-06-27",
+   "volume_ratio": 1.67
+  },
+  {
+   "day": "2025-06-30",
+   "volume_ratio": 3.43
+  },
+  {
+   "day": "2025-07-09",
+   "volume_ratio": 1.15
+  },
+  {
+   "day": "2025-07-14",
+   "volume_ratio": 1.36
+  },
+  {
+   "day": "2025-07-22",
+   "volume_ratio": 1.18
+  },
+  {
+   "day": "2025-07-31",
+   "volume_ratio": 1.17
+  },
+  {
+   "day": "2025-10-17",
+   "volume_ratio": 1.13
+  },
+  {
+   "day": "2025-10-21",
+   "volume_ratio": 1.18
+  }
+ ],
+ "vcp": {
+  "quality": "NOT_PRESENT",
+  "is_vcp": false,
+  "above_30w_sma": false,
+  "depths": [
+   3.52,
+   2.65,
+   9.54,
+   6.84
+  ]
+ }
+}

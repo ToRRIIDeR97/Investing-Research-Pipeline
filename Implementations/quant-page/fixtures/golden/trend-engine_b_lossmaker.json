@@ -1,0 +1,36 @@
+{
+ "stage": {
+  "stage": "STAGE_1_BASE",
+  "stage_number": 1,
+  "confidence": "LOW",
+  "weeks_in_stage": 1,
+  "sma_30w": 125.77,
+  "sma_30w_slope_pct": 1.09,
+  "price_vs_sma_30w_pct": -4.98
+ },
+ "pocket_pivots": [
+  {
+   "day": "2025-08-13",
+   "volume_ratio": 1.05
+  },
+  {
+   "day": "2025-08-29",
+   "volume_ratio": 1.01
+  },
+  {
+   "day": "2025-10-07",
+   "volume_ratio": 1.3
+  }
+ ],
+ "vcp": {
+  "quality": "NOT_PRESENT",
+  "is_vcp": false,
+  "above_30w_sma": false,
+  "depths": [
+   6.47,
+   4.88,
+   11.69,
+   7.97
+  ]
+ }
+}

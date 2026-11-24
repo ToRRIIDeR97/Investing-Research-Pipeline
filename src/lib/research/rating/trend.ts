@@ -29,7 +29,7 @@ function smaAt(prefix: number[], window: number, end: number): number {
 }
 
 /** Pragma's RS rating: weighted 3/6/9/12-month return over the benchmark's, mapped 50 + 140 × difference, 1-99. */
-function rsRating(stock: number[], bench: number[]): number {
+export function rsRating(stock: number[], bench: number[]): number {
   const intervals = [63, 126, 189, 252];
   const weights = [0.4, 0.2, 0.2, 0.2];
   const ret = (s: number[], days: number) => (s.length > days ? s[s.length - 1] / s[s.length - days] - 1 : 0);

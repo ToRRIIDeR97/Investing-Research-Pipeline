@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ResearchRunQueueError } from "@/lib/research/run-queue";
+import { ResearchRunQueueError } from "@/lib/research/run-queue-error";
 import { ZodError } from "zod";
 
 export class ApiError extends Error {

@@ -39,16 +39,9 @@ export interface WorkerHealth {
   stale: boolean;
 }
 
-export class ResearchRunQueueError extends Error {
-  constructor(
-    message: string,
-    public readonly statusCode = 500,
-    public readonly code = "RESEARCH_RUN_QUEUE_ERROR"
-  ) {
-    super(message);
-    this.name = "ResearchRunQueueError";
-  }
-}
+// Defined in its own module so the shared API error handler can recognise it without loading the orchestrator.
+import { ResearchRunQueueError } from "./run-queue-error";
+export { ResearchRunQueueError };
 
 function database() {
   if (!process.env.DATABASE_URL) {

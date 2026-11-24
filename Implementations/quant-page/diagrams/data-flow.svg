@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 470" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">
+  <title>Quant page data flow</title>
+  <desc>A ticker request resolves the issuer, loads facts and prices, runs PragValue and PragTrend in code, caches a snapshot and renders the Q2 page.</desc>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#334155"/></marker></defs>
+  <rect width="980" height="470" fill="#ffffff"/>
+  <text x="20" y="26" font-size="15" font-weight="600" fill="#1e293b">Quant page: one ticker, no research run, no model calls</text>
+
+  <rect x="20" y="60" width="170" height="54" rx="6" fill="#f1f5f9" stroke="#94a3b8"/>
+  <text x="32" y="82" fill="#1e293b">/quant/[ticker] page</text><text x="32" y="100" fill="#475569">rail + Value / Trend tabs</text>
+  <line x1="190" y1="87" x2="230" y2="87" stroke="#334155" marker-end="url(#a)"/>
+  <rect x="232" y="60" width="200" height="54" rx="6" fill="#ecfdf5" stroke="#15803d" stroke-width="2"/>
+  <text x="244" y="82" fill="#1e293b">GET /api/quant/[ticker]</text><text x="244" y="100" fill="#15803d">P4 · cached snapshot or compute</text>
+  <line x1="432" y1="87" x2="472" y2="87" stroke="#334155" marker-end="url(#a)"/>
+  <rect x="474" y="60" width="200" height="54" rx="6" fill="#ecfdf5" stroke="#15803d" stroke-width="2"/>
+  <text x="486" y="82" fill="#1e293b">quant_snapshots (new table)</text><text x="486" y="100" fill="#15803d">P1 · ticker, as-of day, result</text>
+
+  <rect x="20" y="160" width="290" height="130" rx="8" fill="#f8fafc" stroke="#64748b"/>
+  <text x="32" y="182" font-weight="600" fill="#1e293b">P1 · Inputs (quant/inputs.ts)</text>
+  <text x="32" y="204" fill="#1e293b">resolveSecCik → SEC submissions (SIC)</text>
+  <text x="32" y="222" fill="#1e293b">loadCompanyFacts → warehouse or SEC</text>
+  <text x="32" y="240" fill="#1e293b">annual series: revenue, EBIT, D&amp;A, capex …</text>
+  <text x="32" y="258" fill="#1e293b">syncAssetPriceHistory (+ volume, new)</text>
+  <text x="32" y="276" fill="#1e293b">benchmarks: ^GSPC + sector SPDR ETF</text>
+
+  <rect x="340" y="160" width="300" height="130" rx="8" fill="#f8fafc" stroke="#64748b"/>
+  <text x="352" y="182" font-weight="600" fill="#1e293b">P2 · PragValue (quant/value/*)</text>
+  <text x="352" y="204" fill="#1e293b">SIC → engine A–G, industry key</text>
+  <text x="352" y="222" fill="#1e293b">engine metrics, fair multiples, percentiles</text>
+  <text x="352" y="240" fill="#1e293b">DCF bear / base / bull, target ladder</text>
+  <text x="352" y="258" fill="#1e293b">PulseScore, confidence, PulseGrade, PQ-Grade</text>
+  <text x="352" y="276" fill="#475569">reuses rating/grade.ts bands</text>
+
+  <rect x="670" y="160" width="290" height="130" rx="8" fill="#f8fafc" stroke="#64748b"/>
+  <text x="682" y="182" font-weight="600" fill="#1e293b">P3 · PragTrend (quant/trend/*)</text>
+  <text x="682" y="204" fill="#1e293b">9 conditions, RS, Mansfield (exist)</text>
+  <text x="682" y="222" fill="#1e293b">Weinstein stage + weekly history (new)</text>
+  <text x="682" y="240" fill="#1e293b">rebased performance vs SPX + ETF (new)</text>
+  <text x="682" y="258" fill="#1e293b">pocket pivots, VCP (new, needs volume)</text>
+  <text x="682" y="276" fill="#475569">reuses rating/trend.ts</text>
+
+  <line x1="332" y1="114" x2="165" y2="158" stroke="#334155" marker-end="url(#a)"/>
+  <line x1="332" y1="114" x2="490" y2="158" stroke="#334155" marker-end="url(#a)"/>
+  <line x1="332" y1="114" x2="815" y2="158" stroke="#334155" marker-end="url(#a)"/>
+  <line x1="310" y1="225" x2="338" y2="225" stroke="#334155" marker-end="url(#a)"/>
+  <path d="M165 290 L165 316 L815 316 L815 292" fill="none" stroke="#334155" marker-end="url(#a)"/>
+
+  <rect x="20" y="350" width="940" height="96" rx="8" fill="#fffbeb" stroke="#b45309"/>
+  <text x="32" y="372" font-weight="600" fill="#1e293b">External calls (all existing hosts, serial, User-Agent set)</text>
+  <text x="32" y="394" fill="#1e293b">data.sec.gov (submissions, companyfacts) or the XBRL warehouse · Yahoo chart API (daily bars + volume) · Stooq cross-check</text>
+  <text x="32" y="414" fill="#1e293b">Not available without new sources: analyst forward EPS (Pragma's forward growth signal) and FRED credit spreads (Credit Impact Scalar).</text>
+  <text x="32" y="434" fill="#b45309">Both are reported as unavailable, not guessed.</text>
+</svg>

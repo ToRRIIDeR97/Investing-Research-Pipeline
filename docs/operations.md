@@ -157,3 +157,11 @@ The warehouse in `services/xbrl/` is optional. Without `XBRL_WAREHOUSE_URL`, run
    - A run then reads the warehouse when it holds the issuer's newest periodic filing by the cutoff.
    - Check which source a run used in its primary source context: `companyFactsOrigin.provider`, and `reason` when it fell back to SEC.
 4. **Turn it off.** Unset `XBRL_WAREHOUSE_URL`. Stored runs keep the companyfacts they were built from.
+
+## Quant page
+
+- **Setup.** The page needs the `quant_snapshots` table: run `npm run db:migrate` after pulling (migration `0025_quant_snapshots`, additive).
+- **First look-up.** Opening `/quant/<TICKER>` the first time fetches SEC submissions and companyfacts (or warehouse facts) and syncs about six years of daily prices for the ticker, the S&P 500 and its sector ETF. That takes a few seconds; later views that day come from the cache.
+- **Refresh.** The page's Refresh button (`?refresh=1`) recomputes and replaces the day's snapshot, at most once every five minutes per ticker; a sooner refresh returns the cached one. If a refresh fails, the page keeps the snapshot it had and shows the error above it.
+- **Upstream outages.** SEC unreachable, or a failed price sync with nothing stored, gives 503. A failure of SEC companyfacts, Yahoo's listing check, or the ticker, S&P 500 or sector-ETF price sync gives a snapshot from stored data that isn't cached, so the next look-up retries. Nothing needs clearing afterwards.
+- **Clean up.** Reference assets created for look-ups are named `quant-<ticker>` and `benchmark-<etf>`. To drop cached snapshots: `DELETE FROM quant_snapshots;`. Removing reference assets and their bars follows the storage-cleanup procedure.
