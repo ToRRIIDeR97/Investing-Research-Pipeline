@@ -149,3 +149,22 @@
   .drawerBody { transition: grid-template-rows 350ms var(--ease-out); }
 }
 .drawer[data-open] > button svg { transform: rotate(90deg); }
+
+/* Value path footer: how to read the chart, then the DCF settings as small stats. */
+.chartFoot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.chartFoot > p:first-child { flex: 1 1 280px; margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+.footStats { display: flex; gap: 8px; margin: 0; }
+.footStats div { display: grid; padding: 6px 14px; border-radius: 12px; background: var(--soft); }
+.footStats dt { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+.footStats dd { margin: 0; font-family: var(--font-display); font-size: 15px; font-weight: 700; }
+
+/* Exit multiples: three case-coloured columns with a bar each, the multiple history below when there is one. */
+.exits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-bottom: 12px; }
+.exits > div { display: grid; gap: 4px; }
+.exitName { font-size: 12.5px; font-weight: 700; color: var(--case-color); }
+.exits b { font-family: var(--font-display); font-size: 26px; font-weight: 700; line-height: 1.1; letter-spacing: -0.03em; }
+.exitBar { display: block; height: 6px; border-radius: var(--radius-pill); background: var(--line-soft); }
+.exitBar span { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--case-color); }
+.exitHistory { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.exitHistory h3 { margin-bottom: 6px; font-family: var(--font-sans); font-size: 12.5px; font-weight: 600; letter-spacing: 0; color: var(--ink-2); }
+.exitNote { margin: 12px 0 0; padding-top: 12px; border-top: 1px solid var(--line-soft); font-size: 12px; color: var(--ink-3); }

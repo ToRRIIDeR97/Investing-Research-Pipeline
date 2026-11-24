@@ -83,6 +83,36 @@ function Rail({ s }: { s: QuantSnapshot }) {
   </aside>;
 }
 
+/**
+ * The exit multiples each scenario ends year 5 on (from the low, middle and high of the company's own history of the
+ * DCF metric), as three case-coloured bars. The engine's multiple history is drawn under them when there is one.
+ */
+function ExitMultiples({ s }: { s: QuantSnapshot }) {
+  const d = s.value!.dcf, h = s.value!.charts.multiple_history;
+  const exits = (["bear", "base", "bull"] as const).map((k) => ({ k, x: d[`exit_multiple_${k}`] }));
+  const max = Math.max(...exits.map((e) => e.x || 0));
+  const raw = d.exit_metric && d.exit_metric !== "N/A" ? d.exit_metric : h.metric;
+  // "Median of 3 metrics (P/S, P/FCF, P/OCF)" reads as "the median of P/S, P/FCF and P/OCF".
+  const blend = /^Median of \d+ metrics \((.+)\)$/.exec(raw)?.[1].split(/,\s*/);
+  const metric = blend ? `the median of its ${blend.slice(0, -1).join(", ")} and ${blend[blend.length - 1]}` : raw;
+  const hasHistory = h.points.filter((p) => Number.isFinite(p.multiple)).length >= 2;
+  return <Card title={blend ? "Exit multiples" : `Exit multiples on ${metric}`}>
+    {max > 0 ? <div className={styles.exits}>
+      {exits.map((e) => <div key={e.k} data-case={e.k}>
+        <span className={styles.exitName}>{e.k[0].toUpperCase() + e.k.slice(1)}</span>
+        <b>{e.x ? `${e.x.toFixed(1)}x` : "—"}</b>
+        <span className={styles.exitBar}><span style={{ width: `${Math.max(4, ((e.x || 0) / max) * 100)}%` }} /></span>
+      </div>)}
+    </div> : <p className={styles.unavailable}>No exit multiples: the DCF was skipped.</p>}
+    <p className={styles.caption}>Each case values the company in year 5 at {blend ? `${metric} multiples` : `this ${metric} multiple`}, set from the low, middle and high of its own history.</p>
+    {hasHistory ? <div className={styles.exitHistory}>
+      <h3>{h.metric} at each fiscal year end</h3>
+      <MultipleBand {...h} />
+      <p className={styles.caption}>Shaded: 25th to 75th percentile of its own history.</p>
+    </div> : <p className={styles.exitNote}>No {h.metric} history to chart{s.fundamentals?.missing.includes("ebit") && /EBIT/.test(h.metric) ? ": EBIT isn't reported in its filings" : ""}.</p>}
+  </Card>;
+}
+
 function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick: (c: Case) => void }) {
   const v = s.value;
   if (!v) return <Card title="PragValue"><p className={styles.unavailable}>{s.value_reason}</p></Card>;
@@ -125,7 +155,16 @@ function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick:
     </div>
     <Card title="Price and value paths" action={<span className={styles.caseKey} data-case={pick}>{caseLabel[pick]} case</span>}>
       <ValuePathChart history={s.price_history_5y} projection={v.charts.projection} selected={pick} current={s.price} />
-      <p className={styles.caption}>The line shows forward values (the case&apos;s value in each year, before discounting). Intrinsic value (Pragma: the five-year DCF discounted to today): bear {money(d.intrinsic_value_bear)}, base {money(d.intrinsic_value_base)}, bull {money(d.intrinsic_value_bull)}. {d.dcf_skipped ? d.dcf_skip_reason : `Discount rate ${rate(d.discount_rate)}; growth fades to ${rate(d.terminal_growth_rate)}.`}</p>
+      {/* How to read the chart, and the two DCF settings behind it. The case values themselves are in the tiles above. */}
+      <div className={styles.chartFoot}>
+        <p>The line is the case&apos;s value in each year, before discounting. The tiles above show it discounted to today.</p>
+        {d.dcf_skipped ? <p className={styles.callout}><b aria-hidden="true">!</b>{d.dcf_skip_reason}</p>
+          : <dl className={styles.footStats}>
+            <div><dt>Discount rate</dt><dd>{rate(d.discount_rate)}</dd></div>
+            <div><dt>Growth fades to</dt><dd>{rate(d.terminal_growth_rate)}</dd></div>
+            <div><dt>Horizon</dt><dd>{fwd?.year || 5} years</dd></div>
+          </dl>}
+      </div>
     </Card>
     <div className={styles.cardGrid}>
       <Card title={v.charts.value_build ? `From cash flows to ${money(v.charts.value_build.per_share)} a share` : "Value build"}>
@@ -134,10 +173,7 @@ function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick:
           <p className={styles.caption}>Base case on {v.charts.value_build.metric}; terminal value is {(v.charts.value_build.terminal_share * 100).toFixed(0)}% of the total.</p>
         </> : <p className={styles.unavailable}>{d.dcf_skipped ? d.dcf_skip_reason : "No metric-level DCF to break down."}</p>}
       </Card>
-      <Card title={`${v.charts.multiple_history.metric}, fiscal year ends`}>
-        <MultipleBand {...v.charts.multiple_history} />
-        <p className={styles.caption}>Shaded: 25th to 75th percentile of its own history. Scenario exits use the low, mean and high (peer growth is not fetched).</p>
-      </Card>
+      <ExitMultiples s={s} />
     </div>
     <Card title="Scenarios" flush>
       <div className={styles.tableBox}>

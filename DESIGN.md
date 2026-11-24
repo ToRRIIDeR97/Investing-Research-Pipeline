@@ -60,6 +60,12 @@ The Quant page uses colour more freely, because colour is the fastest way to rea
 - **How it was built:** workshop variant H3 (`prototype/workshop/how-it-was-built.html`). The metric weights lead as
   one navy-step bar with a key, then Inputs, Assumptions and Caveats are drawers with counts (Inputs open by default).
   Missing line items are struck-through red chips; engine flags are amber callouts; notes are plain lines.
+- **Chart footers:** a chart card ends with a short "how to read it" line on the left and its settings as small stats
+  on the right (the value path: discount rate, terminal growth, horizon), not a paragraph that repeats numbers shown
+  elsewhere.
+- **Exit multiples:** the card always shows the three exits the scenarios use, as case-coloured columns with bars;
+  the multiple's own history chart sits under them only when there are two or more years, otherwise one quiet line
+  says why.
 - **Signals:** the PulseScore gauge runs red (overvalued) to green (undervalued); trend and stage facts carry a dot;
   unmet trend conditions are red, met ones green; returns and "vs price" figures are green or red.
 
