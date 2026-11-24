@@ -6,7 +6,7 @@
 /* A real logo stands on its own: no tile, no border, filling its square (DESIGN.md "Company identity"). Monograms keep a
    soft navy tile, without the border, so a missing logo still reads as a placeholder. */
 .logo:has(img) { background: transparent; border: 0; border-radius: 0; }
-.logo:has(img) img { padding: 2%; }
+.logo:has(img) img { padding: 0; object-fit: contain; }
 .monogram { border: 0; }
 .logo[data-loading="true"] { background: var(--soft); }
 

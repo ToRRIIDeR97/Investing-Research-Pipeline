@@ -79,7 +79,7 @@ Reach for these before writing new CSS.
 | Main action | `ui.primary` (navy pill, 38px); one per area |
 | Other actions | `ui.secondary` (white pill, strong border) or `ui.textLink` (navy text) |
 | A list inside a card | `ui.row`, `ui.rowTitle`, `ui.rowMeta` |
-| Company identity | `CompanyLogo`: a real logo stands alone, with no tile or border, filling its square (48px on cards, 64px in a hero); without one, a ticker or initials monogram on a soft navy tile |
+| Company identity | `CompanyLogo`: a real logo stands alone, with no tile or border, sized by its shape so every logo covers the same area (a square mark gets 70% of the box, a wordmark runs wider and shorter; `logo-box.ts`) in a 48px box on cards, 64px in a hero; without one, a ticker or initials monogram on a soft navy tile |
 | Price against value | `MiniRuler`: one even 8px track, the price-to-value gap green or red, price as a dark tick, base as a navy dot, bear and bull at the ends |
 | An asset without a valuation | `AssetCard` shows "Open page" and, unless a run is under way, "Run research", never a dead-end sentence. An asset can come from a search or a Quant look-up, not only from a run |
 | A grade | A `--navy-soft` pill with a small label and the letter (see the Quant finder) |
