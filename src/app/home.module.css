@@ -17,7 +17,7 @@
 .main { min-width: 0; }
 .side { display: grid; gap: 20px; min-width: 0; }
 @media (max-width: 960px) { .layout { grid-template-columns: minmax(0, 1fr); } }
-.sectionHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 4px 2px 12px; }
+.sectionHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; margin: 4px 2px 12px; }
 .sectionHead h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.03em; }
 .queue { display: grid; gap: 4px; }
 .queueRow { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 14px; color: var(--ink); }

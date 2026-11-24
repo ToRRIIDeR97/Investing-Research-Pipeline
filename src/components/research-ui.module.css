@@ -63,6 +63,13 @@ a.row:hover, button.row:hover { background: var(--hover); }
 .primary:hover:not(:disabled) { background: var(--navy-hover); }
 .secondary { background: var(--tile); border: 1px solid var(--line-strong); color: var(--ink); }
 .secondary:hover:not(:disabled) { background: var(--hover); }
+/* Motion: primary lifts on hover; both press in. Timing and spring come from globals.css. */
+@media (prefers-reduced-motion: no-preference) {
+  .primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: var(--shadow-navy-lift); }
+  .secondary:hover:not(:disabled) { border-color: var(--ink-4); }
+  :is(.primary, .secondary):active:not(:disabled) { transform: translateY(0) scale(var(--press-scale)); transition-duration: 80ms; }
+  .textLink:active { transform: scale(.98); }
+}
 
 /* Search, filters, forms */
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line-soft); }

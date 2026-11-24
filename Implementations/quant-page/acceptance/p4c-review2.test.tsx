@@ -94,5 +94,6 @@ test("AC-10: a failed refresh keeps the snapshot and reports it; the ticker page
   assert.match(page, /key = decodeURIComponent\(ticker\)\.trim\(\)\.toUpperCase\(\)/);
   assert.match(page, /setRefreshError/);
   assert.match(page, /href="\/quant"/, "the error state links back to the search");
-  assert.match(read("src/app/quant/page.tsx"), /TICKER_PATTERN\.test/);
+  // The finder moved into a component in the design-system change; it still validates typed tickers.
+  assert.match(read("src/components/quant/quant-finder.tsx"), /TICKER_PATTERN\.test/);
 });

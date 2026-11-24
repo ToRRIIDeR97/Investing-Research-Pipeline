@@ -391,7 +391,7 @@ The valuation summary shows it as **Rating and trend** (`src/components/report/s
 ## Quant page (PragValue and PragTrend)
 
 `/quant/[ticker]` shows Pragma's quantitative read for any US-listed stock, separate from Research and without a run or a model call (plan: `Implementations/quant-page/`).
-- **Layout.** A summary rail (price, PulseGrade, PQ-Grade, PulseScore gauge, trend score, stage, confidence, research link) and Value and Trend tabs, kept in `?tab=` (`src/components/quant/**`, `src/app/quant/**`). `/quant` takes a ticker; the main nav has a Quant entry, and a researched asset's page links to it.
+- **Layout.** A summary rail (price, PulseGrade, PQ-Grade, PulseScore gauge, trend score, stage, confidence, research link) and Value and Trend tabs, kept in `?tab=` (`src/components/quant/**`, `src/app/quant/**`). `/quant` is the finder (`src/components/quant/quant-finder.tsx`): a type-ahead over SEC's ticker directory with each match's grades when it has a snapshot, quick picks, and the recently checked tickers as cards, all from `GET /api/quant-finder?q=` (`src/lib/quant/directory.ts`; SEC's map is fetched at most once a day per server process, and when SEC or the database is down the search still opens any typed ticker). The main nav has a Quant entry, and a researched asset's page links to it.
 - **Inputs** (`src/lib/quant/inputs.ts`):
   - Yahoo instrument metadata refuses non-equities (422).
   - `resolveSecCik` and SEC submissions give the issuer and its SIC code.

@@ -8,6 +8,7 @@ import type { Frequency, MetricBook, PeriodRef } from '@/lib/research/reporting/
 import { SeriesChart } from './series-chart';
 import type { SavedChartsApi } from './use-saved-charts';
 import styles from './financials.module.css';
+import { SlideGroup } from '@/components/ui/sliding';
 
 type Row = Record<string, any>;
 export type Preset = { label: string; series: SeriesSpec[] };
@@ -59,9 +60,9 @@ export function ChartPanel({ observations, frequency, book, periods, selection, 
     <div className={styles.panelHead}>
       <label className={styles.srOnly} htmlFor="chart-name">Chart name</label>
       <input id="chart-name" className={styles.titleInput} value={name} maxLength={120} onChange={(e) => { setTitle(e.target.value); setStatus(null); }} />
-      <span className={styles.segmented} role="group" aria-label="Chart values">
+      <SlideGroup className={styles.segmented} label="Chart values">
         {([['values', 'Values'], ['yoy', 'YoY change']] as const).map(([value, text]) => <button key={value} type="button" aria-pressed={mode === value} onClick={() => { setMode(value); setStatus(null); }}>{text}</button>)}
-      </span>
+      </SlideGroup>
       <button type="button" className={styles.ghostButton} onClick={() => { change([]); setTitle(null); }} disabled={!selection.length}>Clear</button>
       <button type="button" className={styles.primaryButton} onClick={() => void save()} disabled={!chart.series.length || saving || isSaved}>{saving ? 'Saving…' : isSaved ? 'Saved' : 'Save to My charts'}</button>
     </div>

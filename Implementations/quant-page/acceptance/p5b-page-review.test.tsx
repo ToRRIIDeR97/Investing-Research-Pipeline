@@ -96,7 +96,7 @@ test("AC-10: condition marks carry visible-to-screen-reader text and a null Puls
 
 test("AC-10: the Quant UI uses palette tokens only (no raw hex colours)", () => {
   for (const f of ["src/components/quant/quant-charts.tsx", "src/components/quant/quant-view.tsx", "src/components/quant/quant.module.css",
-    "src/app/quant/page.tsx", "src/app/quant/[ticker]/page.tsx"]) {
+    "src/app/quant/page.tsx", "src/app/quant/[ticker]/page.tsx", "src/components/quant/quant-finder.tsx", "src/components/quant/finder.module.css"]) {
     assert.doesNotMatch(read(f), /#[0-9a-fA-F]{3,8}\b/, `${f} has a raw hex colour`);
   }
 });

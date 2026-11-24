@@ -2,6 +2,11 @@
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
 .card { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 20px 22px; background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); border-radius: var(--radius-card); box-shadow: var(--shadow-card); color: var(--ink); }
 .card:hover { box-shadow: 0 1px 2px rgb(0 0 0 / 4%), 0 12px 32px -12px rgb(13 27 42 / 22%); }
+@media (prefers-reduced-motion: no-preference) {
+  a.card { transition: transform var(--dur-base) var(--ease-spring), box-shadow var(--dur-base) var(--ease-out); }
+  a.card:hover { transform: translateY(-3px); }
+  a.card:active { transform: scale(.985); transition-duration: 80ms; }
+}
 .cardHead { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .cardTitle { display: grid; flex: 1; min-width: 0; line-height: 1.3; }
 .cardTitle strong { font-family: var(--font-display); font-size: 16px; font-weight: 700; letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

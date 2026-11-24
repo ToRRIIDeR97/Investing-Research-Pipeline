@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Search } from "lucide-react";
+import { SlideLayers, useSlidingIndicator } from "@/components/ui/sliding";
 import { PragmaMark } from "@/components/brand/logo";
 import { CompanyLogo } from "@/components/company/company";
 import { reviewCount } from "@/lib/review/queue-rules";
@@ -16,6 +17,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const box = useRef<HTMLDivElement>(null);
+  // The nav scrolls sideways on phones, so touch swipes scroll it rather than drag the pill.
+  const nav = useSlidingIndicator<HTMLElement>({ dragTouch: false });
   const [assets, setAssets] = useState<Asset[] | null>(null);
   const [searchError, setSearchError] = useState(false);
   const [query, setQuery] = useState("");
@@ -62,7 +65,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className={styles.header}>
         <div className={styles.bar}>
           <Link href="/" className={styles.brand} aria-label="Pragma Research home"><PragmaMark size={26} /><span>Pragma Research</span></Link>
-          <nav className={styles.nav} aria-label="Main">
+          <nav ref={nav} className={styles.nav} aria-label="Main">
+            <SlideLayers />
             <Link href="/" aria-current={current("/")}>Home</Link>
             <Link href="/quant" aria-current={current("/quant")}>Quant</Link>
             <Link href="/assets" aria-current={current("/assets")}>Research</Link>

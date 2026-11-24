@@ -10,6 +10,7 @@ import { METRICS, MetricBook, observedPeriods, parsePeriod, type Frequency, type
 import { CHART_PRESETS, METRIC_PREFIX, resolveSeries, type SeriesSpec } from '@/lib/research/reporting/chart-series';
 import { ChartPanel, type Preset } from './financials/chart-panel';
 import { StatementTable } from './financials/statement-table';
+import { SlideGroup } from '@/components/ui/sliding';
 import { MetricsView } from './financials/metrics-view';
 import { ChartsBoard, type SeriesOptionGroup } from './financials/charts-board';
 import { useSavedCharts, type SavedChartsApi } from './financials/use-saved-charts';
@@ -118,7 +119,7 @@ export function FinancialStatements({observations, sources, evidence, isTest,fil
         {title}{key==='charts'&&<span className={fin.badge} aria-label={`${saved.charts.length} saved`}>{saved.loaded?saved.charts.length:'·'}</span>}
       </Link>)}</nav>
       <div className={fin.tabTools}>
-        <span className={fin.segmented} role="group" aria-label="Frequency">{(['quarterly','annual'] as const).map(f=>available(f)?<Link scroll={false} key={f} href={href({frequency:f,end:null})} aria-current={frequency===f?'true':undefined}>{label(f)}</Link>:<button key={f} disabled title={`No ${f} observations are saved for this run.`}>{label(f)}</button>)}</span>
+        <SlideGroup className={fin.segmented} label="Frequency">{(['quarterly','annual'] as const).map(f=>available(f)?<Link scroll={false} key={f} href={href({frequency:f,end:null})} aria-current={frequency===f?'true':undefined}>{label(f)}</Link>:<button key={f} disabled title={`No ${f} observations are saved for this run.`}>{label(f)}</button>)}</SlideGroup>
         {statement==='charts'&&<a className={fin.primaryButton} href="#new-chart" onClick={()=>setTimeout(()=>document.getElementById('new-chart-name')?.focus(),0)}>New chart</a>}
       </div>
     </div>

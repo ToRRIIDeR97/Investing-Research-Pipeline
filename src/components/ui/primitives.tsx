@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { SlideLayers, useSlidingIndicator } from "./sliding";
 import styles from "./primitives.module.css";
 
 /**
@@ -25,9 +26,11 @@ export function Tag({ tone = "neutral", children }: { tone?: TagTone; children: 
   return <span className={styles.tag} data-tone={tone}><i className={styles.dot} aria-hidden="true" />{children}</span>;
 }
 
-/** A pill segmented toggle: a labelled group of buttons, the selected one pressed. */
+/** A pill segmented toggle: a labelled group of buttons, the selected one pressed. Its pill slides and can be dragged. */
 export function Segmented<T extends string>({ label, options, value, onChange }: { label: string; options: readonly T[]; value: T; onChange: (value: T) => void }) {
-  return <div role="group" aria-label={label} className={styles.segmented}>
+  const bar = useSlidingIndicator<HTMLDivElement>();
+  return <div ref={bar} role="group" aria-label={label} className={styles.segmented}>
+    <SlideLayers />
     {options.map((option) => <button type="button" key={option} aria-pressed={option === value ? "true" : "false"} onClick={() => onChange(option)}>{option}</button>)}
   </div>;
 }

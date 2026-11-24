@@ -7,6 +7,7 @@
 .nav { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: var(--radius-pill); background: var(--hover); }
 .nav a { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 16px; border-radius: var(--radius-pill); color: var(--ink-2); font-size: 13.5px; font-weight: 500; white-space: nowrap; }
 .nav a:hover { color: var(--ink); background: rgb(255 255 255 / 60%); }
+.nav[data-slide] a:hover { background: transparent; }
 .nav a[aria-current] { color: var(--navy); font-weight: 600; background: var(--tile); box-shadow: 0 1px 3px rgb(0 0 0 / 8%); }
 .count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--radius-pill); background: var(--navy); color: var(--tile); font-size: 10.5px; font-weight: 700; }
 .tools { margin-left: auto; display: flex; align-items: center; gap: 12px; padding: 8px 0; }
@@ -23,6 +24,11 @@
 .ticker { color: var(--ink-2); font-size: 11px; font-weight: 500; }
 .start { display: inline-flex; align-items: center; height: 40px; padding: 0 20px; border-radius: var(--radius-pill); background: var(--navy); color: var(--tile); font-size: 13.5px; font-weight: 600; white-space: nowrap; box-shadow: var(--shadow-navy); }
 .start:hover { background: var(--navy-hover); }
+@media (prefers-reduced-motion: no-preference) {
+  .start:hover { transform: translateY(-1px); box-shadow: var(--shadow-navy-lift); }
+  .start:active { transform: scale(var(--press-scale)); transition-duration: 80ms; }
+  .results button:active { transform: scale(.985); }
+}
 @media (max-width: 760px) {
   .nav { order: 3; max-width: 100%; overflow-x: auto; margin-bottom: 8px; }
   .search input { width: 150px; }
