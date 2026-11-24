@@ -87,7 +87,7 @@ test("AC-10: a failed refresh keeps the snapshot and reports it; the ticker page
   const html = renderToStaticMarkup(<QuantView snapshot={s} tab="value" onTab={() => {}} onRefresh={() => {}} refreshError="SEC filings could not be fetched." />);
   // Wording updated in round 3 ("Refresh failed (reason).").
   assert.match(html, /role="alert"><p[^>]*>Refresh failed \(SEC filings could not be fetched\)\. The figures below/);
-  assert.match(html, /PulseGrade/, "the snapshot is still shown");
+  assert.match(html, /PQ-Grade/, "the snapshot is still shown");
   const page = read("src/app/quant/[ticker]/page.tsx");
   // Keyed by the decoded, upper-cased ticker since round 3.
   assert.match(page, /<QuantTicker key=\{key\}/, "a new ticker remounts the view, clearing the old snapshot");

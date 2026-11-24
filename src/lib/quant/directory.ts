@@ -18,7 +18,7 @@ export type FinderSnapshot = {
   name: string;
   price: number | null;
   as_of: string | null;
-  pulse_grade: string | null;
+  /** The one grade shown (PQ-Grade); PulseGrade is still computed by the engine but not shown. */
   pq_grade: string | null;
   trend_label: string | null;
   stage: number | null;
@@ -112,7 +112,6 @@ export function finderSnapshot(json: unknown): FinderSnapshot | null {
     name: str(s.name) ?? ticker,
     price: num(s.price),
     as_of: str(s.as_of),
-    pulse_grade: str(s.value?.pulse_grade?.grade),
     pq_grade: str(s.value?.pq_grade?.grade),
     trend_label: str(s.trend?.conditions?.score_label),
     stage: num(s.trend?.stage?.stage_number),

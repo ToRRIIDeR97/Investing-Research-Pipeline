@@ -46,7 +46,7 @@ The Quant page uses colour more freely, because colour is the fastest way to rea
 
 - **Grades:** five tones by letter, A green, B lime, C amber, D orange-red, F red (`gradeTone` in
   `src/components/quant/tones.ts`). Set `data-grade` on an element and use `var(--g-bg)` and `var(--g-ink)`: a tint
-  behind, the strong colour on the letter. Used for the rail's grade tiles and the finder's grade pills.
+  behind, the strong colour on the letter. Used for the rail's grade tile and the finder's grade pills. The page shows one grade, PQ-Grade.
 - **Scenarios:** bear red (`--case-bear`), base slate navy (`--case-base`), bull green (`--case-bull`), everywhere a
   case appears: the scenario tiles, the chart's path and band edges, and the table's row dots. Set `data-case` to get
   `--case-color` and `--case-tint`.

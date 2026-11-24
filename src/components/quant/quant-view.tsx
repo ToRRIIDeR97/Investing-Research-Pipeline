@@ -79,8 +79,12 @@ function Rail({ s }: { s: QuantSnapshot }) {
     <Sparkline points={t.charts.sparkline} />
     {v ? <>
       <div className={styles.grades}>
-        <div className={styles.grade} data-grade={gradeTone(v.pulse_grade.grade)}><span>PulseGrade</span><b>{v.pulse_grade.grade}</b><span>{v.pulse_grade.label}</span></div>
-        <div className={styles.grade} data-grade={gradeTone(v.pq_grade.grade)}><span>PQ-Grade</span><b>{v.pq_grade.grade}</b><span>{v.pq_grade.label}</span></div>
+        {/* One grade: PQ-Grade weighs the value gap together with the upside/downside balance (PulseGrade is the gap alone). */}
+        <div className={styles.grade} data-grade={gradeTone(v.pq_grade.grade)}>
+          <span>PQ-Grade</span>
+          <div className={styles.gradeRow}><b>{v.pq_grade.grade}</b><span className={styles.gradeLabel}>{v.pq_grade.label}</span></div>
+          <span className={styles.gradeHow}>Value gap and upside versus downside, weighed by confidence</span>
+        </div>
       </div>
       <div>
         <span className={styles.sub}>PulseScore <b className={styles.pulse} data-tone={pulse === null ? undefined : pulse > 0.25 ? "good" : pulse < -0.25 ? "bad" : undefined}>{pulse === null ? "unavailable" : `${pulse > 0 ? "+" : ""}${pulse.toFixed(2)}`}</b></span>

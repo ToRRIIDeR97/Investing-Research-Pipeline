@@ -23,10 +23,9 @@ const href = (ticker: string) => `/quant/${encodeURIComponent(ticker)}`;
 type Option = { kind: "result"; result: FinderResult } | { kind: "open"; ticker: string };
 
 function Grades({ s }: { s: FinderSnapshot }) {
-  if (!s.pulse_grade && !s.pq_grade) return null;
+  if (!s.pq_grade) return null;
   return <span className={styles.grades}>
-    {s.pulse_grade && <span className={styles.grade} data-grade={gradeTone(s.pulse_grade)} title="PulseGrade (value)"><small>Pulse</small>{s.pulse_grade}</span>}
-    {s.pq_grade && <span className={styles.grade} data-grade={gradeTone(s.pq_grade)} title="PQ-Grade (quality)"><small>PQ</small>{s.pq_grade}</span>}
+    {s.pq_grade && <span className={styles.grade} data-grade={gradeTone(s.pq_grade)} title="PQ-Grade: value gap and upside versus downside"><small>PQ</small>{s.pq_grade}</span>}
   </span>;
 }
 
@@ -174,7 +173,7 @@ export function QuantFinder() {
 
     <section className={styles.explain} aria-label="What the Quant page shows">
       <Card title="PragValue">
-        <p className={styles.explainText}>A five-year DCF in bear, base and bull cases, the company&apos;s multiple against its own history, and the PulseGrade (value) and PQ-Grade (quality).</p>
+        <p className={styles.explainText}>A five-year DCF in bear, base and bull cases, the company&apos;s multiple against its own history, and the PQ-Grade, which weighs the value gap together with how much the stock could gain against how much it could lose.</p>
       </Card>
       <Card title="PragTrend">
         <p className={styles.explainText}>Price against its 50, 150 and 200-day averages, Weinstein stage, relative strength against the S&amp;P 500 and its sector, and the trend conditions it meets.</p>
