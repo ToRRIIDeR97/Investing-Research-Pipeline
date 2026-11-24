@@ -99,7 +99,7 @@ Invariants:
   - The Yahoo sync stores `volume`, and `loadStoredPriceHistory` returns it.
   - Bars stored before this change read as `null` volume.
 - **AC-3 (P1).** SIC routing table.
-  - Banks (6020–6029) route to C, REITs (6798) to D, utilities (4911–4991) to E, oil, gas and mining (1000–1499,
+  - Banks (6020–6029) route to C, REITs (6798) to D, utilities (4900–4999 except 4922–4923 and 4950–4959; amended in review) to E, oil, gas and mining (1000–1499,
     2911) to F, and pharma and biotech (2834–2836) to B2 when pre-revenue or loss-making.
   - Brokers and asset managers (6211, 6282) route to B or G as in Pragma. Everything else goes to A, or to B when EBIT is negative.
   - Amended in review: gas transmission (4922–4923) is midstream energy and routes to F; waste management (4950–4959) is Industrials and routes to A or B. Every other 4900–4999 code is a utility (E).
@@ -212,6 +212,22 @@ What changed in response, by criterion:
   - `p5b-page-review.test.tsx`: tab parsing, chart edge cases, forward values, accessible marks, no raw hex, Suspense, and the runtime AC-11 check.
   - `p4c-review2.test.tsx` (round 2): price-sync and submissions failures, mining routing, the narrowest SIC range, Python-exact rounding, ordinals, money text, and the refresh-error and ticker-change states.
 
+### Review round 3 (scores 9, 8.5, 9)
+
+- **AC-3 (mining, decision recorded).** SIC 1000–1499 always uses engine F, including loss-making explorers; Pragma would have sent a loss-making gold explorer to B. The plan's rule is followed as written. Building-materials quarrying (1400–1499) is in the range and is valued with F's commodity multiples under its own industry name.
+- **AC-4.** `pyRound` keeps Python's negative zero.
+- **AC-5.** The SIC lookup's narrowest-match rule can't depend on table order: a test asserts no two overlapping ranges have the same width.
+- **AC-9.** The S&P 500 and sector-ETF outcomes moved into `benchmarkSyncOutcome`, which is tested.
+- **AC-12.** The three docs list the same transient causes, and system.md notes that a cached snapshot's research link is from compute time.
+- **AC-10.**
+  - The refresh alert reads "Refresh failed (reason)." with a Dismiss button.
+  - The page is keyed by the decoded, upper-cased ticker.
+  - Axis labels mark the data's own high and low rather than the padded bounds.
+  - The multiple's current label sits on the side away from the line, and the "today" label moved off the price line.
+  - The stage strip shows the stage number where it changes, plus first and last week dates, so it doesn't rely on colour alone.
+  - The live check found the stage history's current week labelled with the coming Friday. It now uses the last close, like the price history.
+- **Test changes.** In `p4c-review2.test.tsx`, two of my own round-2 assertions follow the round-3 wording ("Refresh failed (reason).") and the decoded ticker key. Each is commented. `p4d-review3.test.tsx` is new.
+
 ### Review round 2 (scores 8, 7, 8)
 
 - **AC-9 (failures).**
@@ -244,12 +260,13 @@ The plan, the tests and the code have one author (a single agent). The parity go
 
 | Check | Command (repository root) | Result |
 | --- | --- | --- |
-| Acceptance | `npx tsx --test Implementations/quant-page/acceptance/*.test.ts*` (nine files, after review round 2) | 62 pass, 0 fail |
+| Acceptance | `npx tsx --test Implementations/quant-page/acceptance/*.test.ts*` (ten files, after review round 3) | 68 pass, 0 fail |
 | Value parity | `p2-value.test.ts`: eight engines against `pulsevalue.py` (0.5% tolerance); `p2c-fuzz.test.ts`: 400 mutated cases | 8 of 8 match; 400 of 400 match |
 | Trend parity | `p3-trend.test.ts`: stage, pivots and VCP against `pragtrend.py` and `pattern_detector.py` | 8 of 8 match |
 | Lint | `npm run lint` | 0 errors, 117 warnings (unchanged from main) |
 | Types | `npx tsc --noEmit` | pass |
-| Unit | `npm run test:unit` | 810 pass, 0 fail, 64 skipped |
+| Unit | `npm run test:unit` | 816 pass, 0 fail, 64 skipped |
+| Live (round 3) | `/quant/AAPL?tab=trend` and `GET /api/quant/AAPL?refresh=1` on the dev server | 200, engine A; stage strip shows stage numbers and dates; the last stage week and price week are 2026-11-23 (the last close), not the coming Friday; no console errors |
 | Build | `npm run build` | pass; `/quant`, `/quant/[ticker]`, `/api/quant/[ticker]` listed |
 | Existing UI rules | `Implementations/consumer-remaster/acceptance/*` | pass, after removing uppercase table headers |
 | Live | `/quant/AAPL` on the dev server, after `db:migrate` | Value and Trend tabs render from real SEC and Yahoo data (engine A, six-metric DCF, 9 of 9 conditions, stage 2); no console errors after the dev server rebuilt the shell |

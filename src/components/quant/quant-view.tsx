@@ -150,8 +150,9 @@ function TrendTab({ s }: { s: QuantSnapshot }) {
 }
 
 /** The Quant view for a loaded snapshot. */
-export function QuantView({ snapshot, tab, onTab, onRefresh, refreshing, refreshError }: {
-  snapshot: QuantSnapshot; tab: QuantTab; onTab: (tab: QuantTab) => void; onRefresh?: () => void; refreshing?: boolean; refreshError?: string;
+export function QuantView({ snapshot, tab, onTab, onRefresh, refreshing, refreshError, onDismissError }: {
+  snapshot: QuantSnapshot; tab: QuantTab; onTab: (tab: QuantTab) => void; onRefresh?: () => void; refreshing?: boolean;
+  refreshError?: string; onDismissError?: () => void;
 }) {
   // Held here, not in the Value tab, so the chosen scenario survives a switch to Trend and back.
   const [pick, setPick] = useState<Case>("base");
@@ -164,7 +165,10 @@ export function QuantView({ snapshot, tab, onTab, onRefresh, refreshing, refresh
         <p>Computed {new Date(snapshot.computed_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}</p>
         {onRefresh && <button type="button" className={ui.secondary} onClick={onRefresh} disabled={refreshing}>{refreshing ? "Refreshing…" : "Refresh"}</button>}
       </div>
-      {refreshError && <p className={styles.unavailable} role="alert">Refresh failed: {refreshError} The figures below are from the last snapshot.</p>}
+      {refreshError && <div className={styles.alertRow} role="alert">
+        <p className={styles.unavailable}>Refresh failed ({refreshError.replace(/[.\s]+$/, "")}). The figures below are from the last snapshot.</p>
+        {onDismissError && <button type="button" className={ui.secondary} onClick={onDismissError}>Dismiss</button>}
+      </div>}
       {tab === "value" ? <ValueTab s={snapshot} pick={pick} setPick={setPick} /> : <TrendTab s={snapshot} />}
     </main>
   </div>;

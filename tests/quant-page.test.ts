@@ -6,5 +6,6 @@ import "../Implementations/quant-page/acceptance/p3-trend.test";
 import "../Implementations/quant-page/acceptance/p4-api.test";
 import "../Implementations/quant-page/acceptance/p4b-api-review.test";
 import "../Implementations/quant-page/acceptance/p4c-review2.test";
+import "../Implementations/quant-page/acceptance/p4d-review3.test";
 import "../Implementations/quant-page/acceptance/p5-page.test";
 import "../Implementations/quant-page/acceptance/p5b-page-review.test";

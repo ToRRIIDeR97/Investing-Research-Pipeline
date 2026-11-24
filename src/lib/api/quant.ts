@@ -77,7 +77,9 @@ export function buildQuantSnapshot(inputs: QuantInputs, research: QuantSnapshot[
       valueReason = `PragValue failed: ${error instanceof Error ? error.message : String(error)}`;
     }
   }
-  const trend = computePragTrend(inputs.bars, inputs.benchmark.bars, inputs.sector_etf);
+  const computed = computePragTrend(inputs.bars, inputs.benchmark.bars, inputs.sector_etf);
+  // Weeks are keyed by their Friday; the current week is labelled with its last real trading day, not a future date.
+  const trend = { ...computed, stage_history: computed.stage_history.map((w) => (w.week > inputs.as_of ? { ...w, week: inputs.as_of } : w)) };
   return {
     ticker: inputs.ticker, name: inputs.name, cik: inputs.cik, sic: inputs.sic, sic_description: inputs.sic_description,
     sector: inputs.sector.sector, industry: inputs.sector.industry, sector_etf: inputs.sector.etf,

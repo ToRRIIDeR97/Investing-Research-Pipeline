@@ -123,6 +123,20 @@ export function priceSyncOutcome(ticker: string, synced: boolean, storedBars: nu
   return { notes: [], transient: [] };
 }
 
+/**
+ * What the benchmark syncs mean for the snapshot. A failed S&P 500 or sector-ETF sync uses what is stored (or drops
+ * the ETF from RS when nothing is) and marks the snapshot transient, so it isn't cached.
+ */
+export function benchmarkSyncOutcome(o: { spxSynced: boolean; etf: string | null; etfSynced: boolean; etfStored: boolean }): { notes: string[]; transient: string[] } {
+  const notes: string[] = [], transient: string[] = [];
+  if (!o.spxSynced) { notes.push("S&P 500 prices could not be refreshed; relative strength uses the stored series."); transient.push("benchmark"); }
+  if (o.etf && !o.etfSynced) {
+    notes.push(o.etfStored ? `Sector ETF ${o.etf} prices could not be refreshed; RS uses the stored series.` : `Sector ETF ${o.etf} prices could not be synced; RS uses the S&P 500 only.`);
+    transient.push("sector_etf");
+  }
+  return { notes, transient };
+}
+
 export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fetchImpl?: FetchLike; now?: Date } = {}): Promise<QuantInputs> {
   const ticker = rawTicker.trim().toUpperCase();
   if (!TICKER_PATTERN.test(ticker)) throw new QuantInputError("invalid_ticker", `"${rawTicker}" is not a ticker symbol.`);
@@ -165,18 +179,15 @@ export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fe
   transient.push(...priced.transient);
 
   const benchSync = await syncBenchmarkPriceHistory(sql, null, options.fetchImpl ? { fetchImpl: options.fetchImpl as typeof fetch } : {});
-  if (benchSync.status !== "synced") { notes.push("S&P 500 prices could not be refreshed; relative strength uses the stored series."); transient.push("benchmark"); }
   const benchmark = await loadBenchmarkPriceHistory(sql, now);
   const sector = sectorFromSic(sic);
-  let sectorEtf: QuantInputs["sector_etf"] = null;
+  let sectorEtf: QuantInputs["sector_etf"] = null, etfSynced = false;
   if (sector.etf) {
-    let synced = false;
-    try { const r = await syncEtf(sql, sector.etf, options.fetchImpl); sectorEtf = r.etf; synced = r.synced; } catch { /* reported below */ }
-    if (!synced) {
-      notes.push(sectorEtf ? `Sector ETF ${sector.etf} prices could not be refreshed; RS uses the stored series.` : `Sector ETF ${sector.etf} prices could not be synced; RS uses the S&P 500 only.`);
-      transient.push("sector_etf");
-    }
+    try { const r = await syncEtf(sql, sector.etf, options.fetchImpl); sectorEtf = r.etf; etfSynced = r.synced; } catch { /* reported by benchmarkSyncOutcome */ }
   }
+  const benched = benchmarkSyncOutcome({ spxSynced: benchSync.status === "synced", etf: sector.etf, etfSynced, etfStored: !!sectorEtf });
+  notes.push(...benched.notes);
+  transient.push(...benched.transient);
 
   return {
     ticker, name, cik, sic, sic_description: sicDescription, sector, instrument_type: instrumentType,

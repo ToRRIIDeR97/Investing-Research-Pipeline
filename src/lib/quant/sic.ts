@@ -109,10 +109,20 @@ const RANGES: Range[] = [
   [7380, 7389, "Industrials", "Specialty Business Services", "XLI"],
 ];
 
+/** Pairs of overlapping ranges with the same width (should be none). */
+export function overlappingEqualRanges(): string[] {
+  const out: string[] = [];
+  RANGES.forEach((a, i) => RANGES.slice(i + 1).forEach((b) => {
+    if (a[1] - a[0] === b[1] - b[0] && a[0] <= b[1] && b[0] <= a[1]) out.push(`${a[0]}-${a[1]} / ${b[0]}-${b[1]}`);
+  }));
+  return out;
+}
 
 export function sectorFromSic(sic: string | number | null | undefined): SectorInfo {
   const code = Number(sic);
   if (!Number.isInteger(code) || code <= 0) return { sector: "Unknown", industry: "Unknown", etf: null };
+  // Narrowest containing range. Two overlapping ranges of equal width would make this order-dependent; the
+  // acceptance tests assert the table has none (`overlappingEqualRanges`).
   let hit: Range | undefined;
   for (const r of RANGES) if (code >= r[0] && code <= r[1] && (!hit || r[1] - r[0] < hit[1] - hit[0])) hit = r;
   return hit ? { sector: hit[2], industry: hit[3], etf: hit[4] } : { sector: "Unknown", industry: "Unknown", etf: null };

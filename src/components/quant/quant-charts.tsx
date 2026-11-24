@@ -64,6 +64,7 @@ export function ValuePathChart({ history, projection, selected, current }: {
   const values = [...history.map((h) => h.close), ...proj.flatMap((p) => [p.bear, p.base, p.bull])].filter(finite);
   if (history.length < 2 || !values.length) return <p className={styles.unavailable}>Not enough stored price history to draw the value path.</p>;
   const [lo, hi] = padded(values);
+  const dataLo = Math.min(...values), dataHi = Math.max(...values);
   const y = scale(lo, hi, bottom, top);
   const xh = scale(0, history.length - 1, left, split);
   const years = Math.max(1, proj[proj.length - 1]?.year ?? 5);
@@ -76,11 +77,11 @@ export function ValuePathChart({ history, projection, selected, current }: {
   const label = `Price over the last five years, weekly from ${history[0].day} (${money(history[0].close)}) to ${money(current)} today; forward value in year ${years}: bear ${money(end?.bear)}, base ${money(end?.base)}, bull ${money(end?.bull)}.`;
   return <figure style={{ margin: 0 }}>
     <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img" aria-label={label}>
-      <text x={0} y={top + 4} fontSize="11" fill={C.ink3}>{money(hi)}</text>
-      <text x={0} y={bottom} fontSize="11" fill={C.ink3}>{money(lo)}</text>
+      <text x={0} y={y(dataHi) + 4} fontSize="11" fill={C.ink3}>{money(dataHi)}</text>
+      <text x={0} y={y(dataLo) + 4} fontSize="11" fill={C.ink3}>{money(dataLo)}</text>
       {proj.length > 1 && <path d={`${path(band)} Z`} fill={C.navySoft} />}
       <line x1={split} y1={top} x2={split} y2={bottom} stroke={C.lineStrong} strokeDasharray="4 4" />
-      <text x={split + 4} y={top + 10} fontSize="12" fill={C.ink3}>today {money(current)}</text>
+      <text x={split - 4} y={bottom - 6} fontSize="12" fill={C.ink3} textAnchor="end">today {money(current)}</text>
       <path d={path(hist)} fill="none" stroke={C.navy} strokeWidth="2.5" />
       {proj.length > 1 && <path d={path(at(selected))} fill="none" stroke={caseColor} strokeWidth="3" />}
       {end && <text x={right + 6} y={clamp(y(end[selected]) + 4, top + 8, bottom)} fontSize="12" fill={C.ink}>{money(end[selected])}</text>}
@@ -135,17 +136,20 @@ export function MultipleBand({ points, metric, p25, p75, current, percentile }: 
   const y = scale(lo, hi, bottom, top);
   const x = scale(0, pts0.length - 1, left + 8, right - 8);
   const pts = pts0.map((p, i) => ({ x: x(i), y: y(p.multiple) }));
-  const lastPt = pts[pts.length - 1];
+  const lastPt = pts[pts.length - 1], prevPt = pts[pts.length - 2];
+  const mLo = Math.min(...pts0.map((p) => p.multiple)), mHi = Math.max(...pts0.map((p) => p.multiple));
+  // Put the label on the side the line comes from the other way: below the point when the line rises into it.
+  const labelY = clamp(prevPt.y > lastPt.y ? lastPt.y - 12 : lastPt.y + 20, top + 10, bottom - 4);
   const aria = `${metric} at each fiscal year end from ${pts0[0].period.slice(0, 4)} to ${pts0[pts0.length - 1].period.slice(0, 4)}: ${pts0.map((p) => `${p.multiple.toFixed(1)}x`).join(", ")}${percentile !== null ? `; the latest is at the ${ordinal(percentile)} percentile of its own history` : ""}.`;
   const bandTop = finite(p75) ? clamp(y(p75), top, bottom) : null, bandBottom = finite(p25) ? clamp(y(p25), top, bottom) : null;
   return <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img" aria-label={aria}>
-    <text x={0} y={top + 4} fontSize="11" fill={C.ink3}>{hi.toFixed(1)}x</text>
-    <text x={0} y={bottom} fontSize="11" fill={C.ink3}>{lo.toFixed(1)}x</text>
+    <text x={0} y={y(mHi) + 4} fontSize="11" fill={C.ink3}>{mHi.toFixed(1)}x</text>
+    <text x={0} y={y(mLo) + 4} fontSize="11" fill={C.ink3}>{mLo.toFixed(1)}x</text>
     {bandTop !== null && bandBottom !== null && <rect x={left} y={bandTop} width={right - left} height={Math.max(2, bandBottom - bandTop)} fill={C.soft} />}
     {lo < 0 && hi > 0 && <line x1={left} y1={y(0)} x2={right} y2={y(0)} stroke={C.lineStrong} strokeDasharray="3 3" />}
     <path d={path(pts)} fill="none" stroke={C.navy} strokeWidth="2.5" />
     {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={i === pts.length - 1 ? 5 : 3} fill={C.navy} />)}
-    {current !== null && <text x={clamp(lastPt.x, left + 110, right)} y={clamp(lastPt.y - 10, top + 10, bottom)} fontSize="12" fill={C.ink} textAnchor="end">{current.toFixed(1)}x{percentile !== null ? ` · ${ordinal(percentile)} percentile` : ""}</text>}
+    {current !== null && <text x={clamp(lastPt.x - 10, left + 110, right)} y={labelY} fontSize="12" fill={C.ink} textAnchor="end">{current.toFixed(1)}x{percentile !== null ? ` · ${ordinal(percentile)} percentile` : ""}</text>}
     {pts0.map((p, i) => <text key={p.period} x={x(i)} y={H - 6} fontSize="11" fill={C.ink3} textAnchor={i === 0 ? "start" : i === pts0.length - 1 ? "end" : "middle"}>{p.period.slice(0, 4)}</text>)}
   </svg>;
 }
@@ -158,7 +162,9 @@ export function PriceVolumeChart({ series, pivots }: {
   const rows = series.filter((s) => finite(s.close));
   if (rows.length < 2) return <p className={styles.unavailable}>Not enough stored prices to draw the chart.</p>;
   const W = 880, H = 316, left = 52, right = W - 8, top = 12, priceBottom = 222, volTop = 236, volBottom = 290;
-  const [lo, hi] = padded(rows.flatMap((s) => [s.close, s.sma50, s.sma150, s.sma200]).filter(finite));
+  const priceVals = rows.flatMap((s) => [s.close, s.sma50, s.sma150, s.sma200]).filter(finite);
+  const [lo, hi] = padded(priceVals);
+  const pLo = Math.min(...priceVals), pHi = Math.max(...priceVals);
   const y = scale(lo, hi, priceBottom, top);
   const x = scale(0, rows.length - 1, left, right);
   const line = (k: "close" | "sma50" | "sma150" | "sma200") => path(rows.flatMap((s, i) => (finite(s[k]) ? [{ x: x(i), y: y(s[k]!) }] : [])));
@@ -169,8 +175,8 @@ export function PriceVolumeChart({ series, pivots }: {
   const barW = Math.max(1, (right - left) / rows.length - 0.5);
   return <figure style={{ margin: 0 }}>
     <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img" aria-label={aria}>
-      <text x={0} y={top + 4} fontSize="11" fill={C.ink3}>{money(hi)}</text>
-      <text x={0} y={priceBottom} fontSize="11" fill={C.ink3}>{money(lo)}</text>
+      <text x={0} y={y(pHi) + 4} fontSize="11" fill={C.ink3}>{money(pHi)}</text>
+      <text x={0} y={y(pLo) + 4} fontSize="11" fill={C.ink3}>{money(pLo)}</text>
       <text x={0} y={volBottom} fontSize="11" fill={C.ink3}>Volume</text>
       <path d={line("sma200")} fill="none" stroke={C.navy2} strokeWidth="2" />
       <path d={line("sma150")} fill="none" stroke={C.navy3} strokeWidth="2" strokeDasharray="6 4" />
@@ -233,8 +239,12 @@ export function StageStrip({ weeks }: { weeks: { week: string; stage_number: num
   const counts = [1, 2, 3, 4].map((n) => weeks.filter((w) => w.stage_number === n).length);
   return <div>
     <div className={styles.strip} role="img" aria-label={`Weinstein stage over ${weeks.length} weeks: ${counts.map((c, i) => `${c} in stage ${i + 1}`).join(", ")}; latest stage ${weeks[weeks.length - 1].stage_number}.`}>
-      {weeks.map((w) => <span key={w.week} title={`Week to ${w.week}: stage ${w.stage_number}`} style={{ background: STAGE_FILL[w.stage_number] ?? STAGE_FILL[0] }} />)}
+      {weeks.map((w, i) => <span key={w.week} title={`Week to ${w.week}: stage ${w.stage_number}`} style={{ background: STAGE_FILL[w.stage_number] ?? STAGE_FILL[0] }}>
+        {/* The stage number where it changes, so the strip doesn't rely on colour alone. */}
+        {(i === 0 || weeks[i - 1].stage_number !== w.stage_number) && w.stage_number > 0 ? <b aria-hidden="true">{w.stage_number}</b> : null}
+      </span>)}
     </div>
+    <div className={styles.stripAxis} aria-hidden="true"><span>{weeks[0].week}</span><span>{weeks[weeks.length - 1].week}</span></div>
     <div className={styles.legend}>
       <span><i style={{ background: STAGE_FILL[1] }} />1 basing</span><span><i style={{ background: STAGE_FILL[2] }} />2 advancing</span>
       <span><i style={{ background: STAGE_FILL[3] }} />3 topping</span><span><i style={{ background: STAGE_FILL[4] }} />4 declining</span>

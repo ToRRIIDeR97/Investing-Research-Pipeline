@@ -134,7 +134,7 @@ export function pyRound(x: number, n = 0): number {
   if (up) { let i = digits.length - 1; while (i >= 0 && digits[i] === 9) digits[i--] = 0; if (i >= 0) digits[i]++; else digits.unshift(1); }
   const all = digits.join("");
   const v = Number(`${all.slice(0, all.length - n)}.${all.slice(all.length - n)}`);
-  return x < 0 && v !== 0 ? -v : v;
+  return x < 0 ? -v : v; // Python keeps the sign: round(-0.001, 2) is -0.0
 }
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 /**
