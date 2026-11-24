@@ -277,6 +277,7 @@ The plan, the tests and the code have one author (a single agent). The parity go
 | Lint | `npm run lint` | 0 errors, 117 warnings (unchanged from main) |
 | Types | `npx tsc --noEmit` | pass |
 | Unit | `npm run test:unit` | 822 pass, 0 fail, 64 skipped |
+| Live (round 5) | `GET /api/quant/NEM?refresh=1` and `/api/quant/KO?refresh=1`, then each again, on the dev server (real `sqlIo` against the dev database; neither ticker researched) | Both 200 with no outage notes, 252 daily bars stored and loaded, and the second request `cached: true`. NEM: SIC 1040, Gold, engine F, XLB. KO: SIC 2080, Beverages—Non-Alcoholic, engine A, XLP |
 | Live (round 3) | `/quant/AAPL?tab=trend` and `GET /api/quant/AAPL?refresh=1` on the dev server | 200, engine A; stage strip shows stage numbers and dates; the last stage week and price week are 2026-11-23 (the last close), not the coming Friday; no console errors |
 | Build | `npm run build` | pass; `/quant`, `/quant/[ticker]`, `/api/quant/[ticker]` listed |
 | Existing UI rules | `Implementations/consumer-remaster/acceptance/*` | pass, after removing uppercase table headers |
