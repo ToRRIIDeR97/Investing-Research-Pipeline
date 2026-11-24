@@ -259,6 +259,42 @@ paths and scripts don't exist (import/ENOENT failures are expected for new modul
   present. The checks now assert what AC-1 means: upstream commit `b0ff599` is an ancestor of HEAD, and
   more than 40 commits are reachable from HEAD but not from the base `d82fd63`. The assertion is no weaker.
 
+## Defects found in review
+
+- AC-16 / invariant "the model never sees `stock_rating`" (`src/lib/research/reporting/store.ts:loadReportInputs`).
+  - Expected: no model packet carries the rating.
+  - Actual: every artifact outside the `products` list reaches the outline, section, review and
+    team-request packets, so the rating would enter prompts and change their layout. AGENTS.md says
+    that needs an approved paid live test.
+  - Simply excluding the rating from report inputs would have hidden it from the report's valuation
+    tile, which renders from `document.artifacts`.
+  - Fix: `MODEL_HIDDEN_REPORT_TYPES` and `modelVisibleArtifacts` in `store.ts`, applied in
+    `splitReportArtifacts` and the team-requests packet. The document still embeds and hashes the rating.
+    Owner answers read only their stage-contract types, and chat uses an allowlist, so neither sees it.
+  - Regression test added: `acceptance/p4b-model-hidden.test.ts`.
+
 ## Completion evidence
 
-Filled in after implementation.
+All of it was produced by the same single agent that wrote the plan and the tests.
+
+| Check | Command (repository root) | Result |
+| --- | --- | --- |
+| Acceptance | `npx tsx --test Implementations/pragma-xbrl-merge/acceptance/*.test.ts Implementations/pragma-xbrl-merge/acceptance/*.test.tsx` | 28 pass, 0 fail |
+| Verification | `npx tsx --test Implementations/pragma-xbrl-merge/verification/*.test.ts Implementations/pragma-xbrl-merge/verification/*.test.tsx` | 23 pass, 0 fail |
+| Frozen-copy diff | `diff -r` against the scratchpad copy | Only the two recorded AC-1 changes |
+| Lint | `npm run lint` | 0 errors (117 existing warnings; none in new code) |
+| Types | `npx tsc --noEmit` | pass |
+| Unit | `npm run test:unit` | 715 pass, 0 fail, 64 skipped (database-gated) |
+| Build | `npm run build` | pass |
+| Warehouse | `python -m compileall -q src tests scripts` in `services/xbrl/sec-xbrl-warehouse` | pass (exit 0) |
+
+Not run, and why:
+- `npm run test:db` and `npm run test:sofi-v3` need a separate test database; none was set up for this
+  change. The handler wiring (AC-16) is checked by source assertions and by reading the end-to-end
+  test's artifact-lifecycle assertions: the final gate accepts every current artifact, so `stock_rating`
+  ends `accepted`.
+- No live run against a running warehouse: the Docker daemon isn't running on this machine, and the
+  warehouse holds only AAPL. AC-6 to AC-9 are verified with HTTP stubs only.
+- Warehouse ruff, mypy and pytest: no warehouse code changed.
+- AC-0 (push the Pragma banner, archive the repos) is waiting on the user's approval. The banner commits
+  exist only in scratchpad clones.

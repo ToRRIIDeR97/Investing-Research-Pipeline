@@ -356,7 +356,7 @@ Company genesis follows the same rule for citations: IDs still unknown after its
 
 ## Stock rating
 
-After its sub-artifacts, `decision_synthesis` writes a code-built `stock_rating` artifact (`saveStockRating` in `handlers/decision-synthesis.ts`, pure functions in `src/lib/research/rating/`). These methods come from the deprecated Pragma platform (PragValue's deviation bands and PragTrend). No model writes or sees the rating. It is information, not a gate. If building it throws, a withheld rating with `withheld_reason: "Rating failed: …"` is stored and the stage continues.
+After its sub-artifacts, `decision_synthesis` writes a code-built `stock_rating` artifact (`saveStockRating` in `handlers/decision-synthesis.ts`, pure functions in `src/lib/research/rating/`). These methods come from the deprecated Pragma platform (PragValue's deviation bands and PragTrend). No model writes or sees the rating. The report document embeds and hashes it like any report input, but `modelVisibleArtifacts` (`reporting/store.ts`, `MODEL_HIDDEN_REPORT_TYPES`) drops it from the report, review and team-request packets, so prompts are unchanged. It is information, not a gate. If building it throws, a withheld rating with `withheld_reason: "Rating failed: …"` is stored and the stage continues.
 
 - **Inputs.**
   - From `valuation_scenario_set`: `current_market_price`, `value_today_{bear,base,bull}`, `valuation_status` and `sanity.flags`.
