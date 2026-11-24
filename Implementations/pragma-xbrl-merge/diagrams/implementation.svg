@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 400" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">
+  <title>Implementation detail</title>
+  <desc>loadCompanyFacts coverage check and fallback, and buildStockRating inputs and outputs.</desc>
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#334155"/></marker></defs>
+  <rect width="760" height="400" fill="#ffffff"/>
+  <text x="20" y="26" font-size="15" font-weight="600" fill="#1e293b">Implementation detail</text>
+
+  <text x="20" y="52" font-weight="600" fill="#1e293b">loadCompanyFacts (AC-6..AC-8)</text>
+  <rect x="20" y="62" width="160" height="40" rx="6" fill="#fff" stroke="#94a3b8"/><text x="30" y="86" fill="#1e293b">warehouseUrlFromEnv</text>
+  <line x1="180" y1="82" x2="210" y2="82" stroke="#334155" marker-end="url(#a)"/>
+  <rect x="212" y="62" width="170" height="40" rx="6" fill="#fff" stroke="#94a3b8"/><text x="222" y="80" fill="#1e293b">GET /filings (paged)</text><text x="222" y="95" fill="#475569">limit 1000</text>
+  <line x1="382" y1="82" x2="412" y2="82" stroke="#334155" marker-end="url(#a)"/>
+  <rect x="414" y="62" width="160" height="40" rx="6" fill="#fff" stroke="#94a3b8"/><text x="424" y="80" fill="#1e293b">newest periodic</text><text x="424" y="95" fill="#475569">from submissions ≤ cutoff</text>
+  <line x1="574" y1="82" x2="604" y2="82" stroke="#334155" marker-end="url(#a)"/>
+  <rect x="606" y="62" width="134" height="40" rx="6" fill="#fff" stroke="#94a3b8"/><text x="614" y="80" fill="#1e293b">GET /facts per</text><text x="614" y="95" fill="#1e293b">accession (paged)</text>
+  <line x1="673" y1="102" x2="673" y2="128" stroke="#334155" marker-end="url(#a)"/>
+  <rect x="520" y="130" width="220" height="40" rx="6" fill="#ecfdf5" stroke="#15803d"/><text x="530" y="148" fill="#1e293b">warehouseFactsToCompanyFacts</text><text x="530" y="163" fill="#15803d">AC-5 · provider xbrl_warehouse</text>
+  <rect x="20" y="130" width="360" height="40" rx="6" fill="#fffbeb" stroke="#b45309"/><text x="30" y="148" fill="#1e293b">any failure or missing filing → SEC companyfacts</text><text x="30" y="163" fill="#b45309">origin.reason = "XBRL warehouse …"; no URL → SEC (unchanged)</text>
+
+  <text x="20" y="212" font-weight="600" fill="#1e293b">buildStockRating (AC-10..AC-13), inside decision_synthesis after its sub-artifacts</text>
+  <rect x="20" y="224" width="200" height="110" rx="6" fill="#fff" stroke="#94a3b8"/>
+  <text x="30" y="244" fill="#1e293b">valuation_scenario_set</text>
+  <text x="30" y="262" fill="#475569">price, value_today_*, sanity</text>
+  <text x="30" y="284" fill="#1e293b">market_price_history</text>
+  <text x="30" y="302" fill="#475569">price / beta verified</text>
+  <text x="30" y="324" fill="#1e293b">stored bars + ^GSPC bars</text>
+  <line x1="220" y1="278" x2="250" y2="278" stroke="#334155" marker-end="url(#a)"/>
+  <rect x="252" y="224" width="250" height="110" rx="6" fill="#fff" stroke="#94a3b8"/>
+  <text x="262" y="244" fill="#1e293b">confidence.ts: quality, years, flags</text>
+  <text x="262" y="266" fill="#1e293b">grade.ts: adjusted deviation → band</text>
+  <text x="262" y="288" fill="#1e293b">grade.ts: composite (asym, credit z)</text>
+  <text x="262" y="310" fill="#1e293b">trend.ts: 9 rules, RS, Mansfield</text>
+  <text x="262" y="326" fill="#475569">build.ts: splitAdjustedCloses</text>
+  <line x1="502" y1="278" x2="532" y2="278" stroke="#334155" marker-end="url(#a)"/>
+  <rect x="534" y="224" width="206" height="110" rx="6" fill="#ecfdf5" stroke="#15803d"/>
+  <text x="544" y="244" fill="#1e293b">stock_rating (validated)</text>
+  <text x="544" y="264" fill="#475569">rated | withheld + reason</text>
+  <text x="544" y="284" fill="#475569">throws → withheld</text>
+  <text x="544" y="300" fill="#475569">"Rating failed: …" (AC-16)</text>
+  <text x="544" y="322" fill="#15803d">read by panel + measures</text>
+  <text x="20" y="368" fill="#475569">credit_z is null today (no FRED credit series in a run) → macro term 0, status unavailable.</text>
+</svg>
