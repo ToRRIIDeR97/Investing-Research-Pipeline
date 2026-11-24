@@ -296,5 +296,6 @@ Not run, and why:
 - No live run against a running warehouse: the Docker daemon isn't running on this machine, and the
   warehouse holds only AAPL. AC-6 to AC-9 are verified with HTTP stubs only.
 - Warehouse ruff, mypy and pytest: no warehouse code changed.
-- AC-0 (push the Pragma banner, archive the repos) is waiting on the user's approval. The banner commits
-  exist only in scratchpad clones.
+- AC-0 is done, with the user's approval (2026-11-24).
+  - The deprecation README was pushed to `ToRRIIDeR97/Pragma` (`97ebcaf1`) and `ToRRIIDeR97/pragma-lite` (`d4998b6`).
+  - Both repos are archived: `gh repo view` reports `isArchived: true`.
