@@ -6,9 +6,6 @@
 .main { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 18px; }
 @media (max-width: 860px) { .rail { max-width: none; } }
 
-.who { display: grid; justify-items: start; gap: 8px; }
-.who h1 { margin: 2px 0 0; font-size: 20px; line-height: 1.2; }
-.whoMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .viewBar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 
 /* Context strip: the first card of each tab (engine, or price data), so it lines up with the rail. */
@@ -43,25 +40,10 @@ button.contextBadge:hover { box-shadow: 0 0 0 4px var(--navy-soft); }
 .contextFigures dt { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
 .contextFigures dd { margin: 0; font-family: var(--font-display); font-size: 15px; font-weight: 700; }
 .sub { font-size: 12px; color: var(--ink-3); }
-.priceBlock { display: grid; }
 .price { font-family: var(--font-display); font-size: 32px; font-weight: 700; line-height: 1.1; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
-.grades { display: grid; gap: 10px; }
-/* Grade tiles take their grade's tint (data-grade, globals.css): A green through F red. */
-.grade { border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; background: var(--g-bg, var(--soft)); }
-.grade b { font-family: var(--font-display); font-size: 32px; line-height: 1.05; letter-spacing: -0.03em; color: var(--g-ink, var(--ink)); }
-.grade span { font-size: 11px; color: var(--ink-2); }
-.grade span:first-child { font-weight: 600; color: var(--g-ink, var(--ink-2)); }
 .pulse { font-weight: 700; color: var(--ink); }
 .pulse[data-tone="good"] { color: var(--positive); }
 .pulse[data-tone="bad"] { color: var(--critical); }
-.dot { display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; vertical-align: 1px; background: var(--ink-4); }
-.dot[data-tone="good"] { background: var(--positive); }
-.dot[data-tone="caution"] { background: var(--caution); }
-.dot[data-tone="bad"] { background: var(--critical); }
-.facts { display: flex; flex-direction: column; gap: 8px; font-size: 13px; border-top: 1px solid var(--line-soft); padding-top: 12px; }
-.facts div { display: flex; justify-content: space-between; gap: 8px; }
-.facts dt { color: var(--ink-3); }
-.facts dd { margin: 0; font-weight: 600; text-align: right; }
 /* PulseScore: red (overvalued) through a neutral middle to green (undervalued). */
 .gauge { position: relative; height: 10px; border-radius: 999px; margin: 8px 0 4px;
   background: linear-gradient(90deg, color-mix(in srgb, var(--critical) 75%, var(--tile)), var(--line) 50%, color-mix(in srgb, var(--positive) 75%, var(--tile))); }
@@ -70,7 +52,6 @@ button.contextBadge:hover { box-shadow: 0 0 0 4px var(--navy-soft); }
 @media (prefers-reduced-motion: no-preference) { .gaugePin { animation: pin-in 600ms var(--ease-spring); } }
 @keyframes pin-in { from { left: 50%; } }
 .gaugeScale { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-3); }
-.actions { display: flex; flex-direction: column; gap: 8px; }
 
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .toolbar p { margin: 0; font-size: 13px; color: var(--ink-3); }
@@ -216,6 +197,36 @@ button.contextBadge:hover { box-shadow: 0 0 0 4px var(--navy-soft); }
 .range52Scale b { font-family: var(--font-display); font-size: 18px; color: var(--ink); }
 .range52Body { display: flex; flex: 1; flex-direction: column; justify-content: center; }
 
-.gradeRow { display: flex; align-items: baseline; gap: 12px; }
-.grade .gradeLabel { font-size: 13px; font-weight: 600; color: var(--g-ink, var(--ink-2)); }
-.grade .gradeHow { margin-top: 2px; font-size: 11px; color: var(--ink-3); font-weight: 400; }
+
+/* Summary rail, layout R1 (prototype/workshop/quant-rail.html). One left edge, 16px between groups, 6px inside. */
+.rail { gap: 16px; }
+.rHead { display: grid; justify-items: start; gap: 10px; }
+.rWho { display: grid; gap: 2px; min-width: 0; }
+.rWho h1 { margin: 0; font-size: 17px; line-height: 1.2; letter-spacing: -0.02em; }
+.rWho span { font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rPrice { display: grid; gap: 4px; }
+.rPriceRow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.rMove { font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+.rMove[data-tone="good"] { color: var(--positive); }
+.rMove[data-tone="bad"] { color: var(--critical); }
+.verdict { display: grid; gap: 6px; padding: 14px; border-radius: 16px; background: var(--g-bg, var(--soft)); }
+.verdictTop { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; margin-bottom: 8px; }
+.verdictLetter { font-family: var(--font-display); font-size: 36px; font-weight: 800; line-height: 1; letter-spacing: -0.03em; color: var(--g-ink, var(--ink)); }
+.verdictText { display: grid; gap: 1px; min-width: 0; }
+.verdictText strong { font-size: 14px; font-weight: 700; color: var(--g-ink, var(--ink)); }
+.verdictText span { font-size: 11px; line-height: 1.35; color: var(--ink-3); }
+.verdictScore { display: flex; align-items: baseline; justify-content: space-between; font-size: 12px; color: var(--ink-2); }
+.verdict .gauge { margin: 4px 0 0; }
+.verdict .gaugeScale { margin-top: 2px; }
+.verdict .gaugeMid { border-left-color: var(--g-bg, var(--soft)); }
+.verdict .gaugePin { box-shadow: 0 0 0 3px var(--g-bg, var(--tile)), 0 2px 6px rgb(13 27 42 / 25%); }
+.rStats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
+.rStats > div { display: grid; grid-template-rows: auto auto auto; padding: 10px 12px; border-radius: 12px; background: var(--soft); }
+.rStats dt { font-size: 11px; color: var(--ink-3); }
+.rStats dd { margin: 2px 0 0; font-family: var(--font-display); font-size: 19px; font-weight: 700; line-height: 1.1; letter-spacing: -0.02em; color: var(--ink); }
+.rStats dd[data-tone="good"] { color: var(--positive); }
+.rStats dd[data-tone="bad"] { color: var(--critical); }
+.rStats small { font-size: 11px; color: var(--ink-3); }
+.rResearch { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.rResearchRow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--ink-3); }
+.rResearchRow b { font-weight: 600; color: var(--ink); text-align: right; }

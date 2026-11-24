@@ -54,6 +54,10 @@ The Quant page uses colour more freely, because colour is the fastest way to rea
   case name carries the colour. A meter runs from today's price to the case value; growth and exit multiple sit on a
   case-tinted pocket door that slides in from the left on hover or keyboard focus (on touch screens the picked tile
   keeps it open). The selected tile gets a fine case-coloured outline.
+- **Summary rail:** layout R1 (`prototype/workshop/quant-rail.html`). Logo, then name with ticker and industry; price
+  with its three-month move; sparkline; one verdict block (PQ-Grade letter and label, then the PulseScore gauge) tinted
+  by grade; the trend signals as a 2×2 stat grid; research status and the button under a rule. Every group shares the
+  rail's left and right edges, 16px between groups, and label/value pairs share a baseline.
 - **Layout:** the Value/Trend tabs sit above both columns, and each tab opens with a context strip card (the
   valuation engine, or the price data) so the summary rail and the first card start at the same height. The rail
   leads with the company logo.

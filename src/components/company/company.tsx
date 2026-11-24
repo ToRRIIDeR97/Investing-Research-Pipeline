@@ -11,17 +11,19 @@ const initials = (name: string) => name.replace(/\(.*?\)/g, "").replace(/,?\s+(i
   .slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "?";
 
 /** A company's logo, normalized to a common visual size; a ticker or initials monogram when there is none (or it fails to load). */
-export function CompanyLogo({ subject, name, ticker, size = 40, shape = "square" }: { subject: ProfileSubject | null; name: string; ticker?: string | null; size?: number; shape?: "square" | "round" }) {
+export function CompanyLogo({ subject, name, ticker, size = 40, shape = "square", maxWidth }: { subject: ProfileSubject | null; name: string; ticker?: string | null; size?: number; shape?: "square" | "round"; maxWidth?: number }) {
   const { profile, loading, throttled } = useCompanyProfile(subject);
   const [broken, setBroken] = useState<string | null>(null);
   const [ratio, setRatio] = useState<{ src: string; r: number } | null>(null);
   const src = profile?.logo_url && broken !== profile.logo_url ? profile.logo_url : null;
   const mono = ticker && ticker.length <= 4 ? ticker.toUpperCase() : initials(name);
   if (src) {
-    const box = logoBox(size, ratio?.src === src ? ratio.r : 1);
-    return <span className={styles.logo} data-shape={shape} style={{ width: size, height: size }}>
+    const box = logoBox(size, ratio?.src === src ? ratio.r : 1, maxWidth);
+    return <span className={styles.logo} data-shape={shape} style={{ width: maxWidth ? Math.max(size, box.width) : size, height: size }}>
       {/* eslint-disable-next-line @next/next/no-img-element -- remote Wikimedia logo, sized by its shape */}
       <img src={src} alt={`${name} logo`} referrerPolicy="no-referrer" loading="lazy" style={box}
+        // A cached image can finish loading before hydration attaches onLoad, so measure on mount too.
+        ref={(i) => { if (i?.complete && i.naturalWidth && i.naturalHeight && ratio?.src !== src) setRatio({ src, r: i.naturalWidth / i.naturalHeight }); }}
         onLoad={(e) => { const i = e.currentTarget; if (i.naturalWidth && i.naturalHeight) setRatio({ src, r: i.naturalWidth / i.naturalHeight }); }}
         onError={() => setBroken(src)} />
     </span>;

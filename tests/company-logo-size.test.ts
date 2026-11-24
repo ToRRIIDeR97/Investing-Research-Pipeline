@@ -20,3 +20,10 @@ test("very wide or tall logos stay inside the box, and bad ratios fall back to s
   assert.deepEqual(logoBox(48, 0), logoBox(48, 1));
   assert.deepEqual(logoBox(48, Number.NaN), logoBox(48, 1));
 });
+
+test("maxWidth lets a wordmark run wider than the square, same area while it fits", () => {
+  const wide = logoBox(44, 3.75, 96);
+  assert.ok(wide.width > 44 && wide.width <= 96, `width ${wide.width}`);
+  assert.ok(Math.abs(wide.width * wide.height - 31 * 31) / (31 * 31) < 0.1);
+  assert.deepEqual(logoBox(44, 1, 96), logoBox(44, 1), "square logos are unchanged");
+});

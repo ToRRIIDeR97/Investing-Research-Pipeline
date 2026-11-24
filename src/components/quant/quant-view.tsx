@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Card, Segmented, Tag } from "@/components/ui/primitives";
+import { Card, Segmented } from "@/components/ui/primitives";
 import ui from "@/components/research-ui.module.css";
 import type { QuantSnapshot } from "@/lib/api/quant";
 import { MultipleBand, PriceVolumeChart, RebasedChart, STAGE_FILL, Sparkline, StageStrip, ValueBuild, ValuePathChart, VcpDepths, type Case } from "./quant-charts";
@@ -66,42 +66,69 @@ function ContextStrip({ label, badge, title, line, figures, explain }: { label: 
   </section>;
 }
 
+/** "2026-11-23" → "23 Nov 2026". */
+const longDay = (d: string) => {
+  const t = Date.parse(`${d}T00:00:00Z`);
+  return Number.isFinite(t) ? new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }) : d;
+};
+
+/**
+ * The summary rail (workshop prototype/workshop/quant-rail.html, layout R1): identity, price and its three-month move,
+ * one verdict block (PQ-Grade with the PulseScore gauge), the trend signals as a 2×2 grid, then research. Every group
+ * shares the rail's left edge; label and value pairs share a baseline.
+ */
 function Rail({ s }: { s: QuantSnapshot }) {
   const v = s.value, t = s.trend;
   const pulse = v?.pulse_score ?? null;
+  const spark = t.charts.sparkline;
+  const move = spark.length > 1 && spark[0].close > 0 ? spark[spark.length - 1].close / spark[0].close - 1 : null;
+  const tone = trendTone(t.conditions.passed, t.conditions.evaluated);
+  const st = t.stage;
+  const rs = t.rs.combined;
+  const industry = s.industry !== "Unknown" ? s.industry : s.sic_description;
+  const status = s.research?.status ? s.research.status.replace(/_/g, " ") : null;
   return <aside className={styles.rail} aria-label={`${s.name} summary`}>
-    <div className={styles.who}>
-      <CompanyLogo subject={s.research ? { asset_id: s.research.asset_id } : { name: s.name, ticker: s.ticker, kind: "equity" }} name={s.name} ticker={s.ticker} size={52} />
-      <h1>{s.name}</h1>
-      <div className={styles.whoMeta}><Tag>{s.ticker}</Tag><span className={styles.sub}>{[s.sector !== "Unknown" ? s.sector : null, s.industry !== "Unknown" ? s.industry : s.sic_description].filter(Boolean).join(" · ")}</span></div>
+    <div className={styles.rHead}>
+      <CompanyLogo subject={s.research ? { asset_id: s.research.asset_id } : { name: s.name, ticker: s.ticker, kind: "equity" }} name={s.name} ticker={s.ticker} size={44} maxWidth={96} />
+      <div className={styles.rWho}>
+        <h1>{s.name}</h1>
+        <span>{[s.ticker, industry].filter(Boolean).join(" · ")}</span>
+      </div>
     </div>
-    <div className={styles.priceBlock}><span className={styles.price}>{money(s.price)}</span><span className={styles.sub}>close {s.as_of}</span></div>
-    <Sparkline points={t.charts.sparkline} />
-    {v ? <>
-      <div className={styles.grades}>
-        {/* One grade: PQ-Grade weighs the value gap together with the upside/downside balance (PulseGrade is the gap alone). */}
-        <div className={styles.grade} data-grade={gradeTone(v.pq_grade.grade)}>
-          <span>PQ-Grade</span>
-          <div className={styles.gradeRow}><b>{v.pq_grade.grade}</b><span className={styles.gradeLabel}>{v.pq_grade.label}</span></div>
-          <span className={styles.gradeHow}>Value gap and upside versus downside, weighed by confidence</span>
-        </div>
+
+    <div className={styles.rPrice}>
+      <div className={styles.rPriceRow}>
+        <span className={styles.price}>{money(s.price)}</span>
+        {move !== null && <span className={styles.rMove} data-tone={move >= 0 ? "good" : "bad"}>{pct(move)} 3m</span>}
       </div>
-      <div>
-        <span className={styles.sub}>PulseScore <b className={styles.pulse} data-tone={pulse === null ? undefined : pulse > 0.25 ? "good" : pulse < -0.25 ? "bad" : undefined}>{pulse === null ? "unavailable" : `${pulse > 0 ? "+" : ""}${pulse.toFixed(2)}`}</b></span>
-        <div className={styles.gauge} role="img" aria-label={pulse === null ? "PulseScore unavailable" : `PulseScore ${pulse.toFixed(2)} on a scale from −3 (overvalued) to +3 (undervalued)`}>
-          <span className={styles.gaugeMid} />{pulse !== null && <span className={styles.gaugePin} style={{ left: `${((Math.max(-3, Math.min(3, pulse)) + 3) / 6) * 100}%` }} />}
-        </div>
-        <div className={styles.gaugeScale}><span>−3 over</span><span>fair</span><span>+3 under</span></div>
+      <span className={styles.sub}>Close {longDay(s.as_of)}</span>
+    </div>
+    <Sparkline points={spark} />
+
+    {v ? <div className={styles.verdict} data-grade={gradeTone(v.pq_grade.grade)}>
+      <div className={styles.verdictTop}>
+        <b className={styles.verdictLetter}>{v.pq_grade.grade}</b>
+        <div className={styles.verdictText}><strong>{v.pq_grade.label}</strong><span>PQ-Grade · value gap and upside versus downside</span></div>
       </div>
-    </> : <p className={styles.unavailable}>PragValue unavailable: {s.value_reason}</p>}
-    <dl className={styles.facts}>
-      <div><dt>Trend</dt><dd><i className={styles.dot} data-tone={trendTone(t.conditions.passed, t.conditions.evaluated)} aria-hidden="true" />{t.conditions.score_label}</dd></div>
-      <div><dt>Stage</dt><dd>{t.stage && <i className={styles.dot} style={{ background: STAGE_FILL[t.stage.stage_number] ?? STAGE_FILL[0] }} aria-hidden="true" />}{t.stage ? `${t.stage.stage_number} · ${weeks(t.stage.weeks_in_stage)}` : "—"}</dd></div>
-      <div><dt>RS rating</dt><dd>{t.rs.combined ?? "—"}</dd></div>
-      {v && <div><dt>Confidence</dt><dd>{v.confidence}</dd></div>}
-      <div><dt>Research</dt><dd>{s.research ? <Link href={researchHref(s)}>{s.research.status ? `Open (${s.research.status.replace(/_/g, " ")})` : "Open"}</Link> : "Not started"}</dd></div>
+      <div className={styles.verdictScore}>
+        <span>PulseScore</span>
+        <b className={styles.pulse} data-tone={pulse === null ? undefined : pulse > 0.25 ? "good" : pulse < -0.25 ? "bad" : undefined}>{pulse === null ? "unavailable" : `${pulse > 0 ? "+" : ""}${pulse.toFixed(2)}`}</b>
+      </div>
+      <div className={styles.gauge} role="img" aria-label={pulse === null ? "PulseScore unavailable" : `PulseScore ${pulse.toFixed(2)} on a scale from −3 (overvalued) to +3 (undervalued)`}>
+        <span className={styles.gaugeMid} />{pulse !== null && <span className={styles.gaugePin} style={{ left: `${((Math.max(-3, Math.min(3, pulse)) + 3) / 6) * 100}%` }} />}
+      </div>
+      <div className={styles.gaugeScale}><span>Overvalued</span><span>Undervalued</span></div>
+    </div> : <p className={styles.unavailable}>PragValue unavailable: {s.value_reason}</p>}
+
+    <dl className={styles.rStats}>
+      <div><dt>Trend</dt><dd data-tone={tone === "caution" ? undefined : tone}>{t.conditions.passed}/{t.conditions.evaluated}</dd><span className={styles.srOnly}>{t.conditions.score_label}</span><small aria-hidden="true">conditions met</small></div>
+      <div><dt>Stage</dt><dd data-tone={st?.stage_number === 2 ? "good" : st?.stage_number === 4 ? "bad" : undefined}>{st ? st.stage_number : "—"}</dd><small>{st ? weeks(st.weeks_in_stage) : "needs 200 days"}</small></div>
+      <div><dt>RS rating</dt><dd data-tone={rs === null ? undefined : rs > 70 ? "good" : rs < 50 ? "bad" : undefined}>{rs ?? "—"}</dd><small>of 99</small></div>
+      <div><dt>Confidence</dt><dd>{v ? v.confidence : "—"}</dd><small>of 100</small></div>
     </dl>
-    <div className={styles.actions}>
+
+    <div className={styles.rResearch}>
+      <div className={styles.rResearchRow}><span>Research</span><b>{s.research ? (status ? status[0].toUpperCase() + status.slice(1) : "Started") : "Not started"}</b></div>
       <Link className={ui.primary} href={researchHref(s)}>{s.research ? "Open research" : "Deep research"}</Link>
     </div>
   </aside>;
