@@ -10,6 +10,8 @@ import ui from "@/components/research-ui.module.css";
 import type { QuantSnapshot } from "@/lib/api/quant";
 import { MultipleBand, PriceVolumeChart, RebasedChart, STAGE_FILL, Sparkline, StageStrip, ValueBuild, ValuePathChart, VcpDepths, type Case } from "./quant-charts";
 import { caseMeter, gradeTone } from "./tones";
+import { parseEngineNote } from "./engine-note";
+import { CompanyLogo } from "@/components/company/company";
 import styles from "./quant.module.css";
 
 export type QuantTab = "value" | "trend";
@@ -34,15 +36,25 @@ function trendTone(passed: number, evaluated: number): "good" | "caution" | "bad
   return r >= 2 / 3 ? "good" : r >= 1 / 3 ? "caution" : "bad";
 }
 
+/** The first card of each tab: what the numbers below are built from, as a label, a line, and a few figures. */
+function ContextStrip({ label, badge, title, line, figures }: { label: string; badge: string; title: string; line: string; figures: { label: string; value: string }[] }) {
+  return <section className={styles.context} aria-label={label}>
+    <span className={styles.contextBadge}>{badge}</span>
+    <div className={styles.contextText}><strong>{title}</strong><span>{line}</span></div>
+    {figures.length > 0 && <dl className={styles.contextFigures}>{figures.map((f) => <div key={f.label}><dt>{f.label}</dt><dd>{f.value}</dd></div>)}</dl>}
+  </section>;
+}
+
 function Rail({ s }: { s: QuantSnapshot }) {
   const v = s.value, t = s.trend;
   const pulse = v?.pulse_score ?? null;
   return <aside className={styles.rail} aria-label={`${s.name} summary`}>
     <div className={styles.who}>
-      <Tag>{s.ticker}</Tag>
-      <div><h1>{s.name}</h1><span className={styles.sub}>{[s.sector !== "Unknown" ? s.sector : null, s.industry !== "Unknown" ? s.industry : s.sic_description].filter(Boolean).join(" · ")}</span></div>
+      <CompanyLogo subject={s.research ? { asset_id: s.research.asset_id } : { name: s.name, ticker: s.ticker, kind: "equity" }} name={s.name} ticker={s.ticker} size={52} />
+      <h1>{s.name}</h1>
+      <div className={styles.whoMeta}><Tag>{s.ticker}</Tag><span className={styles.sub}>{[s.sector !== "Unknown" ? s.sector : null, s.industry !== "Unknown" ? s.industry : s.sic_description].filter(Boolean).join(" · ")}</span></div>
     </div>
-    <div><span className={styles.price}>{money(s.price)}</span> <span className={styles.sub}>close {s.as_of}</span></div>
+    <div className={styles.priceBlock}><span className={styles.price}>{money(s.price)}</span><span className={styles.sub}>close {s.as_of}</span></div>
     <Sparkline points={t.charts.sparkline} />
     {v ? <>
       <div className={styles.grades}>
@@ -81,7 +93,10 @@ function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick:
     forward: fwd && fwd.year > 0 ? fwd[k] : null, ret: y5 ? y5[`${k}_return`] : null,
   }));
   return <>
-    <div className={styles.toolbar}><p>{v.engine_result.engine_note}</p></div>
+    {(() => {
+      const e = parseEngineNote(v.engine_result.engine_note);
+      return <ContextStrip label="Valuation engine" badge={e.code ? `Engine ${e.code}` : "Engine"} title={e.audience ?? "Valuation engine"} line={e.method} figures={e.figures} />;
+    })()}
     {/* The scenarios as upside-first tiles (workshop V6, door D3): the upside leads, a meter runs from today's price
         to the case value, and growth and exit multiple slide in from the left on hover or keyboard focus. */}
     <div className={styles.cases} role="group" aria-label="Scenario">
@@ -150,7 +165,8 @@ function TrendTab({ s }: { s: QuantSnapshot }) {
   const t = s.trend;
   const pivots = t.pocket_pivots.events.map((e) => e.day);
   return <>
-    <div className={styles.toolbar}><p>Daily closes to {s.as_of}, split-adjusted · benchmarks S&amp;P 500{s.sector_etf ? ` and ${s.sector_etf}` : ""}</p></div>
+    <ContextStrip label="Price data" badge="Daily" title={`Daily closes to ${s.as_of}`} line="Split-adjusted, from stored daily bars"
+      figures={[{ label: "Benchmark", value: "S&P 500" }, ...(s.sector_etf ? [{ label: "Sector", value: s.sector_etf }] : [])]} />
     <Card title="Price, averages and volume"><PriceVolumeChart series={t.charts.price} pivots={pivots} /></Card>
     <div className={styles.cardGrid}>
       <Card title="Rebased to 100 a year ago">
@@ -183,26 +199,26 @@ function TrendTab({ s }: { s: QuantSnapshot }) {
 }
 
 /** The Quant view for a loaded snapshot. */
-export function QuantView({ snapshot, tab, onTab, onRefresh, refreshing, refreshError, onDismissError }: {
+export function QuantView({ snapshot, tab, onTab, refreshError, onDismissError }: {
   snapshot: QuantSnapshot; tab: QuantTab; onTab: (tab: QuantTab) => void; onRefresh?: () => void; refreshing?: boolean;
   refreshError?: string; onDismissError?: () => void;
 }) {
   // Held here, not in the Value tab, so the chosen scenario survives a switch to Trend and back.
   const [pick, setPick] = useState<Case>("base");
-  return <div className={styles.layout}>
+  // The tabs sit above both columns, so the rail and the first card of the tab start at the same height.
+  return <>
+    <div className={styles.viewBar}>
+      <Segmented label="Quant tab" options={["Value", "Trend"] as const} value={tab === "value" ? "Value" : "Trend"} onChange={(o) => onTab(o === "Value" ? "value" : "trend")} />
+    </div>
+    <div className={styles.layout}>
     <Rail s={snapshot} />
     <main className={styles.main}>
-      <div className={styles.toolbar}>
-        <Segmented label="Quant tab" options={["Value", "Trend"] as const} value={tab === "value" ? "Value" : "Trend"} onChange={(o) => onTab(o === "Value" ? "value" : "trend")} />
-        <span className={styles.spacer} />
-        <p>Computed {new Date(snapshot.computed_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}</p>
-        {onRefresh && <button type="button" className={ui.secondary} onClick={onRefresh} disabled={refreshing}>{refreshing ? "Refreshing…" : "Refresh"}</button>}
-      </div>
       {refreshError && <div className={styles.alertRow} role="alert">
         <p className={styles.unavailable}>Refresh failed ({refreshError.replace(/[.\s]+$/, "")}). The figures below are from the last snapshot.</p>
         {onDismissError && <button type="button" className={ui.secondary} onClick={onDismissError}>Dismiss</button>}
       </div>}
       {tab === "value" ? <ValueTab s={snapshot} pick={pick} setPick={setPick} /> : <TrendTab s={snapshot} />}
     </main>
-  </div>;
+    </div>
+  </>;
 }

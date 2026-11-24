@@ -54,6 +54,9 @@ The Quant page uses colour more freely, because colour is the fastest way to rea
   case name carries the colour. A meter runs from today's price to the case value; growth and exit multiple sit on a
   case-tinted pocket door that slides in from the left on hover or keyboard focus (on touch screens the picked tile
   keeps it open). The selected tile gets a fine case-coloured outline.
+- **Layout:** the Value/Trend tabs sit above both columns, and each tab opens with a context strip card (the
+  valuation engine, or the price data) so the summary rail and the first card start at the same height. The rail
+  leads with the company logo.
 - **Signals:** the PulseScore gauge runs red (overvalued) to green (undervalued); trend and stage facts carry a dot;
   unmet trend conditions are red, met ones green; returns and "vs price" figures are green or red.
 
