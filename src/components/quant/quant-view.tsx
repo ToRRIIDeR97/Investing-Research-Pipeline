@@ -11,6 +11,7 @@ import type { QuantSnapshot } from "@/lib/api/quant";
 import { MultipleBand, PriceVolumeChart, RebasedChart, STAGE_FILL, Sparkline, StageStrip, ValueBuild, ValuePathChart, VcpDepths, type Case } from "./quant-charts";
 import { caseMeter, gradeTone } from "./tones";
 import { parseEngineNote } from "./engine-note";
+import { HowItWasBuilt } from "./how-built";
 import { CompanyLogo } from "@/components/company/company";
 import styles from "./quant.module.css";
 
@@ -149,15 +150,7 @@ function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick:
         </table>
       </div>
     </Card>
-    <Card title="How it was built">
-      <ul className={styles.notes}>
-        <li>{d.dcf_base_cf_label}. Operating leverage {d.operating_leverage_trend.toLowerCase()}.</li>
-        {v.engine_result.quality_flags.map((f) => <li key={f}>{f}</li>)}
-        {v.engine_result.structural_flags.map((f) => <li key={f}>{f}</li>)}
-        {s.fundamentals && <li>Fiscal years {s.fundamentals.years.join(", ")} ({s.fundamentals.currency}) from {s.fundamentals.origin === "xbrl_warehouse" ? "the XBRL warehouse" : "SEC companyfacts"}.</li>}
-        {s.notes.map((n) => <li key={n}>{n}</li>)}
-      </ul>
-    </Card>
+    <HowItWasBuilt s={s} />
   </>;
 }
 

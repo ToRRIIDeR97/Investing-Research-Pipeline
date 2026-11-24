@@ -57,6 +57,9 @@ The Quant page uses colour more freely, because colour is the fastest way to rea
 - **Layout:** the Value/Trend tabs sit above both columns, and each tab opens with a context strip card (the
   valuation engine, or the price data) so the summary rail and the first card start at the same height. The rail
   leads with the company logo.
+- **How it was built:** workshop variant H3 (`prototype/workshop/how-it-was-built.html`). The metric weights lead as
+  one navy-step bar with a key, then Inputs, Assumptions and Caveats are drawers with counts (Inputs open by default).
+  Missing line items are struck-through red chips; engine flags are amber callouts; notes are plain lines.
 - **Signals:** the PulseScore gauge runs red (overvalued) to green (undervalued); trend and stage facts carry a dot;
   unmet trend conditions are red, met ones green; returns and "vs price" figures are green or red.
 

@@ -35,3 +35,18 @@ export function parseEngineNote(note: string | null | undefined): EngineNote {
   if ((method.match(/\(/g) ?? []).length > (method.match(/\)/g) ?? []).length) method = method.replace(/\s*\([^)]*$/, "");
   return { code, audience: code ? ENGINE_FOR[code] ?? ENGINE_FOR[code[0]] ?? null : null, method: method || text, figures };
 }
+
+/** "interest_expense" → "Interest expense"; "ebit" → "EBIT". */
+export function fieldLabel(key: string): string {
+  const words = key.split("_").map((w) => (["ebit", "ebitda", "fcf", "ocf", "eps"].includes(w) ? w.toUpperCase() : w));
+  const s = words.join(" ");
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Metric weights, heaviest first, as whole percentages; weights at or below zero are left out. */
+export function weightSegments(weights: Record<string, number> | null | undefined): { metric: string; pct: number }[] {
+  const rows = Object.entries(weights ?? {}).filter(([, w]) => Number.isFinite(w) && w > 0);
+  const total = rows.reduce((a, [, w]) => a + w, 0);
+  if (!total) return [];
+  return rows.map(([metric, w]) => ({ metric, pct: Math.round((w / total) * 100) })).sort((a, b) => b.pct - a.pct);
+}

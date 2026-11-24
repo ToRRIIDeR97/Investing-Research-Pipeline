@@ -24,3 +24,13 @@ test("engine notes split into code, audience, method and figures", () => {
   assert.deepEqual(b2.figures, []);
   assert.deepEqual(parseEngineNote("Something else"), { code: null, audience: null, method: "Something else", figures: [] });
 });
+
+test("fieldLabel and weightSegments shape the How it was built card", async () => {
+  const { fieldLabel, weightSegments } = await import("../src/components/quant/engine-note");
+  assert.equal(fieldLabel("interest_expense"), "Interest expense");
+  assert.equal(fieldLabel("ebit"), "EBIT");
+  assert.deepEqual(weightSegments({ "P/S": 0.1, "EV/EBIT": 0.3, "P/FCF": 0.25, "EV/EBITDA": 0.2, "P/OCF": 0.15, Bad: 0 }).map((x) => `${x.metric} ${x.pct}`),
+    ["EV/EBIT 30", "P/FCF 25", "EV/EBITDA 20", "P/OCF 15", "P/S 10"]);
+  assert.deepEqual(weightSegments({ A: 1, B: 3 }).map((x) => x.pct), [75, 25], "normalised to 100");
+  assert.deepEqual(weightSegments(undefined), []);
+});
