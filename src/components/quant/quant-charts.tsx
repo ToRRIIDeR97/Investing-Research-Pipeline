@@ -78,7 +78,7 @@ export function ValuePathChart({ history, projection, selected, current }: {
   return <figure style={{ margin: 0 }}>
     <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img" aria-label={label}>
       <text x={0} y={y(dataHi) + 4} fontSize="11" fill={C.ink3}>{money(dataHi)}</text>
-      <text x={0} y={y(dataLo) + 4} fontSize="11" fill={C.ink3}>{money(dataLo)}</text>
+      {Math.abs(y(dataLo) - y(dataHi)) >= 12 && <text x={0} y={y(dataLo) + 4} fontSize="11" fill={C.ink3}>{money(dataLo)}</text>}
       {proj.length > 1 && <path d={`${path(band)} Z`} fill={C.navySoft} />}
       <line x1={split} y1={top} x2={split} y2={bottom} stroke={C.lineStrong} strokeDasharray="4 4" />
       <text x={split - 4} y={bottom - 6} fontSize="12" fill={C.ink3} textAnchor="end">today {money(current)}</text>
@@ -144,7 +144,7 @@ export function MultipleBand({ points, metric, p25, p75, current, percentile }: 
   const bandTop = finite(p75) ? clamp(y(p75), top, bottom) : null, bandBottom = finite(p25) ? clamp(y(p25), top, bottom) : null;
   return <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img" aria-label={aria}>
     <text x={0} y={y(mHi) + 4} fontSize="11" fill={C.ink3}>{mHi.toFixed(1)}x</text>
-    <text x={0} y={y(mLo) + 4} fontSize="11" fill={C.ink3}>{mLo.toFixed(1)}x</text>
+    {Math.abs(y(mLo) - y(mHi)) >= 12 && <text x={0} y={y(mLo) + 4} fontSize="11" fill={C.ink3}>{mLo.toFixed(1)}x</text>}
     {bandTop !== null && bandBottom !== null && <rect x={left} y={bandTop} width={right - left} height={Math.max(2, bandBottom - bandTop)} fill={C.soft} />}
     {lo < 0 && hi > 0 && <line x1={left} y1={y(0)} x2={right} y2={y(0)} stroke={C.lineStrong} strokeDasharray="3 3" />}
     <path d={path(pts)} fill="none" stroke={C.navy} strokeWidth="2.5" />
@@ -176,7 +176,7 @@ export function PriceVolumeChart({ series, pivots }: {
   return <figure style={{ margin: 0 }}>
     <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img" aria-label={aria}>
       <text x={0} y={y(pHi) + 4} fontSize="11" fill={C.ink3}>{money(pHi)}</text>
-      <text x={0} y={y(pLo) + 4} fontSize="11" fill={C.ink3}>{money(pLo)}</text>
+      {Math.abs(y(pLo) - y(pHi)) >= 12 && <text x={0} y={y(pLo) + 4} fontSize="11" fill={C.ink3}>{money(pLo)}</text>}
       <text x={0} y={volBottom} fontSize="11" fill={C.ink3}>Volume</text>
       <path d={line("sma200")} fill="none" stroke={C.navy2} strokeWidth="2" />
       <path d={line("sma150")} fill="none" stroke={C.navy3} strokeWidth="2" strokeDasharray="6 4" />
@@ -233,6 +233,8 @@ export function RebasedChart({ stock, spx, sector, sectorSymbol }: {
 }
 
 export const STAGE_FILL: Record<number, string> = { 1: C.ink3, 2: C.navy, 3: C.caution, 4: C.critical, 0: C.lineStrong };
+/** Number colour on each fill, chosen for at least 4.5:1 contrast (white fails on the amber stage 3, so it uses ink). */
+export const STAGE_INK: Record<number, string> = { 1: C.tile, 2: C.tile, 3: C.ink, 4: C.tile, 0: C.ink };
 /** The Weinstein stage of each of the last 52 weeks. */
 export function StageStrip({ weeks }: { weeks: { week: string; stage_number: number }[] }) {
   if (!weeks.length) return <p className={styles.unavailable}>Stage history needs about nine months of weekly closes.</p>;
@@ -241,7 +243,7 @@ export function StageStrip({ weeks }: { weeks: { week: string; stage_number: num
     <div className={styles.strip} role="img" aria-label={`Weinstein stage over ${weeks.length} weeks: ${counts.map((c, i) => `${c} in stage ${i + 1}`).join(", ")}; latest stage ${weeks[weeks.length - 1].stage_number}.`}>
       {weeks.map((w, i) => <span key={w.week} title={`Week to ${w.week}: stage ${w.stage_number}`} style={{ background: STAGE_FILL[w.stage_number] ?? STAGE_FILL[0] }}>
         {/* The stage number where it changes, so the strip doesn't rely on colour alone. */}
-        {(i === 0 || weeks[i - 1].stage_number !== w.stage_number) && w.stage_number > 0 ? <b aria-hidden="true">{w.stage_number}</b> : null}
+        {(i === 0 || weeks[i - 1].stage_number !== w.stage_number) && w.stage_number > 0 ? <b aria-hidden="true" style={{ color: STAGE_INK[w.stage_number] }}>{w.stage_number}</b> : null}
       </span>)}
     </div>
     <div className={styles.stripAxis} aria-hidden="true"><span>{weeks[0].week}</span><span>{weeks[weeks.length - 1].week}</span></div>

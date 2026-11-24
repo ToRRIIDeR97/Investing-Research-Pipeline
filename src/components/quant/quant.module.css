@@ -46,7 +46,10 @@
 .mark[data-status="unavailable"] { background: var(--ink-3); }
 .strip { display: grid; grid-template-columns: repeat(52, minmax(0, 1fr)); gap: 2px; }
 .strip span { height: 34px; border-radius: 3px; position: relative; }
-.strip b { position: absolute; left: 2px; top: 2px; font-size: 10px; line-height: 1; color: var(--color-bg-surface); }
+.strip span { overflow: hidden; }
+.strip b { position: absolute; left: 2px; top: 2px; font-size: 10px; line-height: 1; }
+/* At phone width a cell is narrower than a digit; the legend, dates and text alternative carry the stages there. */
+@media (max-width: 640px) { .strip b { display: none; } }
 .stripAxis { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-3); margin-top: 4px; }
 .alertRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .notes { margin: 0; padding-left: 18px; font-size: 12px; color: var(--ink-3); line-height: 1.6; }

@@ -63,6 +63,19 @@ test("AC-10: axis labels mark the data's own high and low; the stage strip has n
   assert.match(path, />\$40\.00<\/text>/);
   const weeks = ["2025-01-03", "2025-01-10", "2025-01-17", "2025-01-24"].map((week, i) => ({ week, stage_number: i < 2 ? 1 : 2 }));
   const strip = renderToStaticMarkup(<c.StageStrip weeks={weeks} />);
-  assert.equal((strip.match(/<b aria-hidden="true">/g) ?? []).length, 2, "a number where the stage changes");
+  // Round 4: each number carries a per-stage ink colour (STAGE_INK) for contrast.
+  assert.equal((strip.match(/<b aria-hidden="true"[^>]*>/g) ?? []).length, 2, "a number where the stage changes");
   assert.match(strip, /2025-01-03<\/span><span>2025-01-24/);
+});
+
+test("AC-10 (round 4): stage numbers use the contrast ink for their fill, and a flat series shows one axis label", async () => {
+  const c = await import("../../../src/components/quant/quant-charts");
+  const { C } = await import("../../../src/components/ui/palette");
+  const weeks = [1, 2, 3, 4].map((stage_number, i) => ({ week: `2025-0${i + 1}-03`, stage_number }));
+  const strip = renderToStaticMarkup(<c.StageStrip weeks={weeks} />);
+  assert.match(strip, new RegExp(`color:${C.ink}">3<`), "stage 3 (amber) uses dark ink");
+  assert.equal((strip.match(new RegExp(`color:${C.tile}">[124]<`, "g")) ?? []).length, 3);
+  const days = Array.from({ length: 10 }, (_, i) => new Date(Date.UTC(2025, 0, 1 + i)).toISOString().slice(0, 10));
+  const flat = renderToStaticMarkup(<c.PriceVolumeChart series={days.map((day) => ({ day, close: 50, volume: 1, sma50: null, sma150: null, sma200: null }))} pivots={[]} />);
+  assert.equal((flat.match(/>\$50\.00<\/text>/g) ?? []).length, 1, "one label, not two on top of each other");
 });

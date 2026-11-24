@@ -137,7 +137,29 @@ export function benchmarkSyncOutcome(o: { spxSynced: boolean; etf: string | null
   return { notes, transient };
 }
 
-export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fetchImpl?: FetchLike; now?: Date } = {}): Promise<QuantInputs> {
+/** The loader's database and price-store calls. Production uses the real ones; tests pass fakes to check the wiring. */
+export type QuantIo = {
+  asset: (ticker: string, name: string) => Promise<{ id: string; name: string; researched: boolean }>;
+  syncPrices: (asset: { id: string; name: string }, ticker: string) => Promise<{ status: string }>;
+  storedPrices: (assetId: string, ticker: string) => Promise<{ bars: StoredBar[]; splits: SplitEvent[] }>;
+  syncBenchmark: () => Promise<{ status: string }>;
+  storedBenchmark: () => Promise<{ bars: StoredBar[]; splits: SplitEvent[] }>;
+  sectorEtf: (symbol: string) => Promise<{ etf: { symbol: string; bars: QuantBar[] } | null; synced: boolean }>;
+};
+
+function sqlIo(sql: Sql, fetchImpl: FetchLike | undefined, now: Date): QuantIo {
+  const f = fetchImpl ? { fetchImpl: fetchImpl as typeof fetch } : {};
+  return {
+    asset: (ticker, name) => quantAsset(sql, ticker, name),
+    syncPrices: (asset, ticker) => syncAssetPriceHistory(sql, { assetId: asset.id, assetName: asset.name, symbol: ticker, cutoffAt: null }, { ...f, now }),
+    storedPrices: (assetId, ticker) => loadStoredPriceHistory(sql, assetId, ticker, now),
+    syncBenchmark: () => syncBenchmarkPriceHistory(sql, null, f),
+    storedBenchmark: () => loadBenchmarkPriceHistory(sql, now),
+    sectorEtf: (symbol) => syncEtf(sql, symbol, fetchImpl),
+  };
+}
+
+export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fetchImpl?: FetchLike; now?: Date; io?: QuantIo } = {}): Promise<QuantInputs> {
   const ticker = rawTicker.trim().toUpperCase();
   if (!TICKER_PATTERN.test(ticker)) throw new QuantInputError("invalid_ticker", `"${rawTicker}" is not a ticker symbol.`);
   const fetchImpl = options.fetchImpl ?? fetchCapped;
@@ -170,20 +192,20 @@ export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fe
     fundamentalsReason = "Not an SEC filer.";
   }
 
-  const asset = await quantAsset(sql, ticker, name);
-  const sync = await syncAssetPriceHistory(sql, { assetId: asset.id, assetName: asset.name, symbol: ticker, cutoffAt: null },
-    options.fetchImpl ? { fetchImpl: options.fetchImpl as typeof fetch, now } : { now });
-  const stored = await loadStoredPriceHistory(sql, asset.id, ticker, now);
+  const io = options.io ?? sqlIo(sql, options.fetchImpl, now);
+  const asset = await io.asset(ticker, name);
+  const sync = await io.syncPrices(asset, ticker);
+  const stored = await io.storedPrices(asset.id, ticker);
   const priced = priceSyncOutcome(ticker, sync.status === "synced", stored.bars.length);
   notes.push(...priced.notes);
   transient.push(...priced.transient);
 
-  const benchSync = await syncBenchmarkPriceHistory(sql, null, options.fetchImpl ? { fetchImpl: options.fetchImpl as typeof fetch } : {});
-  const benchmark = await loadBenchmarkPriceHistory(sql, now);
+  const benchSync = await io.syncBenchmark();
+  const benchmark = await io.storedBenchmark();
   const sector = sectorFromSic(sic);
   let sectorEtf: QuantInputs["sector_etf"] = null, etfSynced = false;
   if (sector.etf) {
-    try { const r = await syncEtf(sql, sector.etf, options.fetchImpl); sectorEtf = r.etf; etfSynced = r.synced; } catch { /* reported by benchmarkSyncOutcome */ }
+    try { const r = await io.sectorEtf(sector.etf); sectorEtf = r.etf; etfSynced = r.synced; } catch { /* reported by benchmarkSyncOutcome */ }
   }
   const benched = benchmarkSyncOutcome({ spxSynced: benchSync.status === "synced", etf: sector.etf, etfSynced, etfStored: !!sectorEtf });
   notes.push(...benched.notes);

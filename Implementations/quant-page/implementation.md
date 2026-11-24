@@ -212,6 +212,17 @@ What changed in response, by criterion:
   - `p5b-page-review.test.tsx`: tab parsing, chart edge cases, forward values, accessible marks, no raw hex, Suspense, and the runtime AC-11 check.
   - `p4c-review2.test.tsx` (round 2): price-sync and submissions failures, mining routing, the narrowest SIC range, Python-exact rounding, ordinals, money text, and the refresh-error and ticker-change states.
 
+### Review round 4 (scores 10, 9.5, 9.5)
+
+- **AC-1/AC-9 (loader seam).**
+  - `loadQuantInputs` takes an optional `io` (`QuantIo`) for its database and price-store calls. Production builds the real ones (`sqlIo`).
+  - `p4e-loader.test.ts` runs the real loader with SEC and Yahoo stubbed and an in-memory store. It covers a filer with companyfacts down, all three sync failures over stored bars (then not cached by `getQuantSnapshot`), a failed sync with nothing stored (503) against a working one (404), submissions down (503), a non-filer, and an ETF refused before anything is stored.
+  - A database-backed `test:db` run still wasn't done: the dev database has a live worker, and this shell can't create the separate test database.
+- **AC-10.**
+  - Stage numbers take a per-fill ink (`STAGE_INK`); every pair is at least 4.5:1, and stage 3's amber uses dark ink.
+  - Cells clip their digit, and digits hide below 640px.
+  - The low axis label is dropped when it would overlap the high one.
+
 ### Review round 3 (scores 9, 8.5, 9)
 
 - **AC-3 (mining, decision recorded).** SIC 1000–1499 always uses engine F, including loss-making explorers; Pragma would have sent a loss-making gold explorer to B. The plan's rule is followed as written. Building-materials quarrying (1400–1499) is in the range and is valued with F's commodity multiples under its own industry name.
@@ -260,12 +271,12 @@ The plan, the tests and the code have one author (a single agent). The parity go
 
 | Check | Command (repository root) | Result |
 | --- | --- | --- |
-| Acceptance | `npx tsx --test Implementations/quant-page/acceptance/*.test.ts*` (ten files, after review round 3) | 68 pass, 0 fail |
+| Acceptance | `npx tsx --test Implementations/quant-page/acceptance/*.test.ts*` (eleven files, after review round 4) | 74 pass, 0 fail |
 | Value parity | `p2-value.test.ts`: eight engines against `pulsevalue.py` (0.5% tolerance); `p2c-fuzz.test.ts`: 400 mutated cases | 8 of 8 match; 400 of 400 match |
 | Trend parity | `p3-trend.test.ts`: stage, pivots and VCP against `pragtrend.py` and `pattern_detector.py` | 8 of 8 match |
 | Lint | `npm run lint` | 0 errors, 117 warnings (unchanged from main) |
 | Types | `npx tsc --noEmit` | pass |
-| Unit | `npm run test:unit` | 816 pass, 0 fail, 64 skipped |
+| Unit | `npm run test:unit` | 822 pass, 0 fail, 64 skipped |
 | Live (round 3) | `/quant/AAPL?tab=trend` and `GET /api/quant/AAPL?refresh=1` on the dev server | 200, engine A; stage strip shows stage numbers and dates; the last stage week and price week are 2026-11-23 (the last close), not the coming Friday; no console errors |
 | Build | `npm run build` | pass; `/quant`, `/quant/[ticker]`, `/api/quant/[ticker]` listed |
 | Existing UI rules | `Implementations/consumer-remaster/acceptance/*` | pass, after removing uppercase table headers |
