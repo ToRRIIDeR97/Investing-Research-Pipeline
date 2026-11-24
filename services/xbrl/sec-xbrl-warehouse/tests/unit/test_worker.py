@@ -1,0 +1,966 @@
+import asyncio
+from datetime import UTC, date, datetime
+from uuid import UUID
+
+import httpx
+import pytest
+
+from sec_xbrl_warehouse.domain.enums import JobType
+from sec_xbrl_warehouse.domain.models import FilingRef, JobRecord
+from sec_xbrl_warehouse.domain.xbrl import CURRENT_EXTRACTION_REVISION
+from sec_xbrl_warehouse.exceptions import (
+    ArtifactIntegrityError,
+    SchemaDriftError,
+    StateTransitionError,
+)
+from sec_xbrl_warehouse.infrastructure.storage.postgres import current_checkpoint_lease
+from sec_xbrl_warehouse.worker import build_handlers, is_retryable_exception
+
+
+def test_is_retryable_classifies_network_and_schema_errors() -> None:
+    assert is_retryable_exception(TimeoutError("t")) is True
+    assert is_retryable_exception(ConnectionError("c")) is True
+    assert is_retryable_exception(ArtifactIntegrityError("bad zip")) is False
+    assert is_retryable_exception(SchemaDriftError("header drift")) is False
+    assert is_retryable_exception(ValueError("plain")) is False
+
+
+def test_build_handlers_requires_runtime_services() -> None:
+    with pytest.raises(ValueError, match="services"):
+        build_handlers()
+
+
+class _FakeOrchestrator:
+    def __init__(self) -> None:
+        self.reconciled = []
+
+    async def download_artifact_job(self, payload, *, job_id=None):
+        return {"artifact_id": "A", "job_id": str(job_id)}
+
+    async def run_artifact_job(self, payload, *, job_id=None):
+        return {"artifact_id": "A"}
+
+    async def reconcile_artifact(self, artifact_id, *, expected_rows=None):
+        self.reconciled.append((artifact_id, expected_rows))
+        return {"artifact_id": artifact_id}
+
+
+def _job(job_type: JobType, payload=None) -> JobRecord:
+    from datetime import UTC, datetime
+    from uuid import uuid4
+
+    return JobRecord(
+        id=uuid4(),
+        job_type=job_type,
+        state="pending",
+        idempotency_key=f"k-{job_type.value}",
+        payload=payload or {},
+        attempts=0,
+        max_attempts=5,
+        priority=100,
+        available_at=datetime.now(UTC),
+    )
+
+
+def test_build_handlers_wires_orchestrator() -> None:
+    orchestrator = _FakeOrchestrator()
+    handlers = build_handlers(services={"orchestrator": orchestrator})
+    assert set(handlers) >= {JobType.DOWNLOAD_BULK, JobType.RECONCILE_ARTIFACT}
+    job = _job(JobType.DOWNLOAD_BULK, {"artifact": {"dataset": "notes"}})
+    result = asyncio.run(handlers[JobType.DOWNLOAD_BULK](job))
+    assert result == {"artifact_id": "A", "job_id": str(job.id)}
+    asyncio.run(
+        handlers[JobType.RECONCILE_ARTIFACT](
+            _job(JobType.RECONCILE_ARTIFACT, {"artifact_id": "X", "expected_rows": {"sub": 1}})
+        )
+    )
+    assert orchestrator.reconciled == [("X", {"sub": 1})]
+
+
+def test_worker_executes_and_completes_job() -> None:
+    from sec_xbrl_warehouse.config import Settings
+    from sec_xbrl_warehouse.worker import Worker
+
+    class _Control:
+        def __init__(self) -> None:
+            self.completed = []
+            self.failed = []
+
+        async def heartbeat_job(self, job_id, worker_id):
+            return None
+
+        async def complete_job(self, job_id, result=None, *, worker_id=None, attempt=None):
+            self.completed.append((job_id, result))
+
+        async def fail_job(self, job_id, error, retryable, *, worker_id=None, attempt=None):
+            self.failed.append((job_id, error, retryable))
+
+    control = _Control()
+    settings = Settings(
+        env="test",
+        worker_poll_seconds=0.01,
+        worker_lock_timeout_seconds=60,
+    )
+
+    async def handler(job):
+        return {"ok": True}
+
+    worker = Worker(settings, control, {JobType.DOWNLOAD_BULK: handler})
+    job = _job(JobType.DOWNLOAD_BULK)
+    asyncio.run(worker._execute(job))
+    assert control.completed and control.completed[0][0] == job.id
+    assert not control.failed
+
+
+def test_worker_propagates_checkpoint_lease_to_handler_task() -> None:
+    from sec_xbrl_warehouse.config import Settings
+    from sec_xbrl_warehouse.worker import Worker
+
+    class _Control:
+        async def complete_job(self, *args, **kwargs):
+            return None
+
+    seen = []
+
+    async def handler(job):
+        seen.append(current_checkpoint_lease())
+        return None
+
+    job = _job(JobType.DOWNLOAD_BULK)
+    worker = Worker(Settings(env="test"), _Control(), {JobType.DOWNLOAD_BULK: handler})
+    asyncio.run(worker._execute(job))
+    assert seen == [job]
+    assert current_checkpoint_lease() is None
+
+
+def test_worker_fails_job_on_handler_error() -> None:
+    from sec_xbrl_warehouse.config import Settings
+    from sec_xbrl_warehouse.worker import Worker
+
+    class _Control:
+        async def heartbeat_job(self, job_id, worker_id):
+            return None
+
+        async def complete_job(self, job_id, result=None, *, worker_id=None, attempt=None):
+            raise AssertionError("should not complete")
+
+        async def fail_job(self, job_id, error, retryable, *, worker_id=None, attempt=None):
+            self.captured = (job_id, error, retryable)
+
+    control = _Control()
+
+    async def handler(job):
+        raise SchemaDriftError("boom")
+
+    worker = Worker(
+        Settings(env="test", worker_poll_seconds=0.01, worker_lock_timeout_seconds=60),
+        control,
+        {JobType.DOWNLOAD_BULK: handler},
+    )
+    job = _job(JobType.DOWNLOAD_BULK)
+    asyncio.run(worker._execute(job))
+    assert control.captured[2] is False  # SchemaDrift is not retryable
+
+
+def test_worker_cancels_handler_when_lease_is_lost() -> None:
+    from sec_xbrl_warehouse.config import Settings
+    from sec_xbrl_warehouse.worker import Worker
+
+    class _Control:
+        async def complete_job(self, *args, **kwargs):
+            raise AssertionError("lost worker must not complete")
+
+        async def fail_job(self, *args, **kwargs):
+            raise AssertionError("lost worker must not fail the reclaimed job")
+
+    cancelled = False
+
+    async def handler(job):
+        nonlocal cancelled
+        try:
+            await asyncio.Future()
+        finally:
+            cancelled = True
+
+    worker = Worker(Settings(env="test"), _Control(), {JobType.DOWNLOAD_BULK: handler})  # type: ignore[arg-type]
+
+    async def lost(job):
+        raise StateTransitionError("reclaimed")
+
+    worker._heartbeat = lost  # type: ignore[method-assign]
+    asyncio.run(worker._execute(_job(JobType.DOWNLOAD_BULK)))
+    assert cancelled
+
+
+def _filing() -> FilingRef:
+    return FilingRef(
+        accession="0000000001-26-000001",
+        cik=1,
+        company_name="Example",
+        form="10-K",
+        filed_date=date(2026, 1, 2),
+        archive_directory_url="https://www.sec.gov/Archives/edgar/data/1/1",
+    )
+
+
+def test_build_handlers_wires_incremental_mapping_and_discovery(tmp_path) -> None:
+    from hashlib import sha256
+
+    from sec_xbrl_warehouse.config import Settings
+    from sec_xbrl_warehouse.domain.xbrl import XbrlDocumentMetadata, XbrlExtractionBundle
+    from sec_xbrl_warehouse.infrastructure.storage.object_store import LocalObjectStore
+    from sec_xbrl_warehouse.infrastructure.xbrl.extraction_io import write_json
+
+    class _Ingestor:
+        async def ingest(self, filing, *, extraction_revision, job_id):
+            return {"accession": filing.accession, "revision": extraction_revision}
+
+        async def reconcile(self, accession):
+            return {"accession": accession}
+
+    class _Mapper:
+        async def map_batches(self, facts, filing, *, extraction_revision, batch_bytes):
+            self.received = (tuple(facts), filing, extraction_revision)
+            yield ()
+
+    class _Warehouse:
+        def insert_canonical_facts(self, facts):
+            self.facts = facts
+            return len(facts)
+
+    class _Discovery:
+        async def discover_range(self, filed_from, filed_to, forms):
+            self.received = (filed_from, filed_to, forms)
+            return (_filing(),)
+
+    settings = Settings(env="test", temp_dir=tmp_path / "tmp", data_dir=tmp_path / "data")
+    store = LocalObjectStore(tmp_path / "objects", "sec-xbrl")
+    bundle = XbrlExtractionBundle(
+        filing=_filing(),
+        metadata=XbrlDocumentMetadata(
+            entrypoint="f.htm",
+            document_type="inline",
+            taxonomy_namespaces=(),
+            source_documents=("f.htm",),
+            software_name="arelle",
+            software_version="test",
+        ),
+        contexts=(),
+        concepts=(),
+        facts=(),
+        relationships=(),
+        footnotes=(),
+        validation_issues=(),
+        extraction_revision=3,
+    )
+    extraction = tmp_path / "extraction.json"
+    write_json(bundle, extraction, 1_000_000)
+    checksum = sha256(extraction.read_bytes()).hexdigest()
+    store.put_file(extraction, "silver/extraction.json")
+
+    class _Control:
+        def __init__(self):
+            self.jobs = []
+
+        async def enqueue_job(self, **kwargs):
+            self.jobs.append(kwargs)
+
+        async def extraction_checkpoint(self, accession, revision):
+            if (accession, revision) == (_filing().accession, 3):
+                return {"object_key": "silver/extraction.json", "sha256": checksum}
+            return None
+
+    mapper = _Mapper()
+    warehouse = _Warehouse()
+    discovery = _Discovery()
+    control = _Control()
+    handlers = build_handlers(
+        settings=settings,
+        services={
+            "object_store": store,
+            "ingestor": _Ingestor(),
+            "mapper": mapper,
+            "warehouse": warehouse,
+            "discovery": discovery,
+            "forms": ["10-K"],
+            "control": control,
+        },
+    )
+    filing_payload = _filing().model_dump(mode="json")
+
+    ingested = asyncio.run(
+        handlers[JobType.INGEST_FILING](
+            _job(JobType.INGEST_FILING, {"filing": filing_payload, "extraction_revision": 2})
+        )
+    )
+    assert ingested == {"accession": _filing().accession, "revision": 2}
+    reconciled = asyncio.run(
+        handlers[JobType.RECONCILE_FILING](
+            _job(JobType.RECONCILE_FILING, {"accession": _filing().accession})
+        )
+    )
+    assert reconciled == {"accession": _filing().accession}
+    # map_canonical loads facts from the saved extraction, not from the payload.
+    mapped = asyncio.run(
+        handlers[JobType.MAP_CANONICAL](
+            _job(
+                JobType.MAP_CANONICAL,
+                {"accession": _filing().accession, "extraction_revision": 3},
+            )
+        )
+    )
+    assert mapped == {
+        "accession": _filing().accession,
+        "extraction_revision": 3,
+        "mapped": 0,
+        "unmapped": 0,
+        "series": {"status": "skipped"},  # the fake warehouse can't store series
+    }
+    assert mapper.received == ((), _filing(), 3)
+    with pytest.raises(Exception, match="No saved extraction"):
+        asyncio.run(
+            handlers[JobType.MAP_CANONICAL](
+                _job(
+                    JobType.MAP_CANONICAL,
+                    {"accession": _filing().accession, "extraction_revision": 2},
+                )
+            )
+        )
+    discovered = asyncio.run(
+        handlers[JobType.DISCOVER_FILINGS](
+            _job(
+                JobType.DISCOVER_FILINGS,
+                {"filed_from": "2026-01-01", "filed_to": "2026-01-02"},
+            )
+        )
+    )
+    assert discovered == {"filings_enqueued": 1}
+    # Discovery fans out fetch jobs at the current extraction revision.
+    assert control.jobs[0]["job_type"] == JobType.FETCH_FILING.value
+    assert control.jobs[0]["idempotency_key"] == "fetch:0000000001-26-000001:3"
+
+
+def test_worker_handles_missing_handler_and_stops_while_idle() -> None:
+    from sec_xbrl_warehouse.config import Settings
+    from sec_xbrl_warehouse.worker import Worker
+
+    class _Control:
+        def __init__(self) -> None:
+            self.failed = []
+
+        async def claim_job(self, worker_id, lock_timeout_seconds, job_types=None):
+            return None
+
+        async def fail_job(self, *args, **kwargs):
+            self.failed.append((args, kwargs))
+
+    control = _Control()
+    worker = Worker(
+        Settings(env="test", worker_poll_seconds=0.01),
+        control,
+        {},  # type: ignore[arg-type]
+    )
+    asyncio.run(worker._execute(_job(JobType.DOWNLOAD_BULK)))
+    assert control.failed
+
+    async def run_until_stopped() -> None:
+        task = asyncio.create_task(worker.run())
+        await asyncio.sleep(0)
+        worker.stop()
+        await task
+
+    asyncio.run(run_until_stopped())
+
+
+def test_retryable_exception_unwraps_causes_and_database_errors() -> None:
+    wrapped = RuntimeError("wrapped")
+    wrapped.__cause__ = httpx.ReadTimeout("timeout")
+    assert is_retryable_exception(wrapped)
+
+    class DatabaseError(Exception):
+        pass
+
+    DatabaseError.__module__ = "sqlalchemy.exc"
+    assert is_retryable_exception(DatabaseError("deadlock detected"))
+    assert not is_retryable_exception(DatabaseError("invalid statement"))
+
+    # SQLAlchemy chains the asyncpg driver error as the cause; the message still decides.
+    class DeadlockDetectedError(Exception):
+        pass
+
+    DeadlockDetectedError.__module__ = "asyncpg.exceptions"
+    chained = DatabaseError("deadlock detected")
+    chained.__cause__ = DeadlockDetectedError("deadlock detected")
+    assert is_retryable_exception(chained)
+    permanent = DatabaseError("invalid statement")
+    permanent.__cause__ = DeadlockDetectedError("syntax error")
+    assert not is_retryable_exception(permanent)
+
+
+def test_worker_claims_only_requested_job_types() -> None:
+    from sec_xbrl_warehouse.config import Settings
+    from sec_xbrl_warehouse.worker import Worker
+
+    requested = []
+
+    class _Control:
+        async def claim_job(self, worker_id, lock_timeout_seconds, job_types=None):
+            requested.append(job_types)
+            worker.stop()
+            return None
+
+    for job_types, claimed in (
+        ([JobType.FETCH_FILING], (JobType.FETCH_FILING,)),
+        # Jobs that queue series rebuilds also claim them.
+        ([JobType.PARSE_FILING], (JobType.PARSE_FILING, JobType.REBUILD_SERIES)),
+    ):
+        requested.clear()
+        worker = Worker(
+            Settings(env="test", worker_poll_seconds=0.01),
+            _Control(),  # type: ignore[arg-type]
+            {},
+            job_types,
+        )
+        asyncio.run(worker.run())
+        assert requested == [claimed]
+
+
+def test_discovery_stores_companies_for_cik_and_daily_index_jobs() -> None:
+    from sec_xbrl_warehouse.domain.models import Company
+
+    class _Control:
+        def __init__(self):
+            self.jobs = []
+            self.companies = []
+
+        async def enqueue_job(self, **kwargs):
+            self.jobs.append(kwargs)
+
+        async def upsert_company(self, company):
+            self.companies.append(company)
+
+        async def known_company_ciks(self, ciks):
+            return {1} & set(ciks)
+
+        async def stale_company_ciks(self, ciks, fetched_before):
+            self.stale_cutoff = fetched_before
+            return set()
+
+    class _Submissions:
+        async def discover_with_company(self, cik, *, forms, filed_from, filed_to):
+            self.received = (cik, tuple(forms), filed_from, filed_to)
+            return Company(cik=cik, name="Example Corp", tickers=("EX",)), (_filing(),)
+
+    class _Daily:
+        async def discover_range(self, filed_from, filed_to, forms):
+            other = _filing().model_copy(update={"cik": 2, "accession": "0000000002-26-000001"})
+            return (_filing(), other)
+
+    class _Http:
+        def __init__(self):
+            self.urls = []
+
+        async def get_json(self, url):
+            self.urls.append(url)
+            return {"cik": "2", "name": "Second Corp", "tickers": ["SEC"]}
+
+    control, submissions, http = _Control(), _Submissions(), _Http()
+    handlers = build_handlers(
+        services={
+            "control": control,
+            "forms": ["10-K"],
+            "discovery": _Daily(),
+            "submissions": submissions,
+            "http": http,
+            "data_api_base": "https://data.sec.gov",
+        }
+    )
+    by_cik = asyncio.run(
+        handlers[JobType.DISCOVER_FILINGS](_job(JobType.DISCOVER_FILINGS, {"cik": 1}))
+    )
+    assert by_cik == {"filings_enqueued": 1, "companies_stored": 1}
+    assert submissions.received == (1, ("10-K",), None, None)
+    daily = asyncio.run(
+        handlers[JobType.DISCOVER_FILINGS](
+            _job(
+                JobType.DISCOVER_FILINGS,
+                {"filed_from": "2026-01-01", "filed_to": "2026-01-02"},
+            )
+        )
+    )
+    assert daily == {"filings_enqueued": 2, "companies_stored": 1}
+    assert http.urls == ["https://data.sec.gov/submissions/CIK0000000002.json"]
+    assert [company.cik for company in control.companies] == [1, 2]
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Code: 202. DB::Exception: Too many simultaneous queries", True),
+        ("Code: 210. DB::Exception: Connection reset by peer (NETWORK_ERROR)", True),
+        ("Code: 81. DB::Exception: Database xbrl does not exist (UNKNOWN_DATABASE)", False),
+        ("Code: 53. DB::Exception: Type mismatch", False),
+    ],
+)
+def test_clickhouse_codes_decide_retry(message: str, expected: bool) -> None:
+    from clickhouse_connect.driver.exceptions import DatabaseError
+
+    assert is_retryable_exception(DatabaseError(message)) is expected
+
+
+def test_s3_status_and_timeouts_decide_retry() -> None:
+    from botocore.exceptions import ClientError, ReadTimeoutError
+
+    throttled = ClientError(
+        {"Error": {"Code": "Unknown"}, "ResponseMetadata": {"HTTPStatusCode": 503}}, "GetObject"
+    )
+    assert is_retryable_exception(throttled)
+    assert is_retryable_exception(ReadTimeoutError(endpoint_url="http://minio:9000"))
+    missing = ClientError(
+        {"Error": {"Code": "NoSuchKey"}, "ResponseMetadata": {"HTTPStatusCode": 404}}, "GetObject"
+    )
+    assert not is_retryable_exception(missing)
+
+
+def test_retry_delay_is_jittered_and_capped() -> None:
+    from sec_xbrl_warehouse.infrastructure.storage.postgres import retry_delay_seconds
+
+    first = {round(retry_delay_seconds(1), 6) for _ in range(50)}
+    assert len(first) > 1 and all(1.0 <= value <= 2.0 for value in first)
+    assert all(1800.0 <= retry_delay_seconds(40) <= 3600.0 for _ in range(50))
+
+
+def test_queue_collector_exports_snapshot_and_failure() -> None:
+    from prometheus_client import CollectorRegistry, generate_latest
+
+    from sec_xbrl_warehouse.domain.models import QueueSnapshot
+    from sec_xbrl_warehouse.observability.metrics import QueueCollector
+
+    registry = CollectorRegistry()
+    registry.register(
+        QueueCollector(
+            lambda: QueueSnapshot(
+                counts={("load_bulk", "pending"): 3, ("ingest_filing", "dead"): 1},
+                oldest_ready_age_seconds=42.5,
+            )
+        )
+    )
+    text = generate_latest(registry).decode()
+    assert 'xbrl_queue_jobs{job_type="load_bulk",state="pending"} 3.0' in text
+    assert 'xbrl_queue_jobs{job_type="ingest_filing",state="dead"} 1.0' in text
+    assert "xbrl_queue_oldest_ready_age_seconds 42.5" in text
+    assert "xbrl_queue_snapshot_up 1.0" in text
+
+    def broken() -> QueueSnapshot:
+        raise TimeoutError
+
+    failing = CollectorRegistry()
+    failing.register(QueueCollector(broken))
+    text = generate_latest(failing).decode()
+    assert "xbrl_queue_snapshot_up 0.0" in text and "xbrl_queue_jobs{" not in text
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [(3, True), (32, True), (236, True), (394, True), (244, True), (285, True), (164, False)],
+)
+def test_clickhouse_code_list(code: int, expected: bool) -> None:
+    from clickhouse_connect.driver.exceptions import DatabaseError
+
+    assert is_retryable_exception(DatabaseError(f"Code: {code}. DB::Exception: x")) is expected
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [(403, True), (408, True), (429, True), (500, True), (503, True), (400, False), (404, False)],
+)
+def test_http_status_errors_retry_only_transient_statuses(status: int, expected: bool) -> None:
+    request = httpx.Request("GET", "https://www.sec.gov/x")
+    error = httpx.HTTPStatusError(
+        "status", request=request, response=httpx.Response(status, request=request)
+    )
+    assert is_retryable_exception(error) is expected
+
+
+def test_snapshot_on_loop_cancels_on_timeout() -> None:
+    import threading
+    import time
+
+    from sec_xbrl_warehouse.domain.models import QueueSnapshot
+    from sec_xbrl_warehouse.observability.metrics import snapshot_on_loop
+
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    cancelled = threading.Event()
+
+    async def slow() -> QueueSnapshot:
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+        return QueueSnapshot(counts={})
+
+    async def fast() -> QueueSnapshot:
+        return QueueSnapshot(counts={("x", "pending"): 1})
+
+    try:
+        with pytest.raises(TimeoutError):
+            snapshot_on_loop(slow, loop, timeout=0.05)()
+        deadline = time.monotonic() + 2
+        while not cancelled.is_set() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert cancelled.is_set()
+        assert snapshot_on_loop(fast, loop, timeout=1)().counts == {("x", "pending"): 1}
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(2)
+        loop.close()
+
+
+def test_busy_egress_lock_defers_job_without_spending_an_attempt() -> None:
+    from sec_xbrl_warehouse.config import Settings
+    from sec_xbrl_warehouse.infrastructure.http.egress_lock import SecEgressBusyError
+    from sec_xbrl_warehouse.worker import Worker
+
+    class _Control:
+        async def heartbeat_job(self, *args, **kwargs):
+            return None
+
+        async def fail_job(self, job_id, error, retryable, **kwargs):
+            self.captured = (error, retryable, kwargs)
+
+    async def handler(job):
+        raise SecEgressBusyError("another process holds the SEC egress lock")
+
+    control = _Control()
+    settings = Settings(
+        env="test", sec_egress_busy_retry_seconds=45, worker_lock_timeout_seconds=60
+    )
+    asyncio.run(
+        Worker(settings, control, {JobType.INGEST_FILING: handler})._execute(
+            _job(JobType.INGEST_FILING)
+        )
+    )
+    error, retryable, options = control.captured
+    assert "egress lock" in error and retryable
+    assert options["defer_seconds"] == 45
+    assert is_retryable_exception(SecEgressBusyError("busy"))
+
+
+def test_busy_deferral_that_hits_the_cap_is_counted_dead() -> None:
+    from sec_xbrl_warehouse.config import Settings
+    from sec_xbrl_warehouse.domain.enums import JobState
+    from sec_xbrl_warehouse.infrastructure.http.egress_lock import SecEgressBusyError
+    from sec_xbrl_warehouse.observability.metrics import JOB_TRANSITIONS
+    from sec_xbrl_warehouse.worker import Worker
+
+    class _Control:
+        async def heartbeat_job(self, *args, **kwargs):
+            return None
+
+        async def fail_job(self, job_id, error, retryable, **kwargs):
+            self.options = kwargs
+            return JobState.DEAD
+
+    async def handler(job):
+        raise SecEgressBusyError("busy")
+
+    control = _Control()
+    settings = Settings(
+        env="test", sec_egress_max_defer_seconds=120, worker_lock_timeout_seconds=60
+    )
+    dead = JOB_TRANSITIONS.labels(state="dead", job_type="ingest_filing")
+    before = dead._value.get()
+    asyncio.run(
+        Worker(settings, control, {JobType.INGEST_FILING: handler})._execute(
+            _job(JobType.INGEST_FILING)
+        )
+    )
+    assert control.options["max_defer_seconds"] == 120
+    assert dead._value.get() == before + 1
+
+
+def test_alert_rule_watches_egress_deferrals() -> None:
+    from pathlib import Path
+
+    from sec_xbrl_warehouse.config_files import load_yaml
+
+    rules = [
+        rule
+        for group in load_yaml(Path(__file__).resolve().parents[2] / "ops/alerts.yml")["groups"]
+        for rule in group["rules"]
+    ]
+    rule = next(rule for rule in rules if rule["alert"] == "XbrlSecEgressDeferrals")
+    assert 'state="deferred"' in rule["expr"] and "[15m]" in rule["expr"]
+    assert rule["for"] == "15m" and "30 minutes" in rule["annotations"]["summary"]
+
+
+def test_series_rebuild_runs_after_ingest_and_failures_do_not_fail_the_job() -> None:
+    calls: list[int] = []
+
+    class _Ingestor:
+        async def ingest(self, filing, *, extraction_revision, job_id):
+            return {"status": "complete", "accession": filing.accession}
+
+    class _Mapper:
+        def __init__(self) -> None:
+            self.metrics: dict = {}
+            self.candidate_priorities = {("us-gaap", "Revenues"): 2}
+
+    class _Warehouse:
+        fail = False
+
+        def insert_metric_series(self, table):
+            return table.num_rows
+
+        def command(self, sql, parameters=None):
+            return None
+
+        def query(self, sql, parameters=None):
+            calls.append(parameters["cik"])
+            if self.fail:
+                raise RuntimeError("clickhouse down")
+            return []
+
+    warehouse = _Warehouse()
+    handlers = build_handlers(
+        services={"ingestor": _Ingestor(), "mapper": _Mapper(), "warehouse": warehouse}
+    )
+    job = _job(JobType.INGEST_FILING, {"filing": _filing().model_dump(mode="json")})
+    result = asyncio.run(handlers[JobType.INGEST_FILING](job))
+    assert result["series"] == {"status": "rebuilt", "rows": 0}
+    assert calls == [_filing().cik]
+    warehouse.fail = True
+    result = asyncio.run(handlers[JobType.INGEST_FILING](job))
+    assert result["series"]["status"] == "failed" and "clickhouse down" in result["series"]["error"]
+
+
+def test_concurrent_jobs_each_keep_their_own_heartbeat_and_lease() -> None:
+    from sec_xbrl_warehouse.config import Settings
+    from sec_xbrl_warehouse.infrastructure.storage.postgres import current_checkpoint_lease
+    from sec_xbrl_warehouse.worker import Worker
+
+    jobs = [_job(JobType.PARSE_FILING, {"accession": f"0000000001-26-00000{i}"}) for i in range(3)]
+
+    class _Control:
+        def __init__(self) -> None:
+            self.queue = list(jobs)
+            self.claims = 0
+            self.heartbeats: list[tuple[object, int | None]] = []
+            self.completed: list[tuple[object, object]] = []
+            self.done = asyncio.Event()
+
+        async def claim_job(self, worker_id, lock_timeout_seconds, job_types=None):
+            self.claims += 1
+            return self.queue.pop(0) if self.queue else None
+
+        async def heartbeat_job(self, job_id, worker_id, attempt=None):
+            self.heartbeats.append((job_id, attempt))
+
+        async def complete_job(self, job_id, result=None, *, worker_id=None, attempt=None):
+            self.completed.append((job_id, result["lease"]))
+            if len(self.completed) == len(jobs):
+                self.done.set()
+
+        async def fail_job(self, *args, **kwargs):
+            raise AssertionError("no job should fail")
+
+    async def handler(record):
+        lease = current_checkpoint_lease()
+        await asyncio.sleep(0.08)
+        # Each task keeps its own job's lease while others run.
+        return {"lease": lease.id if lease is not None else None}
+
+    control = _Control()
+    settings = Settings(
+        env="test", worker_poll_seconds=0.01, worker_lock_timeout_seconds=60, worker_concurrency=2
+    )
+    worker = Worker(settings, control, {JobType.PARSE_FILING: handler})
+
+    async def heartbeat(job) -> None:
+        while True:
+            await control.heartbeat_job(job.id, settings.worker_id, job.attempts)
+            await asyncio.sleep(0.01)
+
+    worker._heartbeat = heartbeat  # type: ignore[method-assign]
+
+    async def run() -> None:
+        task = asyncio.create_task(worker.run())
+        await asyncio.wait_for(control.done.wait(), 5)
+        worker.stop()
+        await asyncio.wait_for(task, 2)
+
+    asyncio.run(run())
+    assert sorted(str(job_id) for job_id, lease in control.completed) == sorted(
+        str(job.id) for job in jobs
+    )
+    assert all(job_id == lease for job_id, lease in control.completed)
+    assert {job_id for job_id, _ in control.heartbeats} == {job.id for job in jobs}
+
+
+def test_fetch_enqueues_parse_and_parse_rebuilds_series() -> None:
+    from sec_xbrl_warehouse.domain.models import FilingPackageManifest
+
+    manifest = FilingPackageManifest(
+        filing=_filing(),
+        members=(),
+        acquired_at=datetime.now(UTC),
+        package_object_key="bronze/package.zip",
+    )
+
+    class _Ingestor:
+        async def fetch(self, filing, *, job_id=None):
+            return manifest
+
+        async def parse(self, accession, *, extraction_revision, job_id=None):
+            return {"accession": accession, "cik": 1, "status": "complete"}
+
+    class _Control:
+        def __init__(self) -> None:
+            self.jobs: list[dict] = []
+
+        async def enqueue_job(self, **kwargs):
+            self.jobs.append(kwargs)
+            return None
+
+    rebuilt: list[int] = []
+
+    class _Warehouse:
+        def insert_metric_series(self, table):
+            return 0
+
+    import sec_xbrl_warehouse.query.series as series
+
+    original = series.rebuild_metric_series
+    series.rebuild_metric_series = lambda warehouse, cik, **kwargs: rebuilt.append(cik) or 0  # type: ignore[assignment]
+    try:
+        control = _Control()
+        handlers = build_handlers(
+            services={"ingestor": _Ingestor(), "control": control, "warehouse": _Warehouse()}
+        )
+        fetched = asyncio.run(
+            handlers[JobType.FETCH_FILING](
+                _job(JobType.FETCH_FILING, {"filing": _filing().model_dump(mode="json")})
+            )
+        )
+        parsed = asyncio.run(
+            handlers[JobType.PARSE_FILING](
+                _job(JobType.PARSE_FILING, {"accession": _filing().accession})
+            )
+        )
+    finally:
+        series.rebuild_metric_series = original  # type: ignore[assignment]
+    assert fetched["package_object_key"] == "bronze/package.zip"
+    assert [job["job_type"] for job in control.jobs] == [JobType.PARSE_FILING.value]
+    assert control.jobs[0]["payload"]["extraction_revision"] == CURRENT_EXTRACTION_REVISION
+    assert parsed["series"]["status"] == "rebuilt"
+    assert rebuilt == [1]
+
+
+def test_requires_sec_and_parse_only_services_have_no_sec_client(monkeypatch, tmp_path) -> None:
+
+    import sec_xbrl_warehouse.infrastructure.http.egress_lock as egress
+    import sec_xbrl_warehouse.infrastructure.http.sec_client as sec_client
+    import sec_xbrl_warehouse.infrastructure.storage.clickhouse as clickhouse
+    import sec_xbrl_warehouse.mapping.postgres_repository as mapping_repository
+    from sec_xbrl_warehouse.config import Settings
+    from sec_xbrl_warehouse.worker import requires_sec, runtime_services
+
+    assert requires_sec([JobType.PARSE_FILING, JobType.MAP_CANONICAL]) is False
+    assert requires_sec([JobType.FETCH_FILING]) is True
+    assert requires_sec(None) is True
+
+    built: list[str] = []
+
+    class _Client:
+        def __init__(self, *args, **kwargs) -> None:
+            built.append("sec-client")
+
+    class _Lock:
+        def __init__(self, *args, **kwargs) -> None:
+            built.append("egress-lock")
+
+    class _Warehouse:
+        def __init__(self, settings) -> None:
+            pass
+
+        def close(self) -> None:
+            pass
+
+    class _Repository:
+        def __init__(self, settings, engine=None) -> None:
+            pass
+
+        async def seed_metrics(self, metrics) -> None:
+            pass
+
+    class _Control:
+        engine = None
+        object_store = None
+
+    monkeypatch.setattr(sec_client, "SecHttpClient", _Client)
+    monkeypatch.setattr(egress, "SecEgressLock", _Lock)
+    monkeypatch.setattr(clickhouse, "ClickHouseWarehouse", _Warehouse)
+    monkeypatch.setattr(mapping_repository, "PostgresMappingRepository", _Repository)
+
+    async def services(offline: bool) -> dict:
+        settings = Settings(
+            env="test",
+            data_dir=tmp_path / "data",
+            temp_dir=tmp_path / "tmp",
+            arelle_offline=offline,
+            object_store_backend="local",
+        )
+        async with runtime_services(settings, _Control(), [JobType.PARSE_FILING]) as found:
+            return found
+
+    offline = asyncio.run(services(True))
+    assert built == []
+    assert "http" not in offline and "discovery" not in offline
+    assert offline["ingestor"].ensure_sec_egress is None
+    online = asyncio.run(services(False))
+    assert built == ["egress-lock"], "online parse takes the egress lock lazily, no SEC client"
+    assert online["ingestor"].ensure_sec_egress is not None
+
+
+def test_parse_queues_one_coalesced_series_rebuild_job() -> None:
+    queued: list[tuple[int, float]] = []
+    rebuilt: list[int] = []
+
+    class _Ingestor:
+        async def parse(self, accession, *, extraction_revision, job_id=None):
+            return {"accession": accession, "cik": 7, "status": "complete"}
+
+    class _Control:
+        async def enqueue_series_rebuild(self, cik, delay_seconds):
+            queued.append((cik, delay_seconds))
+            return UUID(int=1)
+
+    class _Warehouse:
+        def insert_metric_series(self, table):
+            return 0
+
+    import sec_xbrl_warehouse.query.series as series
+    from sec_xbrl_warehouse.config import Settings
+
+    original = series.rebuild_metric_series
+    series.rebuild_metric_series = lambda warehouse, cik, **kwargs: rebuilt.append(cik) or 0  # type: ignore[assignment]
+    try:
+        handlers = build_handlers(
+            settings=Settings(env="test", series_rebuild_delay_seconds=30),
+            services={"ingestor": _Ingestor(), "control": _Control(), "warehouse": _Warehouse()},
+        )
+        parsed = asyncio.run(
+            handlers[JobType.PARSE_FILING](_job(JobType.PARSE_FILING, {"accession": "a"}))
+        )
+        assert parsed["series"] == {"status": "queued", "job_id": str(UUID(int=1))}
+        assert queued == [(7, 30)] and rebuilt == []
+        done = asyncio.run(
+            handlers[JobType.REBUILD_SERIES](_job(JobType.REBUILD_SERIES, {"cik": 7}))
+        )
+        assert done == {"cik": 7, "status": "rebuilt", "rows": 0}
+        assert rebuilt == [7]
+    finally:
+        series.rebuild_metric_series = original  # type: ignore[assignment]

@@ -1,0 +1,583 @@
+from __future__ import annotations
+
+import asyncio
+import inspect
+import json
+import tempfile
+import traceback
+from collections.abc import Awaitable, Callable, Sequence
+from pathlib import Path
+from typing import Any
+from uuid import UUID
+
+from sec_xbrl_warehouse.config import Settings
+from sec_xbrl_warehouse.config_files import load_yaml
+from sec_xbrl_warehouse.domain.enums import Severity
+from sec_xbrl_warehouse.domain.models import FilingPackageManifest, FilingRef, ValidationIssue
+from sec_xbrl_warehouse.domain.ports import (
+    BatchWriter,
+    ControlRepository,
+    FilingPackageStore,
+    ObjectStore,
+    Warehouse,
+    XbrlExtractor,
+)
+from sec_xbrl_warehouse.domain.xbrl import XbrlExtractionBundle
+from sec_xbrl_warehouse.exceptions import ArtifactIntegrityError, XbrlExtractionError
+from sec_xbrl_warehouse.infrastructure.http.egress_lock import EgressBusyError
+from sec_xbrl_warehouse.infrastructure.storage.clickhouse import (
+    XBRL_ENTITIES,
+    iter_shared_concept_tables,
+    iter_xbrl_tables,
+    xbrl_entity_records,
+)
+from sec_xbrl_warehouse.infrastructure.storage.hashing import sha256_bytes, sha256_file
+from sec_xbrl_warehouse.infrastructure.storage.maintenance import delete_filing_source
+from sec_xbrl_warehouse.infrastructure.storage.parquet import verify_checkpoint_objects
+from sec_xbrl_warehouse.infrastructure.xbrl.extraction_io import read_bundle, write_json
+from sec_xbrl_warehouse.mapping.canonical_mapper import CanonicalMapper
+from sec_xbrl_warehouse.normalization.fiscal_focus import derive_fiscal_focus
+from sec_xbrl_warehouse.observability.metrics import (
+    ROWS_PARSED,
+    ROWS_WRITTEN,
+    STAGE_LATENCY,
+    VALIDATION_ISSUES,
+)
+from sec_xbrl_warehouse.validation.filing_reconciliation import reconcile_filing_rows
+from sec_xbrl_warehouse.validation.issue_grouping import group_issues
+from sec_xbrl_warehouse.validation.xbrl_validation import reject_configured_issues
+
+FiscalFocus = Callable[
+    [XbrlExtractionBundle], tuple[XbrlExtractionBundle, Sequence[ValidationIssue]]
+]
+
+
+def sec_fiscal_focus(
+    bundle: XbrlExtractionBundle,
+) -> tuple[XbrlExtractionBundle, Sequence[ValidationIssue]]:
+    """Default fiscal focus: the SEC dei facts (`derive_fiscal_focus`)."""
+    filing, issues = derive_fiscal_focus(bundle)
+    return bundle.model_copy(update={"filing": filing}), issues
+
+
+# Silver entities older completed jobs may lack.
+_ENTITIES_ADDED_LATER = frozenset({"roles", "statement_lines", "cover_pages", "segment_facts"})
+
+
+class IncrementalFilingIngestor:
+    """Restartable, silver-first ingestion of an immutable extraction revision."""
+
+    def __init__(
+        self,
+        control: ControlRepository,
+        package_store: FilingPackageStore,
+        extractor: XbrlExtractor,
+        parquet_writer: BatchWriter,
+        warehouse: Warehouse,
+        *,
+        settings: Settings | None = None,
+        object_store: ObjectStore | None = None,
+        mapper: CanonicalMapper | None = None,
+        ensure_sec_egress: Callable[[], Awaitable[None]] | None = None,
+        fiscal_focus: FiscalFocus | None = None,
+    ) -> None:
+        self.control = control
+        self.package_store = package_store
+        self.extractor = extractor
+        self.parquet_writer = parquet_writer
+        self.warehouse = warehouse
+        self.settings = settings or Settings()
+        self.object_store = object_store
+        self.mapper = mapper
+        # Online Arelle may fetch taxonomies from SEC hosts; hold the SEC egress
+        # lock first so those requests count as this process's SEC traffic.
+        self.ensure_sec_egress = ensure_sec_egress
+        # Filing fiscal fields per source (`SourceRegistry.fiscal_focus`); SEC dei by default.
+        self.fiscal_focus = fiscal_focus or sec_fiscal_focus
+
+    async def ingest(
+        self, filing: FilingRef, *, extraction_revision: int = 1, job_id: UUID | None = None
+    ) -> dict[str, Any]:
+        """Legacy one-job path (`ingest_filing`): `fetch` then `parse`."""
+        self._check_arguments(extraction_revision, job_id)
+        completed = await self._completed(job_id)
+        if completed is not None:
+            return completed
+        manifest = await self.fetch(filing, job_id=job_id, extraction_revision=extraction_revision)
+        return await self.parse(
+            filing.accession,
+            extraction_revision=extraction_revision,
+            job_id=job_id,
+            manifest=manifest,
+        )
+
+    async def fetch(
+        self,
+        filing: FilingRef,
+        *,
+        job_id: UUID | None = None,
+        extraction_revision: int | None = None,
+    ) -> FilingPackageManifest:
+        """Download the filing package (SEC) and store it as one archive.
+
+        Records the package and manifest pointers on the filing row so a later
+        `parse` can find them. A resumed job reuses its saved package checkpoint.
+        """
+        self.settings.ensure_directories()
+        await _upsert_discovered_filing(self.control, filing)
+        try:
+            saved = await self._checkpoint(job_id, "package")
+            manifest = (
+                FilingPackageManifest.model_validate(saved)
+                if saved
+                else await self.package_store.download_package(filing)
+            )
+            if not manifest.package_object_key:
+                # A manifest cached before archive-only bronze: archive it now.
+                with tempfile.TemporaryDirectory(
+                    prefix="filing-", dir=self.settings.temp_dir
+                ) as directory:
+                    staging = Path(directory)
+                    await asyncio.to_thread(
+                        self.package_store.materialize_package, manifest, staging
+                    )
+                    manifest = await asyncio.to_thread(
+                        self.package_store.archive_package, manifest, staging
+                    )
+            await self.control.update_filing_package(manifest)
+            await self._save(job_id, "package", manifest.model_dump(mode="json"))
+            return manifest
+        except EgressBusyError:
+            raise
+        except Exception as exc:
+            await self._record_failure(filing.accession, exc, extraction_revision)
+            raise
+
+    async def parse(
+        self,
+        accession: str,
+        *,
+        extraction_revision: int = 1,
+        job_id: UUID | None = None,
+        manifest: FilingPackageManifest | None = None,
+    ) -> dict[str, Any]:
+        """Extract, validate, write, and publish a fetched filing; never downloads.
+
+        The package comes from `manifest`, the job's saved package checkpoint, or
+        the filing's stored manifest (`control.get_filing_manifest`). Without one
+        it raises a permanent `ArtifactIntegrityError`. Online Arelle may still
+        resolve taxonomies from SEC hosts; it then takes the SEC egress lock first.
+        """
+        self._check_arguments(extraction_revision, job_id)
+        completed = await self._completed(job_id)
+        if completed is not None:
+            return completed
+        self.settings.ensure_directories()
+        try:
+            saved = await self._checkpoint(job_id, "package")
+            if manifest is None:
+                manifest = (
+                    FilingPackageManifest.model_validate(saved)
+                    if saved
+                    else await self.control.get_filing_manifest(accession)
+                )
+            if manifest is None:
+                raise ArtifactIntegrityError(
+                    f"No stored package for {accession}; run fetch_filing first"
+                )
+            if manifest.filing.accession != accession:
+                raise ArtifactIntegrityError(
+                    f"Stored manifest belongs to {manifest.filing.accession}, not {accession}"
+                )
+            if saved is None:
+                await self._save(job_id, "package", manifest.model_dump(mode="json"))
+            filing = manifest.filing
+            with tempfile.TemporaryDirectory(
+                prefix="filing-", dir=self.settings.temp_dir
+            ) as directory:
+                staging = Path(directory)
+                extracted = await self._checkpoint(job_id, "extract")
+                if extracted and self.object_store is not None:
+                    # Plain `.json` (legacy) or `.json.zst`; `read_bundle` detects which.
+                    path = staging / "extraction.json"
+                    stored = await asyncio.to_thread(
+                        self.object_store.get_file,
+                        extracted["object_key"],
+                        path,
+                        max_bytes=self.settings.extraction_max_bytes,
+                    )
+                    if stored.checksum_sha256 != extracted["sha256"]:
+                        raise XbrlExtractionError("Saved extraction checksum mismatch")
+                    bundle = await asyncio.to_thread(
+                        read_bundle, path, self.settings.extraction_max_bytes
+                    )
+                else:
+                    entrypoint = await asyncio.to_thread(
+                        self.package_store.materialize_package, manifest, staging
+                    )
+                    if not manifest.package_object_key:
+                        manifest = await asyncio.to_thread(
+                            self.package_store.archive_package, manifest, staging
+                        )
+                    await self.control.update_filing_package(manifest)
+                    await self._save(job_id, "package", manifest.model_dump(mode="json"))
+                    if self.ensure_sec_egress is not None and not self.settings.arelle_offline:
+                        await self.ensure_sec_egress()
+                    # An extractor that can write the checkpoint file itself (Arelle)
+                    # serializes the bundle once; it is uploaded below as written.
+                    checkpoint_path = staging / "extraction.json.zst"
+                    extra = (
+                        {"checkpoint_path": checkpoint_path}
+                        if self.object_store is not None
+                        and "checkpoint_path"
+                        in inspect.signature(self.extractor.extract).parameters
+                        else {}
+                    )
+                    with STAGE_LATENCY.labels(pipeline="filing", stage="extract").time():
+                        bundle = await asyncio.to_thread(
+                            self.extractor.extract,
+                            entrypoint,
+                            filing,
+                            extraction_revision=extraction_revision,
+                            **extra,
+                        )
+                    if (
+                        bundle.extraction_revision != extraction_revision
+                        or bundle.filing.accession != filing.accession
+                    ):
+                        raise XbrlExtractionError("Extractor returned a different filing/revision")
+                    for entity, count in {
+                        "contexts": len(bundle.contexts),
+                        "concepts": len(bundle.concepts),
+                        "facts": len(bundle.facts),
+                        "relationships": len(bundle.relationships),
+                        "footnotes": len(bundle.footnotes),
+                    }.items():
+                        ROWS_PARSED.labels(source="arelle", table=entity).inc(count)
+                    if self.object_store is not None:
+                        # zstd-compressed; the checksum is of the stored object.
+                        path = checkpoint_path
+                        if not path.is_file():
+                            await asyncio.to_thread(
+                                write_json, bundle, path, self.settings.extraction_max_bytes
+                            )
+                        checksum = await asyncio.to_thread(sha256_file, path)
+                        key = f"silver/xbrl/extractions/accession={filing.accession}/revision={extraction_revision}/sha256={checksum}.json.zst"
+                        await asyncio.to_thread(
+                            self.object_store.put_file, path, key, expected_sha256=checksum
+                        )
+                        await self._save(job_id, "extract", {"object_key": key, "sha256": checksum})
+
+                # Filing-level fiscal fields come from the source adapter (SEC: the
+                # bundle's dei facts). This runs on fresh and checkpointed extractions
+                # alike, so replay derives the same values; the saved extraction stays
+                # as extracted.
+                focused, fiscal_issues = self.fiscal_focus(bundle)
+                bundle = focused.model_copy(
+                    update={"validation_issues": (*focused.validation_issues, *fiscal_issues)}
+                )
+                filing = bundle.filing
+                await self.control.upsert_filing(filing)
+                if await self._checkpoint(job_id, "validation") is None:
+                    # Repeated diagnostics are stored once per group; the reject
+                    # decision below still sees every individual issue.
+                    await self.control.record_validation_issues(
+                        group_issues(
+                            bundle.validation_issues, extraction_revision=extraction_revision
+                        )
+                    )
+                    for issue in bundle.validation_issues:
+                        VALIDATION_ISSUES.labels(
+                            source=issue.source, severity=issue.severity.value, code=issue.code
+                        ).inc()
+                    await self._save(
+                        job_id, "validation", {"issues": len(bundle.validation_issues)}
+                    )
+                policy_path = self.settings.config_dir / "validation.yml"
+                policy = load_yaml(policy_path).get("xbrl", {}) if policy_path.is_file() else {}
+                rejected = reject_configured_issues(
+                    bundle.validation_issues,
+                    tuple(Severity(value) for value in policy.get("reject_severities", ["fatal"])),
+                )
+                if rejected:
+                    raise XbrlExtractionError(
+                        f"Rejected validation issues: {sorted({item.code for item in rejected})}"
+                    )
+                if not bundle.facts:
+                    raise XbrlExtractionError(
+                        "Arelle extracted no facts; the filing was not published"
+                    )
+
+                counts = await self._persist_bundle(bundle, job_id)
+                if self.mapper is not None and await self._checkpoint(job_id, "canonical") is None:
+                    mapped = 0
+                    async for canonical in self.mapper.map_batches(
+                        bundle.facts,
+                        filing,
+                        extraction_revision=extraction_revision,
+                        batch_bytes=self.settings.arrow_batch_bytes,
+                    ):
+                        await asyncio.to_thread(self.warehouse.insert_canonical_facts, canonical)
+                        mapped += len(canonical)
+                    await self._save(job_id, "canonical", {"mapped": mapped})
+                await asyncio.to_thread(self.warehouse.publish_xbrl_bundle, bundle, counts)
+                await self.control.update_filing_package(manifest, extraction_revision)
+                reconciliation = await self.reconcile(filing.accession, filing.cik)
+                result = {
+                    "accession": filing.accession,
+                    "cik": filing.cik,
+                    "extraction_revision": extraction_revision,
+                    "entity_counts": counts,
+                    "validation_issue_count": len(bundle.validation_issues),
+                    "reconciliation": reconciliation,
+                    "status": "complete",
+                }
+                await self._save(job_id, "complete", result)
+                await self._cleanup_source(job_id, result)
+                return result
+        except EgressBusyError:
+            # A deferral, not a failure: the worker reschedules the job, so record no
+            # diagnostics here (they would repeat on every deferral).
+            raise
+        except Exception as exc:
+            await self._record_failure(accession, exc, extraction_revision)
+            raise
+
+    def _check_arguments(self, extraction_revision: int, job_id: UUID | None) -> None:
+        if not self.settings.retain_filing_source_files and (
+            job_id is None or self.object_store is None
+        ):
+            raise ValueError("Source cleanup requires checkpointed ingestion with object storage")
+        if extraction_revision < 1:
+            raise ValueError("Extraction revisions start at 1")
+        if job_id and self.object_store is None:
+            raise ValueError("Checkpointed extraction requires object storage")
+
+    async def _completed(self, job_id: UUID | None) -> dict[str, Any] | None:
+        """A completed job's result, after verifying its silver checkpoints."""
+        completed = await self._checkpoint(job_id, "complete")
+        if completed is None or self.object_store is None:
+            return None
+        self.settings.ensure_directories()
+        for entity in XBRL_ENTITIES:
+            checkpoint = await self._checkpoint(job_id, f"silver:{entity}")
+            if checkpoint is None:
+                if entity in _ENTITIES_ADDED_LATER:
+                    continue  # completed before the derived entities existed
+                raise XbrlExtractionError("Completed filing has no silver checkpoint")
+            await asyncio.to_thread(
+                verify_checkpoint_objects, checkpoint, self.object_store, self.settings
+            )
+        await self._cleanup_source(job_id, completed)
+        return completed
+
+    async def _cleanup_source(self, job_id: UUID | None, completed: dict[str, Any]) -> None:
+        if self.settings.retain_filing_source_files:
+            return
+        if self.object_store is None or job_id is None:
+            raise ValueError("Source cleanup requires checkpointed ingestion with object storage")
+        accession = completed["accession"]
+        if await self.control.source_package_in_use(accession, job_id):
+            return
+        package = await self._checkpoint(job_id, "package")
+        extraction = await self._checkpoint(job_id, "extract")
+        if not package or not extraction:
+            raise ArtifactIntegrityError(
+                "Source cleanup requires package and extraction checkpoints"
+            )
+        manifest = FilingPackageManifest.model_validate(package)
+        if manifest.filing.accession != accession:
+            raise ArtifactIntegrityError("Source cleanup checkpoint belongs to another filing")
+        await asyncio.to_thread(
+            delete_filing_source,
+            self.object_store,
+            self.settings,
+            manifest,
+            extraction,
+            completed["extraction_revision"],
+            apply=True,
+        )
+
+    async def _record_failure(
+        self, accession: str, exc: Exception, extraction_revision: int | None
+    ) -> None:
+        details: dict[str, Any] = {
+            "error": str(exc),
+            "traceback": traceback.format_exc(),
+            "extraction_revision": extraction_revision,
+        }
+        if self.object_store is not None:
+            payload = json.dumps(details, sort_keys=True).encode()
+            key = f"quarantine/filing/{accession}/sha256={sha256_bytes(payload)}.json"
+            await asyncio.to_thread(self.object_store.put_bytes, payload, key)
+            details = {"diagnostic_object_key": key, "extraction_revision": extraction_revision}
+        engine_issues = getattr(exc, "validation_issues", ())
+        await self.control.record_validation_issues(
+            group_issues(
+                (
+                    *engine_issues,
+                    ValidationIssue(
+                        source="filing",
+                        code=type(exc).__name__,
+                        severity=Severity.ERROR,
+                        accession=accession,
+                        message=str(exc)[:16000],
+                        details=details,
+                    ),
+                ),
+                extraction_revision=extraction_revision,
+            )
+        )
+
+    async def _checkpoint(self, job_id: UUID | None, stage: str) -> dict[str, Any] | None:
+        return await self.control.get_checkpoint(job_id, stage) if job_id else None
+
+    async def _save(self, job_id: UUID | None, stage: str, payload: dict[str, Any]) -> None:
+        if job_id:
+            await self.control.save_checkpoint(job_id, stage, payload)
+
+    async def _persist_bundle(
+        self, bundle: XbrlExtractionBundle, job_id: UUID | None = None
+    ) -> dict[str, int]:
+        for entity in XBRL_ENTITIES:
+            checkpoint = await self._checkpoint(job_id, f"silver:{entity}")
+            if checkpoint is not None and self.object_store is not None:
+                await asyncio.to_thread(
+                    verify_checkpoint_objects, checkpoint, self.object_store, self.settings
+                )
+                continue
+            tables = iter_xbrl_tables(
+                bundle, entity, self.settings.arrow_batch_rows, self.settings.arrow_batch_bytes
+            )
+            prefix = f"silver/xbrl/{entity}/filed_year={bundle.filing.filed_date.year}/accession={bundle.filing.accession}/revision={bundle.extraction_revision}"
+            objects = await asyncio.to_thread(
+                self.parquet_writer.write_batches,
+                tables,
+                destination_prefix=prefix,
+                partition_values={},
+            )
+            if entity == "concepts":
+                # Standard concepts are stored once per taxonomy version and shared
+                # by every filing that loads it; the checkpoint lists those objects.
+                objects += await asyncio.to_thread(self._write_shared_concepts, bundle)
+            count = len(xbrl_entity_records(bundle, entity))
+            ROWS_WRITTEN.labels(storage="parquet", table=entity).inc(count)
+            await self._save(
+                job_id,
+                f"silver:{entity}",
+                {
+                    "rows": count,
+                    "objects": [item.key for item in objects],
+                    "object_records": [item.model_dump(mode="json") for item in objects],
+                },
+            )
+        saved = await self._checkpoint(job_id, "gold")
+        if saved is not None:
+            return {key: int(value) for key, value in saved.items()}
+        # Inserts are replay-safe; publication is a separate, last-written marker.
+        counts = await asyncio.to_thread(self.warehouse.insert_xbrl_bundle, bundle)
+        await self._save(job_id, "gold", counts)
+        return counts
+
+    def _write_shared_concepts(self, bundle: XbrlExtractionBundle) -> tuple[Any, ...]:
+        objects: list[Any] = []
+        for prefix, table in iter_shared_concept_tables(
+            bundle, self.settings.arrow_batch_rows, self.settings.arrow_batch_bytes
+        ):
+            objects += self.parquet_writer.write_batches(
+                (table,), destination_prefix=prefix, partition_values={}
+            )
+        return tuple(objects)
+
+    async def reconcile(self, accession: str, cik: int | None = None) -> dict[str, Any]:
+        # ponytail: comparison holds one bounded filing; stream/partition if this ceiling is reached.
+        params: dict[str, Any] = {
+            "accession": accession,
+            "cik": cik,
+            "max_rows": self.settings.reconciliation_max_rows,
+            "max_bytes": self.settings.reconciliation_max_bytes,
+        }
+        budget = """ SETTINGS max_result_rows = %(max_rows)s,
+            max_result_bytes = %(max_bytes)s, result_overflow_mode = 'throw',
+            max_execution_time = 60, max_memory_usage = 536870912
+        """
+        # The `v_sec_*_latest` views apply an outer WHERE after their LIMIT BY, so a
+        # filter on them reads the whole table. These queries filter first (adsh is a
+        # LIMIT BY key, so the result is the same) and join only the filing's dimensions.
+        bulk_numeric = await asyncio.to_thread(
+            self.warehouse.query,
+            """
+            WITH n AS (
+                SELECT adsh, tag, version, ddate, qtrs, uom, dimh, iprx, value_raw, _artifact_id
+                FROM sec_numeric_facts FINAL WHERE adsh = %(accession)s
+                ORDER BY _source_period DESC, _source_revision DESC, _ingested_at DESC
+                LIMIT 1 BY adsh, tag, version, ddate, qtrs, uom, dimh, iprx
+            )
+            SELECT n.tag, n.version, n.ddate, n.qtrs, n.uom, n.value_raw, d.segments, d.segt
+            FROM n LEFT JOIN (
+                SELECT _artifact_id, dimh, segments, segt FROM sec_dimensions FINAL
+                WHERE dimh IN (SELECT dimh FROM sec_numeric_facts WHERE adsh = %(accession)s)
+            ) AS d ON n._artifact_id = d._artifact_id AND n.dimh = d.dimh
+            """
+            + budget,
+            params,
+        )
+        bulk_text = await asyncio.to_thread(
+            self.warehouse.query,
+            """
+            WITH n AS (
+                SELECT adsh, tag, version, ddate, qtrs, dimh, iprx, lang, txtlen, value,
+                       _artifact_id
+                FROM sec_text_facts FINAL WHERE adsh = %(accession)s
+                ORDER BY _source_period DESC, _source_revision DESC, _ingested_at DESC
+                LIMIT 1 BY adsh, tag, version, ddate, qtrs, dimh, iprx
+            )
+            SELECT n.tag, n.version, n.ddate, n.qtrs, n.lang, n.txtlen, n.value AS value_raw,
+                   d.segments, d.segt
+            FROM n LEFT JOIN (
+                SELECT _artifact_id, dimh, segments, segt FROM sec_dimensions FINAL
+                WHERE dimh IN (SELECT dimh FROM sec_text_facts WHERE adsh = %(accession)s)
+            ) AS d ON n._artifact_id = d._artifact_id AND n.dimh = d.dimh
+            """
+            + budget,
+            params,
+        )
+        if not bulk_numeric and not bulk_text:
+            return {"available": False, "reason": "no bulk representation yet"}
+        raw = await asyncio.to_thread(
+            self.warehouse.query,
+            """SELECT concept_namespace, concept_name, taxonomy_version, dimensions_json,
+                      period_kind, period_start, period_end, period_instant, value_kind,
+                      unit_id, unit_numerator_json, unit_denominator_json, language,
+                      value_decimal, value_text, is_nil, raw_value
+               FROM v_xbrl_facts_latest WHERE accession = %(accession)s"""
+            + (" AND cik = %(cik)s" if cik is not None else "")
+            + budget,
+            params,
+        )
+        result = await asyncio.to_thread(
+            reconcile_filing_rows, accession, bulk_numeric, bulk_text, raw
+        )
+        if self.object_store is not None:
+            data = json.dumps(result, sort_keys=True, default=str).encode()
+            key = f"reconciliation/filings/{accession}/sha256={sha256_bytes(data)}.json"
+            await asyncio.to_thread(self.object_store.put_bytes, data, key)
+            result["report_object_key"] = key
+        return result
+
+
+async def _upsert_discovered_filing(control: ControlRepository, filing: FilingRef) -> None:
+    """Upsert discovery metadata without erasing fiscal fields an extraction stored.
+
+    Repositories whose `upsert_filing` lacks the `keep_derived` keyword (test
+    doubles, older adapters) get a plain upsert; the post-extraction upsert
+    rewrites the derived fields either way.
+    """
+    parameters = inspect.signature(control.upsert_filing).parameters.values()
+    if any(
+        parameter.name == "keep_derived" or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    ):
+        await control.upsert_filing(filing, keep_derived=True)
+    else:
+        await control.upsert_filing(filing)
