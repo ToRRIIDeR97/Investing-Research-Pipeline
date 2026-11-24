@@ -10,7 +10,7 @@ import styles from "./page.module.css";
 import ui from "@/components/research-ui.module.css";
 import { useNotebook } from "@/components/notebook/use-notebook";
 import { InvestingNotebook } from "@/components/notebook/investing-notebook";
-import { NotebookDrawer } from "@/components/notebook/notebook-drawer";
+import { NOTEBOOK_OPEN_EVENT, NotebookDrawer } from "@/components/notebook/notebook-drawer";
 import { researchBriefAction } from "@/lib/research/brief-presentation";
 import { ResearchReport } from "@/components/research-report";
 import { FinancialStatements } from "@/components/financial-statements";
@@ -264,10 +264,13 @@ function ViewResearch() {
   const header = <>
     <AssetHero assetId={assetId} name={asset.canonical_name} ticker={ticker}
       meta={[cleanWords(asset.asset_kind.replace(/_asset/g, "")), asset.sector, asset.industry]}
-      status={activeTab !== "thesis" && activeTab !== "memo" ? <Tag tone={heroStatus(heroLabel)[1]}>{heroStatus(heroLabel)[0]}</Tag> : undefined}
+      // On Overview a waiting decision has its own strip, so the header tag would repeat it.
+      status={activeTab !== "thesis" && activeTab !== "memo" && !(activeTab === "overview" && heroLabel === "Needs your decision") ? <Tag tone={heroStatus(heroLabel)[1]}>{heroStatus(heroLabel)[0]}</Tag> : undefined}
       actions={<>
         <Link href={`/assets/${assetId}`} className={ui.secondary}>Asset details</Link>
         {ticker && <Link href={`/quant/${encodeURIComponent(ticker)}`} className={ui.secondary}>Quant</Link>}
+        {/* The notebook opens from here rather than a tab floating over the cards (NotebookDrawer headerTrigger). */}
+        {activeTab !== "notebook" && <button type="button" className={ui.secondary} onClick={() => window.dispatchEvent(new Event(NOTEBOOK_OPEN_EVENT))}>Notebook</button>}
         {data.activeRun&&<ResearchChat key={data.activeRun.id} runId={data.activeRun.id} evidence={data.report?.report_document?.evidence??[]} workbenchHref={(proposal)=>`${sectionHref('workbench')}&proposal=${encodeURIComponent(proposal)}`}/>}
         <Link href={`/assets/${assetId}/run?new=1`} className={ui.primary}>New research</Link>
       </>} />
@@ -332,7 +335,7 @@ function ViewResearch() {
       runs={data.runs.map((r) => ({ id: String(r.id), created_at: r.created_at, status: String(r.status), actual_cost_usd: r.actual_cost_usd, budget_limit_usd: r.budget_limit_usd, waiting_stage_key: r.waiting_stage_key ?? null, latest_decision: r.latest_decision ?? null }))}
       fallbackStatement={typeof statement === "string" && statement.trim() ? statement : null} risks={heatRisks}
       missing={data.report?.incomplete ? (data.report.missing_sections ?? []).map((item: ResearchRecord) => String(item.label)) : null}
-      monitorNote={monitor ? monitorLabel(monitor) : null} onOpenReport={() => openSection("thesis")} />);
+      monitorNote={monitor ? monitorLabel(monitor) : null} onOpenReport={() => openSection("thesis")} onOpenMemo={() => openSection("memo")} />);
   }
 
   return view(<section className={ui.tile}>

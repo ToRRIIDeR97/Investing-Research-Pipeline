@@ -152,6 +152,24 @@ colour), `--dur-base` (200ms, lift and press), `--dur-slide` (380ms, sliding sel
 - Don't animate layout properties on large areas, chain more than one movement per interaction, or loop anything
   except a loading skeleton.
 
+## Research overview
+
+The asset page's Overview (`company-overview.tsx`) uses the Quant patterns, from the SoFi review
+(`prototype/workshop/sofi-research-redesign.html`):
+
+- **Decision first.** When a report waits for a decision, a navy strip leads the page with the report's verdict, its
+  value against today's close, the open questions in a drawer, and the one action: Review and decide.
+- **One price, one headline value.** Gaps are measured against today's close; the report's price is shown as the
+  report's, with its date. The report's weighted value leads, with a button that explains how the case weights make it.
+- **Scenario tiles and the blend** as on Quant: gap first, a meter from today's price, a pocket door, and a blend that
+  starts at the report's weighting.
+- **Readable report.** Three lines with Read more; the conditions that would change the view as rows; the other side
+  and missing work as drawers with counts.
+- **KPIs and risks explained.** KPIs carry a status word and a legend (base band, neutral bear and bull ticks, today's
+  dot); risk scores say they are likelihood × impact, severity shows as five bars, the top five show, the rest in a
+  drawer.
+- **The notebook opens from the header**, never from a tab floating over the cards.
+
 ## Accessibility
 
 - Visible focus: a 2px navy outline, 2px offset, on every interactive element.

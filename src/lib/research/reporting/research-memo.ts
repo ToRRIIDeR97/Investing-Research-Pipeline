@@ -126,18 +126,32 @@ function firstSentences(rest:string,max=260):string|null {
   return out||null;
 }
 
-/** "1.30bn to 1.36bn", "14.5% to 17%", "-9000 to 0", "0% to 8%" in the KPI's own unit. */
+/** How many units one figure stands for when the KPI unit names a scale: "USD thousands" is 1e3. */
+const unitScale=(u:string)=>/\bthousands?\b/.test(u)?1e3:/\bmillions?\b/.test(u)?1e6:/\bbillions?\b/.test(u)?1e9:1;
+
+/**
+ * "1.30bn to 1.36bn", "14.5% to 17%", "-9000 to 0", "0% to 8%", "9 to 10 billion dollars" in the KPI's own unit (a
+ * "USD thousands" KPI gets thousands). Null for one value, or when the two numbers mix a percent with an amount
+ * ("Above 9.5 billion dollars with CET1 ratio above 12%").
+ */
 export function parseBaseRange(range:unknown,unit:unknown):[number,number]|null {
   const raw=text(range);if(!raw)return null;
   const u=String(unit??'').toLowerCase();
-  const values=[...raw.matchAll(/(-?\d+(?:\.\d+)?)\s*(bn|b|m|k|%)?/gi)].map(m=>{
-    let v=Number(m[1]);const suffix=(m[2]??'').toLowerCase();
-    if(suffix==='bn'||suffix==='b')v*=1e9;else if(suffix==='m'&&!/million/.test(u))v*=1e6;else if(suffix==='k')v*=1e3;
-    if(suffix==='%'&&/ratio|decimal/.test(u))v/=100;
-    return v;
-  }).filter(Number.isFinite);
-  if(values.length<2)return null;
-  return [Math.min(values[0],values[1]),Math.max(values[0],values[1])];
+  const scale=unitScale(u);
+  // A digit inside a word ("CET1", "Q4") is not a figure.
+  const hits=[...raw.matchAll(/(?<![A-Za-z\d.])(-?\d+(?:\.\d+)?)\s*(bn|billion|b|million|m|k|%)?/gi)].map(m=>({v:Number(m[1]),suffix:(m[2]??'').toLowerCase()})).filter(h=>Number.isFinite(h.v));
+  if(hits.length<2)return null;
+  const [a,b]=hits;
+  if((a.suffix==='%')!==(b.suffix==='%')&&(a.suffix||b.suffix))return null;
+  const value=({v,suffix}:{v:number;suffix:string})=>{
+    if(suffix==='%')return /ratio|decimal/.test(u)?v/100:v;
+    const amount=suffix==='bn'||suffix==='b'||suffix==='billion'?v*1e9:suffix==='m'||suffix==='million'?v*1e6:suffix==='k'?v*1e3:null;
+    return amount===null?v:amount/scale;
+  };
+  // A unit-less figure next to a scaled one ("9 to 10 billion") takes the same scale.
+  const sa=a.suffix||b.suffix,sb=b.suffix||a.suffix;
+  const x=value({v:a.v,suffix:sa}),y=value({v:b.v,suffix:sb});
+  return [Math.min(x,y),Math.max(x,y)];
 }
 
 /** A KPI level as reader text in its unit: 16.9%, 1.30bn, −$8.8B, 7.6%. */
@@ -146,7 +160,8 @@ export function formatLevel(value:number,unit:unknown):string {
   const trim=(n:number,p:number)=>String(Number(n.toFixed(p)));
   if(/percent|^%$|pct/.test(u))return `${trim(value,2)}%`;
   if(/ratio|decimal/.test(u))return Math.abs(value)<=1.5?`${trim(value*100,1)}%`:`${trim(value,2)}x`;
-  const code=u.replace(/\b(millions?|billions?)\b/,'').trim();
+  const code=u.replace(/\b(thousands?|millions?|billions?)\b/,'').trim();
+  if(/\bthousands?\b/.test(u)&&/^[a-z]{3}$/.test(code))return money(value*1e3,code.toUpperCase());
   if(/\bmillions?\b/.test(u)&&/^[a-z]{3}$/.test(code))return money(value*1e6,code.toUpperCase());
   if(/\bbillions?\b/.test(u)&&/^[a-z]{3}$/.test(code))return money(value*1e9,code.toUpperCase());
   const a=Math.abs(value);
