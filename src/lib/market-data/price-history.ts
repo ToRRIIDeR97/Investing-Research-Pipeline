@@ -39,6 +39,8 @@ export type StoredBar = {
   available_at: string;
   verification_status: string;
   verification_json: Row;
+  /** Shares traded that day; null when the provider gave none or the bar predates volume capture. */
+  volume?: number | null;
 };
 export type CrossCheck = {
   status: "verified" | "mismatch";
@@ -372,21 +374,28 @@ async function crossCheckWithStooq(sql: Sql, instrumentId: string, symbol: strin
 }
 
 /** Bars available by the cutoff, plus every stored split (needed to rebase closes). */
-export async function loadStoredPriceHistory(sql: Sql, assetId: string, symbol: string, cutoffAt: Date) {
-  const rows = await sql`
-    SELECT b.id, b.instrument_id, b.trading_date, b.close, b.adjusted_close, b.currency, b.provider_symbol, b.retrieved_at,
-      b.available_at, b.verification_status, b.verification_json
-    FROM market_price_bars b JOIN instruments i ON i.id = b.instrument_id
-    WHERE i.asset_id = ${assetId} AND b.provider = ${PRIMARY_PRICE_PROVIDER} AND b.provider_symbol = ${symbol.toUpperCase()}
-      AND b.available_at <= ${cutoffAt.toISOString()}
-    ORDER BY b.trading_date`;
-  const bars: StoredBar[] = rows.map((row) => ({
+/** A market_price_bars row as a StoredBar. */
+export function storedBarFromRow(row: Row): StoredBar {
+  const volume = row.volume === null || row.volume === undefined || row.volume === "" ? null : Number(row.volume);
+  return {
     id: String(row.id), day: isoDay(new Date(row.trading_date)), close: Number(row.close),
     adjusted_close: row.adjusted_close === null ? null : Number(row.adjusted_close), currency: String(row.currency),
     provider_symbol: String(row.provider_symbol), retrieved_day: isoDay(new Date(row.retrieved_at)),
     available_at: new Date(row.available_at).toISOString(), verification_status: String(row.verification_status),
     verification_json: (row.verification_json || {}) as Row,
-  }));
+    volume: volume !== null && Number.isFinite(volume) ? volume : null,
+  };
+}
+
+export async function loadStoredPriceHistory(sql: Sql, assetId: string, symbol: string, cutoffAt: Date) {
+  const rows = await sql`
+    SELECT b.id, b.instrument_id, b.trading_date, b.close, b.adjusted_close, b.currency, b.provider_symbol, b.retrieved_at,
+      b.available_at, b.verification_status, b.verification_json, b.volume
+    FROM market_price_bars b JOIN instruments i ON i.id = b.instrument_id
+    WHERE i.asset_id = ${assetId} AND b.provider = ${PRIMARY_PRICE_PROVIDER} AND b.provider_symbol = ${symbol.toUpperCase()}
+      AND b.available_at <= ${cutoffAt.toISOString()}
+    ORDER BY b.trading_date`;
+  const bars: StoredBar[] = rows.map(storedBarFromRow);
   const instrumentIds = [...new Set(rows.map((row) => String(row.instrument_id)))];
   const loaded = (await Promise.all(instrumentIds.map((id) => loadSplits(sql, id)))).flat();
   const splits = [...new Map(loaded.map((split) => [`${split.ex_day}:${split.ratio}`, split])).values()];
