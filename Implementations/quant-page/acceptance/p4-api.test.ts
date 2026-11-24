@@ -26,7 +26,12 @@ test("AC-9: the second request the same day comes from the cache, without loadin
   const second = await getQuantSnapshot("FIXA", deps);
   assert.equal(second.cached, true);
   assert.equal(loads, 1);
-  const refreshed = await getQuantSnapshot("FIXA", { ...deps, refresh: true });
+  // Changed in review (AC-9, throttle): a refresh within five minutes of the cached snapshot returns it unchanged;
+  // a refresh after that recomputes. See "Test changes" in implementation.md.
+  const throttled = await getQuantSnapshot("FIXA", { ...deps, refresh: true });
+  assert.equal(throttled.cached, true);
+  assert.equal(loads, 1);
+  const refreshed = await getQuantSnapshot("FIXA", { ...deps, refresh: true, now: new Date("2025-11-21T15:06:00Z") });
   assert.equal(refreshed.cached, false);
   assert.equal(loads, 2);
 });

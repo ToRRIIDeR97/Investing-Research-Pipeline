@@ -9,6 +9,9 @@ import { ensureDocumentIndexed, evidenceNeeds, rolePassageCounts, evidencePassag
 import { getAgentConfig } from "@/lib/agent-harness/registry";
 import { discoverRoleSources } from "@/lib/research/sources/role-discovery";
 import { fetchCapped } from "@/lib/net";
+import { resolveSecCik } from "@/lib/research/sources/sec-cik";
+// Re-exported for existing callers; the lookup lives in its own module so code-only callers (Quant) skip this file's imports.
+export { resolveSecCik };
 import { isResultsRelease } from "@/lib/research/history/press-release";
 import { dominantCurrency, reportingTaxonomy } from "@/lib/research/history/sec-companyfacts";
 import { loadCompanyFacts } from "@/lib/research/history/xbrl-warehouse";
@@ -1589,29 +1592,7 @@ async function fetchExorIssuerContext(ctx: RunContext) {
   };
 }
 
-/** SEC CIK for a ticker from SEC's ticker map. fetchImpl lets a caller (monitor-check) route it through its own guarded fetch. */
-export async function resolveSecCik(symbol: string, fetchImpl: (url: string, init?: RequestInit) => Promise<Response> = fetchCapped) {
-  const upper = symbol.toUpperCase();
-  const baseSymbol = upper.includes("_TEST") ? upper.split("_TEST")[0] : upper.split("_")[0];
-  const response = await fetchImpl("https://www.sec.gov/files/company_tickers.json", {
-    headers: { "User-Agent": "ResearchOS/0.1 research-pipeline@example.com" },
-  });
-  if (!response.ok) {
-    throw new Error(`SEC ticker map failed: ${response.status}`);
-  }
-
-  const tickerMap = await response.json() as Record<
-    string,
-    { cik_str?: number; ticker?: string; title?: string }
-  >;
-  const match = Object.values(tickerMap).find(
-    (entry) => entry.ticker?.toUpperCase() === upper || entry.ticker?.toUpperCase() === baseSymbol
-  );
-  if (!match?.cik_str) {
-    throw new Error(`SEC CIK not found for ticker ${symbol}`);
-  }
-  return String(match.cik_str).padStart(10, "0");
-}
+// resolveSecCik lives in ./sec-cik (imported and re-exported at the top of this file).
 
 async function storeSourcePayload(sql: Sql, ctx: RunContext, payload: SourcePayload): Promise<StoredSource> {
   const content = payload.content;

@@ -19,7 +19,7 @@
 .facts dt { color: var(--ink-3); }
 .facts dd { margin: 0; font-weight: 600; text-align: right; }
 .gauge { position: relative; height: 10px; border-radius: 999px; background: var(--line-soft); margin: 6px 0 2px; }
-.gaugeMid { position: absolute; left: 50%; top: -3px; bottom: -3px; border-left: 2px solid var(--ink-4); }
+.gaugeMid { position: absolute; left: 50%; top: -3px; bottom: -3px; border-left: 2px solid var(--ink-3); }
 .gaugePin { position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 999px; background: var(--navy); transform: translate(-50%, -50%); }
 .gaugeScale { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-3); }
 .actions { display: flex; flex-direction: column; gap: 8px; }
@@ -42,8 +42,8 @@
 .rule { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line-soft); font-size: 13px; line-height: 1.3; }
 .mark { width: 18px; height: 18px; flex: none; border-radius: 999px; display: grid; place-items: center; color: var(--color-bg-surface); font-size: 10px; font-weight: 700; }
 .mark[data-status="pass"] { background: var(--positive); }
-.mark[data-status="fail"] { background: var(--ink-4); }
-.mark[data-status="unavailable"] { background: var(--line-strong); }
+.mark[data-status="fail"] { background: var(--ink-2); }
+.mark[data-status="unavailable"] { background: var(--ink-3); }
 .strip { display: grid; grid-template-columns: repeat(52, minmax(0, 1fr)); gap: 2px; }
 .strip span { height: 34px; border-radius: 3px; }
 .notes { margin: 0; padding-left: 18px; font-size: 12px; color: var(--ink-3); line-height: 1.6; }

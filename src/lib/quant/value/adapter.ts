@@ -62,8 +62,14 @@ export function toPragmaData(f: AnnualFundamentals, bars: QuantBar[], sharesOver
     bookValue: y0 && y0.equity !== null && shares ? y0.equity / shares : null,
     dividendYield: y0 && y0.dividends !== null && marketCap ? Math.abs(y0.dividends) / marketCap : null,
   };
+  const quarters = f.quarters ?? [];
   return {
-    info, income, income_quarterly: { periods: [], rows: {} }, balance, cashflow,
+    info, income, balance, cashflow,
+    // Pragma's quarterly margin check (two falling quarters mark operating leverage "Decreasing").
+    income_quarterly: quarters.length ? {
+      periods: quarters.map((q) => q.period_end),
+      rows: { "Total Revenue": quarters.map((q) => q.revenue), "Operating Income": quarters.map((q) => q.ebit) },
+    } : { periods: [], rows: {} },
     history: bars.map((b) => ({ day: b.day, close: b.close })),
   };
 }

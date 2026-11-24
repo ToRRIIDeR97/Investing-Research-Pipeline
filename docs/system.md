@@ -409,7 +409,14 @@ The valuation summary shows it as **Rating and trend** (`src/components/report/s
   - The nine conditions and Mansfield RS come from `rating/trend.ts`. Rule 9 uses Pragma's combined RS against the S&P 500 and the sector ETF.
   - Weinstein stage and a 52-week stage history, pocket pivots and VCP are ports of `pragtrend.py` and `pattern_detector.py`, also checked against Pragma's Python.
   - Performance is rebased to 100 a year ago.
-- **Snapshot.** `GET /api/quant/:ticker` (`src/lib/api/quant.ts`) caches one snapshot per ticker and UTC day in `quant_snapshots` (migration `0025_quant_snapshots`); `?refresh=1` recomputes. Errors: malformed 400, unknown or no prices 404, not an equity 422. A non-SEC issuer gets a partial snapshot with Value unavailable and its reason. Nothing here writes research artifacts.
+- **Snapshot.** `GET /api/quant/:ticker` (`src/lib/api/quant.ts`) caches one snapshot per ticker and UTC day in `quant_snapshots` (migration `0025_quant_snapshots`).
+  - `?refresh=1` recomputes, at most once every five minutes per ticker; a sooner refresh returns the cached snapshot.
+  - Errors: malformed 400, unknown or no prices 404, not an equity 422, SEC unreachable 503.
+  - A non-SEC issuer gets a partial snapshot with Value unavailable and its reason.
+  - A snapshot built while SEC companyfacts, Yahoo's listing check or a sector-ETF sync failed is served but not cached, so the next request retries.
+  - Nothing here writes research artifacts. The Quant modules don't load the agent harness: `resolveSecCik` lives in `research/sources/sec-cik.ts` and `ResearchRunQueueError` in `research/run-queue-error.ts`, both re-exported from their old modules. A test checks the loaded modules at runtime.
+- **Fundamentals detail.** IFRS filers use `ifrs-full` concepts. Debt is the combined total if filed, else long-term (total or parts) plus short-term; cash adds marketable securities. The latest four discrete quarters of revenue and operating income (Q4 derived from the year) feed Pragma's falling-margin check. Pharma (SIC 2834–2836) that is pre-revenue or loss-making is valued as Biotechnology, so it routes to engine B2.
+- **Fuzz.** `fixtures/pragma_fuzz.py` mutates the eight fixtures into 400 cases (other engines, credit z, short and null-ridden statements, quarterly margins, forward EPS), and `p2c-fuzz.test.ts` checks each against Pragma's own result. The port sums with Python's compensated `sum()` (`pySum`) so weighted-median ties break the same way.
 
 ## Research across runs
 

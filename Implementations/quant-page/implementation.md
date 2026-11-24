@@ -168,18 +168,60 @@ Invariants:
 - **AC-11 (separation).** "No model calls" is checked by a source scan of the Quant modules (no agent-harness imports, no research-artifact writes).
 - **Fixture harness encoding.** On Windows, Python's `read_text()` defaults to cp1252, which mangled "Software—Application" and gave a false mismatch. The script now reads and writes UTF-8.
 
+### Review round 1 (three judges: 8.5, 7, 7)
+
+What changed in response, by criterion:
+
+- **AC-1/AC-9 (failures).**
+  - `resolveIssuer` tells "not an SEC filer" (partial snapshot) apart from SEC being unreachable (503 `UPSTREAM_UNAVAILABLE`).
+  - A Yahoo, companyfacts or sector-ETF failure marks the inputs transient, and a transient snapshot is served but not cached.
+  - `?refresh=1` is throttled to once per five minutes.
+  - A malformed percent-encoded ticker is a 400, not a 500.
+- **AC-3 (fundamentals).**
+  - `ifrs-full` concepts are supported.
+  - Debt is combined, or long-term plus short-term. Cash includes marketable securities.
+  - Share classes are summed.
+  - The latest four quarters of revenue and operating income now feed Pragma's quarterly override (it was always empty before).
+- **AC-4 (parity).**
+  - A 400-case differential fuzz against Pragma (`pragma_fuzz.py`, `p2c-fuzz.test.ts`) found one bug: weighted-median ties, fixed with Python's compensated sum (`pySum`).
+  - Confidence counts income and cash-flow years only. Pragma read a `balance_sheet` key that never existed.
+  - `safeFloat("")` is skipped, like Python's `float("")`.
+  - VCP's average volume uses Python rounding.
+  - Pocket pivots and VCP need volume only in the bars they read, and VCP is `unavailable` without it.
+- **AC-5 (routing).**
+  - Loss-making or pre-revenue pharma (SIC 2834–2836) is relabelled Biotechnology, so it routes to B2 as the plan says.
+  - The SIC map now covers 1000–1499 and 4900–4999. Gas transmission (4922–4923) is midstream, ahead of the gas-utility range that used to shadow it, and 4950–4959 is Waste Management.
+- **AC-10 (page).**
+  - The value path shows forward (undiscounted) values. The table's duplicate "year-5 target (discounted)" column, which equalled the intrinsic value, is now the year-5 forward value.
+  - The rebased chart is placed by date on one axis, with labels that can't overlap.
+  - The multiple band handles negative multiples and stays inside the chart.
+  - The value build is a signed waterfall.
+  - Axis labels were added, and the S&P line, volume bars, stage 1 and the failed-condition mark have stronger contrast.
+  - Condition marks have screen-reader text, and a null PulseScore says "unavailable".
+  - Loading is `role="status"`, `useSearchParams` sits in Suspense, and `parseQuantTab` is exported and tested.
+  - The sparkline uses a non-scaling stroke, the current week is labelled with its last trading day, and VCP depths get a small chart.
+- **AC-11 (separation).** A runtime check found `agent-harness` modules loaded by the Quant API. The source scan had missed them because they came in through `corpus.ts` (for `resolveSecCik`) and `api/errors.ts` (for `ResearchRunQueueError`, via the orchestrator). Both now live in dependency-free modules, `sec-cik.ts` and `run-queue-error.ts`, re-exported from their old homes.
+
+### Test changes after the freeze
+
+- `p4-api.test.ts`, AC-9 cache test: a refresh straight after the first request now expects the cached snapshot (the throttle), and a refresh six minutes later expects a recompute. This follows the throttle added in review; the "second request is cached" and "refresh recomputes" assertions are kept.
+- New review tests, with no frozen assertion weakened:
+  - `p2c-fuzz.test.ts`: AC-4 fuzz.
+  - `p4b-api-review.test.ts`: issuer outcomes, 503, no-cache when transient, route 400, B2 relabel, SIC coverage, pattern volume windows, `safeFloat`.
+  - `p5b-page-review.test.tsx`: tab parsing, chart edge cases, forward values, accessible marks, no raw hex, Suspense, and the runtime AC-11 check.
+
 ## Completion evidence
 
 The plan, the tests and the code have one author (a single agent). The parity goldens come from Pragma's own Python, not from the port.
 
 | Check | Command (repository root) | Result |
 | --- | --- | --- |
-| Acceptance | `npx tsx --test tests/quant-page.test.ts` (all five acceptance files) | 37 pass, 0 fail |
-| Value parity | `p2-value.test.ts`: eight engines against `pulsevalue.py` (0.5% tolerance) | 8 of 8 match |
+| Acceptance | `npx tsx --test Implementations/quant-page/acceptance/*.test.ts*` (eight files, after review round 1) | 55 pass, 0 fail |
+| Value parity | `p2-value.test.ts`: eight engines against `pulsevalue.py` (0.5% tolerance); `p2c-fuzz.test.ts`: 400 mutated cases | 8 of 8 match; 400 of 400 match |
 | Trend parity | `p3-trend.test.ts`: stage, pivots and VCP against `pragtrend.py` and `pattern_detector.py` | 8 of 8 match |
 | Lint | `npm run lint` | 0 errors, 117 warnings (unchanged from main) |
 | Types | `npx tsc --noEmit` | pass |
-| Unit | `npm run test:unit` | 785 pass, 0 fail, 64 skipped |
+| Unit | `npm run test:unit` | 803 pass, 0 fail, 64 skipped |
 | Build | `npm run build` | pass; `/quant`, `/quant/[ticker]`, `/api/quant/[ticker]` listed |
 | Existing UI rules | `Implementations/consumer-remaster/acceptance/*` | pass, after removing uppercase table headers |
 | Live | `/quant/AAPL` on the dev server, after `db:migrate` | Value and Trend tabs render from real SEC and Yahoo data (engine A, six-metric DCF, 9 of 9 conditions, stage 2); no console errors after the dev server rebuilt the shell |

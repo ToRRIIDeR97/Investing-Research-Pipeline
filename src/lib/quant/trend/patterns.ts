@@ -4,6 +4,7 @@
  * `unavailable` rather than a guess.
  */
 import type { Bar } from "./stage";
+import { pyRound } from "../value/model";
 
 export type PocketPivot = { day: string; close: number; volume: number; max_down_volume_10d: number; volume_ratio: number };
 export type PocketPivots =
@@ -14,10 +15,12 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export function detectPocketPivots(bars: Bar[], lookbackDays = 90): PocketPivots {
   if (bars.length < 12) return { status: "unavailable", reason: "Needs at least 12 trading days.", events: [] };
-  if (bars.some((b) => b.volume === null || b.volume === undefined)) {
-    return { status: "unavailable", reason: "Daily volume is not stored for the whole window.", events: [] };
-  }
   const n = bars.length;
+  // Only the bars the scan reads (the lookback plus the 10-day down-volume window before it) need volume.
+  const first = Math.max(11, n - lookbackDays) - 11;
+  if (bars.slice(first).some((b) => b.volume === null || b.volume === undefined)) {
+    return { status: "unavailable", reason: "Daily volume is not stored for the scanned window.", events: [] };
+  }
   const events: PocketPivot[] = [];
   for (let i = Math.max(11, n - lookbackDays); i < n; i++) {
     if (bars[i].close <= bars[i - 1].close) continue;
@@ -64,6 +67,9 @@ export function detectVcp(bars: Bar[], lookbackWeeks = 26): Vcp {
   const n = closes.length;
   const lookback = Math.min(n, lookbackWeeks * 5);
   if (lookback < 30) return empty("Need at least 30 bars for VCP detection.");
+  if (bars.slice(-lookback).some((b) => b.volume === null || b.volume === undefined)) {
+    return { ...empty("Daily volume is not stored for the VCP window."), status: "unavailable" };
+  }
   const wc = closes.slice(-lookback), wv = volumes.slice(-lookback), wd = bars.slice(-lookback).map((b) => b.day);
   const sma150 = n >= 150 ? closes.slice(-150).reduce((s, v) => s + v, 0) / 150 : NaN;
   const above = Number.isFinite(sma150) ? closes[n - 1] > sma150 : false;
@@ -79,7 +85,7 @@ export function detectVcp(bars: Bar[], lookbackWeeks = 26): Vcp {
     if (depth < 1) continue;
     const vols = wv.slice(p, t + 1);
     contractions.push({ high_day: wd[p], high_price: r2(hi), low_day: wd[t], low_price: r2(lo), depth_pct: r2(depth), duration_days: t - p,
-      avg_volume_during: t > p ? Math.round(vols.reduce((s, v) => s + v, 0) / vols.length) : 0 });
+      avg_volume_during: t > p ? pyRound(vols.reduce((s, v) => s + v, 0) / vols.length) : 0 });
   }
   if (contractions.length < 2) return empty("Fewer than 2 contractions detected.", above, contractions);
   contractions = contractions.slice(-4);

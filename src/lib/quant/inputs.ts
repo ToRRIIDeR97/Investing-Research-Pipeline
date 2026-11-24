@@ -13,7 +13,7 @@ import {
   syncAssetPriceHistory, syncBenchmarkPriceHistory, timedFetch, type SplitEvent, type StoredBar,
 } from "@/lib/market-data/price-history";
 import { createYahooMarketDataProvider } from "@/lib/market-data/providers/yahoo";
-import { resolveSecCik } from "@/lib/research/sources/corpus";
+import { resolveSecCik } from "@/lib/research/sources/sec-cik";
 import { loadCompanyFacts, type CompanyFactsOrigin } from "@/lib/research/history/xbrl-warehouse";
 import { annualFundamentals, type AnnualFundamentals } from "./fundamentals";
 import { sectorFromSic, type SectorInfo } from "./sic";
@@ -27,7 +27,7 @@ const SEC_USER_AGENT = "ResearchOS/0.1 research-pipeline-test@example.com";
 export type QuantBar = { day: string; close: number; volume: number | null };
 
 export class QuantInputError extends Error {
-  constructor(readonly code: "invalid_ticker" | "unknown_ticker" | "not_equity" | "no_prices", message: string) { super(message); }
+  constructor(readonly code: "invalid_ticker" | "unknown_ticker" | "not_equity" | "no_prices" | "upstream_unavailable", message: string) { super(message); }
 }
 
 export type QuantInputs = {
@@ -47,6 +47,8 @@ export type QuantInputs = {
   asset: { id: string; researched: boolean };
   as_of: string;
   notes: string[];
+  /** Upstream steps that failed this time (a snapshot built from them is not cached). */
+  transient: string[];
 };
 
 export const TICKER_PATTERN = /^[A-Z][A-Z0-9.-]{0,9}$/;
@@ -109,25 +111,10 @@ export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fe
   const now = options.now ?? new Date();
   const notes: string[] = [];
 
-  // Listing type first: PragValue values individual equities only (Pragma rejected ETFs, indices and funds).
-  let instrumentType: string | null = null;
-  try {
-    const meta = await createYahooMarketDataProvider((options.fetchImpl ?? timedFetch) as typeof fetch).getInstrumentMetadata(ticker);
-    instrumentType = meta.instrument_type ? String(meta.instrument_type).toUpperCase() : null;
-  } catch (error) {
-    notes.push(`Listing type unavailable: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  if (instrumentType && instrumentType !== "EQUITY") {
-    throw new QuantInputError("not_equity", `${ticker} is a ${instrumentType.toLowerCase()}, not an individual stock. PragValue values individual equities.`);
-  }
-
-  let cik: string | null = null;
-  try {
-    cik = await resolveSecCik(ticker, fetchImpl);
-  } catch {
-    if (!instrumentType) throw new QuantInputError("unknown_ticker", `No listing or SEC filer found for ${ticker}.`);
-    notes.push(`${ticker} is not an SEC filer, so PragValue has no statements to value.`);
-  }
+  const issuer = await resolveIssuer(ticker, { fetchImpl, yahooFetch: options.fetchImpl ?? timedFetch });
+  const { instrumentType, cik } = issuer;
+  notes.push(...issuer.notes);
+  const transient = [...issuer.transient];
 
   let name = ticker, sic: string | null = null, sicDescription: string | null = null;
   let fundamentals: AnnualFundamentals | null = null, fundamentalsReason: string | null = null, origin: CompanyFactsOrigin | null = null;
@@ -141,8 +128,9 @@ export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fe
       origin = loaded.origin;
       fundamentals = annualFundamentals(loaded.companyFacts, { years: 5 });
       if (!fundamentals.years.length) { fundamentalsReason = "Companyfacts has no annual revenue or operating income."; fundamentals = null; }
-    } catch (error) {
-      fundamentalsReason = `Companyfacts unavailable: ${error instanceof Error ? error.message : String(error)}`;
+    } catch {
+      fundamentalsReason = "SEC companyfacts could not be fetched; try Refresh later.";
+      transient.push("companyfacts");
     }
   } else {
     fundamentalsReason = "Not an SEC filer.";
@@ -161,7 +149,7 @@ export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fe
   let sectorEtf: QuantInputs["sector_etf"] = null;
   if (sector.etf) {
     try { sectorEtf = await syncEtf(sql, sector.etf, options.fetchImpl); }
-    catch (error) { notes.push(`Sector ETF ${sector.etf} unavailable: ${error instanceof Error ? error.message : String(error)}`); }
+    catch { notes.push(`Sector ETF ${sector.etf} prices could not be synced; RS uses the S&P 500 only.`); transient.push("sector_etf"); }
   }
 
   return {
@@ -173,5 +161,40 @@ export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fe
     asset: { id: asset.id, researched: asset.researched },
     as_of: stored.bars[stored.bars.length - 1].day,
     notes: [...notes, `Prices: ${PRIMARY_PRICE_PROVIDER} daily closes; volume where the provider gave it.`],
+    transient,
   };
+}
+
+/** Is this resolveSecCik error a definite "no such filer", as opposed to the ticker map being unreachable? */
+const isCikNotFound = (error: unknown) => error instanceof Error && /CIK not found/i.test(error.message);
+
+/**
+ * Listing type (Yahoo) and SEC CIK for a ticker. A definite "not an SEC filer" is a partial result; an SEC ticker map
+ * that cannot be fetched is `upstream_unavailable` (503, never cached). A Yahoo metadata failure is recorded in
+ * `transient`, so the snapshot built from it is not cached either.
+ */
+export async function resolveIssuer(ticker: string, deps: { fetchImpl: FetchLike; yahooFetch: FetchLike }):
+  Promise<{ instrumentType: string | null; cik: string | null; notes: string[]; transient: string[] }> {
+  const notes: string[] = [], transient: string[] = [];
+  // Listing type first: PragValue values individual equities only (Pragma rejected ETFs, indices and funds).
+  let instrumentType: string | null = null;
+  try {
+    const meta = await createYahooMarketDataProvider(deps.yahooFetch as typeof fetch).getInstrumentMetadata(ticker);
+    instrumentType = meta.instrument_type ? String(meta.instrument_type).toUpperCase() : null;
+  } catch {
+    notes.push("The listing type could not be checked (Yahoo unavailable), so the equity check was skipped.");
+    transient.push("listing_type");
+  }
+  if (instrumentType && instrumentType !== "EQUITY") {
+    throw new QuantInputError("not_equity", `${ticker} is a ${instrumentType.toLowerCase()}, not an individual stock. PragValue values individual equities.`);
+  }
+  let cik: string | null = null;
+  try {
+    cik = await resolveSecCik(ticker, deps.fetchImpl);
+  } catch (error) {
+    if (!isCikNotFound(error)) throw new QuantInputError("upstream_unavailable", "SEC could not be reached to identify the issuer. Try again shortly.");
+    if (!instrumentType) throw new QuantInputError("unknown_ticker", `No listing or SEC filer found for ${ticker}.`);
+    notes.push(`${ticker} is not an SEC filer, so PragValue has no statements to value.`);
+  }
+  return { instrumentType, cik, notes, transient };
 }

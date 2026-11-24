@@ -119,12 +119,28 @@ export function pyRound(x: number, n = 0): number {
   return (tie ? (r % 2 === 0 ? r : r - Math.sign(y)) : r) / f;
 }
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+/**
+ * Python 3.12+ `sum()` of floats: Neumaier-compensated. Pragma's weighted sums use it, and a plain JS reduce can land
+ * one ulp away (0.3 + 0.2 + 0.05 + 0.15 is 0.7 in Python, 0.7000000000000001 in JS), which flips a weighted median
+ * sitting on the 0.5 boundary.
+ */
+export function pySum(values: number[]): number {
+  let sum = 0, c = 0;
+  for (const x of values) {
+    const t = sum + x;
+    c += Math.abs(sum) >= Math.abs(x) ? (sum - t) + x : (x - t) + sum;
+    sum = t;
+  }
+  return sum + c;
+}
 
 /** _safe_float: the first finite numeric info value among the keys. */
 export function safeFloat(info: PragmaData["info"], ...keys: string[]): number | null {
   for (const k of keys) {
     const v = info[k];
     if (v === null || v === undefined) continue;
+    // Python's float("") raises and Pragma skipped the key; JavaScript's Number("") is 0.
+    if (typeof v === "string" && v.trim() === "") continue;
     const n = typeof v === "number" ? v : Number(v);
     if (Number.isFinite(n)) return n;
     if (typeof v === "number" && Number.isNaN(v)) continue;
@@ -283,9 +299,9 @@ function historicalExitMultiple(engine: Engine, data: PragmaData, industry: stri
 export function weightedEbit(series: Series): number {
   const available = EBIT_WEIGHTS.map((w, i) => [w, series[i]] as const).filter(([, e]) => e !== null && e !== undefined && !Number.isNaN(e)) as [number, number][];
   if (!available.length) return 0;
-  const total = available.reduce((s, [w]) => s + w, 0);
+  const total = pySum(available.map(([w]) => w));
   if (total === 0) return 0;
-  return available.reduce((s, [w, e]) => s + (w / total) * e, 0);
+  return pySum(available.map(([w, e]) => (w / total) * e));
 }
 export const rdCapRate = (industry: string, sector: string) => (industry in RD_CAP_RATES ? RD_CAP_RATES[industry] : RD_CAP_SECTOR_FALLBACK[sector] ?? 0);
 
@@ -335,8 +351,8 @@ export function estimateBaseCagr(info: PragmaData["info"], series: Series, defau
     if (fG !== null) parts.push([fG, 0.2]);
   }
   if (!parts.length) return defaultGrowth;
-  const tw = parts.reduce((s, [, w]) => s + w, 0);
-  return Math.min(parts.reduce((s, [v, w]) => s + v * w, 0) / tw, maxGrowth);
+  const tw = pySum(parts.map(([, w]) => w));
+  return Math.min(pySum(parts.map(([v, w]) => v * w)) / tw, maxGrowth);
 }
 
 function marketShareAdjustedExit(hist: number[], industryFair: number, companyRevCagr: number | null, industryRevGrowth: number | null): [number, number, number] {
@@ -392,7 +408,7 @@ export function operatingLeverageProfile(income: Statement, quarterly: Statement
 function weightedMedian(values: number[], weights: number[]): number {
   if (!values.length) return 0;
   if (!weights.length || weights.length !== values.length) return median(values);
-  const total = weights.reduce((s, w) => s + w, 0);
+  const total = pySum(weights);
   if (total <= 0) return median(values);
   const pairs = values.map((v, i) => [v, weights[i]] as const).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
   let cum = 0;

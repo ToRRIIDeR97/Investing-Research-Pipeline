@@ -7,6 +7,7 @@ import postgres from "postgres";
 import { ApiError } from "@/lib/api/errors";
 import { loadQuantInputs, QuantInputError, TICKER_PATTERN, type QuantInputs } from "@/lib/quant/inputs";
 import { computePragValue, type PragValue } from "@/lib/quant/value";
+import { valuationIndustry } from "@/lib/quant/sic";
 import { toPragmaData } from "@/lib/quant/value/adapter";
 import { computePragTrend, type PragTrend } from "@/lib/quant/trend";
 import { weeklyCloses } from "@/lib/quant/trend/stage";
@@ -62,8 +63,12 @@ export function buildQuantSnapshot(inputs: QuantInputs, research: QuantSnapshot[
   let valueReason: string | null = inputs.fundamentals_reason;
   if (inputs.fundamentals) {
     try {
-      value = computePragValue(toPragmaData(inputs.fundamentals, inputs.bars), {
-        sector: inputs.sector.sector, industry: inputs.sector.industry, companyName: inputs.name, creditZ: null,
+      const data = toPragmaData(inputs.fundamentals, inputs.bars);
+      const num = (v: unknown) => (typeof v === "number" ? v : null);
+      const industry = valuationIndustry(inputs.sic, inputs.sector.industry, num(data.info.totalRevenue), num(data.info.ebit));
+      if (industry !== inputs.sector.industry) notes.push(`SIC ${inputs.sic} is pharma and pre-revenue or loss-making, so PragValue scores it as Biotechnology (engine B2).`);
+      value = computePragValue(data, {
+        sector: inputs.sector.sector, industry, companyName: inputs.name, creditZ: null,
       });
       notes.push(...value.notes);
       notes.push("Y0 is the latest fiscal year (Pragma used trailing-twelve-month values); analyst forward EPS is not available, so growth blends the company's own history.");
@@ -77,7 +82,8 @@ export function buildQuantSnapshot(inputs: QuantInputs, research: QuantSnapshot[
     ticker: inputs.ticker, name: inputs.name, cik: inputs.cik, sic: inputs.sic, sic_description: inputs.sic_description,
     sector: inputs.sector.sector, industry: inputs.sector.industry, sector_etf: inputs.sector.etf,
     as_of: inputs.as_of, price: inputs.bars[inputs.bars.length - 1].close,
-    price_history_5y: weeklyCloses(inputs.bars.slice(-1260)).map((w) => ({ day: w.week, close: w.close })),
+    // Weeks are keyed by their Friday; the current week is labelled with its last real trading day, not a future date.
+    price_history_5y: weeklyCloses(inputs.bars.slice(-1260)).map((w) => ({ day: w.week > inputs.as_of ? inputs.as_of : w.week, close: w.close })),
     value, value_reason: value ? null : valueReason ?? "PragValue unavailable.", trend,
     fundamentals: inputs.fundamentals ? {
       years: inputs.fundamentals.years.map((y) => y.period_end), currency: inputs.fundamentals.currency,
@@ -89,7 +95,10 @@ export function buildQuantSnapshot(inputs: QuantInputs, research: QuantSnapshot[
 
 const ERROR_STATUS: Record<QuantInputError["code"], [number, string]> = {
   invalid_ticker: [400, "INVALID_TICKER"], unknown_ticker: [404, "UNKNOWN_TICKER"], not_equity: [422, "NOT_EQUITY"], no_prices: [404, "NO_PRICES"],
+  upstream_unavailable: [503, "UPSTREAM_UNAVAILABLE"],
 };
+/** A refresh within this window of the cached snapshot returns the cached one (no new SEC or Yahoo calls). */
+export const REFRESH_MIN_INTERVAL_MS = 5 * 60 * 1000;
 
 export async function getQuantSnapshot(rawTicker: string, deps: {
   store: SnapshotStore;
@@ -102,9 +111,9 @@ export async function getQuantSnapshot(rawTicker: string, deps: {
   if (!TICKER_PATTERN.test(ticker)) throw new ApiError(`"${rawTicker}" is not a ticker symbol.`, 400, "INVALID_TICKER");
   const now = deps.now ?? new Date();
   const day = now.toISOString().slice(0, 10);
-  if (!deps.refresh) {
-    const cached = await deps.store.get(ticker, day);
-    if (cached) return { snapshot: cached, cached: true };
+  const cached = await deps.store.get(ticker, day);
+  if (cached && (!deps.refresh || now.getTime() - Date.parse(cached.computed_at) < REFRESH_MIN_INTERVAL_MS)) {
+    return { snapshot: cached, cached: true };
   }
   let inputs: QuantInputs;
   try {
@@ -114,7 +123,8 @@ export async function getQuantSnapshot(rawTicker: string, deps: {
     throw error;
   }
   const snapshot = buildQuantSnapshot(inputs, await deps.research(inputs), now);
-  await deps.store.put(snapshot, day, snapshot.value ? "ok" : "partial");
+  // A snapshot built while SEC or Yahoo was failing is served but not cached, so the next request retries.
+  if (!inputs.transient?.length) await deps.store.put(snapshot, day, snapshot.value ? "ok" : "partial");
   return { snapshot, cached: false };
 }
 

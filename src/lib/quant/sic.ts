@@ -27,20 +27,25 @@ const RANGES: Range[] = [
   [6798, 6798, "Real Estate", "REIT—Diversified", "XLRE"],
   [6500, 6553, "Real Estate", "Real Estate Services", "XLRE"],
   // Utilities
+  // Gas transmission (4922–4923) is midstream energy and must precede the gas-utility range that contains it.
+  [4922, 4923, "Energy", "Oil & Gas Midstream", "XLE"],
   [4911, 4911, "Utilities", "Utilities—Regulated Electric", "XLU"],
-  [4922, 4932, "Utilities", "Utilities—Regulated Gas", "XLU"],
+  [4924, 4932, "Utilities", "Utilities—Regulated Gas", "XLU"],
   [4931, 4931, "Utilities", "Utilities—Diversified", "XLU"],
   [4941, 4941, "Utilities", "Utilities—Regulated Water", "XLU"],
+  [4950, 4959, "Industrials", "Waste Management", "XLI"],
   [4991, 4991, "Utilities", "Utilities—Independent Power Producers", "XLU"],
-  // Energy and mining
+  [4900, 4999, "Utilities", "Utilities—Diversified", "XLU"],
+  // Energy and mining (1000–1499 in full)
   [1311, 1311, "Energy", "Oil & Gas E&P", "XLE"],
   [1381, 1389, "Energy", "Oil & Gas Equipment & Services", "XLE"],
+  [1300, 1399, "Energy", "Oil & Gas E&P", "XLE"],
   [2911, 2911, "Energy", "Oil & Gas Refining & Marketing", "XLE"],
   [4610, 4619, "Energy", "Oil & Gas Midstream", "XLE"],
-  [4922, 4923, "Energy", "Oil & Gas Midstream", "XLE"],
   [1040, 1040, "Basic Materials", "Gold", "XLB"],
-  [1000, 1099, "Basic Materials", "Other Industrial Metals & Mining", "XLB"],
-  [1220, 1241, "Energy", "Thermal Coal", "XLE"],
+  [1000, 1199, "Basic Materials", "Other Industrial Metals & Mining", "XLB"],
+  [1200, 1299, "Energy", "Thermal Coal", "XLE"],
+  [1400, 1499, "Basic Materials", "Building Materials", "XLB"],
   [3312, 3317, "Basic Materials", "Steel", "XLB"],
   [3330, 3399, "Basic Materials", "Other Industrial Metals & Mining", "XLB"],
   [2800, 2829, "Basic Materials", "Specialty Chemicals", "XLB"],
@@ -110,6 +115,17 @@ export function sectorFromSic(sic: string | number | null | undefined): SectorIn
   if (!Number.isInteger(code) || code <= 0) return { sector: "Unknown", industry: "Unknown", etf: null };
   const hit = EXACT.get(code) ?? RANGES.find(([from, to]) => code >= from && code <= to);
   return hit ? { sector: hit[2], industry: hit[3], etf: hit[4] } : { sector: "Unknown", industry: "Unknown", etf: null };
+}
+
+/**
+ * The plan routes SIC 2834–2836 (pharma and biotech) to engine B2 when pre-revenue (< $50M) or loss-making. SEC files
+ * most clinical-stage biotechs under 2834, which maps to a drug-manufacturer industry, so those are relabelled
+ * Biotechnology before PragValue's router runs; profitable pharma keeps its own industry and multiples.
+ */
+export function valuationIndustry(sic: string | number | null | undefined, industry: string, revenue: number | null, ebit: number | null): string {
+  const code = Number(sic);
+  if (!(code >= 2834 && code <= 2836)) return industry;
+  return (revenue ?? 0) < 50_000_000 || (ebit ?? 0) < 0 ? "Biotechnology" : industry;
 }
 
 export const SECTOR_ETFS = ["XLK", "XLF", "XLV", "XLE", "XLU", "XLRE", "XLI", "XLB", "XLY", "XLP", "XLC"] as const;

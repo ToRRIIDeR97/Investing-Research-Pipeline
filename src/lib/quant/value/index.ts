@@ -41,7 +41,9 @@ function band(dev: number): string {
 
 function confidenceScore(data: PragmaData, er: EngineResult): number {
   let base = { High: 85, Medium: 65, Low: 40 }[er.data_quality] ?? 65;
-  const years = Math.max(data.income.periods.length, data.balance.periods.length, data.cashflow.periods.length);
+  // Pragma read `data.get("balance_sheet")`, a key its fetcher never set (it stores "balance"), so only the income
+  // and cash-flow years ever counted. Kept for parity.
+  const years = Math.max(data.income.periods.length, data.cashflow.periods.length);
   if (years >= 5) base += 8; else if (years >= 3) base += 3;
   base -= Math.min(er.structural_flags.length * 3, 10);
   return Math.trunc(clamp(base, 0, 100));
@@ -104,7 +106,10 @@ export function computePragValue(data: PragmaData, meta: { sector: string; indus
   if (vDev !== gradeForDeviation(adjDev)) notes.push("Band tables disagree"); // guard: both use Pragma's cutoffs
 
   // Charts
-  const projection = [{ year: 0, bear: price, base: price, bull: price }, ...dcf.price_targets.map((t) => ({ year: t.year, bear: t.bear_target, base: t.base_target, bull: t.bull_target }))];
+  // Pragma's ladder targets are discounted to today, so year 5 equals the intrinsic value. The chart shows forward
+  // values instead (each target compounded at the discount rate to its own year), which start at today's price.
+  const fwd = (v: number, year: number) => pyRound(v * (1 + dcf.discount_rate) ** year, 2);
+  const projection = [{ year: 0, bear: price, base: price, bull: price }, ...dcf.price_targets.map((t) => ({ year: t.year, bear: fwd(t.bear_target, t.year), base: fwd(t.base_target, t.year), bull: fwd(t.bull_target, t.year) }))];
   let valueBuild: PragValue["charts"]["value_build"] = null;
   const ladderMetric = dcf.metrics.find((m) => Math.abs(m.iv[1] - dcf.intrinsic_value_base) < 0.01) ?? dcf.metrics[0];
   if (ladderMetric && !dcf.dcf_skipped) {
