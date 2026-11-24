@@ -3,7 +3,7 @@
  * The Quant page (Implementations/quant-page, layout Q2): a summary rail and Value / Trend tabs over one snapshot.
  * Built by code from SEC facts and stored prices; no model calls. Separate from Research, with links across.
  */
-import { useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Card, Segmented, Tag } from "@/components/ui/primitives";
 import ui from "@/components/research-ui.module.css";
@@ -81,6 +81,21 @@ function Rail({ s }: { s: QuantSnapshot }) {
       <Link className={ui.primary} href={researchHref(s)}>{s.research ? "Open research" : "Deep research"}</Link>
     </div>
   </aside>;
+}
+
+/** Measures the space it is given and renders a chart at that size, so a chart fills a card stretched by its row. */
+function Fill({ className, children }: { className?: string; children: (width: number, height: number) => ReactNode }) {
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
+  const ref = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setBox((b) => {
+      const w = Math.round(e.contentRect.width), h = Math.round(e.contentRect.height);
+      return b && b.w === w && b.h === h ? b : { w, h };
+    }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return <div ref={ref} className={className}>{children(box?.w ?? 420, box?.h ?? 210)}</div>;
 }
 
 /**
@@ -167,9 +182,9 @@ function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick:
       </div>
     </Card>
     <div className={styles.cardGrid}>
-      <Card title={v.charts.value_build ? `From cash flows to ${money(v.charts.value_build.per_share)} a share` : "Value build"}>
+      <Card className={styles.fillCard} title={v.charts.value_build ? `From cash flows to ${money(v.charts.value_build.per_share)} a share` : "Value build"}>
         {v.charts.value_build ? <>
-          <ValueBuild build={v.charts.value_build} />
+          <Fill className={styles.fillChart}>{(w, h) => <ValueBuild build={v.charts.value_build!} width={w} height={h} />}</Fill>
           <p className={styles.caption}>Base case on {v.charts.value_build.metric}; terminal value is {(v.charts.value_build.terminal_share * 100).toFixed(0)}% of the total.</p>
         </> : <p className={styles.unavailable}>{d.dcf_skipped ? d.dcf_skip_reason : "No metric-level DCF to break down."}</p>}
       </Card>

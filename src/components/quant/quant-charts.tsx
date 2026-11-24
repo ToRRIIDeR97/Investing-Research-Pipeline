@@ -102,9 +102,13 @@ export function ValuePathChart({ history, projection, selected, current }: {
   </figure>;
 }
 
-/** From the DCF's present values to the base value per share, as a signed waterfall. */
-export function ValueBuild({ build }: { build: { pv_cash_flows: number; pv_terminal: number; net_debt_per_share: number; per_share: number; metric: string; terminal_share: number } }) {
-  const W = 420, H = 210, top = 22, bottom = 180;
+/**
+ * From the DCF's present values to the base value per share, as a signed waterfall. `width` and `height` are the
+ * drawing size in pixels (the card measures its free space and passes it, so the chart fills the card).
+ */
+export function ValueBuild({ build, width = 420, height = 210 }: { build: { pv_cash_flows: number; pv_terminal: number; net_debt_per_share: number; per_share: number; metric: string; terminal_share: number }; width?: number; height?: number }) {
+  const W = Math.max(260, Math.round(width)), H = Math.max(180, Math.round(height)), top = 22, bottom = H - 30;
+  const slot = (W - 10) / 4, barW = Math.min(slot - 18, 120);
   const a = build.pv_cash_flows, b = a + build.pv_terminal, c = b - build.net_debt_per_share;
   const [lo, hi] = padded([0, a, b, c, build.per_share]);
   const y = scale(lo, hi, bottom, top);
@@ -122,9 +126,9 @@ export function ValueBuild({ build }: { build: { pv_cash_flows: number; pv_termi
     {steps.map((s, i) => {
       const y0 = y(Math.max(s.from, s.to)), h = Math.max(2, Math.abs(y(s.from) - y(s.to)));
       return <g key={s.label}>
-        <rect x={10 + i * 102} y={y0} width="82" height={h} rx="4" fill={s.fill} />
-        <text x={10 + i * 102} y={Math.max(14, y0 - 6)} fontSize="12" fill={C.ink}>{s.text}</text>
-        <text x={10 + i * 102} y={H - 6} fontSize="11" fill={C.ink3}>{s.label}</text>
+        <rect x={10 + i * slot} y={y0} width={barW} height={h} rx="6" fill={s.fill} />
+        <text x={10 + i * slot} y={Math.max(14, y0 - 6)} fontSize="12" fill={C.ink}>{s.text}</text>
+        <text x={10 + i * slot} y={H - 6} fontSize="11" fill={C.ink3}>{s.label}</text>
       </g>;
     })}
   </svg>;
