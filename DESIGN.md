@@ -69,6 +69,10 @@ The Quant page uses colour more freely, because colour is the fastest way to rea
 - **Engine strip reveal:** the badge is a button. Clicking it grows its navy across the card (a clip-path circle from
   the badge), flips the badge to white and shows one plain sentence on how that engine values a company
   (`explainEngine`). Clicking it again, Escape or a click elsewhere closes it; hover does nothing.
+- **Trend tab:** the same system as Value. Three signal tiles (trend template, Weinstein stage, RS rating) reuse the
+  scenario tile: coloured name, big figure, meter (segments or a 0 to 99 bar with the 70 pass mark), and a pocket
+  door with the detail. Chart cards end in a footer with small stats; conditions are green or red tinted rows under a
+  segment meter; the 52-week position is a range bar with today's price as a dot.
 - **Signals:** the PulseScore gauge runs red (overvalued) to green (undervalued); trend and stage facts carry a dot;
   unmet trend conditions are red, met ones green; returns and "vs price" figures are green or red.
 

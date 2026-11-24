@@ -9,6 +9,7 @@ import { Card, Segmented, Tag } from "@/components/ui/primitives";
 import ui from "@/components/research-ui.module.css";
 import type { QuantSnapshot } from "@/lib/api/quant";
 import { MultipleBand, PriceVolumeChart, RebasedChart, STAGE_FILL, Sparkline, StageStrip, ValueBuild, ValuePathChart, VcpDepths, type Case } from "./quant-charts";
+import { C } from "@/components/ui/palette";
 import { caseMeter, gradeTone } from "./tones";
 import { explainEngine, parseEngineNote } from "./engine-note";
 import { HowItWasBuilt } from "./how-built";
@@ -224,39 +225,133 @@ function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick:
   </>;
 }
 
+/** Percent with a sign, for slopes and distances already in percent. */
+const signedPct = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v)}%`;
+const STAGE_NAME: Record<number, string> = { 1: "Basing", 2: "Advancing", 3: "Topping", 4: "Declining" };
+
+/**
+ * A Trend signal tile, built like the Value tab's scenario tiles: a coloured name, the big figure, a meter, and the
+ * detail on a pocket door that slides in on hover or keyboard focus (on touch screens it stays open).
+ */
+function SignalTile({ name, color, value, tone, side, meter, scale, door, label }: {
+  name: string; color: string; value: string; tone?: "good" | "bad"; side: ReactNode; meter: ReactNode; scale: [string, string];
+  door: { k: string; v: string }[]; label: string;
+}) {
+  return <div className={styles.caseTile} data-signal="" tabIndex={0} aria-label={label}
+    style={{ ["--case-color" as string]: color, ["--case-tint" as string]: `color-mix(in srgb, ${color} 12%, var(--tile))` }}>
+    <span className={styles.caseName}>{name}</span>
+    <span className={styles.caseRow}><span className={styles.caseUp} data-tone={tone}>{value}</span><span className={styles.caseValue}>{side}</span></span>
+    {meter}
+    <span className={styles.caseScale}><span>{scale[0]}</span><span>{scale[1]}</span></span>
+    <span className={styles.pocket} aria-hidden="true">{door.map((d) => <span key={d.k}><small>{d.k}</small>{d.v}</span>)}</span>
+  </div>;
+}
+
+/** A row of equal segments, the first `on` filled (or only `only`, when given). */
+function Segments({ count, on, only }: { count: number; on: number; only?: number }) {
+  return <span className={styles.segMeter}>{Array.from({ length: count }, (_, i) => <span key={i} data-on={(only !== undefined ? i === only : i < on) ? "" : undefined} />)}</span>;
+}
+
 function TrendTab({ s }: { s: QuantSnapshot }) {
   const t = s.trend;
   const pivots = t.pocket_pivots.events.map((e) => e.day);
+  const tone = trendTone(t.conditions.passed, t.conditions.evaluated);
+  const toneColor = tone === "good" ? C.positive : tone === "caution" ? C.caution : tone === "bad" ? C.critical : C.ink3;
+  const st = t.stage;
+  const stageColor = st ? STAGE_FILL[st.stage_number] ?? STAGE_FILL[0] : C.ink3;
+  const rs = t.rs.combined;
+  const rsColor = rs === null ? C.ink3 : rs > 70 ? C.positive : rs >= 50 ? C.caution : C.critical;
+  const mansfield = t.conditions.mansfield;
+  const last = t.charts.price[t.charts.price.length - 1];
+  const p52 = t.position_52w;
+  const pivotCount = t.pocket_pivots.events.length;
   return <>
     <ContextStrip label="Price data" badge="Daily" title={`Daily closes to ${s.as_of}`} line="Split-adjusted, from stored daily bars"
       figures={[{ label: "Benchmark", value: "S&P 500" }, ...(s.sector_etf ? [{ label: "Sector", value: s.sector_etf }] : [])]}
       explain={`Every trend signal below uses each day's closing price, adjusted for splits, compared with the S&P 500${s.sector_etf ? ` and the ${s.sector_etf} sector fund` : ""}.`} />
-    <Card title="Price, averages and volume"><PriceVolumeChart series={t.charts.price} pivots={pivots} /></Card>
+
+    {/* The three signals as tiles, like the Value tab's scenarios: trend template, Weinstein stage, relative strength. */}
+    <div className={styles.cases}>
+      <SignalTile name="Trend template" color={toneColor} value={`${t.conditions.passed}/${t.conditions.evaluated}`} tone={tone === "good" ? "good" : tone === "bad" ? "bad" : undefined}
+        side={<>conditions<small>met</small></>} meter={<Segments count={Math.max(1, t.conditions.evaluated)} on={t.conditions.passed} />} scale={["None", "All"]}
+        door={[{ k: "Mansfield RS", v: mansfield ? `${mansfield.value > 0 ? "+" : ""}${mansfield.value}` : "—" }, { k: "Signal", v: mansfield ? mansfield.signal.toLowerCase() : "—" }]}
+        label={`Trend template: ${t.conditions.score_label}${mansfield ? `; Mansfield RS ${mansfield.value} (${mansfield.signal.toLowerCase()})` : ""}`} />
+      <SignalTile name="Weinstein stage" color={stageColor} value={st ? `Stage ${st.stage_number}` : "—"} tone={st?.stage_number === 2 ? "good" : st?.stage_number === 4 ? "bad" : undefined}
+        side={<>{st ? STAGE_NAME[st.stage_number] ?? "" : ""}<small>{st ? weeks(st.weeks_in_stage) : "needs 200 days"}</small></>}
+        meter={<Segments count={4} on={0} only={st ? st.stage_number - 1 : -1} />} scale={["1 basing", "4 declining"]}
+        door={st ? [{ k: "30-week average", v: st.sma_30w_slope_pct > 0 ? `rising ${st.sma_30w_slope_pct}%` : st.sma_30w_slope_pct < 0 ? `falling ${Math.abs(st.sma_30w_slope_pct)}%` : "flat" }, { k: "Price vs it", v: signedPct(st.price_vs_sma_30w_pct) }] : [{ k: "Stage", v: "needs 200 trading days" }]}
+        label={st ? `Weinstein stage ${st.stage_number}, ${st.label}, for ${weeks(st.weeks_in_stage)}` : "Weinstein stage needs 200 trading days of prices"} />
+      <SignalTile name="RS rating" color={rsColor} value={rs === null ? "—" : String(rs)} tone={rs === null ? undefined : rs > 70 ? "good" : rs < 50 ? "bad" : undefined}
+        side={<>of 99<small>{rs !== null && rs > 70 ? "above 70" : "70 to pass"}</small></>}
+        meter={<span className={styles.caseMeter}><span style={{ left: 0, width: `${rs === null ? 0 : Math.min(100, (rs / 99) * 100)}%` }} /><i style={{ left: `${(70 / 99) * 100}%` }} /></span>}
+        scale={["1", "99"]}
+        door={[{ k: "vs S&P 500", v: t.rs.vs_spx === null ? "—" : String(t.rs.vs_spx) }, ...(t.rs.sector_symbol ? [{ k: `vs ${t.rs.sector_symbol}`, v: t.rs.vs_sector === null ? "—" : String(t.rs.vs_sector) }] : [])]}
+        label={`RS rating ${rs ?? "unavailable"} of 99: S&P 500 ${t.rs.vs_spx ?? "—"}${t.rs.sector_symbol ? `, ${t.rs.sector_symbol} ${t.rs.vs_sector ?? "—"}` : ""}`} />
+    </div>
+
+    <Card title="Price, averages and volume">
+      <PriceVolumeChart series={t.charts.price} pivots={pivots} />
+      <div className={styles.chartFoot}>
+        <p>Daily closes with the 50, 150 and 200-day averages. Green rings mark pocket pivots: up days on unusually heavy volume.</p>
+        {last && <dl className={styles.footStats}>
+          <div><dt>Close</dt><dd>{money(last.close)}</dd></div>
+          <div><dt>50-day</dt><dd>{money(last.sma50)}</dd></div>
+          <div><dt>200-day</dt><dd>{money(last.sma200)}</dd></div>
+        </dl>}
+      </div>
+    </Card>
     <div className={styles.cardGrid}>
       <Card title="Rebased to 100 a year ago">
         <RebasedChart stock={t.charts.rebased.stock} spx={t.charts.rebased.spx} sector={t.charts.rebased.sector} sectorSymbol={t.rs.sector_symbol} />
-        <p className={styles.caption}>RS rating {t.rs.combined ?? "—"} (S&amp;P 500 {t.rs.vs_spx ?? "—"}{t.rs.sector_symbol ? `, ${t.rs.sector_symbol} ${t.rs.vs_sector ?? "—"}` : ""}) · Mansfield RS {t.conditions.mansfield ? `${t.conditions.mansfield.value > 0 ? "+" : ""}${t.conditions.mansfield.value} (${t.conditions.mansfield.signal.toLowerCase()})` : "—"}</p>
+        <div className={styles.chartFoot}>
+          <p>Above 100 means up over the year; above the benchmark lines means it did better than them.</p>
+          <dl className={styles.footStats}>
+            <div><dt>RS rating</dt><dd>{rs ?? "—"}</dd></div>
+            <div><dt>Mansfield</dt><dd>{mansfield ? `${mansfield.value > 0 ? "+" : ""}${mansfield.value}` : "—"}</dd></div>
+          </dl>
+        </div>
       </Card>
       <Card title="Weinstein stage, last 52 weeks">
         <StageStrip weeks={t.stage_history} />
-        <p className={styles.caption}>{t.stage ? `${t.stage.label}: ${weeks(t.stage.weeks_in_stage)} · 30-week average ${t.stage.sma_30w_slope_pct > 0 ? `rising ${t.stage.sma_30w_slope_pct}%` : t.stage.sma_30w_slope_pct < 0 ? `falling ${Math.abs(t.stage.sma_30w_slope_pct)}%` : "flat"} · price ${t.stage.price_vs_sma_30w_pct === 0 ? "at it" : `${Math.abs(t.stage.price_vs_sma_30w_pct)}% ${t.stage.price_vs_sma_30w_pct > 0 ? "above" : "below"} it`}. ${t.stage.detail}` : "Stage needs 200 trading days of prices."}</p>
+        <div className={styles.chartFoot}>
+          <p>{st ? st.detail : "Stage needs 200 trading days of prices."}</p>
+          {st && <dl className={styles.footStats}>
+            <div><dt>In stage</dt><dd>{weeks(st.weeks_in_stage)}</dd></div>
+            <div><dt>30-week slope</dt><dd>{signedPct(st.sma_30w_slope_pct)}</dd></div>
+          </dl>}
+        </div>
       </Card>
     </div>
-    <Card title={t.conditions.score_label}>
-      <div className={styles.rules}>{t.conditions.rules.map((r) => <div key={r.key} className={styles.rule}>
+    <Card title={t.conditions.score_label} action={<span style={{ ["--case-color" as string]: toneColor }}><Segments count={Math.max(1, t.conditions.evaluated)} on={t.conditions.passed} /></span>}>
+      <div className={styles.rules}>{t.conditions.rules.map((r) => <div key={r.key} className={styles.rule} data-rule={r.status}>
         <span className={styles.mark} data-status={r.status} aria-hidden="true">{r.status === "pass" ? "✓" : r.status === "fail" ? "×" : "–"}</span>
         <span><span className={styles.srOnly}>{r.status === "pass" ? "Met: " : r.status === "fail" ? "Not met: " : "Not enough history: "}</span>{r.label}{r.reason ? ` (${r.reason})` : ""}</span>
       </div>)}</div>
     </Card>
     <div className={styles.cardGrid}>
       <Card title="Patterns">
-        <p className={styles.unavailable}>{t.vcp.detail}</p>
-        {t.vcp.contractions.length > 0 && <><VcpDepths contractions={t.vcp.contractions} /><p className={styles.caption}>Pullbacks: {t.vcp.contractions.map((c) => `${c.depth_pct.toFixed(1)}%`).join(" → ")}</p></>}
-        <p className={styles.caption}>{t.pocket_pivots.status === "unavailable" ? `Pocket pivots: ${t.pocket_pivots.reason}` : `${t.pocket_pivots.events.length} pocket pivot${t.pocket_pivots.events.length === 1 ? "" : "s"} in the last 90 sessions${t.pocket_pivots.events.length ? `, latest ${t.pocket_pivots.events[t.pocket_pivots.events.length - 1].day}` : ""}.`}</p>
+        <p className={styles.patternLead}>{t.vcp.detail}</p>
+        {t.vcp.contractions.length > 0 && <><VcpDepths contractions={t.vcp.contractions} /><p className={styles.caption}>Pullbacks, oldest first: {t.vcp.contractions.map((c) => `${c.depth_pct.toFixed(1)}%`).join(" → ")}</p></>}
+        <div className={styles.chartFoot}>
+          <p>{t.pocket_pivots.status === "unavailable" ? `Pocket pivots: ${t.pocket_pivots.reason}` : "Pocket pivots in the last 90 sessions."}</p>
+          {t.pocket_pivots.status !== "unavailable" && <dl className={styles.footStats}>
+            <div><dt>Pocket pivots</dt><dd>{pivotCount}</dd></div>
+            <div><dt>Latest</dt><dd>{pivotCount ? t.pocket_pivots.events[pivotCount - 1].day.slice(5) : "—"}</dd></div>
+          </dl>}
+        </div>
       </Card>
-      <Card title="52-week position">
-        {t.position_52w ? <p className={styles.caption}>{money(t.position_52w.price)} · {t.position_52w.pct_above_low}% above the low ({money(t.position_52w.low)}) · {t.position_52w.pct_below_high}% below the high ({money(t.position_52w.high)})</p>
-          : <p className={styles.unavailable}>Needs a year of prices.</p>}
+      <Card title="52-week position" className={styles.fillCard}>
+        {p52 ? <div className={styles.range52Body}>
+          {/* The year's range as one track: today's price as a dot, the distance from the low filled. */}
+          <div className={styles.range52} role="img" aria-label={`${money(p52.price)}: ${p52.pct_above_low}% above the 52-week low of ${money(p52.low)} and ${p52.pct_below_high}% below the high of ${money(p52.high)}`}>
+            <span className={styles.range52Track}><span style={{ width: `${p52.high > p52.low ? ((p52.price - p52.low) / (p52.high - p52.low)) * 100 : 50}%` }} /></span>
+            <span className={styles.range52Scale}><span>Low {money(p52.low)}</span><b>{money(p52.price)}</b><span>High {money(p52.high)}</span></span>
+          </div>
+          <dl className={styles.footStats}>
+            <div><dt>Above the low</dt><dd>{p52.pct_above_low}%</dd></div>
+            <div><dt>Below the high</dt><dd>{p52.pct_below_high}%</dd></div>
+          </dl>
+        </div> : <p className={styles.unavailable}>Needs a year of prices.</p>}
       </Card>
     </div>
   </>;

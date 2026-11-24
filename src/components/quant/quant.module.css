@@ -194,3 +194,24 @@ button.contextBadge:hover { box-shadow: 0 0 0 4px var(--navy-soft); }
 .fillCard { display: flex; flex-direction: column; }
 .fillChart { position: relative; flex: 1 1 auto; min-height: 210px; }
 .fillChart > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+/* Trend tab: signal tiles reuse the scenario tile styles; these add the segment meter, tinted condition rows and the
+   52-week range bar. */
+.caseTile[data-signal] { cursor: default; }
+.caseTile[data-signal]:focus-visible { outline: 2px solid var(--navy); outline-offset: 3px; }
+.caseTile[data-signal] .caseValue { font-size: 16px; }
+@media (hover: none) { .caseTile[data-signal]:focus .pocket { transform: none; } }
+.segMeter { display: flex; gap: 3px; height: 8px; min-width: 150px; }
+.segMeter > span { flex: 1; border-radius: var(--radius-pill); background: var(--line-soft); }
+.segMeter > span[data-on] { background: var(--case-color, var(--navy)); }
+.rule[data-rule="pass"] { background: var(--grade-a-bg); border-color: transparent; color: var(--grade-a-ink); }
+.rule[data-rule="fail"] { background: var(--grade-f-bg); border-color: transparent; color: var(--grade-f-ink); }
+.rule[data-rule="unavailable"] { background: var(--soft); border-color: transparent; color: var(--ink-2); }
+.patternLead { margin: 0 0 8px; font-size: 14px; line-height: 1.5; color: var(--ink); }
+.range52 { display: grid; gap: 8px; margin: 6px 0 16px; }
+.range52Track { position: relative; height: 10px; border-radius: var(--radius-pill); background: var(--line-soft); }
+.range52Track > span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: var(--radius-pill); background: var(--navy-3); }
+.range52Track > span::after { content: ""; position: absolute; right: -8px; top: 50%; width: 16px; height: 16px; margin-top: -8px; border-radius: 50%; background: var(--navy); box-shadow: 0 0 0 3px var(--tile), 0 2px 6px rgb(13 27 42 / 25%); }
+.range52Scale { display: flex; justify-content: space-between; align-items: baseline; font-size: 11.5px; color: var(--ink-3); }
+.range52Scale b { font-family: var(--font-display); font-size: 18px; color: var(--ink); }
+.range52Body { display: flex; flex: 1; flex-direction: column; justify-content: center; }
