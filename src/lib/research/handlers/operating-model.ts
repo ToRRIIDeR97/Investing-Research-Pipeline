@@ -6,7 +6,11 @@ import { valuationFinancialInputs } from "../valuation/financial-inputs";
 import { createArtifactRepository } from "../artifacts/repository";
 import { pipelineDb, pipelineSql } from "@/db/pipeline-sql";
 
-/** Latest reported values per metric, oldest first. Annual rows sort after the quarters of their year. */
+/**
+ * Latest reported values per metric, oldest first: { unit, values: { period: value }, source_document_ids }. Annual
+ * periods sort after the quarters of their year. A metric reported in more than one unit keeps one row per value.
+ * Per-row document ids made SoFi's history 129 KB for 222 metrics; listing each metric's documents once halves it.
+ */
 export function recentByMetric(observations: Array<Record<string, any>>, limit: number) {
   const byMetric = new Map<string, Array<Record<string, any>>>();
   for (const observation of observations) {
@@ -15,11 +19,16 @@ export function recentByMetric(observations: Array<Record<string, any>>, limit: 
     byMetric.set(key, [...(byMetric.get(key) || []), observation]);
   }
   const order = (row: Record<string, any>) => row.fiscal_year * 10 + (row.fiscal_quarter ?? 5);
-  return Object.fromEntries([...byMetric].map(([key, rows]) => [key,
-    rows.sort((a, b) => order(a) - order(b)).slice(-limit).map((row) => ({
-      period: row.fiscal_quarter == null ? `FY${row.fiscal_year}` : `${row.fiscal_year}Q${row.fiscal_quarter}`,
-      value: row.value_numeric, unit: row.unit, source_document_id: row.source_document_id,
-    }))]));
+  const period = (row: Record<string, any>) => row.fiscal_quarter == null ? `FY${row.fiscal_year}` : `${row.fiscal_year}Q${row.fiscal_quarter}`;
+  return Object.fromEntries([...byMetric].map(([key, all]) => {
+    const rows = all.sort((a, b) => order(a) - order(b)).slice(-limit);
+    const sources = [...new Set(rows.map((row) => row.source_document_id).filter(Boolean))];
+    const units = new Set(rows.map((row) => row.unit ?? null));
+    const periods = new Set(rows.map(period));
+    if (units.size > 1 || periods.size < rows.length)
+      return [key, rows.map((row) => ({ period: period(row), value: row.value_numeric, unit: row.unit, source_document_id: row.source_document_id }))];
+    return [key, { unit: rows[0].unit ?? null, values: Object.fromEntries(rows.map((row) => [period(row), row.value_numeric])), source_document_ids: sources }];
+  }));
 }
 
 /**
