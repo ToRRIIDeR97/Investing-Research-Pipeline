@@ -656,7 +656,16 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
       source_notes: ["Synthetic fixture; not investment analysis"],
     } };
   }
-  // Banks: model-built equity schedules; code assembles the path, anchors and returns.
+  // Deposit-funded banks: only the excess-return assumptions; the fixture keeps the code defaults.
+  if (packet.output_contract === "bank_valuation_assumptions") {
+    const defaults = (packet.default_bank_assumptions ?? {}) as Record<string, unknown>;
+    return { bank_valuation_assumptions: {
+      artifact_type: "bank_valuation_assumptions", ...defaults,
+      omitted_methods: [{ method: "fcfe", reason: "Synthetic bank: deposit growth is funding, so value comes from excess returns on tangible equity." }],
+      source_notes: ["Synthetic fixture; not investment analysis"],
+    } };
+  }
+  // Other financials: model-built equity schedules; code assembles the path, anchors and returns.
   return {
     valuation_scenario_set: {
       artifact_type: "valuation_scenario_set",

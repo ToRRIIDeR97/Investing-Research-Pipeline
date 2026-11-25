@@ -25,7 +25,8 @@ export function otherBorrowingKeys(keys: string[], hasLongTermTotal: boolean) {
 }
 
 const COLUMNS: { key: string; aliases: string[]; pattern?: RegExp; sum?: string[]; debtLines?: true; scale: "millions" | "count" }[] = [
-  { key: "revenue", aliases: ["revenue", "us_gaap_Revenues", "us_gaap_RevenueFromContractWithCustomerExcludingAssessedTax", "ifrs_full_Revenue"], scale: "millions" },
+  // net_revenue (RevenuesNetOfInterestExpense) is a bank's total net revenue; it is used only when no other revenue line is captured.
+  { key: "revenue", aliases: ["revenue", "us_gaap_Revenues", "us_gaap_RevenueFromContractWithCustomerExcludingAssessedTax", "ifrs_full_Revenue", "net_revenue", "us_gaap_RevenuesNetOfInterestExpense"], scale: "millions" },
   { key: "cost_of_revenue", aliases: ["us_gaap_CostOfRevenue", "us_gaap_CostOfGoodsAndServicesSold"], scale: "millions" },
   { key: "operating_income", aliases: ["operating_income", "us_gaap_OperatingIncomeLoss", "ifrs_full_ProfitLossFromOperatingActivities"], scale: "millions" },
   { key: "pretax_income", aliases: ["pretax_income", "us_gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest", "us_gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments"], scale: "millions" },

@@ -196,20 +196,21 @@ s.text(16, 790, "Source: pipeline-runner.ts:runResearchPipeline, orchestrator.ts
 s.save(P("activity-research-run.svg"))
 
 # ---------------------------------------------------------------- activity: valuation
-s = Svg(1100, 730, "Asset valuation — UML activity view",
-        "The valuation stage loads code-built inputs, separates FCFF assets from banks, withholds before any model call when inputs are missing, "
-        "asks the model only for assumptions (FCFF) or equity schedules (banks), and assembles the path, anchors, returns and reverse valuation in code.")
+s = Svg(1320, 730, "Asset valuation — UML activity view",
+        "The valuation stage loads code-built inputs, separates FCFF assets, deposit-funded banks and other financials, withholds before any model call when inputs are missing, "
+        "asks the model only for assumptions (FCFF and banks) or equity schedules (other financials), and assembles the path, anchors, returns and reverse valuation in code.")
 cx = 300
 s.initial(cx, 50)
 s.line([(cx, 57), (cx, 70)])
 s.box(100, 70, 400, 96, "Load inputs (code)", [
     "operating_scenario_set yearly_drivers · operating_model",
     "financial_inputs · historyRatios (PP&E, IC) · equityBridge · shares · analytics pack",
-    "risk-free (FRED DGS10) · beta (market_price_history) · implied ERP",
+    "risk-free (FRED DGS10) · beta (market_price_history) · implied ERP · bankCapitalBase (TBV, deposits)",
     "price: stored close; historical run without one → withheld"], "lib", title_size=12)
 s.line([(cx, 166), (cx, 186)])
 s.diamond(cx, 200)
-s.text(cx - 20, 188, "bank archetype or financials profile?", 11, fill="#5a4700", italic=True, anchor="end")
+s.text(cx - 20, 182, "bank archetype or financials profile,", 11, fill="#5a4700", italic=True, anchor="end")
+s.text(cx - 20, 195, "or deposits ≥ 30% of assets?", 11, fill="#5a4700", italic=True, anchor="end")
 s.line([(cx + 14, 200), (760, 200), (760, 226)], "yes", lx=600, ly=194)
 s.line([(cx, 214), (cx, 236)], "no", lx=cx + 6, ly=230, lanchor="start")
 s.diamond(cx, 250)
@@ -223,19 +224,33 @@ s.line([(cx, 352), (cx, 372)])
 s.box(130, 372, 340, 66, "Statements → FCFF schedules (code)", ["PP&E roll-forward D&A · fade years · timing",
     "value-driver TV = NOPAT(1+g)(1−g/RONIC)/(r−g)"], "lib", title_size=12)
 s.line([(cx, 438), (cx, 458)])
-s.box(130, 458, 790, 66, "assembleValuation + buildFcffValuation (code)", [
+s.box(130, 458, 790, 66, "assembleValuation + buildFcffValuation / buildBankValuation (code)", [
     "anchors on the base set · case × set matrix · r × g grid · multiples vs own history · no-rerating · lenses",
-    "reverse: implied multiple, perpetual and 10-year FCF growth · sanity flags · stress below bear (banks keep the model's)"], "lib", title_size=12)
-s.box(600, 226, 320, 66, "valuation-analyst (model)", ["FCFE, dividend or book method_inputs × 3",
+    "reverse: implied multiple and FCF growth, or implied ROTE for banks · sanity flags · stress below bear"], "lib", title_size=12)
+s.diamond(760, 240)
+s.text(780, 222, "deposit-funded bank with tangible equity,", 11, fill="#5a4700", italic=True)
+s.text(780, 234, "valued in its reporting currency?", 11, fill="#5a4700", italic=True)
+s.line([(774, 240), (1120, 240), (1120, 262)], "yes", lx=1060, ly=234)
+s.line([(760, 254), (760, 262)])
+s.box(960, 262, 340, 66, "valuation-analyst (model)", ["bank_valuation_assumptions: cost of equity,",
+    "RWA growth + target CET1 per year, terminal ROTE, g"], "ui", title_size=12)
+s.line([(1120, 328), (1120, 348)])
+s.box(960, 348, 340, 96, "Excess return on tangible equity (code)", [
+    "B0 = tangible book at the book date",
+    "B_t = B0 × target / current CET1 × RWA_t / RWA_0",
+    "RI = NI − r × B_t−1 · TV = B_T(ROTE − r)/(r − g)",
+    "withheld without a call when an input is missing"], "lib", title_size=12)
+s.line([(1120, 444), (1120, 491), (920, 491)])
+s.box(600, 262, 320, 66, "valuation-analyst (model, other financials)", ["FCFE, dividend or book method_inputs × 3",
     "reverse_valuation, or withheld with a reason"], "ui", title_size=12)
-s.line([(760, 292), (760, 312)])
-s.diamond(760, 326)
-s.text(780, 314, "withheld by the model?", 11, fill="#5a4700", italic=True)
-s.line([(774, 326), (1070, 326), (1070, 700), (150, 700), (150, 676)], "yes", lx=1000, ly=320)
-s.line([(760, 340), (760, 362)], "no", lx=766, ly=356, lanchor="start")
-s.box(600, 362, 320, 66, "Primary method, shares (code)", ["first of fcff, fcfe, dividend, … with 3 scenarios",
+s.line([(760, 328), (760, 344)])
+s.diamond(760, 358)
+s.text(780, 352, "withheld by the model?", 11, fill="#5a4700", italic=True)
+s.line([(774, 358), (940, 358), (940, 700), (150, 700), (150, 676)], "yes", lx=922, ly=352)
+s.line([(760, 372), (760, 380)])
+s.box(600, 380, 320, 66, "Primary method, shares (code)", ["first of fcff, fcfe, dividend, … with 3 scenarios",
     "diluted shares raised to the reported count"], "lib", title_size=12)
-s.line([(760, 428), (760, 458)])
+s.line([(760, 446), (760, 458)])
 s.line([(525, 524), (525, 544)])
 s.diamond(525, 558)
 s.text(545, 546, "every anchor > 0?", 11, fill="#5a4700", italic=True)
@@ -248,7 +263,7 @@ s.box(560, 590, 300, 70, "Persist (handler)", ["valuation_signals · scenarios r
 s.line([(280, 640), (560, 640)])
 s.line([(860, 625), (900, 625)])
 s.final(910, 625)
-s.text(16, 722, "Source: handlers/asset-valuation.ts, valuation/engine.ts, valuation/v2.ts, handlers/operating-scenarios.ts. Blue: model call; purple: code.", 11, fill="#555")
+s.text(16, 722, "Source: handlers/asset-valuation.ts, valuation/engine.ts, valuation/v2.ts, valuation/bank.ts, handlers/operating-scenarios.ts. Blue: model call; purple: code.", 11, fill="#555")
 s.save(P("activity-valuation.svg"))
 
 # ---------------------------------------------------------------- state machines

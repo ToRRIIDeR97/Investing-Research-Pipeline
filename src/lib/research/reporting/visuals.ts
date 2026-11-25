@@ -191,7 +191,12 @@ function valuationBridge(spec: Extract<VisualSpec,{kind:'valuation_bridge'}>, ar
   const calc = scenarioValuation(storedArtifact(spec.artifact_id, artifacts, ['valuation_scenario_set']).content_json, spec.scenario);
   const cash = calc.years.reduce((n, y) => n + y.present_value, 0);
   const money = (v: number) => `${v.toLocaleString('en-US',{maximumFractionDigits:1})} ${calc.currency} millions`;
-  const steps: { label:string; value:number; total?:boolean }[] = [
+  const steps: { label:string; value:number; total?:boolean }[] = calc.method === 'residual_income' ? [
+    { label:'Tangible book today', value:calc.equity_bridge },
+    { label:'Excess returns, discounted', value:cash },
+    { label:'Terminal excess return, discounted', value:calc.terminal_present_value },
+    { label:'Equity value', value:calc.equity_value, total:true },
+  ] : [
     { label:'Forecast cash flows, discounted', value:cash },
     { label:'Terminal value, discounted', value:calc.terminal_present_value },
     ...(calc.method === 'fcff' ? [{ label:'Enterprise value', value:cash + calc.terminal_present_value, total:true },

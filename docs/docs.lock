@@ -1,4 +1,4 @@
-AGENTS.md	docs/diagrams/_source/make_diagrams.py	6eebfdfff875
+AGENTS.md	docs/diagrams/_source/make_diagrams.py	2ec428f8b3c6
 
 AGENTS.md	docs/generators.json	4bcbf7e48786
 
@@ -26,7 +26,7 @@ DESIGN.md	src/components/ui/sliding.tsx	c60580f81860
 
 docs/architecture.md	docker-compose.yml	9a3084f7dd01
 
-docs/architecture.md	docs/diagrams/_source/make_diagrams.py	6eebfdfff875
+docs/architecture.md	docs/diagrams/_source/make_diagrams.py	2ec428f8b3c6
 
 docs/architecture.md	drizzle/0000_tiny_master_chief.sql	6e0fb77bfbb6
 
@@ -142,7 +142,7 @@ docs/local-agent-harness.md	src/lib/agent-harness/providers/anthropic-compatible
 
 docs/local-agent-harness.md	src/lib/agent-harness/providers/anthropic-schema.ts	e8bbe2b5d644
 
-docs/local-agent-harness.md	src/lib/agent-harness/providers/mock.ts	fa41c1ad7782
+docs/local-agent-harness.md	src/lib/agent-harness/providers/mock.ts	8604138e1336
 
 docs/local-agent-harness.md	src/lib/agent-harness/providers/openai-compatible.ts	30369de0cef2
 
