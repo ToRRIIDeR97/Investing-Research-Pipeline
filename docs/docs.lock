@@ -1,0 +1,279 @@
+AGENTS.md	docs/diagrams/_source/make_diagrams.py	6eebfdfff875
+
+AGENTS.md	docs/generators.json	4bcbf7e48786
+
+AGENTS.md	eslint.config.mjs	6c7f3c5976ae
+
+AGENTS.md	package.json	4fab903f08a0
+
+AGENTS.md	scripts/test-db.cjs	2a818ba6ffc1
+
+AGENTS.md	tools/docs_sync.py	3aab70487852
+
+AGENTS.md	tsconfig.json	e5e7b035732c
+
+DESIGN.md	src/app/globals.css	1d990ae98c9f
+
+DESIGN.md	src/components/research-ui.module.css	05c95db27a2e
+
+DESIGN.md	src/components/ui/palette.ts	ac8785638429
+
+DESIGN.md	src/components/ui/primitives.module.css	babec4012b78
+
+DESIGN.md	src/components/ui/primitives.tsx	dc03112dbd6e
+
+DESIGN.md	src/components/ui/sliding.tsx	c60580f81860
+
+docs/architecture.md	docker-compose.yml	9a3084f7dd01
+
+docs/architecture.md	docs/diagrams/_source/make_diagrams.py	6eebfdfff875
+
+docs/architecture.md	drizzle/0000_tiny_master_chief.sql	6e0fb77bfbb6
+
+docs/architecture.md	drizzle/0001_backtesting.sql	9d523efc87e5
+
+docs/architecture.md	drizzle/0002_research_os_v2.sql	348008507e75
+
+docs/architecture.md	drizzle/0003_research_os_v3.sql	fe8b8b44ced6
+
+docs/architecture.md	drizzle/0004_source_intelligence_v3.sql	cb93e05061d9
+
+docs/architecture.md	drizzle/0005_market_data_v3.sql	12088a598fcf
+
+docs/architecture.md	drizzle/0006_backend_ui_stitch.sql	83228070913c
+
+docs/architecture.md	drizzle/0009_research_memory_graph.sql	f8ad179c080d
+
+docs/architecture.md	drizzle/0010_price_history_verification.sql	849d31e8322e
+
+docs/architecture.md	drizzle/0011_saved_charts.sql	5b33841457b4
+
+docs/architecture.md	drizzle/0012_task_budget_reservation.sql	328402799810
+
+docs/architecture.md	drizzle/0013_research_memory_search.sql	3317bc6dbd79
+
+docs/architecture.md	drizzle/0014_performance_indexes.sql	68989f953dd5
+
+docs/architecture.md	drizzle/0015_valuation_v2.sql	2a8e14d90997
+
+docs/architecture.md	drizzle/0016_research_lineage_monitoring.sql	fd6ea75cda37
+
+docs/architecture.md	drizzle/0017_run_control_state.sql	5417870fe61a
+
+docs/architecture.md	drizzle/0018_report_draft_stage.sql	330bd4ce3e60
+
+docs/architecture.md	drizzle/0019_investing_notebook.sql	c4166bd9d45b
+
+docs/architecture.md	drizzle/0020_valuation_scenarios.sql	c75d7e24c25c
+
+docs/architecture.md	drizzle/0021_filing_notes.sql	89c1252925bb
+
+docs/architecture.md	drizzle/0022_investment_checklists.sql	f7c50f708c98
+
+docs/architecture.md	drizzle/0023_theme_research.sql	d806e18493dc
+
+docs/architecture.md	drizzle/0024_company_profiles.sql	9cab11b59944
+
+docs/architecture.md	drizzle/0025_quant_snapshots.sql	a525a33e0974
+
+docs/architecture.md	src/db/schema/ai.ts	39ec5023abcb
+
+docs/architecture.md	src/db/schema/backtesting.ts	ceef43c8556c
+
+docs/architecture.md	src/db/schema/checklists.ts	b57d8214893b
+
+docs/architecture.md	src/db/schema/company-profiles.ts	4933d032c337
+
+docs/architecture.md	src/db/schema/core.ts	89e6dd99c3e2
+
+docs/architecture.md	src/db/schema/corpus.ts	ee4a7219dd3e
+
+docs/architecture.md	src/db/schema/evidence.ts	0f1529651533
+
+docs/architecture.md	src/db/schema/market-data.ts	6fa2ce8d9f75
+
+docs/architecture.md	src/db/schema/metrics.ts	013df1e4a7f1
+
+docs/architecture.md	src/db/schema/monitoring.ts	e78163a9015e
+
+docs/architecture.md	src/db/schema/notebook.ts	948d024baa75
+
+docs/architecture.md	src/db/schema/profiles.ts	806bbcc27282
+
+docs/architecture.md	src/db/schema/quant.ts	6bdf98f97a41
+
+docs/architecture.md	src/db/schema/research-artifacts.ts	6b756269b2b5
+
+docs/architecture.md	src/db/schema/research-run-jobs.ts	47a3f5b6aea6
+
+docs/architecture.md	src/db/schema/research-v2.ts	e0aadf8030b6
+
+docs/architecture.md	src/db/schema/saved-charts.ts	6f53f77a576b
+
+docs/architecture.md	src/db/schema/source-intelligence.ts	820e89659494
+
+docs/architecture.md	src/db/schema/themes.ts	b2783b048069
+
+docs/architecture.md	src/db/schema/thesis.ts	e155f75ef723
+
+docs/architecture.md	src/db/schema/valuation.ts	d1583c1bb7d6
+
+docs/architecture.md	src/db/schema/workbench.ts	2050236a11b3
+
+docs/architecture.md	src/db/schema/workflow.ts	7845b8309d63
+
+docs/architecture.md	src/lib/research/run-queue.ts	c079def23201
+
+docs/architecture.md	src/lib/research/team-plan.ts	0fca3dbde963
+
+docs/architecture.md	src/lib/workflow/orchestrator.ts	d984c3eefc3e
+
+docs/architecture.md	src/lib/workflow/stages.ts	846b27e51f88
+
+docs/architecture.md	tools/gen_routes.py	d1075262e83d
+
+docs/architecture.md	tools/gen_stages.py	41f42ecb38bb
+
+docs/local-agent-harness.md	.env.example	e53beb778926
+
+docs/local-agent-harness.md	src/lib/agent-harness/providers/anthropic-cache.ts	5dfffef8481b
+
+docs/local-agent-harness.md	src/lib/agent-harness/providers/anthropic-compatible.ts	4ed6c94592c3
+
+docs/local-agent-harness.md	src/lib/agent-harness/providers/anthropic-schema.ts	e8bbe2b5d644
+
+docs/local-agent-harness.md	src/lib/agent-harness/providers/mock.ts	fa41c1ad7782
+
+docs/local-agent-harness.md	src/lib/agent-harness/providers/openai-compatible.ts	30369de0cef2
+
+docs/local-agent-harness.md	src/lib/agent-harness/providers/opencode-go.ts	2133512b5ca9
+
+docs/local-agent-harness.md	src/lib/agent-harness/providers/provider.ts	23df3bedee3e
+
+docs/local-agent-harness.md	src/lib/agent-harness/registry.ts	217ef6b6ad1d
+
+docs/local-development.md	docker-compose.yml	9a3084f7dd01
+
+docs/local-development.md	package.json	4fab903f08a0
+
+docs/local-development.md	scripts/dev-with-db.cjs	7ea83c0b857c
+
+docs/local-development.md	scripts/test-db.cjs	2a818ba6ffc1
+
+docs/local-development.md	src/db/migrate.ts	6d96ed068348
+
+docs/operations.md	scripts/monitor-check.ts	bba043ca4851
+
+docs/operations.md	scripts/research-store.ts	aea78a10f3a9
+
+docs/operations.md	scripts/storage-gc.ts	2b57a48132a8
+
+docs/operations.md	src/lib/maintenance/research-store.ts	6f8b1ed88d76
+
+docs/operations.md	src/lib/maintenance/storage-gc.ts	44ade35fd127
+
+docs/operations.md	src/lib/research/monitoring/monitor-check.ts	901bd09c8203
+
+docs/operations.md	src/lib/research/monitoring/monitor-score.ts	dc07c7b71f38
+
+docs/report-visual-guidelines.md	src/components/report/exhibit-tile.tsx	224873a4e179
+
+docs/report-visual-guidelines.md	src/lib/research/reporting/contracts.ts	41c574e9f6a0
+
+docs/report-visual-guidelines.md	src/lib/research/reporting/exhibits.ts	f837516d765d
+
+docs/security.md	.env.example	e53beb778926
+
+docs/security.md	.gitignore	8ba09d1efc94
+
+docs/security.md	next.config.ts	e68fdd2b2a9b
+
+docs/security.md	src/app/api/session/route.ts	d66f5d1e7921
+
+docs/security.md	src/lib/api/auth.ts	8eaefe01719e
+
+docs/security.md	src/lib/html-scan.ts	d594627bc88c
+
+docs/security.md	src/lib/maintenance/research-store.ts	6f8b1ed88d76
+
+docs/security.md	src/lib/net.ts	55a642f3e099
+
+docs/security.md	src/lib/research/repair/sandbox.ts	95a517bbb6d8
+
+docs/security.md	src/proxy.ts	674fb3d1fa1b
+
+docs/system.md	src/lib/research/asset-overview.ts	a636f3c65b7d
+
+docs/system.md	src/lib/research/asset-snapshot.ts	e1bb4e2dcc18
+
+docs/system.md	src/lib/research/brief-presentation.ts	79034042e95b
+
+docs/system.md	src/lib/research/contract-json-schema.ts	c9cdad44a68c
+
+docs/system.md	src/lib/research/framing.ts	0f25ee7a3454
+
+docs/system.md	src/lib/research/handlers/index.ts	8198b46f77c3
+
+docs/system.md	src/lib/research/model-tiering.ts	c8a5cdc711ad
+
+docs/system.md	src/lib/research/pipeline-contracts.ts	ab95a56dbefa
+
+docs/system.md	src/lib/research/pipeline-helpers.ts	39aa8b57770f
+
+docs/system.md	src/lib/research/pipeline-runner.ts	6f687cf70803
+
+docs/system.md	src/lib/research/primary-run.ts	4331d3dacc88
+
+docs/system.md	src/lib/research/rating/build.ts	2755288ae8ab
+
+docs/system.md	src/lib/research/rating/confidence.ts	0806f30f3d65
+
+docs/system.md	src/lib/research/rating/grade.ts	7c51f8a656b3
+
+docs/system.md	src/lib/research/rating/trend.ts	01d970eedd32
+
+docs/system.md	src/lib/research/report-tabs.ts	2a4f3ec06df8
+
+docs/system.md	src/lib/research/run-bars.ts	0983b246a650
+
+docs/system.md	src/lib/research/run-context.ts	d4fa6db04bc7
+
+docs/system.md	src/lib/research/run-polling.ts	3a967f8083ab
+
+docs/system.md	src/lib/research/run-queue-error.ts	08aa739b6465
+
+docs/system.md	src/lib/research/run-queue.ts	c079def23201
+
+docs/system.md	src/lib/research/run-service.ts	e01b7f9b6e7a
+
+docs/system.md	src/lib/research/run-status.ts	089467e1c966
+
+docs/system.md	src/lib/research/source-reader-batching.ts	d88dea3136af
+
+docs/system.md	src/lib/research/stage-contracts.ts	17c1d914fbd9
+
+docs/system.md	src/lib/research/system-pipeline.ts	15c66f3a9c1d
+
+docs/system.md	src/lib/research/team-plan.ts	0fca3dbde963
+
+docs/system.md	src/lib/research/team.ts	2838c00bd33f
+
+docs/system.md	src/lib/research/test-assets.ts	68655a67cb06
+
+docs/system.md	src/lib/research/v2-contracts.ts	8f921f701cd8
+
+docs/system.md	src/lib/research/version.ts	ed689b6d979d
+
+docs/system.md	src/lib/workflow/orchestrator.ts	d984c3eefc3e
+
+docs/system.md	src/lib/workflow/quality-gates.ts	a0b73fb9d819
+
+docs/system.md	src/lib/workflow/stages.ts	846b27e51f88
+
+docs/system.md	src/lib/workflow/task-queue.ts	cfb770227e54
+
+docs/system.md	src/lib/workflow/validators.ts	b87ee720f915
+
+docs/system.md	src/workers/poll-loop.ts	f97c656085f5
+
+docs/system.md	src/workers/research-worker.ts	a363921f3725

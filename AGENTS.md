@@ -1,3 +1,14 @@
+---
+covers:
+  - package.json
+  - eslint.config.mjs
+  - tsconfig.json
+  - scripts/test-db.cjs
+  - tools/docs_sync.py
+  - docs/generators.json
+  - docs/diagrams/_source/make_diagrams.py
+---
+
 # Repository guide
 
 - Pragma Research is a Next.js app backed by PostgreSQL. The database owns run, stage, artifact and job state. A separate worker runs queued research jobs (pipeline version 3, 25 stages, scheduled from a dependency graph).
@@ -23,13 +34,14 @@
 
 ## Commands
 
-Required local checks. All four must pass before a merge:
+Required local checks. All five must pass before a merge:
 
 ```bash
 npm run lint
 npx tsc --noEmit
 npm run test:unit
 npm run build
+python tools/docs_sync.py check
 ```
 
 When persistence, the queue, orchestration or the pipeline changes, also run the database-backed suites:
@@ -50,6 +62,24 @@ Diagrams in `docs/diagrams/` are generated. Edit `docs/diagrams/_source/make_dia
 python3 docs/diagrams/_source/make_diagrams.py docs/diagrams
 ```
 
+## Docs sync
+
+Docs declare the code they describe in a `covers` frontmatter list; `docs/docs.lock` records when each was last read against that code. After changing code run `python tools/docs_sync.py generate`, then `check`. For each `STALE` doc, read it and its diagrams against the listed changes: update it (and the affected `docs/architecture.md` views) when a boundary, interface, data flow, trust boundary, secret or canonical command changed, then `python tools/docs_sync.py stamp <doc>`. Never stamp a doc you haven't read, and never hand-edit a `GENERATED` block or the lock. Generators for repo-specific blocks are listed in `docs/generators.json`. Enable the pre-commit check once per clone with `git config core.hooksPath .githooks`.
+
+<!-- BEGIN GENERATED: covers -->
+| Document | Covers |
+| --- | --- |
+| `AGENTS.md` | `package.json`, `eslint.config.mjs`, `tsconfig.json`, `scripts/test-db.cjs`, `tools/docs_sync.py`, `docs/generators.json`, `docs/diagrams/_source/make_diagrams.py` |
+| `DESIGN.md` | `src/app/globals.css`, `src/components/ui/**`, `src/components/research-ui.module.css` |
+| `docs/architecture.md` | `src/db/schema/**`, `drizzle/*.sql`, `src/lib/workflow/stages.ts`, `src/lib/research/team-plan.ts`, `src/lib/workflow/orchestrator.ts`, `src/lib/research/run-queue.ts`, `docker-compose.yml`, `docs/diagrams/_source/make_diagrams.py`, `tools/gen_*.py` |
+| `docs/local-agent-harness.md` | `src/lib/agent-harness/providers/**`, `src/lib/agent-harness/registry.ts`, `.env.example` |
+| `docs/local-development.md` | `docker-compose.yml`, `package.json`, `scripts/dev-with-db.cjs`, `scripts/test-db.cjs`, `src/db/migrate.ts` |
+| `docs/operations.md` | `src/lib/maintenance/**`, `scripts/storage-gc.ts`, `scripts/research-store.ts`, `scripts/monitor-check.ts`, `src/lib/research/monitoring/**` |
+| `docs/report-visual-guidelines.md` | `src/lib/research/reporting/exhibits.ts`, `src/lib/research/reporting/contracts.ts`, `src/components/report/exhibit-tile.tsx` |
+| `docs/security.md` | `src/proxy.ts`, `src/lib/api/auth.ts`, `src/app/api/session/**`, `src/lib/net.ts`, `src/lib/html-scan.ts`, `src/lib/research/repair/sandbox.ts`, `next.config.ts`, `.env.example`, `.gitignore`, `src/lib/maintenance/research-store.ts` |
+| `docs/system.md` | `src/lib/workflow/**`, `src/lib/research/*.ts`, `src/lib/research/handlers/index.ts`, `src/workers/**`, `src/lib/research/rating/**` |
+<!-- END GENERATED -->
+
 ## Invariants
 
 - Agents propose; stage contracts and validators decide what's accepted. Model calls have no tool execution.
@@ -67,7 +97,7 @@ python3 docs/diagrams/_source/make_diagrams.py docs/diagrams
 ## Merging
 
 - Target branch is `main`. Work on a feature branch and merge through a pull request. Never push directly to `main` or force-push it.
-- Required checks run **locally**, not in CI, to avoid GitHub Actions charges. Merge only after `npm run lint`, `npx tsc --noEmit`, `npm run test:unit` and `npm run build` pass on the branch **and** the user explicitly approves.
+- Required checks run **locally**, not in CI, to avoid GitHub Actions charges. Merge only after `npm run lint`, `npx tsc --noEmit`, `npm run test:unit`, `npm run build` and `python tools/docs_sync.py check` pass on the branch **and** the user explicitly approves.
   - Changes to model requests (prompt layout, providers, usage parsing) also need a small paid live provider test that the user has approved.
   - Don't wait on or re-run GitHub Actions. If branch protection requires CI checks that block the merge, report it to the user and don't bypass it.
 - After the merge is verified in `main`, delete the feature branch:

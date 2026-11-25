@@ -1,3 +1,10 @@
+---
+covers:
+  - src/app/globals.css
+  - src/components/ui/**
+  - src/components/research-ui.module.css
+---
+
 # Pragma Research design system
 
 How every screen should look, read and move. The source of truth for values is code: tokens in

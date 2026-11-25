@@ -1,3 +1,10 @@
+---
+covers:
+  - src/lib/agent-harness/providers/**
+  - src/lib/agent-harness/registry.ts
+  - .env.example
+---
+
 # Pragma Research local agent harness
 
 Pragma Research calls configured inference endpoints directly. It does not start an OpenCode server or use the OpenCode SDK, localhost sidecar, session database, or history API.

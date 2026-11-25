@@ -1,3 +1,17 @@
+---
+covers:
+  - src/proxy.ts
+  - src/lib/api/auth.ts
+  - src/app/api/session/**
+  - src/lib/net.ts
+  - src/lib/html-scan.ts
+  - src/lib/research/repair/sandbox.ts
+  - next.config.ts
+  - .env.example
+  - .gitignore
+  - src/lib/maintenance/research-store.ts
+---
+
 # Security
 
 Pragma Research is a local, single-user tool with no hosted deployment. It handles provider credentials, database credentials, financial source material and research decisions. Its main risks are:
@@ -27,7 +41,7 @@ This document was verified against source on 2026-10-05, and the controls change
 
 | Zone | Contents | Trust |
 | --- | --- | --- |
-| Z0 Local clients | Browser, curl, any local process that can reach the Next.js port (bound to `127.0.0.1`) | Untrusted: 61 handlers in 53 `route.ts` files. `src/proxy.ts` refuses foreign Host names and cross-site writes, and requires `RESEARCH_OS_API_TOKEN` when it is set |
+| Z0 Local clients | Browser, curl, any local process that can reach the Next.js port (bound to `127.0.0.1`) | Untrusted: every handler under `src/app/api` ([route inventory](architecture.md#api-route-inventory)). `src/proxy.ts` refuses foreign Host names and cross-site writes, and requires `RESEARCH_OS_API_TOKEN` when it is set |
 | Z1 App and worker | Next.js server, research worker, agent harness; holds secrets | Trusted code |
 | Z2 Data stores | Postgres (pgvector image), `./storage` | Trusted; reached by Z1 only (by design, not enforced beyond the DB password) |
 | Z3 External hosts | LLM endpoint, embedding endpoint, configured search endpoint or DuckDuckGo/Bing HTML, discovered URLs, SEC, FRED, Yahoo, Stooq, World Bank, EIA, FDIC, Coinbase, blockchain.info, Wikidata and English Wikipedia (company profiles), Wikimedia image hosts (loaded by the browser) | Their output is untrusted data |

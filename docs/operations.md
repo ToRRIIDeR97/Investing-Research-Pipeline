@@ -1,3 +1,12 @@
+---
+covers:
+  - src/lib/maintenance/**
+  - scripts/storage-gc.ts
+  - scripts/research-store.ts
+  - scripts/monitor-check.ts
+  - src/lib/research/monitoring/**
+---
+
 # Operations
 
 Procedures that aren't covered in [local-development.md](local-development.md). Each one changes stored data, so run it only when the user asks.

@@ -1,3 +1,12 @@
+---
+covers:
+  - docker-compose.yml
+  - package.json
+  - scripts/dev-with-db.cjs
+  - scripts/test-db.cjs
+  - src/db/migrate.ts
+---
+
 # Local Pragma Research development
 
 Repository rules and required checks are in [AGENTS.md](../AGENTS.md). Runtime topology is in the [deployment view](architecture.md#2-structural--deployment).
@@ -65,3 +74,43 @@ Run all database-backed suites one file at a time with `npm run test:db`. The su
 For a live run, `scripts/new-equity-run.ts` requires `RUN_PAID_RESEARCH=1` and respects `RESEARCH_ACCEPTANCE_BUDGET_USD`. It stops at the research-plan gate. Review and explicitly approve that persisted plan before resuming paid work.
 
 Keep credentials and provider settings in `.env.local`; do not commit them.
+
+## npm scripts
+
+Generated from `package.json`; paid scripts still need their flag (see [AGENTS.md](../AGENTS.md)).
+
+<!-- BEGIN GENERATED: scripts -->
+| Command | Runs |
+| --- | --- |
+| `npm run build` | `next build` |
+| `npm run db:generate` | `drizzle-kit generate` |
+| `npm run db:migrate` | `tsx src/db/migrate.ts` |
+| `npm run db:push` | `drizzle-kit push` |
+| `npm run db:seed` | `tsx src/db/seed.ts` |
+| `npm run db:studio` | `drizzle-kit studio` |
+| `npm run dev` | `next dev -H 127.0.0.1` |
+| `npm run eval:judge` | `tsx scripts/judge-research.ts` |
+| `npm run eval:score` | `tsx scripts/score-research.ts` |
+| `npm run lint` | `eslint .` |
+| `npm run monitor:check` | `tsx scripts/monitor-check.ts` |
+| `npm run run:meli-direct` | `RESEARCH_ACCEPTANCE_PROVIDER=direct-openai-compatible tsx scripts/new-meli-run.ts` |
+| `npm run run:research:resume` | `tsx scripts/resume-research-run.ts` |
+| `npm run start` | `next start -H 127.0.0.1` |
+| `npm run store:export` | `tsx scripts/research-store.ts export` |
+| `npm run store:import` | `tsx scripts/research-store.ts import` |
+| `npm run store:sync` | `tsx scripts/research-store.ts sync` |
+| `npm run test:db` | `node scripts/test-db.cjs` |
+| `npm run test:effort-smoke` | `tsx scripts/effort-smoke.ts` |
+| `npm run test:integration` | `RUN_DB_INTEGRATION=1 tsx --test tests/persistence-integration.test.ts` |
+| `npm run test:live-backtest` | `tsx scripts/test-live-backtester.ts` |
+| `npm run test:meli-mock` | `tsx scripts/new-meli-run.ts` |
+| `npm run test:provider-cache-smoke` | `tsx scripts/provider-cache-smoke.ts` |
+| `npm run test:provider-smoke` | `tsx scripts/provider-smoke.ts` |
+| `npm run test:sofi-backtest` | `tsx scripts/test-live-backtester.ts` |
+| `npm run test:sofi-mock` | `RESEARCH_ASSET=SOFI tsx scripts/new-equity-run.ts` |
+| `npm run test:sofi-v3` | `node scripts/test-db.cjs tests/sofi-research-e2e.test.ts` |
+| `npm run test:source-reader-smoke` | `tsx scripts/source-reader-smoke.ts` |
+| `npm run test:unit` | `tsx --test tests/*.test.ts` |
+| `npm run worker:research` | `tsx src/workers/research-worker.ts` |
+| `npm run xbrl:compose` | `docker compose -f services/xbrl/sec-xbrl-warehouse/docker-compose.yml --project-directory services/xbrl/sec-xbrl-warehouse` |
+<!-- END GENERATED -->

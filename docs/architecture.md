@@ -1,3 +1,16 @@
+---
+covers:
+  - src/db/schema/**
+  - drizzle/*.sql
+  - src/lib/workflow/stages.ts
+  - src/lib/research/team-plan.ts
+  - src/lib/workflow/orchestrator.ts
+  - src/lib/research/run-queue.ts
+  - docker-compose.yml
+  - docs/diagrams/_source/make_diagrams.py
+  - tools/gen_*.py
+---
+
 # Pragma Research — master architecture views
 
 This document holds the master UML 2.5.1 views of the **current** system, traced from source on 2026-10-05 (pipeline version 3, 24 stages); research across runs added 2026-10-22; the report split into `report_draft` and `ai_reviewer` (25 stages) in architecture-9.
@@ -42,25 +55,130 @@ Model calls have no tool execution. [local-agent-harness.md](local-agent-harness
 
 **Drill-down: stages** (`src/lib/workflow/stages.ts`; dependencies in `src/lib/research/team-plan.ts:41`). Run-type skips are set at creation through `skipForRunTypes`. Stages 16–19 are skipped for `quick_scan`. Stages 1–15 and 20–25 are skipped for `backtest_only`. The numbers are display order, not a chain: after the plan gate two branches run side by side, the analysis (5–15) and the price-only backtests (16–19, which depend only on `research_plan`), and `decision_synthesis` (20) joins them. A valuation re-run therefore doesn't reopen the backtests.
 
-| # | Stage | failureState | Retries | # | Stage | failureState | Retries |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | intake | fail_run | 2 | 13 | operating_model | skip_and_continue | 2 |
-| 2 | asset_identity | fail_run | 2 | 14 | operating_scenarios | skip_and_continue | 2 |
-| 3 | archetype_composition | fail_run | 2 | 15 | asset_valuation | skip_and_continue | 2 |
-| 4 | research_plan **(gate)** | pause_for_human | 2 | 16 | indicator_design | fail_run | 1 |
-| 5 | source_discovery | skip_and_continue | 3 | 17 | strategy_design | fail_run | 1 |
-| 6 | source_ingestion | skip_and_continue | 3 | 18 | backtest_execution | fail_run | 1 |
-| 7 | evidence_extraction | fail_run | 2 | 19 | backtest_review | fail_run | 1 |
-| 8 | historical_record | fail_run | 2 | 20 | decision_synthesis | skip_and_continue | 2 |
-| 9 | company_genesis | skip_and_continue | 2 | 21 | report_draft | fail_run | 2 |
-| 10 | historical_diagnosis | skip_and_continue | 2 | 22 | ai_reviewer (Report Review) | fail_run | 1 |
-| 11 | business_process_analysis | skip_and_continue | 2 | 23 | human_review **(gate)** | pause_for_human | 0 |
-| 12 | moat_analysis | skip_and_continue | 2 | 24 | export | skip_and_continue | 2 |
-|  |  |  |  | 25 | refresh_schedule | skip_and_continue | 1 |
+<!-- BEGIN GENERATED: run stages -->
+| # | Stage | failureState | Retries | Human gate | Skipped for |
+| --- | --- | --- | --- | --- | --- |
+| 1 | intake | fail_run | 2 |  | backtest_only |
+| 2 | asset_identity | fail_run | 2 |  | backtest_only |
+| 3 | archetype_composition | fail_run | 2 |  | backtest_only |
+| 4 | research_plan | pause_for_human | 2 | yes | backtest_only |
+| 5 | source_discovery | skip_and_continue | 3 |  | backtest_only |
+| 6 | source_ingestion | skip_and_continue | 3 |  | backtest_only |
+| 7 | evidence_extraction | fail_run | 2 |  | backtest_only |
+| 8 | historical_record | fail_run | 2 |  | backtest_only |
+| 9 | company_genesis | skip_and_continue | 2 |  | backtest_only |
+| 10 | historical_diagnosis | skip_and_continue | 2 |  | backtest_only |
+| 11 | business_process_analysis | skip_and_continue | 2 |  | backtest_only |
+| 12 | moat_analysis | skip_and_continue | 2 |  | backtest_only |
+| 13 | operating_model | skip_and_continue | 2 |  | backtest_only |
+| 14 | operating_scenarios | skip_and_continue | 2 |  | backtest_only |
+| 15 | asset_valuation | skip_and_continue | 2 |  | backtest_only |
+| 16 | indicator_design | fail_run | 1 |  | quick_scan |
+| 17 | strategy_design | fail_run | 1 |  | quick_scan |
+| 18 | backtest_execution | fail_run | 1 |  | quick_scan |
+| 19 | backtest_review | fail_run | 1 |  | quick_scan |
+| 20 | decision_synthesis | skip_and_continue | 2 |  | backtest_only |
+| 21 | report_draft | fail_run | 2 |  | backtest_only |
+| 22 | ai_reviewer | fail_run | 1 |  | backtest_only |
+| 23 | human_review | pause_for_human | 0 | yes | backtest_only |
+| 24 | export | skip_and_continue | 2 |  | backtest_only |
+| 25 | refresh_schedule | skip_and_continue | 1 |  | backtest_only |
+<!-- END GENERATED -->
 
 The report runs in two stages: `report_draft` writes the outline, sections and first `report_document`; `ai_reviewer` rebuilds that draft from its artifacts, reviews it and runs the post-review rework and one repair round ([system.md](system.md#report-review-depth-checks-and-rework)).
 
 Handlers are registered in the `STAGE_HANDLERS` map (`src/lib/research/handlers/index.ts`).
+
+### API route inventory
+
+Generated from `src/app/api/**/route.ts` by `tools/gen_routes.py`.
+
+<details>
+<summary>Routes and methods</summary>
+
+<!-- BEGIN GENERATED: run routes -->
+75 route files, 91 handlers.
+
+| Route | Methods |
+| --- | --- |
+| `/api/assets` | GET, POST |
+| `/api/assets/[id]` | GET |
+| `/api/assets/[id]/checklist-evaluations` | GET, POST |
+| `/api/assets/[id]/filings` | GET |
+| `/api/assets/[id]/filings/[docId]` | GET |
+| `/api/assets/[id]/filings/[docId]/text` | GET |
+| `/api/assets/[id]/metrics` | GET |
+| `/api/assets/[id]/monitor` | GET |
+| `/api/assets/[id]/notebook` | GET |
+| `/api/assets/[id]/notebook/[kind]` | POST |
+| `/api/assets/[id]/notebook/[kind]/[itemId]` | DELETE, PATCH |
+| `/api/assets/[id]/pipeline-stages` | GET |
+| `/api/assets/[id]/prices` | GET |
+| `/api/assets/[id]/profile` | GET |
+| `/api/assets/[id]/research-cost` | GET |
+| `/api/assets/[id]/research-runs` | GET, POST |
+| `/api/assets/[id]/valuation-signals` | GET |
+| `/api/assets/overview` | GET |
+| `/api/backtests/[id]/artifacts` | GET |
+| `/api/checklists` | GET, POST |
+| `/api/checklists/[id]` | DELETE, GET, PATCH |
+| `/api/company-profiles` | POST |
+| `/api/evidence/[id]/review` | PATCH |
+| `/api/quant-finder` | GET |
+| `/api/quant/[ticker]` | GET |
+| `/api/research-runs/[id]` | GET |
+| `/api/research-runs/[id]/agent-traces` | GET |
+| `/api/research-runs/[id]/analysis` | GET |
+| `/api/research-runs/[id]/approve-plan` | POST |
+| `/api/research-runs/[id]/artifacts` | GET |
+| `/api/research-runs/[id]/artifacts/[artifactType]` | GET |
+| `/api/research-runs/[id]/backtests` | GET, POST |
+| `/api/research-runs/[id]/cancel` | POST |
+| `/api/research-runs/[id]/catalysts` | GET |
+| `/api/research-runs/[id]/chat` | GET, POST |
+| `/api/research-runs/[id]/evidence` | GET |
+| `/api/research-runs/[id]/export` | POST |
+| `/api/research-runs/[id]/generate-signals` | POST |
+| `/api/research-runs/[id]/indicators` | GET |
+| `/api/research-runs/[id]/jobs` | GET |
+| `/api/research-runs/[id]/metrics` | GET |
+| `/api/research-runs/[id]/model-calls` | GET, POST |
+| `/api/research-runs/[id]/quality` | GET |
+| `/api/research-runs/[id]/refresh` | POST |
+| `/api/research-runs/[id]/report` | GET |
+| `/api/research-runs/[id]/request-plan-changes` | POST |
+| `/api/research-runs/[id]/request-reset` | POST |
+| `/api/research-runs/[id]/review` | POST |
+| `/api/research-runs/[id]/risks` | GET |
+| `/api/research-runs/[id]/run-system-pipeline` | POST |
+| `/api/research-runs/[id]/scenarios` | GET |
+| `/api/research-runs/[id]/sources` | GET |
+| `/api/research-runs/[id]/sources/ingest` | POST |
+| `/api/research-runs/[id]/stage-output` | POST |
+| `/api/research-runs/[id]/stages` | GET |
+| `/api/research-runs/[id]/strategy-combinations` | GET |
+| `/api/research-runs/[id]/tasks` | POST |
+| `/api/research-runs/[id]/thesis` | GET |
+| `/api/research-runs/[id]/valuation-models` | GET |
+| `/api/research-runs/[id]/valuation-signals` | GET |
+| `/api/research-runs/[id]/workbench` | GET, POST |
+| `/api/research-runs/[id]/workbench/scenarios` | GET, POST |
+| `/api/research-runs/[id]/workbench/scenarios/[scenarioId]` | DELETE |
+| `/api/research-workers/health` | GET |
+| `/api/review/queue` | GET |
+| `/api/saved-charts` | GET, POST |
+| `/api/saved-charts/[id]` | DELETE, PATCH |
+| `/api/search` | GET |
+| `/api/session` | DELETE, POST |
+| `/api/sources/[id]` | GET |
+| `/api/staging/[id]/accept` | POST |
+| `/api/themes` | GET, POST |
+| `/api/themes/[id]` | GET |
+| `/api/themes/[id]/run` | POST |
+| `/api/thesis/[id]` | PATCH |
+<!-- END GENERATED -->
+
+</details>
 
 ## 2. Structural — Deployment
 
@@ -92,6 +210,8 @@ Schema modules (`src/db/schema/`) and their key tables:
 | profiles | research_profiles, profile_module_schemas, asset_profile_assignments |
 | workflow | runs (with `prior_run_id`, the run it builds on), stages (with `transient_failures`), tasks, task dependencies, validation results, `research_run_resets` (team-request re-runs: automatic, or awaiting and decided by a reviewer), `research_plan_feedback` (plan-gate notes) |
 | research-run-jobs | jobs, worker heartbeats |
+| company-profiles | company_profiles (cached logos and leadership per company) |
+| quant | quant_snapshots (cached PragValue and PragTrend result per ticker and as-of trading day; never a research input) |
 | corpus | source documents, parses, chunks, `document_embeddings`, tables, locations |
 | source-intelligence | source_retrieval_attempts, source_role_coverage, source_role_assignments, source_document_metadata |
 | evidence | claims, links, `claim_relationships`, gaps |
@@ -110,7 +230,7 @@ Schema modules (`src/db/schema/`) and their key tables:
 | checklists | investment_checklists (global checklists, the built-in default seeded once), checklist_evaluations (per asset and run: checklist snapshot, item results, score) |
 | themes | theme_research (a theme's request, status, result and model cost) |
 
-Migrations are `0000`–`0006`, `0009_research_memory_graph`, which adds provenance and review fields plus a uniqueness constraint to `claim_relationships`, `0010_price_history_verification`, which adds the cross-check columns to `market_price_bars`, `0011_saved_charts`, which adds the `saved_charts` table, `0012_task_budget_reservation`, which adds `research_tasks.budget_reservation_usd` for in-flight budget reservations, `0013_research_memory_search`, which adds `document_chunks.search_tsv` (research-memory passages only, backfilled) with a partial GIN index, `0014_performance_indexes`, which indexes `document_chunks.source_document_id`, `evidence_claims (research_run_id, review_status)`, `evidence_links.evidence_claim_id` and `source_locations`' chunk and document columns, and `0015_valuation_v2`, which adds `research_runs.forecast_years` (3-10, set at the plan gate) and `instruments.depositary_ratio`, and `0016_research_lineage_monitoring`, which adds `research_runs.prior_run_id` (self-reference, set null on delete) and the `asset_monitor_checks` table, and `0017_run_control_state`, which adds `research_run_resets`, `research_plan_feedback` and `research_stages.transient_failures`/`last_transient_error`, backfilled re-runnably from the old `metadata_json` and `validation_result_json` keys. `0018_report_draft_stage` inserts `report_draft` at order 21 in every run with the 24-stage tail and moves `ai_reviewer` through `refresh_schedule` to 22-25 (completed or skipped with `ai_reviewer`, otherwise pending), re-runnably. `0019_investing_notebook` adds the four notebook tables, each cascading with its asset; annotations and journal entries keep their row when their run is deleted. `0020_valuation_scenarios` adds `valuation_scenarios` (name unique per run, `source` `user` or `assistant`), cascading with its run. `0021_filing_notes` adds `notebook_annotations.anchor_kind` (`report` default, or `filing`) and `source_document_id` (set null on delete), re-runnably. `0022_investment_checklists` adds `investment_checklists` (unique names, at most one default) and `checklist_evaluations` (cascading with the asset; run and checklist set null on delete). `0023_theme_research` adds `theme_research`.
+Migrations are `0000`–`0006`, `0009_research_memory_graph`, which adds provenance and review fields plus a uniqueness constraint to `claim_relationships`, `0010_price_history_verification`, which adds the cross-check columns to `market_price_bars`, `0011_saved_charts`, which adds the `saved_charts` table, `0012_task_budget_reservation`, which adds `research_tasks.budget_reservation_usd` for in-flight budget reservations, `0013_research_memory_search`, which adds `document_chunks.search_tsv` (research-memory passages only, backfilled) with a partial GIN index, `0014_performance_indexes`, which indexes `document_chunks.source_document_id`, `evidence_claims (research_run_id, review_status)`, `evidence_links.evidence_claim_id` and `source_locations`' chunk and document columns, and `0015_valuation_v2`, which adds `research_runs.forecast_years` (3-10, set at the plan gate) and `instruments.depositary_ratio`, and `0016_research_lineage_monitoring`, which adds `research_runs.prior_run_id` (self-reference, set null on delete) and the `asset_monitor_checks` table, and `0017_run_control_state`, which adds `research_run_resets`, `research_plan_feedback` and `research_stages.transient_failures`/`last_transient_error`, backfilled re-runnably from the old `metadata_json` and `validation_result_json` keys. `0018_report_draft_stage` inserts `report_draft` at order 21 in every run with the 24-stage tail and moves `ai_reviewer` through `refresh_schedule` to 22-25 (completed or skipped with `ai_reviewer`, otherwise pending), re-runnably. `0019_investing_notebook` adds the four notebook tables, each cascading with its asset; annotations and journal entries keep their row when their run is deleted. `0020_valuation_scenarios` adds `valuation_scenarios` (name unique per run, `source` `user` or `assistant`), cascading with its run. `0021_filing_notes` adds `notebook_annotations.anchor_kind` (`report` default, or `filing`) and `source_document_id` (set null on delete), re-runnably. `0022_investment_checklists` adds `investment_checklists` (unique names, at most one default) and `checklist_evaluations` (cascading with the asset; run and checklist set null on delete). `0023_theme_research` adds `theme_research`. `0024_company_profiles` adds `company_profiles`. `0025_quant_snapshots` adds `quant_snapshots`.
 
 Artifact statuses are listed in `src/lib/research/artifacts/contracts.ts`; the lifecycle is in the [state machine view](#5-behavioral--state-machine). Each run keeps one current version per artifact type and scope.
 
@@ -203,6 +323,7 @@ Report requests (two rounds before drafting, one after the first review) are ans
 | Research across runs: lineage, change log, monitoring | [research-across-runs.svg](diagrams/research-across-runs.svg), Component, Class | `lineage/runs.ts` (`resolvePriorRunId`, `savePriorResearch`, `loadPriorResearch`, `saveVersionChangeLog`), `lineage/prior-research.ts`, `lineage/change-log.ts`, `run-context.ts:prepareResearchCall`, `handlers/ai-reviewer.ts`, `monitoring/monitor-check.ts`, `monitoring/monitor-score.ts`, `scripts/monitor-check.ts`, `src/app/api/assets/[id]/monitor/route.ts`, `src/app/api/research-runs/[id]/refresh/route.ts` ([system](system.md#research-across-runs), [operations](operations.md#monitoring-check)) |
 | Research run workflow | Activity, State, Sequence | see the rows above |
 | Development workflow | [dev-workflow.svg](diagrams/dev-workflow.svg) | [AGENTS.md](../AGENTS.md) |
+| Docs sync (stale-doc check) | — (tooling, no runtime view) | `tools/docs_sync.py`, `tools/gen_stages.py`, `tools/gen_routes.py`, `docs/generators.json`, `docs/docs.lock`, `.githooks/pre-commit` ([AGENTS.md](../AGENTS.md#docs-sync)) |
 
 ## Unresolved boundaries
 
