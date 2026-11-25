@@ -50,6 +50,9 @@ function readHighlight(): Highlight | null {
     paragraphIndex: paragraph ? Number(paragraph.getAttribute("data-paragraph")) : null, exhibitKey: exhibit ? exhibit.getAttribute("data-exhibit-key") : null, filing: null };
 }
 
+/** Dispatch on window to open the notebook drawer (the asset page header's Notebook button). */
+export const NOTEBOOK_OPEN_EVENT = "pragma:notebook-open";
+
 /**
  * The notebook as a panel that slides in from the right on every view of a stock: jot a thought (saved to the
  * journal), or select a line in the report and keep a note on it (saved as an annotation on that chapter).
@@ -73,6 +76,11 @@ export function NotebookDrawer({ api, assetId, document, runId, artifacts, noteb
     window.document.addEventListener("selectionchange", onSelect);
     window.addEventListener("hashchange", onHash);
     return () => { window.document.removeEventListener("selectionchange", onSelect); window.removeEventListener("hashchange", onHash); };
+  }, []);
+  useEffect(() => {
+    const onOpen = () => { setSaved(null); setOpen(true); };
+    window.addEventListener(NOTEBOOK_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(NOTEBOOK_OPEN_EVENT, onOpen);
   }, []);
   useEffect(() => { if (open) field.current?.focus(); }, [open, pending]);
   useEffect(() => { if (!open) return; const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
@@ -112,8 +120,9 @@ export function NotebookDrawer({ api, assetId, document, runId, artifacts, noteb
   }
 
   return <>
-    {!open && <button type="button" className={styles.tab} onClick={highlight ? noteHighlight : () => setOpen(true)} aria-expanded={false} aria-controls="notebook-drawer">
-      <NotebookPen size={15} aria-hidden="true" />{highlight ? "Note this" : "Notebook"}
+    {/* The page header's Notebook button opens the drawer (NOTEBOOK_OPEN_EVENT); the edge tab only appears to note a selection. */}
+    {!open && highlight && <button type="button" className={styles.tab} onClick={noteHighlight} aria-expanded={false} aria-controls="notebook-drawer">
+      <NotebookPen size={15} aria-hidden="true" />Note this
     </button>}
     {!open && askable(highlight) && <button type="button" className={`${styles.tab} ${styles.ask}`} onMouseDown={(e) => e.preventDefault()} onClick={() => askAbout(highlight)}>
       <MessageSquareText size={15} aria-hidden="true" />Ask about this

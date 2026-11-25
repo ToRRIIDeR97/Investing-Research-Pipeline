@@ -45,26 +45,152 @@
 .longText { max-width: 620px; white-space: normal; line-height: 1.55; }
 .supporting table .longText { min-width: 280px; }
 
-/* Company overview (consumer remaster): price and worth, blend and runs, then the report's words. */
-.overview { display: grid; gap: 20px; }
-.overviewRow { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 20px; align-items: start; }
-.priceCard { grid-column: span 7; }
-.worthCard { grid-column: span 5; }
+/* Company overview, SoFi redesign (prototype/workshop/sofi-research-redesign.html, DESIGN.md "Research overview"). */
+.overview { display: grid; gap: 18px; }
+.overviewRow { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 18px; align-items: stretch; }
+.worthCard { grid-column: span 6; }
+.priceCard { grid-column: span 6; }
 .half { grid-column: span 6; }
-.wideCard { grid-column: span 7; }
-.narrowCard { grid-column: span 5; }
 @media (max-width: 960px) { .overviewRow > * { grid-column: span 12; } }
+/* Cards in a row fill the row's height; a footer sits at the bottom. */
+.fill { display: flex; flex-direction: column; gap: 14px; }
+.fill > .foot { margin-top: auto; }
 .cardTitle { font-family: var(--font-sans); font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 10px; }
 .quiet { color: var(--ink-2); font-size: 13px; line-height: 1.6; }
+.quietSmall { font-size: 12px; font-weight: 500; color: var(--ink-3); }
 .footnote { margin-top: 10px; font-size: 12px; color: var(--ink-2); }
 .withheld { font-family: var(--font-display); font-size: 28px; font-weight: 700; letter-spacing: -0.03em; color: var(--ink); margin-bottom: 6px; }
-.answer { margin-top: 14px; padding: 12px 14px; border-radius: 14px; background: var(--soft); color: var(--ink-2); font-size: 13px; line-height: 1.5; }
-.link { font-size: 13px; font-weight: 600; color: var(--navy); }
+.link { font-size: 13px; font-weight: 600; color: var(--navy); justify-self: start; align-self: flex-start; }
 .link:hover { color: var(--ink); }
-.quote { font-family: var(--font-display); font-size: 18px; font-weight: 600; line-height: 1.45; letter-spacing: -0.01em; color: var(--ink); }
-.otherSide { margin-top: 16px; padding: 14px 16px; border-radius: 16px; background: var(--soft); border-left: 3px solid var(--sage); }
-.otherSide h3 { font-family: var(--font-sans); font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 4px; }
-.otherSide p { font-size: 13.5px; line-height: 1.55; color: var(--ink-2); }
-.missing { margin-top: 14px; }
 .priceHead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .priceHead .cardTitle { margin-bottom: 0; }
+
+/* Footer: how to read the card, then small stats. */
+.foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.foot > p { flex: 1 1 220px; margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+.footStats { display: flex; gap: 8px; margin: 0; }
+.footStats div { display: grid; padding: 6px 14px; border-radius: 12px; background: var(--soft); }
+.footStats dt { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+.footStats dd { margin: 0; font-family: var(--font-display); font-size: 15px; font-weight: 700; white-space: nowrap; }
+
+/* 1. The decision strip: navy, full width, the one action on the page. */
+.decision { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px 18px; padding: 18px 22px; border-radius: var(--radius-card); background: var(--navy); color: var(--tile); }
+.decisionBadge { display: inline-grid; place-items: center; height: 30px; padding: 0 14px; border-radius: var(--radius-pill); background: var(--tile); color: var(--navy); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.decisionText { display: grid; gap: 2px; min-width: 0; }
+.decisionText strong { font-family: var(--font-display); font-size: 16px; font-weight: 700; letter-spacing: -0.02em; }
+.decisionText span { font-size: 12.5px; color: var(--navy-2); }
+.decisionText button { color: var(--tile); text-decoration: underline; text-underline-offset: 3px; font-weight: 600; }
+.decisionGo { height: 40px; padding: 0 20px; border-radius: var(--radius-pill); background: var(--tile); color: var(--navy); font-size: 13px; font-weight: 700; white-space: nowrap; }
+.decisionChecks { grid-column: 1 / -1; display: grid; grid-template-rows: 0fr; }
+.decision[data-open] .decisionChecks { grid-template-rows: 1fr; }
+.decisionChecks > div { overflow: hidden; }
+.decisionChecks ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 4px 0 0; list-style: none; }
+.decisionChecks li { padding: 9px 12px; border-radius: 12px; background: rgb(255 255 255 / 10%); font-size: 12.5px; line-height: 1.45; }
+.decisionChecks p { margin-top: 8px; font-size: 12px; color: var(--navy-2); }
+@media (max-width: 760px) { .decision { grid-template-columns: 1fr; } .decisionChecks ul { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: no-preference) {
+  .decisionChecks { transition: grid-template-rows 350ms var(--ease-out); }
+  .decisionGo { transition: transform var(--dur-base) var(--ease-spring); }
+  .decisionGo:active { transform: scale(var(--press-scale)); }
+}
+
+/* 2-5. What it's worth: one headline value, scenario tiles, the blend. */
+.headline { font-family: var(--font-display); font-size: 44px; font-weight: 800; line-height: 1; letter-spacing: -0.03em; }
+.headlineSub { margin-top: 6px; font-size: 12.5px; color: var(--ink-2); }
+.headlineSub b[data-tone="good"], .caseGap[data-tone="good"], .blendRow em[data-tone="good"] { color: var(--positive); }
+.headlineSub b[data-tone="bad"], .caseGap[data-tone="bad"], .blendRow em[data-tone="bad"] { color: var(--critical); }
+.explainBtn { height: 28px; padding: 0 12px; border-radius: var(--radius-pill); background: var(--navy-soft); color: var(--navy); font-size: 12px; font-weight: 700; }
+.explainBox { margin: 0; padding: 10px 14px; border-radius: 12px; background: var(--soft); font-size: 12.5px; line-height: 1.5; color: var(--ink-2); }
+.cases { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.caseTile { position: relative; overflow: hidden; display: grid; gap: 8px; padding: 14px 14px 12px; border-radius: 16px; background: var(--tile); border: 1px solid var(--line); text-align: left; color: var(--ink); }
+.caseTile[aria-pressed="true"] { border-color: transparent; box-shadow: 0 0 0 1.5px var(--case-color); }
+.caseName { font-size: 12px; font-weight: 700; color: var(--case-color); }
+.caseRow { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+.caseGap { font-family: var(--font-display); font-size: 21px; font-weight: 700; line-height: 1; letter-spacing: -0.03em; }
+.caseValue { font-family: var(--font-display); font-size: 14px; font-weight: 700; }
+.caseMeter { position: relative; height: 6px; border-radius: var(--radius-pill); background: var(--line-soft); }
+.caseMeter > span { position: absolute; top: 0; bottom: 0; border-radius: var(--radius-pill); background: var(--case-color); }
+.caseMeter > i { position: absolute; top: -3px; width: 2px; height: 12px; margin-left: -1px; background: var(--ink); }
+.pocket { position: absolute; left: 0; right: 0; bottom: 0; height: 46px; display: flex; align-items: center; gap: 16px; padding: 0 14px; background: var(--case-tint); border-top: 2px solid var(--case-color); transform: translateX(-101%); }
+.pocket > span { display: grid; font-family: var(--font-display); font-size: 13px; font-weight: 700; color: var(--case-color); }
+.pocket small { font: 500 10.5px var(--font-sans); color: var(--ink-3); }
+.caseTile:is(:hover, :focus-visible) .pocket { transform: none; }
+@media (hover: none) { .caseTile[aria-pressed="true"] .pocket { transform: none; } }
+.blend { display: grid; gap: 8px; padding: 14px; border-radius: 16px; background: var(--soft); }
+.blendRow { display: flex; align-items: baseline; justify-content: space-between; font-size: 12.5px; color: var(--ink-2); }
+.blendRow b { font-family: var(--font-display); font-size: 18px; color: var(--ink); }
+.blendRow em { font-style: normal; font-weight: 700; }
+.blend input { width: 100%; accent-color: var(--navy); }
+.blendScale { display: flex; justify-content: space-between; font-size: 11px; color: var(--ink-3); }
+.blendScale button { color: var(--navy); font-weight: 600; }
+@media (prefers-reduced-motion: no-preference) {
+  .caseTile { transition: transform var(--dur-base) var(--ease-spring), box-shadow var(--dur-base) var(--ease-out); }
+  .caseTile:hover { transform: translateY(-2px); }
+  .caseTile:active { transform: scale(.98); transition-duration: 80ms; }
+  .pocket { transition: transform 420ms cubic-bezier(.65, 0, .25, 1); }
+}
+
+/* 7. The report: three lines and Read more, what would change the view, drawers. */
+.reportCard { display: flex; flex-direction: column; gap: 12px; }
+.say { margin: 0; font-size: 15px; font-weight: 500; line-height: 1.6; color: var(--ink); }
+.say[data-clamp] { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.breakers { display: grid; gap: 6px; }
+.breakers h3 { font-family: var(--font-sans); font-size: 12.5px; font-weight: 600; color: var(--ink-3); }
+.breaker { display: grid; gap: 1px; padding: 9px 12px; border-radius: 12px; background: var(--soft); font-size: 12.5px; line-height: 1.45; }
+.breaker b { font-weight: 600; color: var(--ink); }
+.breaker span { color: var(--ink-3); }
+.drawer { border-top: 1px solid var(--line-soft); }
+.drawer > button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 12px 2px; font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.drawer > button:hover { color: var(--navy); }
+.drawerCount { margin-left: auto; height: 24px; padding: 0 10px; border-radius: var(--radius-pill); background: var(--soft); color: var(--ink-2); font-size: 12px; font-weight: 600; line-height: 24px; }
+.drawerCount[data-warn] { background: var(--grade-c-bg); color: var(--caution-ink); }
+.drawerBody { display: grid; grid-template-rows: 0fr; }
+.drawer[data-open] .drawerBody { grid-template-rows: 1fr; }
+.drawer[data-open] > button svg { transform: rotate(90deg); }
+.drawerBody > div { overflow: hidden; }
+.drawerInner { display: grid; gap: 6px; padding: 0 2px 14px 27px; font-size: 13px; line-height: 1.6; color: var(--ink-2); }
+.drawerInner ul { margin: 0; padding-left: 16px; list-style: disc; }
+@media (prefers-reduced-motion: no-preference) {
+  .drawerBody { transition: grid-template-rows 350ms var(--ease-out); }
+  .drawer > button svg { transition: transform 300ms var(--ease-spring); }
+}
+
+/* 8. KPIs: neutral ticks, the base band, today's dot, a status word. */
+.kpiLegend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 11.5px; color: var(--ink-3); }
+.kpiLegend i { display: inline-block; margin-right: 6px; vertical-align: 1px; }
+.kpiLegend i[data-k="band"] { width: 14px; height: 6px; border-radius: 3px; background: var(--navy-2); }
+.kpiLegend i[data-k="tick"] { width: 2px; height: 10px; background: var(--ink-3); vertical-align: -1px; }
+.kpiLegend i[data-k="now"] { width: 8px; height: 8px; border-radius: 50%; background: var(--navy); }
+.kpi { display: grid; gap: 6px; padding: 10px 0; border-top: 1px solid var(--line-soft); }
+.kpi:first-child { border-top: 0; padding-top: 0; }
+.kpiTop { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 13px; font-weight: 600; }
+.kpiTop b { font-family: var(--font-display); font-size: 15px; white-space: nowrap; }
+.state { margin-left: 8px; padding: 1px 8px; border-radius: var(--radius-pill); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.state[data-tone="good"] { background: var(--grade-a-bg); color: var(--grade-a-ink); }
+.state[data-tone="warn"] { background: var(--grade-c-bg); color: var(--caution-ink); }
+.state[data-tone="bad"] { background: var(--grade-f-bg); color: var(--grade-f-ink); }
+.kpiTrack { position: relative; height: 8px; border-radius: var(--radius-pill); background: var(--line-soft); }
+.kpiBand { position: absolute; top: 0; bottom: 0; border-radius: var(--radius-pill); background: var(--navy-2); }
+.kpiTrack > i { position: absolute; top: -3px; width: 2px; height: 14px; margin-left: -1px; background: var(--ink-3); }
+.kpiTrack > b { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--navy); box-shadow: 0 0 0 2.5px var(--tile); }
+.kpiScale { display: grid; grid-template-columns: 1fr 1fr 1fr; font-size: 11px; color: var(--ink-3); }
+.kpiScale span:nth-child(2) { text-align: center; }
+.kpiScale span:nth-child(3) { text-align: right; }
+
+/* 9. Risks: score labelled, severity pips, click a row for how it would show up. */
+.risk { border-top: 1px solid var(--line-soft); }
+.risk:first-child { border-top: 0; }
+.riskHead { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; padding: 10px 0; text-align: left; color: var(--ink); }
+.riskHead:hover b { color: var(--navy); }
+.riskScore { display: grid; place-items: center; height: 30px; border-radius: 10px; font-family: var(--font-display); font-size: 13px; font-weight: 700; background: var(--soft); color: var(--ink-2); }
+.riskScore[data-level="high"] { background: var(--grade-f-bg); color: var(--grade-f-ink); }
+.riskScore[data-level="medium"] { background: var(--grade-c-bg); color: var(--caution-ink); }
+.riskText { display: grid; gap: 1px; min-width: 0; }
+.riskText b { font-size: 13px; font-weight: 600; line-height: 1.35; }
+.riskText span { font-size: 11.5px; line-height: 1.4; color: var(--ink-3); }
+.riskSide { display: grid; justify-items: end; gap: 3px; }
+.riskSide small { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+.pips { display: flex; gap: 2px; }
+.pips i { width: 7px; height: 12px; border-radius: 2px; background: var(--line-soft); }
+.pips i[data-on] { background: var(--ink-2); }
+.riskMore { padding: 0 0 12px 56px; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); }

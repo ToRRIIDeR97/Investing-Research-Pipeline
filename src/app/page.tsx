@@ -61,7 +61,7 @@ export default function HomePage() {
     {loading ? <p className={ui.muted} role="status">Loading research…</p> : error ? <p className={ui.error} role="alert">{error}<button onClick={() => void load()}>Try again</button></p> : <>
       {featured && fs && <Card className={styles.featured}>
         <div className={styles.featuredHead}>
-          <CompanyLogo subject={{ asset_id: featured.id }} name={featured.canonical_name} ticker={featured.ticker} size={52} />
+          <CompanyLogo subject={{ asset_id: featured.id }} name={featured.canonical_name} ticker={featured.ticker} size={64} />
           <div><h2>{featured.canonical_name}</h2><Tag tone={stageOf(featured, reviewing).tone}>{stageOf(featured, reviewing).label}</Tag></div>
         </div>
         <div className={styles.featuredNumbers}>
@@ -84,7 +84,10 @@ export default function HomePage() {
             : <Card><p className={ui.empty}>No assets yet. Start research to add one.</p></Card>}
         </section>
         <aside className={styles.side}>
-          <Card title="Waiting on you" action={<Link href="/review" className={ui.textLink}>Open queue</Link>}>
+          {/* Each column opens with a section heading outside its card, so the first cards on both sides line up. */}
+          <section aria-labelledby="waiting-title">
+          <div className={styles.sectionHead}><h2 id="waiting-title">Waiting on you</h2><Link href="/review" className={ui.textLink}>Open queue</Link></div>
+          <Card>
             {queue.length ? <div className={styles.queue}>{queue.map((item) => {
               const asset = assets.find((a) => a.id === item.asset_id);
               return <Link key={item.run_id} href={`/review?run=${item.run_id}`} className={styles.queueRow} aria-label={`Open ${item.asset_name} review`}>
@@ -94,9 +97,13 @@ export default function HomePage() {
               </Link>;
             })}</div> : <p className={ui.empty}>All reviews are decided.</p>}
           </Card>
-          <Card title="Where things stand">
+          </section>
+          <section aria-labelledby="stand-title">
+          <div className={styles.sectionHead}><h2 id="stand-title">Where things stand</h2></div>
+          <Card>
             <dl className={styles.stand}>{STAGES.map(([key, label]) => <div key={key}><dt>{label}</dt><dd>{assets.filter((a) => stageOf(a, reviewing).key === key).length}</dd></div>)}</dl>
           </Card>
+          </section>
         </aside>
       </div>
     </>}

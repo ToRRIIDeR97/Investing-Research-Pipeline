@@ -9,6 +9,7 @@ import { CHART_PRESETS, METRIC_PREFIX, SERIES_COLORS, canAddSeries, resolveSerie
 import { ChartPanel } from './chart-panel';
 import { ChartToggle } from './chart-toggle';
 import type { SavedChartsApi } from './use-saved-charts';
+import type { SeriesOptionGroup } from './charts-board';
 import styles from './financials.module.css';
 
 type Row = Record<string, any>;
@@ -17,8 +18,8 @@ type Filter = 'all' | 'available' | 'missing';
 const marks = (r: MetricResult) => `${r.derivedQuarter ? '†' : ''}${r.unverified ? '‡' : ''}`;
 
 /** The 39-metric catalogue: grouped tables, a formula drawer and the shared chart panel. */
-export function MetricsView({ observations, frequency, book, periods, chartPeriods, saved, boardHref }: {
-  observations: Row[]; frequency: Frequency; book: MetricBook; periods: PeriodRef[]; chartPeriods: PeriodRef[]; saved: SavedChartsApi; boardHref: string;
+export function MetricsView({ observations, frequency, book, periods, chartPeriods, saved, boardHref, options = [] }: {
+  observations: Row[]; frequency: Frequency; book: MetricBook; periods: PeriodRef[]; chartPeriods: PeriodRef[]; saved: SavedChartsApi; boardHref: string; options?: SeriesOptionGroup[];
 }) {
   const [filter, setFilter] = useState<Filter>('all');
   const [closed, setClosed] = useState<Record<string, boolean>>({});
@@ -44,7 +45,7 @@ export function MetricsView({ observations, frequency, book, periods, chartPerio
 
   return <>
     <ChartPanel observations={observations} frequency={frequency} book={book} periods={chartPeriods} selection={selection} onSelection={setSelection} presets={presets} lines
-      saved={saved} boardHref={boardHref} label="Chart of selected metrics" empty="Press the chart button next to any metric to plot it." />
+      saved={saved} boardHref={boardHref} options={options} label="Chart of selected metrics" empty="Press the chart button next to any metric to plot it." />
     <div className={styles.metricsToolbar}>
       <span role="group" aria-label="Show metrics" className={styles.filters}>
         {([['all', `All ${table.length}`], ['available', `Available ${availableCount}`], ['missing', `Needs data ${table.length - availableCount}`]] as const)

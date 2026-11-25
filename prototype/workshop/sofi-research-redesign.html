@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SoFi research redesign</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* Final workshop: the SoFi research Overview redesigned with the Quant page's design (DESIGN.md). Tokens from
+   src/app/globals.css. Numbered badges tie each change to the merged list at the top. */
+:root {
+  --page:#F8F8F4; --tile:#FFFFFF; --soft:#F5F4EF; --hover:#F3F2EC; --line:#E7E5DF; --line-soft:#EEEDE7; --line-strong:#D6D3CC;
+  --ink:#0D1B2A; --ink-2:#44403C; --ink-3:#78716C; --ink-4:#A8A29E; --navy:#0A2642; --navy-soft:#EEF1F5; --navy-2:#B4C0CC; --navy-3:#3D5A78;
+  --positive:#2D7D46; --critical:#C9302C; --caution:#B8860B; --caution-ink:#7A5300; --caution-bg:#FAF0D9;
+  --bear:#C9302C; --base:#3D5A78; --bull:#2D7D46; --bear-bg:#F9E2E1; --bull-bg:#E5F1E8;
+  --shadow-card:0 1px 2px rgb(0 0 0/4%),0 8px 28px -12px rgb(13 27 42/14%); --shadow-pop:0 12px 32px -8px rgb(13 27 42/18%);
+  --spring:cubic-bezier(.3,1.2,.5,1); --out:cubic-bezier(.2,0,0,1); --door:cubic-bezier(.65,0,.25,1);
+  --display:"Plus Jakarta Sans",Inter,sans-serif;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:var(--page); color:var(--ink); font:13px/1.5 Inter,sans-serif; font-variant-numeric:tabular-nums; padding:28px 32px 80px; }
+button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; text-align:left; }
+a { color:inherit; text-decoration:none; }
+.wrap { max-width:1180px; margin:0 auto; }
+h1.ws { font:700 26px/1.2 var(--display); letter-spacing:-.03em; }
+.lede { color:var(--ink-2); margin:6px 0 18px; max-width:860px; font-size:14px; }
+/* merged list */
+.merged { display:grid; grid-template-columns:repeat(2,1fr); gap:6px 24px; margin-bottom:28px; padding:18px 22px; background:var(--tile); border-radius:20px; box-shadow:var(--shadow-card); }
+.merged h2 { grid-column:1/-1; font:700 15px var(--display); margin-bottom:6px; }
+.merged div { display:grid; grid-template-columns:26px 1fr auto; gap:8px; align-items:baseline; font-size:12.5px; padding:5px 0; border-top:1px solid var(--line-soft); }
+.merged b { font-weight:600; }
+.who { font-size:10.5px; font-weight:700; color:var(--ink-3); white-space:nowrap; }
+.n { display:inline-grid; place-items:center; width:20px; height:20px; border-radius:50%; background:var(--navy); color:#fff; font:700 10.5px Inter; flex:none; }
+.mark { position:absolute; top:-9px; left:-9px; z-index:5; box-shadow:0 0 0 3px var(--page); }
+/* page */
+.head { display:flex; align-items:center; gap:16px; margin-bottom:14px; }
+.logo { font:800 22px var(--display); color:#2BA8D9; letter-spacing:-.02em; }
+.head h1 { font:700 26px/1.1 var(--display); letter-spacing:-.03em; }
+.head .meta { font-size:12.5px; color:var(--ink-3); }
+.head .acts { margin-left:auto; display:flex; gap:8px; }
+.btn { display:inline-flex; align-items:center; height:36px; padding:0 16px; border-radius:99px; font-weight:600; font-size:12.5px; border:1px solid var(--line-strong); background:var(--tile); }
+.btn.p { background:var(--navy); color:#fff; border-color:var(--navy); box-shadow:0 6px 16px -6px rgb(10 38 66/50%); }
+.tabs { display:inline-flex; gap:2px; padding:4px; border-radius:99px; background:var(--hover); margin-bottom:16px; }
+.tabs span { height:30px; padding:0 14px; display:grid; place-items:center; border-radius:99px; font-weight:600; font-size:12.5px; color:var(--ink-2); }
+.tabs span:first-child { background:var(--tile); color:var(--navy); box-shadow:0 1px 3px rgb(0 0 0/10%); }
+.card { position:relative; background:var(--tile); border:1px solid rgb(0 0 0/3.5%); border-radius:24px; box-shadow:var(--shadow-card); padding:22px 24px; display:flex; flex-direction:column; gap:14px; }
+.ct { display:flex; justify-content:space-between; align-items:center; font-weight:600; font-size:14px; }
+.ct a, .ct span.r { font-size:12.5px; color:var(--navy); font-weight:600; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:stretch; margin-bottom:18px; }
+.grid2 > .card .foot { margin-top:auto; }
+.full { margin-bottom:18px; }
+.foot { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px 20px; padding-top:14px; border-top:1px solid var(--line-soft); }
+.foot p { flex:1 1 220px; font-size:12.5px; color:var(--ink-2); }
+.stats { display:flex; gap:8px; }
+.stats div { display:grid; padding:6px 14px; border-radius:12px; background:var(--soft); }
+.stats dt { font-size:11px; color:var(--ink-3); white-space:nowrap; }
+.stats dd { font:700 15px var(--display); }
+.up { color:var(--positive); } .down { color:var(--critical); }
+/* 1 decision strip */
+.decision { display:grid; grid-template-columns:auto 1fr auto; gap:18px; align-items:center; padding:18px 22px; border-radius:24px; background:var(--navy); color:#fff; margin-bottom:18px; position:relative; }
+.decision .badge { height:30px; padding:0 14px; display:grid; place-items:center; border-radius:99px; background:#fff; color:var(--navy); font-weight:700; font-size:12px; }
+.decision strong { font:700 16px var(--display); display:block; }
+.decision .sub { font-size:12.5px; color:#B4C0CC; }
+.decision .sub button { color:#fff; text-decoration:underline; text-underline-offset:3px; }
+.decision .go { height:40px; padding:0 20px; border-radius:99px; background:#fff; color:var(--navy); font-weight:700; }
+.checks { grid-column:1/-1; display:grid; grid-template-rows:0fr; transition:grid-template-rows .35s var(--out); }
+.decision[data-open] .checks { grid-template-rows:1fr; }
+.checks > div { overflow:hidden; }
+.checks ul { list-style:none; display:grid; grid-template-columns:repeat(2,1fr); gap:8px; padding-top:6px; }
+.checks li { padding:9px 12px; border-radius:12px; background:rgb(255 255 255/10%); font-size:12.5px; }
+/* 2-3 worth card */
+.verdict { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; }
+.big { font:800 44px/1 var(--display); letter-spacing:-.03em; }
+.vlabel { font-size:12.5px; color:var(--ink-2); margin-top:6px; }
+.explain { height:28px; padding:0 12px; border-radius:99px; background:var(--navy-soft); color:var(--navy); font-weight:700; font-size:12px; }
+.explainBox { font-size:12.5px; color:var(--ink-2); background:var(--soft); border-radius:12px; padding:10px 14px; display:none; }
+.explainBox[data-open] { display:block; }
+.cases { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+.case { position:relative; overflow:hidden; display:grid; gap:8px; padding:14px 14px 12px; border-radius:16px; background:var(--tile); border:1px solid var(--line); transition:transform .2s var(--spring), box-shadow .2s; }
+.case:hover { transform:translateY(-2px); }
+.case[aria-pressed=true] { box-shadow:0 0 0 1.5px var(--c); border-color:transparent; }
+[data-c=bear] { --c:var(--bear); --cb:var(--bear-bg); } [data-c=base] { --c:var(--base); --cb:var(--navy-soft); } [data-c=bull] { --c:var(--bull); --cb:var(--bull-bg); }
+.case .nm { font-size:12px; font-weight:700; color:var(--c); }
+.case .row { display:flex; justify-content:space-between; align-items:baseline; }
+.case .pc { font:700 22px/1 var(--display); letter-spacing:-.03em; }
+.case .vl { font:700 14px var(--display); }
+.meter { position:relative; height:6px; border-radius:99px; background:var(--line-soft); }
+.meter span { position:absolute; top:0; bottom:0; border-radius:99px; background:var(--c); }
+.meter i { position:absolute; top:-3px; width:2px; height:12px; background:var(--ink); }
+.pocket { position:absolute; left:0; right:0; bottom:0; height:44px; display:flex; align-items:center; gap:14px; padding:0 14px; background:var(--cb); border-top:2px solid var(--c); font-size:11.5px; transform:translateX(-101%); transition:transform .42s var(--door); }
+.pocket b { font:700 13px var(--display); color:var(--c); display:block; }
+.case:hover .pocket, .case:focus-visible .pocket { transform:none; }
+.blend { display:grid; gap:8px; padding:14px; border-radius:16px; background:var(--soft); }
+.blend .row { display:flex; justify-content:space-between; align-items:baseline; font-size:12.5px; color:var(--ink-2); }
+.blend .row b { font:700 18px var(--display); color:var(--ink); }
+.blend input { width:100%; accent-color:var(--navy); }
+.blend .scale { display:flex; justify-content:space-between; font-size:11px; color:var(--ink-3); }
+/* 4 price */
+.pchart { width:100%; height:200px; display:block; }
+/* 6 report */
+.say { font:500 15px/1.6 Inter; color:var(--ink); }
+.say.clamp { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.more { font-size:12.5px; font-weight:600; color:var(--navy); justify-self:start; }
+.conds { display:grid; gap:6px; }
+.cond { display:grid; grid-template-columns:1fr auto; gap:10px; padding:9px 12px; border-radius:12px; font-size:12.5px; }
+.cond.ok { background:var(--bull-bg); color:#1F6A38; } .cond.no { background:var(--bear-bg); color:#A32420; } .cond.open { background:var(--soft); color:var(--ink-2); }
+.cond b { font-weight:700; }
+.drawer { border-top:1px solid var(--line-soft); }
+.drawer > button { display:flex; width:100%; align-items:center; gap:10px; padding:12px 2px; font-weight:600; font-size:13.5px; }
+.drawer > button svg { transition:transform .3s var(--spring); }
+.drawer[data-open] > button svg { transform:rotate(90deg); }
+.count { margin-left:auto; height:24px; padding:0 10px; border-radius:99px; background:var(--soft); font-size:12px; font-weight:600; line-height:24px; color:var(--ink-2); }
+.count.warn { background:var(--caution-bg); color:var(--caution-ink); }
+.dbody { display:grid; grid-template-rows:0fr; transition:grid-template-rows .35s var(--out); }
+.drawer[data-open] .dbody { grid-template-rows:1fr; }
+.dbody > div { overflow:hidden; }
+.dbody > div > div { padding:0 2px 14px 26px; font-size:12.5px; color:var(--ink-2); display:grid; gap:6px; }
+/* 7 KPIs */
+.kpi { display:grid; gap:6px; padding:10px 0; border-top:1px solid var(--line-soft); }
+.kpi:first-of-type { border-top:0; }
+.kpi .top { display:flex; justify-content:space-between; align-items:baseline; gap:10px; }
+.kpi .top span { font-weight:600; font-size:13px; }
+.kpi .top b { font:700 15px var(--display); }
+.state { font-size:11px; font-weight:700; padding:1px 8px; border-radius:99px; margin-left:8px; }
+.state.ok { background:var(--bull-bg); color:#1F6A38; } .state.warn { background:var(--caution-bg); color:var(--caution-ink); } .state.bad { background:var(--bear-bg); color:#A32420; }
+.track { position:relative; height:8px; border-radius:99px; background:var(--line-soft); }
+.track .band { position:absolute; top:0; bottom:0; background:var(--navy-2); border-radius:99px; }
+.track .tk { position:absolute; top:-3px; width:2px; height:14px; background:var(--ink-3); }
+.track .now { position:absolute; top:50%; width:12px; height:12px; margin:-6px 0 0 -6px; border-radius:50%; background:var(--navy); box-shadow:0 0 0 2.5px var(--tile); }
+.kscale { display:grid; grid-template-columns:1fr 1fr 1fr; font-size:11px; color:var(--ink-3); }
+.kscale span:nth-child(2) { text-align:center; } .kscale span:nth-child(3) { text-align:right; }
+.legend { display:flex; gap:16px; font-size:11.5px; color:var(--ink-3); }
+.legend i { display:inline-block; width:14px; height:6px; border-radius:3px; margin-right:6px; vertical-align:1px; }
+/* 8 risks */
+.risk { display:grid; grid-template-columns:44px 1fr auto; gap:12px; align-items:center; padding:10px 0; border-top:1px solid var(--line-soft); }
+.risk:first-of-type { border-top:0; }
+.score { display:grid; place-items:center; height:30px; border-radius:10px; font:700 13px var(--display); }
+.score.h { background:var(--bear-bg); color:#A32420; } .score.m { background:var(--caution-bg); color:var(--caution-ink); } .score.l { background:var(--soft); color:var(--ink-2); }
+.risk .t { font-weight:600; font-size:13px; line-height:1.35; }
+.risk .w { font-size:11.5px; color:var(--ink-3); }
+.pips { display:flex; gap:2px; justify-content:flex-end; }
+.pips i { width:7px; height:12px; border-radius:2px; background:var(--line-soft); }
+.pips i.on { background:var(--ink-2); }
+.rk { font-size:11px; color:var(--ink-3); text-align:right; }
+/* 9 leadership, runs */
+.people { display:flex; gap:10px; flex-wrap:wrap; }
+.person { display:flex; align-items:center; gap:8px; padding:6px 12px 6px 6px; border-radius:99px; background:var(--soft); font-size:12.5px; }
+.av { width:28px; height:28px; border-radius:50%; display:grid; place-items:center; background:var(--navy-soft); color:var(--navy); font-weight:700; font-size:11px; }
+.runs { display:flex; align-items:flex-end; gap:6px; height:70px; }
+.runs span { flex:1; border-radius:6px 6px 2px 2px; background:var(--line); position:relative; }
+.runs span.cur { background:var(--navy); }
+.runs span:hover::after { content:attr(data-l); position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%); white-space:nowrap; padding:4px 8px; border-radius:8px; background:var(--ink); color:#fff; font-size:11px; }
+.cap { position:relative; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1 class="ws">SoFi research: the redesign, in one page</h1>
+<p class="lede">Two reviews (visual consistency with the Quant page, and UX and hierarchy) merged into twelve changes. The page below applies all of them; each numbered badge points at its change. Prices are computed against today's $13.09 close; the report's $14.28 is labelled as the report's. Hover the scenario tiles and runs, click the badges and drawers.</p>
+
+<div class="merged">
+  <h2>Merged changes, most important first</h2>
+  <div><span class="n">1</span><span><b>Decision strip at the top.</b> The waiting decision, the report's verdict and a "Review and decide" button lead the page; open checks in a drawer.</span><span class="who">UX + visual</span></div>
+  <div><span class="n">2</span><span><b>One price.</b> Every gap uses today's close; the report's $14.28 is labelled with its date.</span><span class="who">UX + visual</span></div>
+  <div><span class="n">3</span><span><b>One headline value.</b> The report's weighted $7.70 leads, with a click-to-explain badge; the semicircle gauge goes.</span><span class="who">UX + visual</span></div>
+  <div><span class="n">4</span><span><b>Scenario tiles.</b> Bear, base and bull become Quant tiles: gap first, meter, pocket door, no dots.</span><span class="who">visual</span></div>
+  <div><span class="n">5</span><span><b>Blend inside the value card,</b> starting at the report's weighting, not halfway.</span><span class="who">UX + visual</span></div>
+  <div><span class="n">6</span><span><b>Equal-height rows and one title style;</b> chart cards end in a footer of small stats.</span><span class="who">visual</span></div>
+  <div><span class="n">7</span><span><b>Report verdict, readable.</b> Three lines with "Read more", the conditions as a checklist against today's KPIs, the other side and missing checks as drawers.</span><span class="who">UX + visual</span></div>
+  <div><span class="n">8</span><span><b>KPIs with meaning.</b> Neutral ticks, a legend, a status word per row, and units fixed (9.5 billion, 8%).</span><span class="who">UX + visual</span></div>
+  <div><span class="n">9</span><span><b>Risks explained.</b> Score labelled likelihood × impact, severity as pips, top five then "+2 more".</span><span class="who">UX</span></div>
+  <div><span class="n">10</span><span><b>Runs demoted.</b> A small labelled chart with hover dates beside leadership, not beside the value.</span><span class="who">UX + visual</span></div>
+  <div><span class="n">11</span><span><b>Leadership compact,</b> as a row of people at the bottom.</span><span class="who">UX</span></div>
+  <div><span class="n">12</span><span><b>Notebook in the header,</b> so it stops covering cards.</span><span class="who">visual</span></div>
+</div>
+
+<!-- Page header -->
+<div class="head" style="position:relative">
+  <span class="logo">SoFi⁂</span>
+  <div><h1>SoFi Technologies, Inc.</h1><div class="meta">SOFI · Equity · Credit Services</div></div>
+  <div class="acts" style="position:relative"><span class="n mark" style="left:auto;right:-9px">12</span><a class="btn">Quant</a><a class="btn">Notebook</a><a class="btn">Ask AI</a><a class="btn p">New research</a></div>
+</div>
+<div class="tabs"><span>Overview</span><span>Memo</span><span>Model</span><span>Financials</span><span>Audit</span></div>
+
+<!-- 1 Decision strip -->
+<div class="decision" id="decision">
+  <span class="n mark">1</span>
+  <span class="badge">Needs your decision</span>
+  <div><strong>The report withholds a decision: value $7.70 against $13.09 today.</strong><span class="sub">Run of 18 Nov · $4.86 · <button id="checksBtn">4 checks still open</button></span></div>
+  <a class="go">Review and decide</a>
+  <div class="checks"><div><ul>
+    <li>Bank capital tie-out</li><li>Deposit beta</li><li>Technology Platform third-party split</li><li>Reconcile the 2026 operating model</li>
+  </ul></div></div>
+</div>
+
+<!-- 2-5 Worth + Price -->
+<div class="grid2">
+  <div class="card">
+    <span class="n mark">3</span>
+    <div class="ct">What it's worth <button class="explain" id="explainBtn">How $7.70 is made</button></div>
+    <div class="verdict">
+      <div><div class="big">$7.70</div><div class="vlabel">Report's weighted value · <b class="down">−41.2%</b> vs $13.09 today</div></div>
+    </div>
+    <div class="explainBox" id="explainBox">The report weighs its three cases: base $8.80 most, then bear $1.04 and bull $14.92, which lands at $7.70 a share. Drag the blend below to weigh them yourself.</div>
+    <div style="position:relative"><span class="n mark">4</span>
+    <div class="cases" id="cases">
+      <button class="case" data-c="bear" aria-pressed="false"><span class="nm">Bear</span><span class="row"><span class="pc down">−92.1%</span><span class="vl">$1.04</span></span><span class="meter"><span style="left:0;width:85%"></span><i style="left:85%"></i></span><span class="pocket"><span>Per share<b>$1.04</b></span><span>vs report price<b>−93%</b></span></span></button>
+      <button class="case" data-c="base" aria-pressed="true"><span class="nm">Base</span><span class="row"><span class="pc down">−32.8%</span><span class="vl">$8.80</span></span><span class="meter"><span style="left:55%;width:30%"></span><i style="left:85%"></i></span><span class="pocket"><span>Per share<b>$8.80</b></span><span>vs report price<b>−38%</b></span></span></button>
+      <button class="case" data-c="bull" aria-pressed="false"><span class="nm">Bull</span><span class="row"><span class="pc up">+14.0%</span><span class="vl">$14.92</span></span><span class="meter"><span style="left:85%;width:15%"></span><i style="left:85%"></i></span><span class="pocket"><span>Per share<b>$14.92</b></span><span>vs report price<b>+4.5%</b></span></span></button>
+    </div></div>
+    <div class="blend" style="position:relative"><span class="n mark">5</span>
+      <div class="row"><span>Your blend</span><span><b id="blendV">$7.70</b> <span id="blendG" class="down">−41.2%</span></span></div>
+      <input type="range" id="blend" min="0" max="100" value="43" aria-label="Blend from cautious to hopeful">
+      <div class="scale"><span>Cautious</span><span id="blendNote">Report's weighting</span><span>Hopeful</span></div>
+    </div>
+    <div class="foot"><span class="n mark" style="position:absolute;left:-9px;top:auto;margin-top:-4px">6</span><p>Even the bull case is only 14% above today's price.</p><dl class="stats"><div><dt>Report price</dt><dd>$14.28 · 18 Nov</dd></div></dl></div>
+  </div>
+  <div class="card">
+    <span class="n mark">2</span>
+    <div class="ct">Price <span class="r">1M · 3M · <u>6M</u> · 1Y</span></div>
+    <div style="display:flex;align-items:baseline;gap:12px"><span class="big" style="font-size:38px">$13.09</span><span class="down" style="font-weight:700">−18% 6m</span></div>
+    <svg class="pchart" viewBox="0 0 520 200" preserveAspectRatio="none" id="pchart"></svg>
+    <div class="foot"><p>Daily closes. The dashed line is the report's $7.70; the tick marks the report's price on 18 Nov.</p><dl class="stats"><div><dt>6M high</dt><dd>$19.18</dd></div><div><dt>Report day</dt><dd>$14.28</dd></div></dl></div>
+  </div>
+</div>
+
+<!-- 7 Report verdict -->
+<div class="card full">
+  <span class="n mark">7</span>
+  <div class="ct">The report says <a>Full report</a></div>
+  <p class="say clamp" id="say">Decision withheld. On present evidence the probability-weighted value of $7.70 a share sits well below the price, and only the bull case reaches the market price. Approval should wait until the bank capital tie-out, the deposit beta, the Technology Platform third-party split and the reconciliation of the 2026 operating model are complete. If those close favourably, with a verified capital path that needs no equity issuance and a net interest margin above 5.5 percent with charge-offs at or below 2 percent, the base case could move toward the market price. If they close unfavourably, the bear path becomes the central case.</p>
+  <button class="more" id="moreBtn">Read more</button>
+  <div class="conds">
+    <div class="cond ok"><span>Net interest margin above 5.5%</span><b>5.72% today</b></div>
+    <div class="cond ok"><span>Charge-offs at or below 2%</span><b>1.62% today</b></div>
+    <div class="cond open"><span>A verified capital path with no equity issuance</span><b>Not yet checked</b></div>
+  </div>
+  <div class="drawer"><button><svg width="14" height="14" viewBox="0 0 14 14"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>The other side<span class="count">bull rebuttal</span></button>
+    <div class="dbody"><div><div><p>The strongest case against this judgment: the earnings line is genuinely improving. GAAP net income rose to $564.3 million for nine months, lending contribution rose 66%, net interest margin reached 6.14%, the total net charge-off ratio fell to 1.62% and stock pay intensity is at the bottom of its range.</p></div></div></div></div>
+  <div class="drawer"><button><svg width="14" height="14" viewBox="0 0 14 14"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>Research incomplete<span class="count warn">4 open</span></button>
+    <div class="dbody"><div><div><p>Bank capital tie-out · Deposit beta · Technology Platform third-party split · 2026 operating model reconciliation</p></div></div></div></div>
+</div>
+
+<!-- 8-9 KPIs + Risks -->
+<div class="grid2">
+  <div class="card">
+    <span class="n mark">8</span>
+    <div class="ct">KPIs to watch</div>
+    <div class="legend"><span><i style="background:var(--navy-2)"></i>Base range</span><span><i style="background:var(--ink-3);width:2px;height:10px"></i>Bear and bull triggers</span><span><i style="background:var(--navy);width:8px;height:8px;border-radius:50%"></i>Today</span></div>
+    <div id="kpis"></div>
+  </div>
+  <div class="card">
+    <span class="n mark">9</span>
+    <div class="ct">Risks <span class="r" style="color:var(--ink-3);font-weight:500">score = likelihood × impact, out of 5</span></div>
+    <div id="risks"></div>
+    <div class="drawer"><button><svg width="14" height="14" viewBox="0 0 14 14"><path d="M5 3l4 4-4 4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>More risks<span class="count">+2</span></button>
+      <div class="dbody"><div><div id="moreRisks"></div></div></div></div>
+  </div>
+</div>
+
+<!-- 10-11 Runs + Leadership -->
+<div class="grid2">
+  <div class="card">
+    <span class="n mark">10</span>
+    <div class="ct">Research runs <span class="r" style="color:var(--ink-3);font-weight:500">8 runs</span></div>
+    <div class="runs cap" id="runs"></div>
+    <div class="foot"><p>Each bar is one run's cost against the $10 cap; the navy one waits for your decision. Hover for date and outcome.</p><dl class="stats"><div><dt>Total</dt><dd>$33.62</dd></div><div><dt>Latest</dt><dd>$4.86</dd></div></dl></div>
+  </div>
+  <div class="card">
+    <span class="n mark">11</span>
+    <div class="ct">Leadership <a>Company website</a></div>
+    <div class="people">
+      <span class="person"><span class="av">AN</span>Anthony Noto · CEO</span><span class="person"><span class="av">CL</span>Chris Lapointe · CFO</span>
+      <span class="person"><span class="av">MC</span>Mike Cagney · Co-founder</span><span class="person"><span class="av">DM</span>Dan Macklin · Co-founder</span>
+      <span class="person"><span class="av">JF</span>James Finnigan · Co-founder</span><span class="person"><span class="av">IB</span>Ian Brady · Co-founder</span>
+    </div>
+    <div class="foot"><p>Names and photos from Wikipedia and Wikimedia Commons; display only.</p></div>
+  </div>
+</div>
+</div>
+
+<script>
+const price = 13.09, cases = { bear: 1.04, base: 8.80, bull: 14.92 };
+const $ = (n) => "$" + n.toFixed(2);
+const gap = (v) => { const g = v / price - 1; return `${g >= 0 ? "+" : "−"}${Math.abs(g * 100).toFixed(1)}%`; };
+// 1 checks drawer
+document.getElementById("checksBtn").onclick = () => document.getElementById("decision").toggleAttribute("data-open");
+// 3 explain
+document.getElementById("explainBtn").onclick = () => document.getElementById("explainBox").toggleAttribute("data-open");
+// 4 scenario picks
+document.querySelectorAll(".case").forEach((b) => b.onclick = () => document.querySelectorAll(".case").forEach((x) => x.setAttribute("aria-pressed", String(x === b))));
+// 5 blend: 0 = all bear, 100 = all bull, through base; 43 lands on the report's $7.70
+const blend = document.getElementById("blend");
+const valueAt = (t) => t <= 50 ? cases.bear + (cases.base - cases.bear) * (t / 50) : cases.base + (cases.bull - cases.base) * ((t - 50) / 50);
+blend.oninput = () => {
+  const atReport = Math.abs(+blend.value - 43) <= 1;
+  const v = atReport ? 7.70 : valueAt(+blend.value);
+  document.getElementById("blendV").textContent = $(v);
+  const g = document.getElementById("blendG"); g.textContent = gap(v); g.className = v >= price ? "up" : "down";
+  document.getElementById("blendNote").textContent = Math.abs(+blend.value - 43) <= 1 ? "Report's weighting" : "Your weighting";
+};
+blend.oninput();
+// 7 read more
+document.getElementById("moreBtn").onclick = (e) => { const s = document.getElementById("say"); s.classList.toggle("clamp"); e.target.textContent = s.classList.contains("clamp") ? "Read more" : "Show less"; };
+// drawers
+document.querySelectorAll(".drawer > button").forEach((b) => b.onclick = () => b.parentElement.toggleAttribute("data-open"));
+// 2 price chart with report-value line and report-day tick
+(() => {
+  const pts = [16.4,16.9,17.5,17.2,18.1,18.6,19.2,18.4,17.9,18.3,17.6,17.1,17.4,16.8,16.2,15.9,16.5,17.0,16.3,15.8,15.2,15.6,16.1,15.4,14.8,14.28,13.9,13.5,13.09];
+  const lo = 6, hi = 20, W = 520, H = 200, y = (v) => 10 + (1 - (v - lo) / (hi - lo)) * (H - 20), x = (i) => (i / (pts.length - 1)) * W;
+  const d = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p).toFixed(1)}`).join(" ");
+  const ri = 25;
+  document.getElementById("pchart").innerHTML = `<line x1="0" x2="${W}" y1="${y(7.70)}" y2="${y(7.70)}" stroke="#3D5A78" stroke-dasharray="5 5" vector-effect="non-scaling-stroke"/>
+    <line x1="${x(ri)}" x2="${x(ri)}" y1="${y(14.28) - 16}" y2="${y(14.28) + 16}" stroke="#78716C" stroke-width="2" vector-effect="non-scaling-stroke"/>
+    <path d="${d}" fill="none" stroke="#0A2642" stroke-width="2.5" vector-effect="non-scaling-stroke"/>`;
+})();
+// 8 KPIs: neutral ticks, a base band, today's dot, a status word, fixed units
+const kpis = [
+  ["Total net charge-off ratio", "1.62%", 3.4, 1.75, [1.8, 2.1], 1.62, "Better than bull", "ok", "Bear 3.4%", "Base 1.8–2.1%", "Bull 1.75%", true],
+  ["Personal loan charge-offs", "2.26%", 5, 1.8, [2.0, 2.5], 2.26, "In base range", "ok", "Bear 5%", "Base 2.0–2.5%", "Bull 1.8%", true],
+  ["Holding-company CET1 capital", "$9.5 billion", 8.0, 10.0, [9.5, 9.6], 9.5, "At base floor", "warn", "Bear $8.0bn", "Base above $9.5bn", "Bull $10.0bn", false],
+  ["Share count growth", "8%", 12, 3, [3, 8], 8, "Top of base", "warn", "Bear 12%", "Base 3–8%", "Bull 3%", true],
+  ["Stock-based pay intensity", "5%", 15, 5, [5, 8], 5, "At bull", "ok", "Bear 15%", "Base 5–8%", "Bull 5%", true],
+  ["Net interest margin", "5.72%", 5, 6.25, [5.8, 6.3], 5.72, "Just below base", "warn", "Bear 5%", "Base 5.8–6.3%", "Bull 6.25%", false],
+];
+document.getElementById("kpis").innerHTML = kpis.map(([n, val, bear, bull, band, now, st, tone, sb, sm, su]) => {
+  const lo = Math.min(bear, bull, band[0], now) , hi = Math.max(bear, bull, band[1], now), span = hi - lo || 1;
+  // Always draw bear on the left and bull on the right, whichever way the metric improves.
+  const flip = bear > bull;
+  const p = (v) => 4 + ((flip ? hi - v : v - lo) / span) * 92;
+  const b0 = Math.min(p(band[0]), p(band[1])), b1 = Math.max(p(band[0]), p(band[1]));
+  return `<div class="kpi"><div class="top"><span>${n}<span class="state ${tone}">${st}</span></span><b>${val}</b></div>
+    <div class="track"><span class="band" style="left:${b0}%;width:${Math.max(2, b1 - b0)}%"></span><span class="tk" style="left:${p(bear)}%"></span><span class="tk" style="left:${p(bull)}%"></span><span class="now" style="left:${p(now)}%"></span></div>
+    <div class="kscale"><span>${sb}</span><span>${sm}</span><span>${su}</span></div></div>`;
+}).join("");
+// 9 risks: labelled score, severity pips, top three
+const risks = [
+  [2.7, "h", "Capital consumption by loan growth outruns retained earnings", "Watch the holding-company CET1 ratio each quarter", 60, 4.5],
+  [2.4, "h", "Share dilution from equity pay and capital raises", "Watch share count year over year and stock pay as a share of revenue", 70, 3.5],
+  [2.3, "m", "Negative operating cash flow obscures earnings quality", "Watch operating cash flow against net income", 65, 3.5],
+  [2.2, "m", "Holding-company dependence on restricted bank dividends", "Watch holding-company versus bank CET1", 55, 4],
+  [2.0, "m", "Credit losses above reserve and pricing assumptions", "Watch personal loan charge-offs and card delinquency", 45, 4.5],
+  [1.3, "l", "Adjusted earnings not comparable across periods", "Watch the GAAP versus adjusted gap", 50, 2.5],
+  [1.2, "l", "Technology Platform classification and funding drain", "Watch Technology Platform contribution profit", 40, 3],
+];
+const riskRow = ([s, k, t, w, like, sev]) => `<div class="risk"><span class="score ${k}">${s.toFixed(1)}</span><div><div class="t">${t}</div><div class="w">${w}</div></div>
+  <div><div class="pips">${[1,2,3,4,5].map((i) => `<i class="${i <= Math.round(sev) ? "on" : ""}"></i>`).join("")}</div><div class="rk">${like}% likely</div></div></div>`;
+document.getElementById("risks").innerHTML = risks.slice(0, 5).map(riskRow).join("");
+document.getElementById("moreRisks").innerHTML = risks.slice(5).map(riskRow).join("");
+// 10 runs with hover labels
+// SoFi's eight runs as stored (dates, outcomes and costs from /api/assets/:id/research-runs); they sum to $33.62.
+const runs = [[0.52, "23 Sep · waiting for review"], [2.68, "24 Sep · approved for tracking"], [1.42, "25 Sep · waiting for review"], [5.07, "27 Sep · needs more work"],
+  [0.12, "18 Nov 05:27 · needs more work"], [9.21, "18 Nov 05:49 · needs more work"], [4.86, "18 Nov 11:05 · needs your decision"], [9.74, "18 Nov 13:12 · needs more work"]];
+document.getElementById("runs").innerHTML = runs.map(([c, l], i) => `<span ${i === 6 ? 'class="cur"' : ""} data-l="${l} · $${c.toFixed(2)}" style="height:${Math.max(6, (c / 10) * 100)}%"></span>`).join("");
+</script>
+</body>
+</html>

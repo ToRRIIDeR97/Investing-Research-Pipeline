@@ -27,17 +27,26 @@
 .data > .note { margin-top: 10px; }
 .tableScroll { max-width: 100%; overflow-x: auto; }
 .tableScroll:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
-.tableScroll table { width: 100%; min-width: 840px; table-layout: fixed; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.tableScroll table { width: 100%; min-width: 840px; table-layout: fixed; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
 .measureColumn { width: 235px; }
-.tableScroll :is(th,td) { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
-.tableScroll thead { background: var(--soft); color: var(--ink-2); }
-.tableScroll thead th { font-size: 13px; font-weight: 400; white-space: nowrap; }
+.tableScroll :is(th,td) { text-align: right; padding: 0 10px; height: 48px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; line-height: 1.2; }
+.tableScroll thead { color: var(--ink-3); }
+.tableScroll thead th { height: 40px; font-size: 12px; font-weight: 600; white-space: nowrap; border-bottom: 1px solid var(--line); }
+.tableScroll thead th:first-child { color: var(--ink-2); }
+.tableScroll td { color: var(--ink-2); }
+.tableScroll td small { display: block; font-size: 10.5px; font-weight: 600; margin-top: 3px; min-height: 13px; color: var(--ink-4); }
+.tableScroll td small[data-tone=good] { color: var(--positive); }
+.tableScroll td small[data-tone=bad] { color: var(--critical); }
+.tableScroll td[data-negative] > :first-child { color: var(--critical); }
+.tableScroll tbody tr:hover > * { background: var(--hover); }
+.tableScroll tr[data-key] > * { background: var(--navy-soft); font-weight: 700; color: var(--ink); }
+.tableScroll tr[data-key] th { font-family: var(--font-display); }
 .tableScroll th:first-child { text-align: left; padding-left: 12px; }
-.tableScroll tbody th { font-weight: 400; line-height: 1.4; }
+.tableScroll tbody th { font-weight: 500; line-height: 1.35; color: var(--ink); }
 .tableScroll th small { display: block; color: var(--ink-3); font-size: 11px; margin-top: 2px; }
 .value { cursor: pointer; text-align: right; min-height: 28px; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 4px; }
 .value:hover { text-decoration-color: var(--ink-3); }
-.missing { color: var(--ink-3); font-size: 13px; }
+.missing { color: var(--ink-4); }
 .detailChart { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 30px; margin-top: 30px; }
 .barChart { width: 100%; height: 300px; margin-top: 16px; }
 .chartData { color: var(--ink-2); font-size: 14px; margin-top: 8px; }

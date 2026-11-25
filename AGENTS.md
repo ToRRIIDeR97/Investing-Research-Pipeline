@@ -12,6 +12,7 @@
 | Topic | Document |
 | --- | --- |
 | Current system, specialist team, research memory, caching, repair | [docs/system.md](docs/system.md) |
+| UI look and feel: tokens, type, components, motion (sliding selector, button presses) | [DESIGN.md](DESIGN.md) |
 | Trust boundaries, secrets, untrusted inputs, open security issues | [docs/security.md](docs/security.md) |
 | Master UML views and coverage index | [docs/architecture.md](docs/architecture.md) |
 | Database setup, worker, test databases | [docs/local-development.md](docs/local-development.md) |

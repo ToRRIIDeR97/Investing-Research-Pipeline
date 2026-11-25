@@ -1,0 +1,47 @@
+// The engine note split into code, audience, method and figures (src/components/quant/engine-note.ts).
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { parseEngineNote } from "../src/components/quant/engine-note";
+
+test("engine notes split into code, audience, method and figures", () => {
+  assert.deepEqual(parseEngineNote("Engine F — Mid-cycle normalised (5yr weighted). Core yield: 0.0%, FCF yield: 7.0%"), {
+    code: "F", audience: "Energy and mining", method: "Mid-cycle normalised (5yr weighted)",
+    figures: [{ label: "Core yield", value: "0.0%" }, { label: "FCF yield", value: "7.0%" }],
+  });
+  assert.deepEqual(parseEngineNote("Engine B — Revenue + Growth composite (EV/Rev: 3.1x, Rule of 40: 45)"), {
+    code: "B", audience: "Growth companies", method: "Revenue + Growth composite",
+    figures: [{ label: "EV/Rev", value: "3.1x" }, { label: "Rule of 40", value: "45" }],
+  });
+  const a = parseEngineNote("Engine A — Normalised EBIT/EV with 5-year weighted average and 20% R&D capitalisation");
+  assert.equal(a.method, "Normalised EBIT/EV with 5-year weighted average and 20% R&D capitalisation");
+  assert.deepEqual(a.figures, []);
+  const c1 = parseEngineNote("Engine C1 — Bank/Financial. P/TBV: 1.20x, ROE: 12.5%, COE: 10.0%");
+  assert.equal(c1.audience, "Banks");
+  assert.equal(c1.method, "Bank/Financial");
+  assert.deepEqual(c1.figures.map((f) => f.label), ["P/TBV", "ROE", "COE"]);
+  const b2 = parseEngineNote("Engine B2 — Speculative Pipeline. Score relative to pre-revenue biotech peers only.");
+  assert.equal(b2.audience, "Pre-revenue biotech");
+  assert.deepEqual(b2.figures, []);
+  assert.deepEqual(parseEngineNote("Something else"), { code: null, audience: null, method: "Something else", figures: [] });
+});
+
+test("fieldLabel and weightSegments shape the How it was built card", async () => {
+  const { fieldLabel, weightSegments } = await import("../src/components/quant/engine-note");
+  assert.equal(fieldLabel("interest_expense"), "Interest expense");
+  assert.equal(fieldLabel("ebit"), "EBIT");
+  assert.deepEqual(weightSegments({ "P/S": 0.1, "EV/EBIT": 0.3, "P/FCF": 0.25, "EV/EBITDA": 0.2, "P/OCF": 0.15, Bad: 0 }).map((x) => `${x.metric} ${x.pct}`),
+    ["EV/EBIT 30", "P/FCF 25", "EV/EBITDA 20", "P/OCF 15", "P/S 10"]);
+  assert.deepEqual(weightSegments({ A: 1, B: 3 }).map((x) => x.pct), [75, 25], "normalised to 100");
+  assert.deepEqual(weightSegments(undefined), []);
+});
+
+test("every engine has a one-sentence explanation; sub-engines fall back to their family", async () => {
+  const { explainEngine } = await import("../src/components/quant/engine-note");
+  for (const code of ["A", "B", "B2", "C", "C1", "C2", "D", "E", "F", "G"]) {
+    const s = explainEngine(code);
+    assert.ok(s && s.endsWith(".") && s.split(". ").length === 1, `${code}: one sentence`);
+  }
+  assert.equal(explainEngine("C3"), explainEngine("C"));
+  assert.equal(explainEngine(null), null);
+  assert.equal(explainEngine("Z"), null);
+});

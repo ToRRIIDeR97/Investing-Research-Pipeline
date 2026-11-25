@@ -73,18 +73,22 @@ export function ValuePathChart({ history, projection, selected, current }: {
   const at = (k: Case) => proj.map((p) => ({ x: xp(p.year), y: y(p[k]) }));
   const band = [...at("bull"), ...at("bear").reverse()];
   const end = proj[proj.length - 1];
-  const caseColor = selected === "bull" ? C.positive : selected === "bear" ? C.critical : C.navy3;
+  const caseColor = selected === "bull" ? C.bull : selected === "bear" ? C.bear : C.base;
   const label = `Price over the last five years, weekly from ${history[0].day} (${money(history[0].close)}) to ${money(current)} today; forward value in year ${years}: bear ${money(end?.bear)}, base ${money(end?.base)}, bull ${money(end?.bull)}.`;
   return <figure style={{ margin: 0 }}>
     <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img" aria-label={label}>
       <text x={0} y={y(dataHi) + 4} fontSize="11" fill={C.ink3}>{money(dataHi)}</text>
       {Math.abs(y(dataLo) - y(dataHi)) >= 12 && <text x={0} y={y(dataLo) + 4} fontSize="11" fill={C.ink3}>{money(dataLo)}</text>}
       {proj.length > 1 && <path d={`${path(band)} Z`} fill={C.navySoft} />}
+      {/* The band's edges in their case colours, so bear and bull read at a glance. */}
+      {proj.length > 1 && selected !== "bull" && <path d={path(at("bull"))} fill="none" stroke={C.bull} strokeWidth="1.5" strokeDasharray="5 4" opacity="0.7" />}
+      {proj.length > 1 && selected !== "bear" && <path d={path(at("bear"))} fill="none" stroke={C.bear} strokeWidth="1.5" strokeDasharray="5 4" opacity="0.7" />}
       <line x1={split} y1={top} x2={split} y2={bottom} stroke={C.lineStrong} strokeDasharray="4 4" />
       <text x={split - 4} y={bottom - 6} fontSize="12" fill={C.ink3} textAnchor="end">today {money(current)}</text>
       <path d={path(hist)} fill="none" stroke={C.navy} strokeWidth="2.5" />
       {proj.length > 1 && <path d={path(at(selected))} fill="none" stroke={caseColor} strokeWidth="3" />}
-      {end && <text x={right + 6} y={clamp(y(end[selected]) + 4, top + 8, bottom)} fontSize="12" fill={C.ink}>{money(end[selected])}</text>}
+      {proj.length > 1 && end && <circle cx={xp(end.year)} cy={y(end[selected])} r="5" fill={caseColor} stroke={C.tile} strokeWidth="2" />}
+      {end && <text x={right + 10} y={clamp(y(end[selected]) + 4, top + 8, bottom)} fontSize="13" fontWeight="700" fill={caseColor}>{money(end[selected])}</text>}
       <text x={left} y={H - 8} fontSize="11" fill={C.ink3}>{history[0].day.slice(0, 7)}</text>
       <text x={split} y={H - 8} fontSize="11" fill={C.ink3} textAnchor="middle">now</text>
       <text x={right} y={H - 8} fontSize="11" fill={C.ink3} textAnchor="end">year {years}</text>
@@ -93,13 +97,18 @@ export function ValuePathChart({ history, projection, selected, current }: {
       <span><i style={{ background: C.navy }} />Weekly close</span>
       <span><i style={{ background: caseColor }} />{selected[0].toUpperCase() + selected.slice(1)} forward value</span>
       <span><i style={{ background: C.navySoft, height: 10 }} />Bear to bull range</span>
+      <span><i style={{ background: C.bear }} />Bear</span><span><i style={{ background: C.bull }} />Bull</span>
     </div>
   </figure>;
 }
 
-/** From the DCF's present values to the base value per share, as a signed waterfall. */
-export function ValueBuild({ build }: { build: { pv_cash_flows: number; pv_terminal: number; net_debt_per_share: number; per_share: number; metric: string; terminal_share: number } }) {
-  const W = 420, H = 210, top = 22, bottom = 180;
+/**
+ * From the DCF's present values to the base value per share, as a signed waterfall. `width` and `height` are the
+ * drawing size in pixels (the card measures its free space and passes it, so the chart fills the card).
+ */
+export function ValueBuild({ build, width = 420, height = 210 }: { build: { pv_cash_flows: number; pv_terminal: number; net_debt_per_share: number; per_share: number; metric: string; terminal_share: number }; width?: number; height?: number }) {
+  const W = Math.max(260, Math.round(width)), H = Math.max(180, Math.round(height)), top = 22, bottom = H - 30;
+  const slot = (W - 10) / 4, barW = Math.min(slot - 18, 120);
   const a = build.pv_cash_flows, b = a + build.pv_terminal, c = b - build.net_debt_per_share;
   const [lo, hi] = padded([0, a, b, c, build.per_share]);
   const y = scale(lo, hi, bottom, top);
@@ -117,9 +126,9 @@ export function ValueBuild({ build }: { build: { pv_cash_flows: number; pv_termi
     {steps.map((s, i) => {
       const y0 = y(Math.max(s.from, s.to)), h = Math.max(2, Math.abs(y(s.from) - y(s.to)));
       return <g key={s.label}>
-        <rect x={10 + i * 102} y={y0} width="82" height={h} rx="4" fill={s.fill} />
-        <text x={10 + i * 102} y={Math.max(14, y0 - 6)} fontSize="12" fill={C.ink}>{s.text}</text>
-        <text x={10 + i * 102} y={H - 6} fontSize="11" fill={C.ink3}>{s.label}</text>
+        <rect x={10 + i * slot} y={y0} width={barW} height={h} rx="6" fill={s.fill} />
+        <text x={10 + i * slot} y={Math.max(14, y0 - 6)} fontSize="12" fill={C.ink}>{s.text}</text>
+        <text x={10 + i * slot} y={H - 6} fontSize="11" fill={C.ink3}>{s.label}</text>
       </g>;
     })}
   </svg>;

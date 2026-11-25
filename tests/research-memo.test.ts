@@ -88,6 +88,11 @@ test('base ranges parse in the KPI unit', () => {
   assert.deepEqual(parseBaseRange('14.5% to 17%', 'percent'), [14.5, 17]);
   assert.deepEqual(parseBaseRange('0% to 8%', 'ratio (decimal)'), [0, 0.08]);
   assert.deepEqual(parseBaseRange('-9000 to 0', 'USD millions'), [-9000, 0]);
+  // Scaled units: a thousands KPI gets its range in thousands; a percent mixed with an amount is not a range.
+  assert.deepEqual(parseBaseRange('9 to 10 billion dollars', 'USD thousands'), [9e6, 1e7]);
+  assert.equal(parseBaseRange('Above 9.5 billion dollars with CET1 ratio above 12%', 'USD thousands'), null);
+  assert.deepEqual(parseBaseRange('2.0% to 2.5%', 'percent, annualized'), [2, 2.5]);
+  assert.equal(formatLevel(9520479, 'USD thousands'), '$9.5B');
   assert.equal(parseBaseRange('stable', 'percent'), null);
   assert.equal(formatLevel(14.9, 'percent'), '14.9%');
   assert.equal(formatLevel(-8793, 'USD millions'), '−$8.8B');

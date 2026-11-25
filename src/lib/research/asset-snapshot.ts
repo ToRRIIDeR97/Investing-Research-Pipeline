@@ -47,6 +47,15 @@ export function formatKpi(value: number, unit: string | null): string {
   const trim = (n: number, places: number) => String(Number(n.toFixed(places)));
   if (u.includes("percent") || u === "%" || u === "pct") return `${trim(value, 2)}%`;
   if (u === "ratio" || u === "x" || u.includes("multiple")) return `${trim(value, 2)}x`;
+  // "decimal, year over year" is a fraction: 0.0764 reads as 7.6%.
+  if (u.includes("decimal")) return `${trim(value * 100, 1)}%`;
+  // A scaled currency unit: "USD thousands" 9520479 is $9.52bn, "USD millions" -8793 is −$8.79bn.
+  const scale = /\bthousands?\b/.test(u) ? 1e3 : /\bmillions?\b/.test(u) ? 1e6 : /\bbillions?\b/.test(u) ? 1e9 : 1;
+  if (scale > 1) {
+    const amount = value * scale, a = Math.abs(amount), sign = amount < 0 ? "−" : "";
+    const cur = /\busd\b|dollar/.test(u) ? "$" : "";
+    return a >= 1e9 ? `${sign}${cur}${(a / 1e9).toFixed(2)}bn` : a >= 1e6 ? `${sign}${cur}${(a / 1e6).toFixed(1)}m` : `${sign}${cur}${(a / 1e3).toFixed(1)}k`;
+  }
   const abs = Math.abs(value);
   if (abs >= 1e9) return `${(value / 1e9).toFixed(2)}bn`;
   if (abs >= 1e6) return `${(value / 1e6).toFixed(1)}m`;

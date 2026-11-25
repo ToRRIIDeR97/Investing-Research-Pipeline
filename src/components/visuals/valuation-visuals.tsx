@@ -109,19 +109,36 @@ export function ValueRuler({ snapshot, caption = true }: { snapshot: AssetSnapsh
 }
 
 /** A compact ruler for cards: price needle against the bear-to-bull band. */
+/**
+ * The card's valuation bar: one even-height track from the lowest to the highest of bear, base, bull and price. The
+ * stretch between today's price and the base value is filled green when the value is above the price (cheap) and red
+ * when it is below (expensive); the price is a dark tick, the base value a navy dot. Bear and bull label the ends.
+ */
 export function MiniRuler({ snapshot }: { snapshot: AssetSnapshot }) {
   const { bear, base, bull } = snapshot.values;
   const price = snapshot.price;
   const points = [bear, base, bull, price].filter((v): v is number => v != null && Number.isFinite(v));
   if (points.length < 2 || base == null) return null;
-  const lo = Math.min(...points), hi = Math.max(...points), pad = (hi - lo || 1) * 0.06;
-  const x = (v: number) => 6 + ((v - lo + pad) / (hi - lo + 2 * pad)) * 288;
-  return <svg className={styles.mini} viewBox="0 0 300 34" role="img" aria-label={`Price ${money(price, snapshot.currency)} against base value ${money(base, snapshot.currency)}`}>
-    <line x1={6} x2={294} y1={18} y2={18} stroke={C.line} strokeWidth={6} strokeLinecap="round" />
-    {bear != null && bull != null && <rect x={x(Math.min(bear, bull))} y={13} width={Math.abs(x(bull) - x(bear))} height={10} rx={5} fill={C.navy2} />}
-    <circle cx={x(base)} cy={18} r={6} fill={C.navy} stroke={C.tile} strokeWidth={2} />
-    {price != null && <><line x1={x(price)} x2={x(price)} y1={4} y2={30} stroke={C.ink} strokeWidth={2.5} /></>}
-  </svg>;
+  const lo = Math.min(...points), hi = Math.max(...points), span = hi - lo || 1;
+  const pct = (v: number) => 3 + ((v - lo) / span) * 94;
+  const c = snapshot.currency;
+  const cheap = price != null && base >= price;
+  const gapFrom = price != null ? Math.min(pct(price), pct(base)) : null;
+  const gapTo = price != null ? Math.max(pct(price), pct(base)) : null;
+  const label = price == null ? `Base value ${money(base, c)}`
+    : `Price ${money(price, c)} against base value ${money(base, c)}: ${cheap ? "below value (cheap)" : "above value (expensive)"}`;
+  return <div className={styles.ruler} role="img" aria-label={label}>
+    <div className={styles.rulerTrack}>
+      {gapFrom != null && gapTo != null && <span className={styles.rulerGap} data-tone={cheap ? "good" : "bad"} style={{ left: `${gapFrom}%`, width: `${gapTo - gapFrom}%` }} />}
+      {price != null && <span className={styles.rulerPrice} style={{ left: `${pct(price)}%` }} />}
+      <span className={styles.rulerBase} style={{ left: `${pct(base)}%` }} />
+    </div>
+    <div className={styles.rulerScale} aria-hidden="true">
+      <span>{bear != null ? `Bear ${money(bear, c)}` : ""}</span>
+      <span className={styles.rulerKey}><i data-k="price" />Price<i data-k="base" />Base</span>
+      <span>{bull != null ? `Bull ${money(bull, c)}` : ""}</span>
+    </div>
+  </div>;
 }
 
 /** Yearly bear-to-bull targets as a fan with the base path, against today's price. */

@@ -8,6 +8,7 @@ import type { SavedChart, SavedChartDefinition } from '@/lib/research/reporting/
 import { ChartLegend, SeriesChart } from './series-chart';
 import type { SavedChartsApi } from './use-saved-charts';
 import styles from './financials.module.css';
+import { SlideGroup } from '@/components/ui/sliding';
 
 type Row = Record<string, any>;
 export type SeriesOptionGroup = { group: string; options: { key: string; label: string }[] };
@@ -71,10 +72,10 @@ function ChartCard({ chart, observations, frequency, book, periods, saved }: { c
     {error && <p role="alert" className={styles.errorText}>{error}</p>}
     <footer className={styles.cardFoot}>
       <span>{chartTakeaway(built, frequency)}</span>
-      <span className={styles.segmentedSmall} role="group" aria-label={`Chart type for ${chart.name}`}>
+      <SlideGroup className={styles.segmentedSmall} label={`Chart type for ${chart.name}`}>
         {TYPES.map(([type, text]) => <button key={type} type="button" aria-pressed={def.chart_type === type}
           onClick={() => { if (def.chart_type !== type) void act(() => saved.update(chart.id, { definition: { ...def, chart_type: type } })); }}>{text}</button>)}
-      </span>
+      </SlideGroup>
     </footer>
     <dialog ref={dialog} className={styles.chartDialog} aria-label={chart.name}>
       <header><h2>{chart.name}</h2><button type="button" className={styles.iconButton} aria-label="Close" onClick={() => dialog.current?.close()}><X size={18} aria-hidden="true" /></button></header>
@@ -133,13 +134,13 @@ function ChartBuilder({ observations, frequency, book, periods, saved, options }
       </select>
     </div>
     <span className={styles.fieldLabel}>Chart type</span>
-    <span className={styles.segmentedSmall} role="group" aria-label="Chart type">
+    <SlideGroup className={styles.segmentedSmall} label="Chart type">
       {TYPES.map(([value, text]) => <button key={value} type="button" aria-pressed={type === value} onClick={() => setType(value)}>{value === 'bars' ? 'Bars + lines' : text}</button>)}
-    </span>
+    </SlideGroup>
     <span className={styles.fieldLabel}>Periods</span>
-    <span className={styles.segmentedSmall} role="group" aria-label="Periods">
+    <SlideGroup className={styles.segmentedSmall} label="Periods">
       {(['last_8', 'last_12', 'all'] as const).map((value) => <button key={value} type="button" aria-pressed={range === value} onClick={() => setRange(value)}>{value === 'all' ? 'All' : `Last ${RANGE_PERIODS[value]} ${unit}`}</button>)}
-    </span>
+    </SlideGroup>
     {error && <p role="alert" className={styles.errorText}>{error}</p>}
     <div className={styles.builderActions}>
       <button type="button" className={styles.primaryButton} onClick={() => void save()} disabled={saving}>{saving ? 'Saving…' : 'Save to board'}</button>

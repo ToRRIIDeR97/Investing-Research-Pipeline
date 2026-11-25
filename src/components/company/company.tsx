@@ -4,21 +4,30 @@
 import { useState, type ReactNode } from "react";
 import { SLOW_LOOKUP_NOTE, useCompanyProfile, type CompanyPerson, type ProfileSubject } from "./use-company-profiles";
 import styles from "./company.module.css";
+import { logoBox } from "./logo-box";
 import ui from "@/components/research-ui.module.css";
 
 const initials = (name: string) => name.replace(/\(.*?\)/g, "").replace(/,?\s+(inc|corp|ltd|plc|llc)\.?$/i, "").split(/\s+/).filter(Boolean)
   .slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "?";
 
-/** A company's logo in a square tile; a ticker or initials monogram when there is none (or it fails to load). */
-export function CompanyLogo({ subject, name, ticker, size = 40, shape = "square" }: { subject: ProfileSubject | null; name: string; ticker?: string | null; size?: number; shape?: "square" | "round" }) {
+/** A company's logo, normalized to a common visual size; a ticker or initials monogram when there is none (or it fails to load). */
+export function CompanyLogo({ subject, name, ticker, size = 40, shape = "square", maxWidth }: { subject: ProfileSubject | null; name: string; ticker?: string | null; size?: number; shape?: "square" | "round"; maxWidth?: number }) {
   const { profile, loading, throttled } = useCompanyProfile(subject);
   const [broken, setBroken] = useState<string | null>(null);
+  const [ratio, setRatio] = useState<{ src: string; r: number } | null>(null);
   const src = profile?.logo_url && broken !== profile.logo_url ? profile.logo_url : null;
   const mono = ticker && ticker.length <= 4 ? ticker.toUpperCase() : initials(name);
-  if (src) return <span className={styles.logo} data-shape={shape} style={{ width: size, height: size }}>
-    {/* eslint-disable-next-line @next/next/no-img-element -- remote Wikimedia logo, sized by the tile */}
-    <img src={src} alt={`${name} logo`} referrerPolicy="no-referrer" loading="lazy" onError={() => setBroken(src)} />
-  </span>;
+  if (src) {
+    const box = logoBox(size, ratio?.src === src ? ratio.r : 1, maxWidth);
+    return <span className={styles.logo} data-shape={shape} style={{ width: maxWidth ? Math.max(size, box.width) : size, height: size }}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- remote Wikimedia logo, sized by its shape */}
+      <img src={src} alt={`${name} logo`} referrerPolicy="no-referrer" loading="lazy" style={box}
+        // A cached image can finish loading before hydration attaches onLoad, so measure on mount too.
+        ref={(i) => { if (i?.complete && i.naturalWidth && i.naturalHeight && ratio?.src !== src) setRatio({ src, r: i.naturalWidth / i.naturalHeight }); }}
+        onLoad={(e) => { const i = e.currentTarget; if (i.naturalWidth && i.naturalHeight) setRatio({ src, r: i.naturalWidth / i.naturalHeight }); }}
+        onError={() => setBroken(src)} />
+    </span>;
+  }
   return <span className={`${styles.logo} ${styles.monogram}`} data-shape={shape} data-loading={loading} aria-hidden="true"
     title={loading && throttled ? SLOW_LOOKUP_NOTE : undefined}
     style={{ width: size, height: size, fontSize: Math.max(10, Math.round(size * (mono.length > 2 ? 0.26 : 0.36))) }}>{mono}</span>;

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scenario tiles workshop</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* Workshop for the Quant page's scenario tiles (NEM numbers). Tokens copied from src/app/globals.css. */
+:root {
+  --page:#F8F8F4; --tile:#FFFFFF; --soft:#F5F4EF; --hover:#F3F2EC; --line:#E7E5DF; --line-soft:#EEEDE7; --line-strong:#D6D3CC;
+  --ink:#0D1B2A; --ink-2:#44403C; --ink-3:#78716C; --ink-4:#A8A29E; --navy:#0A2642; --navy-soft:#EEF1F5; --navy-2:#B4C0CC; --navy-3:#3D5A78;
+  --positive:#2D7D46; --critical:#C9302C; --bear:#C9302C; --base:#3D5A78; --bull:#2D7D46; --bear-bg:#F9E2E1; --bull-bg:#E5F1E8;
+  --shadow-card:0 1px 2px rgb(0 0 0/4%),0 8px 28px -12px rgb(13 27 42/14%); --spring:cubic-bezier(.3,1.35,.5,1);
+  --display:"Plus Jakarta Sans",Inter,sans-serif;
+}
+* { box-sizing:border-box; margin:0; }
+body { background:var(--page); color:var(--ink); font:13px/1.5 Inter,sans-serif; font-variant-numeric:tabular-nums; padding:28px 32px 60px; }
+h1 { font:700 26px/1.2 var(--display); letter-spacing:-.03em; }
+.lede { color:var(--ink-2); margin:6px 0 22px; max-width:760px; font-size:14px; }
+.variant { margin-bottom:34px; max-width:980px; }
+.vhead { display:flex; align-items:baseline; gap:12px; margin-bottom:10px; }
+.vhead b { font:700 15px var(--display); }
+.vhead span { color:var(--ink-3); font-size:12.5px; }
+.tag { font:700 11px Inter; color:var(--navy); background:var(--navy-soft); border-radius:999px; padding:2px 8px; }
+button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; text-align:left; }
+.up { color:var(--positive); } .down { color:var(--critical); }
+[data-c="bear"] { --c:var(--bear); --cbg:var(--bear-bg); } [data-c="base"] { --c:var(--base); --cbg:var(--navy-soft); } [data-c="bull"] { --c:var(--bull); --cbg:var(--bull-bg); }
+.big { font:700 28px/1.1 var(--display); letter-spacing:-.03em; }
+.lab { display:inline-flex; align-items:center; gap:7px; font-weight:600; font-size:12.5px; color:var(--ink-2); }
+.lab i { width:8px; height:8px; border-radius:50%; background:var(--c); }
+.meta { color:var(--ink-3); font-size:12px; }
+.card { background:var(--tile); border-radius:20px; box-shadow:var(--shadow-card); border:1px solid rgb(0 0 0/3.5%); }
+.t { transition:transform .2s var(--spring), box-shadow .2s, background-color .2s, border-color .2s; }
+
+/* V1 Quiet: white, dot label, value-vs-price bar; selected = case-coloured outline only */
+.v1 { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+.v1 button { padding:18px 20px; display:grid; gap:6px; }
+.v1 button:hover { transform:translateY(-2px); }
+.v1 button[aria-pressed=true] { box-shadow:0 0 0 1.5px var(--c), var(--shadow-card); }
+.v1 .bar { position:relative; height:6px; border-radius:99px; background:var(--line-soft); margin:6px 0 2px; }
+.v1 .bar span { position:absolute; left:0; top:0; bottom:0; border-radius:99px; background:var(--c); }
+.v1 .bar em { position:absolute; top:-4px; width:2px; height:14px; background:var(--ink); }
+
+/* V2 Stat strip: one card, three columns, a sliding underline in the case colour */
+.v2 { position:relative; display:grid; grid-template-columns:repeat(3,1fr); padding:6px; }
+.v2 button { padding:16px 20px 18px; display:grid; gap:4px; border-radius:14px; position:relative; z-index:1; }
+.v2 button + button { box-shadow:inset 1px 0 0 var(--line-soft); }
+.v2 .pill { position:absolute; top:6px; bottom:6px; width:calc((100% - 12px)/3); left:6px; border-radius:14px; background:var(--cbg); transition:transform .38s var(--spring), background-color .3s; }
+.v2 .pill::after { content:""; position:absolute; left:20px; right:20px; bottom:8px; height:3px; border-radius:3px; background:var(--c); }
+
+/* V3 Ruler: one card, a price scale with the three values as markers, columns underneath */
+.v3 { padding:20px 22px 16px; }
+.v3 .scale { position:relative; height:46px; margin:0 8px 14px; }
+.v3 .track { position:absolute; left:0; right:0; top:20px; height:6px; border-radius:99px; background:linear-gradient(90deg,var(--bear-bg),var(--bull-bg)); }
+.v3 .mk { position:absolute; top:13px; width:20px; height:20px; margin-left:-10px; border-radius:50%; background:var(--c); box-shadow:0 0 0 3px var(--tile); transition:transform .2s var(--spring); }
+.v3 .mk[aria-pressed=true] { transform:scale(1.25); box-shadow:0 0 0 3px var(--tile),0 0 0 6px var(--cbg); }
+.v3 .px { position:absolute; top:6px; width:2px; height:34px; background:var(--ink); }
+.v3 .px b { position:absolute; top:-16px; left:50%; transform:translateX(-50%); font-size:11px; white-space:nowrap; }
+.v3 .cols { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.v3 .cols button { padding:10px 12px; border-radius:12px; display:grid; gap:2px; }
+.v3 .cols button[aria-pressed=true] { background:var(--cbg); }
+
+/* V4 Left accent: an inset accent bar (no clipped stripe), delta as a tinted chip */
+.v4 { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+.v4 button { padding:18px 20px 18px 26px; display:grid; gap:6px; position:relative; }
+.v4 button::before { content:""; position:absolute; left:12px; top:18px; bottom:18px; width:4px; border-radius:4px; background:var(--c); }
+.v4 button:hover { transform:translateY(-2px); }
+.v4 button[aria-pressed=true] { background:var(--cbg); box-shadow:var(--shadow-card); }
+.v4 .chip { justify-self:start; font-weight:700; font-size:12px; padding:2px 9px; border-radius:99px; background:var(--bull-bg); color:var(--positive); }
+.v4 .chip.down { background:var(--bear-bg); color:var(--critical); }
+
+/* V5 Segmented: compact pills that double as the selector, with the sliding pill */
+.v5 { display:inline-flex; position:relative; padding:5px; gap:4px; border-radius:999px; background:var(--hover); }
+.v5 button { position:relative; z-index:1; display:flex; align-items:baseline; gap:10px; padding:10px 18px; border-radius:999px; }
+.v5 button .big { font-size:20px; }
+.v5 .pill { position:absolute; top:5px; bottom:5px; left:0; border-radius:999px; background:var(--tile); box-shadow:0 1px 3px rgb(0 0 0/10%),0 4px 12px -6px rgb(13 27 42/18%); transition:transform .38s var(--spring), width .38s var(--spring); }
+
+/* V6 Upside: each tile shows its upside from today's price as a filled bar; big percent leads */
+.v6 { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+.v6 button { padding:18px 20px; display:grid; gap:8px; }
+.v6 button[aria-pressed=true] { box-shadow:0 0 0 1.5px var(--c), var(--shadow-card); transform:translateY(-2px); }
+.v6 .row { display:flex; justify-content:space-between; align-items:baseline; }
+.v6 .pct { font:700 26px/1 var(--display); letter-spacing:-.03em; }
+.v6 .meter { height:28px; border-radius:10px; background:var(--soft); position:relative; overflow:hidden; }
+.v6 .meter span { position:absolute; left:0; top:0; bottom:0; background:var(--cbg); border-right:3px solid var(--c); }
+.v6 .meter b { position:absolute; left:10px; top:50%; transform:translateY(-50%); font-size:12px; font-weight:600; color:var(--ink-2); }
+</style>
+</head>
+<body>
+<h1>Scenario tiles: six variants</h1>
+<p class="lede">Newmont (NEM) at $100.73. Each variant is clickable, so you can feel the selected state. Bear red, base slate navy, bull green throughout.</p>
+<div id="root"></div>
+<script>
+const price = 100.73;
+const cases = [
+  { k: "bear", name: "Bear", v: 102.11, g: "+13.0%", x: "7.2x" },
+  { k: "base", name: "Base", v: 142.15, g: "+18.5%", x: "10.8x" },
+  { k: "bull", name: "Bull", v: 169.33, g: "+24.1%", x: "12.3x" },
+];
+const pct = (v) => { const d = v / price - 1; return `${d >= 0 ? "+" : "−"}${Math.abs(d * 100).toFixed(1)}%`; };
+const cls = (v) => (v >= price ? "up" : "down");
+const $ = (s) => "$" + s.toFixed(2);
+const hi = Math.max(...cases.map((c) => c.v));
+const lo = Math.min(price, ...cases.map((c) => c.v));
+const pos = (v) => 4 + ((v - lo) / (hi - lo)) * 92;
+
+const variants = [
+  ["V1", "Quiet", "White tiles, no stripe. A thin bar shows value against today's price (tick). Selected: a fine case-coloured outline.", (c) => `
+    <span class="lab"><i></i>${c.name} case</span><span class="big">${$(c.v)}</span>
+    <span class="${cls(c.v)}" style="font-weight:600">${pct(c.v)} vs price</span>
+    <div class="bar"><span style="width:${Math.min(100, (c.v / hi) * 100)}%"></span><em style="left:${(price / hi) * 100}%"></em></div>
+    <span class="meta">Growth ${c.g} · exit ${c.x}</span>`, "v1 card-each"],
+  ["V2", "Stat strip", "One card split in three, like the Home key numbers. A tinted pill with a case-coloured underline slides to the pick.", (c) => `
+    <span class="lab"><i></i>${c.name}</span><span class="big">${$(c.v)}</span>
+    <span class="${cls(c.v)}" style="font-weight:600">${pct(c.v)} vs price</span><span class="meta">Growth ${c.g} · exit ${c.x}</span>`, "v2 card"],
+  ["V3", "Ruler", "One card with a price scale: the three values as dots against today's price, the numbers in columns below.", null, "v3 card"],
+  ["V4", "Inset accent", "Separate tiles with a short accent bar inside the padding (no stripe clipped by the corners). The vs-price figure is a tinted chip.", (c) => `
+    <span class="lab" style="color:var(--c)">${c.name} case</span><span class="big">${$(c.v)}</span>
+    <span class="chip ${cls(c.v)}">${pct(c.v)} vs price</span><span class="meta">Growth ${c.g} · exit ${c.x}</span>`, "v4 card-each"],
+  ["V5", "Segmented", "Compact: the scenarios are the selector itself, using the app's sliding pill. Detail moves to the chart and table.", (c) => `
+    <span class="lab"><i></i>${c.name}</span><span class="big">${$(c.v)}</span><span class="${cls(c.v)}" style="font-weight:600;font-size:12.5px">${pct(c.v)}</span>`, "v5"],
+  ["V6", "Upside first", "Leads with the upside, the number you act on. A meter fills from today's price to the case value.", (c) => `
+    <div class="row"><span class="lab"><i></i>${c.name} case</span><span class="meta">Growth ${c.g} · exit ${c.x}</span></div>
+    <div class="row"><span class="pct ${cls(c.v)}">${pct(c.v)}</span><span class="big" style="font-size:20px">${$(c.v)}</span></div>
+    <div class="meter"><span style="width:${Math.max(6, Math.min(100, ((c.v - price) / (hi - price)) * 100))}%"></span><b>from ${$(price)}</b></div>`, "v6 card-each"],
+];
+
+const root = document.getElementById("root");
+for (const [id, name, note, body, klass] of variants) {
+  const sec = document.createElement("section");
+  sec.className = "variant";
+  sec.innerHTML = `<div class="vhead"><span class="tag">${id}</span><b>${name}</b><span>${note}</span></div>`;
+  const box = document.createElement("div");
+  box.className = klass.replace("card-each", "");
+  let pill = null;
+  if (id === "V2" || id === "V5") { pill = document.createElement("span"); pill.className = "pill"; box.append(pill); }
+  if (id === "V3") {
+    box.innerHTML = `<div class="scale"><div class="track"></div><span class="px" style="left:${pos(price)}%"><b>Price ${$(price)}</b></span>${cases.map((c) => `<button class="mk" data-c="${c.k}" data-k="${c.k}" aria-label="${c.name}" style="left:${pos(c.v)}%"></button>`).join("")}</div>
+      <div class="cols">${cases.map((c) => `<button data-c="${c.k}" data-k="${c.k}"><span class="lab"><i></i>${c.name}</span><span class="big" style="font-size:24px">${$(c.v)}</span><span class="${cls(c.v)}" style="font-weight:600">${pct(c.v)} vs price</span><span class="meta">Growth ${c.g} · exit ${c.x}</span></button>`).join("")}</div>`;
+  } else {
+    for (const c of cases) {
+      const b = document.createElement("button");
+      b.dataset.c = c.k; b.dataset.k = c.k;
+      b.className = (klass.includes("card-each") ? "card " : "") + "t";
+      b.innerHTML = body(c);
+      box.append(b);
+    }
+  }
+  const select = (k) => {
+    box.querySelectorAll("[data-k]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === k)));
+    if (pill) {
+      const t = box.querySelector(`button[data-k="${k}"]`);
+      pill.dataset.c = k;
+      if (id === "V2") pill.style.transform = `translateX(${cases.findIndex((c) => c.k === k) * 100}%)`;
+      else { pill.style.width = t.offsetWidth + "px"; pill.style.transform = `translateX(${t.offsetLeft}px)`; }
+    }
+  };
+  box.addEventListener("click", (e) => { const b = e.target.closest("[data-k]"); if (b) select(b.dataset.k); });
+  sec.append(box);
+  root.append(sec);
+  requestAnimationFrame(() => select("base"));
+}
+</script>
+</body>
+</html>

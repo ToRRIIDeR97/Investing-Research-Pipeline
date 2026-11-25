@@ -17,9 +17,11 @@ test("AC-10: the rail shows price, both grades, PulseScore, trend, stage and the
   const s = await snapshotOf();
   const html = renderToStaticMarkup(<QuantView snapshot={s} tab="value" onTab={noop} />);
   assert.match(html, /Fixture Software/);
-  assert.match(html, /PulseGrade/);
+  // One grade since the design pass: PQ-Grade only (PulseGrade is still computed, see p2-value).
   assert.match(html, /PQ-Grade/);
-  assert.match(html, new RegExp(`>${s.value!.pulse_grade.grade.replace("+", "\\+")}<`));
+  assert.doesNotMatch(html, /PulseGrade/);
+  assert.match(html, /PQ-Grade/);
+  assert.match(html, new RegExp(`>${s.value!.pq_grade.grade.replace("+", "\\+")}<`));
   assert.match(html, /PulseScore/);
   assert.match(html, /conditions met/);
   assert.match(html, /href="\/research\/new\?ticker=FIXA&amp;name=Fixture%20Software"/);
@@ -51,7 +53,7 @@ test("AC-10: a partial snapshot shows why Value is missing; Trend still renders"
   const s = await snapshotOf({ fundamentals: null, fundamentals_reason: "Not an SEC filer.", cik: null });
   const value = renderToStaticMarkup(<QuantView snapshot={s} tab="value" onTab={noop} />);
   assert.match(value, /Not an SEC filer\./);
-  assert.doesNotMatch(value, /PulseGrade/);
+  assert.doesNotMatch(value, /PQ-Grade/);
   assert.match(renderToStaticMarkup(<QuantView snapshot={s} tab="trend" onTab={noop} />), /One year of daily closes/);
 });
 

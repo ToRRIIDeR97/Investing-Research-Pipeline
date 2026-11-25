@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quant rail workshop</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* Workshop for the Quant page's summary rail (SoFi). Tokens from src/app/globals.css. */
+:root {
+  --page:#F8F8F4; --tile:#FFFFFF; --soft:#F5F4EF; --hover:#F3F2EC; --line:#E7E5DF; --line-soft:#EEEDE7;
+  --ink:#0D1B2A; --ink-2:#44403C; --ink-3:#78716C; --ink-4:#A8A29E; --navy:#0A2642; --navy-soft:#EEF1F5; --navy-3:#3D5A78;
+  --positive:#2D7D46; --critical:#C9302C; --caution:#B8860B;
+  --b-ink:#3E6A1F; --b-bg:#EDF4E3;
+  --shadow-card:0 1px 2px rgb(0 0 0/4%),0 8px 28px -12px rgb(13 27 42/14%);
+  --display:"Plus Jakarta Sans",Inter,sans-serif;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:var(--page); color:var(--ink); font:13px/1.5 Inter,sans-serif; font-variant-numeric:tabular-nums; padding:28px 32px 60px; }
+h1 { font:700 26px/1.2 var(--display); letter-spacing:-.03em; }
+.lede { color:var(--ink-2); margin:6px 0 24px; max-width:860px; font-size:14px; }
+.row { display:grid; grid-template-columns:repeat(auto-fill, 290px); gap:28px; align-items:start; }
+.vhead { margin-bottom:10px; min-height:58px; }
+.vhead b { font:700 15px var(--display); display:block; }
+.vhead span { color:var(--ink-3); font-size:12px; }
+.tag { font:700 11px Inter; color:var(--navy); background:var(--navy-soft); border-radius:999px; padding:2px 8px; margin-right:6px; }
+.rail { background:var(--tile); border:1px solid rgb(0 0 0/3.5%); border-radius:24px; box-shadow:var(--shadow-card); padding:20px; display:grid; gap:16px; }
+.logo { font:800 17px var(--display); color:#2BA8D9; letter-spacing:-.02em; }
+.logo i { font-style:normal; font-size:12px; margin-left:3px; }
+.logoTile { width:40px; height:40px; display:grid; place-items:center; }
+.name { font:700 17px/1.2 var(--display); letter-spacing:-.02em; }
+.sub { font-size:12px; color:var(--ink-3); }
+.tick { display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 9px; border-radius:99px; background:var(--soft); font-size:11.5px; font-weight:700; color:var(--ink-2); }
+.price { font:700 30px/1 var(--display); letter-spacing:-.03em; }
+.down { color:var(--critical); } .up { color:var(--positive); }
+.chg { font-size:12.5px; font-weight:700; }
+.spark { width:100%; height:44px; display:block; }
+.k { font-size:11px; color:var(--ink-3); }
+.v { font:700 15px var(--display); letter-spacing:-.02em; }
+.dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:6px; vertical-align:1px; }
+.btn { display:flex; justify-content:center; align-items:center; height:40px; border-radius:99px; background:var(--navy); color:#fff; font-weight:600; font-size:13px; text-decoration:none; }
+.btn2 { display:flex; justify-content:center; align-items:center; height:36px; border-radius:99px; border:1px solid var(--line); font-weight:600; font-size:12.5px; color:var(--ink); }
+.gauge { position:relative; height:8px; border-radius:99px; background:linear-gradient(90deg,#DA7470,var(--line) 50%,#6CA27D); }
+.gauge i { position:absolute; top:50%; width:14px; height:14px; margin:-7px 0 0 -7px; border-radius:50%; background:var(--navy); box-shadow:0 0 0 3px var(--tile); }
+.gscale { display:flex; justify-content:space-between; font-size:10.5px; color:var(--ink-3); margin-top:4px; }
+.grade { background:var(--b-bg); color:var(--b-ink); border-radius:16px; padding:12px 14px; }
+.grade b { font:800 34px/1 var(--display); }
+hr { border:0; border-top:1px solid var(--line-soft); }
+.stats { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.stats > div { background:var(--soft); border-radius:12px; padding:8px 12px; display:grid; }
+.list { display:grid; gap:9px; }
+.list > div { display:flex; justify-content:space-between; gap:8px; }
+.list dt { color:var(--ink-3); } .list dd { font-weight:600; text-align:right; }
+.section { display:grid; gap:10px; }
+.sh { font-size:11.5px; font-weight:700; color:var(--ink-3); }
+.chip { display:inline-flex; align-items:center; gap:6px; height:26px; padding:0 10px; border-radius:99px; font-size:12px; font-weight:600; background:var(--soft); }
+.ring { width:64px; height:64px; border-radius:50%; display:grid; place-items:center; background:var(--b-bg); color:var(--b-ink); font:800 28px var(--display); box-shadow:inset 0 0 0 3px #A9C98C; }
+.research { display:flex; justify-content:space-between; align-items:center; font-size:12px; }
+.research b { font-weight:600; color:var(--caution); }
+</style>
+</head>
+<body>
+<h1>Summary rail: four layouts</h1>
+<p class="lede">SoFi (SOFI) at $13.09. Same data in each; the order and grouping change. Today's rail stacks ten things at equal weight, so nothing leads.</p>
+<div class="row">
+
+<!-- R1 -->
+<div>
+  <div class="vhead"><b><span class="tag">R1</span>Verdict block</b><span>Compact header, price with its 3-month move, then one block that holds the grade and the PulseScore together. Trend signals as a 2×2 stat grid.</span></div>
+  <div class="rail">
+    <div style="display:flex;gap:12px;align-items:center"><div class="logoTile"><span class="logo">SoFi<i>⁂</i></span></div><div><div class="name">SoFi Technologies</div><div class="sub">SOFI · Credit Services</div></div></div>
+    <div><div style="display:flex;align-items:baseline;gap:10px"><span class="price">$13.09</span><span class="chg down">−30.5% 3m</span></div><div class="sub">Close 23 Nov 2026</div></div>
+    <svg class="spark" data-spark viewBox="0 0 250 44" preserveAspectRatio="none"></svg>
+    <div class="grade">
+      <div style="display:flex;align-items:baseline;gap:10px"><b>B</b><div><div style="font-weight:700">Marginal discount</div><div style="font-size:11px;color:var(--ink-3)">PQ-Grade</div></div></div>
+      <div style="margin-top:12px"><div class="gauge"><i style="left:54%"></i></div><div class="gscale"><span>over</span><span>PulseScore +0.26</span><span>under</span></div></div>
+    </div>
+    <div class="stats">
+      <div><span class="k">Trend</span><span class="v down">0/9</span></div>
+      <div><span class="k">Stage</span><span class="v down">4 · 4 wk</span></div>
+      <div><span class="k">RS rating</span><span class="v down">3.3</span></div>
+      <div><span class="k">Confidence</span><span class="v">93</span></div>
+    </div>
+    <div class="research"><span class="sub">Research</span><b>Needs more work</b></div>
+    <a class="btn">Open research</a>
+  </div>
+</div>
+
+<!-- R2 -->
+<div>
+  <div class="vhead"><b><span class="tag">R2</span>Labelled sections</b><span>Three quiet headed sections (Price, Value, Trend) split by rules. Calm and scannable; little colour outside the grade.</span></div>
+  <div class="rail">
+    <div style="display:grid;gap:8px"><span class="logo">SoFi<i>⁂</i></span><div class="name">SoFi Technologies, Inc.</div><div style="display:flex;gap:8px;align-items:center"><span class="tick">SOFI</span><span class="sub">Credit Services</span></div></div>
+    <hr>
+    <div class="section"><span class="sh">Price</span><div style="display:flex;justify-content:space-between;align-items:baseline"><span class="price">$13.09</span><span class="chg down">−30.5%</span></div><svg class="spark" data-spark viewBox="0 0 250 44" preserveAspectRatio="none"></svg></div>
+    <hr>
+    <div class="section"><span class="sh">Value</span>
+      <div style="display:flex;justify-content:space-between;align-items:center"><span style="display:flex;align-items:baseline;gap:8px"><b style="font:800 26px var(--display);color:var(--b-ink)">B</b><span style="color:var(--b-ink);font-weight:600">Marginal discount</span></span></div>
+      <div><div class="gauge"><i style="left:54%"></i></div><div class="gscale"><span>−3</span><span>PulseScore +0.26</span><span>+3</span></div></div>
+      <dl class="list"><div><dt>Confidence</dt><dd>93</dd></div></dl>
+    </div>
+    <hr>
+    <div class="section"><span class="sh">Trend</span>
+      <dl class="list"><div><dt>Conditions</dt><dd class="down">0/9 met</dd></div><div><dt>Stage</dt><dd class="down">4 · 4 weeks</dd></div><div><dt>RS rating</dt><dd>3.3</dd></div></dl>
+    </div>
+    <a class="btn">Open research</a>
+  </div>
+</div>
+
+<!-- R3 -->
+<div>
+  <div class="vhead"><b><span class="tag">R3</span>Grade badge</b><span>The grade becomes a badge beside the price, so price and verdict read together. Signals as chips; research status rides on the button.</span></div>
+  <div class="rail">
+    <div style="display:flex;gap:12px;align-items:center"><div class="logoTile"><span class="logo">SoFi<i>⁂</i></span></div><div><div class="name">SoFi Technologies</div><div class="sub">SOFI · Financial Services</div></div></div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div><span class="price">$13.09</span><div class="chg down">−30.5% in 3 months</div></div>
+      <div style="display:grid;justify-items:center;gap:3px"><div class="ring">B</div><span style="font-size:10.5px;color:var(--b-ink);font-weight:700">PQ-Grade</span></div>
+    </div>
+    <svg class="spark" data-spark viewBox="0 0 250 44" preserveAspectRatio="none"></svg>
+    <div style="font-size:12.5px;color:var(--ink-2)"><b style="color:var(--b-ink)">Marginal discount.</b> PulseScore +0.26 on a −3 to +3 scale; confidence 93.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">
+      <span class="chip down">Trend 0/9</span>
+      <span class="chip down">Stage 4</span>
+      <span class="chip down">RS 3.3</span>
+    </div>
+    <div style="display:grid;gap:6px"><a class="btn">Open research</a><span class="sub" style="text-align:center">Research needs more work</span></div>
+  </div>
+</div>
+
+<!-- R4 -->
+<div>
+  <div class="vhead"><b><span class="tag">R4</span>Scoreboard</b><span>Identity and price on top; below, a two-column scoreboard where every signal is a labelled tile with its colour, then the actions.</span></div>
+  <div class="rail">
+    <div style="display:flex;gap:12px;align-items:center"><div class="logoTile"><span class="logo">SoFi<i>⁂</i></span></div><div style="flex:1"><div class="name">SoFi Technologies</div><div class="sub">SOFI · Credit Services</div></div></div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-end"><div><span class="price">$13.09</span><div class="sub">Close 23 Nov</div></div><svg class="spark" data-spark viewBox="0 0 250 44" preserveAspectRatio="none" style="width:110px;height:40px"></svg></div>
+    <div class="stats">
+      <div style="grid-column:span 2;background:var(--b-bg)"><span class="k" style="color:var(--b-ink)">PQ-Grade</span><span style="display:flex;align-items:baseline;gap:8px"><b style="font:800 26px var(--display);color:var(--b-ink)">B</b><span style="color:var(--b-ink);font-weight:600;font-size:12.5px">Marginal discount</span></span></div>
+      <div><span class="k">PulseScore</span><span class="v up">+0.26</span></div>
+      <div><span class="k">Confidence</span><span class="v">93</span></div>
+      <div style="background:#F9E2E1"><span class="k">Trend</span><span class="v down">0/9</span></div>
+      <div style="background:#F9E2E1"><span class="k">Stage</span><span class="v down">4 · 4 wk</span></div>
+      <div style="grid-column:span 2;background:#F9E2E1;display:flex;justify-content:space-between;align-items:center"><span class="k">RS rating</span><span class="v down">3.3 <span style="font:500 11px Inter;color:var(--ink-3)">of 99</span></span></div>
+    </div>
+    <div style="display:grid;gap:8px"><a class="btn">Open research</a><a class="btn2">Research needs more work</a></div>
+  </div>
+</div>
+
+</div>
+<script>
+// A downtrending three-month line like SoFi's, drawn once into every sparkline.
+const pts = [18.8,19.2,18.1,17.9,17.0,17.8,18.5,18.2,18.0,17.3,17.2,17.3,17.6,17.1,16.8,16.7,16.9,16.2,15.8,16.1,15.6,15.2,15.5,15.9,16.4,15.7,15.1,14.6,14.9,14.4,13.8,14.2,13.6,13.09];
+const lo = Math.min(...pts), hi = Math.max(...pts);
+const d = pts.map((p, i) => `${i ? "L" : "M"}${(i / (pts.length - 1) * 250).toFixed(1)},${(4 + (1 - (p - lo) / (hi - lo)) * 36).toFixed(1)}`).join(" ");
+document.querySelectorAll("[data-spark]").forEach((s) => s.innerHTML = `<path d="${d}" fill="none" stroke="#0A2642" stroke-width="2" vector-effect="non-scaling-stroke"/>`);
+</script>
+</body>
+</html>

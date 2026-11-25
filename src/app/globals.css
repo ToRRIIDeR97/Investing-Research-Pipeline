@@ -17,6 +17,13 @@
 
 :root {
   --ease-nav: cubic-bezier(.2,0,0,1);
+  /* Motion (DESIGN.md "Motion"): one spring for things that move, one ease for things that fade or recolour. */
+  --ease-spring: cubic-bezier(.3,1.35,.5,1);
+  --ease-out: cubic-bezier(.2,0,0,1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slide: 380ms;
+  --press-scale: .96;
   /* Display face for headings and big numbers (in :root so it is always emitted) */
   --font-display: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   /* Surfaces and lines */
@@ -52,6 +59,13 @@
   --caution-ink: #7A5300;
   --caution-bg: #F5F4EF;
   --caution-line: #E7E5DF;
+  /* Quant colour (DESIGN.md): the grade scale, A green through F red, as ink on a tint, and the scenario colours. */
+  --grade-a-ink: #1F6A38; --grade-a-bg: #E5F1E8;
+  --grade-b-ink: #3E6A1F; --grade-b-bg: #EDF4E3;
+  --grade-c-ink: #7A5300; --grade-c-bg: #FAF0D9;
+  --grade-d-ink: #A1401C; --grade-d-bg: #FBE8DF;
+  --grade-f-ink: #A32420; --grade-f-bg: #F9E2E1;
+  --case-bear: #C9302C; --case-base: #3D5A78; --case-bull: #2D7D46;
   /* Shape */
   --radius-card: 24px;
   --radius-control: 12px;
@@ -59,6 +73,7 @@
   --shadow-card: 0 1px 2px rgb(0 0 0 / 4%), 0 8px 28px -12px rgb(13 27 42 / 14%);
   --shadow-pop: 0 12px 32px -8px rgb(13 27 42 / 18%);
   --shadow-navy: 0 6px 16px -6px rgb(10 38 66 / 50%);
+  --shadow-navy-lift: 0 10px 22px -8px rgb(10 38 66 / 55%);
 }
 
 @layer base {
@@ -78,6 +93,37 @@
 @keyframes research-fade { from { opacity:0; } to { opacity:1; } }
 @media(prefers-reduced-motion:no-preference) {
   html[data-input=pointer] dialog[open], html[data-input=pointer] details[open]>:not(summary) { animation:research-fade 140ms ease-out; }
-  button, a, summary { transition:background-color 120ms ease-out,color 120ms ease-out,border-color 120ms ease-out; }
+  button, a, summary { transition:background-color var(--dur-fast) ease-out,color var(--dur-fast) ease-out,border-color var(--dur-fast) ease-out,box-shadow var(--dur-base) var(--ease-out),transform var(--dur-base) var(--ease-spring); }
+}
+
+/* Grade chips: [data-grade] on any element tints it by grade tone (src/components/quant/tones.ts). */
+[data-grade="a"] { --g-ink: var(--grade-a-ink); --g-bg: var(--grade-a-bg); }
+[data-grade="b"] { --g-ink: var(--grade-b-ink); --g-bg: var(--grade-b-bg); }
+[data-grade="c"] { --g-ink: var(--grade-c-ink); --g-bg: var(--grade-c-bg); }
+[data-grade="d"] { --g-ink: var(--grade-d-ink); --g-bg: var(--grade-d-bg); }
+[data-grade="f"] { --g-ink: var(--grade-f-ink); --g-bg: var(--grade-f-bg); }
+/* Scenario colour: [data-case] sets --case-color and --case-tint for bear, base and bull. */
+[data-case="bear"] { --case-color: var(--case-bear); --case-tint: var(--grade-f-bg); }
+[data-case="base"] { --case-color: var(--case-base); --case-tint: var(--navy-soft); }
+[data-case="bull"] { --case-color: var(--case-bull); --case-tint: var(--grade-a-bg); }
+
+/* Sliding selector (src/components/ui/sliding.tsx). The hook marks a bar data-slide once it has measured it; the bar's
+   own selected background then gives way to one pill that glides between items, plus a faint ghost under the pointer. */
+[data-slide] { position: relative; isolation: isolate; touch-action: pan-y; }
+[data-slide] > :not([data-slide-pill], [data-slide-ghost]) { position: relative; z-index: 1; }
+[data-slide] > :is([aria-pressed="true"], [aria-current]:not([aria-current="false"]), [aria-selected="true"]) { background: transparent !important; box-shadow: none !important; }
+[data-slide-pill], [data-slide-ghost] { position: absolute; z-index: 0; left: 0; top: var(--slide-inset, 4px); bottom: var(--slide-inset, 4px); width: var(--pill-w, 0); border-radius: var(--radius-pill); pointer-events: none; transform: translateX(var(--pill-x, 0)); }
+[data-slide-pill] { background: var(--tile); box-shadow: 0 1px 3px rgb(0 0 0 / 10%), 0 4px 12px -6px rgb(13 27 42 / 18%); opacity: 0; }
+[data-slide-has] > [data-slide-pill] { opacity: 1; }
+[data-slide-ghost] { width: var(--ghost-w, 0); transform: translateX(var(--ghost-x, 0)); background: rgb(255 255 255 / 55%); opacity: 0; }
+[data-slide-hover] > [data-slide-ghost] { opacity: 1; }
+[data-slide-drag] { cursor: grabbing; user-select: none; }
+[data-slide-drag] > [data-slide-pill] { box-shadow: 0 2px 6px rgb(0 0 0 / 12%), 0 10px 22px -8px rgb(13 27 42 / 28%); }
+@media (prefers-reduced-motion: no-preference) {
+  [data-slide-ready] > [data-slide-pill] { transition: transform var(--dur-slide) var(--ease-spring), width var(--dur-slide) var(--ease-spring), opacity var(--dur-base) ease-out, box-shadow var(--dur-base) ease-out; }
+  [data-slide-ready] > [data-slide-ghost] { transition: transform 260ms var(--ease-spring), width 260ms var(--ease-spring), opacity var(--dur-base) ease-out; }
+  [data-slide-drag] > [data-slide-pill] { transition-duration: 90ms, 160ms, var(--dur-base), var(--dur-base); transition-timing-function: var(--ease-out); }
+  /* Items squeeze slightly while pressed, like an iOS segment. */
+  [data-slide] > :not([data-slide-pill], [data-slide-ghost]):active { transform: scale(var(--press-scale)); }
 }
 .research-form { display:grid;gap:14px;max-width:560px;margin:4px 0; }.research-form label { display:grid;gap:6px;font-size:13px;color:var(--ink-2); }.research-form input { height:36px;padding:0 12px;border:1px solid var(--line-strong);border-radius:var(--radius-control);background:var(--tile);color:var(--ink); }.research-form button { justify-self:start; }
