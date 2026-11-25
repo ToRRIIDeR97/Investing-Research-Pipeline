@@ -131,6 +131,28 @@ Keyboard: arrows move, Enter opens, Escape closes; `/` focuses the page's main s
 Empty, loading and error states are sentences, not icons: "Nothing checked yet. Search above or try one of the quick
 picks." Loading lists show neutral skeleton cards; errors say what failed and offer "Try again".
 
+## Financials
+
+Workshop `prototype/workshop/financials-charts.html`: chart builder C2, table T3.
+
+- **Chart card:** name, then "show as" (Separate, Stacked, One total), Values or YoY %, Clear and "Save as bundle". Under
+  it a command bar, a pill search field like the finder: type a line item, ratio or bundle and press Enter; bundles come
+  first; each result shows its latest value; `/` focuses it. The chart sits right under it, and under the chart a small
+  legend table, not pills: one row per series with its colour, name, latest value, an 8-period trend line, change on a
+  year earlier (green or red; points for ratios), Bar/Line and remove. Under the table, plain text links: Sum into one
+  line, Bundles, Suggested. The card ends in a footer: the first series' latest value and its change on a year earlier, and how to read it.
+- **Bundles:** a named set of line items shown together ("Revenue, cash flow and expenses"). It stores line items,
+  never numbers, so it fills in for any company. Saved bundles are text links under the legend table, and the
+  search finds them. "Sum into one line" adds (or subtracts) lines into one named total; its legend row has "Split".
+- **Statement tables:** read top-down. Each total sits above the lines that add up to it, indented 20px a level with a
+  fold arrow (revenue first, then its breakdown; "Fold to main totals" collapses to the top level). Clicking anywhere on
+  a row adds it to the chart or takes it off; a number opens its sources. The unit once in the head, one decimal in
+  millions, headline lines (revenue, net interest income, net income) on a `--navy-soft` band, ratios as small grey
+  rows under their line, the latest period faintly tinted. Under each value, its change on the same period a year
+  earlier in green or red (for parts of an expense total, up is red). Rows with nothing in the window are hidden behind a
+  "Show N lines" link. A missing value is an em dash. Lines filed without a label show their XBRL tag as plain words
+  (`lineName`), and names wrap to two lines at most with the full name on hover.
+
 ## Motion
 
 Tokens (in `:root`): `--ease-spring` for anything that moves, `--ease-out` for fades and colour, `--dur-fast` (120ms,

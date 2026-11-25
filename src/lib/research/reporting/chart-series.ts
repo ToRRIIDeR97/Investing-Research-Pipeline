@@ -5,7 +5,7 @@
  * or `us_gaap_CostOfRevenue`) or a catalogue metric (`metric:operating_margin`). Saved charts
  * store keys, never values, so the same definition refills with any asset's observations.
  */
-import { label as plainLabel } from './presentation.mjs';
+import { label as plainLabel, lineName } from './presentation.mjs';
 import { MetricBook, evaluateMetric, formatMetric, metricDef, periodKey, periodName, shiftPeriod, yearLag, type Frequency, type MetricKind, type PeriodRef } from './metric-catalogue';
 
 type Row = Record<string, any>;
@@ -13,11 +13,28 @@ export type ChartKind = MetricKind | 'shares';
 export type SeriesAs = 'bar' | 'line';
 export type ChartType = 'bars' | 'stacked' | 'lines';
 export type ChartMode = 'values' | 'yoy';
-export type SeriesSpec = { key: string; as: SeriesAs; axis?: 'left' | 'right' };
+/** `label` names a summed series (`sum:` key); other series take their label from the data. */
+export type SeriesSpec = { key: string; as: SeriesAs; axis?: 'left' | 'right'; label?: string };
 
 export const MAX_SERIES = 6;
 export const SERIES_COLORS = ['#3d4a5f', '#c0862a', '#3f8f6b', '#b5523f', '#7a64a8', '#2f87a3'];
 export const METRIC_PREFIX = 'metric:';
+export const SUM_PREFIX = 'sum:';
+const TERM = /([+-])((?:metric:)?[A-Za-z][A-Za-z0-9_]*)/g;
+
+/** A summed series: `sum:+revenue-us_gaap_CostOfRevenue`. Two to six terms, each added or subtracted. */
+export type SumTerm = { key: string; sign: 1 | -1 };
+export function sumKey(terms: SumTerm[]): string {
+  return `${SUM_PREFIX}${terms.map((t) => `${t.sign < 0 ? '-' : '+'}${t.key}`).join('')}`;
+}
+export function parseSumKey(key: string): SumTerm[] | null {
+  if (!key.startsWith(SUM_PREFIX)) return null;
+  const body = key.slice(SUM_PREFIX.length);
+  const terms = [...body.matchAll(TERM)].map((m) => ({ key: m[2], sign: (m[1] === '-' ? -1 : 1) as 1 | -1 }));
+  if (terms.map((t) => `${t.sign < 0 ? '-' : '+'}${t.key}`).join('') !== body) return null;
+  return terms.length >= 2 && terms.length <= MAX_SERIES && new Set(terms.map((t) => t.key)).size === terms.length ? terms : null;
+}
+export const sumLabel = (labels: string[], terms: SumTerm[]) => labels.map((l, i) => (i ? (terms[i].sign < 0 ? ' − ' : ' + ') : terms[i].sign < 0 ? '−' : '') + l).join('');
 
 export type ResolvedSeries = {
   key: string;
@@ -42,7 +59,7 @@ function rowKind(r: Row): { kind: ChartKind; currency: string | null } | null {
 /** A consolidated statement line item over the given periods. */
 export function lineItemSeries(observations: Row[], frequency: Frequency, key: string, periods: PeriodRef[]): ResolvedSeries {
   const rows = observations.filter((r) => r.metric_key === key && r.periodicity === frequency && !r.segment && !r.geography && Number.isFinite(r.value_numeric));
-  const name = rows.find((r) => r.metadata_json?.statement_label)?.metadata_json.statement_label ?? plainLabel(key.replace(/^us_gaap_/, ''));
+  const name = lineName(rows.find((r) => r.metadata_json?.statement_label)?.metadata_json.statement_label ?? plainLabel(key.replace(/^us_gaap_/, '')));
   const base = { key, label: name, kind: 'money' as ChartKind, currency: null as string | null, values: periods.map(() => null as number | null) };
   if (!rows.length) return { ...base, reason: 'Not captured for this company' };
   const kinds = new Set(rows.map((r) => JSON.stringify(rowKind(r))));
@@ -67,8 +84,28 @@ export function metricSeries(book: MetricBook, key: string, periods: PeriodRef[]
   return { key, label: def.name, kind: def.kind, currency: results.find((r) => r.currency)?.currency ?? null, values: results.map((r) => r.value), reason: null };
 }
 
-export function resolveSeries(observations: Row[], frequency: Frequency, key: string, periods: PeriodRef[], book = new MetricBook(observations, frequency)) {
+export function resolveSeries(observations: Row[], frequency: Frequency, key: string, periods: PeriodRef[], book = new MetricBook(observations, frequency), label?: string): ResolvedSeries {
+  if (key.startsWith(SUM_PREFIX)) return summedSeries(observations, frequency, key, periods, book, label);
   return key.startsWith(METRIC_PREFIX) ? metricSeries(book, key, periods) : lineItemSeries(observations, frequency, key, periods);
+}
+
+/**
+ * The sum of its terms in each period. A period with any term missing is a gap, never a partial
+ * sum, and every term must be in the same unit.
+ */
+export function summedSeries(observations: Row[], frequency: Frequency, key: string, periods: PeriodRef[], book: MetricBook, label?: string): ResolvedSeries {
+  const terms = parseSumKey(key);
+  const empty = periods.map(() => null as number | null);
+  if (!terms) return { key, label: label || 'Custom total', kind: 'money', currency: null, values: empty, reason: 'This total is not valid' };
+  const parts = terms.map((t) => resolveSeries(observations, frequency, t.key, periods, book));
+  const name = label || sumLabel(parts.map((p) => p.label), terms);
+  const base = { key, label: name, kind: parts[0].kind, currency: parts[0].currency, values: empty };
+  const missing = parts.find((p) => p.reason);
+  if (missing) return { ...base, reason: `${missing.label}: ${(missing.reason ?? "").toLowerCase()}` };
+  if (new Set(parts.map(unitFamily)).size > 1) return { ...base, reason: 'Its parts are in different units' };
+  if (parts[0].kind === 'pct' || parts[0].kind === 'x') return { ...base, reason: 'Ratios cannot be added up' };
+  const values = periods.map((_, i) => parts.every((p) => p.values[i] !== null) ? parts.reduce((sum, p, j) => sum + terms[j].sign * p.values[i]!, 0) : null);
+  return { ...base, values, reason: null };
 }
 
 /** Axis family: two series share an axis only when their values are in the same unit. */
@@ -140,7 +177,7 @@ export function buildChart(input: { observations: Row[]; frequency: Frequency; s
   const lag = yearLag(frequency);
   const extended = periods.length ? [...Array.from({ length: lag }, (_, i) => shiftPeriod(periods[0], i - lag)), ...periods] : [];
   const omitted: BuiltChart['omitted'] = [];
-  const resolved = specs.map((spec) => ({ spec, series: resolveSeries(observations, frequency, spec.key, extended, book) })).filter(({ series }) => {
+  const resolved = specs.map((spec) => ({ spec, series: resolveSeries(observations, frequency, spec.key, extended, book, spec.label) })).filter(({ series }) => {
     if (series.reason) omitted.push({ label: series.label, reason: series.reason });
     return !series.reason;
   });

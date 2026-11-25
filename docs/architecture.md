@@ -103,7 +103,7 @@ Schema modules (`src/db/schema/`) and their key tables:
 | ai | staging, model calls, budgets, traces |
 | backtesting | backtest_runs, backtest_artifacts |
 | market-data | market_price_bars (with Stooq cross-check status; S&P 500 benchmark bars under the `benchmark-gspc` reference asset), corporate_actions, market_data_fetches, instrument_provider_mappings |
-| saved-charts | saved_charts (My charts board definitions; series keys, never values) |
+| saved-charts | saved_charts (bundles and My charts board definitions; series keys, including `sum:` totals, never values) |
 | monitoring | asset_monitor_checks (monitor-check results: refresh due, reasons, filings, KPI scores, including notebook KPIs) |
 | notebook | notebook_pins, notebook_kpis, notebook_annotations (report notes, and filing notes with `anchor_kind = 'filing'` and `source_document_id`), notebook_journal_entries (the operator's per-asset notebook: references and text, never computed values) |
 | workbench | valuation_scenarios (named what-ifs per run: the typed change and the summary the server recomputed; never a report input) |

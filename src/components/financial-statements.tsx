@@ -5,11 +5,12 @@ import Link from 'next/link';
 import { usePathname, useSearchParams, useRouter } from 'next/navigation';
 import { ArrowLeft, ArrowRight, X } from 'lucide-react';
 import { LineChart, Line, ResponsiveContainer, YAxis } from 'recharts';
-import { financialStatements, financialPeriod, financialWindow, financialSeries, historyMatrix, label, number, safeUrl } from '@/lib/research/reporting/presentation.mjs';
+import { financialStatements, financialPeriod, financialWindow, financialSeries, historyMatrix, label, lineName, number, safeUrl } from '@/lib/research/reporting/presentation.mjs';
 import { METRICS, MetricBook, observedPeriods, parsePeriod, type Frequency, type PeriodRef } from '@/lib/research/reporting/metric-catalogue';
 import { CHART_PRESETS, METRIC_PREFIX, resolveSeries, type SeriesSpec } from '@/lib/research/reporting/chart-series';
 import { ChartPanel, type Preset } from './financials/chart-panel';
-import { StatementTable } from './financials/statement-table';
+import { StatementTable, cellFor } from './financials/statement-table';
+import { changeTone, formatChange, priorYearLabel, unitKind, yearChange } from './financials/statement-rows';
 import { SlideGroup } from '@/components/ui/sliding';
 import { MetricsView } from './financials/metrics-view';
 import { ChartsBoard, type SeriesOptionGroup } from './financials/charts-board';
@@ -28,9 +29,9 @@ const summaries = {
   cashflow:['operating_cash_flow','investing_cash_flow','financing_cash_flow'],
 };
 const chartMetric = {income:'net_revenue', balance:'total_assets', cashflow:'operating_cash_flow'};
-/** The chart a statement opens with, kept to rows the company reports. */
+/** The chart a statement opens with: the first few of these the company reports with values. */
 const defaultSeries: Record<Group, SeriesSpec[]> = {
-  income: [{key:'revenue',as:'bar'},{key:'us_gaap_OperatingIncomeLoss',as:'bar'},{key:'metric:operating_margin',as:'line'}],
+  income: [{key:'revenue',as:'bar'},{key:'net_revenue',as:'bar'},{key:'contract_revenue',as:'bar'},{key:'us_gaap_OperatingIncomeLoss',as:'bar'},{key:'net_income',as:'bar'},{key:'metric:operating_margin',as:'line'},{key:'metric:net_margin',as:'line'}],
   balance: [{key:'total_assets',as:'bar'},{key:'total_liabilities',as:'bar'},{key:'stockholders_equity',as:'bar'}],
   cashflow: [{key:'operating_cash_flow',as:'bar'},{key:'us_gaap_PaymentsToAcquirePropertyPlantAndEquipment',as:'bar'},{key:'metric:fcf_margin',as:'line'}],
 };
@@ -84,13 +85,15 @@ export function FinancialStatements({observations, sources, evidence, isTest,fil
     return <div className={styles.tableScroll} tabIndex={0} role="region" aria-label={`${title} table, scroll horizontally for all periods`}>
       <table><caption className={styles.srOnly}>{title}. Select a value for exact amounts and sources.</caption>
         <colgroup><col className={styles.measureColumn}/>{periods.map(p=><col key={p}/>)}</colgroup>
-        <thead><tr><th scope="col">Measure{commonUnit&&<small>{commonUnit}</small>}</th>{periods.map(p=><th scope="col" key={p}>{undated?'Period unavailable':p}</th>)}</tr></thead>
-        <tbody>{matrix.rows.map((row,index)=><tr key={index}>
+        <thead><tr><th scope="col">{commonUnit??'Measure'}{!undated&&<small>Under each value: change on a year earlier</small>}</th>{periods.map(p=><th scope="col" key={p}>{undated?'Period unavailable':p}</th>)}</tr></thead>
+        <tbody>{matrix.rows.map((row,index)=><tr key={index} data-key={/^(revenue|net_revenue|contract_revenue|net_income|total_assets|operating_cash_flow)$/.test(row.metric_key)||undefined}>
           <th scope="row">{row.name}{!commonUnit&&<small>{row.unit}{row.basis ? ` · ${row.basis}` : ''}</small>}</th>
-          {periods.map(p=>{const i=matrix.periods.indexOf(p); const records:Row[] = row.observations[i] ?? [];const display=records.length&&records.every(r=>r.value_numeric==null)&&records.some(r=>r.metadata_json?.missing_reason)?(records.some(r=>r.metadata_json?.missing_reason?.startsWith('Not applicable'))?'Not applicable':'Unavailable'):row.values[i];
-            return <td key={p}>{records.length ? <button className={styles.value} onClick={e=>showSources(records,e.currentTarget)} title={row.exact[i]} aria-label={`${row.name}, ${undated?'period unavailable':p}: ${display}. Exact values and sources`}>{display}</button> : <span className={styles.missing}>Not disclosed</span>}</td>;
+          {periods.map(p=>{const i=matrix.periods.indexOf(p); const first:Row|undefined=row.observations.flat()[0]; const kind=unitKind(first?.unit,first?.currency);
+            const cell=cellFor(row,i,kind); const change=undated||kind==='other'?null:yearChange(cell.value,cellFor(row,matrix.periods.indexOf(priorYearLabel(p)),kind).value); const tone=changeTone(row.name,change);
+            return <td key={p} data-negative={cell.value!==null&&cell.value<0||undefined}>{cell.records.length ? <button className={styles.value} onClick={e=>showSources(cell.records,e.currentTarget)} title={row.exact[i]} aria-label={`${row.name}, ${undated?'period unavailable':p}: ${cell.text}${change===null?'':`, ${formatChange(change)} on a year earlier`}. Exact values and sources`}>{cell.text}</button> : <span className={styles.missing}>—</span>}
+              {!undated&&<small data-tone={tone??undefined} aria-hidden="true">{change===null?'':formatChange(change)}</small>}</td>;
           })}
-        </tr>)}{missing.filter(metric=>!rows.some(r=>r.metric_key===metric)).map(metric=><tr key={metric}><th scope="row">{label(metric)}</th>{periods.map(p=><td key={p} className={styles.missing}>Not available</td>)}</tr>)}</tbody>
+        </tr>)}{missing.filter(metric=>!rows.some(r=>r.metric_key===metric)).map(metric=><tr key={metric}><th scope="row">{label(metric)}</th>{periods.map(p=><td key={p}><span className={styles.missing}>Not available</span></td>)}</tr>)}</tbody>
       </table>
     </div>;
   }
@@ -98,7 +101,7 @@ export function FinancialStatements({observations, sources, evidence, isTest,fil
     .sort((a,b)=>(a.metadata_json?.statement_order??1e9)-(b.metadata_json?.statement_order??1e9));
   const seriesOptions: SeriesOptionGroup[] = useMemo(() => [
     ...(['income','balance','cashflow'] as const).map(group => ({group:statements[group], options:[...new Map((grouped[group] as Row[]).filter(r=>!r.segment&&!r.geography&&Number.isFinite(r.value_numeric))
-      .map(r=>[r.metric_key,{key:r.metric_key as string,label:(r.metadata_json?.statement_label as string)||label(r.metric_key)}])).values()].sort((a,b)=>a.label.localeCompare(b.label))})),
+      .map(r=>[r.metric_key,{key:r.metric_key as string,label:lineName((r.metadata_json?.statement_label as string)||label(r.metric_key))}])).values()].sort((a,b)=>a.label.localeCompare(b.label))})),
     {group:'Derived', options:[{key:`${METRIC_PREFIX}gross_profit`,label:'Gross profit'}]},
     {group:'Metrics', options:METRICS.map(m=>({key:`${METRIC_PREFIX}${m.key}`,label:m.name}))},
   ].filter(g=>g.options.length), [observations, frequency]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -129,16 +132,16 @@ export function FinancialStatements({observations, sources, evidence, isTest,fil
         {periodWindow}
       </div>}
       {statement==='charts'&&<ChartsBoard observations={observations} frequency={frequency} book={book} periods={allPeriods} saved={saved} options={seriesOptions}/>}
-      {statement==='metrics'&&<MetricsView key={frequency} observations={observations} frequency={frequency} book={book} periods={windowRefs} chartPeriods={chartPeriods} saved={saved} boardHref={boardHref}/>}
+      {statement==='metrics'&&<MetricsView key={frequency} observations={observations} frequency={frequency} book={book} periods={windowRefs} chartPeriods={chartPeriods} saved={saved} boardHref={boardHref} options={seriesOptions}/>}
       {single&&(asFiled?<section className={styles.statement} data-layout="filed" aria-label={statements[statement]}>{originalTables(statement)}</section>
         :<StatementWorkspace key={statement} group={statement} rows={statementRows(statement)} periods={window.periods} chartPeriods={windowRefs} frequency={frequency} observations={observations} book={book}
-          saved={saved} boardHref={boardHref} onSources={showSources} missing={statement==='cashflow'?grouped.missingCashFlows:[]}
+          saved={saved} boardHref={boardHref} options={seriesOptions} onSources={showSources} missing={statement==='cashflow'?grouped.missingCashFlows:[]}
           undated={(grouped[statement] as Row[]).filter(r=>!financialPeriod(r))} undatedTable={(rows)=>table(rows,'Observations without a fiscal period',[],true)}
           original={filedRows.some(t=>t.statement===statement)?originalTables(statement):null}/>)}
       {statement==='all'&&(['income','balance','cashflow'] as const).map(group=>{
         const allRows:Row[] = grouped[group];
         const summaryKeys = group==='income'&&allRows.some(r=>r.metric_key==='net_revenue') ? summaries.income.filter(key=>key!=='contract_revenue') : summaries[group];
-        const rows = allRows.filter(r=>financialPeriod(r) && !r.segment && !r.geography && summaryKeys.includes(r.metric_key)&&window.periods.includes(financialPeriod(r)!))
+        const rows = allRows.filter(r=>financialPeriod(r) && !r.segment && !r.geography && summaryKeys.includes(r.metric_key))
           .sort((a,b)=>{const order=summaries[group];const rank=(key:string)=>order.includes(key)?order.indexOf(key):order.length;return rank(a.metric_key)-rank(b.metric_key);});
         const metric = group==='income' && !allRows.some(r=>r.metric_key==='net_revenue') && allRows.some(r=>r.metric_key==='contract_revenue') ? 'contract_revenue' : group==='income'&&!allRows.some(r=>r.metric_key==='net_revenue')&&allRows.some(r=>r.metric_key==='revenue') ? 'revenue' : chartMetric[group];
         const series = financialSeries(allRows,metric,window.periods);
@@ -162,10 +165,10 @@ export function FinancialStatements({observations, sources, evidence, isTest,fil
         const claim = evidence.find(e=>e.id===row.evidence_claim_id);
         const source = sources.find(s=>s.id===(row.source_document_id??claim?.source_document_id));
         const url = safeUrl(row.metadata_json?.source_url || claim?.url || source?.source_url || source?.url);
-        return <section key={index}><h3>{row.metadata_json?.statement_label||label(row.metric_key)}{selected.length>1?` · Observation ${index+1}`:''}</h3>
+        return <section key={index}><h3>{lineName(row.metadata_json?.statement_label||label(row.metric_key))}{selected.length>1?` · Observation ${index+1}`:''}</h3>
           <p className={styles.exact}>{number(row.value_numeric,12)} {row.unit}</p>{row.value_text&&<p>{row.value_text}</p>}
           {row.formula_or_adjustment&&<p>{row.formula_or_adjustment}</p>}{row.metadata_json?.missing_reason&&<p>{row.metadata_json.missing_reason}</p>}
-          {row.metadata_json?.inputs?.map((input:Row,j:number)=><p key={j}>{input.metadata_json?.statement_label||label(input.metric_key)} · {input.fiscal_year}{input.fiscal_quarter?` Q${input.fiscal_quarter}`:''}: {number(input.value_numeric,12)} {input.unit} {safeUrl(input.metadata_json?.source_url)&&<a href={safeUrl(input.metadata_json.source_url)!} target="_blank" rel="noreferrer">Source</a>}</p>)}
+          {row.metadata_json?.inputs?.map((input:Row,j:number)=><p key={j}>{lineName(input.metadata_json?.statement_label||label(input.metric_key))} · {input.fiscal_year}{input.fiscal_quarter?` Q${input.fiscal_quarter}`:''}: {number(input.value_numeric,12)} {input.unit} {safeUrl(input.metadata_json?.source_url)&&<a href={safeUrl(input.metadata_json.source_url)!} target="_blank" rel="noreferrer">Source</a>}</p>)}
           <p>{financialPeriod(row)?periodLabel(financialPeriod(row)!):'Period unavailable'} · {[row.reporting_basis,row.segment,row.geography].filter(Boolean).map(label).join(' · ')}</p>
           {claim||source?<><h4>{claim?.source_title||source?.title||'Saved source'}</h4>{(claim?.location||claim?.source_locator)&&<p>{claim.location||claim.source_locator}</p>}{(claim?.quote||claim?.supporting_quote)&&<blockquote>{claim.quote||claim.supporting_quote}</blockquote>}{url?<a href={url} target="_blank" rel="noreferrer">Open original source</a>:<p>Original source link unavailable.</p>}</>:url?<a href={url} target="_blank" rel="noreferrer">Open original source</a>:!row.metadata_json?.inputs?.some((input:Row)=>safeUrl(input.metadata_json?.source_url))&&<p>Source provenance unavailable in this run.</p>}
         </section>;
@@ -177,18 +180,24 @@ export function FinancialStatements({observations, sources, evidence, isTest,fil
 const financialPeriodKey = (p:PeriodRef) => p.quarter ? `${p.year}-Q${p.quarter}` : String(p.year);
 
 /** One statement: the sticky chart panel above the compare-periods table. */
-function StatementWorkspace({group, rows, periods, chartPeriods, frequency, observations, book, saved, boardHref, onSources, missing, undated, undatedTable, original}:{
-  group:Group; rows:Row[]; periods:string[]; chartPeriods:PeriodRef[]; frequency:Frequency; observations:Row[]; book:MetricBook; saved:SavedChartsApi; boardHref:string;
+function StatementWorkspace({group, rows, periods, chartPeriods, frequency, observations, book, saved, boardHref, onSources, missing, undated, undatedTable, original, options}:{
+  options:SeriesOptionGroup[]; group:Group; rows:Row[]; periods:string[]; chartPeriods:PeriodRef[]; frequency:Frequency; observations:Row[]; book:MetricBook; saved:SavedChartsApi; boardHref:string;
   onSources:(rows:Row[],button:HTMLButtonElement)=>void; missing:string[]; undated:Row[]; undatedTable:(rows:Row[])=>React.ReactNode; original:React.ReactNode;
 }) {
-  const usable = (spec:SeriesSpec) => !resolveSeries(observations, frequency, spec.key, chartPeriods, book).reason;
-  const [selection, setSelection] = useState<SeriesSpec[]>(() => defaultSeries[group].filter(usable));
+  // Usable means captured with at least one value in the window, so the chart never opens empty.
+  const usable = (spec:SeriesSpec) => { const s = resolveSeries(observations, frequency, spec.key, chartPeriods, book); return !s.reason && s.values.some(v=>v!==null); };
+  const [selection, setSelection] = useState<SeriesSpec[]>(() => {
+    const picks = defaultSeries[group].filter(usable);
+    // One revenue line is enough; keep at most one ratio line.
+    const revenue = picks.find(p=>/revenue/.test(p.key));
+    return [...(revenue?[revenue]:[]), ...picks.filter(p=>!/revenue/.test(p.key)&&p.as==='bar'), ...picks.filter(p=>p.as==='line').slice(0,1)].slice(0,3);
+  });
   const presets: Preset[] = useMemo(() => CHART_PRESETS[group].map(p => ({...p, series:p.series.filter(usable)})).filter(p => p.series.length >= 2), [group, observations, frequency]); // eslint-disable-line react-hooks/exhaustive-deps
   return <section className={fin.workspace} aria-label={statements[group]}>
     <ChartPanel observations={observations} frequency={frequency} book={book} periods={chartPeriods} selection={selection} onSelection={setSelection} presets={presets}
-      saved={saved} boardHref={boardHref} label="Chart of selected rows" empty="Press the chart button on any row below to start."/>
+      saved={saved} boardHref={boardHref} options={options} label="Chart of selected rows" empty="Search above for a line item or bundle, or press the chart button on any row below."/>
     <StatementTable rows={rows} group={group} periods={periods} frequency={frequency} observations={observations} book={book} selection={selection} onSelection={setSelection} onSources={onSources} caption={statements[group]}/>
-    <p className={fin.panelNote}>Click a row’s chart button to chart it alone; shift-click to add it. Hover the chart to read every series for a period. Italic rows are calculated from the lines above them. Saved charts land in My charts and refill with the same line items for any company.</p>
+    <p className={fin.panelNote}>Type in the bar above the chart to add any line item, ratio or bundle, or press a row’s chart button (shift-click to add it). A bundle keeps its line items, not this company’s numbers, so it fills in for any company; bundles also show in My charts.</p>
     {!!missing.length&&<p className={fin.panelNote}>{missing.map(label).join(', ')}: not available in the saved {frequency} research.</p>}
     {!!undated.length&&undatedTable(undated)}
     {original&&<details className={styles.filedTables}><summary>Original filed statement</summary>{original}</details>}

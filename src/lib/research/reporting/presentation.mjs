@@ -31,6 +31,18 @@ const names = {
 const internal = /^(valuation_accepted_first|confidence|confidence_score|artifact_type|metadata_json|restatement_version|system_generated|source_accession_number|source_document_id|source_id|id|created_at|updated_at|scope_key)$|(_ids?$)|(^supporting_observation)|(^supersedes_)/;
 const uuid = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
 const acronyms=/\b(usd|gaap|ttm|nim|cet1|kpi|tam|fcf|fcfe|fcff|nav|yoy|ebitda|eps|rwa|roe|roa|roic|dcf|cagr|tbv|tbvps|bvps|nii|ltv|cac|arpu|sbc|roi|apy)\b/gi;
+/**
+ * A filing line's name in plain words. Lines filed without a label carry their XBRL tag
+ * ("us-gaap:TemporaryEquityCarryingAmountAttributableToParent"); those become
+ * "Temporary equity carrying amount attributable to parent". Real labels pass through.
+ */
+export function lineName(text){
+  const value=String(text??'').trim();
+  const tag=/^(?:[a-z][a-z0-9-]*:|us_gaap_)([A-Z][A-Za-z0-9]*)$/.exec(value);
+  if(!tag)return value;
+  const words=tag[1].replace(/([A-Z]+)([A-Z][a-z])/g,'$1 $2').replace(/([a-z0-9])([A-Z])/g,'$1 $2').toLowerCase();
+  return (words.charAt(0).toUpperCase()+words.slice(1)).replace(acronyms,m=>m.toUpperCase());
+}
 export function label(key){
   if(names[key])return names[key];
   const value=String(key).replace(/_json$/,'').replace(/([a-z])([A-Z])/g,'$1 $2').replace(/[_.]+/g,' ').trim();
@@ -156,7 +168,7 @@ export function historyMatrix(observations){
     const signature=JSON.stringify([r.metric_key,r.unit,r.currency,r.segment,r.geography,r.periodicity,r.reporting_basis]);
     if(!groups.has(signature)){
       const currency=r.unit===r.currency&&/^[A-Z]{3}$/.test(r.unit||'');
-      groups.set(signature,{metric_key:r.metric_key,name:r.metadata_json?.statement_label||label(r.metric_key),unit:currency?`${r.currency} millions`:label(r.unit||'Value'),
+      groups.set(signature,{metric_key:r.metric_key,name:lineName(r.metadata_json?.statement_label||label(r.metric_key)),unit:currency?`${r.currency} millions`:label(r.unit||'Value'),
         basis:[r.reporting_basis,r.segment,r.geography].filter(Boolean).map(label).join(' · '),currency,
         values:ordered.map(()=>[]),exact:ordered.map(()=>[]),observations:ordered.map(()=>[])});
     }
