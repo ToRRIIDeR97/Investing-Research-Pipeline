@@ -1,0 +1,8 @@
+{
+  "hooks": {
+    "Stop": [
+      { "hooks": [ { "type": "command",
+        "command": "python \"C:/Users/sense/OneDrive/Documents/GitHub/Investing-Research-Pipeline/tools/docs_sync.py\" hook" } ] }
+    ]
+  }
+}

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Block commits that leave the docs out of sync with the code (see AGENTS.md, Docs sync).
+exec python tools/docs_sync.py check

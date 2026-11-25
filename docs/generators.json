@@ -1,0 +1,4 @@
+{
+  "stages": ["python", "tools/gen_stages.py"],
+  "routes": ["python", "tools/gen_routes.py"]
+}

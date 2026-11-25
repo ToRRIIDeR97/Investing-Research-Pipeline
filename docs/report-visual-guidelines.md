@@ -1,3 +1,10 @@
+---
+covers:
+  - src/lib/research/reporting/exhibits.ts
+  - src/lib/research/reporting/contracts.ts
+  - src/components/report/exhibit-tile.tsx
+---
+
 # Visuals in investment research
 
 Use a visual when it answers a question that matters to understanding the business. Keep the full reasoning and evidence available below it. A report should remain a readable research document, not a dashboard.
