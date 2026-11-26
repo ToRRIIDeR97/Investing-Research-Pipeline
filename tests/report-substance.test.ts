@@ -39,7 +39,9 @@ test("display text that leaks pipeline terms is flagged; ordinary prose is not",
     "The implication uses internal pipeline terms (corpus).");
 });
 
-test("substance findings send a passed review through the writing repair", async () => {
+// pipeline-simplification: substance findings no longer trigger a repair. They join the passed review's findings and the
+// draft is kept (was: one repair with substance_check feedback, after which the review's findings were empty).
+test("substance findings join a passed review's findings and the draft is kept", async () => {
   const plan = { id: "moat", title: "Moat", purpose: "Explain", coverage: ["moat"], artifact_ids: [] };
   const feedbacks: Record<string, any>[][] = [];
   const result = await composeReviewedReport({ asset_name: "Fixture", cutoff: "2026-01-01", is_test: true, artifacts: [], evidence: [], required_coverage: ["moat"] }, {
@@ -51,13 +53,15 @@ test("substance findings send a passed review through the writing repair", async
     review: async () => ({ review_summary: "ok", findings: [], quality_score: 0.9, recommendations: [], review_verdict: "pass" }),
     save: async () => {},
   });
-  assert.equal(feedbacks.length, 2, "one repair");
-  assert.equal(feedbacks[1][0].source, "substance_check");
-  assert.equal(result.document.sections[0].paragraphs[0].text, "Retention held at 95% in FY2024.");
-  assert.deepEqual(result.review.findings, [], "the repaired report passes the check");
+  assert.equal(feedbacks.length, 1, "pipeline-simplification: written once, no repair");
+  assert.equal(result.document.sections[0].paragraphs[0].text, "The moat is strong.", "pipeline-simplification: the draft is kept");
+  assert.ok(result.review.findings.length > 0 && result.review.findings.every(f => f.source === "substance_check"),
+    "pipeline-simplification: the substance findings are on the review");
+  assert.equal(result.review.findings[0].section_id, "moat");
 });
 
-test("a conditional pass with research gaps repairs only the flagged sections, without re-planning", async () => {
+// pipeline-simplification: a conditional pass with research gaps rewrites nothing (was: only the flagged section rewritten).
+test("a conditional pass with research gaps re-plans and rewrites nothing", async () => {
   const plans = [{ id: "moat", title: "Moat", purpose: "Explain", coverage: ["moat"], artifact_ids: [] },
     { id: "business", title: "Business", purpose: "Explain", coverage: ["business"], artifact_ids: [] }];
   let planned = 0; const written: string[] = [];
@@ -73,5 +77,5 @@ test("a conditional pass with research gaps repairs only the flagged sections, w
     save: async () => {},
   });
   assert.equal(planned, 1, "no outline re-plan");
-  assert.deepEqual(written, ["moat", "business", "moat"], "only the flagged section is rewritten");
+  assert.deepEqual(written, ["moat", "business"], "pipeline-simplification: each section is written once (was [moat, business, moat])");
 });

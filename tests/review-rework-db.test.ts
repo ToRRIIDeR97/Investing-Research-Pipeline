@@ -1,4 +1,5 @@
-// A review's analysis_rework finding reopens its owning stage once, with no model call, and is answered after the rerun.
+// An analysis_rework request (since pipeline-simplification, only the pre-draft valuation check raises one) reopens its
+// owning stage once, with no model call, and is answered after the rerun.
 import test from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
@@ -13,10 +14,12 @@ test("an analysis_rework request reruns asset_valuation once, then is answered w
   const run = await createRun(sql);
   const model = scriptModel(() => undefined);
   try {
-    const answered = { round: 2, state: "answered" as const, requests: [] };
+    // pipeline-simplification: the review opens no post-review round, so the rework request comes from a pre-draft
+    // round (the valuation check's path). Was: a post-review round 3 after two answered pre-draft rounds.
+    const answered = { round: 1, state: "answered" as const, requests: [] };
     const batch = nextRequestBatch(answered, reworkRequests([{ category: "analysis_rework", owner_stage: "asset_valuation", section_id: "valuation",
-      severity: "high", issue: "The terminal multiple is applied to a capex-peak year." }]), "post_review")!;
-    await saveBatch(sql, run, batch.requests, { round: batch.round, post_review_round: batch.post_review_round });
+      severity: "high", issue: "The terminal multiple is applied to a capex-peak year." }]))!;
+    await saveBatch(sql, run, batch.requests, { round: batch.round });
 
     assert.equal(await processResearchRequests(sql, stageCtx(run)), true, "stages were reopened");
     assert.equal((await runState(sql, run.runId)).status, "running", "an automatic rerun needs no reviewer");
@@ -35,7 +38,7 @@ test("an analysis_rework request reruns asset_valuation once, then is answered w
     await processResearchRequests(sql, stageCtx(run));
     const after = await getTeamRequests(sql, run.runId);
     assert.equal(after!.state, "answered");
-    assert.equal(after!.post_review_round, 3, "the round marker survives");
+    assert.equal(after!.round, 2, "pipeline-simplification: the round survives (was the post_review_round marker, 3)");
     assert.match(after!.requests[0].response!.answer, /was rerun/);
     assert.equal(after!.requests[0].response!.requires_rerun, undefined);
     assert.equal((await stageStatuses(sql, run.runId)).asset_valuation, "completed", "no second rerun");

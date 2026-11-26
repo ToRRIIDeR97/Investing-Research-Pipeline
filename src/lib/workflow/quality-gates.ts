@@ -312,7 +312,8 @@ export function evaluateLoadedResearchQuality(data: RunQualityData): ResearchQua
     (item) => item.requiredForCompletion && ["high", "critical"].includes(item.severity)
   );
   const hasFailures = errors.length > 0 || blockingMissingCoverage.length > 0;
-  const status: ResearchQualityGateResult["status"] = hasFailures || missingCoverage.length > 0
+  // The AI review's verdict is advisory: reported in missingCoverage and warnings, it doesn't make the run needs_more_work.
+  const status: ResearchQualityGateResult["status"] = hasFailures || missingCoverage.some((item) => !isAdvisoryReviewItem(item))
     ? "needs_more_work"
     : "pass";
   const actionReadiness = actionReadinessFor(data, threshold, status);
@@ -691,6 +692,10 @@ function addValuationCoverage(
   }
 }
 
+/** AI review verdicts that used to fail the review stage and completion; they are now warnings. */
+const ADVISORY_FAILING_VERDICTS = ["needs_more_work", "fail", "failed"];
+const isAdvisoryReviewItem = (item: MissingCoverageItem) => item.key === "ai_review_outcome" && !item.requiredForCompletion;
+
 function addAiReviewCoverage(
   data: RunQualityData,
   errors: string[],
@@ -735,15 +740,17 @@ function addAiReviewCoverage(
     warnings.push("AI review outcome is conditional_pass.");
   }
 
-  if (passFail === "needs_more_work" || passFail === "fail" || passFail === "failed") {
+  // The verdict is advisory: the run goes on to human_review with it and the review's findings, and the reviewer decides.
+  // Blocking findings still hold the position decision back at the review route.
+  if (ADVISORY_FAILING_VERDICTS.includes(passFail)) {
     const description = `AI review outcome is ${passFail}.`;
-    errors.push(description);
+    warnings.push(description);
     missingCoverage.push({
       key: "ai_review_outcome",
       severity: passFail === "fail" || passFail === "failed" ? "critical" : "high",
       area: "AI review",
       description,
-      requiredForCompletion: true,
+      requiredForCompletion: false,
     });
   }
 }
@@ -802,7 +809,8 @@ function actionReadinessFor(
   const reviewTask = data.tasks.find((task) => task.task_type === "ai_review" && task.status === "completed");
   const reviewOutput = normalizeReviewOutput(reviewTask?.output_json);
   const reviewVerdict = String(reviewOutput.pass_fail || reviewOutput.passFail || reviewOutput.status || reviewOutput.review_verdict || "").toLowerCase();
-  if (reviewVerdict === "conditional_pass" && baseReadiness === "investment_ready") return "review_ready";
+  // An advisory failing verdict (pipeline-simplification) no longer stops the run, so it caps readiness like conditional_pass.
+  if (["conditional_pass", ...ADVISORY_FAILING_VERDICTS].includes(reviewVerdict) && baseReadiness === "investment_ready") return "review_ready";
 
   const metadata = typeof data.run.metadata_json === "string"
     ? JSON.parse(data.run.metadata_json)

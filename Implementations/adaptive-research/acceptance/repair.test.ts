@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { composeReviewedReport } from "../../../src/lib/research/reporting/compose";
 
-test("AC-4: complete report review repairs affected writing once and stops on repeated failure", async () => {
+// pipeline-simplification: the review is advisory and runs once; a needs_more_work verdict repairs nothing (was: one repair
+// write and a second review, 2 writes and 2 reviews).
+test("AC-4: complete report review is advisory: one review, no repair, the verdict is kept", async () => {
   let writes = 0, reviews = 0;
   const saved: string[] = [];
   const plan = { id: "s", title: "Funding", purpose: "Explain uncertainty", coverage: ["downside"], artifact_ids: [] };
@@ -13,7 +15,8 @@ test("AC-4: complete report review repairs affected writing once and stops on re
     review: async (doc) => { reviews++; assert.match(doc.markdown, /Funding/); return { review_summary: "More explanation needed", findings: [{ section_id: "s", category: "writing" }], quality_score: 0.2, recommendations: [], review_verdict: "needs_more_work" }; },
     save: async (type) => { saved.push(type); },
   });
-  assert.equal(writes, 2); assert.equal(reviews, 2);
+  assert.equal(writes, 1); assert.equal(reviews, 1); // pipeline-simplification (was 2 and 2)
+  assert.equal(result.review.review_verdict, "needs_more_work", "pipeline-simplification: the verdict is reported");
   assert.equal(result.document.conclusion_status, "withheld");
   assert.ok(saved.includes("question_register"));
 });

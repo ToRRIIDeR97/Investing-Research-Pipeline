@@ -417,17 +417,19 @@ export async function validateReviewOutcome(
   const quality = await evaluateResearchQuality(runId);
   const reviewItems = reviewCoverageItems(quality.missingCoverage, "AI review");
 
+  // A missing review or an unparsed verdict fails the stage; a failing verdict (ai_review_outcome) is advisory and
+  // only warns, so the run reaches human_review with the review's findings.
   return {
     valid: reviewItems.filter((item) => item.requiredForCompletion).length === 0,
     errors: reviewItems
       .filter((item) => item.requiredForCompletion)
       .map((item) => item.description),
-    warnings: [
+    warnings: [...new Set([
       ...quality.warnings.filter((warning) => /review/i.test(warning)),
       ...reviewItems
         .filter((item) => !item.requiredForCompletion)
         .map((item) => item.description),
-    ],
+    ])],
     checkedAt: new Date().toISOString(),
   };
 }

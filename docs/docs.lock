@@ -1,4 +1,4 @@
-AGENTS.md	docs/diagrams/_source/make_diagrams.py	2ec428f8b3c6
+AGENTS.md	docs/diagrams/_source/make_diagrams.py	7a9b06ca3fac
 
 AGENTS.md	docs/generators.json	4bcbf7e48786
 
@@ -26,7 +26,7 @@ DESIGN.md	src/components/ui/sliding.tsx	c60580f81860
 
 docs/architecture.md	docker-compose.yml	9a3084f7dd01
 
-docs/architecture.md	docs/diagrams/_source/make_diagrams.py	2ec428f8b3c6
+docs/architecture.md	docs/diagrams/_source/make_diagrams.py	7a9b06ca3fac
 
 docs/architecture.md	drizzle/0000_tiny_master_chief.sql	6e0fb77bfbb6
 
@@ -258,7 +258,7 @@ docs/system.md	src/lib/research/system-pipeline.ts	15c66f3a9c1d
 
 docs/system.md	src/lib/research/team-plan.ts	0fca3dbde963
 
-docs/system.md	src/lib/research/team.ts	078195bdba71
+docs/system.md	src/lib/research/team.ts	718f9c60d76c
 
 docs/system.md	src/lib/research/test-assets.ts	68655a67cb06
 
@@ -268,13 +268,13 @@ docs/system.md	src/lib/research/version.ts	ed689b6d979d
 
 docs/system.md	src/lib/workflow/orchestrator.ts	d984c3eefc3e
 
-docs/system.md	src/lib/workflow/quality-gates.ts	a0b73fb9d819
+docs/system.md	src/lib/workflow/quality-gates.ts	8fe1efc07e37
 
 docs/system.md	src/lib/workflow/stages.ts	846b27e51f88
 
 docs/system.md	src/lib/workflow/task-queue.ts	cfb770227e54
 
-docs/system.md	src/lib/workflow/validators.ts	b87ee720f915
+docs/system.md	src/lib/workflow/validators.ts	efff95eaefcb
 
 docs/system.md	src/workers/poll-loop.ts	f97c656085f5
 

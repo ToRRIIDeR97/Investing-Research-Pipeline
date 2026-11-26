@@ -4,12 +4,12 @@ import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Outline, 
 import { buildExhibits, isAvailable, placeExhibits, type BuiltExhibit } from "./exhibits";
 import { composeDraft, draftDocument, reviewDraftedReport, checkFinalCoverage, type CompositionActions, type ReportReview, type WrittenSection, REQUIRED_COVERAGE } from "./compose";
 import { z } from "zod/v4";
-import { DEPTH_CHECKS, DEPTH_CHECK_RULE, REWORK_STAGES, depthFindings } from "./depth";
+import { DEPTH_CHECKS, DEPTH_CHECK_RULE, REWORK_STAGES } from "./depth";
 import { loadReportInputs, modelVisibleArtifacts, saveReportArtifact } from "./store";
 import { createReport, reviewDocument } from "./report";
 import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { VISUAL_GUIDELINES, validateVisual } from './visuals';
-import { getTeamRequests, includeUnansweredQuestions, requestMissingResearch, preDraftBatch, preDraftRequests, postReviewAnswers, ResearchRequestsPending } from "../team";
+import { getTeamRequests, includeUnansweredQuestions, requestMissingResearch, ResearchRequestsPending } from "../team";
 import { saveVersionChangeLog, loadPriorResearch } from "../lineage/runs";
 import { PRIOR_RESEARCH_RULE } from "../lineage/prior-research";
 import { buildReportFacts } from "./facts";
@@ -296,8 +296,6 @@ export const KEY_REASONS_RULE = "Write section.key_reasons: up to three reasons 
 export const PLAIN_LANGUAGE_RULE = "Plain language: never use pipeline vocabulary in reader-facing text (packet, falsifier, artifact, record ids, snake_case names or field names); say what would disprove a claim instead of naming a falsifier. Write amounts in millions or billions, never thousands.";
 export const CONCLUSION_DIGEST_RULE = "completed_sections are code-built digests of the finished chapters: each chapter's implication, one key point per paragraph, its counterevidence and gaps, and every evidence_id and artifact_id it cites. Synthesize from them and refer to a chapter by title; cite the IDs a digest lists for the point you use. Figures not in a digest, report_facts or financial_analytics stay with their chapter. An artifact's omitted_fields were analysed in the chapters that cite it.";
 export const FINAL_COVERAGE_RULE ="packet.provisional_coverage is the planner's coverage, set before any chapter was written. Return coverage with one entry per key, keeping key and section_ids, and set status and rationale to what the completed chapters actually deliver: downgrade a status the chapters do not support. The rationale is reader-facing.";
-/** Review finding categories that may send work back to the specialists after the review. */
-const REWORK_CATEGORIES = ["research_gap", "calculation", "evidence", "analysis_rework"];
 
 /** The two report stages. Their calls share one composition, so a draft call's packet is the same in either stage. */
 export type ReportStageKey = "report_draft" | "ai_reviewer";
@@ -322,7 +320,7 @@ export class ReportDraftReopened extends ResearchRequestsPending {
 }
 
 /**
- * The calls and packets both report stages make: outline, sections, review, post-review rework and artifact saves.
+ * The calls and packets both report stages make: outline, sections, review and artifact saves.
  * `stageKey` records each call under the stage that makes it; it does not change a packet or a prompt.
  */
 async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: ReportStageKey, droppedSeed: string[] = []) {
@@ -355,12 +353,10 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
   const priorRules = prior ? [PRIOR_RESEARCH_RULE] : [];
   const common = { asset: { assetName: ctx.assetName, symbol: ctx.symbol, profile: ctx.profileKey },
     research_question: ctx.researchQuestion, source_cutoff: ctx.cutoffAt.toISOString(),
-    coverage_requirements: COVERAGE, ...shared, artifacts: packetArtifacts, evidence_claims: reportEvidenceView(evidence), specialist_requests: compactRequests(preDraftRequests(teamRequests)),
+    coverage_requirements: COVERAGE, ...shared, artifacts: packetArtifacts, evidence_claims: reportEvidenceView(evidence), specialist_requests: compactRequests(teamRequests?.requests ?? []),
     human_revision_request: run?.metadata_json?.report_revision_request || null, ...(prior ? { prior_research: prior } : {}) };
   const reportInput = { asset_name: ctx.assetName, cutoff: ctx.cutoffAt.toISOString(), is_test: ctx.testMode,
     required_coverage: REQUIRED_COVERAGE, artifacts, evidence };
-  // The latest outline's sections, so rework requests from missing depth checks name the chapter that owns them.
-  const tracked = { outlineSections: [] as ReportOutline["sections"] };
   // The id of each artifact a save stored (or kept, when unchanged), by type and scope.
   const savedIds = new Map<string, string>();
   const actions: CompositionActions = {
@@ -386,9 +382,7 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
       const unanswered = output.outline.questions.filter(q => q.status === "blocked" && q.materiality !== "supporting")
         .map(q => ({ category: "research_gap", question: q.question, follow_up: q.follow_up }));
       if (unanswered.length) await requestMissingResearch(sql, ctx, unanswered, "pre_draft", stageKey);
-      const planned = includeFramingQuestions(includeUnansweredQuestions(output.outline, preDraftBatch(teamRequests)), ctx.researchFraming);
-      tracked.outlineSections = planned.sections;
-      return planned;
+      return includeFramingQuestions(includeUnansweredQuestions(output.outline, teamRequests), ctx.researchFraming);
     },
     async write(section, outline, feedback, completed, options) {
       const finalCoverage = options?.coverage;
@@ -427,12 +421,6 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
             REVIEW_FRAMING_RULE, ...priorRules] }) }), dropped);
       return review;
     },
-    // Called once, after the first review is saved: the post-review round may pause the run; on resume its answers come back.
-    async rework(review) {
-      const gaps = [...review.findings.filter(f => REWORK_CATEGORIES.includes(f.category)), ...depthFindings(review.depth_checks, tracked.outlineSections)];
-      if (gaps.length) await requestMissingResearch(sql, ctx, gaps, "post_review", stageKey);
-      return postReviewAnswers(await getTeamRequests(sql, ctx.runId));
-    },
     async save(type, scope, content) {
       const row = await saveReportArtifact(sql, ctx, type, `${ctx.assetSlug}-${scope}`,
         type === "report_review" ? { ...content, dropped_citations: [...dropped].sort() } : content);
@@ -445,7 +433,7 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
           AND scope_key <> ALL(${scopes.map(scope => `${ctx.assetSlug}-${scope}`)}::text[])`;
     },
   };
-  return { actions, reportInput, input_hash, dropped, tracked, savedIds };
+  return { actions, reportInput, input_hash, dropped, savedIds };
 }
 
 /**
@@ -505,9 +493,9 @@ export async function reopenDraft(sql: Sql, ctx: Pick<ResearchRunContext, "runId
 
 /**
  * ai_reviewer: rebuilds the stored draft from its artifacts (zod restores the key order jsonb dropped, so every
- * packet is the one the draft stage would have built), reviews it, then runs the post-review rework and the repair
- * round. A draft that no longer matches the report inputs, for example after a request round added evidence, is
- * redrafted first, as one composition would have done on resume.
+ * packet is the one the draft stage would have built) and reviews it once; the verdict and findings are advisory
+ * (reviewDraftedReport). A draft that no longer matches the report inputs, for example after a request round added
+ * evidence, is redrafted first, as one composition would have done on resume.
  */
 export async function reviewReport(sql: Sql, ctx: ResearchRunContext) {
   const { composition, draft } = await loadCurrentDraft(sql, ctx);
@@ -517,8 +505,8 @@ export async function reviewReport(sql: Sql, ctx: ResearchRunContext) {
 /**
  * The stored draft and the review stage's composition, when the draft still matches the run's report inputs. A
  * missing or stale draft reopens report_draft (reopenDraft) and throws ReportDraftReopened. The draft's artifacts are
- * read by the ids it saved, so rows a failed review attempt superseded are still found; report products are not
- * report inputs, so that attempt's repaired artifacts don't make the draft look stale.
+ * read by the ids it saved, so rows an earlier attempt superseded (a repair round before pipeline-simplification) are
+ * still found; report products are not report inputs, so such artifacts don't make the draft look stale.
  */
 export async function loadCurrentDraft(sql: Sql, ctx: ResearchRunContext) {
   const state = await storedDraft(sql, ctx);
@@ -533,6 +521,5 @@ export async function loadCurrentDraft(sql: Sql, ctx: ResearchRunContext) {
   const sections = state.section_ids.map(id => Section.parse(content.get(id)));
   const draft = draftDocument(composition.reportInput, { outline, sections, finalCoverage: state.final_coverage ?? undefined });
   if (draft.document.content_hash !== state.content_hash) return reopenDraft(sql, ctx);
-  composition.tracked.outlineSections = outline.sections;
   return { composition, draft };
 }

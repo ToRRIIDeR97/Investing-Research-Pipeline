@@ -2,30 +2,9 @@ import { Outline, Section, COVERAGE, CoverageResult, type ReportOutline, type Re
 import { createReport, type ReportInput, type ReportDocument } from "./report";
 import { mapWithConcurrency } from "../pipeline-helpers";
 import { checkReportSubstance } from "./substance";
-import { deriveReview, depthFindings, isPassing, type DepthCheck, type DerivedReview } from "./depth";
-import { ResearchAgentRunError } from "../../agent-harness/errors";
+import { deriveReview, type DepthCheck } from "./depth";
 
 const isConclusion = (plan: { coverage: string[] }) => plan.coverage.includes("conclusion");
-
-/** Model-output failures: the call ran, but what came back never met the contract. Retrying the stage won't fix them. */
-const CONTENT_FAILURES = new Set(["schema_validation", "output_exhausted", "response_limit"]);
-/**
- * Whether a repair-round error is a content failure (through its cause chain, as isTransientAgentError reads it).
- * Transient provider errors, authentication, quota and budget stops, and code errors are not: they still fail the stage.
- */
-export function isRepairContentFailure(error: unknown): boolean {
-  for (let current = error, depth = 0; current && depth < 5; current = (current as { cause?: unknown }).cause, depth += 1) {
-    if (current instanceof ResearchAgentRunError) return CONTENT_FAILURES.has(String(current.responseMetadata.error_type));
-  }
-  return false;
-}
-
-/**
- * A body section's repair feedback: findings and answers that name it, plus those that name no section.
- * Conclusions synthesise every chapter, so they keep the full feedback.
- */
-const feedbackFor = (sectionId: string, feedback: Record<string, any>[]) =>
-  feedback.filter(f => !f.section_id || f.section_id === sectionId);
 
 export interface ReportReview extends Record<string, unknown> {
   review_summary: string; findings: Record<string, any>[]; quality_score: number;
@@ -40,10 +19,10 @@ export interface CompositionActions {
     options?: { coverage?: CoverageCheck[] }): Promise<WrittenSection>;
   review(document: ReportDocument): Promise<ReportReview>;
   /**
-   * After the first review is saved: ask the owning specialists about its findings, at most once per run. It may
-   * pause the run for their answers; on resume it returns them as repair feedback.
+   * Never called: the review opens no post-review rework round (pipeline-simplification). Optional and accepted
+   * only so action objects written for the old contract still type-check.
    */
-  rework?(review: ReportReview & DerivedReview): Promise<Record<string, any>[]>;
+  rework?(review: ReportReview): Promise<Record<string, any>[]>;
   save(type: string, scope: string, value: Record<string, any>): Promise<unknown>;
   /** Retires the current artifacts of `type` whose scope is not listed (sections a later outline no longer has). */
   retain?(type: string, scopes: string[]): Promise<unknown>;
@@ -93,15 +72,13 @@ export function checkFinalCoverage(input: Omit<ReportInput, "sections" | "covera
   createReport({ ...input, ...outline, sections, coverage: reconcileCoverage(outline.coverage, returned, { artifacts: input.artifacts, sections }) });
 }
 
-const severe = (f: Record<string, any>) => ["high", "critical"].includes(String(f.severity ?? "").toLowerCase());
-
 /** The first draft: its outline, its sections in outline order, the last conclusion's coverage and the first document. */
 export interface ReportDraft {
   outline: ReportOutline; sections: ReportSection[]; finalCoverage?: CoverageCheck[]; document: ReportDocument;
 }
 type CompositionInput = Omit<ReportInput, "sections" | "coverage" | "questions">;
 
-/** Writing state shared by the draft and the repair round: the current outline, sections and final coverage. */
+/** The draft's writing state: the current outline, sections and final coverage. */
 function composer(input: CompositionInput, actions: CompositionActions, state: { outline: ReportOutline; sections: ReportSection[]; finalCoverage?: CoverageCheck[] }) {
   async function write(plan: ReportOutline["sections"][number], feedback: Record<string, any>[], completed = state.sections, last = false) {
     const written = await actions.write(plan, state.outline, feedback, completed, last ? { coverage: state.outline.coverage } : undefined);
@@ -122,8 +99,8 @@ function composer(input: CompositionInput, actions: CompositionActions, state: {
   };
   const inOutlineOrder = (list: ReportSection[]) => list.sort((a, b) =>
     state.outline.sections.findIndex(s => s.id === a.id) - state.outline.sections.findIndex(s => s.id === b.id));
-  const documentFor = (findings: Record<string, any>[]) => {
-    const coverage = reconcileCoverage(state.outline.coverage, state.finalCoverage, { artifacts: input.artifacts, sections: state.sections, findings });
+  const documentFor = () => {
+    const coverage = reconcileCoverage(state.outline.coverage, state.finalCoverage, { artifacts: input.artifacts, sections: state.sections });
     return createReport({ ...input, ...state.outline, coverage, sections: state.sections });
   };
   return { write, body, writeConclusions, inOutlineOrder, documentFor };
@@ -139,7 +116,7 @@ export async function composeDraft(input: CompositionInput, actions: Composition
   state.sections.push(...await mapWithConcurrency(c.body(state.outline.sections), plan => c.write(plan, [], [])));
   await c.writeConclusions(state.outline.sections, [], state.sections);
   c.inOutlineOrder(state.sections);
-  const document = c.documentFor([]);
+  const document = c.documentFor();
   await actions.save("report_document", "document", document);
   return { ...state, document };
 }
@@ -149,90 +126,34 @@ export function draftDocument(input: CompositionInput, parts: Omit<ReportDraft, 
   const state = { outline: parts.outline, sections: parts.sections, finalCoverage: parts.finalCoverage };
   // A no-op actions object: documentFor only reads the state.
   const c = composer(input, {} as CompositionActions, state);
-  return { ...state, document: c.documentFor([]) };
+  return { ...state, document: c.documentFor() };
 }
 
-/** One repair round, even after restart: callers cache calls by input content. */
+/** The draft and its one review, as report_draft and ai_reviewer produce them in turn. */
 export async function composeReviewedReport(input: CompositionInput, actions: CompositionActions) {
   return reviewDraftedReport(input, actions, await composeDraft(input, actions));
 }
 
 /**
- * The ai_reviewer stage: reviews the stored draft, then runs the post-review rework and the one repair round
- * exactly as one composition did. The first round reviews the draft's own document, which is already saved.
+ * The ai_reviewer stage: one review of the stored draft, saved as advisory findings. Nothing is rewritten and no
+ * specialist is asked again (pipeline-simplification): the verdict and findings go to the human reviewer, and the
+ * returned document is the draft's own. Review call errors propagate, so the stage's own retry handles them.
  */
 export async function reviewDraftedReport(input: CompositionInput, actions: CompositionActions, draft: ReportDraft) {
-  const state = { outline: draft.outline, sections: [...draft.sections], finalCoverage: draft.finalCoverage };
-  const c = composer(input, actions, state);
-  const { write } = c;
-  const sections = state.sections;
-  let priorFindings: Record<string, any>[] = [];
-  for (let round = 0; round <= 1; round++) {
-    const outline = state.outline;
-    const document = round === 0 ? draft.document : c.documentFor(priorFindings);
-    // The current outline, questions, sections and document are always the ones the reviewed document was built
-    // from. In round 0 that restores the draft over a failed earlier attempt's repair; an unchanged save keeps the row.
-    if (round === 0) {
-      await actions.save("report_outline", "outline", outline);
-      await actions.save("question_register", "questions", { questions: outline.questions });
-      for (const section of sections) await actions.save("report_section", section.id, section);
-    }
-    await actions.retain?.("report_section", sections.map(section => section.id));
-    await actions.save("report_document", "document", document);
-    // Substance findings join the reviewer's, so a passed review with thin or leaking sections still gets the one repair.
-    const reviewed = await actions.review(document);
-    // Question and coverage leaks are shown to the reviewer; only section text can be repaired by a writer.
-    const leaks = checkReportSubstance(document.sections, { questions: document.questions, coverage: document.coverage });
-    const substance = leaks.filter(f => f.section_id);
-    const derived = deriveReview(reviewed, input.artifacts);
-    const review = { ...reviewed, findings: [...reviewed.findings, ...leaks], ...derived };
-    await actions.save("report_review", `review-${document.content_hash}`, { ...review, report_hash: document.content_hash, input_hash: document.input_hash, round });
-    // Open high or critical findings get the repair even under conditional_pass; the model's severity is enough to try once.
-    const passed = isPassing(review.effective_verdict) && !reviewed.findings.some(severe);
-    if ((passed && !substance.length) || round === 1) return { document, review };
-    priorFindings = review.findings;
-    const answers = !passed && actions.rework ? await actions.rework(review) : [];
-    const findings = [...review.findings.filter(f => f.source !== "substance_check" || f.section_id), ...depthFindings(review.depth_checks, outline.sections)];
-    const feedback = [...findings, ...answers];
-    try {
-      // One writing pass: the chapters are fixed, so the outline is never re-planned. Research gaps went to the
-      // specialists (rework above); their answers and the findings reach only the chapters they name, and the
-      // conclusions. A finding that names no chapter reaches every rewritten chapter but rewrites none on its own.
-      const writingFindings = passed ? substance : findings;
-      const affected = new Set([...writingFindings, ...(passed ? [] : answers)].map(f => f.section_id).filter(Boolean));
-      const planOf = (i: number) => outline.sections.find(s => s.id === sections[i].id)!;
-      const indexes = sections.map((_, i) => i);
-      const repairBody = indexes.filter(i => !isConclusion(sections[i]) && affected.has(sections[i].id));
-      const repairFeedback = passed ? substance : feedback;
-      (await mapWithConcurrency(repairBody, i => write(planOf(i), feedbackFor(sections[i].id, repairFeedback), []))).forEach((section, k) => { sections[repairBody[k]] = section; });
-      const last = indexes.filter(i => isConclusion(sections[i])).at(-1);
-      for (const i of indexes.filter(i => isConclusion(sections[i]))) sections[i] = await write(planOf(i), repairFeedback, sections, i === last);
-    } catch (error) {
-      if (!isRepairContentFailure(error)) throw error;
-      return keepDraft(review, error);
-    }
-  }
-  throw new Error("Report review did not finish");
-
-  /**
-   * The repair round's model output never met the contract. The draft is still a valid report: make it current again
-   * (mapWithConcurrency has let every sibling rewrite settle, so none saves after this), and save the round-0 review,
-   * its verdict and findings unchanged, marked repair failed. The run goes on to human review instead of stopping.
-   */
-  async function keepDraft(review: ReportReview & DerivedReview, error: unknown) {
-    state.outline = draft.outline;
-    state.finalCoverage = draft.finalCoverage;
-    sections.splice(0, sections.length, ...draft.sections);
-    await actions.save("report_outline", "outline", draft.outline);
-    await actions.save("question_register", "questions", { questions: draft.outline.questions });
-    for (const section of draft.sections) await actions.save("report_section", section.id, section);
-    await actions.retain?.("report_section", draft.sections.map(section => section.id));
-    await actions.save("report_document", "document", draft.document);
-    const kept = { ...review, repair: { status: "failed" as const, error: error instanceof Error ? error.message : String(error) } };
-    await actions.save("report_review", `review-${draft.document.content_hash}`,
-      { ...kept, report_hash: draft.document.content_hash, input_hash: draft.document.input_hash, round: 0 });
-    return { document: draft.document, review: kept };
-  }
+  const { outline, sections, document } = draft;
+  // The current outline, questions, sections and document are the draft's; this restores them over an earlier
+  // attempt that changed them (a repair round before pipeline-simplification). An unchanged save keeps the row.
+  await actions.save("report_outline", "outline", outline);
+  await actions.save("question_register", "questions", { questions: outline.questions });
+  for (const section of sections) await actions.save("report_section", section.id, section);
+  await actions.retain?.("report_section", sections.map(section => section.id));
+  await actions.save("report_document", "document", document);
+  const reviewed = await actions.review(document);
+  // Code's substance findings (thin sections, question and coverage leaks) join the reviewer's.
+  const leaks = checkReportSubstance(document.sections, { questions: document.questions, coverage: document.coverage });
+  const review = { ...reviewed, findings: [...reviewed.findings, ...leaks], ...deriveReview(reviewed, input.artifacts) };
+  await actions.save("report_review", `review-${document.content_hash}`, { ...review, report_hash: document.content_hash, input_hash: document.input_hash, round: 0 });
+  return { document, review };
 }
 
 export const REQUIRED_COVERAGE = Object.keys(COVERAGE);

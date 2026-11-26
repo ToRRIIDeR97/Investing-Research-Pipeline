@@ -79,7 +79,8 @@ function db() {
   }, retain(type: string, scopes: string[]) { for (const r of rows) if (r.type === type && r.current && !scopes.includes(r.scope)) r.current = false; } };
 }
 
-type Hooks = { findings: Record<string, any>[]; onPlan?: (feedback: any[]) => void; onWrite?: (id: string, feedback: any[]) => Promise<void> | void; seen?: Map<string, string[][]> };
+type Hooks = { findings: Record<string, any>[]; onPlan?: (feedback: any[]) => void; onWrite?: (id: string, feedback: any[]) => Promise<void> | void; seen?: Map<string, string[][]>;
+  onReview?: () => void };
 function acts(store: ReturnType<typeof db>, h: Hooks): CompositionActions {
   let reviews = 0;
   return {
@@ -88,7 +89,7 @@ function acts(store: ReturnType<typeof db>, h: Hooks): CompositionActions {
       if (feedback.length) { h.seen?.set(p.id, [...(h.seen.get(p.id) ?? []), feedback.map(f => String(f.issue)).sort()]); await h.onWrite?.(p.id, feedback); }
       return { ...body(p, feedback.length ? 9 : 5), ...(options?.coverage ? { final_coverage: (options.coverage as any[]).map(c => ({ ...c, rationale: "Written." })) } : {}) } as any;
     },
-    review: async () => { reviews++; return { review_summary: "r", quality_score: 0.4, recommendations: [], depth_checks: allMet(),
+    review: async () => { reviews++; h.onReview?.(); return { review_summary: "r", quality_score: 0.4, recommendations: [], depth_checks: allMet(),
       review_verdict: reviews === 1 ? "fail" : "pass", findings: reviews === 1 ? h.findings : [] }; },
     rework: async () => [],
     save: async (t, s, v) => store.save(t, s, v),
@@ -109,28 +110,32 @@ const gap = (section_id: string | undefined, issue: string, category = "writing"
 const wrapped = (type: string) => { const inner = new ResearchAgentRunError("Agent attempts exhausted: invalid", {} as any, { error_type: type });
   return new Error("Section writer failed", { cause: inner }); };
 
-test("V-AC3: a research_gap never re-plans the outline (adaptive-4); its rewrite failing validation keeps the draft and the round-0 findings", async () => {
+// pipeline-simplification: the review rewrites nothing, so the V-AC3 cases now check that no rewrite runs at all, the
+// draft stays current and the round-0 findings stay open, with no repair marker (was: a failing rewrite was absorbed
+// and the review marked repair failed).
+test("V-AC3 (pipeline-simplification): a research_gap never re-plans or rewrites; the draft and the round-0 findings are kept", async () => {
   const { store, draft, reload, snapshot } = await setup();
   const failure = new ResearchAgentRunError("Agent attempts exhausted: Structured output validation failed: report: Error: Integrate historical causes", {} as any, { error_type: "schema_validation" });
-  let replans = 0;
+  let replans = 0, rewrites = 0;
   const result = await reviewDraftedReport(input as any, acts(store, { findings: [gap("ops", "Funding mix unknown.", "research_gap")],
-    onPlan: () => { replans += 1; }, onWrite: () => { throw failure; } }), reload());
+    onPlan: () => { replans += 1; }, onWrite: () => { rewrites += 1; throw failure; } }), reload());
   assert.equal(replans, 0, "the fixed chapters are never re-planned");
+  assert.equal(rewrites, 0, "pipeline-simplification: no chapter is rewritten");
   assert.equal(result.document.content_hash, draft.document.content_hash);
-  assert.equal((result.review as any).repair?.status, "failed");
+  assert.equal((result.review as any).repair, undefined, "pipeline-simplification: no repair marker (was status failed)");
   assert.ok((result.review as any).findings.some((f: any) => f.issue === "Funding mix unknown."));
   for (const [id, fp] of Object.entries(snapshot)) assert.equal(fingerprint(store.current("report_section", id)!.content), fp);
   assert.equal(store.current("report_document", "document")!.content.content_hash, draft.document.content_hash);
 });
 
-test("V-AC3: a content failure found through the error's cause chain is absorbed; a slower sibling rewrite cannot overwrite the restored draft", async () => {
+test("V-AC3 (pipeline-simplification): several failing findings rewrite nothing, and the draft stays current", async () => {
   const { store, draft, reload, snapshot } = await setup();
   const result = await reviewDraftedReport(input as any, acts(store, { findings: [gap("ops", "Thin ops."), gap("moat", "Thin moat."), gap("value", "Thin value.")],
     onWrite: async id => {
       if (id === "ops") throw wrapped("response_limit");
       await new Promise(r => setTimeout(r, 25));
     } }), reload());
-  assert.equal((result.review as any).repair?.status, "failed");
+  assert.equal((result.review as any).repair, undefined, "pipeline-simplification: no rewrite ran (was repair status failed)");
   await new Promise(r => setTimeout(r, 60));
   for (const [id, fp] of Object.entries(snapshot)) assert.equal(fingerprint(store.current("report_section", id)!.content), fp, `${id} is still the draft's after siblings settle`);
   assert.equal(store.current("report_document", "document")!.content.content_hash, draft.document.content_hash);
@@ -145,21 +150,22 @@ test("V-AC3: running the review stage again after a failed repair starts from th
   assert.notEqual((again.review as any).repair?.status, "failed", "a passing review records no failed repair");
 });
 
-test("V-AC4: rate limits, authentication and quota stops are not absorbed, even through a cause chain", async () => {
+// pipeline-simplification: with no repair round these errors can only come from the review call; they are still rethrown
+// unchanged so the stage's retry handles them (was: thrown by a repair-round rewrite).
+test("V-AC4 (pipeline-simplification): review-call rate limits, authentication and quota stops are not absorbed, even through a cause chain", async () => {
   for (const type of ["rate_limit", "authentication", "quota_exceeded", "budget_exhausted"]) {
     const { store, reload } = await setup();
     const err = wrapped(type);
-    await assert.rejects(reviewDraftedReport(input as any, acts(store, { findings: [gap("ops", "Thin.")], onWrite: () => { throw err; } }), reload()), e => e === err, type);
+    await assert.rejects(reviewDraftedReport(input as any, acts(store, { findings: [gap("ops", "Thin.")], onReview: () => { throw err; } }), reload()), e => e === err, type);
   }
 });
 
-test("V-AC5: in the research path only the chapters findings name are rewritten, each with its own and report-wide findings", async () => {
+// pipeline-simplification: no chapter is rewritten, so none receives findings as feedback; all stay on the review (was:
+// ops and value rewritten with their own and report-wide findings, the summary with all of them, moat untouched).
+test("V-AC5 (pipeline-simplification): in the research path no chapter is rewritten and every finding stays on the review", async () => {
   const { store, reload } = await setup();
   const seen = new Map<string, string[][]>();
-  await reviewDraftedReport(input as any, acts(store, { seen, findings: [gap("ops", "No funding data.", "research_gap"), gap("value", "Bridge missing.", "calculation"), gap(undefined, "Tone.")] }), reload());
-  assert.deepEqual(seen.get("ops"), [["No funding data.", "Tone."]]);
-  // adaptive-4: a chapter only report-wide findings reach is not rewritten.
-  assert.equal(seen.get("moat"), undefined);
-  assert.deepEqual(seen.get("value"), [["Bridge missing.", "Tone."]]);
-  assert.deepEqual(seen.get("summary"), [["Bridge missing.", "No funding data.", "Tone."]]);
+  const result = await reviewDraftedReport(input as any, acts(store, { seen, findings: [gap("ops", "No funding data.", "research_gap"), gap("value", "Bridge missing.", "calculation"), gap(undefined, "Tone.")] }), reload());
+  assert.equal(seen.size, 0, "pipeline-simplification: no chapter is rewritten");
+  assert.deepEqual(result.review.findings.map(f => f.issue).filter(Boolean).sort(), ["Bridge missing.", "No funding data.", "Tone."]);
 });

@@ -89,7 +89,7 @@ function store() {
 const finding = (section_id: string | undefined, issue: string, category = "writing") =>
   ({ ...(section_id ? { section_id } : {}), category, severity: "high", issue, repair: "Fix it." });
 
-interface Opts { findings?: Record<string, any>[]; failWrite?: (id: string, feedback: any[]) => Error | undefined }
+interface Opts { findings?: Record<string, any>[]; failWrite?: (id: string, feedback: any[]) => Error | undefined; failReview?: Error }
 function actions(db: ReturnType<typeof store>, log: { writes: { id: string; issues: string[] }[]; reviews: number }, opts: Opts = {}): CompositionActions {
   return {
     plan: async feedback => (feedback.length ? { ...planned(), questions: [] } : planned()) as any,
@@ -101,6 +101,7 @@ function actions(db: ReturnType<typeof store>, log: { writes: { id: string; issu
     },
     review: async () => {
       log.reviews++;
+      if (opts.failReview) throw opts.failReview;
       const first = log.reviews === 1;
       return { review_summary: "x", quality_score: 0.5, recommendations: [], depth_checks: allMet(), review_verdict: first ? "fail" : "pass",
         findings: first ? (opts.findings ?? [finding("a", "Thin a.")]) : [] };
@@ -125,16 +126,19 @@ async function drafted() {
 const contentFailure = (type = "schema_validation") => new ResearchAgentRunError(
   "Agent attempts exhausted: Structured output validation failed: report: Error: section_plan.chart_plan plans a chart", {} as any, { error_type: type });
 
-// ---------- AC-3: a content failure in the repair round keeps the draft and completes the review ----------
+// ---------- AC-3: a failing review keeps the draft and completes the review ----------
+// pipeline-simplification: there is no repair round, so no rewrite can fail. A failing review keeps the draft and saves the
+// round-0 review with its findings open and no repair marker (was: a rewrite's content failure restored the draft and
+// marked the review repair failed).
 
-test("AC-3: a section rewrite that exhausts its attempts on validation restores the draft and returns the round-0 review marked repair failed", async () => {
+test("AC-3 (pipeline-simplification): a failing review keeps the draft and saves the round-0 review with its findings, no rewrite", async () => {
   const { db, draft, reload, draftContent, log } = await drafted();
   const result = await reviewDraftedReport(input as any, actions(db, log, { findings: [finding("a", "Thin a."), finding("b", "Thin b.")],
     failWrite: id => id === "a" ? contentFailure() : undefined }), reload());
   assert.equal(result.document.content_hash, draft.document.content_hash, "the returned document is the draft's");
-  assert.equal((result.review as any).repair?.status, "failed");
-  assert.match(String((result.review as any).repair?.error ?? ""), /plans a chart/);
-  assert.equal(log.reviews, 1, "no second review runs after a failed repair");
+  assert.equal((result.review as any).repair, undefined, "pipeline-simplification: no repair ran, so none is marked failed");
+  assert.deepEqual(log.writes, [], "pipeline-simplification: no section is rewritten");
+  assert.equal(log.reviews, 1, "no second review runs");
   assert.equal(db.current("report_document", "document")!.content.content_hash, draft.document.content_hash, "current document is the draft's");
   assert.equal(fingerprint(db.current("report_outline", "outline")!.content), fingerprint(draftContent.outline), "current outline is the draft's");
   for (const [id, content] of Object.entries(draftContent.sections))
@@ -142,38 +146,42 @@ test("AC-3: a section rewrite that exhausts its attempts on validation restores 
   const reviews = db.rows.filter(r => r.type === "report_review" && r.current);
   const latest = reviews.at(-1)!.content;
   assert.equal(latest.report_hash, draft.document.content_hash, "the saved review describes the current document");
-  assert.equal(latest.repair?.status, "failed");
+  assert.equal(latest.repair, undefined, "pipeline-simplification: no repair marker (was status failed)");
+  assert.equal(latest.round, 0);
   assert.ok(latest.findings.some((f: any) => f.issue === "Thin a."), "the reviewer's findings stay open on the saved review");
 });
 
-test("AC-3: an output-exhausted conclusion rewrite is handled the same way", async () => {
+test("AC-3 (pipeline-simplification): no conclusion rewrite runs either", async () => {
   const { db, draft, reload, log } = await drafted();
   const result = await reviewDraftedReport(input as any, actions(db, log, { failWrite: id => id === "summary" ? contentFailure("output_exhausted") : undefined }), reload());
   assert.equal(result.document.content_hash, draft.document.content_hash);
-  assert.equal((result.review as any).repair?.status, "failed");
+  assert.equal((result.review as any).repair, undefined, "pipeline-simplification: no conclusion rewrite runs (was repair status failed)");
+  assert.deepEqual(log.writes, [], "pipeline-simplification: no section is rewritten");
 });
 
 // ---------- AC-4: every other failure still fails the stage as before ----------
+// pipeline-simplification: the repair round is gone, so these now check the review call itself: its errors are rethrown
+// unchanged and the stage's own retry handles them (was: errors from a repair-round rewrite).
 
-test("AC-4: a transient provider failure in the repair round is rethrown unchanged", async () => {
+test("AC-4 (pipeline-simplification): a transient provider failure in the review call is rethrown unchanged", async () => {
   const { db, reload, log } = await drafted();
   const transient = new ResearchAgentRunError("Agent attempts exhausted: overloaded", {} as any, { error_type: "server_error" });
-  await assert.rejects(reviewDraftedReport(input as any, actions(db, log, { failWrite: id => id === "a" ? transient : undefined }), reload()), e => e === transient);
+  await assert.rejects(reviewDraftedReport(input as any, actions(db, log, { failReview: transient }), reload()), e => e === transient);
 });
 
-test("AC-4: a code error in the repair round is rethrown unchanged", async () => {
+test("AC-4 (pipeline-simplification): a code error in the review call is rethrown unchanged", async () => {
   const { db, reload, log } = await drafted();
   const bug = new TypeError("Cannot read properties of undefined");
-  await assert.rejects(reviewDraftedReport(input as any, actions(db, log, { failWrite: id => id === "a" ? bug : undefined }), reload()), e => e === bug);
+  await assert.rejects(reviewDraftedReport(input as any, actions(db, log, { failReview: bug }), reload()), e => e === bug);
 });
 
 // ---------- AC-5: each body section's repair sees only its own findings and report-wide ones ----------
+// pipeline-simplification: no section is rewritten, so no section receives findings as feedback; they all stay on the
+// saved review (was: a and b rewritten with their own and report-wide findings, the summary with all of them).
 
-test("AC-5: body rewrites get their own and report-wide findings; conclusions get all of them", async () => {
+test("AC-5 (pipeline-simplification): no section is rewritten; every finding stays on the review", async () => {
   const { db, reload, log } = await drafted();
-  await reviewDraftedReport(input as any, actions(db, log, { findings: [finding("a", "Thin a."), finding("b", "Thin b."), finding(undefined, "General.")] }), reload());
-  const of = (id: string) => log.writes.filter(w => w.id === id).map(w => w.issues);
-  assert.deepEqual(of("a"), [["General.", "Thin a."]]);
-  assert.deepEqual(of("b"), [["General.", "Thin b."]]);
-  assert.deepEqual(of("summary"), [["General.", "Thin a.", "Thin b."]]);
+  const result = await reviewDraftedReport(input as any, actions(db, log, { findings: [finding("a", "Thin a."), finding("b", "Thin b."), finding(undefined, "General.")] }), reload());
+  assert.deepEqual(log.writes, [], "pipeline-simplification: no rewrites");
+  assert.deepEqual(result.review.findings.map(f => f.issue).filter(Boolean).sort(), ["General.", "Thin a.", "Thin b."]);
 });

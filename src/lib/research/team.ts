@@ -42,13 +42,13 @@ export type TeamAnswer = {
 export type TeamRequest = Request & { id: string; response?: TeamAnswer; source_searched?: boolean;
   rework_stage?: ReworkStage; section_id?: string; reworked?: boolean };
 /**
- * `rerun_stages`: analysis stages a re-run reopened; the batch waits for them before asking again.
- * `post_review_round`: the round the report review used. Pre-draft requests may use two rounds; one more is
- * kept for the review's findings, and nothing is asked after it.
+ * `rerun_stages`: analysis stages a re-run reopened; the batch waits for them before asking again. Batches stored
+ * before pipeline-simplification may also carry `post_review_round`, the round a report review used; nothing reads it.
  */
 export interface RequestBatch { round: number; state: "queued" | "processing" | "answered"; source_escalated?: boolean;
-  rerun_stages?: string[]; post_review_round?: number; requests: TeamRequest[] }
-export type RequestPhase = "pre_draft" | "post_review";
+  rerun_stages?: string[]; requests: TeamRequest[] }
+/** Requests are asked only before drafting; the review no longer opens a round (pipeline-simplification). */
+export type RequestPhase = "pre_draft";
 export const MAX_PRE_DRAFT_ROUNDS = 2;
 const MAX_REQUESTS = 5;
 /** The wire schema cannot carry maxItems, so requests past the fifth are dropped locally instead of costing a full-prompt repair. */
@@ -144,11 +144,11 @@ export function teamBriefScheduler(prepare: (ctx: ResearchRunContext) => Promise
 }
 
 /**
- * The next round: at most two before drafting and one after the review, repeated questions dropped, per-run
- * flags carried. Null when there is nothing new or the phase has no round left.
+ * The next round: at most MAX_PRE_DRAFT_ROUNDS before drafting, repeated questions dropped, per-run flags carried.
+ * Null when there is nothing new or no round is left. The review opens no round, so `_phase` is always pre_draft.
  */
-export function nextRequestBatch(previous: RequestBatch | null, proposed: (Request & Partial<TeamRequest>)[], phase: RequestPhase = "pre_draft"): RequestBatch | null {
-  if (!roundAvailable(previous, phase)) return null;
+export function nextRequestBatch(previous: RequestBatch | null, proposed: (Request & Partial<TeamRequest>)[], _phase: RequestPhase = "pre_draft"): RequestBatch | null {
+  if (!roundAvailable(previous)) return null;
   const asked = new Set(previous?.requests.map(r => r.question.trim().toLowerCase()));
   const fresh = proposed.filter(r => {
     const key = r.question.trim().toLowerCase();
@@ -159,29 +159,13 @@ export function nextRequestBatch(previous: RequestBatch | null, proposed: (Reque
   if (!fresh.length) return null;
   const round = (previous?.round || 0) + 1;
   return { round, state: "queued", ...(previous?.source_escalated !== undefined ? { source_escalated: previous.source_escalated } : {}),
-    ...(phase === "post_review" ? { post_review_round: round } : {}),
     requests: [...(previous?.requests || []), ...fresh.map((r, i) => ({ ...r, id: `request-${round}-${i + 1}` }))] };
 }
 
-const roundAvailable = (previous: RequestBatch | null, phase: RequestPhase) =>
-  !previous?.post_review_round && (phase === "post_review" || (previous?.round || 0) < MAX_PRE_DRAFT_ROUNDS);
-const inRound = (request: TeamRequest, round: number | undefined) => Boolean(round) && request.id.startsWith(`request-${round}-`);
-
-/** Requests asked before drafting: writers and the outline read only these, so post-review answers leave their cached calls intact. */
-export function preDraftRequests(batch: RequestBatch | null): TeamRequest[] {
-  return (batch?.requests || []).filter(r => !inRound(r, batch?.post_review_round));
-}
-export const preDraftBatch = (batch: RequestBatch | null): RequestBatch | null => batch && { ...batch, requests: preDraftRequests(batch) };
-
-/** The review round's requests with their answers, as repair feedback for the sections they name. */
-export function postReviewAnswers(batch: RequestBatch | null): Record<string, any>[] {
-  return (batch?.requests || []).filter(r => inRound(r, batch?.post_review_round) && r.response).map(r => ({
-    source: "team_answer", category: "team_answer", ...(r.section_id ? { section_id: r.section_id } : {}), question: r.question,
-    status: r.response!.status, answer: r.response!.answer, evidence_ids: r.response!.evidence_ids, artifact_ids: r.response!.artifact_ids }));
-}
+const roundAvailable = (previous: RequestBatch | null) => (previous?.round || 0) < MAX_PRE_DRAFT_ROUNDS;
 
 const REWORK_ROLE: Partial<Record<ReworkStage, Request["role"]>> = { asset_valuation: "valuation" };
-/** One rework request per owning stage from the review's analysis_rework findings. */
+/** One rework request per owning stage from analysis_rework findings (the pre-draft valuation check's). */
 export function reworkRequests(findings: Record<string, any>[]): (Request & Pick<TeamRequest, "rework_stage" | "section_id">)[] {
   const byStage = new Map<ReworkStage, Record<string, any>>();
   for (const f of findings) {
@@ -197,19 +181,16 @@ export function reworkRequests(findings: Record<string, any>[]): (Request & Pick
 }
 
 /**
- * The report owner decides what is missing, using the complete current input snapshot. The post-review phase also
- * turns analysis_rework findings into rerun requests for their owning stages.
- */
-/**
- * `stageKey` is the report stage making the call: pre-draft rounds run in report_draft, the post-review round
- * in ai_reviewer. It records the call under that stage and picks its model; the prompt is the same.
+ * The report owner decides what is missing before drafting, using the complete current input snapshot, and
+ * analysis_rework findings become rerun requests for their owning stages. `stageKey` records the call under the
+ * report stage making it (report_draft) and picks its model. The review asks no questions (pipeline-simplification).
  */
 export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, findings: Record<string, any>[] = [], phase: RequestPhase = "pre_draft",
-  stageKey: string = phase === "post_review" ? "ai_reviewer" : "report_draft") {
+  stageKey: string = "report_draft") {
   const previous = await getTeamRequests(sql, ctx.runId);
   if (previous && previous.state !== "answered") throw new ResearchRequestsPending();
   // Persisted limit survives worker restarts. Unavailable material answers stay blocked.
-  if (!roundAvailable(previous, phase)) return;
+  if (!roundAvailable(previous)) return;
   const inputs = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
   const rework = reworkRequests(findings);
   const reworking = rework.map(r => ({ stage: r.rework_stage, owner: r.role, reason: r.question }));
@@ -226,7 +207,7 @@ export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, 
         "role names the specialist and must be exactly one of: data, financials, business, valuation. Document types such as regulatory_filing or market_data belong in source_role, never in role.",
         "When needs_sources is true, set document to the specific document the collector should search for: the organisation, the document type and the period, in at most 200 characters. The collector searches document, not the question.",
         ...(reworking.length ? [REWORKING_RULE] : [])] }) });
-  // analysis_rework findings become rerun requests in either phase: the review's findings, or the pre-draft valuation check.
+  // analysis_rework findings (the pre-draft valuation check's) become rerun requests.
   const batch = nextRequestBatch(previous, [...rework, ...withoutReworkedOwners(firstRequests(result).requests, rework)], phase);
   if (!batch) return;
   await saveReportArtifact(sql, ctx, "team_requests", "requests", batch);
