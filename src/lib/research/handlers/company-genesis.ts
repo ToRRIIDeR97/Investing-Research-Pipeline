@@ -31,6 +31,18 @@ export const GENESIS_PROMPT_RULES = [
   "Where the evidence says nothing more about the founders, state that limitation in founder_background and background_summary rather than inventing history.",
 ];
 
+/**
+ * Added when the run has no founder or company-history document. Source discovery already records the gap
+ * (missing_founder_and_company_history, owned by system:source-collector); the stage writes the history from what the
+ * run holds instead of stopping (SoFi run 7c70364e stopped here when web search found no history page).
+ */
+export const MISSING_HISTORY_RULE = "missing_source_roles names the source roles this run could not fetch. With no founder or company-history document, build the history from the filings and other accepted evidence_claims (the business and history sections of annual reports and registration statements, results releases, proxy statements): cite those claims, use documented_company_action or analyst_inference as evidence_weight with low confidence, and state in founder_background and background_summary that no founder or company-history source was available. Do not invent founders, dates or motivations the evidence does not support.";
+
+/** The source roles the genesis stage reads; a missing one becomes a packet note, not a stop. */
+export function genesisMissingRoles(presentRoles: string[]) {
+  return missingRequiredSourceRoles(["founder_and_company_history"], presentRoles);
+}
+
 export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "company_genesis",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
@@ -43,15 +55,7 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
       WHERE (sd.research_run_id = ${ctx.runId} OR rrs.research_run_id = ${ctx.runId})
         AND sra.confidence >= 70
     `;
-    const missingRoles = missingRequiredSourceRoles(
-      ["founder_and_company_history"],
-      roleRows.map((row) => String(row.role))
-    );
-    if (missingRoles.length > 0) {
-      throw new Error(
-        `Company genesis blocked by evidence coverage: missing ${missingRoles.join(", ")}`
-      );
-    }
+    const missingRoles = genesisMissingRoles(roleRows.map((row) => String(row.role)));
     const evidenceClaims = await loadAcceptedEvidencePacket(sql, {
       runId: ctx.runId,
       runType: ctx.runType,
@@ -78,6 +82,7 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
       required_modules: ["founder_and_company_history", "corporate_structure"],
       output_contract: "company_genesis",
       output_schema: COMPANY_GENESIS_CONTRACT.schema,
+      ...(missingRoles.length ? { missing_source_roles: missingRoles } : {}),
       evidence_claims: evidenceClaims,
       artifact_shape: {
         company_genesis: {
@@ -116,7 +121,7 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
       agentName: "asset-analyst",
       requiredKeys: COMPANY_GENESIS_CONTRACT.requiredKeys,
       packet: p,
-      extraRules: GENESIS_PROMPT_RULES,
+      extraRules: missingRoles.length ? [...GENESIS_PROMPT_RULES, MISSING_HISTORY_RULE] : GENESIS_PROMPT_RULES,
     });
 
     let output = await callResearchAgent<Record<string, any>>({

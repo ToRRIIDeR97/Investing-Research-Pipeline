@@ -109,10 +109,13 @@ const gap = (section_id: string | undefined, issue: string, category = "writing"
 const wrapped = (type: string) => { const inner = new ResearchAgentRunError("Agent attempts exhausted: invalid", {} as any, { error_type: type });
   return new Error("Section writer failed", { cause: inner }); };
 
-test("V-AC3: a re-plan (research_gap) that fails validation keeps the draft and the round-0 findings", async () => {
+test("V-AC3: a research_gap never re-plans the outline (adaptive-4); its rewrite failing validation keeps the draft and the round-0 findings", async () => {
   const { store, draft, reload, snapshot } = await setup();
   const failure = new ResearchAgentRunError("Agent attempts exhausted: Structured output validation failed: report: Error: Integrate historical causes", {} as any, { error_type: "schema_validation" });
-  const result = await reviewDraftedReport(input as any, acts(store, { findings: [gap("ops", "Funding mix unknown.", "research_gap")], onPlan: () => { throw failure; } }), reload());
+  let replans = 0;
+  const result = await reviewDraftedReport(input as any, acts(store, { findings: [gap("ops", "Funding mix unknown.", "research_gap")],
+    onPlan: () => { replans += 1; }, onWrite: () => { throw failure; } }), reload());
+  assert.equal(replans, 0, "the fixed chapters are never re-planned");
   assert.equal(result.document.content_hash, draft.document.content_hash);
   assert.equal((result.review as any).repair?.status, "failed");
   assert.ok((result.review as any).findings.some((f: any) => f.issue === "Funding mix unknown."));
@@ -150,12 +153,13 @@ test("V-AC4: rate limits, authentication and quota stops are not absorbed, even 
   }
 });
 
-test("V-AC5: in the research path every rewritten body section gets only its own and report-wide findings", async () => {
+test("V-AC5: in the research path only the chapters findings name are rewritten, each with its own and report-wide findings", async () => {
   const { store, reload } = await setup();
   const seen = new Map<string, string[][]>();
   await reviewDraftedReport(input as any, acts(store, { seen, findings: [gap("ops", "No funding data.", "research_gap"), gap("value", "Bridge missing.", "calculation"), gap(undefined, "Tone.")] }), reload());
   assert.deepEqual(seen.get("ops"), [["No funding data.", "Tone."]]);
-  assert.deepEqual(seen.get("moat"), [["Tone."]]);
+  // adaptive-4: a chapter only report-wide findings reach is not rewritten.
+  assert.equal(seen.get("moat"), undefined);
   assert.deepEqual(seen.get("value"), [["Bridge missing.", "Tone."]]);
   assert.deepEqual(seen.get("summary"), [["Bridge missing.", "No funding data.", "Tone."]]);
 });

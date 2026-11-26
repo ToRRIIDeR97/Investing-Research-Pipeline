@@ -178,9 +178,9 @@ docs/operations.md	src/lib/research/monitoring/monitor-score.ts	dc07c7b71f38
 
 docs/report-visual-guidelines.md	src/components/report/exhibit-tile.tsx	224873a4e179
 
-docs/report-visual-guidelines.md	src/lib/research/reporting/contracts.ts	41c574e9f6a0
+docs/report-visual-guidelines.md	src/lib/research/reporting/contracts.ts	6daf07fb2588
 
-docs/report-visual-guidelines.md	src/lib/research/reporting/exhibits.ts	f837516d765d
+docs/report-visual-guidelines.md	src/lib/research/reporting/exhibits.ts	325fdbdb6bf3
 
 docs/security.md	.env.example	e53beb778926
 
@@ -256,7 +256,7 @@ docs/system.md	src/lib/research/system-pipeline.ts	15c66f3a9c1d
 
 docs/system.md	src/lib/research/team-plan.ts	0fca3dbde963
 
-docs/system.md	src/lib/research/team.ts	2838c00bd33f
+docs/system.md	src/lib/research/team.ts	078195bdba71
 
 docs/system.md	src/lib/research/test-assets.ts	68655a67cb06
 

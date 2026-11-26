@@ -3,7 +3,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import postgres from "postgres";
 import { NextRequest } from "next/server";
-import { dependentStages } from "../../../src/lib/research/team-plan";
 import { getTeamRequests, processResearchRequests, requestMissingResearch } from "../../../src/lib/research/team";
 import { saveReportArtifact } from "../../../src/lib/research/reporting/store";
 import {
@@ -12,7 +11,6 @@ import {
 } from "./fixtures";
 
 loadEnv();
-const sorted = (values: string[]) => [...values].sort();
 const ask = (id: string, role: string, source_role: string, question: string, needs_sources = false) =>
   ({ id, role, source_role, question, material: true, needs_sources });
 const unavailable = (text = "Not disclosed in the supplied corpus.") => ({ status: "unavailable", answer: text, evidence_ids: [], artifact_ids: [] });
@@ -152,7 +150,9 @@ test("AC-4: with an empty corpus a needs_sources request is answered from the ne
   } finally { model.restore(); web.restore(); await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
 });
 
-test("AC-6: after an automatic reset completes, a second requires_rerun pauses instead of resetting again", { skip }, async () => {
+// Changed by the one-rerun-per-stage limit (limitReruns): a second requires_rerun for the stage an automatic reset was
+// asked for no longer pauses for approval; the answer becomes unavailable and the report continues.
+test("AC-6: after an automatic reset completes, a second requires_rerun for the same stage is not rerun", { skip }, async () => {
   const sql = postgres(process.env.DATABASE_URL!);
   const run = await createRun(sql);
   let version = 0;
@@ -183,10 +183,15 @@ test("AC-6: after an automatic reset completes, a second requires_rerun pauses i
     await drain(sql, run);
     assert.equal(model.answers().length, 2, "the owner answers again after the re-run");
     const state = await runState(sql, run.runId);
-    assert.equal(state.status, "waiting_for_human");
-    assert.deepEqual(state.requestReset?.request_ids, [request.id]);
-    assert.deepEqual(sorted(state.requestReset.stages), sorted(dependentStages(["asset_valuation"])));
-    assert.ok(Math.abs(Number(state.requestReset.estimated_cost_usd) - 0.4) < 1e-6, `estimate ${state.requestReset.estimated_cost_usd}`);
+    assert.equal(state.status, "running", "no second re-run and no approval pause");
+    assert.equal(state.requestReset ?? null, null);
+    assert.equal((await stageStatuses(sql, run.runId)).asset_valuation, "completed");
+    const batch = await getTeamRequests(sql, run.runId);
+    assert.equal(batch?.state, "answered");
+    const response = batch?.requests.find(r => r.id === request.id)?.response;
+    assert.equal(response?.status, "unavailable", "the answer stays an open report question");
+    assert.equal(response?.requires_rerun, undefined);
+    assert.match(response!.answer, /^Not rerun: asset_valuation was already rerun in this run\. The owner's answer was: Discounting still uses the wrong base date \(pass 2\)\./);
   } finally { model.restore(); await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
 });
 

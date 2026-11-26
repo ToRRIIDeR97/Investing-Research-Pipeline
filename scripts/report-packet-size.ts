@@ -21,7 +21,7 @@ import { cleanReaderFields } from "../src/lib/research/reporting/reader-prose";
 import { checkReportSubstance } from "../src/lib/research/reporting/substance";
 import { writeFileSync } from "node:fs";
 import { buildExhibits, isAvailable, placeExhibits } from "../src/lib/research/reporting/exhibits";
-import { reportEvidenceView, reportSectionCall, splitReportArtifacts } from "../src/lib/research/reporting/runtime";
+import { compactRequests, reportEvidenceView, reportSectionCall, splitReportArtifacts } from "../src/lib/research/reporting/runtime";
 import { buildReportFacts } from "../src/lib/research/reporting/facts";
 import { mergeObservations } from "../src/lib/research/reporting/data-views";
 import { FinancialAnalytics, buildFinancialAnalytics } from "../src/lib/research/history/analytics";
@@ -61,7 +61,7 @@ async function main() {
   const [run] = await sql`SELECT metadata_json FROM research_runs WHERE id = ${runId}`;
   const common = { asset: { assetName: ctx.assetName, symbol: ctx.symbol, profile: ctx.profileKey },
     research_question: ctx.researchQuestion, source_cutoff: ctx.cutoffAt.toISOString(),
-    coverage_requirements: COVERAGE, ...shared, artifacts: packetArtifacts, evidence_claims: reportEvidenceView(inputs.evidence), specialist_requests: teamRequests?.requests || [],
+    coverage_requirements: COVERAGE, ...shared, artifacts: packetArtifacts, evidence_claims: reportEvidenceView(inputs.evidence), specialist_requests: compactRequests(teamRequests?.requests || []),
     human_revision_request: run?.metadata_json?.report_revision_request || null };
 
   const outlineContent = (await latest("report_outline"))?.content_json;

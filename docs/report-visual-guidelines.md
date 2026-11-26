@@ -9,7 +9,7 @@ covers:
 
 Use a visual when it answers a question that matters to understanding the business. Keep the full reasoning and evidence available below it. A report should remain a readable research document, not a dashboard.
 
-Reports of standard `asset-framework-2.1-adaptive-3` split the work. **Code builds every table and chart** from stored artifacts and places them in chapters (the exhibits below). **The model draws only qualitative visuals**: `process` diagrams and `organization` charts, where a diagram explains more than prose. The outline plans no charts (it has no `chart_plan`), and the section writer returns no tables or chart specifications. If it still sends them, code drops them before storage.
+Reports of standards `asset-framework-2.1-adaptive-3` and `-adaptive-4` (six fixed chapters) split the work. **Code builds every table and chart** from stored artifacts and places them in chapters (the exhibits below). **The model draws only qualitative visuals**: `process` diagrams and `organization` charts, where a diagram explains more than prose. The outline plans no charts (it has no `chart_plan`), and the section writer returns no tables or chart specifications. If it still sends them, code drops them before storage.
 
 ## Code-built exhibits
 

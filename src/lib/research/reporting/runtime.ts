@@ -1,6 +1,6 @@
 import { callResearchAgent, exactJsonPrompt, type ResearchRunContext, type Sql } from "../run-context";
 import { AI_REVIEWER_CONTRACT } from "../stage-contracts";
-import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Outline, Section, ConclusionSectionAnswer, normalizeOutlineStructure, validateProductOutline, storedSection, writerContract, type ReportOutline, type ReportSection, type CoverageCheck, type WriterSection } from "./contracts";
+import { COVERAGE, OUTLINE_CONTRACT, SECTION_CONTRACT, CoverageResult, Outline, Section, ConclusionSectionAnswer, REPORT_CHAPTERS, fitOutlineToChapters, validateProductOutline, storedSection, writerContract, type ReportOutline, type ReportSection, type CoverageCheck, type WriterSection } from "./contracts";
 import { buildExhibits, isAvailable, placeExhibits, type BuiltExhibit } from "./exhibits";
 import { composeDraft, draftDocument, reviewDraftedReport, checkFinalCoverage, type CompositionActions, type ReportReview, type WrittenSection, REQUIRED_COVERAGE } from "./compose";
 import { z } from "zod/v4";
@@ -13,13 +13,14 @@ import { getTeamRequests, includeUnansweredQuestions, requestMissingResearch, pr
 import { saveVersionChangeLog, loadPriorResearch } from "../lineage/runs";
 import { PRIOR_RESEARCH_RULE } from "../lineage/prior-research";
 import { buildReportFacts } from "./facts";
-import { researchPacketForModel } from "./packet";
+import { cappedArtifactView, fitPacket, KEPT_ARTIFACT_FIELDS } from "./packet";
+import type { TeamRequest } from "../team";
 import { citationRefs } from "./refs";
 import { cleanReaderFields } from "./reader-prose";
 
 /** Computed inputs every report call shares; they lead the packet instead of riding in each section's artifacts. */
 export const SHARED_REPORT_TYPES = ["financial_analytics", "financial_statement_summary", "report_facts"];
-export const REPORT_FACTS_RULE = "financial_analytics (computed history: statistics, segment economics, cash conversion, working capital, capital allocation), financial_statement_summary (which statements were captured) and report_facts (present values, terminal-value share, yields, implied multiples and no-rerating returns computed from the stored schedules) are code-computed. Cite their artifact_id for any figure they hold and never derive it again in prose; for statistics give the median and where the latest value sits. Code builds the report's tables and charts from them and the stored scenario and valuation sets. Report a statement gap only where financial_statement_summary shows one.";
+export const REPORT_FACTS_RULE = "financial_analytics (computed history: statistics, segment economics, cash conversion, working capital, capital allocation), financial_statement_summary (which statements were captured) and report_facts (present values, terminal-value share, yields, implied multiples and no-rerating returns computed from the stored schedules) are code-computed. Cite their artifact_id for any figure they hold and never derive it again in prose; for statistics give the median and where the latest value sits. Code builds the report's tables and charts from them and the stored scenario and valuation sets. Report a statement gap only where financial_statement_summary shows one. report_facts.valuation_check is code's plausibility check of the valuation; when it is flagged, treat the valuation figures as unreliable and say why.";
 
 /** The outline packet's exhibit rule: code places the catalogue, so the outline plans no chart or table. */
 export const EXHIBIT_CATALOGUE_RULE = "exhibit_catalogue lists the tables and charts code builds from stored data (available false when the data cannot support one). Code places each available exhibit in the first chapter, other than the opening summary, whose coverage includes its home area. Plan no charts or tables; let coverage decide where each exhibit appears.";
@@ -33,7 +34,7 @@ export const compactExhibit = (exhibit: BuiltExhibit) => ({ title: exhibit.title
 /** The reviewer challenges the framing, not only consistency (RQ-MOD-5): these are calculation findings. */
 export const REVIEW_FRAMING_RULE = "Challenge the valuation framing as calculation findings: a forecast horizon that ends inside a reinvestment cycle, terminal value above 75% of enterprise value (report_facts tv_share_of_ev), terminal-year capex far above depreciation, and unnormalized margins. Also check that the report answers research_framing's central_question and keeps its engines separate.";
 
-export const FRAMING_OUTLINE_RULE = "Answer the approved research_framing: give each framing key_question its own entry in questions with the same id, organize the sections around the central_question and the named engines, and make the opening conclusion section state whether the central_question and the decisive_insight_hypothesis held, with the evidence that decided it.";
+export const FRAMING_OUTLINE_RULE = "Answer the approved research_framing: give each framing key_question its own entry in questions with the same id, frame each chapter's title and purpose around the central_question and the named engines, and make the opening verdict chapter state whether the central_question and the decisive_insight_hypothesis held, with the evidence that decided it.";
 
 /**
  * Framing key questions the outline left out are added as qualified material questions, so the reader and the
@@ -52,14 +53,17 @@ export function includeFramingQuestions(outline: ReportOutline, framing: Record<
 
 /** Instructions for each report section writer, after the doctrine. */
 export const SECTION_RULES = [
-  "Write a detailed analytical section. Preserve section_plan.id and coverage exactly. Explain evidence, mechanism, historical context, counterevidence, uncertainty and investment consequences. Develop the reasoning in connected paragraphs; do not merely restate artifact fields.",
+  "Write a concise chapter: three to five paragraphs and at most 600 words, the first sentence stating the chapter's conclusion. Preserve section_plan.id and coverage exactly. Spend words only on what changes value, risk or confidence: the mechanism, its history, the counterevidence and the investment consequence. Leave numbers the exhibits show to the exhibits, and do not restate artifact fields or repeat what another chapter covers.",
   "Analyse with frameworks, not commentary, where the data allow: revenue as price × volume, a margin bridge between periods, unit economics, return on incremental capital, and moat claims tested against specific KPIs and counter-evidence. Explain why each figure moved (price, volume, mix, cost, accounting), not only that it moved.",
   "Every analysis paragraph carries a figure or a citation. section_plan.key_figures are this section's to present and explain; for figures the outline allocates to other sections, refer to that section by title instead of repeating the number.",
   "Paragraph kinds are fact, analysis, assumption or speculation. Cite exact supporting evidence_ids and artifact_ids for each paragraph. Unknown figures remain unknown. Uncited counterevidence and implication fields may synthesize the cited paragraphs but must not introduce new facts.",
   "Use plain text inside paragraphs; no HTML, embedded links or Markdown tables. Do not request or author tables or charts: code builds each chapter's exhibits from stored data. Do not recalculate their values.",
   "Follow packet.visual_guidelines for the optional section.visuals: an organization chart or a process diagram, only where it explains more than prose. Visual claims require the same evidence and accounting discipline as paragraphs.",
-  "If any material question or required coverage is blocked, withhold the investment conclusion. Describe the unresolved issue and what research is needed. Never turn a repair request into invented support."
+  "If a material question or required coverage is blocked, still give the provisional view and how confident it is, and name the open question and the evidence that would settle it, once and briefly. Never turn a repair request into invented support."
 ];
+
+/** The opening Verdict chapter (conclusion coverage) only. */
+export const VERDICT_RULE = "This chapter opens the report and is at most 400 words. Its first sentence states the view (attractive, fairly priced, unattractive or not yet investable) and the confidence (high, medium or low). Then give the value range against the price, the reasons, the main risks and what would change the view. If report_facts.valuation_check is flagged, say in plain words that the model's value is not reliable and why, and do not rest the view on it.";
 
 /** Claims as report writers see them: code renders each citation's link and location from the stored claim. */
 export const reportEvidenceView = <E extends { id: string }>(evidence: E[]) =>
@@ -123,21 +127,48 @@ export function chapterDigest(section: ReportSection) {
 /** Largest top-level artifact field a conclusion packet carries; the chapters already analysed the larger ones. */
 export const CONCLUSION_FIELD_BYTES = 4096;
 /** Valuation v2 judgments a conclusion always reads, whatever their size. */
-export const CONCLUSION_KEPT_FIELDS = ["valuation_matrix", "sanity", "cross_checks", "terminal_value_share", "value_beyond_explicit_share"];
+export const CONCLUSION_KEPT_FIELDS = KEPT_ARTIFACT_FIELDS;
 /**
  * A selected artifact as a conclusion writer sees it: the model view (historical_record becomes its coverage and
  * reconciliation view first), then its top-level fields up to CONCLUSION_FIELD_BYTES each, plus CONCLUSION_KEPT_FIELDS.
  * Larger fields (schedules, inputs, chart series) are named in omitted_fields; their figures reach the conclusion
  * through report_facts, financial_analytics and the chapter digests, and their paths may still be requested as tables.
  */
-export function conclusionArtifactView<T extends { content_json: any }>(artifact: T) {
-  if (!artifact.content_json || typeof artifact.content_json !== "object" || Array.isArray(artifact.content_json)) return artifact;
-  const content = researchPacketForModel(artifact.content_json);
-  const omitted = Object.keys(content).filter(key => !CONCLUSION_KEPT_FIELDS.includes(key)
-    && Buffer.byteLength(JSON.stringify(content[key] ?? null)) > CONCLUSION_FIELD_BYTES);
-  return { ...artifact, content_json: omitted.length ? Object.fromEntries(Object.entries(content).filter(([key]) => !omitted.includes(key))) : content,
-    ...(omitted.length ? { omitted_fields: omitted } : {}) };
+export const conclusionArtifactView = <T extends { content_json: any }>(artifact: T) => cappedArtifactView(artifact, CONCLUSION_FIELD_BYTES);
+
+/** Most claims a body chapter reads: those its artifacts cite first, then those that share its words. */
+export const SECTION_EVIDENCE_MAX = 40;
+const WORD = /[a-z][a-z0-9-]{2,}/g;
+const STOP_WORDS = new Set(["the", "and", "for", "with", "from", "that", "this", "its", "are", "was", "were", "has", "have", "what", "which", "how", "not", "but", "into", "over", "each", "than", "their", "they"]);
+const wordsOf = (text: string) => new Set((text.toLowerCase().match(WORD) ?? []).filter(w => !STOP_WORDS.has(w)));
+
+/**
+ * The claims a body chapter reads, in evidence order: claims its own artifacts cite, then claims sharing the most
+ * words with its title, purpose, key figures and coverage, up to `max`. A run with fewer claims keeps them all. Every
+ * chapter used to read every claim (70 KB on SoFi 0c9a2731), which put each call over Haiku's 100K-token rate step.
+ */
+export function sectionEvidence<E extends { id: string; claim_text?: unknown }>(evidence: E[], section: ReportOutline["sections"][number],
+  artifacts: { content_json: unknown }[], max = SECTION_EVIDENCE_MAX): E[] {
+  if (evidence.length <= max) return evidence;
+  const cited = JSON.stringify(artifacts.map(a => a.content_json));
+  const terms = wordsOf([section.title, section.purpose, ...(section.key_figures ?? []), ...section.coverage.map(key => COVERAGE[key as keyof typeof COVERAGE] ?? key)].join(" "));
+  const score = (claim: E) => { const words = wordsOf(String(claim.claim_text ?? "")); let n = 0; for (const term of terms) if (words.has(term)) n += 1; return n; };
+  return evidence.map((claim, index) => ({ claim, index, cited: cited.includes(claim.id), score: score(claim) }))
+    .sort((a, b) => Number(b.cited) - Number(a.cited) || b.score - a.score || a.index - b.index)
+    .slice(0, max).sort((a, b) => a.index - b.index).map(r => r.claim);
 }
+
+/** Longest team answer a report packet quotes; the full answer stays in team_requests. */
+export const REQUEST_ANSWER_CHARS = 600;
+/** The specialist requests as report calls read them: the question, the answer clipped, and what it cites. */
+export const compactRequests = (requests: TeamRequest[]) => requests.map(r => ({ id: r.id, role: r.role, question: r.question,
+  ...(r.section_id ? { section_id: r.section_id } : {}),
+  ...(r.response ? { status: r.response.status, answer: clip(String(r.response.answer ?? ""), REQUEST_ANSWER_CHARS),
+    evidence_ids: r.response.evidence_ids ?? [], artifact_ids: r.response.artifact_ids ?? [] } : {}) }));
+
+/** A body chapter's outline view: every chapter's id, title, coverage and key figures, and the questions without answers. */
+const outlineView = (outline: ReportOutline) => ({ sections: outline.sections.map(({ id, title, coverage, key_figures }) => ({ id, title, coverage, ...(key_figures ? { key_figures } : {}) })),
+  coverage: outline.coverage.map(({ key, section_ids }) => ({ key, section_ids })), questions: outline.questions.map(({ id, question, status }) => ({ id, question, status })) });
 
 /**
  * What a conclusion section reads of the finished chapters: a digest of each (see chapterDigest) and the claims
@@ -164,15 +195,18 @@ export function reportSectionCall<A extends { id: string; content_json: any }>(c
   const contract = conclusion ? (finalCoverage ? CONCLUSION_CONTRACT : CONCLUSION_SECTION_CONTRACT) : SECTION_CONTRACT;
   const artifacts = selected.length ? selected : packetArtifacts;
   const placed = !conclusion && exhibits ? exhibits : null;
-  const packet = { ...common, ...(conclusion ? { evidence_claims: conclusion.evidence, filing_passages: [] } : {}),
+  // A body chapter reads the claims relevant to it; a conclusion reads the claims the chapters cite.
+  const evidence = conclusion ? conclusion.evidence : sectionEvidence(common.evidence_claims, section, artifacts);
+  const packet = fitPacket({ ...common, evidence_claims: evidence, ...(conclusion ? { filing_passages: [] } : {}),
     artifacts: conclusion ? artifacts.map(conclusionArtifactView) : artifacts, section_plan: section, ...(placed ? { section_exhibits: placed.map(compactExhibit) } : {}),
-    // A conclusion reads the outline's questions and coverage whole, and of the other plans only what names them.
-    outline: conclusion ? { ...outline, sections: outline.sections.map(({ id, title, coverage, key_figures }) => ({ id, title, coverage, ...(key_figures ? { key_figures } : {}) })) } : outline,
+    // A conclusion reads the outline's questions and coverage whole, and of the other plans only what names them; a body
+    // chapter reads the compact view (its own plan is section_plan).
+    outline: conclusion ? { ...outline, sections: outline.sections.map(({ id, title, coverage, key_figures }) => ({ id, title, coverage, ...(key_figures ? { key_figures } : {}) })) } : outlineView(outline),
     feedback, completed_sections: conclusion?.chapters ?? [], ...(finalCoverage ? { provisional_coverage: finalCoverage } : {}),
-    visual_guidelines: VISUAL_GUIDELINES, output_contract: "report_section", output_schema: contract.schema };
+    visual_guidelines: VISUAL_GUIDELINES, output_contract: "report_section", output_schema: contract.schema });
   // Sections of one round share everything but these keys, so the shared part is read from cache.
-  return { packet, contract, perCallKeys: ["artifacts", "section_plan", "section_exhibits", "completed_sections", "provisional_coverage"],
-    extraRules: [REPORT_FACTS_RULE, ...SECTION_RULES, ...(placed ? [SECTION_EXHIBITS_RULE] : []), ...(conclusion ? [CONCLUSION_DIGEST_RULE, KEY_REASONS_RULE, PLAIN_LANGUAGE_RULE] : []), ...(finalCoverage ? [FINAL_COVERAGE_RULE] : [])] };
+  return { packet, contract, perCallKeys: ["evidence_claims", "filing_passages", "artifacts", "section_plan", "section_exhibits", "completed_sections", "provisional_coverage"],
+    extraRules: [REPORT_FACTS_RULE, ...SECTION_RULES, ...(placed ? [SECTION_EXHIBITS_RULE] : []), ...(conclusion ? [CONCLUSION_DIGEST_RULE, VERDICT_RULE, KEY_REASONS_RULE, PLAIN_LANGUAGE_RULE] : []), ...(finalCoverage ? [FINAL_COVERAGE_RULE] : [])] };
 }
 
 /** Save report_facts from the current valuation and analytics, so writers can cite it like any artifact. */
@@ -181,6 +215,19 @@ export async function saveReportFacts(sql: Sql, ctx: ResearchRunContext) {
     { types: ["valuation_scenario_set", "financial_analytics"], fingerprint: false, evidence: false });
   const facts = buildReportFacts(artifacts);
   if (facts) await saveReportArtifact(sql, ctx, "report_facts", `${ctx.assetSlug}-report-facts`, facts);
+  return facts;
+}
+
+/**
+ * The rework finding a flagged valuation check raises before any chapter is written: asset_valuation is sent back
+ * once per run, with the check's reasons. A run whose requests already reworked it writes the report on the
+ * valuation it has, and the writers say it is unreliable (VERDICT_RULE).
+ */
+export function valuationRework(facts: { valuation_check?: { status: string; reasons: string[] } } | null, previous: { requests?: { rework_stage?: string }[] } | null) {
+  const check = facts?.valuation_check;
+  if (check?.status !== "flagged" || (previous?.requests ?? []).some(r => r.rework_stage === "asset_valuation")) return [];
+  return [{ category: "analysis_rework", owner_stage: "asset_valuation",
+    issue: `The valuation failed code's plausibility check before the report was written. ${check.reasons.join(" ")} Recheck the scenario cash flows, the equity bridge and the terminal assumption, and correct what is wrong.` }];
 }
 
 /** The packet artifacts and the shared computed inputs, keyed by type with their artifact_id. */
@@ -292,7 +339,8 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
   const check = <T>(value: T) => keepUsableReferences(value, artifacts, evidence);
   // Code places the exhibits, so a chart_plan the outline writer still sends is dropped.
   const withoutChartPlans = (outline: ReportOutline): ReportOutline => ({ ...outline, sections: (outline.sections || []).map(({ chart_plan: _plan, ...plan }) => plan) });
-  const usableOutline = (value: { outline: ReportOutline }, keepIds = usable) => { const kept = keepIds(value); return { ...kept, outline: normalizeOutlineStructure(withoutChartPlans(kept.outline)) }; };
+  // adaptive-4: code fixes the chapters, so the outline writer fills them in rather than designing them.
+  const usableOutline = (value: { outline: ReportOutline }, keepIds = usable) => { const kept = keepIds(value); return { ...kept, outline: fitOutlineToChapters(withoutChartPlans(kept.outline), packetArtifacts) }; };
   // The launch exhibits, built once from the report inputs; placeExhibits assigns them to the outline's chapters.
   const exhibits = buildExhibits(artifacts, { cutoff: ctx.cutoffAt.toISOString() });
   const exhibitCatalogue = exhibits.map(e => ({ key: e.key, title: e.title, home: e.home, available: isAvailable(e) }));
@@ -307,7 +355,7 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
   const priorRules = prior ? [PRIOR_RESEARCH_RULE] : [];
   const common = { asset: { assetName: ctx.assetName, symbol: ctx.symbol, profile: ctx.profileKey },
     research_question: ctx.researchQuestion, source_cutoff: ctx.cutoffAt.toISOString(),
-    coverage_requirements: COVERAGE, ...shared, artifacts: packetArtifacts, evidence_claims: reportEvidenceView(evidence), specialist_requests: preDraftRequests(teamRequests),
+    coverage_requirements: COVERAGE, ...shared, artifacts: packetArtifacts, evidence_claims: reportEvidenceView(evidence), specialist_requests: compactRequests(preDraftRequests(teamRequests)),
     human_revision_request: run?.metadata_json?.report_revision_request || null, ...(prior ? { prior_research: prior } : {}) };
   const reportInput = { asset_name: ctx.assetName, cutoff: ctx.cutoffAt.toISOString(), is_test: ctx.testMode,
     required_coverage: REQUIRED_COVERAGE, artifacts, evidence };
@@ -317,7 +365,8 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
   const savedIds = new Map<string, string>();
   const actions: CompositionActions = {
     async plan(feedback) {
-      const packet = { ...common, exhibit_catalogue: exhibitCatalogue, feedback, output_contract: "report_outline", output_schema: OUTLINE_CONTRACT.schema };
+      const packet = fitPacket({ ...common, report_chapters: REPORT_CHAPTERS.map(({ id, title, coverage, purpose }) => ({ id, title, coverage, purpose })),
+        exhibit_catalogue: exhibitCatalogue, feedback, output_contract: "report_outline", output_schema: OUTLINE_CONTRACT.schema });
       const output = usableOutline(answer(await callResearchAgent<{ outline: ReportOutline }>({ sql, ctx, stageKey,
         taskKey: "report:outline", taskType: "report_outline", agentName: "asset-analyst", modelTier: "mid", packet, packetTransform: refs.packet,
         outputFormat: resolved(checkedContract(OUTLINE_CONTRACT, ({ outline }: { outline: ReportOutline }) => {
@@ -327,11 +376,10 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
             counterevidence: "Outline validation", implication: "Outline validation", gaps: [], tables: [] })) });
         }, value => usableOutline(value, check))), promptFactory: p => exactJsonPrompt({ agentName: "asset-analyst", requiredKeys: ["outline"], packet: p,
           extraRules: [REPORT_FACTS_RULE,
-            "Design a report outline around the material investment questions. Use company-specific section titles. Cover every coverage_requirements key exactly once in coverage, mapping it to one or more sections. First section should summarize the eventual judgment, and its coverage is conclusion only.",
-            "Section coverage rules: every section whose coverage includes history or evidence must also include at least one other key (for example business, moat, management or constraints); a section covering only history and/or evidence is rejected. Exactly one section may include valuation, and that section must also include forecasts and downside; the opening summary section must not list valuation. Backtest and market-timing evidence belongs in a section that lists monitoring, because it tests timing indicators, not the fundamental thesis.",
+            "The report has exactly the chapters in report_chapters, in that order, with their ids and coverage: return one section per chapter with the same id and coverage. Give each a company-specific title and a purpose naming the question it answers, and choose the artifact_ids it should read. Cover every coverage_requirements key once in coverage. Backtest and market-timing evidence belongs in the monitoring chapter, because it tests timing indicators, not the fundamental thesis.",
             "Use full artifacts and evidence to investigate the questions. Record an answer, evidence/artifact IDs, materiality, status, and specific next evidence needed. Add questions discovered from contradictions or missing disclosures. Do not claim you fetched new evidence.",
             "Coverage states: satisfied for evidenced analysis including a no-moat finding; qualified for usable analysis with explained limits; blocked for a decision-critical gap; not_applicable only with asset-specific justification. A missing artifact is not evidence of inapplicability.",
-            "Use only supplied artifact and evidence IDs. Keep numerical models unchanged. Request missing analysis in follow_up when artifacts cannot answer a material question. Prefer 8-16 substantial sections, maximum 24. No word-count target.",
+            "Use only supplied artifact and evidence IDs. Keep numerical models unchanged. Request missing analysis in follow_up when artifacts cannot answer a material question. Keep at most eight questions, the ones that change the view.",
             "Allocate key figures: give each section 2-5 key_figures (metric and period, e.g. \"FY2024 take rate\"). Assign each figure to exactly one section, the one that explains it; other sections refer to it rather than repeat it.",
             EXHIBIT_CATALOGUE_RULE,
             ...(ctx.researchFraming ? [FRAMING_OUTLINE_RULE] : []), ...priorRules] }) }), dropped));
@@ -359,9 +407,13 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
       return finalCoverage ? { ...output.section, final_coverage: output.coverage } : output.section;
     },
     async review(document) {
-      const packet = { ...common, visual_guidelines: VISUAL_GUIDELINES, report_document: reviewDocument(document),
+      // The reviewer checks the claims the report cites; the rest of the corpus can't change what it reads.
+      const cited = new Set([...document.sections.flatMap(s => [...s.paragraphs.flatMap(p => p.evidence_ids), ...(s.key_reasons ?? []).flatMap(r => r.evidence_ids)]),
+        ...document.questions.flatMap(q => q.evidence_ids)]);
+      const packet = fitPacket({ ...common, evidence_claims: common.evidence_claims.filter(claim => cited.has(claim.id)),
+        visual_guidelines: VISUAL_GUIDELINES, report_document: reviewDocument(document),
         depth_checks: DEPTH_CHECKS.map(({ id, label, ask, critical }) => ({ id, label, ask, decision_critical: critical })),
-        output_contract: "report_review", output_schema: AI_REVIEWER_CONTRACT.schema };
+        output_contract: "report_review", output_schema: AI_REVIEWER_CONTRACT.schema });
       const review = answer(await callResearchAgent<ReportReview>({ sql, ctx, stageKey, taskKey: "report:review", taskType: "ai_review",
         agentName: "research-reviewer", modelTier: "mid", packet, packetTransform: refs.packet, outputFormat: resolved(AI_REVIEWER_CONTRACT),
         promptFactory: p => exactJsonPrompt({ agentName: "research-reviewer", requiredKeys: AI_REVIEWER_CONTRACT.requiredKeys, packet: p,
@@ -403,8 +455,9 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
 export async function draftReport(sql: Sql, ctx: ResearchRunContext) {
   // What changed since the prior run, computed by code before the report is written; nothing without a prior.
   await saveVersionChangeLog(sql, ctx);
-  await requestMissingResearch(sql, ctx, [], "pre_draft", "report_draft");
-  await saveReportFacts(sql, ctx);
+  // report_facts first, so its valuation check can send the valuation back before the request round and any chapter.
+  const facts = await saveReportFacts(sql, ctx);
+  await requestMissingResearch(sql, ctx, valuationRework(facts, await getTeamRequests(sql, ctx.runId)), "pre_draft", "report_draft");
   const composition = await reportComposition(sql, ctx, "report_draft");
   const draft = await composeDraft(composition.reportInput, composition.actions);
   const id = (type: string, scope: string) => composition.savedIds.get(`${type}:${scope}`)!;

@@ -98,7 +98,7 @@ test("a conclusion reads historical_record through its model view: coverage gaps
   assert.equal(view.content_json.reconciliation_issues.blocking, 3);
 });
 
-test("body packets carry full artifacts and no digests; conclusions get digests, capped artifacts, a slim outline and the final coverage", () => {
+test("body packets carry full artifacts, a compact outline and no digests; conclusions get digests, capped artifacts, a slim outline and the final coverage", () => {
   const plan = (id: string, coverage: string[]) => ({ id, title: id, purpose: "p", coverage, artifact_ids: ["val"], chart_plan: "margin trend", key_figures: ["FY2025 margin"] });
   const outline: ReportOutline = { sections: [plan("summary", ["conclusion"]), plan("valuation", ["valuation", "forecasts", "downside"])],
     coverage: [{ key: "conclusion", status: "qualified", rationale: "r", section_ids: ["summary"] }], questions: [] };
@@ -106,7 +106,10 @@ test("body packets carry full artifacts and no digests; conclusions get digests,
   const common = { evidence_claims: [{ id: "ev-0" }, { id: "ev-1" }, { id: "ev-7" }], filing_passages: ["passage"] };
   const body = reportSectionCall(common, [big], outline.sections[1], outline, [], []);
   assert.equal(body.packet.artifacts[0], big);
-  assert.equal(body.packet.outline, outline);
+  // A body chapter reads its own plan as section_plan and every chapter's id, title, coverage and key figures.
+  assert.deepEqual(body.packet.outline, { sections: [{ id: "summary", title: "summary", coverage: ["conclusion"], key_figures: ["FY2025 margin"] },
+    { id: "valuation", title: "valuation", coverage: ["valuation", "forecasts", "downside"], key_figures: ["FY2025 margin"] }],
+    coverage: [{ key: "conclusion", section_ids: ["summary"] }], questions: [] });
   assert.deepEqual(body.packet.completed_sections, []);
   assert.deepEqual(body.packet.evidence_claims, common.evidence_claims);
   assert.ok(!("provisional_coverage" in body.packet));

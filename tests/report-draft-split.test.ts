@@ -93,9 +93,11 @@ const EXPECTED: Record<Scenario, { review: string[]; repaired: string[]; replann
   writing: { review: [...REVIEW_START, "rework", "write:valuation:repair", "save:report_section:valuation", "write:summary:repair:last",
     "save:report_section:summary", "retain:report_section:summary,valuation", "save:report_document:document", "review", "save:report_review:review"],
     repaired: ["valuation", "summary"], replanned: false },
-  research: { review: [...REVIEW_START, "rework", "plan:1", "save:report_outline:outline", "save:question_register:questions", "write:valuation:repair",
+  // adaptive-4: a research finding is answered by the specialists (rework) and repaired in the chapter it names; the
+  // fixed chapters are never re-planned.
+  research: { review: [...REVIEW_START, "rework", "write:valuation:repair",
     "save:report_section:valuation", "write:summary:repair:last", "save:report_section:summary", "retain:report_section:summary,valuation",
-    "save:report_document:document", "review", "save:report_review:review"], repaired: ["valuation", "summary"], replanned: true },
+    "save:report_document:document", "review", "save:report_review:review"], repaired: ["valuation", "summary"], replanned: false },
 };
 
 for (const scenario of ["pass", "writing", "research"] as const) {

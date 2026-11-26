@@ -9,8 +9,11 @@ import type { ReportArtifact, ReportDocument } from './report';
 import { buildVisual, type BuiltVisual } from './visuals';
 import { withheldValuationReason } from '../valuation/contracts';
 
-/** The report standard whose sections carry code-placed `exhibits`. */
+/** The first report standard whose sections carry code-placed `exhibits`. */
 export const EXHIBIT_STANDARD = 'asset-framework-2.1-adaptive-3';
+/** Every standard whose sections carry code-placed `exhibits`: adaptive-3 and adaptive-4 (fixed chapters). */
+export const EXHIBIT_STANDARDS: readonly string[] = [EXHIBIT_STANDARD, 'asset-framework-2.1-adaptive-4'];
+export const hasCodeExhibits = (standard: unknown) => typeof standard === 'string' && EXHIBIT_STANDARDS.includes(standard);
 
 export type ExhibitKey =
   | 'quarterly_results' | 'history_statistics' | 'operating_margin_trend' | 'segment_economics' | 'cash_conversion'
@@ -367,7 +370,7 @@ export function placeExhibits(sections: { id: string; coverage: string[] }[], ex
 
 /** The built exhibits a stored chapter names, in its order; [] for an unknown section or a document of an earlier standard. */
 export function chapterExhibits(document: ReportDocument, sectionId: string): BuiltExhibit[] {
-  if (document?.standard_version !== EXHIBIT_STANDARD) return [];
+  if (!hasCodeExhibits(document?.standard_version)) return [];
   const section = (document.sections ?? []).find(s => s.id === sectionId);
   const keys = (section as { exhibits?: unknown } | undefined)?.exhibits;
   if (!Array.isArray(keys) || !keys.length) return [];

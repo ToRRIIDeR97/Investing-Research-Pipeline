@@ -164,7 +164,7 @@ export async function composeReviewedReport(input: CompositionInput, actions: Co
 export async function reviewDraftedReport(input: CompositionInput, actions: CompositionActions, draft: ReportDraft) {
   const state = { outline: draft.outline, sections: [...draft.sections], finalCoverage: draft.finalCoverage };
   const c = composer(input, actions, state);
-  const { write, body, writeConclusions } = c;
+  const { write } = c;
   const sections = state.sections;
   let priorFindings: Record<string, any>[] = [];
   for (let round = 0; round <= 1; round++) {
@@ -195,31 +195,14 @@ export async function reviewDraftedReport(input: CompositionInput, actions: Comp
     const findings = [...review.findings.filter(f => f.source !== "substance_check" || f.section_id), ...depthFindings(review.depth_checks, outline.sections)];
     const feedback = [...findings, ...answers];
     try {
-      // A passed review repairs only the substance findings: no outline re-plan, only the flagged sections and conclusions.
-      const researchFindings = passed ? [] : findings.filter(f => f.category === "research_gap");
-      if (researchFindings.length) {
-        // Re-investigate the existing corpus once. Missing disclosures must become
-        // qualified/blocked questions, not facts invented by the section writer.
-        state.outline = Outline.parse(await actions.plan(researchFindings));
-        const replanned = state.outline;
-        await actions.save("report_outline", "outline", replanned);
-        await actions.save("question_register", "questions", { questions: replanned.questions });
-        const revised: ReportSection[] = await mapWithConcurrency(body(replanned.sections), plan => {
-          const prior = sections.find(s => s.id === plan.id);
-          const affected = findings.some(f => !f.section_id || f.section_id === plan.id);
-          return prior && !affected && JSON.stringify(prior.coverage) === JSON.stringify(plan.coverage)
-            ? Promise.resolve(prior) : write(plan, feedbackFor(plan.id, feedback), []);
-        });
-        await writeConclusions(replanned.sections, feedback, revised);
-        c.inOutlineOrder(revised);
-        sections.splice(0, sections.length, ...revised);
-        continue;
-      }
+      // One writing pass: the chapters are fixed, so the outline is never re-planned. Research gaps went to the
+      // specialists (rework above); their answers and the findings reach only the chapters they name, and the
+      // conclusions. A finding that names no chapter reaches every rewritten chapter but rewrites none on its own.
       const writingFindings = passed ? substance : findings;
-      const affected = new Set(writingFindings.map(f => f.section_id).filter(Boolean));
+      const affected = new Set([...writingFindings, ...(passed ? [] : answers)].map(f => f.section_id).filter(Boolean));
       const planOf = (i: number) => outline.sections.find(s => s.id === sections[i].id)!;
       const indexes = sections.map((_, i) => i);
-      const repairBody = indexes.filter(i => !isConclusion(sections[i]) && (!affected.size || affected.has(sections[i].id)));
+      const repairBody = indexes.filter(i => !isConclusion(sections[i]) && affected.has(sections[i].id));
       const repairFeedback = passed ? substance : feedback;
       (await mapWithConcurrency(repairBody, i => write(planOf(i), feedbackFor(sections[i].id, repairFeedback), []))).forEach((section, k) => { sections[repairBody[k]] = section; });
       const last = indexes.filter(i => isConclusion(sections[i])).at(-1);

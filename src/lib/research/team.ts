@@ -12,6 +12,7 @@ import { extractEvidenceForSources } from "./handlers/evidence-extraction";
 import { costOfCapitalInputs } from "./valuation/cost-of-capital";
 import { latestRiskFreeRate } from "./valuation/engine";
 import { REWORK_STAGES, type ReworkStage } from "./reporting/depth";
+import { fitPacket } from "./reporting/packet";
 
 const Role = z.enum(["data", "financials", "business", "valuation"]);
 export const ResearchRequest = z.object({
@@ -200,8 +201,8 @@ export function reworkRequests(findings: Record<string, any>[]): (Request & Pick
  * turns analysis_rework findings into rerun requests for their owning stages.
  */
 /**
- * `stageKey` is the report stage making the call: pre-draft rounds run in report_draft, the post-review round and
- * the repair re-plan in ai_reviewer. It records the call under that stage and picks its model; the prompt is the same.
+ * `stageKey` is the report stage making the call: pre-draft rounds run in report_draft, the post-review round
+ * in ai_reviewer. It records the call under that stage and picks its model; the prompt is the same.
  */
 export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, findings: Record<string, any>[] = [], phase: RequestPhase = "pre_draft",
   stageKey: string = phase === "post_review" ? "ai_reviewer" : "report_draft") {
@@ -210,8 +211,12 @@ export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, 
   // Persisted limit survives worker restarts. Unavailable material answers stay blocked.
   if (!roundAvailable(previous, phase)) return;
   const inputs = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
-  const packet = { asset: { name: ctx.assetName, symbol: ctx.symbol }, ...inputs, artifacts: modelVisibleArtifacts(inputs.artifacts), previous_requests: previous?.requests || [],
-    findings, role: "report", output_contract: "team_requests" };
+  const rework = reworkRequests(findings);
+  const reworking = rework.map(r => ({ stage: r.rework_stage, owner: r.role, reason: r.question }));
+  // Capped like every report call (fitPacket), so the round stays under the model's long-prompt rate.
+  const packet = fitPacket({ asset: { name: ctx.assetName, symbol: ctx.symbol }, ...inputs, artifacts: modelVisibleArtifacts(inputs.artifacts), previous_requests: previous?.requests || [],
+    findings: findings.filter(f => f.category !== "analysis_rework"), ...(reworking.length ? { reworking } : {}),
+    role: "report", output_contract: "team_requests" }, undefined, "evidence");
   const result = await callResearchAgent<{ requests: Request[] }>({ sql, ctx, stageKey,
     taskKey: `team:requests:${previous?.round || 0}`, taskType: "team_requests", agentName: "export-writer", modelTier: "cheap",
     packet, outputFormat: REQUEST_CONTRACT, promptFactory: p => exactJsonPrompt({ agentName: "export-writer",
@@ -219,11 +224,24 @@ export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, 
         "Request only specific unanswered investment questions or material inconsistencies, at most 5, most material first. Return an empty requests array when the supplied research is adequate. Do not request information already present or repeat answered/unavailable requests.",
         "Route financial extraction/reconciliation to financials, management/operations/scenarios to business, valuation calculations to valuation, and missing documents to data. Set needs_sources when new external evidence is required; source_role tells the collector where to search. Stored price history and the FRED 10-year Treasury series are answered directly from the run's data. Owners answer from the run's documents without rerunning their analysis; the collector searches once for a missing document, and a stage reruns only when its owner says its own output must be recomputed.",
         "role names the specialist and must be exactly one of: data, financials, business, valuation. Document types such as regulatory_filing or market_data belong in source_role, never in role.",
-        "When needs_sources is true, set document to the specific document the collector should search for: the organisation, the document type and the period, in at most 200 characters. The collector searches document, not the question."] }) });
-  const batch = nextRequestBatch(previous, [...(phase === "post_review" ? reworkRequests(findings) : []), ...firstRequests(result).requests], phase);
+        "When needs_sources is true, set document to the specific document the collector should search for: the organisation, the document type and the period, in at most 200 characters. The collector searches document, not the question.",
+        ...(reworking.length ? [REWORKING_RULE] : [])] }) });
+  // analysis_rework findings become rerun requests in either phase: the review's findings, or the pre-draft valuation check.
+  const batch = nextRequestBatch(previous, [...rework, ...withoutReworkedOwners(firstRequests(result).requests, rework)], phase);
   if (!batch) return;
   await saveReportArtifact(sql, ctx, "team_requests", "requests", batch);
   throw new ResearchRequestsPending();
+}
+
+export const REWORKING_RULE = "reworking lists the stages code is already sending back for a rerun, with the reason. Do not ask their owners to recheck the same thing; their rerun answers it.";
+
+/**
+ * While a stage is reworked, its owner gets no other question in the same round: the rework already sends it the
+ * issue, and a second question would be answered again after the rerun and could ask for a second rerun.
+ */
+export function withoutReworkedOwners<T extends { role: string }>(requests: T[], rework: { role: string }[]): T[] {
+  const owners = new Set(rework.map(r => r.role));
+  return requests.filter(r => !owners.has(r.role));
 }
 
 /**
@@ -311,11 +329,37 @@ async function loadSystemFacts(sql: Sql, runId: string): Promise<SystemFacts> {
     fred: fred?.csv ? { sourceId: String(fred.id), csv: String(fred.csv) } : null };
 }
 
+const rerunRoot = (request: TeamRequest) => request.rework_stage ?? TEAM_ROLES[request.role].stage;
 /** Only an owner's requires_rerun names a root; data requests never reopen source discovery. Rework requests name their stage. */
 export function requestStageRoots(requests: TeamRequest[]): string[] {
-  return [...new Set(rerunRequests(requests).map(r => r.rework_stage ?? TEAM_ROLES[r.role].stage))];
+  return [...new Set(rerunRequests(requests).map(rerunRoot))];
 }
 const rerunRequests = (requests: TeamRequest[]) => requests.filter(r => r.response?.requires_rerun === true && r.role !== "data");
+
+/**
+ * A stage reruns at most once per run for requests. A rerun request for a stage an applied reset was already asked
+ * for (`rerunRoots`) is not rerun: its answer becomes unavailable, so it stays an open report question. An unavailable answer never
+ * asks for a rerun. Without this, an owner re-answering after its rerun could ask again after every rerun
+ * (SoFi 7c70364e paused for approval four times on one valuation question).
+ */
+export function limitReruns(requests: TeamRequest[], rerunStages: Set<string>): TeamRequest[] {
+  return requests.map(request => {
+    const response = request.response;
+    if (response?.requires_rerun !== true) return request;
+    const { requires_rerun: _, ...kept } = response;
+    if (response.status !== "answered") return { ...request, response: kept };
+    const stage = rerunRoot(request);
+    if (!rerunStages.has(stage)) return request;
+    const owner = request.rework_stage ? "" : ` The owner's answer was: ${response.answer}`;
+    return { ...request, response: { ...kept, status: "unavailable", answer: `Not rerun: ${stage} was already rerun in this run.${owner}` } };
+  });
+}
+
+/** The stages applied resets were asked for (their roots, not the dependents they also reopened), from their request ids. */
+export function rerunRoots(requests: TeamRequest[], appliedRequestIds: string[]): Set<string> {
+  const ids = new Set(appliedRequestIds);
+  return new Set(requests.filter(r => ids.has(r.id)).map(rerunRoot));
+}
 
 export interface RequestResetPlan { mode: "none" | "auto" | "approval"; stages: string[]; analysis_stages: string[]; request_ids: string[] }
 function autoResetLimit() {
@@ -559,6 +603,9 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
   const stages = await sql`SELECT stage_key, status FROM research_stages WHERE research_run_id = ${ctx.runId}`;
   // The run's one automatic re-run is used once it has an auto row.
   const [auto] = await sql`SELECT 1 FROM research_run_resets WHERE research_run_id = ${ctx.runId} AND kind = 'auto' LIMIT 1`;
+  const applied = await sql`SELECT request_ids FROM research_run_resets WHERE research_run_id = ${ctx.runId} AND status = 'applied'`;
+  const limited = limitReruns(batch.requests, rerunRoots(batch.requests, applied.flatMap(row => (row.request_ids ?? []) as string[])));
+  if (limited.some((request, i) => request !== batch!.requests[i])) { batch = { ...batch, requests: limited }; await save(); }
   const plan = requestResetPlan(batch.requests, stages.map(s => ({ stage_key: String(s.stage_key), status: String(s.status) })),
     { autoResetUsed: Boolean(auto) });
   if (plan.mode === "none") {

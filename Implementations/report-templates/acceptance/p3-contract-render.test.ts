@@ -34,7 +34,8 @@ test("AC-6: an answer that still carries tables, chart specs and a chart plan is
 
 test("AC-7: a new report renders its placed exhibits from stored data", () => {
   const doc = report([bodySection("business", ["business", "valuation"], ["quarterly_results", "valuation_matrix", "no_such_exhibit"])], ["business", "valuation"]);
-  assert.equal(STANDARD_VERSION, "asset-framework-2.1-adaptive-3");
+  // adaptive-4 (fixed chapters) keeps adaptive-3's code-built exhibits.
+  assert.equal(STANDARD_VERSION, "asset-framework-2.1-adaptive-4");
   assert.equal(doc.standard_version, STANDARD_VERSION);
   assert.match(doc.markdown, /\| 2025Q2 \|/);
   assert.match(doc.markdown, /39\.0%/);

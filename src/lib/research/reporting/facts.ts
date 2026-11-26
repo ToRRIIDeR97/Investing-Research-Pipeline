@@ -36,6 +36,35 @@ export const REPORT_FACT_DEFINITIONS: Record<string, string> = {
   earnings_yield: "TTM net income ÷ market cap; the cash-yield cross-check for banks and other firms valued on equity",
 };
 
+/**
+ * Weighted value per share against the market price outside this band (below 40% or above 3x) is far more likely a
+ * modelling error than a mispricing. SoFi 0c9a2731 valued a $14.28 share at $1.38.
+ */
+export const VALUE_TO_PRICE_BAND = { low: 0.4, high: 3 };
+/** Terminal value above this share of enterprise value in the base case leaves the forecast years carrying almost nothing. */
+export const MAX_BASE_TV_SHARE = 0.9;
+export interface ValuationCheck { status: "pass" | "flagged"; reasons: string[] }
+
+/**
+ * Checks by code that the stored valuation is plausible before the report is written: value against price, explicit
+ * cash flows negative in every case (growth funded in a way the model may double count) and the base case resting on
+ * its terminal value. Reasons are reader-facing.
+ */
+export function valuationCheck(cases: { case: string; explicit_cash_flow_sum: Num; tv_share_of_ev: Num }[], weighted: Num, price: Num): ValuationCheck {
+  const reasons: string[] = [];
+  if (weighted !== null && price) {
+    const ratio = weighted / price;
+    if (ratio < VALUE_TO_PRICE_BAND.low || ratio > VALUE_TO_PRICE_BAND.high)
+      reasons.push(`The probability-weighted value of ${weighted.toFixed(2)} per share is ${Math.round(ratio * 100)}% of the ${price.toFixed(2)} market price, a gap more likely to come from the model than from the market.`);
+  }
+  if (cases.length === 3 && cases.every((c) => c.explicit_cash_flow_sum !== null && c.explicit_cash_flow_sum < 0))
+    reasons.push("Cash flows over the forecast years are negative in every case, including the bull case; check that growth funding is not counted twice.");
+  const base = cases.find((c) => c.case === "base");
+  if (base?.tv_share_of_ev != null && base.tv_share_of_ev > MAX_BASE_TV_SHARE)
+    reasons.push(`The terminal value is ${Math.round(base.tv_share_of_ev * 100)}% of the base case's value, so the forecast years carry almost none of it.`);
+  return { status: reasons.length ? "flagged" : "pass", reasons };
+}
+
 /** The facts writers cite; withheld valuations give only the market block. Null when nothing is stored. */
 export function buildReportFacts(artifacts: Row[]) {
   const valuation = latestContent(artifacts, "valuation_scenario_set");
@@ -102,6 +131,7 @@ export function buildReportFacts(artifacts: Row[]) {
   const weights = cases.map((c) => c.probability);
   const weighted = cases.length === 3 && weights.every((w) => w !== null) && Math.abs(weights.reduce((a, b) => a! + b!, 0)! - 1) <= 0.001
     ? cases.reduce((n, c) => n + unrounded.get(c.case)! * c.probability!, 0) : null;
+  const check = cases.length ? valuationCheck(cases, weighted, price) : null;
   return {
     artifact_type: "report_facts",
     note: "Computed by code from valuation_scenario_set and financial_analytics. Per-share values are currency per share; amounts are currency millions. Cite these instead of deriving figures.",
@@ -113,6 +143,7 @@ export function buildReportFacts(artifacts: Row[]) {
       "terminal_price_target", "undiscounted_return_to_terminal", "tv_share_of_ev", "value_beyond_explicit_share", "explicit_cash_flow_sum", "no_rerating_return", "no_rerating_return_annualized"],
       rows: cases.map((c) => Object.values(c)) },
     weighted: { pv_per_share: r2(weighted), return_to_pv: r4(weighted !== null && price ? weighted / price - 1 : null) },
+    ...(check ? { valuation_check: check } : {}),
     market: {
       analytics_period: typeof cash.period === "string" ? cash.period : null,
       diluted_shares: shares, equity_bridge: bridge, market_cap: r2(marketCap), enterprise_value: r2(ev),
