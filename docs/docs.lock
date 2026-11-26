@@ -208,6 +208,8 @@ docs/system.md	src/lib/research/asset-snapshot.ts	e1bb4e2dcc18
 
 docs/system.md	src/lib/research/brief-presentation.ts	79034042e95b
 
+docs/system.md	src/lib/research/call-packet.ts	04bced474f5f
+
 docs/system.md	src/lib/research/contract-json-schema.ts	c9cdad44a68c
 
 docs/system.md	src/lib/research/framing.ts	0f25ee7a3454
@@ -236,7 +238,7 @@ docs/system.md	src/lib/research/report-tabs.ts	2a4f3ec06df8
 
 docs/system.md	src/lib/research/run-bars.ts	0983b246a650
 
-docs/system.md	src/lib/research/run-context.ts	d4fa6db04bc7
+docs/system.md	src/lib/research/run-context.ts	6d76ff845195
 
 docs/system.md	src/lib/research/run-polling.ts	3a967f8083ab
 

@@ -25,6 +25,7 @@ import { SourceRequestsPending, getStageSourceRequests, parseSourceRequests, que
 import { loadReportInputs } from "./reporting/store";
 import { getStageOutputContract } from "./stage-contracts";
 import { researchPacketForModel } from "./reporting/packet";
+import { ANALYSIS_PACKET_BYTES, ANALYSIS_PACKET_STAGES, CAPPED_PACKET_RULE, fitCallPacket } from "./call-packet";
 import { FILING_PASSAGE_RULE, FILING_PASSAGE_TASKS, loadFilingPassages } from "./memory/filing-passages";
 import { FinancialAnalytics, analyticsDigest } from "./history/analytics";
 import { PRIOR_RESEARCH_RULE, PRIOR_RESEARCH_STAGES } from "./lineage/prior-research";
@@ -412,10 +413,15 @@ export type ResearchCallParams = {
   packetTransform?: (packet: Record<string, unknown>) => Record<string, unknown>;
 };
 
-/** The packet a call sends: per-call keys last, the model view of large artifacts, then the caller's transform. */
-export function finishCallPacket(packet: Record<string, unknown>, perCallKeys?: string[], transform?: ResearchCallParams["packetTransform"]) {
+/**
+ * The packet a call sends: per-call keys last, the model view of large artifacts, fitted to `budget` bytes when one
+ * is given (analysis stages, fitCallPacket), then the caller's transform.
+ */
+export function finishCallPacket(packet: Record<string, unknown>, perCallKeys?: string[], transform?: ResearchCallParams["packetTransform"],
+  budget?: number) {
   const view = researchPacketForModel(perCallKeysLast(packet, perCallKeys));
-  return transform ? transform(view) : view;
+  const fitted = budget ? fitCallPacket(view, perCallKeys, budget) : view;
+  return transform ? transform(fitted) : fitted;
 }
 
 /**
@@ -514,7 +520,11 @@ export async function prepareResearchCall(params: ResearchCallParams) {
       addRule(FILING_PASSAGE_RULE);
     }
   }
-  params = { ...params, packet: finishCallPacket(params.packet, params.perCallKeys, params.packetTransform) };
+  // Analysis calls stay under the model's long-prompt rate: the packet is fitted to ANALYSIS_PACKET_BYTES, and a
+  // capped packet carries packet_cap and a rule naming what was left out.
+  const budget = ANALYSIS_PACKET_STAGES.has(params.stageKey) ? ANALYSIS_PACKET_BYTES : undefined;
+  params = { ...params, packet: finishCallPacket(params.packet, params.perCallKeys, params.packetTransform, budget) };
+  if ("packet_cap" in params.packet) addRule(CAPPED_PACKET_RULE);
   return { params, sourceLedger, sourceRequests };
 }
 
