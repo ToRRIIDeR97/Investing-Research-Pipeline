@@ -20,10 +20,12 @@ export const REPORT_FACT_DEFINITIONS: Record<string, string> = {
   return_to_pv: "PV per share ÷ market price − 1 (not annualized)",
   terminal_price_target: "Undiscounted value per share at the end of the terminal year (the scenario anchor)",
   undiscounted_return_to_terminal: "Terminal price target ÷ market price − 1, cumulative and undiscounted",
-  tv_share_of_ev: "Present value of the terminal value alone (after any fade years) ÷ enterprise value",
-  value_beyond_explicit_share: "Present value of everything after the explicit forecast (fade years and terminal value) ÷ enterprise value; information, not a gate",
-  explicit_cash_flow_sum: "Sum of the explicit-year cash flows, undiscounted (currency millions); fade years excluded",
-  no_rerating_return: "Return to the terminal year if today's multiple holds: (today's EV/NOPAT × terminal-year NOPAT + equity bridge + explicit cash flows) ÷ diluted shares ÷ market price − 1; for equity methods (FCFE, dividends) today's P/E × terminal-year net income",
+  tv_share_of_ev: "Present value of the terminal value alone (after any fade years) ÷ enterprise value; for a bank's excess-return method, the terminal excess return ÷ the whole equity value, today's tangible book included",
+  value_beyond_explicit_share: "Present value of everything after the explicit forecast (fade years and terminal value) ÷ enterprise value (÷ equity value for the excess-return method); information, not a gate",
+  explicit_cash_flow_sum: "Sum of the explicit-year cash flows, undiscounted (currency millions); fade years excluded. For the excess-return method, the sum of excess returns (net income − cost of equity × opening tangible equity)",
+  no_rerating_return: "Return to the terminal year if today's multiple holds: (today's EV/NOPAT × terminal-year NOPAT + equity bridge + explicit cash flows) ÷ diluted shares ÷ market price − 1; for equity methods (FCFE, dividends) today's P/E × terminal-year net income; for a bank's excess-return method, the valuation stage's figure: today's price-to-tangible-book × terminal-year tangible equity plus capital distributed",
+  tangible_book_per_share: "Opening tangible common equity ÷ diluted shares (excess-return method)",
+  price_to_tangible_book: "Market price ÷ tangible book per share (excess-return method)",
   no_rerating_return_annualized: "no_rerating_return compounded per explicit year",
   weighted_pv_per_share: "Probability-weighted PV per share over bear, base and bull",
   fcf_yield: "TTM free cash flow ÷ market cap at the market price",
@@ -48,16 +50,18 @@ export interface ValuationCheck { status: "pass" | "flagged"; reasons: string[] 
 /**
  * Checks by code that the stored valuation is plausible before the report is written: value against price, explicit
  * cash flows negative in every case (growth funded in a way the model may double count) and the base case resting on
- * its terminal value. Reasons are reader-facing.
+ * its terminal value. Reasons are reader-facing. A bank's excess-return method (residual_income) is exempt from the
+ * negative-cash-flow reason: its explicit sum is excess returns, negative whenever the bank earns below its cost of
+ * equity, and its value rests on today's tangible book rather than on those flows.
  */
-export function valuationCheck(cases: { case: string; explicit_cash_flow_sum: Num; tv_share_of_ev: Num }[], weighted: Num, price: Num): ValuationCheck {
+export function valuationCheck(cases: { case: string; method?: string; explicit_cash_flow_sum: Num; tv_share_of_ev: Num }[], weighted: Num, price: Num): ValuationCheck {
   const reasons: string[] = [];
   if (weighted !== null && price) {
     const ratio = weighted / price;
     if (ratio < VALUE_TO_PRICE_BAND.low || ratio > VALUE_TO_PRICE_BAND.high)
       reasons.push(`The probability-weighted value of ${weighted.toFixed(2)} per share is ${Math.round(ratio * 100)}% of the ${price.toFixed(2)} market price, a gap more likely to come from the model than from the market.`);
   }
-  if (cases.length === 3 && cases.every((c) => c.explicit_cash_flow_sum !== null && c.explicit_cash_flow_sum < 0))
+  if (cases.length === 3 && cases.every((c) => c.method !== "residual_income" && c.explicit_cash_flow_sum !== null && c.explicit_cash_flow_sum < 0))
     reasons.push("Cash flows over the forecast years are negative in every case, including the bull case; check that growth funding is not counted twice.");
   const base = cases.find((c) => c.case === "base");
   if (base?.tv_share_of_ev != null && base.tv_share_of_ev > MAX_BASE_TV_SHARE)
@@ -83,7 +87,10 @@ export function buildReportFacts(artifacts: Row[]) {
   const sbcTtm = typeof capital.sbc_ttm === "number" ? capital.sbc_ttm : null;
 
   const base = schedule("base");
-  const shares = base?.diluted_shares ?? null, bridge = base?.equity_bridge ?? null;
+  // The excess-return method's bridge is today's tangible book, not net cash: its market cap is its enterprise value.
+  const residual = base?.method === "residual_income";
+  const shares = base?.diluted_shares ?? null, bridge = residual ? 0 : base?.equity_bridge ?? null;
+  const tangibleBook = residual && shares ? base!.equity_bridge / shares : null;
   const marketCap = price !== null && shares !== null ? price * shares : null;
   const ev = marketCap !== null && bridge !== null ? marketCap - bridge : null;
   const multiple = ev !== null && nopatTtm !== null && nopatTtm > 0 ? ev / nopatTtm : null;
@@ -103,7 +110,9 @@ export function buildReportFacts(artifacts: Row[]) {
     // Fade years (valuation v2) are valued but are not part of the explicit forecast.
     const explicitYears = calc.years.filter((y) => !y.fade);
     const explicitPv = explicitYears.reduce((n, y) => n + y.present_value, 0);
-    const enterprise = calc.years.reduce((n, y) => n + y.present_value, 0) + calc.terminal_present_value;
+    // For residual income the opening tangible book is part of the value, so the shares are of the whole equity value.
+    const book = s.method === "residual_income" ? calc.equity_bridge : 0;
+    const enterprise = calc.years.reduce((n, y) => n + y.present_value, 0) + calc.terminal_present_value + book;
     const explicit = explicitYears.reduce((n, y) => n + ((y as { counted_cash_flow?: number }).counted_cash_flow ?? y.cash_flow), 0);
     const lastProfit = explicitYears.at(-1)?.build?.starting_profit ?? null;
     const rerate = equityMethod(s) ? peTtm : multiple;
@@ -122,7 +131,7 @@ export function buildReportFacts(artifacts: Row[]) {
       terminal_price_target: r2(Number.isFinite(anchor) ? anchor : null),
       undiscounted_return_to_terminal: r4(price && Number.isFinite(anchor) ? anchor / price - 1 : null),
       tv_share_of_ev: r4(enterprise > 0 ? calc.terminal_present_value / enterprise : null),
-      value_beyond_explicit_share: r4(enterprise > 0 ? (enterprise - explicitPv) / enterprise : null),
+      value_beyond_explicit_share: r4(enterprise > 0 ? (enterprise - explicitPv - book) / enterprise : null),
       explicit_cash_flow_sum: r2(explicit),
       no_rerating_return: r4(noRerating),
       no_rerating_return_annualized: r4(noRerating !== null && noRerating > -1 ? (1 + noRerating) ** (1 / explicitYears.length) - 1 : null),
@@ -156,6 +165,7 @@ export function buildReportFacts(artifacts: Row[]) {
       pe_ttm: r2(peTtm),
       pe_next: r2(marketCap !== null && firstNetIncome !== null && firstNetIncome > 0 ? marketCap / firstNetIncome : null),
       earnings_yield: r4(peTtm !== null ? 1 / peTtm : null),
+      ...(residual ? { tangible_book_per_share: r2(tangibleBook), price_to_tangible_book: r2(price !== null && tangibleBook ? price / tangibleBook : null) } : {}),
     },
     definitions: REPORT_FACT_DEFINITIONS,
   };

@@ -26,6 +26,10 @@ import {
   valuationSetsFormat, valuationTiming, type LensValue, type SegmentDriver, type ValuationSet, type ValuationSetsOutput,
 } from "../valuation/v2";
 import { FinancialAnalytics, tableRows } from "../history/analytics";
+import {
+  BANK_METHOD_RULES, CET1_KEY, bankAssumptionsFormat, bankCapitalBase, buildBankValuation, currentCet1Ratio, defaultBankAssumptions,
+  isDepositFundedBank, type BankAssumptions, type BankAssumptionsOutput, type ScenarioInput,
+} from "../valuation/bank";
 
 /** Shared by both valuation prompts: anchor discount rates on the sourced beta and equity risk premium. */
 const COST_OF_CAPITAL_RULE = "cost_of_capital_inputs holds a regression beta against the S&P 500 (beta), a dated implied equity risk premium (equity_risk_premium) and the CAPM cost of equity they give with risk_free_rate (capm_cost_of_equity). Build each discount rate from them, cite their values and as-of dates in rationale, and explain any departure from the CAPM rate. Flag an input marked unverified or stale; when one is null, say so and state the assumption used instead.";
@@ -47,7 +51,15 @@ export const valuationPrompt = (p: Record<string, unknown>) => exactJsonPrompt({
   ],
 });
 
-/** Banks and other assets valued on equity cash flows or book value: the model builds the schedules, code assembles them. */
+/** The bank analyst prompt: only the excess-return assumptions; code builds the capital path, schedules and cross-checks. */
+export const bankValuationPrompt = (p: Record<string, unknown>) => exactJsonPrompt({
+  agentName: "valuation-analyst",
+  requiredKeys: ["bank_valuation_assumptions"],
+  packet: p,
+  extraRules: [...BANK_METHOD_RULES, COST_OF_CAPITAL_RULE],
+});
+
+/** Other financials valued on equity cash flows or book value: the model builds the schedules, code assembles them. */
 const EquityMethodsOutput = z.object({
   valuation_scenario_set: z.object({
     artifact_type: z.literal("valuation_scenario_set"),
@@ -321,6 +333,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       LIMIT 1
     `;
     let navInputs: Record<string, unknown> | null = null;
+    let companyFactsDoc: { facts: unknown; currency: string } | null = null;
     let reportedDilutedShares: { value: number; start: string; end: string; filed: string; accession_number: string } | null = null;
     if (primaryDoc?.storage_path) {
       const sourceRoot = resolve(process.cwd(), "storage", "sources");
@@ -329,6 +342,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       const fileText = await readFile(sourcePath, "utf8");
       const companyFacts = JSON.parse(fileText).companyFacts;
       const bookCurrency = dominantCurrency(companyFacts);
+      companyFactsDoc = { facts: companyFacts, currency: bookCurrency };
       const equity = latestSecInstantFact(companyFacts, "us-gaap", "StockholdersEquity", bookCurrency, cutoff);
       const goodwill = latestSecInstantFact(companyFacts, "us-gaap", "Goodwill", bookCurrency, cutoff);
       const intangibles = latestSecInstantFact(companyFacts, "us-gaap", "IntangibleAssetsNetExcludingGoodwill", bookCurrency, cutoff);
@@ -431,16 +445,126 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
     const fiscalYearEnd = baseRow ? String(baseRow[0]).slice(5) : undefined;
     const asset = { runId: ctx.runId, assetId: ctx.assetId, assetName: ctx.assetName, symbol: ctx.symbol, profileKey: ctx.profileKey };
     const equityMethods = ctx.archetypeKeys.includes("bank") || ctx.profileKey === "financials";
+    // Deposit-funded banks (the bank archetype, or deposits >= 30% of assets in the filings) with tangible equity, valued in
+    // their reporting currency, take the code-built excess-return method; other financials keep model-built schedules.
+    const fiscalMonthDay = fiscalYearEnd ?? "12-31";
+    const bankBase = companyFactsDoc ? bankCapitalBase({ companyFacts: companyFactsDoc.facts, currency: companyFactsDoc.currency, cutoff,
+      firstForecastYearStart: new Date(Date.parse(`${horizon[0] - 1}-${fiscalMonthDay}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10) }) : null;
+    const valuePriceCurrency = valuationPrice?.currency ? String(valuationPrice.currency) : marketSnapshot.currency ? String(marketSnapshot.currency) : null;
+    const bankMethod = !!bankBase && bankBase.tangible_equity > 0 && isDepositFundedBank(ctx.archetypeKeys, bankBase)
+      && (!valuePriceCurrency || valuePriceCurrency === companyFactsDoc!.currency) && (!financialInputs?.currency || financialInputs.currency === companyFactsDoc!.currency);
     const taskKey = "valuation-analyst:valuation";
     let output: Record<string, any>;
-    // Code-computed lens values (FCFF path); other paths keep one signal per lens.
+    // Code-computed lens values (FCFF and bank paths); the legacy equity path keeps one signal per lens.
     let lenses: LensValue[] | null = null;
+
+    /** The excess-return valuation for a deposit-funded bank; withholds without a model call when an input is missing. */
+    const valueBank = async (): Promise<Record<string, any>> => {
+      const base = bankBase!;
+      // A forecast year that ended by the book date is already in the opening tangible equity.
+      const bankHorizon = horizon.filter((year) => `${year}-${fiscalMonthDay}` > base.book_date);
+      const drivers = Object.fromEntries(SCENARIOS.map((scenario) => [scenario,
+        scenarioList.find((entry) => entry.scenario_type === scenario)?.yearly_drivers])) as Record<Scenario, YearlyDriver[] | undefined>;
+      const baseRevenue = ratios.base_year?.revenue ?? null;
+      const readiness = valuationReadiness({ drivers, horizon, dilutedSharesMillions: dilutedMillions, marketPrice, baseRevenue });
+      if (!bankHorizon.length) readiness.missing.push(`a forecast year ending after the ${base.book_date} book date`);
+      if (readiness.missing.length) return withheldValuation(`Valuation inputs are missing: ${readiness.missing.join("; ")}.`, horizon, currency);
+      const pinned = operatingModelFirstYear(upstream.operating_model, baseRevenue);
+      // Statements run over the whole horizon (growth compounds from the base year); the valuation uses the years after the book date.
+      const statements = Object.fromEntries(SCENARIOS.map((scenario) => [scenario, buildScenarioStatements({
+        baseRevenue: baseRevenue!, baseYear, ratios, firstYear: scenario === "base" ? pinned : null,
+        drivers: drivers[scenario]!.filter((driver) => horizon.includes(driver.fiscal_year)),
+      }).filter((year) => bankHorizon.includes(year.fiscal_year))])) as Record<Scenario, ReturnType<typeof buildScenarioStatements>>;
+      const metricRows = await sql`
+        SELECT md.metric_key, mo.period_end, mo.value_numeric
+        FROM metric_observations mo
+        JOIN metric_definitions md ON md.id = mo.metric_definition_id
+        WHERE mo.research_run_id = ${ctx.runId} AND mo.review_status = 'accepted' AND md.metric_key ~* 'cet1|common_equity_tier'
+        ORDER BY mo.period_end DESC NULLS LAST, md.metric_key
+        LIMIT 40
+      `;
+      const scenarioInputs = scenarioList.map((entry) => ({ scenario_type: entry.scenario_type, numeric_assumptions: entry.numeric_assumptions })) as ScenarioInput[];
+      const targetKeys = [...new Set(scenarioInputs.flatMap((entry) => (entry.numeric_assumptions ?? [])
+        .map((a) => String(a.driver_key ?? "")).filter((key) => CET1_KEY.test(key))))];
+      const current = currentCet1Ratio({ base, targetKeys, metrics: metricRows.map((row) => ({ metric_key: String(row.metric_key), value_numeric: row.value_numeric,
+        period_end: row.period_end instanceof Date ? row.period_end.toISOString() : row.period_end })) });
+      const capm = costOfCapital.capm_cost_of_equity?.rate ?? null;
+      const valuationDate = String(valuationPrice?.trading_date ?? cutoff.toISOString()).slice(0, 10);
+      const defaults = defaultBankAssumptions({ scenarios: scenarioInputs, statements, base, current, capm, riskFree: riskFree?.rate ?? null,
+        valuationDate, fiscalYearEnd: fiscalMonthDay, shares: dilutedMillions! });
+      const outputFormat = bankAssumptionsFormat({ riskFree: riskFree?.rate ?? null, horizon: bankHorizon });
+      const netIncomeRow = (year: ReturnType<typeof buildScenarioStatements>[number]) => ({ fiscal_year: year.fiscal_year, revenue: Number(year.revenue.toFixed(1)),
+        revenue_growth: Number(year.revenue_growth.toFixed(4)), operating_income: Number(year.operating_income.toFixed(1)), tax_rate: year.tax_rate,
+        net_income: Number(year.nopat.toFixed(1)) });
+      const packet = {
+        asset,
+        required_lenses: requiredLenses,
+        current_market_snapshot: marketSnapshot,
+        risk_free_rate: riskFreeRate,
+        cost_of_capital_inputs: costOfCapital,
+        financial_inputs: financialInputs,
+        bank_capital_base: base,
+        default_bank_assumptions: defaults.assumptions,
+        default_bank_assumptions_basis: defaults.basis,
+        reported_diluted_shares: reportedDilutedShares,
+        operating_scenarios: { ...probabilities, scenarios: scenarioList.map((scenario) => ({
+          scenario_type: scenario.scenario_type, yearly_drivers: scenario.yearly_drivers, numeric_assumptions: scenario.numeric_assumptions,
+        })) },
+        scenario_net_income: Object.fromEntries(SCENARIOS.map((scenario) => [scenario, statements[scenario].map(netIncomeRow)])),
+        output_contract: "bank_valuation_assumptions",
+        output_schema: outputFormat.schema,
+      };
+      const answer = (await callResearchAgent<Record<string, any>>({
+        sql, ctx, stageKey: "asset_valuation", taskKey,
+        taskType: "asset_valuation", agentName: "valuation-analyst", modelTier: "premium",
+        packet, promptFactory: bankValuationPrompt, outputFormat,
+      })).bank_valuation_assumptions as BankAssumptionsOutput;
+      const assumptions: BankAssumptions = { current_cet1_ratio: answer.current_cet1_ratio, current_cet1_ratio_source: answer.current_cet1_ratio_source,
+        scenarios: answer.scenarios };
+      const [analyticsRow] = await sql`SELECT content_json FROM research_artifacts WHERE research_run_id = ${ctx.runId}
+        AND artifact_type = 'financial_analytics' AND status IN ('validated', 'accepted') ORDER BY artifact_version DESC, created_at DESC LIMIT 1`;
+      const parsedPack = FinancialAnalytics.safeParse(analyticsRow?.content_json);
+      const ttm = parsedPack.success ? tableRows(parsedPack.data.cash_conversion.quarterly).at(-1)?.net_income_ttm : null;
+      const reportedToBook = base.first_year_reported_net_income;
+      const sourceNotes = [
+        `Net income is the operating scenarios' operating income after tax for FY${bankHorizon[0]}-FY${bankHorizon.at(-1)}${pinned ? `; the base case's FY${horizon[0]} revenue and operating income come from operating_model` : ""}.`,
+        `Opening tangible common equity ${base.tangible_equity}m at ${base.book_date}; ${reportedToBook === null
+          ? `FY${bankHorizon[0]} net income is pro-rated after the book date (no year-to-date fact)`
+          : `FY${bankHorizon[0]} counts only the net income after the ${reportedToBook}m already reported to the book date`}.`,
+        `Current CET1 ratio ${assumptions.current_cet1_ratio ?? "not available"}: ${assumptions.current_cet1_ratio_source}`,
+        ...defaults.basis,
+        riskFree ? `Risk-free rate ${riskFree.rate} on ${riskFree.observation_date} (FRED DGS10).` : "No FRED DGS10 observation was available by the cutoff.",
+        ...(costOfCapital.capm_cost_of_equity ? [`CAPM cost of equity ${costOfCapital.capm_cost_of_equity.rate} = ${costOfCapital.capm_cost_of_equity.formula}.`] : []),
+        ...base.notes,
+        ...(answer.source_notes ?? []),
+      ];
+      const built = buildBankValuation({ statements, assumptions, probabilities, price: marketPrice, netIncomeTtm: typeof ttm === "number" ? ttm : null, fiscalYearEnd,
+        common: { base, shares: dilutedMillions!, currency, valuationDate, fiscalYearEnd: fiscalMonthDay, sourceNotes } });
+      lenses = built.lenses;
+      return {
+        valuation_scenario_set: {
+          ...built.assembled.valuation_scenario_set, ...built.additions, omitted_methods: answer.omitted_methods ?? [], risk_free_rate: riskFreeRate,
+          cost_of_capital_inputs: costOfCapital, default_bank_assumptions: defaults.assumptions, history_ratios: ratios,
+          scenario_statements: Object.fromEntries(SCENARIOS.map((scenario) => [scenario, statements[scenario].map(rounded)])),
+          source_gaps: [
+            ...(assumptions.current_cet1_ratio === null ? ["No CET1 ratio: tangible equity holds its current ratio to risk-weighted assets."] : []),
+            ...(reportedToBook === null ? [`No year-to-date net income fact to ${base.book_date}; the first year is pro-rated.`] : []),
+            ...(riskFree ? [] : ["No FRED DGS10 observation was available by the cutoff; the cost of equity is unchecked against a risk-free rate."]),
+            ...costOfCapital.gaps,
+          ],
+        },
+        annual_price_target_path: built.assembled.annual_price_target_path,
+        reverse_valuation: built.reverse,
+      };
+    };
 
     if (priceWithheld) {
       // A historical run is never valued against a later market; nothing a model could judge would change that.
       output = withheldValuation(`Market price unavailable: ${priceWithheld}.`, horizon, currency);
+    } else if (bankMethod) {
+      output = await valueBank();
     } else if (equityMethods) {
-      // Banks: the model builds FCFE, dividend or book schedules; code assembles the path from the primary method.
+      // Other financials: the model builds FCFE, dividend or book schedules; code assembles the path from the primary method.
       const metricRows = await sql`
         SELECT md.metric_key, mo.period_end, mo.value_numeric, mo.value_text, mo.unit, mo.currency
         FROM metric_observations mo
@@ -652,7 +776,9 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       scenarioSet.source_gaps = [
         ...(Array.isArray(scenarioSet.source_gaps) ? scenarioSet.source_gaps : []),
         "No sourced future share issuance schedule is available beyond the reported diluted share count.",
-        "No dividend forecast: dividend_per_share is 0 in every year.",
+        scenarioSet.engine_version === "bank-excess-return-v1"
+          ? "No dividend per share is forecast: capital above the CET1 target is counted as distributable (capital_schedule) and the price path includes it."
+          : "No dividend forecast: dividend_per_share is 0 in every year.",
       ];
     }
     if (marketPrice > 0) {

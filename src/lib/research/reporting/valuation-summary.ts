@@ -123,7 +123,15 @@ export function valuationSummary(artifacts:Row[],options:{conclusionStatus?:stri
     const targets=priceTargets(t);
     const years:number[]=s?.years?.length?s.years.map((y:Row)=>Number(y.fiscal_year)):Object.keys(statement(t)?.years??{}).map(Number).filter(Number.isFinite).sort();
     if(!years.length&&!targets)return [];
-    const rows:CalcRow[]=[
+    const yearOf=(y:number)=>s?.years?.find((r:Row)=>Number(r.fiscal_year)===y);
+    // A bank valued on excess returns shows its net income, equity charge and tangible equity instead of FCF lines.
+    const residual=s?.method==='residual_income';
+    const rows:CalcRow[]=residual?[
+      {label:'Net income',values:years.map(y=>num(yearOf(y)?.equity_build?.counted_net_income))},
+      {label:'Cost of equity on tangible equity',values:years.map(y=>{const v=num(yearOf(y)?.equity_build?.equity_charge);return v==null?null:-v;})},
+      {label:'Excess return',values:years.map(y=>num(yearOf(y)?.cash_flow)),strong:true},
+      {label:'Tangible equity at year end',values:years.map(y=>num(yearOf(y)?.equity_build?.closing_tangible_equity))},
+    ].filter(r=>r.values.some(v=>v!=null)):[
       {label:'Revenue',values:years.map(y=>line(t,y,revenueKeys))},
       {label:'Operating profit',values:years.map(y=>line(t,y,profitKeys))},
       {label:'Capital expenditure',values:years.map(y=>{const v=line(t,y,capexKeys);return v==null?null:-Math.abs(v);})},
@@ -134,8 +142,11 @@ export function valuationSummary(artifacts:Row[],options:{conclusionStatus?:stri
       const last=years.at(-1),tv=num(s.terminal_value);
       if(s.terminal?.type==='multiple'&&tv!=null)steps.push({text:`Value the business at the end of ${last} at ${s.terminal.multiple} times ${plainLabel(s.terminal.metric).toLowerCase()}`,value:m(tv)});
       else if(s.terminal?.type==='perpetuity'&&tv!=null)steps.push({text:`Value the business beyond ${last} assuming cash flow grows ${rate(num(s.terminal.growth_rate))} a year`,value:m(tv)});
+      else if(s.terminal?.type==='excess_return'&&tv!=null)steps.push({text:`Value the returns above the cost of equity beyond ${last}: ${m(s.terminal.metric_value)} of tangible equity earning ${rate(num(s.terminal.rote))} a year, growing ${rate(num(s.terminal.growth_rate))}`,value:m(tv)});
       const bridge=num(s.equity_bridge),discount=num(s.discount_rate);
-      if(num(s.equity_value)!=null&&discount!=null){
+      if(residual&&num(s.equity_value)!=null&&discount!=null)
+        steps.push({text:`Bring that and the ${years.length} years of excess return back to today at ${rate(discount)} a year, then add ${m(bridge)} of tangible book today`,value:m(s.equity_value)});
+      else if(num(s.equity_value)!=null&&discount!=null){
         const adjust=bridge==null||bridge===0?'':bridge<0?`, then subtract ${m(-bridge)} of debt`:`, then add ${m(bridge)} of net cash`;
         steps.push({text:`Bring that and the ${years.length} years of cash flow back to today at ${rate(discount)} a year${adjust}`,value:m(s.equity_value)});
       }
@@ -144,7 +155,11 @@ export function valuationSummary(artifacts:Row[],options:{conclusionStatus?:stri
     }
     // The anchor is a terminal-year value, so it is checked against the schedule's value at the end of its last year.
     const vps=num(s?.value_per_share),anchor=anchors[t],tv=num(s?.terminal_value),shares=num(s?.diluted_shares);
-    const endValue=tv!=null&&shares?(tv+(num(s?.equity_bridge)??0))/shares:null;
+    // The excess-return path ends at the final tangible equity plus its terminal, plus the capital distributed to then.
+    const lastBuild=s?.years?.at(-1)?.equity_build;
+    const distributed=residual?(s?.years??[]).reduce((n:number,y:Row)=>n+(num(y.equity_build?.distributable)??0),0):0;
+    const endBridge=residual&&lastBuild?num(lastBuild.closing_tangible_equity)!+distributed:num(s?.equity_bridge)??0;
+    const endValue=tv!=null&&shares?(tv+endBridge)/shares:null;
     const note=endValue!=null&&anchor!=null&&Math.abs(endValue-anchor)>0.01*Math.abs(anchor)
       ?`At the end of ${years.at(-1)} this gives ${price(endValue,currency)}, ${endValue<anchor?'lower':'higher'} than the ${price(anchor,currency)} scenario value above. The two haven’t been reconciled yet, which is why the result is marked not final.`:null;
     return [{type:t,years,rows,steps,valuePerShare:vps,endValue,anchor,note,priceTargets:targets}];
@@ -258,8 +273,14 @@ export function valuationSummary(artifacts:Row[],options:{conclusionStatus?:stri
       const r=pctRange(values);if(!r)return '';
       return implied>Math.max(...values)+0.005?` Every scenario assumes less: ${r}.`:implied<Math.min(...values)-0.005?` Every scenario assumes more: ${r}.`:` The scenarios assume ${r}.`;
     };
+    const impliedRote=num(reverse.implied_rote);
+    // A bank's code-built reverse valuation is the return on tangible equity the price implies.
+    if(impliedRote!=null){
+      const ptbv=num(reverse.price_to_tangible_book),coe=num(reverse.cost_of_equity);
+      priceImplies.push(`${at[0].toUpperCase()}${at.slice(1)} implies the bank earns about ${pct0(impliedRote)} on its tangible equity for good${coe!=null?`, against a ${pct0(coe)} cost of equity`:''}${ptbv!=null?` (${ptbv.toFixed(2)} times tangible book)`:''}.`);
+    }
     // Only the code solver writes method 'fcff'; any other reverse valuation is the analyst's own.
-    if(reverse.method==='fcff'){
+    else if(reverse.method==='fcff'){
       // Valuation v2 leads with the market's expectations in multiple and FCF-growth terms.
       const multiple=num(reverse.implied_terminal_multiple),perpetual=num(reverse.implied_perpetual_growth);
       const current=num(valuation.cross_checks?.ev_to_nopat),assumed=num(valuation.cross_checks?.assumed_terminal_ev_to_nopat);

@@ -97,6 +97,10 @@ test("valuationCheck flags SoFi 0c9a2731's valuation and passes a plausible one"
   const fine = [{ case: "bear", explicit_cash_flow_sum: 900, tv_share_of_ev: 0.6 }, { case: "base", explicit_cash_flow_sum: 1200, tv_share_of_ev: 0.7 },
     { case: "bull", explicit_cash_flow_sum: 1500, tv_share_of_ev: 0.75 }];
   assert.deepEqual(valuationCheck(fine, 18, 14.28), { status: "pass", reasons: [] });
+  // A bank earning below its cost of equity has negative excess returns in every case; on the excess-return method that
+  // is a finding, not a model error, so it alone does not flag the valuation.
+  const bank = ["bear", "base", "bull"].map(c => ({ case: c, method: "residual_income", explicit_cash_flow_sum: -120, tv_share_of_ev: 0.1 }));
+  assert.deepEqual(valuationCheck(bank, 6.5, 12.86), { status: "pass", reasons: [] });
 });
 
 test("a flagged valuation is sent back to asset_valuation once per run", () => {
