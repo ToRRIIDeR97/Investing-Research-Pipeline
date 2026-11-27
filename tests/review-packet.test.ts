@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { citedIds, fitPacket, REPORT_PACKET_BYTES, REVIEW_PACKET_BYTES } from "../src/lib/research/reporting/packet";
 import { responseExcerpt } from "../src/lib/agent-harness/runner";
+import { LONG_OUTPUT_STAGES } from "../src/lib/research/model-tiering";
 
 const blob = (kb: number) => "x".repeat(kb * 1024);
 const artifact = (id: string, kb: number) => ({ id, artifact_type: `type_${id}`, content_json: { body: blob(kb) } });
@@ -58,3 +59,5 @@ test("a long answer's excerpt keeps its start and its end", () => {
   assert.match(excerpt, /characters omitted/);
   assert.equal(responseExcerpt("short"), "short");
 });
+
+test("the AI review starts at the long output cap", () => assert.ok(LONG_OUTPUT_STAGES.has("ai_reviewer")));
