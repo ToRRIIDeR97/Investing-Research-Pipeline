@@ -710,7 +710,8 @@ describe("SOFI Research End-to-End Acceptance (Component 9)", { skip: process.en
         const [stage] = await sql`SELECT status FROM research_stages WHERE research_run_id = ${runId} AND stage_key = 'source_discovery'`;
         discoveryAtBrief.push(stage.status);
       }
-      if (packet.output_contract !== "moat_analysis") { yield* original.call(this, req, signal); return; }
+      // moat_analysis runs as two calls (handlers/split-calls.ts); the first, the assessment, asks for the peer document.
+      if (packet.output_contract !== "moat_analysis_assessment") { yield* original.call(this, req, signal); return; }
       moatPackets.push(packet);
       let text = "";
       for await (const event of original.call(this, req, signal)) if (event.type === "text.delta") text += event.text;
