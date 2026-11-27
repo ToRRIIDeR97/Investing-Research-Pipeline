@@ -38,7 +38,7 @@ test("an analysis_rework request reruns asset_valuation once, then is answered w
     await processResearchRequests(sql, stageCtx(run));
     const after = await getTeamRequests(sql, run.runId);
     assert.equal(after!.state, "answered");
-    assert.equal(after!.round, 1, "pipeline-simplification: the round survives (was the post_review_round marker, 3)");
+    assert.equal(after!.round, 1, "pipeline-simplification: the batch is still the run's one round (round 1) after the rerun");
     assert.match(after!.requests[0].response!.answer, /was rerun/);
     assert.equal(after!.requests[0].response!.requires_rerun, undefined);
     assert.equal((await stageStatuses(sql, run.runId)).asset_valuation, "completed", "no second rerun");

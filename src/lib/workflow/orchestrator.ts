@@ -533,7 +533,8 @@ export async function approveHumanReview(
 export class RequestResetError extends Error {}
 
 /**
- * A reviewer's decision on a team-request re-run above the automatic limit. `rerun` reopens the recorded
+ * A reviewer's decision on a legacy pending team-request re-run (a `research_run_resets` approval row from before
+ * pipeline-simplification; no new rows are created, since requests never pause the run now). `rerun` reopens the recorded
  * stages; `skip` leaves them and turns the requests into open report questions. Neither touches the
  * research-plan or final-review gate, and an approved re-run does not use up the run's automatic one.
  */

@@ -126,7 +126,7 @@ docs/architecture.md	src/lib/research/run-queue.ts	c079def23201
 
 docs/architecture.md	src/lib/research/team-plan.ts	0fca3dbde963
 
-docs/architecture.md	src/lib/workflow/orchestrator.ts	d984c3eefc3e
+docs/architecture.md	src/lib/workflow/orchestrator.ts	66a16f78e5f1
 
 docs/architecture.md	src/lib/workflow/stages.ts	d7820b9f0dc2
 
@@ -266,7 +266,7 @@ docs/system.md	src/lib/research/v2-contracts.ts	8f921f701cd8
 
 docs/system.md	src/lib/research/version.ts	ed689b6d979d
 
-docs/system.md	src/lib/workflow/orchestrator.ts	d984c3eefc3e
+docs/system.md	src/lib/workflow/orchestrator.ts	66a16f78e5f1
 
 docs/system.md	src/lib/workflow/quality-gates.ts	8fe1efc07e37
 
