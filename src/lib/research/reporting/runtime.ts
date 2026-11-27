@@ -13,7 +13,7 @@ import { getTeamRequests, includeUnansweredQuestions, requestMissingResearch, Re
 import { saveVersionChangeLog, loadPriorResearch } from "../lineage/runs";
 import { PRIOR_RESEARCH_RULE } from "../lineage/prior-research";
 import { buildReportFacts } from "./facts";
-import { cappedArtifactView, fitPacket, KEPT_ARTIFACT_FIELDS } from "./packet";
+import { cappedArtifactView, citedIds, fitPacket, KEPT_ARTIFACT_FIELDS, REVIEW_PACKET_BYTES } from "./packet";
 import type { TeamRequest } from "../team";
 import { citationRefs } from "./refs";
 import { cleanReaderFields } from "./reader-prose";
@@ -403,10 +403,12 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
       // The reviewer checks the claims the report cites; the rest of the corpus can't change what it reads.
       const cited = new Set([...document.sections.flatMap(s => [...s.paragraphs.flatMap(p => p.evidence_ids), ...(s.key_reasons ?? []).flatMap(r => r.evidence_ids)]),
         ...document.questions.flatMap(q => q.evidence_ids)]);
+      // What the report cites is cut last, and the review has its own budget (REVIEW_PACKET_BYTES), so the reviewer sees
+      // the claims and artifacts it is asked to check.
       const packet = fitPacket({ ...common, evidence_claims: common.evidence_claims.filter(claim => cited.has(claim.id)),
         visual_guidelines: VISUAL_GUIDELINES, report_document: reviewDocument(document),
         depth_checks: DEPTH_CHECKS.map(({ id, label, ask, critical }) => ({ id, label, ask, decision_critical: critical })),
-        output_contract: "report_review", output_schema: AI_REVIEWER_CONTRACT.schema });
+        output_contract: "report_review", output_schema: AI_REVIEWER_CONTRACT.schema }, REVIEW_PACKET_BYTES, "evidence_claims", citedIds(document));
       const review = answer(await callResearchAgent<ReportReview>({ sql, ctx, stageKey, taskKey: "report:review", taskType: "ai_review",
         agentName: "research-reviewer", modelTier: "mid", packet, packetTransform: refs.packet, outputFormat: resolved(AI_REVIEWER_CONTRACT),
         promptFactory: p => exactJsonPrompt({ agentName: "research-reviewer", requiredKeys: AI_REVIEWER_CONTRACT.requiredKeys, packet: p,

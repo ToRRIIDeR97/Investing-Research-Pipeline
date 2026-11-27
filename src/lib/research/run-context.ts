@@ -633,6 +633,8 @@ export async function callResearchAgent<T extends Record<string, unknown>>(input
               compaction_occurred: attempt.compactionOccurred,
               input_bytes: attempt.inputBytes,
               max_output_tokens: attempt.maxOutputTokens,
+              // input_tokens sums the attempt's passes (a generation and its repair); Haiku's long-prompt rate is per request.
+              largest_request_input_tokens: Math.max(0, ...(attempt.passes || []).map((pass) => pass.inputTokens)) || attempt.inputTokens,
               original_input_bytes: attempt.originalInputBytes,
               effort: execution.effort ?? null,
               model_source: execution.modelSource,
