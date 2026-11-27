@@ -11,6 +11,7 @@ import { money } from "@/components/visuals/valuation-visuals";
 import { BigNumber, Card, Tag } from "@/components/ui/primitives";
 import { formatGap } from "@/lib/ui/chart-math";
 import { currentReviews } from "@/lib/review/queue-rules";
+import { waitingOnYou } from "@/lib/research/run-flow";
 
 interface ReviewItem { run_id: string; asset_id: string; asset_name: string; run_type: string; priority?: string | null; research_question?: string | null }
 
@@ -46,14 +47,16 @@ export default function HomePage() {
     .sort((a, b) => String(b.snapshot_run?.created_at).localeCompare(String(a.snapshot_run?.created_at)))[0] ?? null;
   const fs = featured?.snapshot ?? null;
   const featuredReview = featured ? queue.find((item) => item.asset_id === featured.id) : undefined;
-  const decisions = queue.length;
+  // Final reviews and plans to approve: everything a run is waiting on the person for.
+  const waiting = waitingOnYou(queue, assets);
+  const decisions = waiting.length;
   const reviewing = new Set(queue.map((item) => item.asset_id));
 
   return <div className={ui.page}>
     <header className={styles.header}>
       <div>
         <p className={styles.date}>{now ? now.toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long" }) : " "}</p>
-        <h1>{now ? greeting(now.getHours()) : "Welcome back"}. {loading ? "" : decisions ? `${decisions} ${decisions === 1 ? "report needs" : "reports need"} your decision.` : "Nothing is waiting on you."}</h1>
+        <h1>{now ? greeting(now.getHours()) : "Welcome back"}. {loading ? "" : decisions ? `${decisions} ${decisions === 1 ? "thing is" : "things are"} waiting on you.` : "Nothing is waiting on you."}</h1>
       </div>
       <Link href="/research/new" className={ui.primary}>Start research</Link>
     </header>
@@ -88,14 +91,12 @@ export default function HomePage() {
           <section aria-labelledby="waiting-title">
           <div className={styles.sectionHead}><h2 id="waiting-title">Waiting on you</h2><Link href="/review" className={ui.textLink}>Open queue</Link></div>
           <Card>
-            {queue.length ? <div className={styles.queue}>{queue.map((item) => {
-              const asset = assets.find((a) => a.id === item.asset_id);
-              return <Link key={item.run_id} href={`/review?run=${item.run_id}`} className={styles.queueRow} aria-label={`Open ${item.asset_name} review`}>
-                <CompanyLogo subject={{ asset_id: item.asset_id }} name={item.asset_name} ticker={asset?.ticker} size={32} />
+            {waiting.length ? <div className={styles.queue}>{waiting.map((item) =>
+              <Link key={item.run_id} href={item.href} className={styles.queueRow} aria-label={`${item.kind === "plan" ? "Approve" : "Review"} ${item.asset_name}`}>
+                <CompanyLogo subject={{ asset_id: item.asset_id }} name={item.asset_name} ticker={item.ticker} size={32} />
                 <strong>{item.asset_name}</strong>
-                <Tag tone="waiting">Needs your decision</Tag>
-              </Link>;
-            })}</div> : <p className={ui.empty}>All reviews are decided.</p>}
+                <Tag tone="waiting">{item.label}</Tag>
+              </Link>)}</div> : <p className={ui.empty}>Nothing to approve or review. Plans and reports that need you show up here.</p>}
           </Card>
           </section>
           <section aria-labelledby="stand-title">

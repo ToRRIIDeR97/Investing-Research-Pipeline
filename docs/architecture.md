@@ -97,7 +97,7 @@ Generated from `src/app/api/**/route.ts` by `tools/gen_routes.py`.
 <summary>Routes and methods</summary>
 
 <!-- BEGIN GENERATED: run routes -->
-75 route files, 91 handlers.
+76 route files, 92 handlers.
 
 | Route | Methods |
 | --- | --- |
@@ -164,6 +164,7 @@ Generated from `src/app/api/**/route.ts` by `tools/gen_routes.py`.
 | `/api/research-runs/[id]/workbench` | GET, POST |
 | `/api/research-runs/[id]/workbench/scenarios` | GET, POST |
 | `/api/research-runs/[id]/workbench/scenarios/[scenarioId]` | DELETE |
+| `/api/research-runs/estimates` | GET |
 | `/api/research-workers/health` | GET |
 | `/api/review/queue` | GET |
 | `/api/saved-charts` | GET, POST |

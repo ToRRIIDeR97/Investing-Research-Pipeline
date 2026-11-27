@@ -12,6 +12,8 @@ import { FramingEditor, type FramingEdits } from "@/components/framing-editor";
 import { pollTick, runProgressIsLive } from "@/lib/research/run-polling";
 import { Card, Tag } from "@/components/ui/primitives";
 import { runStatusWord, stateTone, statusTone } from "@/lib/research/run-status";
+import { flowStep, formatEstimate, phaseProgress, runFeed, runNow, type RunEstimate } from "@/lib/research/run-flow";
+import { DepthPicker, FlowStepper, PhaseTrack, RunFeed } from "@/components/run-flow";
 
 interface Message {
   role: "user" | "assistant" | "system";
@@ -389,7 +391,17 @@ export default function RunResearchPage() {
   const [linkUrl, setLinkUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [estimates, setEstimates] = useState<Record<string, RunEstimate>>({});
+  const [estimatesFailed, setEstimatesFailed] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [feedAll, setFeedAll] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Typical cost and time of past runs by run type, for the start form and the plan decision. Read-only.
+  useEffect(() => {
+    fetch("/api/research-runs/estimates").then((r) => { if (!r.ok) throw new Error(); return r.json(); })
+      .then((data) => setEstimates(data && typeof data === "object" ? data : {})).catch(() => setEstimatesFailed(true));
+  }, []);
 
   useEffect(() => {
     async function loadAssetContext() {
@@ -827,6 +839,15 @@ export default function RunResearchPage() {
   const finalReviewWaiting = progress?.stages.some((stage) => stage.key === "human_review" && stage.status === "waiting_for_human");
   const lastMessage = messages[messages.length - 1];
   const startNew = () => { activeRunRef.current = null; window.history.replaceState(null, "", `/assets/${assetId}/run?new=1`); setRunId(null); setProgress(null); setQuality(null); setResearchPlan(null); setPhase("intake"); setMessages([]); setTheater({ sources: [], traces: [], modelCalls: [], backtests: [] }); setLoadError(""); };
+  // Where the person is in the guided flow (Company, Question, Plan, Research, Review).
+  const step = phase === "intake" ? 1 : phase === "plan" ? 2 : flowStep({ hasRun: !!runId, status: progress?.status, stages: progress?.stages ?? [] }).index;
+  const stagesDone = progress?.stages.filter((stage) => stage.status === "completed" || stage.status === "skipped").length ?? 0;
+  const stopped = !!progress && ["failed", "cancelled", "needs_more_work"].includes(progress.status);
+  const decided = !!progress && ["completed", "approved"].includes(progress.status);
+  const now = progress ? runNow(progress.stages) : null;
+  const feed = progress ? runFeed(progress.stages) : [];
+  const advancedSummary = [budgetLimitUsd ? `Cap $${budgetLimitUsd}` : "No cost cap", sourceCutoffAt || marketDataCutoffAt ? "custom cutoffs" : "sources and prices up to now"].join(" · ");
+  const planRunType = String(researchPlan?.run_type || runType);
 
   return <div className={`${ui.page} ${ui.withBack}`}>
     <Link href={`/assets/${assetId}/view${runId ? `?run=${runId}` : ""}`} className={ui.back}><ArrowLeft size={14} />Research brief</Link>
@@ -838,45 +859,58 @@ export default function RunResearchPage() {
         {!["completed", "cancelled"].includes(progress.status) && <button className={ui.secondary} onClick={handleCancelRun} disabled={isProcessing}>Cancel run</button>}
         <button className={ui.primary} onClick={startNew}>New research</button>
       </> : undefined} />
+    <FlowStepper current={step} />
     {loadError && <p className={ui.error} role="alert">{loadError}{runId && <button onClick={() => fetchProgress(runId)}>Try again</button>}</p>}
     {lastMessage && !lastMessage.content.startsWith("Loaded research run") && <p className={`${ui.banner} ${ui.notes} ${ui.muted}`} role="status">{lastMessage.content}</p>}
 
-    {phase === "intake" && !loadError ? <form className={ui.grid} onSubmit={(event) => { event.preventDefault(); handleSend(); }}>
-      <Card flush className={ui.s8} title="Research question">
+    {phase === "intake" && !loadError ? <form className={styles.narrow} onSubmit={(event) => { event.preventDefault(); handleSend(); }}>
+      <Card flush title="Your question" action={<Link href="/research/new" className={ui.textLink}>Change company</Link>}>
         <div className={`${ui.form} ${ui.tileBody}`}>
-          <label className={ui.field}><span className="sr-only">Research question</span><textarea rows={5} value={input} onChange={(event) => setInput(event.target.value)} placeholder={`What would you like to understand about ${assetName}?`} disabled={isProcessing} required /></label>
+          <label className={ui.field}><span className="sr-only">Research question</span><textarea rows={4} value={input} onChange={(event) => setInput(event.target.value)} placeholder={`What would you like to understand about ${assetName}?`} disabled={isProcessing} required /></label>
           <div className="flex flex-wrap gap-x-5 gap-y-1">{["Long-term investment thesis", "Update valuation"].map((label, index) => <button key={label} type="button" className={ui.textLink} onClick={() => setInput(index === 0 ? `Research ${assetName} as a long-term compounder` : "Update valuation with latest data")}>{label}</button>)}</div>
-          <label className={ui.field}>Research type<select value={runType} onChange={(event) => setRunType(event.target.value)} disabled={isProcessing}>{[["quick_scan", "Quick scan"], ["deep_dive", "Deep dive"], ["thesis_investigation", "Thesis investigation"], ["full_initiation_report", "Full initiation report"]].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <DepthPicker value={runType} onChange={setRunType} estimates={estimates} disabled={isProcessing} />
+          {estimatesFailed && <p className={ui.muted}>Past-run estimates are unavailable right now.</p>}
         </div>
-      </Card>
-      <Card flush className={ui.s4} title="Budget and cutoffs">
-        <div className={`${ui.form} ${ui.tileBody}`}>
-          <label className={ui.field}>Budget (USD)<input type="number" min="0" step="0.01" value={budgetLimitUsd} onChange={(event) => setBudgetLimitUsd(event.target.value)} disabled={isProcessing} /></label>
-          <label className={ui.field}>Source cutoff<input type="datetime-local" value={sourceCutoffAt} onChange={(event) => setSourceCutoffAt(event.target.value)} disabled={isProcessing} /></label>
-          <label className={ui.field}>Market data cutoff<input type="datetime-local" value={marketDataCutoffAt} onChange={(event) => setMarketDataCutoffAt(event.target.value)} disabled={isProcessing} /></label>
-        </div>
-        <div className={ui.actions}><span className={ui.muted}>Stops first at the plan gate</span><button className={ui.primary} disabled={isProcessing || !input.trim()}>{isProcessing ? "Creating…" : "Create research plan"}</button></div>
+        <details className={styles.fold}>
+          <summary>Advanced<span className={ui.muted}>{advancedSummary}</span></summary>
+          <div className={`${ui.form} ${ui.tileBody}`}>
+            <label className={ui.field}>Cost cap (USD)<input type="number" min="0" step="0.01" value={budgetLimitUsd} onChange={(event) => setBudgetLimitUsd(event.target.value)} disabled={isProcessing} placeholder="No cap" /></label>
+            <label className={ui.field}>Source cutoff<input type="datetime-local" value={sourceCutoffAt} onChange={(event) => setSourceCutoffAt(event.target.value)} disabled={isProcessing} /></label>
+            <label className={ui.field}>Market data cutoff<input type="datetime-local" value={marketDataCutoffAt} onChange={(event) => setMarketDataCutoffAt(event.target.value)} disabled={isProcessing} /></label>
+          </div>
+        </details>
+        <div className={ui.actions}><span className={ui.muted}>Next we draft a plan. The run stops there for your approval.</span><button className={ui.primary} disabled={isProcessing || !input.trim()}>{isProcessing ? "Creating…" : "Draft the plan"}</button></div>
       </Card>
     </form> : phase === "plan" ? <div className={ui.grid}>
-      <Card flush className={ui.s8} title="Gate 1 of 2: research plan" action={<Tag tone="waiting">Needs plan approval</Tag>}>
+      <Card flush className={ui.s8} title="Here's the plan" action={<Tag tone="waiting">Needs plan approval</Tag>}>
         {researchPlan && <div className="border-b border-[var(--line-soft)] [&>section]:m-0 [&>section]:rounded-none [&>section]:border-0"><FramingEditor key={`${researchPlan.generated_at}`} plan={researchPlan} disabled={isProcessing} onChange={setPlanEdits} /></div>}
         <ResearchPlanCard plan={researchPlan} />
       </Card>
       <Card flush className={ui.s4} title="Your decision">
+        <dl className={ui.kv}>
+          <dt>Past runs like this</dt><dd>{formatEstimate(estimates[planRunType])}</dd>
+          <dt>Stops again at</dt><dd>Final review</dd>
+        </dl>
         <div className={`${ui.form} ${ui.tileBody}`}>
           <ForecastYearsField value={planForecastYears} onChange={setPlanForecastYears} disabled={isProcessing} />
-          <label className={ui.field}>Requested changes<textarea rows={4} value={planChangeNotes} onChange={(event) => setPlanChangeNotes(event.target.value)} disabled={isProcessing} /></label>
+          <label className={ui.field}>Anything to change?<textarea rows={4} value={planChangeNotes} onChange={(event) => setPlanChangeNotes(event.target.value)} disabled={isProcessing} placeholder="Say it in your words and the plan is redrafted" /></label>
         </div>
         <div className={ui.actions}>
-          <button className={ui.secondary} onClick={handleRequestPlanChanges} disabled={isProcessing || !planChangeNotes.trim()}>Request changes</button>
-          <button className={ui.primary} onClick={handleApprovePlan} disabled={isProcessing}>{isProcessing ? "Saving…" : "Approve plan & start"}</button>
+          <button className={ui.secondary} onClick={handleRequestPlanChanges} disabled={isProcessing || !planChangeNotes.trim()}>Redraft</button>
+          <button className={ui.primary} onClick={handleApprovePlan} disabled={isProcessing}>{isProcessing ? "Saving…" : "Approve and start"}</button>
         </div>
       </Card>
-    </div> : progress ? <div className={ui.grid}>
-      {finalReviewWaiting && <Card flush className={ui.s12} title="Gate 2 of 2: final review" action={<Tag tone="waiting">Needs your decision</Tag>}>
-        <div className={`${ui.tileBody} flex flex-wrap items-center justify-between gap-3`}><p className={ui.muted}>The report and AI review are ready. Record a verdict to export the report and schedule refreshes.</p><Link className={ui.primary} href={`/review?run=${runId}`}>Review research</Link></div>
+    </div> : progress ? <div className={styles.flow}>
+      {finalReviewWaiting && <Card flush title="Ready for your review" action={<Tag tone="waiting">Needs your decision</Tag>}>
+        <div className={`${ui.tileBody} flex flex-wrap items-center justify-between gap-3`}>
+          <p className={ui.muted}>The report and its AI review are ready{quality ? `; readiness: ${humanize(quality.actionReadiness)}` : ""}. Your verdict exports the report and schedules its refresh.</p>
+          <span className="flex gap-2"><Link className={ui.secondary} href={`/assets/${assetId}/view?view=memo&run=${runId}`}>Read the report</Link><Link className={ui.primary} href={`/review?run=${runId}`}>Review research</Link></span>
+        </div>
       </Card>}
-      {progress.requestReset && <Card flush className={ui.s12} aria-label="Re-run approval" title="Approve a re-run?" action={<Tag tone="waiting">Needs your decision</Tag>}>
+      {decided && <Card flush title="Research is decided" action={<Tag tone="good">Decided</Tag>}>
+        <div className={`${ui.tileBody} flex flex-wrap items-center justify-between gap-3`}><p className={ui.muted}>This run is finished. Read the research or start a new run.</p><Link className={ui.primary} href={`/assets/${assetId}/view?view=memo&run=${runId}`}>Read research</Link></div>
+      </Card>}
+      {progress.requestReset && <Card flush aria-label="Re-run approval" title="Approve a re-run?" action={<Tag tone="waiting">Needs your decision</Tag>}>
         <div className={ui.tileBody}>
           <p className={ui.muted}>A specialist asked to recompute its analysis to answer {progress.requestReset.request_ids.length === 1 ? "one report question" : `${progress.requestReset.request_ids.length} report questions`}. Re-running reopens {progress.requestReset.stages.length} stages; their earlier model calls cost {formatMoney(progress.requestReset.estimated_cost_usd)}. Skipping keeps the current analysis and lists the requests as open questions.</p>
           <ul className="mt-2">{progress.requestReset.stages.map((stage) => <li key={stage}>{stageLabel(stage)}</li>)}</ul>
@@ -886,17 +920,44 @@ export default function RunResearchPage() {
           <button className={ui.primary} onClick={() => handleRequestReset("rerun")} disabled={isProcessing}>{isProcessing ? "Saving…" : "Re-run stages"}</button>
         </div>
       </Card>}
-      <RunDetails progress={progress} theater={theater} quality={quality} messages={messages} />
-      <Card flush className={ui.s6} title="Sources" action={<span className={styles.count}>{theater.sources.length}</span>}>
-        <div className={styles.scroll}>{theater.sources.length ? theater.sources.map((source) => <div key={source.id} className={ui.row}><div><div className={ui.rowTitle}>{source.url ? <a href={source.url} target="_blank" rel="noreferrer" className="hover:underline">{source.title}</a> : source.title}</div><p className={ui.rowMeta}>{[humanize(source.source_type), source.publisher].filter(Boolean).join(" · ")}</p></div></div>) : <p className={ui.empty}>No sources attached.</p>}</div>
-        <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" aria-label="Upload source file" />
-        {showLinkInput && <form className={`${ui.form} ${ui.tileBody}`} onSubmit={(event) => { event.preventDefault(); handleLinkAttach(); }}><label className={ui.field}>Source URL<input type="url" value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} required disabled={isUploading} /></label><div className="flex gap-3"><button className={ui.primary} disabled={isUploading || !linkUrl.trim()}>Attach source</button><button type="button" className={ui.secondary} onClick={() => { setShowLinkInput(false); setLinkUrl(""); }}>Cancel</button></div></form>}
-        <div className={ui.actions}><button className={ui.textLink} onClick={() => setShowLinkInput(!showLinkInput)} disabled={isUploading}>Attach link</button><button className={ui.secondary} onClick={() => fileInputRef.current?.click()} disabled={isUploading}>{isUploading ? "Attaching…" : "Attach file"}</button></div>
+      <Card flush title="Progress" action={<RunStatusTag status={progress.status} waiting={progress.stages.find((s) => s.status === "waiting_for_human")?.key} />}>
+        <div className={styles.progress}>
+          <div className={styles.bigCount}><strong>{stagesDone}</strong><span>of {progress.stages.length} stages</span></div>
+          <progress className={ui.progress} max={progress.stages.length || 1} value={stagesDone} aria-label="Research progress" />
+          {stopped ? <p className={ui.error} role="alert">{progress.latestJob?.failure_reason || progress.stages.find((s) => s.status === "failed")?.failure_reason || "The run stopped before the report was ready."}</p>
+            : now ? <p className={ui.lead}>Now: {now.charAt(0).toLowerCase() + now.slice(1)}.</p>
+            : !progress.workerHealthy && progress.latestJob?.status === "queued" ? <p className={ui.notice}>Waiting for an available worker.</p> : null}
+          <dl className={styles.facts}>
+            <div><dt>Sources read</dt><dd>{progress.sourceCount}</dd></div>
+            <div><dt>Facts pulled</dt><dd>{quality?.counts.evidence ?? "—"}</dd></div>
+            <div><dt>Spent</dt><dd>${progress.totalCost.toFixed(2)}{progress.budgetLimit != null ? ` of $${progress.budgetLimit}` : ""}</dd></div>
+          </dl>
+        </div>
+        <div className={ui.actions}>
+          <span className={ui.muted}>You can leave this page. Plans and reviews that need you show on Home under Waiting on you.</span>
+          <button className={ui.secondary} onClick={() => { setDetailsOpen(true); setShowLinkInput(true); }} disabled={isUploading}>Add a source</button>
+        </div>
       </Card>
-      <Card flush className={ui.s6} title="Backtests" action={<span className={styles.count}>{theater.backtests.length}</span>}>
-        {theater.backtests.length ? theater.backtests.map((test) => <div key={test.id} className={ui.row}><div><div className={ui.rowTitle}>{test.strategy_name || `${test.symbol} backtest`}</div><p className={ui.rowMeta}>{test.error_message || test.strategy_prompt}</p></div><StatusBadge status={test.status} /></div>) : <p className={ui.empty}>No backtests for this run.</p>}
-        <form className={`${ui.form} ${ui.tileBody}`} onSubmit={(event) => { event.preventDefault(); handleBacktestRequest(); }}><label className={ui.field}>Strategy<textarea rows={3} value={backtestPrompt} onChange={(event) => setBacktestPrompt(event.target.value)} disabled={isBacktestSubmitting} placeholder="Describe the strategy to test" required /></label><div><button className={ui.primary} disabled={isBacktestSubmitting || !backtestPrompt.trim()}>{isBacktestSubmitting ? "Queueing…" : "Queue backtest"}</button></div></form>
+      <Card title="Phases"><PhaseTrack phases={phaseProgress(progress.stages)} /></Card>
+      <Card title="What's happening" action={feed.length > 8 ? <button className={ui.textLink} onClick={() => setFeedAll(!feedAll)}>{feedAll ? "Show latest" : `Show all ${feed.length}`}</button> : undefined}>
+        <RunFeed items={feedAll ? feed : feed.slice(0, 8)} />
       </Card>
+      <details className={styles.details} open={detailsOpen} onToggle={(event) => { if (event.target === event.currentTarget) setDetailsOpen(event.currentTarget.open); }}>
+        <summary>Details<span className={ui.muted}>Stages, quality checks, model calls, sources and backtests</span></summary>
+        <div className={ui.grid}>
+          <RunDetails progress={progress} theater={theater} quality={quality} messages={messages} />
+          <Card flush className={ui.s6} title="Sources" action={<span className={styles.count}>{theater.sources.length}</span>}>
+            <div className={styles.scroll}>{theater.sources.length ? theater.sources.map((source) => <div key={source.id} className={ui.row}><div><div className={ui.rowTitle}>{source.url ? <a href={source.url} target="_blank" rel="noreferrer" className="hover:underline">{source.title}</a> : source.title}</div><p className={ui.rowMeta}>{[humanize(source.source_type), source.publisher].filter(Boolean).join(" · ")}</p></div></div>) : <p className={ui.empty}>No sources attached.</p>}</div>
+            <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" aria-label="Upload source file" />
+            {showLinkInput && <form className={`${ui.form} ${ui.tileBody}`} onSubmit={(event) => { event.preventDefault(); handleLinkAttach(); }}><label className={ui.field}>Source URL<input type="url" value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} required disabled={isUploading} /></label><div className="flex gap-3"><button className={ui.primary} disabled={isUploading || !linkUrl.trim()}>Attach source</button><button type="button" className={ui.secondary} onClick={() => { setShowLinkInput(false); setLinkUrl(""); }}>Cancel</button></div></form>}
+            <div className={ui.actions}><button className={ui.textLink} onClick={() => setShowLinkInput(!showLinkInput)} disabled={isUploading}>Attach link</button><button className={ui.secondary} onClick={() => fileInputRef.current?.click()} disabled={isUploading}>{isUploading ? "Attaching…" : "Attach file"}</button></div>
+          </Card>
+          <Card flush className={ui.s6} title="Backtests" action={<span className={styles.count}>{theater.backtests.length}</span>}>
+            {theater.backtests.length ? theater.backtests.map((test) => <div key={test.id} className={ui.row}><div><div className={ui.rowTitle}>{test.strategy_name || `${test.symbol} backtest`}</div><p className={ui.rowMeta}>{test.error_message || test.strategy_prompt}</p></div><StatusBadge status={test.status} /></div>) : <p className={ui.empty}>No backtests for this run.</p>}
+            <form className={`${ui.form} ${ui.tileBody}`} onSubmit={(event) => { event.preventDefault(); handleBacktestRequest(); }}><label className={ui.field}>Strategy<textarea rows={3} value={backtestPrompt} onChange={(event) => setBacktestPrompt(event.target.value)} disabled={isBacktestSubmitting} placeholder="Describe the strategy to test" required /></label><div><button className={ui.primary} disabled={isBacktestSubmitting || !backtestPrompt.trim()}>{isBacktestSubmitting ? "Queueing…" : "Queue backtest"}</button></div></form>
+          </Card>
+        </div>
+      </details>
     </div> : null}
   </div>;
 }

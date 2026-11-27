@@ -1,9 +1,7 @@
-/* Start research (consumer remaster): two steps, pick or add a company, then the run page sets question and budget. */
-.steps { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
-.steps li { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px 0 6px; border-radius: var(--radius-pill); background: var(--tile); border: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--ink-2); }
-.steps li span { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--soft); font-size: 12px; }
-.steps li[aria-current="step"] { border-color: var(--navy); color: var(--navy); }
-.steps li[aria-current="step"] span { background: var(--navy); color: var(--tile); }
+/* Start research, step 1 of the guided run flow: find or add a company; the run page asks the question next. */
+.search { display: block; margin: 4px 0 10px; }
+.search input { width: 100%; height: 42px; padding: 0 16px; border-radius: var(--radius-pill); border: 1px solid transparent; background: var(--soft); font-size: 14px; color: var(--ink); }
+.search input:focus { outline: none; background: var(--tile); border-color: var(--navy-2); box-shadow: 0 0 0 4px var(--navy-soft); }
 .pick { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px; color: var(--ink); }
 .pick:hover { background: var(--hover); }
 .pick[aria-current="true"] { background: var(--soft); }

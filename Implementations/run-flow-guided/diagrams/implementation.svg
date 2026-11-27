@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 260" font-family="Inter,Segoe UI,sans-serif"><defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#78716C"/></marker></defs><rect width="100%" height="100%" fill="#F8F8F4"/><text x="16" y="26" font-size="15" font-weight="700" fill="#0D1B2A">Implementation detail</text>
+<rect x="16" y="50" width="270" height="60" rx="10" fill="#EEF1F5" stroke="#3D5A78"/><text x="26" y="70" font-size="13" font-weight="600" fill="#0D1B2A">src/lib/research/run-flow.ts (pure)</text><text x="26" y="88" font-size="11" fill="#44403C">RUN_PHASES, phaseProgress, flowStep,</text>
+<text x="26" y="104" font-size="11" fill="#44403C">runNow, runFeed, runEstimates, waitingOnYou</text>
+<rect x="316" y="50" width="260" height="60" rx="10" fill="#EEF1F5" stroke="#3D5A78"/><text x="326" y="70" font-size="13" font-weight="600" fill="#0D1B2A">src/components/run-flow.tsx</text><text x="326" y="88" font-size="11" fill="#44403C">FlowStepper, PhaseTrack, RunFeed,</text>
+<text x="326" y="104" font-size="11" fill="#44403C">DepthPicker (server-renderable)</text>
+<rect x="606" y="50" width="280" height="60" rx="10" fill="#fff" stroke="#3D5A78"/><text x="616" y="70" font-size="13" font-weight="600" fill="#0D1B2A">api/research-runs/estimates</text><text x="616" y="88" font-size="11" fill="#44403C">SELECT v3 runs + stage times (read-only)</text>
+<rect x="16" y="160" width="270" height="50" rx="10" fill="#fff" stroke="#3D5A78"/><text x="26" y="180" font-size="13" font-weight="600" fill="#0D1B2A">src/app/page.tsx</text><text x="26" y="198" font-size="11" fill="#44403C">Waiting on you via waitingOnYou</text>
+<rect x="316" y="160" width="260" height="50" rx="10" fill="#fff" stroke="#3D5A78"/><text x="326" y="180" font-size="13" font-weight="600" fill="#0D1B2A">src/app/research/new/page.tsx</text><text x="326" y="198" font-size="11" fill="#44403C">step 1, search filter</text>
+<rect x="606" y="160" width="280" height="50" rx="10" fill="#fff" stroke="#3D5A78"/><text x="616" y="180" font-size="13" font-weight="600" fill="#0D1B2A">src/app/assets/[id]/run/page.tsx</text><text x="616" y="198" font-size="11" fill="#44403C">steps 2-5, Details fold</text>
+<line x1="286" y1="80" x2="316" y2="80" stroke="#78716C" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="150" y1="110" x2="150" y2="160" stroke="#78716C" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="446" y1="110" x2="446" y2="160" stroke="#78716C" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="446" y1="110" x2="746" y2="160" stroke="#78716C" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="746" y1="110" x2="746" y2="160" stroke="#78716C" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="286" y1="95" x2="700" y2="160" stroke="#78716C" stroke-width="1.5" marker-end="url(#a)"/>
+</svg>
