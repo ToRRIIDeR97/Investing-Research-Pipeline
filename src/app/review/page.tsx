@@ -16,7 +16,7 @@ import { verdictLine, type ResearchMemo } from "@/lib/research/reporting/researc
 import type { ReportDocument } from "@/lib/research/reporting/report";
 import { currentReviews, reviewCount } from "@/lib/review/queue-rules";
 import type { ReviewQueueItem, ReviewSummary } from "@/lib/review/review-queue";
-import { decisionOptions, groupFindingsByChapter, refusalWords, reviewBody, withReportCheck, type ReviewChoice } from "@/lib/review/review-view";
+import { decisionOptions, groupFindingsByChapter, refusalWords, reviewBody, reviewOutcomeLabel, withReportCheck, type ReviewChoice } from "@/lib/review/review-view";
 import { formatGap } from "@/lib/ui/chart-math";
 
 type Row = Record<string, any>;
@@ -25,12 +25,10 @@ export default function ReviewsPage() {
   return <Suspense fallback={<div className={ui.page} role="status">Loading reviews…</div>}><Reviews /></Suspense>;
 }
 
-/** The AI review's outcome in words, from the summary's gate. */
+/** The AI review's outcome in words, from the summary's gate: its actual verdict, since the verdict is advisory. */
 function reviewOutcome(review: ReviewSummary["review"] | null | undefined): [string, TagTone] {
-  if (!review) return ["No AI review", "neutral"];
-  if (review.positionable) return ["Review passed", "good"];
-  if (review.trackable) return ["Passed for tracking", "waiting"];
-  return ["Review didn't pass", "bad"];
+  const tone: TagTone = !review ? "neutral" : review.positionable ? "good" : review.trackable ? "waiting" : "bad";
+  return [reviewOutcomeLabel(review), tone];
 }
 
 /** The slug shown as a ticker only for equities; other kinds have no ticker to show. */
@@ -144,7 +142,7 @@ function ReviewRun({ item, onDecided }: { item: ReviewQueueItem; onDecided: (mes
   const currency = memo?.currency ?? item.summary?.currency ?? "USD";
   const price = v?.price ?? item.summary?.price ?? null;
   const values = v?.valuationComplete ? v.values : { bear: null, base: item.summary?.value ?? null, bull: null };
-  const [outcome, tone] = reviewOutcome(report ? (gate ? { verdict: null, open_severe: gate.open_severe, blocking: gate.blocking, trackable: gate.trackable, positionable: gate.positionable } : null) : item.summary?.review);
+  const [outcome, tone] = reviewOutcome(report ? (gate ? { verdict: gate.verdict == null ? null : String(gate.verdict), open_severe: gate.open_severe, blocking: gate.blocking, trackable: gate.trackable, positionable: gate.positionable } : null) : item.summary?.review);
 
   async function submit(choice: ReviewChoice, extras: DecisionExtras) {
     // Watchlist and reject need no report; approving or sending back must name the report that was read.

@@ -45,7 +45,7 @@ test('consolidated TTM ignores segment rows and the operating model gets segment
  const record=buildHistoricalRecord({asset_id:id,observations,requiredMetricKeys:['revenue'],endFiscalYear:2025,endFiscalQuarter:4});
  assert.deepEqual(record.ttm_series.map(o=>o.value_numeric),[400]);
  const history=recentByMetric(observations.filter(o=>o.segment==='meta:RealityLabsMember'),8);
- assert.deepEqual(history.revenue.map(r=>[r.period,r.value]),[['2025Q1',10],['2025Q2',10],['2025Q3',10],['2025Q4',10]]);
+ assert.deepEqual(history.revenue,{unit:'USD',values:{'2025Q1':10,'2025Q2':10,'2025Q3':10,'2025Q4':10},source_document_ids:[]});
  const annual={...row(4,40,'meta:RealityLabsMember'),periodicity:'annual',fiscal_quarter:null};
- assert.equal(recentByMetric([annual,row(4,10)],8).revenue.at(-1)?.period,'FY2025');
+ assert.equal(Object.keys(recentByMetric([annual,row(4,10)],8).revenue.values).at(-1),'FY2025');
 });

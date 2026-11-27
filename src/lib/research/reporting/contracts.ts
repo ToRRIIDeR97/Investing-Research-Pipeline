@@ -4,10 +4,13 @@ import type { AgentOutputFormat } from "@/lib/agent-harness/types";
 import { ReportVisual, QUANTITATIVE_VISUALS } from './visuals';
 
 /**
- * adaptive-3: section writers return prose only; code builds and places each chapter's exhibits (exhibits.ts).
- * Reports stored under adaptive-2 (model-requested flat tables and charts) and adaptive-1 render as before.
+ * adaptive-4: six fixed chapters set by code (REPORT_CHAPTERS) with word caps, and a provisional view in place of a
+ * withheld one. adaptive-3: section writers return prose only; code builds and places each chapter's exhibits
+ * (exhibits.ts), as adaptive-4 does. Reports stored under adaptive-3, adaptive-2 (model-requested flat tables and
+ * charts) and adaptive-1 render as before.
  */
-export const STANDARD_VERSION = "asset-framework-2.1-adaptive-3";
+export const STANDARD_VERSION = "asset-framework-2.1-adaptive-4";
+export const ADAPTIVE_3_STANDARD = "asset-framework-2.1-adaptive-3";
 /** The standard whose reports print model-requested tables as flat rows (see flatTable). */
 export const ADAPTIVE_2_STANDARD = "asset-framework-2.1-adaptive-2";
 export const COVERAGE = {
@@ -115,6 +118,58 @@ export function normalizeOutlineStructure(outline: ReportOutline): ReportOutline
   return { ...outline, sections, coverage };
 }
 
+/**
+ * The adaptive-4 report: six chapters in this order, each with fixed coverage. The opening verdict is written last,
+ * from the others. `types` are the artifacts a chapter reads when the outline names none for it.
+ */
+export const REPORT_CHAPTERS = [
+  { id: "verdict", title: "Verdict", coverage: ["conclusion"],
+    purpose: "The investment view and its confidence, the value range against the price, the reasons, the main risks and what would change the view.",
+    types: ["decision_record", "investment_thesis", "thesis_breakers", "risk_register"] },
+  { id: "business", title: "The business and what the investor owns", coverage: ["business", "ownership", "constraints"],
+    purpose: "How the company makes money, which segments earn and which burn, what the shareholder owns and what limits growth.",
+    types: ["business_process_map", "segment_model", "customer_decision_map", "bottleneck_register", "driver_tree", "demand_backdrop", "peer_benchmark"] },
+  { id: "track-record", title: "Track record and management", coverage: ["history", "management", "evidence"],
+    purpose: "What the reported history shows against its own past, how management allocates capital, and where the record is incomplete.",
+    types: ["company_genesis", "strategic_history_timeline", "strategic_dna", "founder_profile", "historical_diagnosis", "management_assessment"] },
+  { id: "competition", title: "Competitive position", coverage: ["moat"],
+    purpose: "Whether an advantage is demonstrated in customer behaviour and returns, what attacks it, and the economics without one.",
+    types: ["moat_assessment", "moat_attack_matrix", "competitive_response_matrix", "no_moat_counterfactual", "peer_benchmark"] },
+  { id: "valuation", title: "Scenarios, valuation and downside", coverage: ["forecasts", "valuation", "downside"],
+    purpose: "The bear, base and bull drivers, the value each gives against the price, what the price implies, and the permanent-loss case.",
+    types: ["operating_scenario_set", "valuation_scenario_set", "annual_price_target_path", "reverse_valuation", "expected_return_matrix", "segment_model"] },
+  { id: "watch", title: "What to watch", coverage: ["monitoring"],
+    purpose: "The few measures and thresholds that would confirm or break the view, and the catalysts ahead.",
+    types: ["monitoring_dashboard", "thesis_breakers", "catalyst_register", "risk_register", "backtest_review"] },
+] as const;
+/** Most research questions an adaptive-4 outline keeps; framing questions it skipped are added after. */
+export const MAX_REPORT_QUESTIONS = 8;
+/** Most paragraphs a chapter stores; the writers are asked for three to five. */
+export const MAX_SECTION_PARAGRAPHS = 6;
+
+/**
+ * The outline on REPORT_CHAPTERS: the model's title, purpose, key figures and artifacts for each chapter id it used,
+ * the fixed id and coverage always, and the chapter's artifact types when it named none it may read. Coverage keeps the
+ * model's status and rationale, linked to the chapter that owns each key. The structural rules hold by construction.
+ */
+export function fitOutlineToChapters(outline: ReportOutline, artifacts: { id: string; artifact_type: string }[]): ReportOutline {
+  const known = new Set(artifacts.map(a => a.id));
+  const sections = REPORT_CHAPTERS.map(chapter => {
+    const own = outline.sections.find(s => s.id === chapter.id);
+    const chosen = (own?.artifact_ids ?? []).filter(id => known.has(id));
+    const typed = artifacts.filter(a => (chapter.types as readonly string[]).includes(a.artifact_type)).map(a => a.id);
+    return { id: chapter.id, title: own?.title?.trim() || chapter.title, purpose: own?.purpose?.trim() || chapter.purpose,
+      coverage: [...chapter.coverage] as string[], artifact_ids: chosen.length ? chosen : typed,
+      ...(own?.key_figures?.length ? { key_figures: own.key_figures.slice(0, 5) } : {}) };
+  });
+  const home = (key: string) => sections.find(s => s.coverage.includes(key))!.id;
+  const coverage = Object.keys(COVERAGE).map(key => {
+    const given = outline.coverage.find(c => c.key === key);
+    return { key, status: given?.status ?? "qualified" as const, rationale: given?.rationale?.trim() || "Covered in its chapter.", section_ids: [home(key)] };
+  });
+  return { ...outline, sections, coverage, questions: outline.questions.slice(0, MAX_REPORT_QUESTIONS) };
+}
+
 /** Reports every violation at once and names the sections, so one repair pass can fix them all. */
 export function validateProductOutline(outline:ReportOutline) {
   const errors:string[]=[];
@@ -171,7 +226,9 @@ export function storedSection(written: WriterSection, exhibitKeys: string[]): Re
   const kept = qualitativeVisuals(visuals);
   // Only a conclusion keeps key reasons; any other section, or one without them, stores exactly as before.
   const reasons = rest.coverage.includes("conclusion") ? keptKeyReasons(key_reasons) : undefined;
-  return { ...rest, tables: [], ...(kept ? { visuals: kept } : {}), exhibits: [...exhibitKeys], ...(reasons?.length ? { key_reasons: reasons } : {}) };
+  // adaptive-4 chapters are capped; a writer that runs long loses its last paragraphs rather than costing a repair.
+  const paragraphs = Array.isArray(rest.paragraphs) ? rest.paragraphs.slice(0, MAX_SECTION_PARAGRAPHS) : rest.paragraphs;
+  return { ...rest, paragraphs, tables: [], ...(kept ? { visuals: kept } : {}), exhibits: [...exhibitKeys], ...(reasons?.length ? { key_reasons: reasons } : {}) };
 }
 
 export function outputContract(shape: Record<string, z.ZodType>): AgentOutputFormat {
@@ -218,6 +275,6 @@ export const RESEARCH_DOCTRINE = [
   "Test moat claims against customer behavior and financial evidence. No demonstrated moat is a valid conclusion. Separate operating scenarios from valuation assumptions and examine permanent impairment and returns without rerating.",
   "Adapt metrics and valuation to the asset and each segment. Do not impose banking capital metrics on unrelated businesses. Treat framework equations as conceptual until units, periods and accounting definitions are established.",
   "Spend detail on questions that change valuation, downside or confidence. Explain unavailable disclosures and their consequences. Required coverage may be grouped under any useful headings; add company-specific sections when material.",
-  "Never invent sources, quotations, numerical inputs or calculated results. Every table value comes from stored artifacts, computed by code. Label incomplete analysis and withhold a decision when a material gap blocks it.",
+  "Never invent sources, quotations, numerical inputs or calculated results. Every table value comes from stored artifacts, computed by code. Label incomplete analysis. When a material gap blocks a decision, keep the decision withheld but still state the provisional view, how confident it is and the evidence that would settle it.",
   ...ANALYST_BEHAVIOUR_RULES,
 ];

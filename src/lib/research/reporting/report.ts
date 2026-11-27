@@ -3,7 +3,7 @@ import { validateVisual, historySeries, buildVisual } from './visuals';
 export { resolveTable } from "./tables";
 import { createHash } from "node:crypto";
 import { buildExhibits, isAvailable, type BuiltExhibit } from "./exhibits";
-import { Section, CoverageResult, Question, STANDARD_VERSION, ADAPTIVE_2_STANDARD, type ReportSection, type CoverageCheck, type ResearchQuestion } from "./contracts";
+import { Section, CoverageResult, Question, STANDARD_VERSION, ADAPTIVE_2_STANDARD, ADAPTIVE_3_STANDARD, type ReportSection, type CoverageCheck, type ResearchQuestion } from "./contracts";
 import { changeLogMarkdown, type VersionChangeLog } from "../lineage/change-log";
 
 export interface ReportArtifact {
@@ -90,8 +90,8 @@ export function createReport(input: ReportInput): ReportDocument {
   // A stored report keeps the standard it was written under, so re-rendering it reproduces its hash.
   const stored = (input as Partial<ReportDocument>).standard_version;
   const legacy = Boolean(stored) && stored !== STANDARD_VERSION;
-  // adaptive-3 renders the exhibits code placed; adaptive-2 the model's tables as flat rows; earlier standards as raw tables.
-  const codeExhibits = !legacy;
+  // adaptive-3 and -4 render the exhibits code placed; adaptive-2 the model's tables as flat rows; earlier standards as raw tables.
+  const codeExhibits = !legacy || stored === ADAPTIVE_3_STANDARD;
   const renderTable = (table: ReportSection["tables"][number]) => stored === ADAPTIVE_2_STANDARD
     ? flatTableMarkdown(flatTable(table, input.artifacts)) : tableMarkdown(resolveTable(table, input.artifacts));
   const built = codeExhibits ? new Map(buildExhibits(input.artifacts, { cutoff: input.cutoff }).filter(isAvailable).map(e => [e.key, e])) : new Map<string, BuiltExhibit>();
@@ -159,7 +159,9 @@ export function createReport(input: ReportInput): ReportDocument {
   const citation = (id: string) => `[${usedIds.indexOf(id) + 1}]`;
   const lines = [`# ${plainMarkdown(input.asset_name)}: investment research`, "", `Research cutoff: ${input.cutoff}`, ""];
   if (input.is_test) lines.push("> TEST WATERMARK: Synthetic research. Not for investment decisions.", "");
-  if (withheld) lines.push("> Conclusion withheld - research incomplete. Material questions remain unresolved.", "");
+  // adaptive-4 states a provisional view; the status stays withheld, so a position still can't be approved on it.
+  if (withheld) lines.push(legacy ? "> Conclusion withheld - research incomplete. Material questions remain unresolved."
+    : "> Provisional view - material questions remain open, so no position decision yet. The verdict gives its confidence and what would settle it.", "");
   else if (qualified) lines.push("> Qualified research: read the evidence limitations before relying on the conclusion.", "");
   for (const s of sections) {
     lines.push(`## ${plainMarkdown(s.title)}`, "");

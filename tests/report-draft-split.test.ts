@@ -88,18 +88,17 @@ const DRAFT = ["plan:0", "save:report_outline:outline", "save:question_register:
   "write:summary:first:last", "save:report_section:summary", "save:report_document:document"];
 const REVIEW_START = ["save:report_outline:outline", "save:question_register:questions", "save:report_section:summary", "save:report_section:valuation",
   "retain:report_section:summary,valuation", "save:report_document:document", "review", "save:report_review:review"];
+// pipeline-simplification: a failing review is advisory. Writing and research findings are saved with the one review;
+// no rework call, no repair writes and no second review follow (was: "rework", the two repair writes and saves, a
+// second document save, "review", "save:report_review:review", with valuation and summary repaired).
 const EXPECTED: Record<Scenario, { review: string[]; repaired: string[]; replanned: boolean }> = {
   pass: { review: REVIEW_START, repaired: [], replanned: false },
-  writing: { review: [...REVIEW_START, "rework", "write:valuation:repair", "save:report_section:valuation", "write:summary:repair:last",
-    "save:report_section:summary", "retain:report_section:summary,valuation", "save:report_document:document", "review", "save:report_review:review"],
-    repaired: ["valuation", "summary"], replanned: false },
-  research: { review: [...REVIEW_START, "rework", "plan:1", "save:report_outline:outline", "save:question_register:questions", "write:valuation:repair",
-    "save:report_section:valuation", "write:summary:repair:last", "save:report_section:summary", "retain:report_section:summary,valuation",
-    "save:report_document:document", "review", "save:report_review:review"], repaired: ["valuation", "summary"], replanned: true },
+  writing: { review: REVIEW_START, repaired: [], replanned: false },
+  research: { review: REVIEW_START, repaired: [], replanned: false },
 };
 
 for (const scenario of ["pass", "writing", "research"] as const) {
-  test(`report_draft then ai_reviewer: the exact calls and saves when the first review ${scenario === "pass" ? "passes" : `asks for a ${scenario} repair`}`, async () => {
+  test(`report_draft then ai_reviewer: the exact calls and saves when the review ${scenario === "pass" ? "passes" : `fails with a ${scenario} finding`}`, async () => {
     const events: string[] = [];
     const db = store();
     const draft = await composeDraft(input as any, actionsFor(scenario, events, db));
@@ -113,7 +112,9 @@ for (const scenario of ["pass", "writing", "research"] as const) {
     events.length = 0;
     const result = await reviewDraftedReport(input as any, actionsFor(scenario, events, db), rebuilt);
     assert.deepEqual(events, EXPECTED[scenario].review);
-    if (scenario === "pass") assert.equal(db.rows.length, rows + 1, "re-saving the unchanged draft writes nothing new; only the review is added");
+    // pipeline-simplification: true for every verdict now, not only a pass.
+    assert.equal(db.rows.length, rows + 1, "re-saving the unchanged draft writes nothing new; only the review is added");
+    if (scenario !== "pass") assert.equal(result.review.findings[0].issue, "Thin.", "pipeline-simplification: the finding is kept on the review");
     const expected = expectedDocument(EXPECTED[scenario].replanned ? replanned() : planned(), EXPECTED[scenario].repaired);
     assert.equal(result.document.content_hash, expected.content_hash);
     assert.equal(db.current("report_document", "document")!.content.content_hash, expected.content_hash);
@@ -126,8 +127,12 @@ test("a retry after a failed repair attempt restores the draft as the current re
   const ids = { outline: db.current("report_outline", "outline")!.id, sections: draft.sections.map(s => db.current("report_section", s.id)!.id) };
   const draftRows = { outline: db.current("report_outline", "outline")!.content, sections: draft.sections.map(s => db.current("report_section", s.id)!.content) };
 
-  // Attempt 1 repairs the sections and saves a new document, then crashes in the second review.
-  await assert.rejects(reviewDraftedReport(input as any, actionsFor("writing", [], db, { failSecondReview: true }), reload(db, ids, draft.finalCoverage)), /crashed/);
+  // pipeline-simplification: the review no longer repairs, so attempt 1 is a repair round left by the code before it
+  // (a legacy run): repaired sections and a new document are current. Was: a reviewDraftedReport attempt that repaired
+  // and then crashed in its second review.
+  const repaired = draft.outline.sections.map(p => section(p as any, true));
+  for (const s of repaired) db.save("report_section", s.id, s);
+  db.save("report_document", "document", expectedDocument(planned(), ["valuation", "summary"]));
   assert.notEqual(db.current("report_document", "document")!.content.content_hash, draft.document.content_hash, "the failed attempt left its repair current");
 
   // Attempt 2 reloads the draft by its ids (now superseded rows) and its first review passes.

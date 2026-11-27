@@ -17,7 +17,7 @@ import {readerSections,readerSectionId} from '@/lib/research/reporting/data-view
 import {KPIDashboard,ValuationDashboard} from './research-dashboards';
 import {ChangeLogTable} from './report/change-log-table';
 import {ExhibitTile} from './report/exhibit-tile';
-import {chapterExhibits,EXHIBIT_STANDARD} from '@/lib/research/reporting/exhibits';
+import {chapterExhibits,hasCodeExhibits} from '@/lib/research/reporting/exhibits';
 
 type RecordValue=Record<string,any>;
 const clean=readerText;
@@ -290,7 +290,7 @@ export function ResearchReport({document,financialsHref,liveArtifacts}:{document
   const section=sections.find(s=>s.id===active); const index=sections.findIndex(s=>s.id===active);
   const visuals=useMemo(()=>sectionVisuals(document,active),[document,active]);
   // Reports of this standard store exhibit keys on each section; code builds the exhibits from stored artifacts.
-  const codeBuilt=document.standard_version===EXHIBIT_STANDARD;
+  const codeBuilt=hasCodeExhibits(document.standard_version);
   const built=useMemo(()=>codeBuilt?chapterExhibits(document,active):[],[codeBuilt,document,active]);
   const evidence=document.evidence.find(e=>e.id===source);
   function showSource(id:string){setSource(id);dialog.current?.showModal();}

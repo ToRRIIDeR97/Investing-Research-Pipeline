@@ -242,25 +242,29 @@ export function buildFcffSchedule(input: {
 /**
  * Value per share at each explicit year end (fade years are valued but not listed): the value then of the later cash
  * flows and the terminal value, plus the bridge. For FCFF the bridge also grows by the cash flows counted so far,
- * since no dividends are forecast: the cash stays in the company rather than vanishing from the path. Other methods
- * treat their cash flows as distributed, as before.
+ * since no dividends are forecast: the cash stays in the company rather than vanishing from the path. For residual
+ * income the bridge is that year's closing tangible equity, plus the capital distributed so far (less any raised), so
+ * the path is a total value to today's holders. Other methods treat their cash flows as distributed, as before.
  */
 export function valuationPricePath(schedule: ValuationMethodInput): { fiscal_year: number; price_target: number }[] {
   const calc = calculateValuationSchedule(schedule);
   const r = calc.discount_rate, times = yearTimes(calc), last = calc.years.length - 1;
-  const retain = calc.method === "fcff";
+  const retain = calc.method === "fcff", residual = calc.method === "residual_income";
   let retained = 0;
   return calc.years.flatMap((year, i) => {
-    retained += retain ? ((year as { counted_cash_flow?: number }).counted_cash_flow ?? year.cash_flow) : 0;
+    retained += retain ? ((year as { counted_cash_flow?: number }).counted_cash_flow ?? year.cash_flow)
+      : residual ? year.equity_build?.distributable ?? 0 : 0;
     if (year.fade) return [];
     let value = calc.terminal_value / (1 + r) ** (times[last] - times[i]);
     for (let j = i + 1; j <= last; j += 1) value += calc.years[j].cash_flow / (1 + r) ** (times[j] - times[i]);
-    return [{ fiscal_year: year.fiscal_year, price_target: (value + calc.equity_bridge + retained) / calc.diluted_shares }];
+    const bridge = residual ? year.equity_build?.closing_tangible_equity ?? calc.equity_bridge : calc.equity_bridge;
+    return [{ fiscal_year: year.fiscal_year, price_target: (value + bridge + retained) / calc.diluted_shares }];
   });
 }
 
 const methodKey = (schedule: ValuationMethodInput) => schedule.method === "fcff"
-  ? `fcff_dcf_${schedule.terminal.type === "multiple" ? "terminal_multiple" : "perpetuity"}` : schedule.method;
+  ? `fcff_dcf_${schedule.terminal.type === "multiple" ? "terminal_multiple" : "perpetuity"}`
+  : schedule.method === "residual_income" ? "residual_income_tangible_equity" : schedule.method;
 
 /** Price path, anchors (the terminal-year prices), weighted target and returns from three schedules of one method. */
 export function assembleValuation(input: {
@@ -316,7 +320,11 @@ export function assembleValuation(input: {
           const year = schedules[scenario].years[i];
           return [[`cash_flow_${scenario}`, year.cash_flow], ...(year.build ? [[`starting_profit_${scenario}`, year.build.starting_profit]] : [])];
         })),
-        balance_sheet_values: { diluted_shares_millions: shares, shares_outstanding_millions: shares, equity_bridge: schedules.base.equity_bridge },
+        balance_sheet_values: { diluted_shares_millions: shares, shares_outstanding_millions: shares, equity_bridge: schedules.base.equity_bridge,
+          ...Object.fromEntries(SCENARIOS.flatMap((scenario) => {
+            const closing = schedules[scenario].years[i].equity_build?.closing_tangible_equity;
+            return closing === undefined ? [] : [[`tangible_equity_${scenario}`, closing]];
+          })) },
         per_share_values: Object.fromEntries(SCENARIOS.map((scenario) => [`value_per_share_${scenario}`, paths[scenario][i].price_target])),
       })),
       price_target_path: years.flatMap((fiscal_year, i) => SCENARIOS.map((scenario) => {

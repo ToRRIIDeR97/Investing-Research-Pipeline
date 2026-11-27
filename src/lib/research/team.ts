@@ -12,6 +12,7 @@ import { extractEvidenceForSources } from "./handlers/evidence-extraction";
 import { costOfCapitalInputs } from "./valuation/cost-of-capital";
 import { latestRiskFreeRate } from "./valuation/engine";
 import { REWORK_STAGES, type ReworkStage } from "./reporting/depth";
+import { fitPacket } from "./reporting/packet";
 
 const Role = z.enum(["data", "financials", "business", "valuation"]);
 export const ResearchRequest = z.object({
@@ -30,7 +31,10 @@ export type TeamAnswer = {
   source_ids?: string[];
   /** "system:market-history" | "system:fred" for answers made from stored data. */
   resolved_by?: string;
-  /** The owner asks for its stage and dependents to rerun. */
+  /**
+   * Set only on code's rework answers (reworkAnswer): the reworked stage and its dependents rerun once, automatically.
+   * An owner's answer never carries it (pipeline-simplification); a stored legacy one is dropped and reruns nothing.
+   */
   requires_rerun?: boolean;
 };
 /**
@@ -41,14 +45,16 @@ export type TeamAnswer = {
 export type TeamRequest = Request & { id: string; response?: TeamAnswer; source_searched?: boolean;
   rework_stage?: ReworkStage; section_id?: string; reworked?: boolean };
 /**
- * `rerun_stages`: analysis stages a re-run reopened; the batch waits for them before asking again.
- * `post_review_round`: the round the report review used. Pre-draft requests may use two rounds; one more is
- * kept for the review's findings, and nothing is asked after it.
+ * `rerun_stages`: analysis stages a re-run reopened; the batch waits for them before asking again. Batches stored
+ * before pipeline-simplification may also carry `post_review_round`, the round a report review used; nothing writes it
+ * now, and roundAvailable treats it as closing the rounds.
  */
 export interface RequestBatch { round: number; state: "queued" | "processing" | "answered"; source_escalated?: boolean;
-  rerun_stages?: string[]; post_review_round?: number; requests: TeamRequest[] }
-export type RequestPhase = "pre_draft" | "post_review";
-export const MAX_PRE_DRAFT_ROUNDS = 2;
+  rerun_stages?: string[]; requests: TeamRequest[] }
+/** Requests are asked only before drafting; the review no longer opens a round (pipeline-simplification). */
+export type RequestPhase = "pre_draft";
+/** One specialist question round per run, before drafting (pipeline-simplification). */
+export const MAX_PRE_DRAFT_ROUNDS = 1;
 const MAX_REQUESTS = 5;
 /** The wire schema cannot carry maxItems, so requests past the fifth are dropped locally instead of costing a full-prompt repair. */
 const firstRequests = <T>(value: T): T => {
@@ -59,12 +65,10 @@ const REQUESTS_SCHEMA = outputContract({ requests: z.array(ResearchRequest).max(
 export const REQUEST_CONTRACT: AgentOutputFormat = { ...REQUESTS_SCHEMA, validate: value => REQUESTS_SCHEMA.validate!(firstRequests(value)) };
 const BRIEF_CONTRACT = outputContract({ approach: z.string().min(1), checks: z.array(z.string().min(1)).min(1), information_needed: z.array(z.string().min(1)) });
 const ANSWER_CONTRACT = { ...outputContract({ status: z.enum(["answered", "unavailable", "needs_sources"]), answer: z.string().min(1),
-  evidence_ids: z.array(z.string()), artifact_ids: z.array(z.string()), source_ids: z.array(z.string()).optional(), requires_rerun: z.boolean().optional() }),
+  evidence_ids: z.array(z.string()), artifact_ids: z.array(z.string()), source_ids: z.array(z.string()).optional() }),
   requiredKeys: ["status", "answer", "evidence_ids", "artifact_ids"] };
 /** Stages after the analysis: a re-run reopens them but does not wait for them. */
 export const REQUEST_TAIL_STAGES = ["report_draft", "ai_reviewer", "human_review", "export", "refresh_schedule"];
-/** The two report stages; a request round pauses whichever of them is running. */
-export const REPORT_STAGES = ["report_draft", "ai_reviewer"];
 export class ResearchRequestsPending extends Error {
   constructor() { super("Specialists are investigating report requests"); }
 }
@@ -143,11 +147,11 @@ export function teamBriefScheduler(prepare: (ctx: ResearchRunContext) => Promise
 }
 
 /**
- * The next round: at most two before drafting and one after the review, repeated questions dropped, per-run
- * flags carried. Null when there is nothing new or the phase has no round left.
+ * The next round: at most MAX_PRE_DRAFT_ROUNDS before drafting, repeated questions dropped, per-run flags carried.
+ * Null when there is nothing new or no round is left. The review opens no round, so `_phase` is always pre_draft.
  */
-export function nextRequestBatch(previous: RequestBatch | null, proposed: (Request & Partial<TeamRequest>)[], phase: RequestPhase = "pre_draft"): RequestBatch | null {
-  if (!roundAvailable(previous, phase)) return null;
+export function nextRequestBatch(previous: RequestBatch | null, proposed: (Request & Partial<TeamRequest>)[], _phase: RequestPhase = "pre_draft"): RequestBatch | null {
+  if (!roundAvailable(previous)) return null;
   const asked = new Set(previous?.requests.map(r => r.question.trim().toLowerCase()));
   const fresh = proposed.filter(r => {
     const key = r.question.trim().toLowerCase();
@@ -158,29 +162,15 @@ export function nextRequestBatch(previous: RequestBatch | null, proposed: (Reque
   if (!fresh.length) return null;
   const round = (previous?.round || 0) + 1;
   return { round, state: "queued", ...(previous?.source_escalated !== undefined ? { source_escalated: previous.source_escalated } : {}),
-    ...(phase === "post_review" ? { post_review_round: round } : {}),
     requests: [...(previous?.requests || []), ...fresh.map((r, i) => ({ ...r, id: `request-${round}-${i + 1}` }))] };
 }
 
-const roundAvailable = (previous: RequestBatch | null, phase: RequestPhase) =>
-  !previous?.post_review_round && (phase === "post_review" || (previous?.round || 0) < MAX_PRE_DRAFT_ROUNDS);
-const inRound = (request: TeamRequest, round: number | undefined) => Boolean(round) && request.id.startsWith(`request-${round}-`);
-
-/** Requests asked before drafting: writers and the outline read only these, so post-review answers leave their cached calls intact. */
-export function preDraftRequests(batch: RequestBatch | null): TeamRequest[] {
-  return (batch?.requests || []).filter(r => !inRound(r, batch?.post_review_round));
-}
-export const preDraftBatch = (batch: RequestBatch | null): RequestBatch | null => batch && { ...batch, requests: preDraftRequests(batch) };
-
-/** The review round's requests with their answers, as repair feedback for the sections they name. */
-export function postReviewAnswers(batch: RequestBatch | null): Record<string, any>[] {
-  return (batch?.requests || []).filter(r => inRound(r, batch?.post_review_round) && r.response).map(r => ({
-    source: "team_answer", category: "team_answer", ...(r.section_id ? { section_id: r.section_id } : {}), question: r.question,
-    status: r.response!.status, answer: r.response!.answer, evidence_ids: r.response!.evidence_ids, artifact_ids: r.response!.artifact_ids }));
-}
+/** A batch stored before pipeline-simplification with a post-review round closes the rounds (read-only legacy handling). */
+const roundAvailable = (previous: (RequestBatch & { post_review_round?: number }) | null) =>
+  !previous?.post_review_round && (previous?.round || 0) < MAX_PRE_DRAFT_ROUNDS;
 
 const REWORK_ROLE: Partial<Record<ReworkStage, Request["role"]>> = { asset_valuation: "valuation" };
-/** One rework request per owning stage from the review's analysis_rework findings. */
+/** One rework request per owning stage from analysis_rework findings (the pre-draft valuation check's). */
 export function reworkRequests(findings: Record<string, any>[]): (Request & Pick<TeamRequest, "rework_stage" | "section_id">)[] {
   const byStage = new Map<ReworkStage, Record<string, any>>();
   for (const f of findings) {
@@ -196,22 +186,23 @@ export function reworkRequests(findings: Record<string, any>[]): (Request & Pick
 }
 
 /**
- * The report owner decides what is missing, using the complete current input snapshot. The post-review phase also
- * turns analysis_rework findings into rerun requests for their owning stages.
- */
-/**
- * `stageKey` is the report stage making the call: pre-draft rounds run in report_draft, the post-review round and
- * the repair re-plan in ai_reviewer. It records the call under that stage and picks its model; the prompt is the same.
+ * The report owner decides what is missing before drafting, using the complete current input snapshot, and
+ * analysis_rework findings become rerun requests for their owning stages. `stageKey` records the call under the
+ * report stage making it (report_draft) and picks its model. The review asks no questions (pipeline-simplification).
  */
 export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, findings: Record<string, any>[] = [], phase: RequestPhase = "pre_draft",
-  stageKey: string = phase === "post_review" ? "ai_reviewer" : "report_draft") {
+  stageKey: string = "report_draft") {
   const previous = await getTeamRequests(sql, ctx.runId);
   if (previous && previous.state !== "answered") throw new ResearchRequestsPending();
   // Persisted limit survives worker restarts. Unavailable material answers stay blocked.
-  if (!roundAvailable(previous, phase)) return;
+  if (!roundAvailable(previous)) return;
   const inputs = await loadReportInputs(sql, ctx.runId, ctx.cutoffAt.toISOString());
-  const packet = { asset: { name: ctx.assetName, symbol: ctx.symbol }, ...inputs, artifacts: modelVisibleArtifacts(inputs.artifacts), previous_requests: previous?.requests || [],
-    findings, role: "report", output_contract: "team_requests" };
+  const rework = reworkRequests(findings);
+  const reworking = rework.map(r => ({ stage: r.rework_stage, owner: r.role, reason: r.question }));
+  // Capped like every report call (fitPacket), so the round stays under the model's long-prompt rate.
+  const packet = fitPacket({ asset: { name: ctx.assetName, symbol: ctx.symbol }, ...inputs, artifacts: modelVisibleArtifacts(inputs.artifacts), previous_requests: previous?.requests || [],
+    findings: findings.filter(f => f.category !== "analysis_rework"), ...(reworking.length ? { reworking } : {}),
+    role: "report", output_contract: "team_requests" }, undefined, "evidence");
   const result = await callResearchAgent<{ requests: Request[] }>({ sql, ctx, stageKey,
     taskKey: `team:requests:${previous?.round || 0}`, taskType: "team_requests", agentName: "export-writer", modelTier: "cheap",
     packet, outputFormat: REQUEST_CONTRACT, promptFactory: p => exactJsonPrompt({ agentName: "export-writer",
@@ -219,11 +210,24 @@ export async function requestMissingResearch(sql: Sql, ctx: ResearchRunContext, 
         "Request only specific unanswered investment questions or material inconsistencies, at most 5, most material first. Return an empty requests array when the supplied research is adequate. Do not request information already present or repeat answered/unavailable requests.",
         "Route financial extraction/reconciliation to financials, management/operations/scenarios to business, valuation calculations to valuation, and missing documents to data. Set needs_sources when new external evidence is required; source_role tells the collector where to search. Stored price history and the FRED 10-year Treasury series are answered directly from the run's data. Owners answer from the run's documents without rerunning their analysis; the collector searches once for a missing document, and a stage reruns only when its owner says its own output must be recomputed.",
         "role names the specialist and must be exactly one of: data, financials, business, valuation. Document types such as regulatory_filing or market_data belong in source_role, never in role.",
-        "When needs_sources is true, set document to the specific document the collector should search for: the organisation, the document type and the period, in at most 200 characters. The collector searches document, not the question."] }) });
-  const batch = nextRequestBatch(previous, [...(phase === "post_review" ? reworkRequests(findings) : []), ...firstRequests(result).requests], phase);
+        "When needs_sources is true, set document to the specific document the collector should search for: the organisation, the document type and the period, in at most 200 characters. The collector searches document, not the question.",
+        ...(reworking.length ? [REWORKING_RULE] : [])] }) });
+  // analysis_rework findings (the pre-draft valuation check's) become rerun requests.
+  const batch = nextRequestBatch(previous, [...rework, ...withoutReworkedOwners(firstRequests(result).requests, rework)], phase);
   if (!batch) return;
   await saveReportArtifact(sql, ctx, "team_requests", "requests", batch);
   throw new ResearchRequestsPending();
+}
+
+export const REWORKING_RULE = "reworking lists the stages code is already sending back for a rerun, with the reason. Do not ask their owners to recheck the same thing; their rerun answers it.";
+
+/**
+ * While a stage is reworked, its owner gets no other question in the same round: the rework already sends it the
+ * issue, and a second question would be answered again after the rerun and could ask for a second rerun.
+ */
+export function withoutReworkedOwners<T extends { role: string }>(requests: T[], rework: { role: string }[]): T[] {
+  const owners = new Set(rework.map(r => r.role));
+  return requests.filter(r => !owners.has(r.role));
 }
 
 /**
@@ -311,29 +315,66 @@ async function loadSystemFacts(sql: Sql, runId: string): Promise<SystemFacts> {
     fred: fred?.csv ? { sourceId: String(fred.id), csv: String(fred.csv) } : null };
 }
 
-/** Only an owner's requires_rerun names a root; data requests never reopen source discovery. Rework requests name their stage. */
+/**
+ * Only code's rework requests (`rework_stage`, from the valuation check) name a root, the stage they rework, while their
+ * answer asks for the rerun. An owner's answer never reruns a stage (pipeline-simplification), even a stored legacy
+ * `requires_rerun`; data requests never reopen source discovery.
+ */
 export function requestStageRoots(requests: TeamRequest[]): string[] {
-  return [...new Set(rerunRequests(requests).map(r => r.rework_stage ?? TEAM_ROLES[r.role].stage))];
+  return [...new Set(rerunRequests(requests).map(r => r.rework_stage!))];
 }
-const rerunRequests = (requests: TeamRequest[]) => requests.filter(r => r.response?.requires_rerun === true && r.role !== "data");
+const rerunRequests = (requests: TeamRequest[]) => requests.filter(r => r.rework_stage && r.response?.requires_rerun === true);
 
-export interface RequestResetPlan { mode: "none" | "auto" | "approval"; stages: string[]; analysis_stages: string[]; request_ids: string[] }
+/**
+ * `approval` is never returned since pipeline-simplification; it stays in the type because legacy `research_run_resets`
+ * rows of that kind can still be decided (approveRequestReset). `declined` names the rework requests that asked for a
+ * rerun the run can't give automatically (its one automatic rerun is used, or the reset is over the stage limit).
+ */
+export interface RequestResetPlan { mode: "none" | "auto" | "approval"; stages: string[]; analysis_stages: string[]; request_ids: string[];
+  declined?: { request_ids: string[]; reason: string } }
 function autoResetLimit() {
   const raw = process.env.RESEARCH_MAX_AUTO_RESET_STAGES?.trim();
   const value = Number(raw);
   return raw && Number.isInteger(value) && value >= 0 ? value : 6;
 }
 
-/** One automatic re-run of at most maxAutoStages analysis stages per run; anything else waits for a reviewer. */
+/**
+ * One automatic re-run per run, of at most maxAutoStages analysis stages, for code's rework requests only. Anything
+ * else reruns nothing: the plan is `none`, its rework requests are `declined`, and the report continues. Nothing
+ * waits for a reviewer (pipeline-simplification).
+ */
 export function requestResetPlan(requests: TeamRequest[], stages: { stage_key: string; status: string }[],
   opts: { autoResetUsed: boolean; maxAutoStages?: number }): RequestResetPlan {
+  const none = { mode: "none" as const, stages: [], analysis_stages: [], request_ids: [] };
   const roots = requestStageRoots(requests);
-  if (!roots.length) return { mode: "none", stages: [], analysis_stages: [], request_ids: [] };
+  if (!roots.length) return none;
   const skipped = new Set(stages.filter(s => s.status === "skipped").map(s => s.stage_key));
   const reset = dependentStages(roots).filter(key => !skipped.has(key));
   const analysis = reset.filter(key => !REQUEST_TAIL_STAGES.includes(key));
-  const auto = !opts.autoResetUsed && analysis.length <= (opts.maxAutoStages ?? autoResetLimit());
-  return { mode: auto ? "auto" : "approval", stages: reset, analysis_stages: analysis, request_ids: rerunRequests(requests).map(r => r.id) };
+  const limit = opts.maxAutoStages ?? autoResetLimit();
+  const ids = rerunRequests(requests).map(r => r.id);
+  // A declined plan keeps stages and analysis_stages as what the reset would have reopened; nothing reopens.
+  const declined = (reason: string) => ({ ...none, stages: reset, analysis_stages: analysis, declined: { request_ids: ids, reason } });
+  if (opts.autoResetUsed) return declined("the run's one automatic rerun was already used");
+  if (analysis.length > limit) return declined(`it would reopen ${analysis.length} analysis stages, over the automatic limit of ${limit}`);
+  return { mode: "auto", stages: reset, analysis_stages: analysis, request_ids: ids };
+}
+
+/**
+ * The batch as it is kept: a stored owner's `requires_rerun` (legacy) is dropped, keeping its status and text, and each
+ * declined rework request becomes unavailable ("Not rerun: …"), so it stays an open report question.
+ */
+export function settleRerunRequests(requests: TeamRequest[], declined?: RequestResetPlan["declined"]): TeamRequest[] {
+  const ids = new Set(declined?.request_ids ?? []);
+  return requests.map(request => {
+    const response = request.response;
+    if (response?.requires_rerun !== true) return request;
+    const { requires_rerun: _, ...kept } = response;
+    if (!request.rework_stage) return { ...request, response: kept };
+    if (!ids.has(request.id)) return request;
+    return { ...request, response: { ...kept, status: "unavailable",
+      answer: `Not rerun: ${request.rework_stage} was not rerun because ${declined!.reason}. ${request.question}` } };
+  });
 }
 
 async function writeTeamRequests(tx: Sql, runId: string, batch: RequestBatch) {
@@ -376,7 +417,7 @@ export async function rerunRequestStages(tx: Sql, runId: string, batch: RequestB
     }) });
 }
 
-/** A reviewer declined the re-run: its requests become open questions and the report continues. */
+/** A reviewer declined a legacy re-run approval: its requests become open questions and the report continues. */
 export async function skipRequestRerun(tx: Sql, runId: string, batch: RequestBatch, requestIds: string[]) {
   const ids = new Set(requestIds);
   const { rerun_stages: _, ...rest } = batch;
@@ -479,17 +520,17 @@ async function ownerAnswer(sql: Sql, ctx: ResearchRunContext, request: TeamReque
     } }, promptFactory: p => exactJsonPrompt({ agentName: owner.agent, requiredKeys: ANSWER_CONTRACT.requiredKeys, packet: p,
       extraRules: [owner.purpose,
         "Answer the report agent's exact question from the refreshed artifacts, quoted evidence and passages. passages are excerpts of this run's stored documents for the request's source role; cite a passage by adding its source_id to the optional source_ids array. Use only supplied IDs.",
-        "If the question cannot be answered from these inputs and source_search_attempted is false, return needs_sources to send it to the collector once. If source_search_attempted is true, return unavailable and explain the remaining gap. Never treat a search attempt or a finished stage as proof of an answer.",
-        "Set the optional requires_rerun to true only when your own stage's output is wrong and must be recomputed; your stage and its dependents then rerun before you answer again. Omit it when the answer stands on its own."] }) });
+        "If the question cannot be answered from these inputs and source_search_attempted is false, return needs_sources to send it to the collector once. If source_search_attempted is true, return unavailable and explain the remaining gap. Never treat a search attempt or a finished stage as proof of an answer."] }) });
   const kept = keepCurrentReferences(response, references);
   return { status: kept.status, answer: kept.answer, evidence_ids: kept.evidence_ids, artifact_ids: kept.artifact_ids,
-    ...(kept.source_ids ? { source_ids: kept.source_ids } : {}), ...(kept.requires_rerun === true ? { requires_rerun: true } : {}) };
+    ...(kept.source_ids ? { source_ids: kept.source_ids } : {}) };
 }
 
 /**
  * Answer the batch without resetting stages: stored market history and FRED first, then each owner from
- * research-memory passages, with one collector search per request at most. Stages reopen only when an
- * owner sets requires_rerun: automatically once per run within the limit, otherwise after a reviewer approves.
+ * research-memory passages, with one collector search per request at most. An owner's answer never reopens a stage;
+ * only code's rework requests (the valuation check) do, automatically once per run within the limit. Nothing pauses
+ * the run for approval (pipeline-simplification).
  */
 export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext) {
   let batch = await getTeamRequests(sql, ctx.runId);
@@ -561,7 +602,9 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
   const [auto] = await sql`SELECT 1 FROM research_run_resets WHERE research_run_id = ${ctx.runId} AND kind = 'auto' LIMIT 1`;
   const plan = requestResetPlan(batch.requests, stages.map(s => ({ stage_key: String(s.stage_key), status: String(s.status) })),
     { autoResetUsed: Boolean(auto) });
-  if (plan.mode === "none") {
+  const settled = settleRerunRequests(batch.requests, plan.declined);
+  if (settled.some((request, i) => request !== batch!.requests[i])) { batch = { ...batch, requests: settled }; await save(); }
+  if (plan.mode !== "auto") {
     const { rerun_stages: _, ...rest } = batch;
     batch = { ...rest, state: "answered" };
     await save();
@@ -572,25 +615,13 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
     const [locked] = await tx`SELECT status FROM research_runs WHERE id = ${ctx.runId} FOR UPDATE`;
     if (locked?.status !== "running") throw new Error("Research requests cannot bypass a human gate");
     const record = { stages: plan.stages, request_ids: plan.request_ids };
-    if (plan.mode === "auto") {
-      await rerunRequestStages(tx as unknown as Sql, ctx.runId, final, record,
-        `Superseded: its owning stage was reopened by team request round ${final.round}.`);
-      // Only automatic resets use up the run's one automatic re-run.
-      await tx`INSERT INTO research_run_resets (research_run_id, kind, status, stages, request_ids, round)
-        VALUES (${ctx.runId}, 'auto', 'applied', ${record.stages}::text[], ${record.request_ids}::text[], ${final.round ?? null})`;
-      await tx`UPDATE research_runs SET updated_at = NOW() WHERE id = ${ctx.runId}`;
-      return;
-    }
-    const [{ cost }] = await tx`SELECT COALESCE(SUM(m.cost_usd), 0) AS cost FROM model_call_logs m
-      JOIN research_stages s ON s.id = m.stage_id WHERE m.research_run_id = ${ctx.runId} AND s.stage_key = ANY(${plan.stages}::text[])`;
-    const { rerun_stages: _, ...rest } = final;
-    await writeTeamRequests(tx as unknown as Sql, ctx.runId, { ...rest, state: "processing" });
-    // The report stage that raised the round waits with the run.
-    await tx`UPDATE research_stages SET status = 'waiting_for_human', updated_at = NOW()
-      WHERE research_run_id = ${ctx.runId} AND stage_key = ANY(${REPORT_STAGES}::text[]) AND status = 'running'`;
-    await tx`INSERT INTO research_run_resets (research_run_id, kind, status, stages, request_ids, estimated_cost_usd)
-      VALUES (${ctx.runId}, 'approval', 'pending', ${record.stages}::text[], ${record.request_ids}::text[], ${Number(cost)})`;
-    await tx`UPDATE research_runs SET status = 'waiting_for_human', updated_at = NOW() WHERE id = ${ctx.runId}`;
+    await rerunRequestStages(tx as unknown as Sql, ctx.runId, final, record,
+      `Superseded: its owning stage was reopened by team request round ${final.round}.`);
+    // The automatic reset uses up the run's one automatic re-run. No approval row is created any more; legacy pending
+    // ones are still decided through approveRequestReset.
+    await tx`INSERT INTO research_run_resets (research_run_id, kind, status, stages, request_ids, round)
+      VALUES (${ctx.runId}, 'auto', 'applied', ${record.stages}::text[], ${record.request_ids}::text[], ${final.round ?? null})`;
+    await tx`UPDATE research_runs SET updated_at = NOW() WHERE id = ${ctx.runId}`;
   });
   return true;
 }
@@ -598,8 +629,8 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
 /** A rework request asks for its stage's rerun once; after the rerun it is answered by the recomputed artifacts. */
 export function reworkAnswer(request: TeamRequest): TeamAnswer {
   return request.reworked
-    ? { status: "answered", answer: `${request.rework_stage} was rerun for this review finding.`, evidence_ids: [], artifact_ids: [], resolved_by: "system:rework" }
-    : { status: "answered", answer: `The review sent ${request.rework_stage} back for rework.`, evidence_ids: [], artifact_ids: [], resolved_by: "system:rework", requires_rerun: true };
+    ? { status: "answered", answer: `${request.rework_stage} was rerun for this rework request.`, evidence_ids: [], artifact_ids: [], resolved_by: "system:rework" }
+    : { status: "answered", answer: `Code sent ${request.rework_stage} back for rework.`, evidence_ids: [], artifact_ids: [], resolved_by: "system:rework", requires_rerun: true };
 }
 
 export function includeUnansweredQuestions(outline: ReportOutline, batch: RequestBatch | null): ReportOutline {

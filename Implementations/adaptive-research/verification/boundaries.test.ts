@@ -17,7 +17,8 @@ test("AC-3: an evidenced no-moat result is complete; critical unanswered questio
       paragraphs: [{ kind: "analysis", text: "Low switching friction leaves pricing exposed.", evidence_ids: ["c"], artifact_ids: [] }],
       counterevidence: "No retention disclosure supports a durable advantage.", implication: "Do not assume protected pricing.", gaps: [], tables: [] }] });
   assert.equal(document.conclusion_status, "withheld");
-  assert.match(document.markdown, /Conclusion withheld/);
+  // adaptive-4: the status stays withheld; the banner states a provisional view instead of "Conclusion withheld".
+  assert.match(document.markdown, /Provisional view - material questions remain open/);
   assert.match(document.markdown, /Obtain debt maturity disclosure/);
 });
 

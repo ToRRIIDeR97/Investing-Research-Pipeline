@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { currentReviews, groupReviewQueue, reviewCount } from "../src/lib/review/queue-rules";
-import { decisionOptions, refusalWords, reviewBody, withReportCheck, REPORT_UNCHECKED } from "../src/lib/review/review-view";
+import { decisionOptions, refusalWords, reviewBody, reviewOutcomeLabel, withReportCheck, REPORT_UNCHECKED } from "../src/lib/review/review-view";
 import { assembleReviewQueue } from "../src/lib/review/review-queue";
 
 test("assembleReviewQueue: the light path loads no summary; the full path loads one per company", async () => {
@@ -66,4 +66,17 @@ test("reviewBody carries a null hash through and refusalWords explains each rout
   }
   assert.equal(refusalWords("SOMETHING_ELSE", "the run_id was wrong"), "The run id was wrong");
   assert.equal(refusalWords(undefined), "The decision couldn't be saved. Try again.");
+});
+
+// pipeline-simplification: the AI verdict is advisory, so REPORT_REVIEW_FAILED now means no finished review, and the
+// review's label shows the actual verdict rather than "Passed for tracking".
+test("REPORT_REVIEW_FAILED says the AI review is missing, and the outcome label shows the actual verdict", () => {
+  const words = refusalWords("REPORT_REVIEW_FAILED", "raw");
+  assert.match(words, /missing or hasn't finished/);
+  assert.doesNotMatch(words, /didn't pass/);
+  assert.equal(reviewOutcomeLabel(null), "No AI review");
+  assert.equal(reviewOutcomeLabel({ verdict: "pass", trackable: true, positionable: true }), "AI review: passed");
+  assert.equal(reviewOutcomeLabel({ verdict: "needs_more_work", trackable: true, positionable: false }), "AI review: needs more work, open for tracking");
+  assert.equal(reviewOutcomeLabel({ verdict: "fail", trackable: true, positionable: false }), "AI review: failed, open for tracking");
+  assert.equal(reviewOutcomeLabel({ verdict: null, trackable: false, positionable: false }), "AI review: no verdict");
 });

@@ -72,13 +72,15 @@ test("replaying a specialist invalidates its consumers without reopening plan ap
   for (const key of ["company_genesis", "business_process_analysis", "moat_analysis"]) assert.ok(financial.includes(key));
   assert.ok(dependentStages(["source_discovery"]).includes("historical_record"));
 });
-test("requests reopen only an owner's stage that asked for a re-run, and unresolved material questions block the report", () => {
+test("requests reopen only a code rework's stage, and unresolved material questions block the report", () => {
   const request: TeamRequest = { id: "r1", role: "valuation", question: "What is the disclosed maintenance capex?", material: true, needs_sources: true, source_role: "regulatory_filing" };
   // Research request routing AC-5: missing disclosure goes to the collector without reopening source_discovery,
   // and an arriving request reopens nothing; only the owner's requires_rerun names its stage.
   assert.deepEqual(requestStageRoots([request]), []);
   assert.deepEqual(requestStageRoots([{ ...request, needs_sources: false }]), []);
-  assert.deepEqual(requestStageRoots([{ ...request, response: { status: "answered", answer: "Recompute", evidence_ids: [], artifact_ids: ["a1"], requires_rerun: true } }]), ["asset_valuation"]);
+  // pipeline-simplification: an owner's requires_rerun names no root (was ["asset_valuation"]); only code's rework does.
+  assert.deepEqual(requestStageRoots([{ ...request, response: { status: "answered", answer: "Recompute", evidence_ids: [], artifact_ids: ["a1"], requires_rerun: true } }]), []);
+  assert.deepEqual(requestStageRoots([{ ...request, rework_stage: "asset_valuation", response: { status: "answered", answer: "Rework", evidence_ids: [], artifact_ids: [], requires_rerun: true } }]), ["asset_valuation"]);
   const outline = includeUnansweredQuestions({ sections: [], coverage: [], questions: [] }, { round: 2, state: "answered", requests: [{ ...request, response: { status: "unavailable", answer: "Issuer does not disclose it", evidence_ids: [], artifact_ids: [] } }] });
   assert.equal(outline.questions[0].status, "blocked");
   assert.equal(outline.questions[0].materiality, "material");

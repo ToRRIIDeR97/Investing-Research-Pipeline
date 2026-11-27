@@ -5,8 +5,9 @@ const YearBuild = z.object({
   starting_profit:z.number(),depreciation_amortization:z.number(),capital_expenditures:z.number(),
   change_in_net_working_capital:z.number(),other_adjustments:z.number(),
 });
+const MODEL_METHODS = ['fcff','fcfe','dividend','earnings_exit','book_exit','tangible_book_exit'] as const;
 const MethodFields = {
-  method:z.enum(['fcff','fcfe','dividend','earnings_exit','book_exit','tangible_book_exit']),
+  method:z.enum(MODEL_METHODS),
   method_name:z.string().min(1), scenario_type:z.enum(['bear','base','bull']),
   rationale:z.string().min(1), currency:z.string().length(3),
   cash_flow_label:z.string().min(1), discount_rate:z.number().min(0).max(1),
@@ -25,17 +26,33 @@ export const ModelMethodInput = z.object({
 });
 
 /**
- * A stored schedule. Code-built FCFF schedules may also carry fade years (code-generated after the explicit
+ * A code-built bank year (residual_income): tangible equity rolled forward to the capital the risk-weighted assets
+ * require, net income, the equity charge (cost of equity x opening tangible equity) and what is left to distribute
+ * (negative when the bank must raise capital). Millions; rates decimals.
+ */
+const EquityBuild = z.object({
+  opening_tangible_equity:z.number(), net_income:z.number(), counted_net_income:z.number(), equity_charge:z.number(),
+  rote:z.number().nullable(), rwa_growth:z.number(), rwa_index:z.number(), target_cet1_ratio:z.number().nullable(),
+  closing_tangible_equity:z.number(), distributable:z.number(),
+});
+
+/**
+ * A stored schedule. Code-built bank schedules use method residual_income: cash_flow is each year's excess return
+ * (net income - cost of equity x opening tangible equity), equity_bridge is the opening tangible equity, and the
+ * excess_return terminal is closing tangible equity x (ROTE - r) / (r - g). Code-built FCFF schedules may also carry fade years (code-generated after the explicit
  * forecast, `fade: true`), a value-driver terminal on the final NOPAT, TV = NOPAT x (1 + g) x (1 - g / RONIC) / (r - g),
  * and timing: the first year is discounted over the fraction of it left after the valuation date, and only its
  * cash flow after the year-to-date already reported counts.
  */
 export const ValuationMethodInput = z.object({
   ...MethodFields,
-  years:z.array(z.object({fiscal_year:z.number().int(),cash_flow:z.number(),build:YearBuild.optional(),fade:z.boolean().optional()})).min(1).max(25),
+  method:z.enum([...MODEL_METHODS,'residual_income']),
+  years:z.array(z.object({fiscal_year:z.number().int(),cash_flow:z.number(),build:YearBuild.optional(),fade:z.boolean().optional(),
+    equity_build:EquityBuild.optional()})).min(1).max(25),
   terminal:z.discriminatedUnion('type',[
     PerpetuityTerminal, MultipleTerminal,
     z.object({type:z.literal('value_driver'),metric:z.literal('nopat'),metric_value:z.number(),growth_rate:z.number().min(-1).max(1),ronic:z.number().positive()}),
+    z.object({type:z.literal('excess_return'),metric:z.literal('tangible_equity'),metric_value:z.number(),growth_rate:z.number().min(-1).max(1),rote:z.number().gt(-1).lt(1)}),
   ]),
   timing:z.object({
     valuation_date:z.string().min(10), first_year_fraction:z.number().gt(0).max(1),
@@ -51,7 +68,10 @@ export function calculateValuationSchedule(value:unknown) {
   const model=ValuationMethodInput.parse(value);
   if(model.years.some((y,i)=>i>0&&y.fiscal_year!==model.years[i-1].fiscal_year+1))throw new Error('Valuation years must be consecutive and increasing.');
   if(model.method.endsWith('_exit')&&model.terminal.type!=='multiple')throw new Error('Exit valuation requires a terminal multiple.');
-  if(model.method!=='fcff'&&model.equity_bridge!==0)throw new Error('Equity methods cannot subtract net debt again.');
+  const residual=model.method==='residual_income';
+  if(residual!==(model.terminal.type==='excess_return'))throw new Error('The residual_income method needs the excess_return terminal, and only it.');
+  // The residual-income bridge is the opening tangible equity, not net debt.
+  if(model.method!=='fcff'&&!residual&&model.equity_bridge!==0)throw new Error('Equity methods cannot subtract net debt again.');
   const r=model.discount_rate, times=yearTimes(model);
   // Without timing every cash flow counts in full; with it the first year counts only what is left after the reported part.
   const years=model.years.map((y,i)=>{
@@ -63,8 +83,11 @@ export function calculateValuationSchedule(value:unknown) {
   if(t.type!=='multiple'&&t.growth_rate>=r)throw new Error('Terminal growth must be below the discount rate.');
   // At RONIC <= g growth costs at least all of NOPAT, and the value-driver terminal turns zero or negative.
   if(t.type==='value_driver'&&t.ronic<=t.growth_rate)throw new Error('RONIC must exceed terminal growth.');
+  // At ROTE <= g the terminal-year equity is worth nothing or less: growth would consume all earnings.
+  if(t.type==='excess_return'&&t.rote<=t.growth_rate)throw new Error('Terminal ROTE must exceed terminal growth.');
   const terminal_value=t.type==='multiple'?t.metric_value*t.multiple
     :t.type==='value_driver'?t.metric_value*(1+t.growth_rate)*(1-t.growth_rate/t.ronic)/(r-t.growth_rate)
+    :t.type==='excess_return'?t.metric_value*(t.rote-r)/(r-t.growth_rate)
     :years.at(-1)!.cash_flow*(1+t.growth_rate)/(r-t.growth_rate);
   const terminal_present_value=terminal_value*years.at(-1)!.discount_factor;
   const explicit_present_value=years.reduce((n,y)=>n+y.present_value,0);
@@ -72,8 +95,11 @@ export function calculateValuationSchedule(value:unknown) {
   const value_per_share=equity_value/model.diluted_shares;
   if(!Number.isFinite(value_per_share))throw new Error('Valuation calculation is not finite.');
   const enterprise_value=explicit_present_value+terminal_present_value;
+  // For residual income the opening book is part of the value, not a bridge from an enterprise value: the terminal share
+  // is of the whole equity value.
+  const valueBase=residual?equity_value:enterprise_value;
   return {...model,years,terminal_value,terminal_present_value,equity_value,value_per_share,explicit_present_value,enterprise_value,
-    tv_share_of_ev:enterprise_value>0?terminal_present_value/enterprise_value:null};
+    tv_share_of_ev:valueBase>0?terminal_present_value/valueBase:null};
 }
 
 export function validateMethodInputs(models:ValuationMethodInput[]) {

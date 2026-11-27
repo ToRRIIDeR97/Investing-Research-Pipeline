@@ -125,7 +125,10 @@ test("AC-4: when the search finds nothing the single answer attempt ends unavail
   } finally { model.restore(); web.restore(); await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
 });
 
-/** A financials answer that asks for a re-run: 9 analysis stages, above the default limit of 6. */
+/**
+ * A financials answer that asks for a re-run: 9 analysis stages, above the default limit of 6. Since
+ * pipeline-simplification an owner's answer never reruns or pauses anything, so this no longer pauses the run.
+ */
 async function pauseOnFinancialsRerun(sql: postgres.Sql, run: Run) {
   const record = await saveReportArtifact(sql, run, "historical_record", `${run.assetSlug}-historical-record`,
     { artifact_type: "historical_record", summary: `Capex series with year-to-date derived quarters. Fixture ${run.runId}.` });
@@ -143,39 +146,56 @@ async function pauseOnFinancialsRerun(sql: postgres.Sql, run: Run) {
   return String(record.id);
 }
 
-test("AC-6: a re-run above the automatic limit pauses the run with its stages, requests and estimated cost", { skip }, async () => {
+/**
+ * A run paused the way the code before pipeline-simplification paused it: a pending approval row for a financials
+ * re-run, the batch processing, and the run and its report stage waiting. New code never creates this state; legacy
+ * rows must still be decidable through approveRequestReset and the request-reset route.
+ */
+async function legacyFinancialsPause(sql: postgres.Sql, run: Run) {
+  const record = await saveReportArtifact(sql, run, "historical_record", `${run.assetSlug}-historical-record`,
+    { artifact_type: "historical_record", summary: `Capex series with year-to-date derived quarters. Fixture ${run.runId}.` });
+  await saveBatch(sql, run, [{ ...REQUEST_1_2, response: { status: "answered", answer: "The Q3 2025 quarter must be captured and its consumers recomputed.",
+    evidence_ids: [], artifact_ids: [String(record.id)], requires_rerun: true } }], { state: "processing" });
+  await sql`INSERT INTO research_run_resets (research_run_id, kind, status, stages, request_ids, estimated_cost_usd)
+    VALUES (${run.runId}, 'approval', 'pending', ${dependentStages(["historical_record"])}::text[], ${[REQUEST_1_2.id]}::text[], 0.911)`;
+  await sql`UPDATE research_stages SET status = 'waiting_for_human' WHERE research_run_id = ${run.runId} AND stage_key = 'ai_reviewer'`;
+  await sql`UPDATE research_runs SET status = 'waiting_for_human' WHERE id = ${run.runId}`;
+  return String(record.id);
+}
+
+// pipeline-simplification: an owner's re-run request above the limit no longer pauses the run (was: waiting_for_human with
+// a pending row holding the stages, request ids and estimated cost). It reruns nothing, and its flag is not stored.
+test("AC-6: an owner's re-run request above the automatic limit pauses nothing and reruns nothing", { skip }, async () => {
   const sql = postgres(process.env.DATABASE_URL!);
   const run = await createRun(sql);
   try {
     await pauseOnFinancialsRerun(sql, run);
     const state = await runState(sql, run.runId);
-    assert.equal(state.status, "waiting_for_human");
-    const reset = state.requestReset;
-    assert.ok(reset, "a pending research_run_resets row is set");
-    assert.deepEqual(sorted(reset.stages), sorted(dependentStages(["historical_record"])));
-    assert.deepEqual(reset.request_ids, [REQUEST_1_2.id]);
-    // Every reset stage's earlier cost, company_genesis included now that it reads the analytics digest.
-    assert.ok(Math.abs(Number(reset.estimated_cost_usd) - 0.911) < 1e-6, `estimated cost ${reset.estimated_cost_usd}`);
+    assert.equal(state.status, "running");
+    assert.equal(state.requestReset ?? null, null, "no pending research_run_resets row");
     const statuses = await stageStatuses(sql, run.runId);
-    assert.equal(statuses.ai_reviewer, "waiting_for_human");
-    assert.equal(statuses.historical_record, "completed", "nothing is reset before approval");
+    assert.equal(statuses.ai_reviewer, "running");
+    assert.equal(statuses.historical_record, "completed", "nothing is reset");
     assert.equal(statuses.asset_valuation, "completed");
+    const response = (await getTeamRequests(sql, run.runId))!.requests[0].response!;
+    assert.equal(response.status, "answered", "the owner's answer is kept");
+    assert.equal(response.requires_rerun, undefined, "its rerun flag is dropped");
   } finally { await cleanup(sql, [run.runId], [run.assetId]); await sql.end(); }
 });
 
+// pipeline-simplification: the automatic re-run now comes only from code's rework request (the valuation check), answered
+// without an owner call (was: the owner's requires_rerun answer, after one owner call).
 test("AC-6: the first re-run within the limit resets the owner stage and its dependents automatically", { skip }, async () => {
   const sql = postgres(process.env.DATABASE_URL!);
   const run = await createRun(sql);
-  let valuationId = "";
   const model = scriptModel(packet => packet.output_contract !== "team_answer" ? undefined : {
-    status: "answered", answer: "The schedule discounts from the wrong base date; the valuation must be recomputed.",
-    evidence_ids: [], artifact_ids: [valuationId], requires_rerun: true });
+    status: "answered", answer: "Not asked.", evidence_ids: [], artifact_ids: [] });
   try {
-    valuationId = String((await saveReportArtifact(sql, run, "valuation_scenario_set", `${run.assetSlug}-valuation`,
-      { artifact_type: "valuation_scenario_set", valuation_status: "withheld", fixture: run.runId })).id);
-    await saveBatch(sql, run, [REQUEST_1_4]);
+    await saveReportArtifact(sql, run, "valuation_scenario_set", `${run.assetSlug}-valuation`,
+      { artifact_type: "valuation_scenario_set", valuation_status: "withheld", fixture: run.runId });
+    await saveBatch(sql, run, [{ ...REQUEST_1_4, question: `Rework asset_valuation: ${REQUEST_1_4.question}`, rework_stage: "asset_valuation" }]);
     await drain(sql, run);
-    assert.equal(model.answers().length, 1, "the owner answered before anything was reset");
+    assert.equal(model.answers().length, 0, "pipeline-simplification: code answers a rework request, no owner call (was 1)");
     const state = await runState(sql, run.runId);
     assert.equal(state.status, "running");
     assert.equal(state.requestReset ?? null, null, "no approval is needed");
@@ -190,7 +210,7 @@ test("AC-7: approving the re-run performs the reset and resumes the run", { skip
   const sql = postgres(process.env.DATABASE_URL!);
   const run = await createRun(sql);
   try {
-    const recordId = await pauseOnFinancialsRerun(sql, run);
+    const recordId = await legacyFinancialsPause(sql, run); // pipeline-simplification: a legacy pending row (new code creates none)
     assert.equal((await runState(sql, run.runId)).status, "waiting_for_human", "fixture: the run is paused on the request reset");
     await approveRequestReset(run.runId, { decision: "rerun", actor: "qa-reviewer" });
     const state = await runState(sql, run.runId);
@@ -210,7 +230,7 @@ test("AC-7: skipping the re-run marks the request unavailable and lets the repor
   const sql = postgres(process.env.DATABASE_URL!);
   const run = await createRun(sql);
   try {
-    await pauseOnFinancialsRerun(sql, run);
+    await legacyFinancialsPause(sql, run); // pipeline-simplification: a legacy pending row (new code creates none)
     assert.equal((await runState(sql, run.runId)).status, "waiting_for_human", "fixture: the run is paused on the request reset");
     await approveRequestReset(run.runId, { decision: "skip", actor: "qa-reviewer" });
     const state = await runState(sql, run.runId);
@@ -231,7 +251,7 @@ test("AC-7: the route rejects an unknown decision with 400 and queues nothing", 
   const sql = postgres(process.env.DATABASE_URL!);
   const run = await createRun(sql);
   try {
-    await pauseOnFinancialsRerun(sql, run);
+    await legacyFinancialsPause(sql, run); // pipeline-simplification: a legacy pending row (new code creates none)
     // The 200 path queues a real job, which a worker polling this database would run; it is a manual check.
     const response = await POST(new NextRequest(`http://localhost/api/research-runs/${run.runId}/request-reset`, { method: "POST",
       body: JSON.stringify({ decision: "approve", actor: "qa-reviewer" }), headers: { "content-type": "application/json" } }),

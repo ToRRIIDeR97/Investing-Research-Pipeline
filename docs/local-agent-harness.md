@@ -51,7 +51,7 @@ The model for a task, first match wins:
 
 `RESEARCH_MID_MODEL` and `RESEARCH_CHEAP_MODEL` used to rank below `RESEARCH_ALL_AGENTS_MODEL` and the per-agent variables. They now rank above both for tiered calls; leave them unset to keep a single all-agents model.
 
-`report_draft` (the report writers, split out of `ai_reviewer` in architecture-9) reads `RESEARCH_STAGE_AI_REVIEWER_MODEL` and `RESEARCH_STAGE_AI_REVIEWER_EFFORT` when its own `RESEARCH_STAGE_REPORT_DRAFT_*` setting is unset, so a reviewer setting made before the split still steers the writers; set `RESEARCH_STAGE_REPORT_DRAFT_MODEL` to give the writers their own model. The review calls and the repair round stay on the `AI_REVIEWER` settings.
+`report_draft` (the report writers, split out of `ai_reviewer` in architecture-9) reads `RESEARCH_STAGE_AI_REVIEWER_MODEL` and `RESEARCH_STAGE_AI_REVIEWER_EFFORT` when its own `RESEARCH_STAGE_REPORT_DRAFT_*` setting is unset, so a reviewer setting made before the split still steers the writers; set `RESEARCH_STAGE_REPORT_DRAFT_MODEL` to give the writers their own model. The review calls stay on the `AI_REVIEWER` settings.
 
 Fallbacks: a stage model falls back only to `RESEARCH_STAGE_<KEY>_FALLBACK_MODEL`, and a tier model only to `RESEARCH_<TIER>_FALLBACK_MODEL` (none when unset). A stage pinned to one model never inherits its tier's fallback. Other models keep the agent's own fallback rules.
 
@@ -66,7 +66,7 @@ Effort (anthropic-direct only), first match wins: `RESEARCH_STAGE_<KEY>_EFFORT`,
 
 Limits per task:
 
-- **Output cap:** `decision_synthesis` and `operating_scenarios` start at 65,536 output tokens instead of 32,768 (Haiku's synthesis needed 39K and was cut off at 32K on META 4fae0fb1).
+- **Output cap:** `decision_synthesis`, `operating_scenarios`, `business_process_analysis`, `company_genesis`, `moat_analysis` and `operating_model` start at 65,536 output tokens instead of 32,768 (Haiku's synthesis needed 39K and was cut off at 32K on META 4fae0fb1; each of the others ran out at 32K on paid SoFi runs, mostly on reasoning).
 - **Premium timeout:** premium calls get `RESEARCH_PREMIUM_TIMEOUT_MS`, default 1,200,000 ms. Haiku 5.5 measured 195-252 output tokens/s on the heavy META calls, and a full 65,536-token answer at a quarter of that speed takes about 1,100 s. Re-size it from `latency_ms` and `output_tokens` in `model_call_logs` after the first premium run.
 - **Budget reserve:** each attempt's reserve is a prompt of 100,001 tokens plus a full-cap answer at the model's list price (`telemetry.ts`). The prompt sits just above Haiku 5.5's 100K long-prompt threshold, so the 5x rate is covered: 24 of META 4fae0fb1's 79 calls were above it, and a cheap Haiku call now reserves about $0.13. The floor is `RESEARCH_ATTEMPT_BUDGET_RESERVE_USD` (0.1), and `RESEARCH_<TIER>_ATTEMPT_BUDGET_RESERVE_USD` overrides it. That gives about $1.71 for Opus 5.5 on a long-output stage, and the $0.10 floor for Haiku.
 

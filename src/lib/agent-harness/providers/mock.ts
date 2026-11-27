@@ -656,7 +656,16 @@ function v3ValuationResponse(packet: Record<string, unknown>) {
       source_notes: ["Synthetic fixture; not investment analysis"],
     } };
   }
-  // Banks: model-built equity schedules; code assembles the path, anchors and returns.
+  // Deposit-funded banks: only the excess-return assumptions; the fixture keeps the code defaults.
+  if (packet.output_contract === "bank_valuation_assumptions") {
+    const defaults = (packet.default_bank_assumptions ?? {}) as Record<string, unknown>;
+    return { bank_valuation_assumptions: {
+      artifact_type: "bank_valuation_assumptions", ...defaults,
+      omitted_methods: [{ method: "fcfe", reason: "Synthetic bank: deposit growth is funding, so value comes from excess returns on tangible equity." }],
+      source_notes: ["Synthetic fixture; not investment analysis"],
+    } };
+  }
+  // Other financials: model-built equity schedules; code assembles the path, anchors and returns.
   return {
     valuation_scenario_set: {
       artifact_type: "valuation_scenario_set",
@@ -855,15 +864,16 @@ export class MockProvider implements ModelProvider {
     } else if (request.agentName === "asset-analyst") {
       // Route on the explicit output_contract discriminator (set by stage-specific handlers).
       const contract = packet.output_contract as string | undefined;
-      if (contract === "company_genesis") {
+      if (contract?.startsWith("company_genesis")) {
         response = v3CompanyGenesisResponse(packet);
       } else if (contract === "historical_diagnosis") {
         response = v3HistoricalDiagnosisResponse(packet);
-      } else if (contract === "business_process_analysis") {
+      } else if (contract?.startsWith("business_process_analysis")) {
+        // The three business calls (segments, flow, competition) get the full fixture; the handler keeps the keys each owns.
         response = v3BusinessProcessResponse(packet);
-      } else if (contract === "moat_analysis") {
+      } else if (contract?.startsWith("moat_analysis")) {
         response = v3MoatResponse(packet);
-      } else if (contract === "operating_model") {
+      } else if (contract?.startsWith("operating_model")) {
         response = v3OperatingModelResponse(packet);
       } else if (contract === "operating_scenarios") {
         response = v3OperatingScenariosResponse(packet);

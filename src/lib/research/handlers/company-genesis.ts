@@ -1,6 +1,7 @@
 import type { ResearchRunContext, StageHandler } from "../run-context";
-import { callResearchAgent, exactJsonPrompt } from "../run-context";
-import { COMPANY_GENESIS_CONTRACT } from "../stage-contracts";
+import { callResearchAgent } from "../run-context";
+import { COMPANY_GENESIS_CONTRACT, GENESIS_HISTORY_CONTRACT, GENESIS_ORIGIN_CONTRACT } from "../stage-contracts";
+import { partCall, runSplitStage } from "./split-calls";
 import { loadAcceptedEvidencePacket } from "../sources/corpus";
 import {
   dropInvalidCitationIds,
@@ -31,6 +32,18 @@ export const GENESIS_PROMPT_RULES = [
   "Where the evidence says nothing more about the founders, state that limitation in founder_background and background_summary rather than inventing history.",
 ];
 
+/**
+ * Added when the run has no founder or company-history document. Source discovery already records the gap
+ * (missing_founder_and_company_history, owned by system:source-collector); the stage writes the history from what the
+ * run holds instead of stopping (SoFi run 7c70364e stopped here when web search found no history page).
+ */
+export const MISSING_HISTORY_RULE = "missing_source_roles names the source roles this run could not fetch. With no founder or company-history document, build the history from the filings and other accepted evidence_claims (the business and history sections of annual reports and registration statements, results releases, proxy statements): cite those claims, use documented_company_action or analyst_inference as evidence_weight with low confidence, and state in founder_background and background_summary that no founder or company-history source was available. Do not invent founders, dates or motivations the evidence does not support.";
+
+/** The source roles the genesis stage reads; a missing one becomes a packet note, not a stop. */
+export function genesisMissingRoles(presentRoles: string[]) {
+  return missingRequiredSourceRoles(["founder_and_company_history"], presentRoles);
+}
+
 export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "company_genesis",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
@@ -43,15 +56,7 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
       WHERE (sd.research_run_id = ${ctx.runId} OR rrs.research_run_id = ${ctx.runId})
         AND sra.confidence >= 70
     `;
-    const missingRoles = missingRequiredSourceRoles(
-      ["founder_and_company_history"],
-      roleRows.map((row) => String(row.role))
-    );
-    if (missingRoles.length > 0) {
-      throw new Error(
-        `Company genesis blocked by evidence coverage: missing ${missingRoles.join(", ")}`
-      );
-    }
+    const missingRoles = genesisMissingRoles(roleRows.map((row) => String(row.role)));
     const evidenceClaims = await loadAcceptedEvidencePacket(sql, {
       runId: ctx.runId,
       runType: ctx.runType,
@@ -76,8 +81,7 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
         profileKey: ctx.profileKey,
       },
       required_modules: ["founder_and_company_history", "corporate_structure"],
-      output_contract: "company_genesis",
-      output_schema: COMPANY_GENESIS_CONTRACT.schema,
+      ...(missingRoles.length ? { missing_source_roles: missingRoles } : {}),
       evidence_claims: evidenceClaims,
       artifact_shape: {
         company_genesis: {
@@ -112,51 +116,48 @@ export const companyGenesisHandler: StageHandler<Record<string, unknown>> = {
       },
     };
 
-    const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
-      agentName: "asset-analyst",
-      requiredKeys: COMPANY_GENESIS_CONTRACT.requiredKeys,
-      packet: p,
-      extraRules: GENESIS_PROMPT_RULES,
-    });
-
-    let output = await callResearchAgent<Record<string, any>>({
-      sql, ctx, stageKey: "company_genesis", taskKey,
-      taskType: "company_genesis", agentName: "asset-analyst", modelTier: "mid",
-      packet, promptFactory,
-      outputFormat: COMPANY_GENESIS_CONTRACT,
-    });
+    // Two calls side by side: the origin and founder, and the strategic history (split-calls.ts). Each is given
+    // artifact_shape for its own artifacts only.
+    const { artifact_shape: shape, ...shared } = packet;
+    const shapeFor = (contract: { requiredKeys: string[] }) =>
+      ({ artifact_shape: Object.fromEntries(contract.requiredKeys.map((key) => [key, (shape as Record<string, unknown>)[key]])) });
+    const split = {
+      sql, ctx, stageKey: "company_genesis", taskKey, taskType: "company_genesis", agentName: "asset-analyst" as const, modelTier: "mid",
+      packet: shared, rules: missingRoles.length ? [...GENESIS_PROMPT_RULES, MISSING_HISTORY_RULE] : GENESIS_PROMPT_RULES,
+      parts: [
+        { name: "origin", contract: GENESIS_ORIGIN_CONTRACT, rules: [], extra: shapeFor(GENESIS_ORIGIN_CONTRACT) },
+        { name: "history", contract: GENESIS_HISTORY_CONTRACT, rules: [], extra: shapeFor(GENESIS_HISTORY_CONTRACT) },
+      ],
+    };
+    const output = await runSplitStage(split);
     const allowedClaimRows = await sql`
       SELECT id FROM evidence_claims
       WHERE research_run_id = ${ctx.runId} AND review_status = 'accepted'
     `;
-    const citationValidation = validateArtifactCitationIds(
-      output,
-      allowedClaimRows.map((row) => String(row.id))
-    );
-    if (!citationValidation.valid) {
-      const repairPacket = {
-        ...packet,
-        draft_requiring_citation_repair: output,
-        invalid_evidence_claim_ids: citationValidation.invalidIds,
-        allowed_evidence_claim_ids: allowedClaimRows.map((row) => String(row.id)),
-        repair_instruction:
-          "Return the complete four-artifact output again. Replace an invalid citation only when an allowed evidence claim directly supports the statement. Otherwise remove the unsupported statement, keeping at least one supported founder motivation. Never invent a UUID.",
-      };
-      output = await callResearchAgent<Record<string, any>>({
-        sql,
-        ctx,
-        stageKey: "company_genesis",
-        taskKey: `${taskKey}:citation-repair`,
-        taskType: "company_genesis_citation_repair",
-        agentName: "asset-analyst",
-        modelTier: "mid",
-        packet: repairPacket,
-        promptFactory,
-        outputFormat: COMPANY_GENESIS_CONTRACT,
-      });
+    const allowedIds = allowedClaimRows.map((row) => String(row.id));
+    // A part citing an unknown claim id is rerun once with the allowed ids; the other part is kept as it is.
+    let repaired = false;
+    for (const part of split.parts) {
+      const own = Object.fromEntries(part.contract.requiredKeys.map((key) => [key, output[key]]));
+      const citationValidation = validateArtifactCitationIds(own, allowedIds);
+      if (citationValidation.valid) continue;
+      repaired = true;
+      const answer = await callResearchAgent<Record<string, any>>(partCall(split, part, output, {
+        taskKey: `${taskKey}:${part.name}:citation-repair`, taskType: "company_genesis_citation_repair",
+        extra: {
+          draft_requiring_citation_repair: own,
+          invalid_evidence_claim_ids: citationValidation.invalidIds,
+          allowed_evidence_claim_ids: allowedIds,
+          repair_instruction:
+            "Return this call's artifacts again in full. Replace an invalid citation only when an allowed evidence claim directly supports the statement. Otherwise remove the unsupported statement, keeping at least one supported founder motivation. Never invent a UUID.",
+        },
+      }));
+      for (const key of part.contract.requiredKeys) output[key] = answer[key];
+    }
+    if (repaired) {
       // IDs still unknown after the repair are dropped and recorded on company_genesis, not thrown;
       // an entry left with no supporting citation is removed rather than failing the artifact contract.
-      const dropped = dropInvalidCitationIds(output, allowedClaimRows.map((row) => String(row.id)), { pruneUncited: true });
+      const dropped = dropInvalidCitationIds(output, allowedIds, { pruneUncited: true });
       if (dropped.length) {
         console.warn(`company genesis dropped citations outside the accepted packet: ${dropped.join(", ")}`);
         if (output.company_genesis && typeof output.company_genesis === "object") {

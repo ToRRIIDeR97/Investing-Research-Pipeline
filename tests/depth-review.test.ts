@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DEPTH_CHECKS, depthCheckErrors, resolveDepthChecks, deriveReview, reviewGate, valuationFlags, depthFindings } from "../src/lib/research/reporting/depth";
+import { DEPTH_CHECKS, depthCheckErrors, resolveDepthChecks, deriveReview, reviewGate, valuationFlags } from "../src/lib/research/reporting/depth";
 import { AI_REVIEWER_CONTRACT } from "../src/lib/research/stage-contracts";
 import { composeReviewedReport, reconcileCoverage } from "../src/lib/research/reporting/compose";
 import { checkReportSubstance } from "../src/lib/research/reporting/substance";
-import { nextRequestBatch, reworkRequests, requestStageRoots, reworkAnswer, preDraftRequests, postReviewAnswers, type RequestBatch, type TeamRequest } from "../src/lib/research/team";
+import { nextRequestBatch, reworkRequests, requestStageRoots, reworkAnswer, type TeamRequest } from "../src/lib/research/team";
 import { parseRubricRatings, ratingAgreement } from "../src/lib/research/scoring/rubric";
 
 const allMet = () => DEPTH_CHECKS.map(c => ({ id: c.id, status: "met" as const, section_id: "", why: "Present." }));
@@ -38,9 +38,9 @@ test("missing decision-critical depth sends the report back; unavailable data ca
   const missing = deriveReview(review({ depth_checks: withStatus("what_would_change_my_mind", "missing") }), [facts(0.1)]);
   assert.equal(missing.review_verdict, "needs_more_work");
   assert.equal(missing.model_verdict, "pass", "the reviewer's own verdict is kept");
-  const [finding] = depthFindings(missing.depth_checks, [{ id: "summary", coverage: ["conclusion"] }, { id: "valuation", coverage: ["valuation"] }]);
-  assert.deepEqual([finding.owner_stage, finding.category, finding.section_id], ["decision_synthesis", "depth_gap", "summary"],
-    "a section-repair finding aimed at the chapter that owns the check's coverage");
+  // pipeline-simplification: depthFindings (missing checks as section-repair findings) is gone with the repair round; the
+  // missing check stays on the review and still lowers the verdict (was: a depth_gap finding aimed at the summary chapter).
+  assert.equal(missing.depth_checks.find(c => c.id === "what_would_change_my_mind")!.status, "missing");
   const unavailable = deriveReview(review({ depth_checks: withStatus("ownership_and_control", "data_unavailable") }), [facts(0.1)]);
   assert.equal(unavailable.review_verdict, "conditional_pass");
   const optional = deriveReview(review({ depth_checks: withStatus("scorecard_confidence", "missing") }), [facts(0.1)]);
@@ -62,7 +62,7 @@ test("unresolved critical findings and code-confirmed high calculation findings 
   assert.equal(critical.effective_verdict, "needs_more_work");
 
   const gate = reviewGate({ ...review({ review_verdict: "needs_more_work", findings: confirmed.blocking }), ...confirmed });
-  assert.equal(gate.trackable, true, "tracking reads the reviewer's own verdict");
+  assert.equal(gate.trackable, true, "tracking needs only a completed review (pipeline-simplification; was: the reviewer's own verdict)");
   assert.equal(gate.positionable, false);
   assert.equal(reviewGate({ ...missingCritical(), review_verdict: "needs_more_work" }).trackable, true, "missing depth never deadlocks tracking");
   assert.deepEqual(reviewGate({ review_verdict: "conditional_pass", findings: [{ severity: "high" }] }),
@@ -71,6 +71,21 @@ test("unresolved critical findings and code-confirmed high calculation findings 
   assert.deepEqual([legacy.trackable, legacy.positionable, legacy.blocking], [true, false, ["Unresolved critical finding"]],
     "a stored review with an open critical finding blocks a position even without effective_verdict");
   assert.equal(reviewGate(null).trackable, false);
+});
+
+// pipeline-simplification: the AI verdict is advisory, so any completed review allows tracking; a position still needs
+// the effective verdict (was: tracking needed the reviewer's own verdict to pass).
+test("a needs_more_work or failing review allows tracking but still refuses a position when findings block it", () => {
+  const blocked = deriveReview(review({ review_verdict: "needs_more_work",
+    findings: [{ section_id: "valuation", category: "evidence", severity: "critical", issue: "Unsupported buy call." }] }), []);
+  const gate = reviewGate({ ...review({ review_verdict: "needs_more_work", findings: blocked.blocking }), ...blocked });
+  assert.equal(gate.trackable, true, "approved_for_tracking is allowed");
+  assert.equal(gate.positionable, false, "approved_for_position is refused");
+  assert.ok(gate.blocking.length > 0);
+  for (const verdict of ["fail", "failed"]) {
+    const g = reviewGate({ review_verdict: verdict, findings: [] });
+    assert.deepEqual([g.trackable, g.positionable], [true, false], verdict);
+  }
 });
 const missingCritical = () => ({ ...deriveReview(review({ depth_checks: withStatus("thesis_breakers", "missing") }), []), findings: [] });
 
@@ -92,7 +107,9 @@ const plan = (id: string, coverage: string[]) => ({ id, title: id, purpose: "Exp
 const sectionFor = (p: any, text = "Revenue grew 12% in FY2024.") => ({ ...p, paragraphs: [{ kind: "analysis", text, evidence_ids: [], artifact_ids: [] }],
   counterevidence: "Competition.", implication: "Margins hold.", gaps: [], tables: [] });
 
-test("compose uses the conclusion's coverage, repairs open high findings under conditional_pass, and reworks once after saving the review", async () => {
+// pipeline-simplification: the review is advisory, so an open high finding under conditional_pass is saved with the
+// review and nothing is reworked or repaired (was: rework once, then repair both chapters and review again).
+test("compose uses the conclusion's coverage and saves one advisory review, with no rework or repair", async () => {
   const plans = [plan("summary", ["conclusion"]), plan("valuation", ["valuation", "downside"])];
   const outline = { sections: plans, questions: [], coverage: [
     { key: "conclusion", status: "qualified", rationale: "Planned", section_ids: ["summary"] },
@@ -113,36 +130,41 @@ test("compose uses the conclusion's coverage, repairs open high findings under c
       return { review_summary: "x", quality_score: 0.5, recommendations: [], review_verdict: "conditional_pass", depth_checks: allMet(),
         findings: reviews === 1 ? [{ section_id: "valuation", category: "calculation", severity: "high", issue: "The bear case omits dilution." }] : [] };
     },
-    rework: async r => { events.push(`rework:${r.findings.length}`); return [{ category: "team_answer", section_id: "valuation", answer: "Dilution is 2% a year." }]; },
+    rework: async (r: { findings: unknown[] }) => { events.push(`rework:${r.findings.length}`); return []; },
     save: async type => { if (type === "report_review") events.push("save:review"); },
   });
-  assert.deepEqual(events, ["write:valuation", "write:summary", "review", "save:review", "rework:1", "write:valuation:repair", "write:summary:repair", "review", "save:review"]);
+  // pipeline-simplification: one review, no rework call and no repair writes (was: ..., "rework:1", "write:valuation:repair",
+  // "write:summary:repair", "review", "save:review").
+  assert.deepEqual(events, ["write:valuation", "write:summary", "review", "save:review"]);
   assert.equal(result.review.model_verdict, "conditional_pass");
+  assert.ok(result.review.findings.some(f => f.issue === "The bear case omits dilution."), "pipeline-simplification: the high finding is kept on the review");
 });
 
-test("post-review requests get their own round, rework requests name their stage, and writers see only pre-draft requests", () => {
+// pipeline-simplification: the review opens no round, so there is no post-review round, no post_review_round marker and
+// no pre-draft/post-review split for writers (preDraftRequests and postReviewAnswers are gone).
+test("pre-draft rounds are capped, no post-review round exists, and rework requests name their stage", () => {
   const ask = (question: string) => ({ role: "business" as const, question, material: true, needs_sources: false, source_role: "regulatory_filing" as const });
-  const first = nextRequestBatch(null, [ask("Which segment loses money?")])!;
-  const second = nextRequestBatch({ ...first, state: "answered" }, [ask("What is the net cash position?")])!;
-  assert.equal(nextRequestBatch({ ...second, state: "answered" }, [ask("A third pre-draft question?")]), null, "two pre-draft rounds");
   const rework = reworkRequests([{ category: "analysis_rework", owner_stage: "asset_valuation", section_id: "valuation", issue: "Terminal multiple on peak capex" },
     { category: "analysis_rework", owner_stage: "asset_valuation", issue: "Duplicate" }, { category: "writing", owner_stage: "moat_analysis" }]);
   assert.equal(rework.length, 1);
   assert.equal(rework[0].role, "valuation");
-  const review = nextRequestBatch({ ...second, state: "answered" }, [...rework, ask("Peer pricing for Snap?")], "post_review")!;
-  assert.equal(review.post_review_round, 3);
-  assert.equal(nextRequestBatch({ ...review, state: "answered" }, [ask("Anything else at all?")], "post_review"), null, "one post-review round");
-  assert.equal(nextRequestBatch({ ...review, state: "answered" }, [ask("Anything else at all?")]), null, "no pre-draft round after the review");
-  assert.deepEqual(preDraftRequests(review).map(r => r.id), ["request-1-1", "request-2-1"]);
+  const first = nextRequestBatch(null, [...rework, ask("Which segment loses money?")])!;
+  // pipeline-simplification: one pre-draft round per run (was two: a second round, then null for a third).
+  assert.equal(nextRequestBatch({ ...first, state: "answered" }, [ask("What is the net cash position?")]), null, "one pre-draft round");
+  // pipeline-simplification: was a post-review round 3 with post_review_round set; asking for one now creates nothing.
+  assert.equal(nextRequestBatch({ ...first, state: "answered" }, [ask("Peer pricing for Snap?")], "post_review" as any), null, "no post-review round");
+  assert.ok(!("post_review_round" in first), "no batch carries post_review_round");
+  // pipeline-simplification: a legacy batch with post_review_round still closes the rounds; round 0 isolates that check
+  // from the one-round limit.
+  const legacy = { round: 0, state: "answered" as const, post_review_round: 1, requests: [] } as any;
+  assert.equal(nextRequestBatch(legacy, [ask("A pre-draft question after a legacy review round?")]), null, "a stored post_review_round opens no further round");
 
-  const reworkRequest = review.requests.find(r => r.rework_stage) as TeamRequest;
+  const reworkRequest = first.requests.find(r => r.rework_stage) as TeamRequest;
   const asked = { ...reworkRequest, response: reworkAnswer(reworkRequest) };
   assert.equal(asked.response.requires_rerun, true);
   assert.deepEqual(requestStageRoots([asked]), ["asset_valuation"]);
   const after = reworkAnswer({ ...reworkRequest, reworked: true });
   assert.equal(after.requires_rerun, undefined, "a granted rework is answered, not rerun again");
-  const answered: RequestBatch = { ...review, state: "answered", requests: review.requests.map(r => r.id === asked.id ? asked : r) };
-  assert.deepEqual(postReviewAnswers(answered).map(a => a.section_id), ["valuation"]);
 });
 
 test("substance checks reach gaps, captions, table titles, questions and coverage with narrow narration patterns", () => {

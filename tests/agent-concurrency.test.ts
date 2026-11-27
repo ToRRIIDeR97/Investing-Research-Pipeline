@@ -83,28 +83,23 @@ test("a failed body section is rethrown after the other sections are saved, and 
   assert.equal(conclusionWritten, false);
 });
 
-test("the writing repair rewrites affected body sections together, then the conclusion", async () => {
-  let reviews = 0, inFlight = 0, peak = 0;
-  const repaired: string[] = [];
-  await composeReviewedReport(input, {
+// pipeline-simplification: the writing repair round is gone. A needs_more_work review with writing findings on b, c and
+// d is saved as advisory findings and nothing is rewritten (was: b, c and d rewritten together, then the conclusion).
+test("a needs_more_work review rewrites no section and is not repeated", async () => {
+  let reviews = 0;
+  const written: string[] = [];
+  const result = await composeReviewedReport(input, {
     plan: async () => outline as any,
-    write: async (p, _outline, feedback, completed) => {
-      peak = Math.max(peak, ++inFlight);
+    write: async (p, _outline, feedback) => {
+      written.push(`${p.id}${feedback.length ? ":repair" : ""}`);
       await tick(5);
-      inFlight--;
-      if (feedback.length) {
-        repaired.push(p.id);
-        if (p.coverage.includes("conclusion")) assert.deepEqual(completed.filter(s => s.paragraphs[0].text === "Repaired.").map(s => s.id), ["b", "c", "d"]);
-      }
-      return sectionFor(p as any, feedback.length ? "Repaired." : "Draft.") as any;
+      return sectionFor(p as any, "Draft.") as any;
     },
-    review: async () => ++reviews === 1
-      ? { review_summary: "fix", findings: ["b", "c", "d"].map(id => ({ section_id: id, category: "writing" })), quality_score: 0.3, recommendations: [], review_verdict: "needs_more_work" }
-      : { review_summary: "ok", findings: [], quality_score: 0.9, recommendations: [], review_verdict: "pass" },
+    review: async () => (++reviews, { review_summary: "fix", findings: ["b", "c", "d"].map(id => ({ section_id: id, category: "writing" })), quality_score: 0.3, recommendations: [], review_verdict: "needs_more_work" }),
     save: async () => {},
   });
-  assert.deepEqual(repaired.slice(0, 3).sort(), ["b", "c", "d"]);
-  assert.equal(repaired.at(-1), "summary");
-  assert.equal(repaired.length, 4, "unaffected body sections are kept");
-  assert.ok(peak >= 3, "the affected body sections were rewritten together");
+  assert.equal(reviews, 1, "one review");
+  assert.equal(written.length, 7, "each section is written once, by the draft");
+  assert.ok(written.every(id => !id.endsWith(":repair")), "no section is rewritten");
+  assert.deepEqual(result.review.findings.filter(f => f.category === "writing").map(f => f.section_id), ["b", "c", "d"], "the findings are kept on the review");
 });

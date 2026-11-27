@@ -1,4 +1,4 @@
-AGENTS.md	docs/diagrams/_source/make_diagrams.py	6eebfdfff875
+AGENTS.md	docs/diagrams/_source/make_diagrams.py	a16f7de108d0
 
 AGENTS.md	docs/generators.json	4bcbf7e48786
 
@@ -26,7 +26,7 @@ DESIGN.md	src/components/ui/sliding.tsx	c60580f81860
 
 docs/architecture.md	docker-compose.yml	9a3084f7dd01
 
-docs/architecture.md	docs/diagrams/_source/make_diagrams.py	6eebfdfff875
+docs/architecture.md	docs/diagrams/_source/make_diagrams.py	a16f7de108d0
 
 docs/architecture.md	drizzle/0000_tiny_master_chief.sql	6e0fb77bfbb6
 
@@ -126,9 +126,9 @@ docs/architecture.md	src/lib/research/run-queue.ts	c079def23201
 
 docs/architecture.md	src/lib/research/team-plan.ts	0fca3dbde963
 
-docs/architecture.md	src/lib/workflow/orchestrator.ts	d984c3eefc3e
+docs/architecture.md	src/lib/workflow/orchestrator.ts	66a16f78e5f1
 
-docs/architecture.md	src/lib/workflow/stages.ts	846b27e51f88
+docs/architecture.md	src/lib/workflow/stages.ts	d7820b9f0dc2
 
 docs/architecture.md	tools/gen_routes.py	d1075262e83d
 
@@ -142,7 +142,7 @@ docs/local-agent-harness.md	src/lib/agent-harness/providers/anthropic-compatible
 
 docs/local-agent-harness.md	src/lib/agent-harness/providers/anthropic-schema.ts	e8bbe2b5d644
 
-docs/local-agent-harness.md	src/lib/agent-harness/providers/mock.ts	fa41c1ad7782
+docs/local-agent-harness.md	src/lib/agent-harness/providers/mock.ts	dbb904ed8c84
 
 docs/local-agent-harness.md	src/lib/agent-harness/providers/openai-compatible.ts	30369de0cef2
 
@@ -178,9 +178,9 @@ docs/operations.md	src/lib/research/monitoring/monitor-score.ts	dc07c7b71f38
 
 docs/report-visual-guidelines.md	src/components/report/exhibit-tile.tsx	224873a4e179
 
-docs/report-visual-guidelines.md	src/lib/research/reporting/contracts.ts	41c574e9f6a0
+docs/report-visual-guidelines.md	src/lib/research/reporting/contracts.ts	6daf07fb2588
 
-docs/report-visual-guidelines.md	src/lib/research/reporting/exhibits.ts	f837516d765d
+docs/report-visual-guidelines.md	src/lib/research/reporting/exhibits.ts	325fdbdb6bf3
 
 docs/security.md	.env.example	e53beb778926
 
@@ -208,13 +208,15 @@ docs/system.md	src/lib/research/asset-snapshot.ts	e1bb4e2dcc18
 
 docs/system.md	src/lib/research/brief-presentation.ts	79034042e95b
 
+docs/system.md	src/lib/research/call-packet.ts	04bced474f5f
+
 docs/system.md	src/lib/research/contract-json-schema.ts	c9cdad44a68c
 
 docs/system.md	src/lib/research/framing.ts	0f25ee7a3454
 
 docs/system.md	src/lib/research/handlers/index.ts	8198b46f77c3
 
-docs/system.md	src/lib/research/model-tiering.ts	c8a5cdc711ad
+docs/system.md	src/lib/research/model-tiering.ts	7b3e7fbd6906
 
 docs/system.md	src/lib/research/pipeline-contracts.ts	ab95a56dbefa
 
@@ -236,7 +238,7 @@ docs/system.md	src/lib/research/report-tabs.ts	2a4f3ec06df8
 
 docs/system.md	src/lib/research/run-bars.ts	0983b246a650
 
-docs/system.md	src/lib/research/run-context.ts	d4fa6db04bc7
+docs/system.md	src/lib/research/run-context.ts	6d76ff845195
 
 docs/system.md	src/lib/research/run-polling.ts	3a967f8083ab
 
@@ -250,13 +252,13 @@ docs/system.md	src/lib/research/run-status.ts	089467e1c966
 
 docs/system.md	src/lib/research/source-reader-batching.ts	d88dea3136af
 
-docs/system.md	src/lib/research/stage-contracts.ts	17c1d914fbd9
+docs/system.md	src/lib/research/stage-contracts.ts	6e6b34f59b11
 
 docs/system.md	src/lib/research/system-pipeline.ts	15c66f3a9c1d
 
 docs/system.md	src/lib/research/team-plan.ts	0fca3dbde963
 
-docs/system.md	src/lib/research/team.ts	2838c00bd33f
+docs/system.md	src/lib/research/team.ts	2764e375f9fe
 
 docs/system.md	src/lib/research/test-assets.ts	68655a67cb06
 
@@ -264,15 +266,15 @@ docs/system.md	src/lib/research/v2-contracts.ts	8f921f701cd8
 
 docs/system.md	src/lib/research/version.ts	ed689b6d979d
 
-docs/system.md	src/lib/workflow/orchestrator.ts	d984c3eefc3e
+docs/system.md	src/lib/workflow/orchestrator.ts	66a16f78e5f1
 
-docs/system.md	src/lib/workflow/quality-gates.ts	a0b73fb9d819
+docs/system.md	src/lib/workflow/quality-gates.ts	8fe1efc07e37
 
-docs/system.md	src/lib/workflow/stages.ts	846b27e51f88
+docs/system.md	src/lib/workflow/stages.ts	d7820b9f0dc2
 
 docs/system.md	src/lib/workflow/task-queue.ts	cfb770227e54
 
-docs/system.md	src/lib/workflow/validators.ts	b87ee720f915
+docs/system.md	src/lib/workflow/validators.ts	efff95eaefcb
 
 docs/system.md	src/workers/poll-loop.ts	f97c656085f5
 
