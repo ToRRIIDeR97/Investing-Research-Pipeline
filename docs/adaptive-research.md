@@ -29,22 +29,25 @@ a rationale. An evidenced finding of no moat can satisfy a moat investigation.
 Blocked material questions withhold the conclusion. Qualified analysis retains
 its limitations in the report. Confidence is not inferred from word count.
 
-One writing repair round is allowed per input snapshot. The report specialist can
-also send missing-information requests to the data, financials, business or
-valuation specialist before writing, while planning sections, or after review.
-Requests are persisted and answered without reopening stages: stored price
-history and the FRED 10-year series answer market and rate questions directly,
+The review is advisory: `ai_reviewer` reviews the draft once and saves the verdict
+and findings for the human reviewer, with no repair round and no rewrite; a failing
+verdict doesn't fail the stage or the run. Before writing, the report specialist can
+send missing-information requests to the data, financials, business or valuation
+specialist, in one question round per run; the outline and the review open no
+further round. Requests are persisted and answered without reopening stages: stored
+price history and the FRED 10-year series answer market and rate questions directly,
 and other requests go to their owner with research-memory passages from the run's
 documents. A request that needs sources gets one collector search, which ingests
-eligible documents before the owner answers once more. Stages rerun only when an
-owner says its own output must be recomputed: automatically once per run for up to
-`RESEARCH_MAX_AUTO_RESET_STAGES` analysis stages, otherwise after a reviewer
-approves on the run page (see [system.md](system.md)). Two request rounds before
-drafting, one after the first review, and one answer-triggered source escalation
-per run bound this work across restarts. The reviewer also answers fixed depth
-checks, and code derives the verdicts from them and the findings; a review finding
-can send an analysis stage back for rework once
-([system.md](system.md#report-review-depth-checks-and-rework)).
+eligible documents before the owner answers once more. An owner's answer never
+reruns a stage. The only rerun is code's: when the valuation check flags the
+valuation, `asset_valuation` and its dependents rerun once per run, automatically,
+within `RESEARCH_MAX_AUTO_RESET_STAGES` analysis stages; otherwise it reruns nothing
+and the request stays an open report question. Nothing pauses the run for approval;
+a pending re-run approval row left by a run from before this change can still be
+decided on the run page (see [system.md](system.md)). One question round and one
+answer-triggered source escalation per run bound this work across restarts. The
+reviewer also answers fixed depth checks, and code derives the verdicts from them
+and the findings ([system.md](system.md#report-review-depth-checks-and-rework)).
 Existing budget and model-attempt limits still apply. Unavailable or skipped
 material answers remain blocked questions and withhold the conclusion.
 

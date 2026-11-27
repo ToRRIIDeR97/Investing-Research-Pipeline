@@ -10,7 +10,7 @@ const INTERNAL_TERMS: [RegExp, string][] = [
   [/\bconfidence(?: score| level)?(?: of| is|:|=)? ?(?:0?\.\d+|1\.0+)\b/i, "confidence score"],
   [/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i, "record ID"],
   [/\b[a-z]+_[a-z]+(?:_[a-z]+)*\b/, "field name"],
-  // Process narration seen in stored reports. Narrow on purpose: a hit forces a paid repair round.
+  // Process narration seen in stored reports. Narrow on purpose: a hit becomes an advisory review finding.
   [/\b(?:an?|the) (?:earlier|previous|prior) draft\b/i, "draft history"],
   [/\bthe model'?s note\b/i, "model note"],
   [/\bstored (?:matrix|valuation outputs?|FCFF (?:cases|schedules?))\b/i, "stored outputs"],
@@ -28,7 +28,7 @@ const REPAIR = "Rewrite in an analyst's voice: name the filing or disclosure, sa
 /**
  * Terms checked in conclusion chapters only: their prompts carry the plain-language rule (runtime.ts PLAIN_LANGUAGE_RULE)
  * and the research memo shows their text. Body chapters aren't told to avoid these, so flagging them there would force
- * paid rewrites of chapters for a word their prompt never mentioned.
+ * review findings against chapters for a word their prompt never mentioned.
  */
 const CONCLUSION_TERMS: [RegExp, string][] = [[/\bfalsifiers?\b/i, "falsifier"]];
 const leaks = (text: string, conclusion = false) => [...INTERNAL_TERMS, ...(conclusion ? CONCLUSION_TERMS : [])]
@@ -37,8 +37,8 @@ const leaks = (text: string, conclusion = false) => [...INTERNAL_TERMS, ...(conc
 /**
  * A deterministic floor under the AI review: an analysis paragraph must carry a figure or a citation, and
  * reader-facing text must not leak pipeline terms. Every reader-facing field is scanned: prose, gaps, visual
- * and table titles and captions, and, when given, research questions and coverage rationales. Findings feed
- * the report's writing repair; they never fail a run.
+ * and table titles and captions, and, when given, research questions and coverage rationales. Findings join
+ * the review's advisory findings for the human reviewer; they never fail a run or rewrite a chapter.
  */
 export function checkReportSubstance(sections: ReportSection[],
   extra: { questions?: ResearchQuestion[]; coverage?: CoverageCheck[] } = {}): SubstanceFinding[] {

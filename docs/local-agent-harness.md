@@ -51,7 +51,7 @@ The model for a task, first match wins:
 
 `RESEARCH_MID_MODEL` and `RESEARCH_CHEAP_MODEL` used to rank below `RESEARCH_ALL_AGENTS_MODEL` and the per-agent variables. They now rank above both for tiered calls; leave them unset to keep a single all-agents model.
 
-`report_draft` (the report writers, split out of `ai_reviewer` in architecture-9) reads `RESEARCH_STAGE_AI_REVIEWER_MODEL` and `RESEARCH_STAGE_AI_REVIEWER_EFFORT` when its own `RESEARCH_STAGE_REPORT_DRAFT_*` setting is unset, so a reviewer setting made before the split still steers the writers; set `RESEARCH_STAGE_REPORT_DRAFT_MODEL` to give the writers their own model. The review calls and the repair round stay on the `AI_REVIEWER` settings.
+`report_draft` (the report writers, split out of `ai_reviewer` in architecture-9) reads `RESEARCH_STAGE_AI_REVIEWER_MODEL` and `RESEARCH_STAGE_AI_REVIEWER_EFFORT` when its own `RESEARCH_STAGE_REPORT_DRAFT_*` setting is unset, so a reviewer setting made before the split still steers the writers; set `RESEARCH_STAGE_REPORT_DRAFT_MODEL` to give the writers their own model. The review calls stay on the `AI_REVIEWER` settings.
 
 Fallbacks: a stage model falls back only to `RESEARCH_STAGE_<KEY>_FALLBACK_MODEL`, and a tier model only to `RESEARCH_<TIER>_FALLBACK_MODEL` (none when unset). A stage pinned to one model never inherits its tier's fallback. Other models keep the agent's own fallback rules.
 
