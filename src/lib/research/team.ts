@@ -43,7 +43,8 @@ export type TeamRequest = Request & { id: string; response?: TeamAnswer; source_
   rework_stage?: ReworkStage; section_id?: string; reworked?: boolean };
 /**
  * `rerun_stages`: analysis stages a re-run reopened; the batch waits for them before asking again. Batches stored
- * before pipeline-simplification may also carry `post_review_round`, the round a report review used; nothing reads it.
+ * before pipeline-simplification may also carry `post_review_round`, the round a report review used; nothing writes it
+ * now, and roundAvailable treats it as closing the rounds.
  */
 export interface RequestBatch { round: number; state: "queued" | "processing" | "answered"; source_escalated?: boolean;
   rerun_stages?: string[]; requests: TeamRequest[] }
@@ -162,7 +163,9 @@ export function nextRequestBatch(previous: RequestBatch | null, proposed: (Reque
     requests: [...(previous?.requests || []), ...fresh.map((r, i) => ({ ...r, id: `request-${round}-${i + 1}` }))] };
 }
 
-const roundAvailable = (previous: RequestBatch | null) => (previous?.round || 0) < MAX_PRE_DRAFT_ROUNDS;
+/** A batch stored before pipeline-simplification with a post-review round closes the rounds (read-only legacy handling). */
+const roundAvailable = (previous: (RequestBatch & { post_review_round?: number }) | null) =>
+  !previous?.post_review_round && (previous?.round || 0) < MAX_PRE_DRAFT_ROUNDS;
 
 const REWORK_ROLE: Partial<Record<ReworkStage, Request["role"]>> = { asset_valuation: "valuation" };
 /** One rework request per owning stage from analysis_rework findings (the pre-draft valuation check's). */

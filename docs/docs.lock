@@ -128,7 +128,7 @@ docs/architecture.md	src/lib/research/team-plan.ts	0fca3dbde963
 
 docs/architecture.md	src/lib/workflow/orchestrator.ts	d984c3eefc3e
 
-docs/architecture.md	src/lib/workflow/stages.ts	846b27e51f88
+docs/architecture.md	src/lib/workflow/stages.ts	d7820b9f0dc2
 
 docs/architecture.md	tools/gen_routes.py	d1075262e83d
 
@@ -258,7 +258,7 @@ docs/system.md	src/lib/research/system-pipeline.ts	15c66f3a9c1d
 
 docs/system.md	src/lib/research/team-plan.ts	0fca3dbde963
 
-docs/system.md	src/lib/research/team.ts	718f9c60d76c
+docs/system.md	src/lib/research/team.ts	d5faae9020f1
 
 docs/system.md	src/lib/research/test-assets.ts	68655a67cb06
 
@@ -270,7 +270,7 @@ docs/system.md	src/lib/workflow/orchestrator.ts	d984c3eefc3e
 
 docs/system.md	src/lib/workflow/quality-gates.ts	8fe1efc07e37
 
-docs/system.md	src/lib/workflow/stages.ts	846b27e51f88
+docs/system.md	src/lib/workflow/stages.ts	d7820b9f0dc2
 
 docs/system.md	src/lib/workflow/task-queue.ts	cfb770227e54
 

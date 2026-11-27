@@ -202,7 +202,7 @@ export interface DerivedReview {
 }
 
 /**
- * review_verdict is the worse of the model's verdict and the depth verdict, and drives the repair round.
+ * review_verdict is the worse of the model's verdict and the depth verdict; it is advisory and reaches the human reviewer.
  * effective_verdict adds blocking findings and gates position approval. The model's own verdict is kept.
  * A review stored before depth checks existed has none, and only its findings count.
  */
@@ -217,37 +217,14 @@ export function deriveReview(review: { review_verdict: unknown; findings?: Row[]
     blocking: blocking.map(({ finding, reason }) => ({ reason, section_id: finding.section_id, issue: String(finding.issue ?? finding.message ?? finding.description ?? "") })) };
 }
 
-/** The report coverage key whose chapter should carry each check. */
-const CHECK_COVERAGE: Record<string, string> = {
-  decisive_insight: "conclusion", ownership_and_control: "ownership", segment_economics: "business", history_statistics: "history",
-  cash_conversion: "business", working_capital: "business", capital_allocation: "management", demand_backdrop: "constraints",
-  moat_attacks: "moat", management_assessment: "management", valuation_matrix: "valuation", reverse_valuation: "valuation",
-  fcf_yield_cross_check: "valuation", no_rerating_return: "valuation", tail_below_bear: "downside", thesis_breakers: "monitoring",
-  monitoring_dashboard: "monitoring", what_would_change_my_mind: "conclusion", scorecard_confidence: "conclusion",
-};
-
-/**
- * Missing decision-critical checks, as writing findings for the section repair (category depth_gap, not research_gap:
- * the data exists, so there is nothing to re-plan or block). A finding names the reviewer's section, or the first
- * section covering the check's coverage key, so the repair rewrites that chapter rather than every one.
- */
-export function depthFindings(checks: ResolvedDepthCheck[], sections: { id: string; coverage: string[] }[] = []) {
-  return checks.filter((check) => check.critical && check.status === "missing").map((check) => {
-    const owner = sections.find((s) => s.coverage.includes(CHECK_COVERAGE[check.id]))?.id;
-    return { section_id: check.section_id || owner || undefined, category: "depth_gap", severity: "high", source: "depth_check", check_id: check.id,
-      owner_stage: check.owner_stage, issue: `${check.label} is missing: ${check.why}`, repair: DEFINITIONS.get(check.id)!.ask };
-  });
-}
-
 export const isPassing = (verdict: unknown) => verdict === "pass" || verdict === "conditional_pass";
 
 /**
- * What a stored final review allows at the human gate. Tracking needs the reviewer's own verdict to pass, so a
- * check the data can never satisfy can't deadlock approval; a position also needs the effective verdict, which
+ * What a stored final review allows at the human gate. The verdict is advisory (pipeline-simplification), so tracking
+ * needs only a completed review, whatever its verdict; a position also needs the effective verdict to pass, which
  * missing decision-critical depth and blocking findings lower. Reviews stored before depth checks have only review_verdict.
  */
 export function reviewGate(review: Row | null | undefined) {
-  const model = review?.model_verdict ?? review?.review_verdict;
   const findings: Row[] = Array.isArray(review?.findings) ? review!.findings : [];
   const checks: Row[] = Array.isArray(review?.depth_checks) ? review!.depth_checks : [];
   // A review stored before this gate has no effective_verdict: any open critical finding still blocks a position.
@@ -259,7 +236,7 @@ export function reviewGate(review: Row | null | undefined) {
     ...legacyCritical.map(() => "Unresolved critical finding"),
     ...checks.filter((c) => c.critical && c.status === "missing").map((c) => `${c.label ?? c.id} is missing`),
   ];
-  return { verdict: effective ?? null, trackable: Boolean(review) && isPassing(model), positionable: Boolean(review) && isPassing(effective),
+  return { verdict: effective ?? null, trackable: Boolean(review), positionable: Boolean(review) && isPassing(effective),
     blocking: blocking.length ? [...new Set(blocking)] : effective && !isPassing(effective) ? [`the review verdict is ${effective}`] : [],
     open_severe: findings.filter((f) => ["high", "critical"].includes(String(f.severity ?? "").toLowerCase())).length };
 }

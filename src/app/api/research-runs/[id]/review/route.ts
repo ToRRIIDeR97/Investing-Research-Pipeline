@@ -71,7 +71,9 @@ export async function POST(
         const current = await loadReportInputs(tx as unknown as Sql, runId, report.cutoff);
         if (current.input_hash !== report.document.input_hash) throw new ApiError("Research inputs changed. Regenerate and review the report.", 409, "STALE_REPORT_INPUTS");
         const gate = reviewGate(report.review);
-        if (!gate.trackable) throw new ApiError("The report has unresolved review findings. Request more work before approving.", 422, "REPORT_REVIEW_FAILED");
+        // The AI verdict is advisory (pipeline-simplification): tracking needs only a completed review; a position also
+        // needs the effective verdict and no withheld conclusion (below).
+        if (!gate.trackable) throw new ApiError("The report has no completed AI review. Request more work before approving.", 422, "REPORT_REVIEW_FAILED");
         if (status === "approved_for_position" && !gate.positionable) throw new ApiError(`Review findings block position approval: ${gate.blocking.join("; ")}. Request more work or approve for tracking.`, 422, "REVIEW_BLOCKS_POSITION");
         if (status === "approved_for_position" && report.document.conclusion_status === "withheld") throw new ApiError("Material research gaps prevent position approval. Request more work or approve for tracking.", 422, "RESEARCH_INCOMPLETE");
         if (gate.open_severe > 0 && body.acknowledgeFindings !== true) throw new ApiError(`The review left ${gate.open_severe} high or critical findings open. Read and acknowledge them before approving.`, 422, "FINDINGS_NOT_ACKNOWLEDGED");

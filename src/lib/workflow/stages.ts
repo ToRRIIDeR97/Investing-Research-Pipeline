@@ -363,7 +363,7 @@ export const STAGE_CONFIGS: StageConfig[] = [
     key: "ai_reviewer",
     order: 22,
     name: "Report Review",
-    description: "Review the drafted report against every current artifact, including backtest evidence and limitations, then run the post-review rework and one repair round.",
+    description: "Review the drafted report against every current artifact, including backtest evidence and limitations, once; the verdict and findings are advisory and go to the human review.",
     allowedModelTiers: ["premium"],
     maxRetries: 1,
     maxBudgetUsd: 5.00,
