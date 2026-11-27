@@ -363,6 +363,16 @@ async function executePass(params: {
   }
 }
 
+/**
+ * The stored excerpt of an answer: all of it up to 12,000 characters, else the first 8,000 and the last 4,000, so an
+ * answer that fails to parse shows where it went wrong (SoFi e7adabe1's scenarios answer broke after the first 12,000).
+ */
+export function responseExcerpt(text: string) {
+  return text.length <= 12_000 ? text : `${text.slice(0, 8_000)}
+[... ${text.length - 12_000} characters omitted ...]
+${text.slice(-4_000)}`;
+}
+
 function cacheFields(pass?: PassResult): Pick<AgentPassTelemetry, "cacheReadTokens" | "cacheWriteTokens" | "cache"> {
   return { ...cacheTokens(pass?.usage), ...(pass?.cache ? { cache: pass.cache } : {}) };
 }
@@ -381,7 +391,7 @@ async function executeTrackedPass(
       latencyMs: Date.now() - started, requestId: result.requestId,
       inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens,
       reasoningTokens: result.usage.reasoningTokens, ...cacheFields(result), costUsd: result.usage.costUsd, status: "success",
-      structuredOutput,
+      ...(result.finishReason ? { finishReason: result.finishReason } : {}), textChars: result.rawText.length, structuredOutput,
     });
     return result;
   } catch (error) {
@@ -392,6 +402,7 @@ async function executeTrackedPass(
       inputTokens: partial?.usage.inputTokens || 0, outputTokens: partial?.usage.outputTokens || 0,
       reasoningTokens: partial?.usage.reasoningTokens || 0, ...cacheFields(partial), costUsd: partial?.usage.costUsd || 0,
       status: "failed", errorCategory: category(error),
+      ...(partial?.finishReason ? { finishReason: partial.finishReason } : {}), ...(partial ? { textChars: partial.rawText.length } : {}),
       errorMessage: redact(error instanceof Error ? error.message : String(error)), structuredOutput,
     });
     throw error;
@@ -652,7 +663,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         costUsd: Number(pass.usage.costUsd.toFixed(6)), status: "success", repairAttempted,
         fallback, compactionOccurred: compactedFallback.compacted,
         inputBytes: attemptPromptBytes, originalInputBytes: originalPromptBytes,
-        rawResponseExcerpt: redact(pass.rawText.slice(0, 12_000)), validationErrors,
+        rawResponseExcerpt: redact(responseExcerpt(pass.rawText)), validationErrors,
         passes,
         localCoercionApplied,
         completionRecoveredAtTimeout,
@@ -683,7 +694,7 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
         timeoutType: reason === "total" || reason === "inactivity" ? reason : undefined,
         repairAttempted, fallback, compactionOccurred: compactedFallback.compacted,
         inputBytes: attemptPromptBytes, originalInputBytes: originalPromptBytes,
-        rawResponseExcerpt: redact(pass.rawText.slice(0, 12_000)), validationErrors,
+        rawResponseExcerpt: redact(responseExcerpt(pass.rawText)), validationErrors,
         passes,
         localCoercionApplied,
         completionRecoveredAtTimeout,

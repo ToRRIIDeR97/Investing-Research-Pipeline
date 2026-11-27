@@ -16,10 +16,10 @@ type Sql = ReturnType<typeof postgres>;
  * Stages whose answers run past the 32,768 default: 65,536 from the start. decision_synthesis hit it on Haiku (META
  * 4fae0fb1), and on four paid SoFi runs each of the others did, mostly on reasoning. Their calls are now split
  * (handlers/split-calls.ts), but business_process_analysis's segments call still wrote 48K tokens on e7adabe1. The cap
- * is a ceiling, not a charge.
+ * is a ceiling, not a charge. ai_reviewer ran out at 32K on both of e7adabe1's reviews (they needed 43K and 50K).
  */
 export const LONG_OUTPUT_STAGES = new Set(["decision_synthesis", "operating_scenarios", "business_process_analysis", "company_genesis",
-  "moat_analysis", "operating_model"]);
+  "moat_analysis", "operating_model", "ai_reviewer"]);
 export const LONG_OUTPUT_TOKENS = 65_536;
 const DEFAULT_OUTPUT_TOKENS = 32_768;
 

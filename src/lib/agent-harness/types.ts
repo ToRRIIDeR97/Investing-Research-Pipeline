@@ -131,6 +131,9 @@ export interface AgentPassTelemetry {
   validationErrors?: Array<{ path: string; message: string }>;
   localCoercionApplied?: boolean;
   completionRecoveredAtTimeout?: boolean;
+  /** Why the provider stopped (end_turn, max_tokens, ...), and the answer's length in characters. */
+  finishReason?: string;
+  textChars?: number;
   /** Whether a request of this pass carried output_config, and whether a schema rejection resent it without. */
   structuredOutput: { sent: boolean; fallback: boolean };
 }
