@@ -34,6 +34,18 @@ const findingText = (f: Row) => f.issue ?? f.message ?? f.description ?? f.summa
 export const verdictWords = (value: unknown) => sentence(String(value ?? "").replace(/[_-]+/g, " ")) || "No verdict";
 
 /**
+ * The AI review's outcome as a label, from the gate: "AI review: passed" when it allows a position, otherwise its
+ * verdict in words and that it is open for tracking (the verdict is advisory, so any completed review is), e.g.
+ * "AI review: needs more work, open for tracking".
+ */
+export function reviewOutcomeLabel(review: { verdict: string | null; trackable: boolean; positionable: boolean } | null | undefined): string {
+  if (!review) return "No AI review";
+  if (review.positionable) return "AI review: passed";
+  const verdict = !review.verdict ? "no verdict" : review.verdict === "fail" ? "failed" : verdictWords(review.verdict).toLowerCase();
+  return review.trackable ? `AI review: ${verdict}, open for tracking` : `AI review: ${verdict}`;
+}
+
+/**
  * Findings grouped by the report chapter they name, in the report's chapter order; findings that name no chapter, or a
  * chapter the report doesn't have, come last as "The whole report". Within a group, most severe first.
  */
@@ -120,7 +132,7 @@ export function reviewBody(choice: ReviewChoice, { ack, reportHash }: { ack: boo
 export function refusalWords(code: unknown, message?: unknown, context: { reportUnchecked?: boolean } = {}): string {
   if (code === "STALE_REPORT" && context.reportUnchecked) return `${REPORT_UNCHECKED}, so it can't be approved or sent back yet. You can still put it on the watchlist or reject it.`;
   switch (code) {
-    case "REPORT_REVIEW_FAILED": return "The AI review didn't pass, so this report can't be approved. Send it back for more work, put it on the watchlist or reject it.";
+    case "REPORT_REVIEW_FAILED": return "The AI review is missing or hasn't finished, so this report can't be approved yet. Send it back for more work, put it on the watchlist or reject it.";
     case "REVIEW_BLOCKS_POSITION": return "The AI review blocks approval for a position. You can approve it for tracking or send it back for more work.";
     case "RESEARCH_INCOMPLETE": return "The report withholds a conclusion, so it can't be approved for a position. Approve it for tracking or send it back for more work.";
     case "FINDINGS_NOT_ACKNOWLEDGED": return "Tick that you've read the serious findings before approving.";
