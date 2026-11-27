@@ -66,7 +66,7 @@ Effort (anthropic-direct only), first match wins: `RESEARCH_STAGE_<KEY>_EFFORT`,
 
 Limits per task:
 
-- **Output cap:** `decision_synthesis` and `operating_scenarios` start at 65,536 output tokens instead of 32,768 (Haiku's synthesis needed 39K and was cut off at 32K on META 4fae0fb1).
+- **Output cap:** `decision_synthesis`, `operating_scenarios`, `business_process_analysis`, `company_genesis`, `moat_analysis` and `operating_model` start at 65,536 output tokens instead of 32,768 (Haiku's synthesis needed 39K and was cut off at 32K on META 4fae0fb1; each of the others ran out at 32K on paid SoFi runs, mostly on reasoning).
 - **Premium timeout:** premium calls get `RESEARCH_PREMIUM_TIMEOUT_MS`, default 1,200,000 ms. Haiku 5.5 measured 195-252 output tokens/s on the heavy META calls, and a full 65,536-token answer at a quarter of that speed takes about 1,100 s. Re-size it from `latency_ms` and `output_tokens` in `model_call_logs` after the first premium run.
 - **Budget reserve:** each attempt's reserve is a prompt of 100,001 tokens plus a full-cap answer at the model's list price (`telemetry.ts`). The prompt sits just above Haiku 5.5's 100K long-prompt threshold, so the 5x rate is covered: 24 of META 4fae0fb1's 79 calls were above it, and a cheap Haiku call now reserves about $0.13. The floor is `RESEARCH_ATTEMPT_BUDGET_RESERVE_USD` (0.1), and `RESEARCH_<TIER>_ATTEMPT_BUDGET_RESERVE_USD` overrides it. That gives about $1.71 for Opus 5.5 on a long-output stage, and the $0.10 floor for Haiku.
 

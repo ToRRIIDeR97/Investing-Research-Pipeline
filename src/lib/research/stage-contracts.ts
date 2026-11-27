@@ -61,12 +61,23 @@ export const COMPANY_GENESIS_CONTRACT = artifactContract({
   company_genesis: CompanyGenesis, founder_profile: FounderProfile,
   strategic_history_timeline: StrategicHistoryTimeline, strategic_dna: StrategicDNA,
 });
+/** company_genesis's two calls, side by side: the origin and founder, and the strategic history. */
+export const GENESIS_ORIGIN_CONTRACT = artifactContract({ company_genesis: CompanyGenesis, founder_profile: FounderProfile });
+export const GENESIS_HISTORY_CONTRACT = artifactContract({ strategic_history_timeline: StrategicHistoryTimeline, strategic_dna: StrategicDNA });
 export const HISTORICAL_DIAGNOSIS_CONTRACT = artifactContract({ historical_diagnosis: HistoricalDiagnosisArtifact });
 export const BUSINESS_PROCESS_CONTRACT = artifactContract({
   segment_model: SegmentModel, customer_decision_map: CustomerDecisionMap,
   business_process_map: BusinessProcessMap, bottleneck_register: BottleneckRegister,
   competitive_response_matrix: CompetitiveResponseMatrix,
 });
+/**
+ * business_process_analysis writes BUSINESS_PROCESS_CONTRACT's artifacts in three calls, so no one answer has to hold
+ * all five (on SoFi the single call spent 100K to 125K output tokens, mostly reasoning, and needed three attempts):
+ * segments first, then the process map and the competitive matrix, each built on the accepted segment model.
+ */
+export const BUSINESS_SEGMENTS_CONTRACT = artifactContract({ segment_model: SegmentModel, customer_decision_map: CustomerDecisionMap });
+export const BUSINESS_FLOW_CONTRACT = artifactContract({ business_process_map: BusinessProcessMap, bottleneck_register: BottleneckRegister });
+export const BUSINESS_COMPETITION_CONTRACT = artifactContract({ competitive_response_matrix: CompetitiveResponseMatrix });
 /** A second, small business_process_analysis call: management scored on separate axes. */
 export const MANAGEMENT_CONTRACT = artifactContract({ management_assessment: ManagementAssessment });
 /** What business_process_analysis must store: both calls' artifacts. */
@@ -75,8 +86,16 @@ const BUSINESS_STAGE_OUTPUTS: AgentOutputFormat = { ...BUSINESS_PROCESS_CONTRACT
 export const MOAT_CONTRACT = artifactContract({
   moat_assessment: MoatAssessment, moat_attack_matrix: MoatAttackMatrix, no_moat_counterfactual: NoMoatCounterfactual,
 });
+/** moat_analysis's two calls: the assessment, then the attacks and the counterfactual that test it. */
+export const MOAT_ASSESSMENT_CONTRACT = artifactContract({ moat_assessment: MoatAssessment });
+export const MOAT_ATTACK_CONTRACT = artifactContract({ moat_attack_matrix: MoatAttackMatrix, no_moat_counterfactual: NoMoatCounterfactual });
 export const OPERATING_MODEL_CONTRACT = artifactContract({
   driver_tree: DriverTree, operating_model: OperatingModel,
+  top_down_bottom_up_reconciliation: TopDownBottomUpReconciliation, reinvestment_model: ReinvestmentModel,
+});
+/** operating_model's two calls: the forecast, then the reconciliation and reinvestment built on it. */
+export const OPERATING_FORECAST_CONTRACT = artifactContract({ driver_tree: DriverTree, operating_model: OperatingModel });
+export const OPERATING_RECONCILIATION_CONTRACT = artifactContract({
   top_down_bottom_up_reconciliation: TopDownBottomUpReconciliation, reinvestment_model: ReinvestmentModel,
 });
 export const OPERATING_SCENARIOS_CONTRACT = artifactContract({ operating_scenario_set: OperatingScenarioSet.extend({scenarios:z.array(OperatingScenarioEntry.extend({numeric_assumptions:z.array(NumericAssumption).min(1),yearly_drivers:z.array(YearlyDriver).min(1)})).length(3)}) });

@@ -1,6 +1,6 @@
 import type { ResearchRunContext, StageHandler } from "../run-context";
-import { callResearchAgent, exactJsonPrompt } from "../run-context";
-import { OPERATING_MODEL_CONTRACT } from "../stage-contracts";
+import { OPERATING_FORECAST_CONTRACT, OPERATING_MODEL_CONTRACT, OPERATING_RECONCILIATION_CONTRACT } from "../stage-contracts";
+import { runSplitStage } from "./split-calls";
 import { forecastHorizon, forecastYears, historyRatios, operatingModelFirstYear } from "../valuation/engine";
 import { valuationFinancialInputs } from "../valuation/financial-inputs";
 import { createArtifactRepository } from "../artifacts/repository";
@@ -64,6 +64,24 @@ export function forecastPeriodErrors(output: Record<string, any>, period: { fisc
   return [{ path: "operating_model.consolidated_revenue", message: `consolidated_revenue repeats reported FY${period.base_fiscal_year} revenue; it must be the FY${period.fiscal_year} forecast.` }];
 }
 
+/** The first call: the driver tree and the forecast. */
+export const OPERATING_FORECAST_RULES = [
+  "Construct a driver-based forecast tree structure, mapping historical inputs to future drivers.",
+  "Forecast each segment's revenue as price × volume and bridge operating margin from the base year to the forecast (gross margin, operating cost lines, mix, operating leverage), naming the driver of each step and why it moves.",
+  "Cover each reportable segment and reconcile their forecast revenue and operating income to consolidated totals.",
+  "Every forecast figure (consolidated_revenue, consolidated_operating_income and each segment's forecast) is for fiscal year forecast_period.fiscal_year, the year after the latest reported year. Never restate a reported year's figures as the forecast.",
+  "Use reported_segment_history (XBRL segment members such as meta:FamilyOfAppsMember) as the anchor for segment revenue and operating income; values are in the reported unit.",
+  "Use recent_reported_history as the quantitative anchor. Label units and forecast horizon in optional explanatory fields.",
+];
+
+/** The second call: the reconciliation and the reinvestment model, against the accepted forecast. */
+export const OPERATING_RECONCILIATION_RULES = [
+  "Set bottom_up_forecast_total to the sum of the segment forecast revenue in accepted_artifacts.operating_model. Independently derive top_down_forecast_total from sourced market and customer constraints when available.",
+  "If TAM or customer budget cannot be supported, set the unavailable limit and top_down_forecast_total to null, mark reconciliation_status as blocked_source_gap, and list the gap. Never use zero as a missing-data placeholder or invent a bound.",
+  "Tie reinvestment to growth: compare incremental operating income with incremental invested capital (return on incremental capital) against the historical rate, and explain any gap.",
+  "Make reinvestment_model reflect the stated capex, working capital, and balance sheet assumptions; use source_gaps for unsupported amounts.",
+];
+
 export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "operating_model",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
@@ -116,38 +134,22 @@ export const operatingModelHandler: StageHandler<Record<string, unknown>> = {
       process_nodes: (upstream.business_process_map?.process_nodes || []).map((item: any) => ({
         process_node: item.process_node, financial_line_affected: item.financial_line_affected, main_constraint: item.main_constraint,
       })),
-      output_contract: "operating_model",
-      output_schema: OPERATING_MODEL_CONTRACT.schema,
     };
 
-    const promptFactory = (p: Record<string, unknown>) => exactJsonPrompt({
-      agentName: "asset-analyst",
-      requiredKeys: OPERATING_MODEL_CONTRACT.requiredKeys,
-      packet: p,
-      extraRules: [
-        "Construct a driver-based forecast tree structure, mapping historical inputs to future drivers.",
-        "Forecast each segment's revenue as price × volume and bridge operating margin from the base year to the forecast (gross margin, operating cost lines, mix, operating leverage), naming the driver of each step and why it moves.",
-        "Tie reinvestment to growth: compare incremental operating income with incremental invested capital (return on incremental capital) against the historical rate, and explain any gap.",
-        "Follow output_schema exactly, including every nested required field and primitive type.",
-        "Cover each reportable segment and reconcile their forecast revenue and operating income to consolidated totals.",
-        "Every forecast figure (consolidated_revenue, consolidated_operating_income and each segment's forecast) is for fiscal year forecast_period.fiscal_year, the year after the latest reported year. Never restate a reported year's figures as the forecast.",
-        "Use reported_segment_history (XBRL segment members such as meta:FamilyOfAppsMember) as the anchor for segment revenue and operating income; values are in the reported unit.",
-        "Use recent_reported_history as the quantitative anchor. Label units and forecast horizon in optional explanatory fields.",
-        "Set bottom_up_forecast_total to the sum of segment forecast revenue. Independently derive top_down_forecast_total from sourced market and customer constraints when available.",
-        "If TAM or customer budget cannot be supported, set the unavailable limit and top_down_forecast_total to null, mark reconciliation_status as blocked_source_gap, and list the gap. Never use zero as a missing-data placeholder or invent a bound.",
-        "Make reinvestment_model reflect the stated capex, working capital, and balance sheet assumptions; use source_gaps for unsupported amounts.",
+    // Two calls: the forecast, then the reconciliation and reinvestment built on it (split-calls.ts).
+    const output = await runSplitStage({
+      sql, ctx, stageKey: "operating_model", taskKey, taskType: "operating_model", agentName: "asset-analyst", modelTier: "premium",
+      packet, rules: ["Follow output_schema exactly, including every nested required field and primitive type."],
+      parts: [
+        { name: "forecast", contract: OPERATING_FORECAST_CONTRACT, rules: OPERATING_FORECAST_RULES,
+          validate: (value) => forecastPeriodErrors(value, forecastPeriod) },
+        { name: "reconciliation", contract: OPERATING_RECONCILIATION_CONTRACT, rules: OPERATING_RECONCILIATION_RULES, after: ["forecast"],
+          // The bottom-up total is the accepted segments' forecast revenue; TAM bounds of 0 are missing, not zero.
+          normalize: (value, accepted) => {
+            const { operating_model: _, ...rest } = normalizeReconciliation({ ...value, operating_model: accepted.operating_model }); // eslint-disable-line @typescript-eslint/no-unused-vars
+            return rest;
+          } },
       ],
-    });
-
-    const output = await callResearchAgent<Record<string, any>>({
-      sql, ctx, stageKey: "operating_model", taskKey,
-      taskType: "operating_model", agentName: "asset-analyst", modelTier: "premium",
-      packet, promptFactory,
-      outputFormat: { ...OPERATING_MODEL_CONTRACT, validate: (value: unknown) => {
-        const normalized = normalizeReconciliation(value as Record<string, any>);
-        const errors = OPERATING_MODEL_CONTRACT.validate!(normalized);
-        return errors.length ? errors : forecastPeriodErrors(normalized, forecastPeriod);
-      } },
     });
     output.top_down_bottom_up_reconciliation = normalizeReconciliation(output).top_down_bottom_up_reconciliation;
 

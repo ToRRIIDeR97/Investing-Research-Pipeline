@@ -142,7 +142,7 @@ docs/local-agent-harness.md	src/lib/agent-harness/providers/anthropic-compatible
 
 docs/local-agent-harness.md	src/lib/agent-harness/providers/anthropic-schema.ts	e8bbe2b5d644
 
-docs/local-agent-harness.md	src/lib/agent-harness/providers/mock.ts	8604138e1336
+docs/local-agent-harness.md	src/lib/agent-harness/providers/mock.ts	dbb904ed8c84
 
 docs/local-agent-harness.md	src/lib/agent-harness/providers/openai-compatible.ts	30369de0cef2
 
@@ -216,7 +216,7 @@ docs/system.md	src/lib/research/framing.ts	0f25ee7a3454
 
 docs/system.md	src/lib/research/handlers/index.ts	8198b46f77c3
 
-docs/system.md	src/lib/research/model-tiering.ts	c8a5cdc711ad
+docs/system.md	src/lib/research/model-tiering.ts	7b3e7fbd6906
 
 docs/system.md	src/lib/research/pipeline-contracts.ts	ab95a56dbefa
 
@@ -252,7 +252,7 @@ docs/system.md	src/lib/research/run-status.ts	089467e1c966
 
 docs/system.md	src/lib/research/source-reader-batching.ts	d88dea3136af
 
-docs/system.md	src/lib/research/stage-contracts.ts	17c1d914fbd9
+docs/system.md	src/lib/research/stage-contracts.ts	6e6b34f59b11
 
 docs/system.md	src/lib/research/system-pipeline.ts	15c66f3a9c1d
 
