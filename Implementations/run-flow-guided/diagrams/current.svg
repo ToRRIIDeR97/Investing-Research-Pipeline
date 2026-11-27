@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 230" font-family="Inter,Segoe UI,sans-serif"><defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="#78716C"/></marker></defs><rect width="100%" height="100%" fill="#F8F8F4"/><text x="16" y="26" font-size="15" font-weight="700" fill="#0D1B2A">Current: run flow (baseline)</text>
+<rect x="16" y="50" width="190" height="50" rx="10" fill="#fff" stroke="#3D5A78"/><text x="26" y="70" font-size="13" font-weight="600" fill="#0D1B2A">/research/new</text><text x="26" y="88" font-size="11" fill="#44403C">pick company or add one</text>
+<rect x="236" y="50" width="200" height="50" rx="10" fill="#fff" stroke="#3D5A78"/><text x="246" y="70" font-size="13" font-weight="600" fill="#0D1B2A">/assets/[id]/run intake</text><text x="246" y="88" font-size="11" fill="#44403C">question, type, budget, cutoffs</text>
+<rect x="466" y="50" width="190" height="50" rx="10" fill="#fff" stroke="#3D5A78"/><text x="476" y="70" font-size="13" font-weight="600" fill="#0D1B2A">plan phase (gate 1)</text><text x="476" y="88" font-size="11" fill="#44403C">only seen if page is open</text>
+<rect x="686" y="50" width="196" height="50" rx="10" fill="#fff" stroke="#3D5A78"/><text x="696" y="70" font-size="13" font-weight="600" fill="#0D1B2A">pipeline phase</text><text x="696" y="88" font-size="11" fill="#44403C">8 operator cards</text>
+<rect x="686" y="140" width="196" height="50" rx="10" fill="#fff" stroke="#3D5A78"/><text x="696" y="160" font-size="13" font-weight="600" fill="#0D1B2A">/review (gate 2)</text><text x="696" y="178" font-size="11" fill="#44403C">link from a banner</text>
+<rect x="236" y="140" width="200" height="50" rx="10" fill="#fff" stroke="#3D5A78"/><text x="246" y="160" font-size="13" font-weight="600" fill="#0D1B2A">Home Waiting on you</text><text x="246" y="178" font-size="11" fill="#44403C">final reviews only</text>
+<rect x="16" y="140" width="190" height="50" rx="10" fill="#fff" stroke="#3D5A78"/><text x="26" y="160" font-size="13" font-weight="600" fill="#0D1B2A">API</text><text x="26" y="178" font-size="11" fill="#44403C">research-runs, approve-plan</text>
+<line x1="206" y1="75" x2="236" y2="75" stroke="#78716C" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="436" y1="75" x2="466" y2="75" stroke="#78716C" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="656" y1="75" x2="686" y2="75" stroke="#78716C" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="784" y1="100" x2="784" y2="140" stroke="#78716C" stroke-width="1.5" marker-end="url(#a)"/>
+<line x1="436" y1="165" x2="686" y2="165" stroke="#78716C" stroke-width="1.5" marker-end="url(#a)"/>
+</svg>

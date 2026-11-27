@@ -5,13 +5,17 @@ import { useRouter, useSearchParams } from "next/navigation";
 import ui from "@/components/research-ui.module.css";
 import { CompanyLogo } from "@/components/company/company";
 import { Card, Tag } from "@/components/ui/primitives";
+import { FlowStepper } from "@/components/run-flow";
 import styles from "./new.module.css";
 
 export default function NewResearchPage() {
   return <Suspense fallback={null}><NewResearch /></Suspense>;
 }
 
-/** Start research. `?ticker=&name=` (from a theme's shortlist) prefills the new-company form and marks a matching asset. */
+/**
+ * Start research, step 1 of the guided flow: find or add the company, then the run page asks the question.
+ * `?ticker=&name=` (from a theme's shortlist) prefills the new-company form and marks a matching asset.
+ */
 function NewResearch() {
   const params = useSearchParams();
   const prefillTicker = (params.get("ticker") ?? "").replace(/[^A-Za-z0-9-]/g, "").slice(0, 30);
@@ -22,6 +26,7 @@ function NewResearch() {
   const [prefill] = useState(() => prefillTicker && params.get("name") ? { name: (params.get("name") ?? "").slice(0, 200), ticker: prefillTicker, kind: "equity" } : null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
   const router = useRouter();
   useEffect(() => { fetch("/api/assets").then((r) => { if (!r.ok) throw new Error(); return r.json(); }).then(setAssets).catch(() => setError("Unable to load assets. Reload to try again.")); }, []);
   async function add(e: React.FormEvent) {
@@ -33,24 +38,26 @@ function NewResearch() {
       router.push(`/assets/${data.id}/run?new=1`);
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to add company."); } finally { setBusy(false); }
   }
+  const q = query.trim().toLowerCase();
+  const shown = q ? assets.filter((a) => a.canonical_name.toLowerCase().includes(q) || a.slug.toLowerCase().includes(q)) : assets;
   return <div className={ui.page}>
     <header className={ui.heading}><div className={ui.titleGroup}><h1>Start research</h1></div></header>
-    <ol className={styles.steps} aria-label="Steps">
-      <li aria-current="step"><span>1</span>Company</li>
-      <li><span>2</span>Question and budget</li>
-    </ol>
+    <FlowStepper current={0} />
     {error && <p role="alert" className={ui.error}>{error}</p>}
     <div className={ui.grid}>
-      <Card title="Pick a company" action={<span>{assets.length}</span>} className={ui.s7}>
-        {assets.length ? <div className={ui.list}>
-          {assets.map((a) => { const fromTheme = !!prefillTicker && a.slug === prefillTicker.toLowerCase();
+      <Card title="Pick a company" action={<span>{q ? `${shown.length} of ${assets.length}` : assets.length}</span>} className={ui.s7}>
+        <label className={styles.search}><span className="sr-only">Search companies</span>
+          <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or ticker" autoComplete="off" />
+        </label>
+        {shown.length ? <div className={ui.list}>
+          {shown.map((a) => { const fromTheme = !!prefillTicker && a.slug === prefillTicker.toLowerCase();
             return <Link key={a.id} href={`/assets/${a.id}/run?new=1`} className={styles.pick} aria-current={fromTheme ? "true" : undefined}>
               <CompanyLogo subject={{ asset_id: a.id }} name={a.canonical_name} size={36} />
               <span className={styles.pickName}><strong>{a.canonical_name}</strong>{a.asset_kind === "equity" && <span>{a.slug.toUpperCase()}</span>}</span>
               {fromTheme && <Tag tone="neutral">From your theme</Tag>}
               <span className={styles.pickAction}>Start</span>
             </Link>; })}
-        </div> : <p className={ui.empty}>No companies yet. Add one.</p>}
+        </div> : <p className={ui.empty}>{assets.length ? `No company matches "${query.trim()}". Add it on the right.` : "No companies yet. Add one."}</p>}
       </Card>
       <Card title="Add a listed company" className={ui.s5}>
         <form onSubmit={add} className={ui.form}>

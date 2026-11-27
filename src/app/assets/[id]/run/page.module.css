@@ -19,3 +19,20 @@
 .fold > summary::-webkit-details-marker { display: none; }
 .fold > summary:hover { background: var(--hover); }
 .fold ul { list-style: disc; padding: 0 22px 12px 40px; font-size: 13px; line-height: 1.6; }
+
+/* Guided run flow (prototype/workshop/run-flow, variant A): one column of step cards; operator panels behind Details. */
+.narrow { max-width: 820px; margin: 0 auto; }
+.flow { display: grid; gap: 16px; max-width: 980px; margin: 0 auto; }
+.progress { display: grid; gap: 12px; padding: 8px 22px 18px; }
+.bigCount { display: flex; align-items: baseline; gap: 8px; }
+.bigCount strong { font-family: var(--font-display); font-size: 44px; font-weight: 700; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.bigCount span { color: var(--ink-3); font-size: 15px; }
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 4px 0 0; }
+.facts dt { color: var(--ink-3); font-size: 12px; }
+.facts dd { font-family: var(--font-display); font-size: 22px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.details > summary { list-style: none; display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-radius: var(--radius-card); background: var(--tile); box-shadow: var(--shadow-card); cursor: pointer; font-weight: 600; }
+.details > summary::-webkit-details-marker { display: none; }
+.details > summary::after { content: "Show"; margin-left: auto; color: var(--navy); font-size: 13px; }
+.details[open] > summary { margin-bottom: 16px; }
+.details[open] > summary::after { content: "Hide"; }
+@media (max-width: 700px) { .facts { grid-template-columns: 1fr; } .bigCount strong { font-size: 34px; } }
