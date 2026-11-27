@@ -7,6 +7,7 @@ import { STAGE_CONFIGS } from "../../../src/lib/workflow/stages";
 import { approveRequestReset, startNextStage } from "../../../src/lib/workflow/orchestrator";
 import { MockProvider } from "../../../src/lib/agent-harness/providers/mock";
 import { processResearchRequests } from "../../../src/lib/research/team";
+import { dependentStages } from "../../../src/lib/research/team-plan";
 import { saveReportArtifact } from "../../../src/lib/research/reporting/store";
 import { withLinkedRunSources } from "../../../src/lib/research/handlers/source-discovery";
 import { openSourceGap } from "../../../src/lib/research/sources/corpus";
@@ -53,8 +54,9 @@ test("AC-4: with nothing newly fetched, earlier linked documents still provide c
 });
 
 // Updated for research-request-routing AC-5 to AC-7: source_discovery is never reopened, so a data request
-// needing sources supersedes no gap (its search is served by the collector without a reset). An owner's
-// requires_rerun answer, approved by a reviewer, supersedes the gaps of the stages it reopens only.
+// needing sources supersedes no gap (its search is served by the collector without a reset). An approved re-run
+// supersedes the gaps of the stages it reopens only. pipeline-simplification: an owner's requires_rerun no longer pauses
+// the run, so the approved re-run is a legacy pending row added after the round is answered (was: the answer paused it).
 test("AC-5: a data request needing sources supersedes no gap; an approved re-run supersedes downstream gaps, not collector or unrelated ones", { skip }, async () => {
   const sql = postgres(process.env.DATABASE_URL!);
   const ctx = await run(sql, {}, "completed");
@@ -85,6 +87,9 @@ test("AC-5: a data request needing sources supersedes no gap; an approved re-run
       { id: "request-1-1", role: "data", question: "Find the investor day presentation with segment KPIs", material: true, needs_sources: true, source_role: "company_investor_relations" },
       { id: "request-1-2", role: "financials", question: "Reconcile the operating margin series across recast filings", material: true, needs_sources: false, source_role: "regulatory_filing" }] });
     await processResearchRequests(sql, ctx as any);
+    await sql`INSERT INTO research_run_resets (research_run_id, kind, status, stages, request_ids, estimated_cost_usd)
+      VALUES (${ctx.runId}, 'approval', 'pending', ${dependentStages(["historical_record"])}::text[], ${["request-1-2"]}::text[], 0)`;
+    await sql`UPDATE research_runs SET status = 'waiting_for_human' WHERE id = ${ctx.runId}`;
     const arrived = await sql`SELECT gap_key, status FROM source_gaps WHERE research_run_id = ${ctx.runId} ORDER BY gap_key`;
     assert.deepEqual(arrived.map(r => r.status), ["open", "open", "open"], "requests supersede nothing on arrival");
     await approveRequestReset(ctx.runId, { decision: "rerun", actor: "verify-repair" });

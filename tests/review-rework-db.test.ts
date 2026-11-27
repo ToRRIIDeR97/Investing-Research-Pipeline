@@ -16,8 +16,8 @@ test("an analysis_rework request reruns asset_valuation once, then is answered w
   try {
     // pipeline-simplification: the review opens no post-review round, so the rework request comes from a pre-draft
     // round (the valuation check's path). Was: a post-review round 3 after two answered pre-draft rounds.
-    const answered = { round: 1, state: "answered" as const, requests: [] };
-    const batch = nextRequestBatch(answered, reworkRequests([{ category: "analysis_rework", owner_stage: "asset_valuation", section_id: "valuation",
+    // pipeline-simplification: one round per run, so the rework is the run's first round (was round 2 after round 1).
+    const batch = nextRequestBatch(null, reworkRequests([{ category: "analysis_rework", owner_stage: "asset_valuation", section_id: "valuation",
       severity: "high", issue: "The terminal multiple is applied to a capex-peak year." }]))!;
     await saveBatch(sql, run, batch.requests, { round: batch.round });
 
@@ -38,7 +38,7 @@ test("an analysis_rework request reruns asset_valuation once, then is answered w
     await processResearchRequests(sql, stageCtx(run));
     const after = await getTeamRequests(sql, run.runId);
     assert.equal(after!.state, "answered");
-    assert.equal(after!.round, 2, "pipeline-simplification: the round survives (was the post_review_round marker, 3)");
+    assert.equal(after!.round, 1, "pipeline-simplification: the round survives (was the post_review_round marker, 3)");
     assert.match(after!.requests[0].response!.answer, /was rerun/);
     assert.equal(after!.requests[0].response!.requires_rerun, undefined);
     assert.equal((await stageStatuses(sql, run.runId)).asset_valuation, "completed", "no second rerun");

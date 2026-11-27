@@ -7,6 +7,7 @@ import { STAGE_CONFIGS } from "../../../src/lib/workflow/stages";
 import { approveRequestReset, startNextStage } from "../../../src/lib/workflow/orchestrator";
 import { MockProvider } from "../../../src/lib/agent-harness/providers/mock";
 import { processResearchRequests } from "../../../src/lib/research/team";
+import { dependentStages } from "../../../src/lib/research/team-plan";
 import { saveReportArtifact } from "../../../src/lib/research/reporting/store";
 import { withLinkedRunSources } from "../../../src/lib/research/handlers/source-discovery";
 import { openSourceGap } from "../../../src/lib/research/sources/corpus";
@@ -88,8 +89,8 @@ function scriptTeamAnswers(answer: (packet: any) => Record<string, unknown>) {
 }
 
 // Updated for research-request-routing AC-5 to AC-7: an arriving request no longer reopens stages or
-// supersedes gaps. The reset now comes from the owner's requires_rerun answer; a financials re-run reopens
-// 10 analysis stages, above the automatic limit, so it runs after a reviewer approves it.
+// supersedes gaps. pipeline-simplification: an owner's answer never pauses or reruns, so the approved financials
+// re-run is a legacy pending row (was: the owner's requires_rerun answer paused the run through processResearchRequests).
 test("AC-5: reopening a stage supersedes its open gaps, and a re-emitted gap opens again", { skip }, async () => {
   const sql = postgres(process.env.DATABASE_URL!);
   const run = await createRun(sql);
@@ -103,9 +104,12 @@ test("AC-5: reopening a stage supersedes its open gaps, and a re-emitted gap ope
     await openSourceGap(sql, { ...gap, gapKey: "missing_peer_company_primary", owner: "system:source-reader", description: "Peer filings missing" });
     recordId = String((await saveReportArtifact(sql, run, "historical_record", `${run.assetSlug}-historical-record`,
       { artifact_type: "historical_record", summary: `Revenue history. Fixture ${run.runId}.` })).id);
-    await saveReportArtifact(sql, run, "team_requests", "requests", { round: 1, state: "queued", requests: [{ id: "request-1-1", role: "financials",
-      question: "Reconcile FY2023 revenue across the recast filings", material: true, needs_sources: false, source_role: "regulatory_filing" }] });
-    assert.equal(await processResearchRequests(sql, run as any), true);
+    await saveReportArtifact(sql, run, "team_requests", "requests", { round: 1, state: "processing", requests: [{ id: "request-1-1", role: "financials",
+      question: "Reconcile FY2023 revenue across the recast filings", material: true, needs_sources: false, source_role: "regulatory_filing",
+      response: { status: "answered", answer: "FY2023 revenue must be recaptured from the recast filing.", evidence_ids: [], artifact_ids: [recordId], requires_rerun: true } }] });
+    await sql`INSERT INTO research_run_resets (research_run_id, kind, status, stages, request_ids, estimated_cost_usd)
+      VALUES (${run.runId}, 'approval', 'pending', ${dependentStages(["historical_record"])}::text[], ${["request-1-1"]}::text[], 0)`;
+    await sql`UPDATE research_runs SET status = 'waiting_for_human' WHERE id = ${run.runId}`;
     const paused = await sql`SELECT gap_key, status FROM source_gaps WHERE research_run_id = ${run.runId} ORDER BY gap_key`;
     assert.deepEqual(paused.map(g => g.status), ["open", "open"], "nothing is superseded before the re-run is approved");
     await approveRequestReset(run.runId, { decision: "rerun", actor: "live-repair-test" });

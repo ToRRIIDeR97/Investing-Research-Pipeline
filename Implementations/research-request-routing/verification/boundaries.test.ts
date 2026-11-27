@@ -8,8 +8,11 @@ import { exported, fredWithTrailingBlank, loadEnv, TAIL, TEAM, VERIFIED_HISTORY 
 loadEnv();
 const request = (id: string, role: string, source_role: string, question: string, needs_sources = false) =>
   ({ id, role, source_role, question, material: true, needs_sources });
-const rerun = (r: Record<string, unknown>) => ({ ...r, response: { status: "answered", answer: "Inputs changed; recompute.",
-  evidence_ids: ["e1"], artifact_ids: [], requires_rerun: true } });
+// pipeline-simplification: only code's rework requests rerun a stage, so `rerun` now builds one for the role's home stage
+// (was an owner answer with requires_rerun). A data request gets no rework stage: its flag is the owner kind and reruns nothing.
+const HOME: Record<string, string> = { valuation: "asset_valuation", financials: "historical_record", business: "company_genesis" };
+const rerun = (r: Record<string, unknown>) => ({ ...r, ...(HOME[String(r.role)] ? { rework_stage: HOME[String(r.role)] } : {}),
+  response: { status: "answered", answer: "Inputs changed; recompute.", evidence_ids: ["e1"], artifact_ids: [], requires_rerun: true } });
 const ledger = (skipped: string[] = []) => STAGE_CONFIGS.map(s => ({ stage_key: s.key, status: skipped.includes(s.key) ? "skipped" : "completed" }));
 const sorted = (values: string[]) => [...values].sort();
 const history = { id: "market-history-v2", content: VERIFIED_HISTORY };
@@ -85,12 +88,13 @@ test("AC-6: the automatic limit is inclusive and configurable", () => {
   const valuation = [rerun(request("r1", "valuation", "regulatory_filing", "Recompute the discounting base date"))];
   // Valuation and decision only: the backtests no longer depend on valuation (architecture-9 P1).
   assert.equal(requestResetPlan(valuation, ledger(), { autoResetUsed: false, maxAutoStages: 2 }).mode, "auto", "2 of 2");
-  assert.equal(requestResetPlan(valuation, ledger(), { autoResetUsed: false, maxAutoStages: 1 }).mode, "approval", "2 of 1");
+  // pipeline-simplification: over the limit nothing reruns and nothing waits for approval (was "approval").
+  assert.equal(requestResetPlan(valuation, ledger(), { autoResetUsed: false, maxAutoStages: 1 }).mode, "none", "2 of 1");
   const financials = [rerun(request("r2", "financials", "regulatory_filing", "Recapture the Q3 2025 cash flow quarter"))];
   process.env.RESEARCH_MAX_AUTO_RESET_STAGES = "9";
   try { assert.equal(requestResetPlan(financials, ledger(), { autoResetUsed: false }).mode, "auto", "9 of 9 from the environment"); }
   finally { delete process.env.RESEARCH_MAX_AUTO_RESET_STAGES; }
-  assert.equal(requestResetPlan(financials, ledger(), { autoResetUsed: false }).mode, "approval", "default limit 6");
+  assert.equal(requestResetPlan(financials, ledger(), { autoResetUsed: false }).mode, "none", "default limit 6 (pipeline-simplification: was approval)");
 });
 
 test("AC-6: skipped stages are neither reset nor counted", () => {
@@ -105,22 +109,25 @@ test("AC-6: skipped stages are neither reset nor counted", () => {
   assert.ok(TAIL.every(key => plan.stages.includes(key)), "the tail is reset but not counted");
 });
 
-test("AC-6: several owners reset the union of their stages; a used automatic reset always needs approval", () => {
+test("AC-6: several reworks span the union of their stages; a used automatic reset reruns nothing (pipeline-simplification)", () => {
   const requestResetPlan = exported(TEAM, "requestResetPlan");
   const both = [rerun(request("r4", "valuation", "regulatory_filing", "Recompute the valuation schedule")),
     { ...request("r5", "business", "proxy_and_governance", "Who reports to the CEO?"), response: { status: "answered", answer: "Documented.", evidence_ids: ["e2"], artifact_ids: [] } },
     rerun(request("r6", "financials", "regulatory_filing", "Recapture restated revenue"))];
   const plan = requestResetPlan(both, ledger(), { autoResetUsed: false });
   assert.deepEqual(sorted(plan.stages), sorted([...new Set([...dependentStages(["asset_valuation"]), ...dependentStages(["historical_record"])])]));
-  assert.deepEqual(sorted(plan.request_ids), ["r4", "r6"]);
-  assert.equal(plan.mode, "approval");
+  // pipeline-simplification: over the default limit, so declined rather than "approval"; the requests are named there.
+  assert.deepEqual(sorted(plan.declined.request_ids), ["r4", "r6"]);
+  assert.equal(plan.mode, "none");
   const small = requestResetPlan([both[0]], ledger(["indicator_design", "strategy_design", "backtest_execution", "backtest_review", "decision_synthesis"]),
     { autoResetUsed: true, maxAutoStages: 6 });
   assert.equal(small.analysis_stages.length, 1);
-  assert.equal(small.mode, "approval");
+  assert.equal(small.mode, "none", "pipeline-simplification: was approval");
+  assert.match(small.declined.reason, /already used/);
 });
 
-test("AC-8: the first round starts unescalated; a later round inherits false as false", () => {
+// pipeline-simplification: one round per run, so no later round exists to inherit the flag (was: round 2 inherited false).
+test("AC-8: the first round starts unescalated; no later round is created", () => {
   const nextRequestBatch = exported(TEAM, "nextRequestBatch");
   const ask = { role: "valuation", question: "What maintenance capex is disclosed separately?", material: true, needs_sources: false, source_role: "regulatory_filing" };
   const first = nextRequestBatch(null, [ask, { ...ask, question: "what maintenance capex is disclosed separately?" }]);
@@ -128,9 +135,8 @@ test("AC-8: the first round starts unescalated; a later round inherits false as 
   assert.equal(first.state, "queued");
   assert.ok(!first.source_escalated);
   assert.deepEqual(first.requests.map((r: any) => r.id), ["request-1-1"], "a repeat within one output is dropped");
-  const second = nextRequestBatch({ ...first, state: "answered", source_escalated: false }, [{ ...ask, question: "Which lease costs are capitalised?" }]);
-  assert.equal(second?.round, 2);
-  assert.ok(!second.source_escalated);
+  assert.equal(nextRequestBatch({ ...first, state: "answered", source_escalated: false }, [{ ...ask, question: "Which lease costs are capitalised?" }]) ?? null, null,
+    "one round per run");
   assert.equal(nextRequestBatch({ ...first, state: "answered" }, [{ ...ask, question: "  WHAT MAINTENANCE CAPEX IS DISCLOSED SEPARATELY? " }]) ?? null, null,
     "only repeated questions: no new round");
 });

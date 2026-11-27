@@ -31,7 +31,10 @@ export type TeamAnswer = {
   source_ids?: string[];
   /** "system:market-history" | "system:fred" for answers made from stored data. */
   resolved_by?: string;
-  /** The owner asks for its stage and dependents to rerun. */
+  /**
+   * Set only on code's rework answers (reworkAnswer): the reworked stage and its dependents rerun once, automatically.
+   * An owner's answer never carries it (pipeline-simplification); a stored legacy one is dropped and reruns nothing.
+   */
   requires_rerun?: boolean;
 };
 /**
@@ -50,7 +53,8 @@ export interface RequestBatch { round: number; state: "queued" | "processing" | 
   rerun_stages?: string[]; requests: TeamRequest[] }
 /** Requests are asked only before drafting; the review no longer opens a round (pipeline-simplification). */
 export type RequestPhase = "pre_draft";
-export const MAX_PRE_DRAFT_ROUNDS = 2;
+/** One specialist question round per run, before drafting (pipeline-simplification). */
+export const MAX_PRE_DRAFT_ROUNDS = 1;
 const MAX_REQUESTS = 5;
 /** The wire schema cannot carry maxItems, so requests past the fifth are dropped locally instead of costing a full-prompt repair. */
 const firstRequests = <T>(value: T): T => {
@@ -61,12 +65,10 @@ const REQUESTS_SCHEMA = outputContract({ requests: z.array(ResearchRequest).max(
 export const REQUEST_CONTRACT: AgentOutputFormat = { ...REQUESTS_SCHEMA, validate: value => REQUESTS_SCHEMA.validate!(firstRequests(value)) };
 const BRIEF_CONTRACT = outputContract({ approach: z.string().min(1), checks: z.array(z.string().min(1)).min(1), information_needed: z.array(z.string().min(1)) });
 const ANSWER_CONTRACT = { ...outputContract({ status: z.enum(["answered", "unavailable", "needs_sources"]), answer: z.string().min(1),
-  evidence_ids: z.array(z.string()), artifact_ids: z.array(z.string()), source_ids: z.array(z.string()).optional(), requires_rerun: z.boolean().optional() }),
+  evidence_ids: z.array(z.string()), artifact_ids: z.array(z.string()), source_ids: z.array(z.string()).optional() }),
   requiredKeys: ["status", "answer", "evidence_ids", "artifact_ids"] };
 /** Stages after the analysis: a re-run reopens them but does not wait for them. */
 export const REQUEST_TAIL_STAGES = ["report_draft", "ai_reviewer", "human_review", "export", "refresh_schedule"];
-/** The two report stages; a request round pauses whichever of them is running. */
-export const REPORT_STAGES = ["report_draft", "ai_reviewer"];
 export class ResearchRequestsPending extends Error {
   constructor() { super("Specialists are investigating report requests"); }
 }
@@ -313,55 +315,66 @@ async function loadSystemFacts(sql: Sql, runId: string): Promise<SystemFacts> {
     fred: fred?.csv ? { sourceId: String(fred.id), csv: String(fred.csv) } : null };
 }
 
-const rerunRoot = (request: TeamRequest) => request.rework_stage ?? TEAM_ROLES[request.role].stage;
-/** Only an owner's requires_rerun names a root; data requests never reopen source discovery. Rework requests name their stage. */
+/**
+ * Only code's rework requests (`rework_stage`, from the valuation check) name a root, the stage they rework, while their
+ * answer asks for the rerun. An owner's answer never reruns a stage (pipeline-simplification), even a stored legacy
+ * `requires_rerun`; data requests never reopen source discovery.
+ */
 export function requestStageRoots(requests: TeamRequest[]): string[] {
-  return [...new Set(rerunRequests(requests).map(rerunRoot))];
+  return [...new Set(rerunRequests(requests).map(r => r.rework_stage!))];
 }
-const rerunRequests = (requests: TeamRequest[]) => requests.filter(r => r.response?.requires_rerun === true && r.role !== "data");
+const rerunRequests = (requests: TeamRequest[]) => requests.filter(r => r.rework_stage && r.response?.requires_rerun === true);
 
 /**
- * A stage reruns at most once per run for requests. A rerun request for a stage an applied reset was already asked
- * for (`rerunRoots`) is not rerun: its answer becomes unavailable, so it stays an open report question. An unavailable answer never
- * asks for a rerun. Without this, an owner re-answering after its rerun could ask again after every rerun
- * (SoFi 7c70364e paused for approval four times on one valuation question).
+ * `approval` is never returned since pipeline-simplification; it stays in the type because legacy `research_run_resets`
+ * rows of that kind can still be decided (approveRequestReset). `declined` names the rework requests that asked for a
+ * rerun the run can't give automatically (its one automatic rerun is used, or the reset is over the stage limit).
  */
-export function limitReruns(requests: TeamRequest[], rerunStages: Set<string>): TeamRequest[] {
-  return requests.map(request => {
-    const response = request.response;
-    if (response?.requires_rerun !== true) return request;
-    const { requires_rerun: _, ...kept } = response;
-    if (response.status !== "answered") return { ...request, response: kept };
-    const stage = rerunRoot(request);
-    if (!rerunStages.has(stage)) return request;
-    const owner = request.rework_stage ? "" : ` The owner's answer was: ${response.answer}`;
-    return { ...request, response: { ...kept, status: "unavailable", answer: `Not rerun: ${stage} was already rerun in this run.${owner}` } };
-  });
-}
-
-/** The stages applied resets were asked for (their roots, not the dependents they also reopened), from their request ids. */
-export function rerunRoots(requests: TeamRequest[], appliedRequestIds: string[]): Set<string> {
-  const ids = new Set(appliedRequestIds);
-  return new Set(requests.filter(r => ids.has(r.id)).map(rerunRoot));
-}
-
-export interface RequestResetPlan { mode: "none" | "auto" | "approval"; stages: string[]; analysis_stages: string[]; request_ids: string[] }
+export interface RequestResetPlan { mode: "none" | "auto" | "approval"; stages: string[]; analysis_stages: string[]; request_ids: string[];
+  declined?: { request_ids: string[]; reason: string } }
 function autoResetLimit() {
   const raw = process.env.RESEARCH_MAX_AUTO_RESET_STAGES?.trim();
   const value = Number(raw);
   return raw && Number.isInteger(value) && value >= 0 ? value : 6;
 }
 
-/** One automatic re-run of at most maxAutoStages analysis stages per run; anything else waits for a reviewer. */
+/**
+ * One automatic re-run per run, of at most maxAutoStages analysis stages, for code's rework requests only. Anything
+ * else reruns nothing: the plan is `none`, its rework requests are `declined`, and the report continues. Nothing
+ * waits for a reviewer (pipeline-simplification).
+ */
 export function requestResetPlan(requests: TeamRequest[], stages: { stage_key: string; status: string }[],
   opts: { autoResetUsed: boolean; maxAutoStages?: number }): RequestResetPlan {
+  const none = { mode: "none" as const, stages: [], analysis_stages: [], request_ids: [] };
   const roots = requestStageRoots(requests);
-  if (!roots.length) return { mode: "none", stages: [], analysis_stages: [], request_ids: [] };
+  if (!roots.length) return none;
   const skipped = new Set(stages.filter(s => s.status === "skipped").map(s => s.stage_key));
   const reset = dependentStages(roots).filter(key => !skipped.has(key));
   const analysis = reset.filter(key => !REQUEST_TAIL_STAGES.includes(key));
-  const auto = !opts.autoResetUsed && analysis.length <= (opts.maxAutoStages ?? autoResetLimit());
-  return { mode: auto ? "auto" : "approval", stages: reset, analysis_stages: analysis, request_ids: rerunRequests(requests).map(r => r.id) };
+  const limit = opts.maxAutoStages ?? autoResetLimit();
+  const ids = rerunRequests(requests).map(r => r.id);
+  // A declined plan keeps stages and analysis_stages as what the reset would have reopened; nothing reopens.
+  const declined = (reason: string) => ({ ...none, stages: reset, analysis_stages: analysis, declined: { request_ids: ids, reason } });
+  if (opts.autoResetUsed) return declined("the run's one automatic rerun was already used");
+  if (analysis.length > limit) return declined(`it would reopen ${analysis.length} analysis stages, over the automatic limit of ${limit}`);
+  return { mode: "auto", stages: reset, analysis_stages: analysis, request_ids: ids };
+}
+
+/**
+ * The batch as it is kept: a stored owner's `requires_rerun` (legacy) is dropped, keeping its status and text, and each
+ * declined rework request becomes unavailable ("Not rerun: …"), so it stays an open report question.
+ */
+export function settleRerunRequests(requests: TeamRequest[], declined?: RequestResetPlan["declined"]): TeamRequest[] {
+  const ids = new Set(declined?.request_ids ?? []);
+  return requests.map(request => {
+    const response = request.response;
+    if (response?.requires_rerun !== true) return request;
+    const { requires_rerun: _, ...kept } = response;
+    if (!request.rework_stage) return { ...request, response: kept };
+    if (!ids.has(request.id)) return request;
+    return { ...request, response: { ...kept, status: "unavailable",
+      answer: `Not rerun: ${request.rework_stage} was not rerun because ${declined!.reason}. ${request.question}` } };
+  });
 }
 
 async function writeTeamRequests(tx: Sql, runId: string, batch: RequestBatch) {
@@ -404,7 +417,7 @@ export async function rerunRequestStages(tx: Sql, runId: string, batch: RequestB
     }) });
 }
 
-/** A reviewer declined the re-run: its requests become open questions and the report continues. */
+/** A reviewer declined a legacy re-run approval: its requests become open questions and the report continues. */
 export async function skipRequestRerun(tx: Sql, runId: string, batch: RequestBatch, requestIds: string[]) {
   const ids = new Set(requestIds);
   const { rerun_stages: _, ...rest } = batch;
@@ -507,17 +520,17 @@ async function ownerAnswer(sql: Sql, ctx: ResearchRunContext, request: TeamReque
     } }, promptFactory: p => exactJsonPrompt({ agentName: owner.agent, requiredKeys: ANSWER_CONTRACT.requiredKeys, packet: p,
       extraRules: [owner.purpose,
         "Answer the report agent's exact question from the refreshed artifacts, quoted evidence and passages. passages are excerpts of this run's stored documents for the request's source role; cite a passage by adding its source_id to the optional source_ids array. Use only supplied IDs.",
-        "If the question cannot be answered from these inputs and source_search_attempted is false, return needs_sources to send it to the collector once. If source_search_attempted is true, return unavailable and explain the remaining gap. Never treat a search attempt or a finished stage as proof of an answer.",
-        "Set the optional requires_rerun to true only when your own stage's output is wrong and must be recomputed; your stage and its dependents then rerun before you answer again. Omit it when the answer stands on its own."] }) });
+        "If the question cannot be answered from these inputs and source_search_attempted is false, return needs_sources to send it to the collector once. If source_search_attempted is true, return unavailable and explain the remaining gap. Never treat a search attempt or a finished stage as proof of an answer."] }) });
   const kept = keepCurrentReferences(response, references);
   return { status: kept.status, answer: kept.answer, evidence_ids: kept.evidence_ids, artifact_ids: kept.artifact_ids,
-    ...(kept.source_ids ? { source_ids: kept.source_ids } : {}), ...(kept.requires_rerun === true ? { requires_rerun: true } : {}) };
+    ...(kept.source_ids ? { source_ids: kept.source_ids } : {}) };
 }
 
 /**
  * Answer the batch without resetting stages: stored market history and FRED first, then each owner from
- * research-memory passages, with one collector search per request at most. Stages reopen only when an
- * owner sets requires_rerun: automatically once per run within the limit, otherwise after a reviewer approves.
+ * research-memory passages, with one collector search per request at most. An owner's answer never reopens a stage;
+ * only code's rework requests (the valuation check) do, automatically once per run within the limit. Nothing pauses
+ * the run for approval (pipeline-simplification).
  */
 export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext) {
   let batch = await getTeamRequests(sql, ctx.runId);
@@ -587,12 +600,11 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
   const stages = await sql`SELECT stage_key, status FROM research_stages WHERE research_run_id = ${ctx.runId}`;
   // The run's one automatic re-run is used once it has an auto row.
   const [auto] = await sql`SELECT 1 FROM research_run_resets WHERE research_run_id = ${ctx.runId} AND kind = 'auto' LIMIT 1`;
-  const applied = await sql`SELECT request_ids FROM research_run_resets WHERE research_run_id = ${ctx.runId} AND status = 'applied'`;
-  const limited = limitReruns(batch.requests, rerunRoots(batch.requests, applied.flatMap(row => (row.request_ids ?? []) as string[])));
-  if (limited.some((request, i) => request !== batch!.requests[i])) { batch = { ...batch, requests: limited }; await save(); }
   const plan = requestResetPlan(batch.requests, stages.map(s => ({ stage_key: String(s.stage_key), status: String(s.status) })),
     { autoResetUsed: Boolean(auto) });
-  if (plan.mode === "none") {
+  const settled = settleRerunRequests(batch.requests, plan.declined);
+  if (settled.some((request, i) => request !== batch!.requests[i])) { batch = { ...batch, requests: settled }; await save(); }
+  if (plan.mode !== "auto") {
     const { rerun_stages: _, ...rest } = batch;
     batch = { ...rest, state: "answered" };
     await save();
@@ -603,25 +615,13 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
     const [locked] = await tx`SELECT status FROM research_runs WHERE id = ${ctx.runId} FOR UPDATE`;
     if (locked?.status !== "running") throw new Error("Research requests cannot bypass a human gate");
     const record = { stages: plan.stages, request_ids: plan.request_ids };
-    if (plan.mode === "auto") {
-      await rerunRequestStages(tx as unknown as Sql, ctx.runId, final, record,
-        `Superseded: its owning stage was reopened by team request round ${final.round}.`);
-      // Only automatic resets use up the run's one automatic re-run.
-      await tx`INSERT INTO research_run_resets (research_run_id, kind, status, stages, request_ids, round)
-        VALUES (${ctx.runId}, 'auto', 'applied', ${record.stages}::text[], ${record.request_ids}::text[], ${final.round ?? null})`;
-      await tx`UPDATE research_runs SET updated_at = NOW() WHERE id = ${ctx.runId}`;
-      return;
-    }
-    const [{ cost }] = await tx`SELECT COALESCE(SUM(m.cost_usd), 0) AS cost FROM model_call_logs m
-      JOIN research_stages s ON s.id = m.stage_id WHERE m.research_run_id = ${ctx.runId} AND s.stage_key = ANY(${plan.stages}::text[])`;
-    const { rerun_stages: _, ...rest } = final;
-    await writeTeamRequests(tx as unknown as Sql, ctx.runId, { ...rest, state: "processing" });
-    // The report stage that raised the round waits with the run.
-    await tx`UPDATE research_stages SET status = 'waiting_for_human', updated_at = NOW()
-      WHERE research_run_id = ${ctx.runId} AND stage_key = ANY(${REPORT_STAGES}::text[]) AND status = 'running'`;
-    await tx`INSERT INTO research_run_resets (research_run_id, kind, status, stages, request_ids, estimated_cost_usd)
-      VALUES (${ctx.runId}, 'approval', 'pending', ${record.stages}::text[], ${record.request_ids}::text[], ${Number(cost)})`;
-    await tx`UPDATE research_runs SET status = 'waiting_for_human', updated_at = NOW() WHERE id = ${ctx.runId}`;
+    await rerunRequestStages(tx as unknown as Sql, ctx.runId, final, record,
+      `Superseded: its owning stage was reopened by team request round ${final.round}.`);
+    // The automatic reset uses up the run's one automatic re-run. No approval row is created any more; legacy pending
+    // ones are still decided through approveRequestReset.
+    await tx`INSERT INTO research_run_resets (research_run_id, kind, status, stages, request_ids, round)
+      VALUES (${ctx.runId}, 'auto', 'applied', ${record.stages}::text[], ${record.request_ids}::text[], ${final.round ?? null})`;
+    await tx`UPDATE research_runs SET updated_at = NOW() WHERE id = ${ctx.runId}`;
   });
   return true;
 }
@@ -629,8 +629,8 @@ export async function processResearchRequests(sql: Sql, ctx: ResearchRunContext)
 /** A rework request asks for its stage's rerun once; after the rerun it is answered by the recomputed artifacts. */
 export function reworkAnswer(request: TeamRequest): TeamAnswer {
   return request.reworked
-    ? { status: "answered", answer: `${request.rework_stage} was rerun for this review finding.`, evidence_ids: [], artifact_ids: [], resolved_by: "system:rework" }
-    : { status: "answered", answer: `The review sent ${request.rework_stage} back for rework.`, evidence_ids: [], artifact_ids: [], resolved_by: "system:rework", requires_rerun: true };
+    ? { status: "answered", answer: `${request.rework_stage} was rerun for this rework request.`, evidence_ids: [], artifact_ids: [], resolved_by: "system:rework" }
+    : { status: "answered", answer: `Code sent ${request.rework_stage} back for rework.`, evidence_ids: [], artifact_ids: [], resolved_by: "system:rework", requires_rerun: true };
 }
 
 export function includeUnansweredQuestions(outline: ReportOutline, batch: RequestBatch | null): ReportOutline {

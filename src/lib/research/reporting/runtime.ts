@@ -379,9 +379,8 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
             "Allocate key figures: give each section 2-5 key_figures (metric and period, e.g. \"FY2024 take rate\"). Assign each figure to exactly one section, the one that explains it; other sections refer to it rather than repeat it.",
             EXHIBIT_CATALOGUE_RULE,
             ...(ctx.researchFraming ? [FRAMING_OUTLINE_RULE] : []), ...priorRules] }) }), dropped));
-      const unanswered = output.outline.questions.filter(q => q.status === "blocked" && q.materiality !== "supporting")
-        .map(q => ({ category: "research_gap", question: q.question, follow_up: q.follow_up }));
-      if (unanswered.length) await requestMissingResearch(sql, ctx, unanswered, "pre_draft", stageKey);
+      // The run's one question round ran before the outline (draftReport), so a blocked outline question starts no round:
+      // it stays an open report question (pipeline-simplification).
       return includeFramingQuestions(includeUnansweredQuestions(output.outline, teamRequests), ctx.researchFraming);
     },
     async write(section, outline, feedback, completed, options) {
@@ -437,7 +436,7 @@ async function reportComposition(sql: Sql, ctx: ResearchRunContext, stageKey: Re
 }
 
 /**
- * report_draft: the version change log, pre-draft team requests, report_facts, the outline, every section and the
+ * report_draft: the version change log, report_facts, the run's one team request round, the outline, every section and the
  * first report_document. The review stage reads that draft; what its artifacts don't hold is saved on the stage row.
  */
 export async function draftReport(sql: Sql, ctx: ResearchRunContext) {

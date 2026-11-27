@@ -149,13 +149,14 @@ test("pre-draft rounds are capped, no post-review round exists, and rework reque
   assert.equal(rework.length, 1);
   assert.equal(rework[0].role, "valuation");
   const first = nextRequestBatch(null, [...rework, ask("Which segment loses money?")])!;
-  const second = nextRequestBatch({ ...first, state: "answered" }, [ask("What is the net cash position?")])!;
-  assert.equal(nextRequestBatch({ ...second, state: "answered" }, [ask("A third pre-draft question?")]), null, "two pre-draft rounds");
+  // pipeline-simplification: one pre-draft round per run (was two: a second round, then null for a third).
+  assert.equal(nextRequestBatch({ ...first, state: "answered" }, [ask("What is the net cash position?")]), null, "one pre-draft round");
   // pipeline-simplification: was a post-review round 3 with post_review_round set; asking for one now creates nothing.
-  assert.equal(nextRequestBatch({ ...second, state: "answered" }, [ask("Peer pricing for Snap?")], "post_review" as any), null, "no post-review round");
-  assert.ok(!("post_review_round" in first) && !("post_review_round" in second), "no batch carries post_review_round");
-  // pipeline-simplification: a legacy batch whose only round was post-review still closes the rounds.
-  const legacy = { round: 1, state: "answered" as const, post_review_round: 1, requests: [] } as any;
+  assert.equal(nextRequestBatch({ ...first, state: "answered" }, [ask("Peer pricing for Snap?")], "post_review" as any), null, "no post-review round");
+  assert.ok(!("post_review_round" in first), "no batch carries post_review_round");
+  // pipeline-simplification: a legacy batch with post_review_round still closes the rounds; round 0 isolates that check
+  // from the one-round limit.
+  const legacy = { round: 0, state: "answered" as const, post_review_round: 1, requests: [] } as any;
   assert.equal(nextRequestBatch(legacy, [ask("A pre-draft question after a legacy review round?")]), null, "a stored post_review_round opens no further round");
 
   const reworkRequest = first.requests.find(r => r.rework_stage) as TeamRequest;

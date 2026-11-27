@@ -7,7 +7,7 @@ import { COVERAGE, REPORT_CHAPTERS, MAX_SECTION_PARAGRAPHS, STANDARD_VERSION, AD
 import { valuationCheck } from "../src/lib/research/reporting/facts";
 import { createReport } from "../src/lib/research/reporting/report";
 import { hasCodeExhibits } from "../src/lib/research/reporting/exhibits";
-import { reworkRequests, withoutReworkedOwners, limitReruns, rerunRoots, requestResetPlan, type TeamRequest } from "../src/lib/research/team";
+import { reworkRequests, reworkAnswer, withoutReworkedOwners, settleRerunRequests, requestResetPlan, type TeamRequest } from "../src/lib/research/team";
 
 const size = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
 
@@ -140,34 +140,38 @@ test("while code sends the valuation back, the round asks its owner nothing else
   assert.deepEqual(withoutReworkedOwners(asked, []), asked);
 });
 
-test("a stage reruns once per run for requests, and an unavailable answer never asks for one (SoFi 7c70364e's loop)", () => {
+// pipeline-simplification: owner answers never rerun a stage, so limitReruns and rerunRoots are gone (was: an owner's
+// requires_rerun reran its stage once per run, then became "Not rerun: ... was already rerun"). A stored owner flag is
+// dropped with its status and text kept; only code's rework reruns, and a declined one becomes unavailable.
+test("owner answers never rerun a stage; a declined rework becomes an open question (SoFi 7c70364e's loop)", () => {
   const base = { material: true, needs_sources: false, source_role: "regulatory_filing" as const };
   const ref = { evidence_ids: [], artifact_ids: ["a1"] };
   const requests = [
     { ...base, id: "request-1-3", role: "valuation", question: "Recheck the valuation.", response: { ...ref, status: "answered", answer: "The 2026 tax rate is wrong.", requires_rerun: true } },
-    { ...base, id: "request-2-1", role: "valuation", question: "Reconcile the values.", response: { ...ref, status: "unavailable", answer: "Cannot be completed.", requires_rerun: true } },
-    { ...base, id: "request-2-2", role: "financials", question: "Restate Q3.", response: { ...ref, status: "answered", answer: "Margins are misstated.", requires_rerun: true } },
-    { ...base, id: "request-2-3", role: "data", question: "Verify the close.", response: { ...ref, status: "answered", answer: "12.15 on 25 November." } },
+    { ...base, id: "request-1-4", role: "valuation", question: "Reconcile the values.", response: { ...ref, status: "unavailable", answer: "Cannot be completed.", requires_rerun: true } },
+    { ...base, id: "request-1-5", role: "financials", question: "Restate Q3.", response: { ...ref, status: "answered", answer: "Margins are misstated.", requires_rerun: true } },
+    { ...base, id: "request-1-6", role: "data", question: "Verify the close.", response: { ...ref, status: "answered", answer: "12.15 on 25 November." } },
   ] as TeamRequest[];
   const stages = ["historical_record", "asset_valuation", "decision_synthesis", "report_draft", "ai_reviewer"].map(stage_key => ({ stage_key, status: "completed" }));
 
-  // First pass: nothing has rerun yet, so the answered valuation request still asks for its rerun.
-  const first = limitReruns(requests, new Set());
-  assert.equal(first[0], requests[0]);
-  assert.equal(first[1].response?.requires_rerun, undefined);
-  assert.equal(first[1].response?.status, "unavailable");
-  assert.equal(first[3], requests[3]);
+  const plan = requestResetPlan(requests, stages, { autoResetUsed: false });
+  assert.equal(plan.mode, "none", "no owner answer reruns anything");
+  const settled = settleRerunRequests(requests, plan.declined);
+  for (const i of [0, 1, 2]) {
+    assert.equal(settled[i].response?.requires_rerun, undefined, "the owner's flag is dropped");
+    assert.equal(settled[i].response?.status, requests[i].response?.status, "its status is kept");
+    assert.equal(settled[i].response?.answer, requests[i].response?.answer, "its text is kept");
+  }
+  assert.equal(settled[3], requests[3]);
 
-  // An applied reset's roots are the stages its requests asked for, not the dependents it also reopened.
-  assert.deepEqual([...rerunRoots(requests, ["request-1-3"])], ["asset_valuation"]);
-  // After asset_valuation was rerun, its owner cannot reopen it again: the answer becomes an open question.
-  const after = limitReruns(requests, rerunRoots(requests, ["request-1-3"]));
-  assert.equal(after[0].response?.status, "unavailable");
-  assert.equal(after[0].response?.requires_rerun, undefined);
-  assert.match(after[0].response!.answer, /^Not rerun: asset_valuation was already rerun in this run\. The owner's answer was: The 2026 tax rate is wrong\./);
-  // Another stage's first rerun is still allowed.
-  assert.equal(after[2], requests[2]);
-  const plan = requestResetPlan(after, stages, { autoResetUsed: true });
-  assert.deepEqual(plan.request_ids, ["request-2-2"]);
-  assert.equal(requestResetPlan(after.slice(0, 2), stages, { autoResetUsed: true }).mode, "none");
+  const [rework] = reworkRequests(valuationRework({ valuation_check: { status: "flagged", reasons: ["The terminal value is 97%."] } }, null));
+  const asked = { ...rework, id: "request-1-1" } as TeamRequest;
+  const code = { ...asked, response: reworkAnswer(asked) } as TeamRequest;
+  const used = requestResetPlan([code, ...requests], stages, { autoResetUsed: true });
+  assert.equal(used.mode, "none", "the run's one automatic rerun is used, and nothing asks for approval");
+  const [declined] = settleRerunRequests([code], used.declined);
+  assert.equal(declined.response?.status, "unavailable");
+  assert.equal(declined.response?.requires_rerun, undefined);
+  assert.match(declined.response!.answer, /^Not rerun: asset_valuation was not rerun because the run's one automatic rerun was already used\./);
+  assert.deepEqual(requestResetPlan([code, ...requests], stages, { autoResetUsed: false }).request_ids, ["request-1-1"]);
 });

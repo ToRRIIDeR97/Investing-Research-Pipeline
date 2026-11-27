@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1380" width="1120" height="1380" role="img" aria-labelledby="t d" font-family="Helvetica, Arial, sans-serif" font-size="13">
-<title id="t">Research run — UML sequence view</title><desc id="d">Ordered messages from run creation through enqueue, worker claim, advisory lock, parallel stage execution with model calls, report requests answered without stage resets and the re-run approval, plan gate pause, approval and re-enqueue, the lease-expiry retry path, and cancel or shutdown.</desc>
+<title id="t">Research run — UML sequence view</title><desc id="d">Ordered messages from run creation through enqueue, worker claim, advisory lock, parallel stage execution with model calls, report requests answered without stage resets and the one automatic re-run, plan gate pause, approval and re-enqueue, the lease-expiry retry path, and cancel or shutdown.</desc>
 <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker><marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10" fill="none" stroke="#333"/></marker></defs>
 <rect x="0" y="0" width="1120" height="1380" fill="#ffffff"/>
 <text x="16" y="26" font-size="16" font-weight="bold" fill="#111">Research run — UML sequence view</text>
@@ -65,7 +65,7 @@
 <path d="M630,606 h40 v14 h-40" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="676" y="617" font-size="11" font-weight="normal" text-anchor="start" fill="#222">validate → advanceStage as each settles; start newly ready</text>
 <rect x="280" y="346" width="835" height="280" fill="none" stroke="#6f4fa3" stroke-dasharray="6 3"/>
-<text x="16" y="652" font-size="11" font-weight="bold" text-anchor="start" fill="#2f7f7f">alt [report requests in team_requests: 2 rounds pre-draft, none after review]</text>
+<text x="16" y="652" font-size="11" font-weight="bold" text-anchor="start" fill="#2f7f7f">alt [report requests in team_requests: 1 round pre-draft, none after review]</text>
 <path d="M630,674 L350,674" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="490.0" y="669" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">processResearchRequests: no reset; valuation-check rework → requires_rerun</text>
 <path d="M630,702 L350,702" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
@@ -79,9 +79,9 @@
 <path d="M630,814 L350,814" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="490.0" y="809" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">requestResetPlan: none → answered · auto → reset once</text>
 <path d="M630,842 L350,842" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="490.0" y="837" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">approval → run + running report stage waiting; request_reset</text>
+<text x="490.0" y="837" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">rework over the limit or after the auto re-run → unavailable, report continues</text>
 <path d="M70,870 L210,870" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
-<text x="140.0" y="865" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">POST …/request-reset {rerun | skip}</text>
+<text x="140.0" y="865" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">POST …/request-reset {rerun | skip} (legacy pending rows only)</text>
 <path d="M210,898 L350,898" fill="none" stroke="#333" stroke-width="1.3" marker-end="url(#a)"/>
 <text x="280.0" y="893" font-size="11" text-anchor="middle" fill="#222" stroke="#ffffff" stroke-width="3" paint-order="stroke">approveRequestReset + enqueue new job</text>
 <rect x="10" y="638" width="1105" height="278" fill="none" stroke="#2f7f7f" stroke-dasharray="6 3"/>

@@ -269,7 +269,7 @@ s.save(P("activity-valuation.svg"))
 # ---------------------------------------------------------------- state machines
 s = Svg(1100, 960, "Run, stage, job and artifact lifecycles — UML state machine view",
         "State machines for research_run_jobs, research_runs, research_stages and research_artifacts with transition guards from run-queue.ts, orchestrator.ts, pipeline-runner.ts, "
-        "team.ts and the artifact writers, including the pause for a team-request re-run above the automatic limit.")
+        "team.ts and the artifact writers. A team request never pauses the run; only a legacy re-run approval row can still be decided.")
 s.zone(20, 45, 1060, 160, "research_run_jobs (run-queue.ts)", "#b07a1f")
 s.initial(55, 125)
 s.state(100, 108, 120, 34, "queued", "worker")
@@ -297,8 +297,8 @@ s.state(860, 330, 120, 34, "failed", "warn")
 s.state(860, 395, 120, 34, "cancelled", "plain")
 s.line([(62, 317), (90, 317)], None)
 s.line([(200, 317), (300, 317)], "startRun [pending]", lx=250, ly=310)
-s.line([(410, 305), (540, 262)], "human gate / pause /\nre-run above limit", lx=482, ly=290, lanchor="start")
-s.line([(540, 250), (355, 250), (355, 300)], "approve* / request-reset\n[FOR UPDATE]", lx=445, ly=231)
+s.line([(410, 305), (540, 262)], "human gate", lx=482, ly=290, lanchor="start")
+s.line([(540, 250), (355, 250), (355, 300)], "approve* / legacy request-reset\n[FOR UPDATE]", lx=445, ly=231)
 s.line([(395, 334), (540, 395)], "exception / blocked /\nquality gate fails", lx=490, ly=352, lanchor="start")
 s.line([(540, 410), (355, 410), (355, 334)], "resumeResearchRun on enqueue", lx=445, ly=428)
 s.line([(410, 314), (820, 314), (820, 279), (860, 279)], "completeRun", lx=740, ly=308)
@@ -335,9 +335,9 @@ s.text(290, 700, "resume: an open gate, or human_review, stays waiting_for_human
 s.text(290, 715, "backtest withheld: backtest_review pending → skipped", 11, fill="#555")
 s.text(760, 655, "skip_and_continue: failed, run continues", 11, fill="#555")
 s.text(760, 670, "max_retries per stage: 0–3 (stages.ts)", 11, fill="#555")
-s.text(760, 685, "owner requires_rerun: stage + dependents → pending", 11, fill="#555")
-s.text(760, 700, "(auto once ≤ 6 analysis stages, else approved);", 11, fill="#555")
-s.text(760, 715, "report_draft waits until the decision", 11, fill="#555")
+s.text(760, 685, "valuation-check rework: stage + dependents → pending", 11, fill="#555")
+s.text(760, 700, "(auto once ≤ 6 analysis stages, else not rerun);", 11, fill="#555")
+s.text(760, 715, "owner answers never rerun a stage", 11, fill="#555")
 # Artifact
 s.zone(20, 740, 1060, 205, "research_artifacts (artifacts/repository.ts upsertArtifact, reporting/store.ts saveReportArtifact)", "#2f6f9f")
 s.initial(55, 800)
@@ -359,7 +359,7 @@ s.save(P("state-machines.svg"))
 # ---------------------------------------------------------------- sequence
 s = Svg(1120, 1380, "Research run — UML sequence view",
         "Ordered messages from run creation through enqueue, worker claim, advisory lock, parallel stage execution with model calls, report requests "
-        "answered without stage resets and the re-run approval, plan gate pause, approval and re-enqueue, the lease-expiry retry path, and cancel or shutdown.")
+        "answered without stage resets and the one automatic re-run, plan gate pause, approval and re-enqueue, the lease-expiry retry path, and cancel or shutdown.")
 parts = ["Analyst UI", "API route", "Postgres", "Worker", "Pipeline runner", "Stage handler", "Agent harness", "LLM provider"]
 xs = [70 + i * 140 for i in range(len(parts))]
 for x, p in zip(xs, parts):
@@ -410,10 +410,10 @@ def requests_body():
     msg(4, 6, "team_answer(owner, report inputs + passages)")
     msg(6, 7, "one call; one more after a collector search")
     msg(4, 2, "requestResetPlan: none → answered · auto → reset once")
-    msg(4, 2, "approval → run + running report stage waiting; request_reset")
-    msg(0, 1, "POST …/request-reset {rerun | skip}")
+    msg(4, 2, "rework over the limit or after the auto re-run → unavailable, report continues")
+    msg(0, 1, "POST …/request-reset {rerun | skip} (legacy pending rows only)")
     msg(1, 2, "approveRequestReset + enqueue new job")
-frame("alt [report requests in team_requests: 2 rounds pre-draft, none after review]", "#2f7f7f", xs[0] - 60, xs[7] + 65, requests_body)
+frame("alt [report requests in team_requests: 1 round pre-draft, none after review]", "#2f7f7f", xs[0] - 60, xs[7] + 65, requests_body)
 def gate_body():
     msg(4, 2, "run + stage → waiting_for_human; release lock")
     msg(3, 2, "completeResearchRunJob (owner-guarded)")
