@@ -97,7 +97,7 @@ Generated from `src/app/api/**/route.ts` by `tools/gen_routes.py`.
 <summary>Routes and methods</summary>
 
 <!-- BEGIN GENERATED: run routes -->
-76 route files, 92 handlers.
+77 route files, 93 handlers.
 
 | Route | Methods |
 | --- | --- |
@@ -124,6 +124,7 @@ Generated from `src/app/api/**/route.ts` by `tools/gen_routes.py`.
 | `/api/checklists/[id]` | DELETE, GET, PATCH |
 | `/api/company-profiles` | POST |
 | `/api/evidence/[id]/review` | PATCH |
+| `/api/market-search` | GET |
 | `/api/quant-finder` | GET |
 | `/api/quant/[ticker]` | GET |
 | `/api/research-runs/[id]` | GET |
