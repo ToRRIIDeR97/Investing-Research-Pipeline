@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Company search workshop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+/* Tokens copied from src/app/globals.css (consumer remaster). */
+:root{
+  --page:#F8F8F4;--tile:#FFFFFF;--soft:#F5F4EF;--hover:#F3F2EC;--line:#E7E5DF;--line-soft:#EEEDE7;--line-strong:#D6D3CC;
+  --ink:#0D1B2A;--ink-2:#44403C;--ink-3:#78716C;--ink-4:#A8A29E;
+  --navy:#0A2642;--navy-soft:#EEF1F5;--navy-2:#B4C0CC;--navy-3:#3D5A78;--sage:#75937D;
+  --positive:#2D7D46;--critical:#C9302C;--caution:#B8860B;
+  --radius-card:24px;--radius-control:12px;--radius-pill:999px;
+  --shadow-card:0 1px 2px rgb(0 0 0 / 4%),0 8px 28px -12px rgb(13 27 42 / 14%);
+  --shadow-pop:0 12px 32px -8px rgb(13 27 42 / 18%);
+  --shadow-navy:0 6px 16px -6px rgb(10 38 66 / 50%);
+  --ease-spring:cubic-bezier(.3,1.35,.5,1);
+  --font-display:"Plus Jakarta Sans",Inter,system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--page);font-family:Inter,system-ui,sans-serif;color:var(--ink);font-size:13px;line-height:1.5;font-variant-numeric:tabular-nums}
+button,input{font:inherit;color:inherit;background:none;border:0}
+button{cursor:pointer}
+h1,h2,h3{font-family:var(--font-display);letter-spacing:-.02em}
+
+/* Workshop chrome */
+.ws{max-width:1240px;margin:0 auto;padding:32px 24px 64px}
+.ws>header h1{font-size:32px;font-weight:700;letter-spacing:-.03em}
+.ws>header p{color:var(--ink-2);font-size:15px;max-width:80ch;margin-top:6px}
+.controls{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;padding:14px 0;background:linear-gradient(var(--page) 80%,transparent)}
+.controls label{font-size:12px;color:var(--ink-3);font-weight:600;margin-right:8px}
+.seg{display:inline-flex;background:var(--hover);border-radius:var(--radius-pill);padding:3px;gap:2px}
+.seg button{height:32px;padding:0 14px;border-radius:var(--radius-pill);font-weight:600;font-size:13px;color:var(--ink-2);transition:background .2s,color .2s,box-shadow .2s}
+.seg button.on{background:var(--tile);color:var(--navy);box-shadow:0 1px 3px rgb(0 0 0 / 10%)}
+.seg button:active{transform:scale(.96)}
+.idea{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:20px;margin:6px 0 16px;align-items:start}
+.idea h2{font-size:22px;font-weight:700}.idea p{color:var(--ink-2);font-size:14px;margin-top:4px;max-width:60ch}
+.pros{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.pros div{background:var(--tile);border-radius:18px;padding:12px 16px;box-shadow:var(--shadow-card)}
+.pros h3{font-family:Inter;font-size:12px;font-weight:600;color:var(--ink-3);letter-spacing:0;margin-bottom:4px}
+.pros li{list-style:none;font-size:13px;color:var(--ink-2);padding-left:14px;position:relative;margin-top:3px}
+.pros li:before{content:"";position:absolute;left:0;top:7px;width:6px;height:6px;border-radius:50%;background:var(--positive)}
+.pros .con li:before{background:var(--caution)}
+.hint{font-size:12.5px;color:var(--ink-3);margin:-4px 0 14px}
+
+/* Mock app window */
+.win{background:var(--page);border-radius:28px;box-shadow:0 30px 60px -30px rgb(13 27 42 / 35%),0 0 0 1px rgb(0 0 0 / 6%);overflow:hidden;min-height:680px}
+.nav{height:58px;display:flex;align-items:center;gap:22px;padding:0 28px;background:rgb(255 255 255 / 70%);border-bottom:1px solid var(--line)}
+.nav .brand{display:flex;align-items:center;gap:8px;font-family:var(--font-display);font-weight:800;font-size:16px}
+.nav .brand i{width:22px;height:22px;border-radius:7px;background:var(--sage);display:block}
+.nav a{color:var(--ink-2);font-weight:500}.nav a.on{color:var(--navy);font-weight:600}
+.nav .sp{flex:1}
+.scr{padding:26px 32px 40px}
+.title{font-family:var(--font-display);font-size:28px;font-weight:700;letter-spacing:-.03em;margin-bottom:14px}
+.stepper{display:flex;gap:6px;align-items:center;margin-bottom:26px}
+.stepper li{list-style:none;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--ink-4)}
+.stepper li b{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:var(--hover);font-size:12px}
+.stepper li.on{color:var(--navy)}.stepper li.on b{background:var(--navy);color:#fff;box-shadow:0 0 0 4px var(--navy-soft)}
+.stepper li+li:before{content:"";width:36px;height:2px;background:var(--line);margin-right:4px}
+
+.card{background:var(--tile);border-radius:var(--radius-card);box-shadow:var(--shadow-card);border:1px solid rgb(0 0 0 / 3.5%)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;padding:0 18px;border-radius:var(--radius-pill);font-weight:600;font-size:13px;border:1px solid var(--line-strong);background:var(--tile);white-space:nowrap;transition:transform .15s var(--ease-spring)}
+.btn:active{transform:scale(.96)}
+.btn.pri{background:var(--navy);border-color:var(--navy);color:#fff;box-shadow:var(--shadow-navy)}
+.btn.sm{height:30px;padding:0 12px;font-size:12.5px}
+.tag{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:var(--radius-pill);background:var(--soft);font-size:11.5px;font-weight:600;color:var(--ink-2);white-space:nowrap}
+.tag:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--ink-4)}
+.tag.good:before{background:var(--positive)}.tag.wait:before{background:var(--caution)}.tag.theme:before{background:var(--sage)}
+.logo{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-weight:800;font-size:10.5px;font-family:var(--font-display);flex-shrink:0;color:#fff}
+.logo.lg{width:56px;height:56px;border-radius:16px;font-size:13px}
+.muted{color:var(--ink-3)}
+.up{color:var(--positive);font-weight:600}.dn{color:var(--critical);font-weight:600}
+mark{background:none;color:var(--navy);font-weight:700}
+
+/* The big bar */
+.bigbar{display:flex;align-items:center;gap:14px;height:68px;padding:0 10px 0 24px;border-radius:var(--radius-pill);background:var(--tile);border:1px solid var(--line);box-shadow:var(--shadow-card);transition:border-color .2s,box-shadow .2s}
+.bigbar:focus-within{border-color:var(--navy-2);box-shadow:0 0 0 5px var(--navy-soft),var(--shadow-pop)}
+.bigbar svg{flex-shrink:0;color:var(--ink-3)}
+.bigbar input{flex:1;min-width:0;height:100%;font-size:19px;font-weight:500;outline:none}
+.bigbar input::placeholder{color:var(--ink-4);font-weight:400}
+.kbd{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 7px;border-radius:7px;border:1px solid var(--line-strong);font-size:11.5px;font-weight:600;color:var(--ink-3);background:var(--soft)}
+.src{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-3);font-weight:500;white-space:nowrap;padding-right:8px}
+.src i{width:7px;height:7px;border-radius:50%;background:#6001D2;display:block}
+.spin{width:18px;height:18px;border-radius:50%;border:2px solid var(--line);border-top-color:var(--navy);animation:spin .8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.res{display:grid;gap:2px}
+.hit{display:flex;align-items:center;gap:14px;padding:10px 14px;border-radius:16px;cursor:pointer;transition:background .15s;text-align:left;width:100%}
+.hit:hover,.hit.sel{background:var(--hover)}
+.hit.sel{box-shadow:inset 3px 0 0 var(--navy)}
+.hit .nm{flex:1;min-width:0;display:grid;line-height:1.3}
+.hit .nm strong{font-size:14.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hit .nm span{font-size:12.5px;color:var(--ink-3)}
+.hit .px{text-align:right;display:grid;line-height:1.3;font-size:13.5px;font-weight:600}
+.hit .px span{font-size:12px}
+.hit .go{font-size:13px;font-weight:600;color:var(--navy);opacity:0;transition:opacity .15s;white-space:nowrap}
+.hit:hover .go,.hit.sel .go{opacity:1}
+.grp{font-size:11.5px;font-weight:700;color:var(--ink-3);letter-spacing:.04em;text-transform:uppercase;padding:14px 14px 6px;display:flex;justify-content:space-between}
+.grp:first-child{padding-top:4px}
+.empty{padding:28px 14px;text-align:center;color:var(--ink-3);font-size:13.5px}
+.empty strong{display:block;color:var(--ink);font-size:15px;margin-bottom:4px}
+.foot{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 18px;border-top:1px solid var(--line-soft);font-size:12px;color:var(--ink-3)}
+.foot span{display:inline-flex;align-items:center;gap:6px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px 0 6px;border-radius:var(--radius-pill);background:var(--tile);border:1px solid var(--line);font-size:13px;font-weight:600;transition:all .15s}
+.chip:hover{border-color:var(--navy-2);background:var(--navy-soft)}
+.chip .logo{width:26px;height:26px;border-radius:50%;font-size:8px}
+.label{font-size:12.5px;font-weight:600;color:var(--ink-3);margin:0 0 10px}
+
+/* A: centred hero */
+.A .hero{max-width:760px;margin:30px auto 0;text-align:center}
+.A .hero h2{font-size:34px;font-weight:700;letter-spacing:-.03em}
+.A .hero p{color:var(--ink-2);font-size:15px;margin:6px 0 22px}
+.A .drop{margin-top:10px;text-align:left;overflow:hidden}
+.A .drop .res{padding:8px}
+.A .below{max-width:760px;margin:26px auto 0;text-align:left}
+
+/* B: bar over one list */
+.B .wrap{max-width:900px}
+.B .list{margin-top:16px}
+.B .list .res{padding:8px}
+
+/* C: spotlight with preview */
+.C .spot{display:grid;grid-template-columns:minmax(0,7fr) minmax(0,5fr);margin-top:12px;overflow:hidden;min-height:430px}
+.C .spot .res{padding:8px;border-right:1px solid var(--line-soft);align-content:start}
+.C .pv{padding:22px 24px;display:flex;flex-direction:column;gap:16px}
+.C .pv .who{display:flex;gap:14px;align-items:center}
+.C .pv .who strong{display:block;font-family:var(--font-display);font-size:20px;letter-spacing:-.02em;line-height:1.2}
+.C .pv .px{font-family:var(--font-display);font-size:34px;font-weight:700;letter-spacing:-.03em;line-height:1}
+.C .kv{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:13px}.C .kv dt{color:var(--ink-3)}.C .kv dd{text-align:right;font-weight:600}
+.C .pv .act{margin-top:auto;display:grid;gap:8px}
+.spark{height:56px;width:100%}
+
+.notes{margin-top:28px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.notes div{background:var(--tile);border-radius:18px;padding:14px 16px;box-shadow:var(--shadow-card)}
+.notes strong{display:block;font-size:13px;margin-bottom:4px}
+.notes p{font-size:12.5px;color:var(--ink-2)}
+</style>
+</head>
+<body>
+<div class="ws">
+  <header>
+    <h1>Pick a company: one search bar</h1>
+    <p>Step 1 of Start research. The two cards ("Pick a company" and "Add a listed company") become a single bar. It searches your companies and Yahoo Finance together, so a new listing is one click: picking a Yahoo result adds the company and opens the question step.</p>
+  </header>
+  <div class="controls">
+    <span><label>Version</label><span class="seg" id="vseg"></span></span>
+    <span><label>State</label><span class="seg" id="sseg"></span></span>
+  </div>
+  <div class="idea" id="idea"></div>
+  <p class="hint">The bar is live: type a name or ticker (try <b>nvidia</b>, <b>sofi</b>, <b>bank</b>, <b>asml</b>), use ↑ ↓ and Enter. Results are sample Yahoo data.</p>
+  <div class="win" id="win"></div>
+  <div class="notes">
+    <div><strong>How search works</strong><p>A new server route proxies Yahoo's search endpoint (the browser never calls Yahoo), debounced at ~250 ms, equities and ETFs only. Your companies match locally first, so they appear instantly.</p></div>
+    <div><strong>Picking a Yahoo result</strong><p>Adds the company with Yahoo's name and symbol (no form to fill), then opens the question step. A symbol you already have goes to that company instead of making a duplicate.</p></div>
+    <div><strong>When Yahoo is down</strong><p>Your companies still search. Below them, "Add SYMBOL anyway" keeps today's manual path for a ticker Yahoo can't find.</p></div>
+  </div>
+</div>
+
+<script>
+const V=[
+  {k:"A",t:"Centred search",d:"The page is the search. One large bar in the middle, results drop beneath it. Before you type, your recent companies sit underneath as quick picks.",p:["Calmest and most obvious","Matches the 'one big bar' ask exactly","Works the same on a phone"],c:["Your companies are hidden until you type or scroll","Lots of empty space on wide screens"]},
+  {k:"B",t:"Bar over one list",d:"The bar sits at the top of the step and filters a single list. Before typing it shows your companies; once you type it splits into Your companies and From Yahoo Finance.",p:["Closest to today, smallest change","Your companies always visible","Clear where a result comes from"],c:["Less of a moment than A","Long lists push Yahoo results down"]},
+  {k:"C",t:"Spotlight with preview",d:"A command-palette bar with a preview pane. Arrow through results and the right side shows price, exchange, sector and whether you've researched it before you commit.",p:["Confirm the right listing before adding","Fast with the keyboard","Shows past research for a match"],c:["Biggest build (quote fetch per selection)","Busier on small screens"]}
+];
+const ST=[["empty","Before typing"],["typing","Typing"],["loading","Searching"],["none","No match"],["down","Yahoo unavailable"],["theme","From a theme"]];
+const MINE=[
+  {s:"SOFI",n:"SoFi Technologies, Inc.",x:"NASDAQ",sec:"Financial Services",ind:"Credit Services",p:13.07,ch:1.8,c:"#2F6FDE",st:"Needs your decision",tone:"wait",last:"Nov 21"},
+  {s:"AAPL",n:"Apple Inc.",x:"NASDAQ",sec:"Technology",ind:"Consumer Electronics",p:238.45,ch:-0.6,c:"#111111",st:"Not started",tone:""},
+  {s:"BTC-USD",n:"Bitcoin",x:"CCC",sec:"Crypto",ind:"Cryptocurrency",p:96240,ch:2.4,c:"#F7931A",st:"Not started",tone:"",crypto:1}
+];
+const YH=[
+  {s:"NVDA",n:"NVIDIA Corporation",x:"NASDAQ",sec:"Technology",ind:"Semiconductors",p:177.82,ch:2.1,c:"#76B900",t:"Equity"},
+  {s:"NVD.DE",n:"NVIDIA Corporation",x:"XETRA",sec:"Technology",ind:"Semiconductors",p:153.4,ch:1.7,c:"#76B900",t:"Equity"},
+  {s:"NVDL",n:"GraniteShares 2x Long NVDA Daily ETF",x:"NASDAQ",sec:"ETF",ind:"Leveraged",p:71.2,ch:4.3,c:"#3D5A78",t:"ETF"},
+  {s:"SOFI",n:"SoFi Technologies, Inc.",x:"NASDAQ",sec:"Financial Services",ind:"Credit Services",p:13.07,ch:1.8,c:"#2F6FDE",t:"Equity"},
+  {s:"ASML",n:"ASML Holding N.V.",x:"NASDAQ",sec:"Technology",ind:"Semiconductor Equipment",p:742.1,ch:-1.2,c:"#10069F",t:"Equity"},
+  {s:"ASML.AS",n:"ASML Holding N.V.",x:"Amsterdam",sec:"Technology",ind:"Semiconductor Equipment",p:688.5,ch:-1.0,c:"#10069F",t:"Equity"},
+  {s:"BAC",n:"Bank of America Corporation",x:"NYSE",sec:"Financial Services",ind:"Banks - Diversified",p:47.9,ch:0.4,c:"#E31837",t:"Equity"},
+  {s:"BMO",n:"Bank of Montreal",x:"NYSE",sec:"Financial Services",ind:"Banks - Diversified",p:104.3,ch:-0.3,c:"#0079C1",t:"Equity"},
+  {s:"OZK",n:"Bank OZK",x:"NASDAQ",sec:"Financial Services",ind:"Banks - Regional",p:48.2,ch:0.9,c:"#6C2D82",t:"Equity"},
+  {s:"META",n:"Meta Platforms, Inc.",x:"NASDAQ",sec:"Communication Services",ind:"Internet Content",p:612.3,ch:0.8,c:"#0866FF",t:"Equity"},
+  {s:"MELI",n:"MercadoLibre, Inc.",x:"NASDAQ",sec:"Consumer Cyclical",ind:"Internet Retail",p:2041,ch:-0.9,c:"#FFE600",t:"Equity",dark:1},
+  {s:"AMZN",n:"Amazon.com, Inc.",x:"NASDAQ",sec:"Consumer Cyclical",ind:"Internet Retail",p:224.6,ch:1.1,c:"#FF9900",t:"Equity"},
+  {s:"APP",n:"AppLovin Corporation",x:"NASDAQ",sec:"Technology",ind:"Software - Application",p:356.4,ch:3.2,c:"#1D2B4F",t:"Equity"},
+  {s:"APH",n:"Amphenol Corporation",x:"NYSE",sec:"Technology",ind:"Electronic Components",p:71.5,ch:0.2,c:"#003DA5",t:"Equity"}
+];
+let v="A",s="empty",q="",sel=0;
+
+const icon=`<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>`;
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const hl=(t,qq)=>{if(!qq)return esc(t);const i=t.toLowerCase().indexOf(qq.toLowerCase());return i<0?esc(t):esc(t.slice(0,i))+"<mark>"+esc(t.slice(i,i+qq.length))+"</mark>"+esc(t.slice(i+qq.length));};
+const logo=(c,cls="")=>`<span class="logo ${cls}" style="background:${c.c};${c.dark?"color:#0D1B2A":""}">${esc(c.s.split(/[.-]/)[0].slice(0,4))}</span>`;
+const money=p=>p>=10000?"$"+p.toLocaleString("en-US",{maximumFractionDigits:0}):"$"+p.toFixed(2);
+const chg=c=>`<span class="${c>=0?"up":"dn"}">${c>=0?"+":""}${c.toFixed(1)}%</span>`;
+const match=(c,qq)=>c.n.toLowerCase().includes(qq)||c.s.toLowerCase().includes(qq);
+
+function results(){
+  const qq=q.trim().toLowerCase();
+  if(!qq)return{mine:MINE,yh:[]};
+  const mine=MINE.filter(c=>match(c,qq));
+  const have=new Set(MINE.map(c=>c.s));
+  const yh=s==="down"?[]:YH.filter(c=>match(c,qq)&&!have.has(c.s)).slice(0,6);
+  return{mine,yh};
+}
+function flat(){const r=results();return[...r.mine.map(c=>({...c,own:1})),...r.yh];}
+
+function hit(c,i,qq){
+  const meta=c.own?`${c.crypto?"Crypto":c.s} · ${c.x}`:`${c.s} · ${c.x} · ${c.t}`;
+  const right=c.own?`<span class="tag ${c.tone}">${c.st}</span>`:`<span class="px">${money(c.p)}${chg(c.ch)}</span>`;
+  return `<button class="hit ${i===sel?"sel":""}" data-i="${i}">${logo(c)}<span class="nm"><strong>${hl(c.n,qq)}</strong><span>${hl(meta,qq)}</span></span>${v!=="C"?right:(c.own?`<span class="tag ${c.tone}">${c.st}</span>`:"")}<span class="go">${c.own?"Open":"Add & start"} →</span></button>`;
+}
+function list(){
+  const qq=q.trim();
+  if(s==="loading")return `<div class="grp"><span>Your companies</span></div>${MINE.filter(c=>match(c,qq.toLowerCase())).map((c,i)=>hit({...c,own:1},i,qq)).join("")||`<div class="empty" style="padding:10px">None of yours match.</div>`}<div class="grp"><span>From Yahoo Finance</span></div><div class="hit" style="cursor:default"><span class="spin"></span><span class="muted">Searching Yahoo Finance for "${esc(qq)}"…</span></div>`;
+  const r=results(),f=flat();
+  if(!qq&&v==="B")return `<div class="grp"><span>Your companies</span><span>${MINE.length}</span></div>`+MINE.map((c,i)=>hit({...c,own:1},i,"")).join("");
+  if(!f.length){
+    if(s==="down")return `<div class="empty"><strong>Yahoo Finance isn't answering</strong>None of your companies match "${esc(qq)}". You can still add it by ticker.<div style="margin-top:14px"><button class="btn pri sm">Add ${esc(qq.toUpperCase())} anyway</button></div></div>`;
+    return `<div class="empty"><strong>No listed company matches "${esc(qq)}"</strong>Check the spelling, or try the ticker. Yahoo covers most stocks and ETFs worldwide.</div>`;
+  }
+  let o="",i=0;
+  if(r.mine.length){o+=`<div class="grp"><span>Your companies</span><span>${r.mine.length}</span></div>`;r.mine.forEach(c=>o+=hit({...c,own:1},i++,qq));}
+  if(r.yh.length){o+=`<div class="grp"><span>From Yahoo Finance</span><span>${r.yh.length}</span></div>`;r.yh.forEach(c=>o+=hit(c,i++,qq));}
+  if(s==="down")o+=`<div class="grp"><span>From Yahoo Finance</span></div><div class="hit" style="cursor:default"><span class="muted">Yahoo isn't answering. </span><button class="btn sm">Add ${esc(qq.toUpperCase())} anyway</button></div>`;
+  return o;
+}
+function bar(ph="Search any listed company by name or ticker"){
+  return `<label class="bigbar">${s==="loading"?`<span class="spin"></span>`:icon}<input id="q" value="${esc(q)}" placeholder="${ph}" autocomplete="off" spellcheck="false">${q?`<span class="kbd">Esc</span>`:`<span class="src"><i></i>Yahoo Finance</span><span class="kbd">/</span>`}</label>`;
+}
+const recent=()=>`<p class="label">Your companies</p><div class="chips">${MINE.map(c=>`<button class="chip" data-pick="${c.s}">${logo(c)}${esc(c.n.replace(/,? Inc\.|Technologies,/g,"").trim())}</button>`).join("")}</div>`;
+const foot=()=>`<div class="foot"><span><span class="kbd">↑</span><span class="kbd">↓</span> move <span class="kbd">Enter</span> start</span><span><span class="src" style="padding:0"><i></i>Search by Yahoo Finance</span></span></div>`;
+const themeNote=()=>s==="theme"?`<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><span class="tag theme">From your theme: AI infrastructure</span><span class="muted">Picked NVIDIA from the shortlist. Confirm the listing below.</span></div>`:"";
+
+function spark(up){let pts=[],y=30;for(let i=0;i<40;i++){y+=Math.sin(i*1.7)*3+(up?-.5:.5)+Math.cos(i*.6)*2;y=Math.max(6,Math.min(50,y));pts.push(`${(i/39*100).toFixed(1)},${y.toFixed(1)}`);}
+  return `<svg class="spark" viewBox="0 0 100 56" preserveAspectRatio="none"><polyline points="${pts.join(" ")}" fill="none" stroke="${up?"var(--positive)":"var(--critical)"}" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg>`;}
+function preview(){
+  const f=flat(),c=f[Math.min(sel,f.length-1)];
+  if(s==="loading"||!c)return `<div class="pv"><p class="muted">${s==="loading"?"Searching…":"Pick a result to see it here."}</p></div>`;
+  return `<div class="pv"><div class="who">${logo(c,"lg")}<div><strong>${esc(c.n)}</strong><span class="muted">${c.crypto?"Crypto":c.s} · ${c.x}${c.t?" · "+c.t:""}</span></div></div>
+  <div><div class="px">${money(c.p)}</div><div style="margin-top:4px">${chg(c.ch)} <span class="muted">today</span></div></div>${spark(c.ch>=0)}
+  <dl class="kv"><dt>Sector</dt><dd>${c.sec}</dd><dt>Industry</dt><dd>${c.ind}</dd><dt>Your research</dt><dd>${c.own?(c.last?`Last run ${c.last}`:"Added, not run"):"None yet"}</dd></dl>
+  <div class="act">${c.own?`<button class="btn pri">Start research on ${c.crypto?"Bitcoin":c.s} →</button>${c.tone==="wait"?`<span class="muted" style="text-align:center">A run is waiting on your decision.</span>`:""}`:`<button class="btn pri">Add ${c.s} and start →</button><span class="muted" style="text-align:center">Adds the company with Yahoo's name and symbol.</span>`}</div></div>`;
+}
+
+function screen(){
+  const head=`<h1 class="title">Start research</h1><ol class="stepper">${["Company","Question","Plan","Run","Review"].map((t,i)=>`<li class="${i?"":"on"}"><b>${i+1}</b>${t}</li>`).join("")}</ol>`;
+  const nav=`<div class="nav"><span class="brand"><i></i>Pragma Research</span><a>Home</a><a>Quant</a><a class="on">Research</a><a>Themes</a><a>Reviews</a><span class="sp"></span></div>`;
+  const typed=!!q.trim();
+  let body="";
+  if(v==="A"){
+    body=`<div class="hero">${themeNote()}<h2>Which company?</h2><p>Search every listed company on Yahoo Finance, or pick one you've researched.</p>${bar()}
+      ${typed?`<div class="card drop"><div class="res">${list()}</div>${foot()}</div>`:""}</div>${typed?"":`<div class="below">${recent()}</div>`}`;
+  }else if(v==="B"){
+    body=`<div class="wrap">${themeNote()}${bar()}<div class="card list"><div class="res">${list()}</div>${typed?foot():""}</div></div>`;
+  }else{
+    body=`${themeNote()}${bar()}<div class="card spot"><div class="res">${typed?list():`<div class="grp"><span>Your companies</span><span>${MINE.length}</span></div>`+MINE.map((c,i)=>hit({...c,own:1},i,"")).join("")}</div>${preview()}</div>`;
+  }
+  return `${nav}<div class="scr ${v}">${head}${body}</div>`;
+}
+
+function render(keepFocus){
+  const pos=keepFocus?document.getElementById("q")?.selectionStart:null;
+  document.getElementById("vseg").innerHTML=V.map(x=>`<button class="${x.k===v?"on":""}" data-v="${x.k}">${x.k} · ${x.t}</button>`).join("");
+  document.getElementById("sseg").innerHTML=ST.map(([k,t])=>`<button class="${k===s?"on":""}" data-s="${k}">${t}</button>`).join("");
+  const x=V.find(y=>y.k===v);
+  document.getElementById("idea").innerHTML=`<div><h2>${x.k} · ${x.t}</h2><p>${x.d}</p></div><div class="pros"><div><h3>Good</h3><ul>${x.p.map(i=>`<li>${i}</li>`).join("")}</ul></div><div class="con"><h3>Watch out</h3><ul>${x.c.map(i=>`<li>${i}</li>`).join("")}</ul></div></div>`;
+  document.getElementById("win").innerHTML=screen();
+  const inp=document.getElementById("q");
+  if(keepFocus&&inp){inp.focus();inp.setSelectionRange(pos,pos);}
+}
+const preset={empty:"",typing:"nvidia",loading:"asml",none:"zzqx",down:"rivn",theme:"NVDA"};
+document.addEventListener("click",e=>{
+  const b=e.target.closest("[data-v],[data-s],[data-pick],[data-i]");if(!b)return;
+  if(b.dataset.v){v=b.dataset.v;sel=0;render();}
+  else if(b.dataset.s){s=b.dataset.s;q=preset[s];sel=0;render();}
+  else if(b.dataset.pick){q=b.dataset.pick;s="typing";sel=0;render(true);}
+  else if(b.dataset.i){sel=+b.dataset.i;render();}
+});
+document.addEventListener("input",e=>{if(e.target.id==="q"){q=e.target.value;if(s==="empty"||s==="none"||s==="theme")s=q?"typing":"empty";sel=0;render(true);}});
+document.addEventListener("keydown",e=>{
+  if(e.target.id!=="q"){if(e.key==="/"){e.preventDefault();document.getElementById("q")?.focus();}return;}
+  const n=flat().length;
+  if(e.key==="ArrowDown"){e.preventDefault();sel=Math.min(n-1,sel+1);render(true);}
+  else if(e.key==="ArrowUp"){e.preventDefault();sel=Math.max(0,sel-1);render(true);}
+  else if(e.key==="Escape"){q="";s="empty";sel=0;render(true);}
+});
+render();
+</script>
+</body>
+</html>
