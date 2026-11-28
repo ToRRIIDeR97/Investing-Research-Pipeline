@@ -6,6 +6,7 @@ import ui from "@/components/research-ui.module.css";
 import { CompanyLogo } from "@/components/company/company";
 import styles from "../themes.module.css";
 import type { ThemeResult } from "@/lib/research/themes/pipeline";
+import { PageLoading } from "@/components/ui/loading";
 
 type Theme = { id: string; theme: string; status: string; request: Record<string, any>; result: ThemeResult | null; error: string | null; cost_usd: number;
   created_at: string; completed_at: string | null };
@@ -38,7 +39,7 @@ export default function ThemePage() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setRunning(false); }
   }
 
-  if (!theme) return <div className={ui.page}>{error ? <p role="alert" className={ui.error}>{error}</p> : <p className={ui.muted} role="status">Loading the theme…</p>}</div>;
+  if (!theme) return <div className={ui.page}>{error ? <p role="alert" className={ui.error}>{error}</p> : <PageLoading shape="detail" label="Loading the theme" />}</div>;
   const r = theme.result, req = theme.request;
   return <div className={ui.page}>
     <header className={ui.heading}><div className={ui.titleGroup}><h1>{theme.theme}</h1>

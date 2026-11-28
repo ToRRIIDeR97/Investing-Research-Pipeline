@@ -54,7 +54,7 @@ export function HowItWasBuilt({ s }: { s: QuantSnapshot }) {
     <Drawer id="inputs" title="Inputs" open={open.has("inputs")} onToggle={() => toggle("inputs")}
       count={f ? `${years.length} year${years.length === 1 ? "" : "s"}${f.missing.length ? ` · ${f.missing.length} gap${f.missing.length === 1 ? "" : "s"}` : ""}` : "—"}>
       {f ? <>
-        <p className={styles.caption}>{f.origin === "xbrl_warehouse" ? "XBRL warehouse" : "SEC companyfacts"}, {years.length > 1 ? `${fy(years[0])} to ${fy(years[years.length - 1])}` : years.map(fy).join("")} ({f.currency}); daily closes for prices.</p>
+        <p className={styles.caption}>{f.origin === "xbrl_warehouse" ? "XBRL warehouse" : f.origin === "yahoo" ? "Yahoo Finance statements" : "SEC companyfacts"}, {years.length > 1 ? `${fy(years[0])} to ${fy(years[years.length - 1])}` : years.map(fy).join("")} ({f.currency}); daily closes for prices.</p>
         {f.missing.length > 0 && <div className={styles.gaps}><span>Not reported</span>{f.missing.map((m) => <s key={m}>{fieldLabel(m)}</s>)}</div>}
       </> : <p className={styles.caption}>No filing data was loaded.</p>}
     </Drawer>

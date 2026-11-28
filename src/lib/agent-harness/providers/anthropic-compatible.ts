@@ -4,6 +4,7 @@ import { calculateCost, oneHourCacheWriteSurcharge } from "../telemetry";
 import { anthropicPromptFields, isClaudeModel } from "./anthropic-cache";
 import { anthropicWireSchema, isRejectedSchema, rememberRejectedSchema } from "./anthropic-schema";
 import { validateEndpointUrl } from "../../net";
+import { parseModelList, type ListedModel } from "../model-family";
 
 export interface AnthropicProviderOptions {
   baseUrl: string;
@@ -60,15 +61,21 @@ export class AnthropicCompatibleProvider implements ModelProvider {
     this.baseUrl = validateBaseUrl(options.baseUrl, options.allowedHosts);
   }
 
+  get endpoint() { return this.baseUrl; }
+
+  /** GET /models, one page of up to 1,000 (Anthropic lists 20 by default). */
+  async listModels(): Promise<ListedModel[]> {
+    const response = await fetch(`${this.baseUrl}/models?limit=1000`, {
+      headers: { "x-api-key": this.options.apiKey, "anthropic-version": "2023-06-01", ...this.options.headers },
+      redirect: "error",
+    });
+    if (!response.ok) throw new ProviderError(`Model list: HTTP ${response.status}`, response.status === 401 || response.status === 403 ? "authentication" : "server_error", { status: response.status });
+    return parseModelList(await response.json().catch(() => ({})));
+  }
+
   async healthCheck(): Promise<ProviderHealth> {
     try {
-      const response = await fetch(`${this.baseUrl}/models`, {
-        headers: { "x-api-key": this.options.apiKey, "anthropic-version": "2023-06-01", ...this.options.headers },
-        redirect: "error",
-      });
-      if (!response.ok) return { status: "unhealthy", message: `HTTP ${response.status}` };
-      const body = await response.json().catch(() => ({})) as { data?: Array<{ id?: string }> };
-      return { status: "healthy", models: (body.data || []).map((item) => item.id || "").filter(Boolean) };
+      return { status: "healthy", models: (await this.listModels()).map((model) => model.id) };
     } catch (error) {
       return { status: "unhealthy", message: error instanceof Error ? error.message : String(error) };
     }

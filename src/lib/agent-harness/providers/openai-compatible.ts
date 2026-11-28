@@ -1,4 +1,5 @@
 import type { ModelEvent, ModelProvider, ModelRequest, ProviderHealth, ToolCall } from "../types";
+import { parseModelList, type ListedModel } from "../model-family";
 import { ProviderError, upstreamServerErrorBody, usageLimitBody, type HarnessErrorCategory } from "../errors";
 import { validateEndpointUrl } from "../../net";
 
@@ -43,12 +44,17 @@ export class OpenAICompatibleProvider implements ModelProvider {
     return headers;
   }
 
+  get endpoint() { return this.baseUrl; }
+
+  async listModels(): Promise<ListedModel[]> {
+    const response = await fetch(`${this.baseUrl}/models`, { headers: this.headers(), redirect: "error" });
+    if (!response.ok) throw new ProviderError(`Model list: HTTP ${response.status}`, response.status === 401 || response.status === 403 ? "authentication" : "server_error", { status: response.status });
+    return parseModelList(await response.json().catch(() => ({})));
+  }
+
   async healthCheck(): Promise<ProviderHealth> {
     try {
-      const response = await fetch(`${this.baseUrl}/models`, { headers: this.headers(), redirect: "error" });
-      if (!response.ok) return { status: "unhealthy", message: `HTTP ${response.status}` };
-      const body = await response.json().catch(() => ({})) as { data?: Array<{ id?: string }> };
-      return { status: "healthy", models: (body.data || []).map((item) => item.id || "").filter(Boolean) };
+      return { status: "healthy", models: (await this.listModels()).map((model) => model.id) };
     } catch (error) {
       return { status: "unhealthy", message: error instanceof Error ? error.message : String(error) };
     }

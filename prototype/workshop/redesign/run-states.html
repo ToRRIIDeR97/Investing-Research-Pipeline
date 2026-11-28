@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Run page states</title>
+<link rel="stylesheet" href="redesign.css">
+<style>
+.phase{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:12px;align-items:start;padding:12px 18px;border-top:1px solid var(--line-soft)}
+.phase:first-child{border-top:0}
+.dot{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700}
+.done .dot{background:var(--positive-bg);color:var(--positive)}.now .dot{background:var(--navy);color:#fff}.todo .dot{background:var(--soft);color:var(--ink-4)}
+.phase strong{display:block;font-size:13.5px}.phase span{font-size:12.5px;color:var(--ink-3)}
+.todo strong{color:var(--ink-3)}
+.progress{height:8px;border-radius:4px;background:var(--soft);margin:2px 18px 14px;overflow:hidden}
+.plan{display:grid;gap:10px;padding:14px 18px}
+.plan li{display:grid;grid-template-columns:160px 1fr;gap:12px;line-height:1.55;color:var(--ink-2)}.plan li b{color:var(--ink);font-weight:600}
+@media (max-width:640px){.plan li{grid-template-columns:1fr;gap:2px}}
+</style></head><body>
+
+<p class="label">Run page · a run in progress (illustrative)<span>What it's doing now, spend against budget and when it next needs you. Cancel is a secondary action with a confirm that says what's kept and what's lost.</span></p>
+<div class="nav"><span class="brand">Pragma Research</span><a>Home</a><a class="on">Research</a><a>Themes</a><a>Reviews<span class="badge">1</span></a><span class="spacer"></span><span class="search">Search companies</span><span class="btn">Start research</span></div>
+<div class="screen">
+  <p class="back">← Grid Rail</p>
+  <div class="hero">
+    <div class="who"><div class="logo" style="width:60px;height:60px;color:var(--ink-2)">GR</div><div><strong>Grid Rail</strong><div class="heroMeta">Full initiation report · started today, 09:40 <span class="status run">Researching</span></div></div></div>
+  </div>
+  <div class="banner info"><div><strong>Step 12 of 25: building the operating model.</strong><p>$3.10 of the $15 budget spent so far. Nothing needs you until the final report is ready; you approved the plan at 09:52.</p></div><div class="acts"><span class="btn">Cancel run…</span></div></div>
+  <div class="grid">
+    <section class="tile">
+      <div class="tileHead"><h2>Progress</h2><span class="small">11 of 25 done</span></div>
+      <div class="progress"><i style="display:block;height:100%;width:44%;background:var(--navy-3)"></i></div>
+      <div class="phase done"><span class="dot">✓</span><div><strong>Plan</strong><span>You approved it</span></div><span class="small">4 steps</span></div>
+      <div class="phase done"><span class="dot">✓</span><div><strong>Gather evidence</strong><span>41 sources read, 96 pieces of evidence</span></div><span class="small">3 steps</span></div>
+      <div class="phase done"><span class="dot">✓</span><div><strong>Understand the business</strong><span>History, founding, business model, moat</span></div><span class="small">5 steps</span></div>
+      <div class="phase now"><span class="dot">●</span><div><strong>Model and value</strong><span>Now: operating model</span></div><span class="small">0 of 3</span></div>
+      <div class="phase todo"><span class="dot">·</span><div><strong>Test signals</strong><span>Waiting</span></div><span class="small">4 steps</span></div>
+      <div class="phase todo"><span class="dot">·</span><div><strong>Write and review</strong><span>Waiting</span></div><span class="small">3 steps</span></div>
+      <div class="phase todo"><span class="dot">·</span><div><strong>Your decision and export</strong><span>Waiting</span></div><span class="small">3 steps</span></div>
+    </section>
+    <div class="col">
+      <div class="dialog demo-open"><strong>Cancel this run?</strong><p>It stops within about 10 seconds. What it has gathered so far stays readable, but a cancelled run can't be resumed; you'd start a new one. Spent so far: $3.10.</p><div class="acts"><span class="btn">Keep running</span><span class="btn primary">Cancel run</span></div></div>
+      <p class="dnote">The confirm opens from "Cancel run…". It uses the existing cancel action, which stops the worker's model call within about 10 seconds.</p>
+    </div>
+  </div>
+</div>
+
+<p class="label">Run page · waiting for plan approval (illustrative)<span>The first gate. The plan in plain words, the budget, and two actions that already exist: approve, or ask for changes.</span></p>
+<div class="nav"><span class="brand">Pragma Research</span><a>Home</a><a class="on">Research</a><a>Themes</a><a>Reviews<span class="badge">1</span></a><span class="spacer"></span><span class="search">Search companies</span><span class="btn">Start research</span></div>
+<div class="screen">
+  <p class="back">← Hooded Dynamics</p>
+  <div class="hero">
+    <div class="who"><div class="logo" style="width:60px;height:60px;color:var(--ink-2)">HD</div><div><strong>Hooded Dynamics</strong><div class="heroMeta">Full initiation report · plan drafted 22 Nov, 16:05 <span class="status wait">Needs plan approval</span></div></div></div>
+  </div>
+  <div class="banner caution"><div><strong>Approve the research plan to start the main research.</strong><p>Drafting the plan cost $0.21; asking for changes redrafts it (another small paid call). The main research runs within the $15 budget and stops for your decision on the final report.</p></div><div class="acts"><span class="btn">Request changes…</span><span class="btn primary">Approve plan</span></div></div>
+  <section class="tile">
+    <div class="tileHead"><h2>The plan</h2></div>
+    <ul class="plan">
+      <li><b>Question</b>Is the subscription business durable enough to justify the current price?</li>
+      <li><b>What it will answer</b>6 questions, starting with churn by customer cohort and the cost of winning a customer.</li>
+      <li><b>Sources it will read</b>Annual and quarterly filings, earnings calls, industry data; nothing published after 22 Nov.</li>
+      <li><b>Valuation</b>Bear, base and bull cases, with the price compared against each.</li>
+      <li><b>Budget</b>$15.00, of which $0.21 is spent. Your recent full reports cost $4.86 to $9.74.</li>
+    </ul>
+
+  </section>
+<p class="dnote" style="margin-top:12px">The plan rows come from the stored research plan; "Request changes" opens a text box and uses the existing request-plan-changes action, which queues a plan redraft (another paid model call; its cost isn't known in advance). Cancel uses the existing cancel action; its own documentation says the worker drops its in-flight model call within about 10 seconds, when its lease renewal finds the job closed.</p>
+</div>
+<div style="height:30px"></div>
+</body></html>

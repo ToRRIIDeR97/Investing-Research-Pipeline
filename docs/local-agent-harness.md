@@ -18,6 +18,17 @@ RESEARCH_MODEL_API_KEY=replace-locally
 RESEARCH_MODEL_ALLOWED_HOSTS=opencode.ai
 ```
 
+## Settings page
+
+`/settings` chooses the provider and models without editing env files (`src/lib/settings/model-settings.ts`). It writes whitelisted keys to the gitignored `.env.settings.local`: saved providers (`PRAGMA_PROVIDER_<n>_TYPE`, `_LABEL`, `_BASE_URL`, `_ALLOWED_HOSTS`, `_API_KEY`, up to eight) with one active through `PRAGMA_ACTIVE_PROVIDER` (mapped to `RESEARCH_MODEL_PROVIDER`, `RESEARCH_MODEL_BASE_URL`, `RESEARCH_MODEL_ALLOWED_HOSTS` and `RESEARCH_MODEL_API_KEY`), the tier models and efforts, `RESEARCH_ALL_AGENTS_MODEL` and per-agent models. Precedence:
+
+- The worker applies the file before each job and the Next server at start and on save, so a key in the file overrides the same key from `.env.local`, `.env` or the shell.
+- Removing a key from the file restores the value the process started with.
+- A process that started with `RESEARCH_MODEL_PROVIDER=mock` (tests, `npm run test:db`) or `PRAGMA_IGNORE_SETTINGS=1` ignores the file.
+- Model resolution itself is unchanged: stage, tier, all agents, agent, default.
+
+Keys are write-only in the app: the page shows only whether one is set and its last four characters.
+
 ## Anthropic API
 
 `anthropic-direct` calls the Anthropic Messages API (`/v1/messages`) with `x-api-key` and `anthropic-version: 2023-06-01`. It reads `RESEARCH_MODEL_API_KEY`, then `ANTHROPIC_API_KEY`. Claude models get no `temperature`, because current Claude models reject non-default sampling values.
@@ -52,6 +63,33 @@ The model for a task, first match wins:
 `RESEARCH_MID_MODEL` and `RESEARCH_CHEAP_MODEL` used to rank below `RESEARCH_ALL_AGENTS_MODEL` and the per-agent variables. They now rank above both for tiered calls; leave them unset to keep a single all-agents model.
 
 `report_draft` (the report writers, split out of `ai_reviewer` in architecture-9) reads `RESEARCH_STAGE_AI_REVIEWER_MODEL` and `RESEARCH_STAGE_AI_REVIEWER_EFFORT` when its own `RESEARCH_STAGE_REPORT_DRAFT_*` setting is unset, so a reviewer setting made before the split still steers the writers; set `RESEARCH_STAGE_REPORT_DRAFT_MODEL` to give the writers their own model. The review calls stay on the `AI_REVIEWER` settings.
+
+#### Latest models
+
+Any model variable (stage, tier, fallback, all-agents, per-agent, or the Settings page) also takes `latest:<family>`, which follows the newest model the provider lists, so a release is used without a config change:
+
+- **Anthropic:** `latest:haiku`, `latest:sonnet`, `latest:opus`.
+- **OpenCode Go:** `latest:deepseek-flash`, `latest:deepseek-pro`, `latest:qwen-plus`, `latest:kimi-code`, `latest:glm`.
+
+Each provider lists its models through `listModels()` (`GET <base URL>/models`, with `?limit=1000` on Anthropic), which is the same allowlisted host the runner already calls. Just before its attempts, the runner (`resolveModels` in `src/lib/agent-harness/latest-model.ts`) swaps each alias for a concrete ID, and attempt telemetry records that ID.
+
+How the newest model is picked (`pickLatest` in `src/lib/agent-harness/model-family.ts`):
+
+1. Only IDs whose words include every family word qualify.
+2. The fewest extra words wins, so `-preview` or `-vl` variants lose to the plain model.
+3. Then the highest version (an 8-digit snapshot date is not a version).
+4. Then the newest `created` time, then the shortest ID.
+
+Lookup behaviour:
+
+- **Caching:** the list is cached per provider endpoint for `RESEARCH_MODEL_LIST_TTL_MS`, one hour by default.
+- **Failed refresh:** the last good list is used.
+- **No list and no cache:** the call fails as `server_error`. An alias nothing matches fails as `invalid_request`.
+- **Mock provider:** aliases pass through unchanged.
+- **Untrusted IDs:** listed IDs that don't match `^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$` are dropped.
+- **Settings page:** shows what each alias in use resolves to (`latest` in `GET /api/settings/models`).
+
+Pricing: a model missing from `PRICING_DB`, or an alias, is priced as its family's newest priced model (`familyPricedModel`). For example, `claude-haiku-6-0` is priced as `claude-haiku-5-5`, with a one-time warning. Add the real rates to `PRICING_DB` when a new model ships.
 
 Fallbacks: a stage model falls back only to `RESEARCH_STAGE_<KEY>_FALLBACK_MODEL`, and a tier model only to `RESEARCH_<TIER>_FALLBACK_MODEL` (none when unset). A stage pinned to one model never inherits its tier's fallback. Other models keep the agent's own fallback rules.
 
@@ -101,7 +139,7 @@ Other models on the Anthropic protocol (Qwen and MiniMax on OpenCode Go) keep on
 | `RESEARCH_ANTHROPIC_CACHE_PROMPT` | on | `0` keeps only the system breakpoint for Claude models. |
 | `RESEARCH_ANTHROPIC_CACHE_TTL` | `5m` | `1h` keeps entries for an hour, applied to Claude breakpoints only. |
 
-Cost: a 5-minute write costs 1.25x input and a 1-hour write costs 2x; a read costs 0.1x on Haiku 5.5 (0.05x on Opus and Sonnet 5.5). A breakpoint at the end of a whole packet pays off only once more than about 28% of calls resend it. In two Haiku 5.5 runs, 15 of 59 calls needed a repair; retries and fallbacks add to that. Set `RESEARCH_ANTHROPIC_CACHE_PROMPT=0` if repairs become rare. Before per-call keys, run 7fa1f00a wrote 5.90M cache tokens and read 0.84M: each of its 12 report sections read only the 5,581-token system block and wrote 53K to 260K tokens. Sections run four at a time, so the first four of a round still write the shared part; later sections and later same-owner answers read it. The cost ledger prices 1-hour writes at 2x from the `cache_creation` usage breakdown. Rates live in `PRICING_DB` (`src/lib/agent-harness/telemetry.ts`): Haiku 5.5 is $0.10/$0.50 per MTok for prompts up to 100K tokens and $0.50/$2.50 above (cache rates scaled the same way; the prompt counts cache reads and writes); Opus 5.5 is $4/$20 and Sonnet 5.5 $2/$10, with cache reads at $0.20. An unknown `claude-*` model falls back to the default $0.50/$1.00 with a warning, so the budget guard would undercount it.
+Cost: a 5-minute write costs 1.25x input and a 1-hour write costs 2x; a read costs 0.1x on Haiku 5.5 (0.05x on Opus and Sonnet 5.5). A breakpoint at the end of a whole packet pays off only once more than about 28% of calls resend it. In two Haiku 5.5 runs, 15 of 59 calls needed a repair; retries and fallbacks add to that. Set `RESEARCH_ANTHROPIC_CACHE_PROMPT=0` if repairs become rare. Before per-call keys, run 7fa1f00a wrote 5.90M cache tokens and read 0.84M: each of its 12 report sections read only the 5,581-token system block and wrote 53K to 260K tokens. Sections run four at a time, so the first four of a round still write the shared part; later sections and later same-owner answers read it. The cost ledger prices 1-hour writes at 2x from the `cache_creation` usage breakdown. Rates live in `PRICING_DB` (`src/lib/agent-harness/telemetry.ts`): Haiku 5.5 is $0.10/$0.50 per MTok for prompts up to 100K tokens and $0.50/$2.50 above (cache rates scaled the same way; the prompt counts cache reads and writes); Opus 5.5 is $4/$20 and Sonnet 5.5 $2/$10, with cache reads at $0.20. A model missing from the table is priced as its family's newest priced model (see Latest models). An unknown `claude-*` model with no priced family falls back to the default $0.50/$1.00 with a warning, so the budget guard would undercount it.
 
 Prompt layout follows the same order on every provider, so DeepSeek and OpenCode Go, whose prefix caching is automatic, also match the shared part. The report packet no longer repeats the team requests under `team_context` when it already carries them as `specialist_requests`.
 

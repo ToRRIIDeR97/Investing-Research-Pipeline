@@ -4,19 +4,24 @@
  * Issuer and SIC come from SEC submissions; annual fundamentals from companyfacts (the XBRL warehouse when it
  * covers the issuer, else SEC); daily bars with volume from the stored Yahoo history, synced first. Prices hang off
  * an asset row: a researched asset's when one lists the ticker, else a `quant-<ticker>` reference asset that stays
- * out of the Research list. Benchmarks are the S&P 500 and the issuer's SPDR sector ETF. No model calls.
+ * out of the Research list. Benchmarks are the S&P 500 and the issuer's SPDR sector ETF. A listing that doesn't file
+ * with SEC (BBCA.JK) takes its name, sector and annual statements from Yahoo Finance and is benchmarked against its
+ * exchange's main index (`benchmarks.ts`). No model calls.
  */
 import postgres from "postgres";
 import { fetchCapped } from "@/lib/net";
 import {
-  BETA_BENCHMARK, PRIMARY_PRICE_PROVIDER, closeOnSplitBasis, loadBenchmarkPriceHistory, loadStoredPriceHistory,
+  PRIMARY_PRICE_PROVIDER, closeOnSplitBasis, loadBenchmarkPriceHistory, loadStoredPriceHistory,
   syncAssetPriceHistory, syncBenchmarkPriceHistory, timedFetch, type SplitEvent, type StoredBar,
 } from "@/lib/market-data/price-history";
 import { createYahooMarketDataProvider } from "@/lib/market-data/providers/yahoo";
 import { resolveSecCik } from "@/lib/research/sources/sec-cik";
 import { loadCompanyFacts, type CompanyFactsOrigin } from "@/lib/research/history/xbrl-warehouse";
+import { searchListedCompanies } from "@/lib/market-data/company-search";
 import { annualFundamentals, type AnnualFundamentals } from "./fundamentals";
 import { sectorFromSic, type SectorInfo } from "./sic";
+import { benchmarkFor, listingUnit, US_BENCHMARK, type Benchmark } from "./benchmarks";
+import { fetchYahooFundamentals } from "./yahoo-fundamentals";
 
 type Sql = ReturnType<typeof postgres>;
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
@@ -41,6 +46,12 @@ export type QuantInputs = {
   fundamentals: AnnualFundamentals | null;
   fundamentals_reason: string | null;
   company_facts_origin: CompanyFactsOrigin | null;
+  /** Where the annual statements came from. */
+  fundamentals_origin: "sec_companyfacts" | "xbrl_warehouse" | "yahoo" | null;
+  /** The listing's price currency (Yahoo), e.g. USD, IDR. */
+  currency: string;
+  /** The market index trend and RS are measured against. */
+  benchmark_index: Benchmark;
   bars: QuantBar[];
   benchmark: { symbol: string; bars: QuantBar[] };
   sector_etf: { symbol: string; bars: QuantBar[] } | null;
@@ -91,16 +102,16 @@ async function quantAsset(sql: Sql, ticker: string, name: string): Promise<{ id:
   return { id: String(row.id), name: String(row.canonical_name), researched: false };
 }
 
-/** A reference asset for a benchmark ETF, created on first use (like the S&P 500 benchmark). */
-async function syncEtf(sql: Sql, symbol: string, fetchImpl: FetchLike | undefined): Promise<{ etf: { symbol: string; bars: QuantBar[] } | null; synced: boolean }> {
-  const slug = `benchmark-${symbol.toLowerCase()}`;
+/** A reference asset for a benchmark ETF or market index, created on first use (like the S&P 500 benchmark). */
+async function syncEtf(sql: Sql, symbol: string, fetchImpl: FetchLike | undefined, label = `${symbol} sector ETF`, kind: "fund" | "index" = "fund"): Promise<{ etf: { symbol: string; bars: QuantBar[] } | null; synced: boolean }> {
+  const slug = `benchmark-${symbol.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`;
   await sql`
     INSERT INTO assets (canonical_name, slug, asset_kind, base_currency, status, description)
-    VALUES (${`${symbol} sector ETF`}, ${slug}, 'fund', 'USD', 'reference', ${`Sector benchmark (${symbol}) for the Quant page; not a research subject.`})
+    VALUES (${label}, ${slug}, ${kind}, ${kind === "fund" ? "USD" : null}, 'reference', ${`Benchmark (${symbol}) for the Quant page; not a research subject.`})
     ON CONFLICT (slug) DO NOTHING`;
   const [row] = await sql`SELECT id FROM assets WHERE slug = ${slug}`;
   const assetId = String(row.id);
-  const sync = await syncAssetPriceHistory(sql, { assetId, assetName: `${symbol} sector ETF`, symbol, cutoffAt: null }, fetchImpl ? { fetchImpl: fetchImpl as typeof fetch } : {});
+  const sync = await syncAssetPriceHistory(sql, { assetId, assetName: label, symbol, cutoffAt: null }, fetchImpl ? { fetchImpl: fetchImpl as typeof fetch } : {});
   const stored = await loadStoredPriceHistory(sql, assetId, symbol, new Date());
   return { etf: stored.bars.length ? { symbol, bars: quantBars(stored.bars, stored.splits) } : null, synced: sync.status === "synced" };
 }
@@ -145,6 +156,8 @@ export type QuantIo = {
   syncBenchmark: () => Promise<{ status: string }>;
   storedBenchmark: () => Promise<{ bars: StoredBar[]; splits: SplitEvent[] }>;
   sectorEtf: (symbol: string) => Promise<{ etf: { symbol: string; bars: QuantBar[] } | null; synced: boolean }>;
+  /** A non-US market index (^JKSE) as the benchmark. */
+  marketIndex?: (index: Benchmark) => Promise<{ etf: { symbol: string; bars: QuantBar[] } | null; synced: boolean }>;
 };
 
 function sqlIo(sql: Sql, fetchImpl: FetchLike | undefined, now: Date): QuantIo {
@@ -156,6 +169,7 @@ function sqlIo(sql: Sql, fetchImpl: FetchLike | undefined, now: Date): QuantIo {
     syncBenchmark: () => syncBenchmarkPriceHistory(sql, null, f),
     storedBenchmark: () => loadBenchmarkPriceHistory(sql, now),
     sectorEtf: (symbol) => syncEtf(sql, symbol, fetchImpl),
+    marketIndex: (index) => syncEtf(sql, index.symbol, fetchImpl, index.name, "index"),
   };
 }
 
@@ -173,6 +187,9 @@ export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fe
 
   let name = ticker, sic: string | null = null, sicDescription: string | null = null;
   let fundamentals: AnnualFundamentals | null = null, fundamentalsReason: string | null = null, origin: CompanyFactsOrigin | null = null;
+  let fundamentalsOrigin: QuantInputs["fundamentals_origin"] = null;
+  let yahooSector: SectorInfo | null = null;
+  const yahooFetch = (options.fetchImpl ?? timedFetch) as typeof fetch;
   if (cik) {
     // The CIK resolved, so this is a filer: a submissions failure means SEC is unreachable, not "no filer".
     const submissions = await fetchSubmissions(cik, fetchImpl);
@@ -182,6 +199,7 @@ export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fe
     try {
       const loaded = await loadCompanyFacts({ cik, submissions, cutoffDate: now.toISOString().slice(0, 10), userAgent: SEC_USER_AGENT, fetchImpl });
       origin = loaded.origin;
+      fundamentalsOrigin = loaded.origin.provider;
       fundamentals = annualFundamentals(loaded.companyFacts, { years: 5 });
       if (!fundamentals.years.length) { fundamentalsReason = "Companyfacts has no annual revenue or operating income."; fundamentals = null; }
     } catch {
@@ -189,7 +207,20 @@ export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fe
       transient.push("companyfacts");
     }
   } else {
-    fundamentalsReason = "Not an SEC filer.";
+    // Not an SEC filer (a non-US listing): name and sector from Yahoo's search, statements from its timeseries.
+    const profile = await yahooProfile(ticker, yahooFetch).catch(() => { transient.push("profile"); return null; });
+    if (profile) {
+      name = profile.name;
+      if (profile.sector) yahooSector = { sector: profile.sector, industry: profile.industry ?? "Unknown", etf: null };
+    }
+    try {
+      fundamentals = await fetchYahooFundamentals(ticker, yahooFetch, now);
+      if (fundamentals) { fundamentalsOrigin = "yahoo"; notes.push("Annual statements are from Yahoo Finance, since the company doesn't file with SEC."); }
+      else fundamentalsReason = "Yahoo Finance has no annual statements for this listing.";
+    } catch {
+      fundamentalsReason = "Yahoo Finance statements could not be fetched; try Refresh later.";
+      transient.push("fundamentals");
+    }
   }
 
   const io = options.io ?? sqlIo(sql, options.fetchImpl, now);
@@ -200,28 +231,60 @@ export async function loadQuantInputs(sql: Sql, rawTicker: string, options: { fe
   notes.push(...priced.notes);
   transient.push(...priced.transient);
 
-  const benchSync = await io.syncBenchmark();
-  const benchmark = await io.storedBenchmark();
-  const sector = sectorFromSic(sic);
+  // US listings: the S&P 500 and the SPDR sector ETF. Others: their exchange's main index, and no US sector fund.
+  const index = cik ? US_BENCHMARK : benchmarkFor(ticker);
+  let benchBars: QuantBar[] = [], benchSynced = false;
+  if (index.symbol === US_BENCHMARK.symbol) {
+    benchSynced = (await io.syncBenchmark()).status === "synced";
+    const storedBench = await io.storedBenchmark();
+    benchBars = quantBars(storedBench.bars, storedBench.splits);
+  } else {
+    try { const r = await io.marketIndex!(index); benchBars = r.etf?.bars ?? []; benchSynced = r.synced; } catch { /* reported below */ }
+  }
+  const sector = yahooSector ?? sectorFromSic(sic);
   let sectorEtf: QuantInputs["sector_etf"] = null, etfSynced = false;
   if (sector.etf) {
     try { const r = await io.sectorEtf(sector.etf); sectorEtf = r.etf; etfSynced = r.synced; } catch { /* reported by benchmarkSyncOutcome */ }
   }
-  const benched = benchmarkSyncOutcome({ spxSynced: benchSync.status === "synced", etf: sector.etf, etfSynced, etfStored: !!sectorEtf });
-  notes.push(...benched.notes);
+  const benched = benchmarkSyncOutcome({ spxSynced: benchSynced, etf: sector.etf, etfSynced, etfStored: !!sectorEtf });
+  notes.push(...benched.notes.map((n) => n.replace("S&P 500", index.name)));
   transient.push(...benched.transient);
+  // Per-share values need statements and prices in one currency (an ADR-style listing can differ).
+  // A minor-unit quote (London pence) is converted to the major unit, so prices and statements compare.
+  const unit = await listingCurrency(ticker, yahooFetch).catch(() => null);
+  const currency = unit?.currency ?? fundamentals?.currency ?? "USD";
+  const priceFactor = unit?.factor ?? 1;
+  if (priceFactor !== 1) notes.push(`Yahoo quotes ${ticker} in hundredths of ${currency}; prices are shown in ${currency}.`);
+  if (fundamentals && fundamentals.currency !== currency) {
+    fundamentalsReason = `Statements are in ${fundamentals.currency} but the listing trades in ${currency}, so per-share values would mix currencies.`;
+    fundamentals = null;
+  }
 
   return {
     ticker, name, cik, sic, sic_description: sicDescription, sector, instrument_type: instrumentType,
-    fundamentals, fundamentals_reason: fundamentalsReason, company_facts_origin: origin,
-    bars: quantBars(stored.bars, stored.splits),
-    benchmark: { symbol: BETA_BENCHMARK.symbol, bars: quantBars(benchmark.bars, benchmark.splits) },
+    fundamentals, fundamentals_reason: fundamentalsReason, company_facts_origin: origin, fundamentals_origin: fundamentals ? fundamentalsOrigin : null,
+    currency, benchmark_index: index,
+    bars: quantBars(stored.bars, stored.splits).map((b) => (priceFactor === 1 ? b : { ...b, close: b.close * priceFactor })),
+    benchmark: { symbol: index.symbol, bars: benchBars },
     sector_etf: sectorEtf,
     asset: { id: asset.id, researched: asset.researched },
     as_of: stored.bars[stored.bars.length - 1].day,
     notes: [...notes, `Prices: ${PRIMARY_PRICE_PROVIDER} daily closes; volume where the provider gave it.`],
     transient,
   };
+}
+
+/** Name, sector and industry for a Yahoo symbol, from its search entry with exactly that symbol (or null). */
+async function yahooProfile(ticker: string, fetchImpl: typeof fetch): Promise<{ name: string; sector: string | null; industry: string | null } | null> {
+  const hits = await searchListedCompanies(ticker, fetchImpl, { international: true, withQuotes: false });
+  const hit = hits.find((h) => h.symbol === ticker);
+  return hit ? { name: hit.name, sector: hit.sector, industry: hit.industry } : null;
+}
+
+/** The listing's trading currency (major unit) and price factor from Yahoo's chart metadata, or null. */
+async function listingCurrency(ticker: string, fetchImpl: typeof fetch): Promise<{ currency: string; factor: number } | null> {
+  const meta = await createYahooMarketDataProvider(fetchImpl).getInstrumentMetadata(ticker);
+  return listingUnit(typeof meta.currency === "string" ? meta.currency : null);
 }
 
 /** Is this resolveSecCik error a definite "no such filer", as opposed to the ticker map being unreachable? */
@@ -253,7 +316,7 @@ export async function resolveIssuer(ticker: string, deps: { fetchImpl: FetchLike
   } catch (error) {
     if (!isCikNotFound(error)) throw new QuantInputError("upstream_unavailable", "SEC could not be reached to identify the issuer. Try again shortly.");
     if (!instrumentType) throw new QuantInputError("unknown_ticker", `No listing or SEC filer found for ${ticker}.`);
-    notes.push(`${ticker} is not an SEC filer, so PragValue has no statements to value.`);
+    notes.push(`${ticker} is not an SEC filer.`);
   }
   return { instrumentType, cik, notes, transient };
 }

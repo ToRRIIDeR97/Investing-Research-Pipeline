@@ -61,6 +61,10 @@ export interface ModelProvider {
   readonly id: string;
   stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent>;
   healthCheck?(): Promise<ProviderHealth>;
+  /** The models the provider serves (GET /models), for `latest:<family>` aliases. Throws on failure. */
+  listModels?(): Promise<Array<{ id: string; created?: number }>>;
+  /** Base URL, so cached model lists are kept per endpoint. */
+  readonly endpoint?: string;
 }
 
 export interface ExecutionPolicy {

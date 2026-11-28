@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Reviews redesign</title>
+<link rel="stylesheet" href="redesign.css">
+<style>
+.item{background:var(--tile);border:1px solid var(--line);border-radius:16px}
+.itemMain{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.25fr) auto;gap:20px;align-items:center;padding:16px 18px}
+.cell{color:var(--ink-2);line-height:1.5}.cell .k{display:block;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-4);margin-bottom:2px}
+.cell strong{font-size:15px;color:var(--ink)}
+.older .foldrow{color:var(--ink-2)}
+.olderBody{padding:0 18px 10px}
+.olderRow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line-soft)}
+.olderRow div{display:flex;gap:18px}
+.reasons{display:grid;gap:10px;margin-top:12px}
+.reason{display:grid;grid-template-columns:28px 1fr;gap:12px;padding:14px 16px;border:1px solid var(--line);border-radius:12px}
+.n{width:26px;height:26px;border-radius:50%;background:var(--navy-soft);color:var(--navy);display:grid;place-items:center;font-weight:650}
+.reason h3{font-size:14.5px;font-weight:650;margin:2px 0 4px}.reason p{line-height:1.6;color:var(--ink-2)}
+.cite{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 3px;border-radius:5px;background:var(--navy-soft);color:var(--navy);font-size:11px;font-weight:700;margin-left:4px;vertical-align:2px}
+.other{margin-top:12px;padding:14px 16px;border-radius:12px;background:var(--soft);border:1px solid var(--line);line-height:1.6;color:var(--ink-2)}
+.other h3{font-size:13.5px;color:var(--ink);margin-bottom:4px}
+.quote{margin-top:14px;padding:12px 14px;border-left:3px solid var(--line-strong);color:var(--ink-2);line-height:1.6;background:var(--hover);border-radius:0}
+.quote b{display:block;font-size:12px;color:var(--ink-3);font-weight:600;margin-bottom:2px}
+.blocked{padding:12px 14px;border-radius:12px;border:1px solid var(--critical-line);border-left:4px solid var(--critical);line-height:1.55;color:var(--ink-2)}
+.blocked strong{display:block;color:var(--critical)}.blocked ul{list-style:disc;padding-left:18px;margin:6px 0;color:var(--ink)}
+.sev{display:flex;gap:6px}
+.form{display:grid;gap:14px;padding:14px 18px}
+.choice{display:grid;grid-template-columns:20px 1fr;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;align-items:start;min-height:44px}
+.choice i{width:18px;height:18px;border-radius:50%;border:1.5px solid var(--line-strong);margin-top:1px}
+.choice strong{display:block;font-size:13.5px}.choice span{font-size:12.5px;color:var(--ink-3);line-height:1.45}
+.choice.dis{background:var(--soft);color:var(--ink-4)}.choice.dis strong{color:var(--ink-3)}
+.choice.on{border-color:var(--navy);box-shadow:0 0 0 1px var(--navy) inset}.choice.on i{border:5px solid var(--navy)}
+.sticky{position:sticky;top:16px}
+.actions{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-top:1px solid var(--line-soft)}
+.check{display:flex;gap:10px;line-height:1.5;color:var(--ink-2);padding:10px 12px;border-radius:10px;background:var(--soft)}.box{width:18px;height:18px;border:1.5px solid var(--line-strong);border-radius:4px;margin-top:1px;flex-shrink:0;background:#fff}
+@media (max-width:1000px){.itemMain{grid-template-columns:1fr 1fr}.sticky{position:static}}
+@media (max-width:640px){.itemMain{grid-template-columns:1fr;gap:12px}}
+</style></head><body>
+
+<p class="label">Reviews · the queue<span>One row per company: what you're deciding, value against price and what the AI reviewer said. Older versions of the same report need no decision, so they fold away and don't count.</span></p>
+<div class="nav"><span class="brand">Pragma Research</span><a>Home</a><a>Research</a><a>Themes</a><a class="on">Reviews<span class="badge">1</span></a><span class="spacer"></span><span class="search">Search companies</span><span class="btn">Start research</span></div>
+<div class="screen">
+  <h1>Reviews</h1>
+  <p class="sub">1 report waiting for your decision</p>
+  <article class="item">
+    <div class="itemMain">
+      <div class="who"><div class="logo">SoFi</div><div><strong>SoFi Technologies, Inc.</strong><span>Full initiation report · 18 Nov 2026</span></div></div>
+      <div class="cell"><span class="k">Value per share vs price</span><strong>$8.80</strong> vs $14.28 · <span class="down">38% below</span></div>
+      <div class="cell"><span class="k">AI review</span><strong>16 serious findings</strong><br>Position blocked · tracking allowed</div>
+      <span class="btn primary">Decide</span>
+    </div>
+    <div class="older">
+      <div class="foldrow open"><span>2 older versions · superseded, no decision needed</span><span class="small">they stay readable; deciding on 18 Nov closes them</span></div>
+      <div class="olderBody">
+        <div class="olderRow"><span>Full initiation report · 25 Sep 2026</span><div><span class="rowact">Read</span><span class="link">Dismiss</span></div></div>
+        <div class="olderRow"><span>Full initiation report · 23 Sep 2026</span><div><span class="rowact">Read</span><span class="link">Dismiss</span></div></div>
+      </div>
+    </div>
+  </article>
+  <div style="display:flex;gap:16px;align-items:flex-start;margin-top:16px;flex-wrap:wrap">
+    <div class="dialog"><strong>Dismiss the 25 Sep version?</strong><p>Its run is cancelled, so it can never be decided or resumed. The report stays readable from the SoFi page. The 18 Nov report isn't affected.</p><div class="acts"><span class="btn">Keep it</span><span class="btn primary">Dismiss</span></div></div>
+    <p class="dnote" style="max-width:520px">Shown when you click Dismiss. The newest report has no Dismiss button. Dismissing uses the existing cancel action; the build adds a check that refuses it on the newest waiting run. Any decision on the newest report, including sending it back, dismisses its older versions in the same step: the newest run stays the newest while it's rewritten, so the older ones never come back as "needs your decision".</p>
+  </div>
+</div>
+
+<p class="label">Reviews · the decision page<span>Starts with the report's numbers (both the base case and the weighted value), then the reasons, then what the AI reviewer found, folded by chapter. The verdict is a set of described choices; nothing is preselected, and a blocked choice says why.</span></p>
+<div class="nav"><span class="brand">Pragma Research</span><a>Home</a><a>Research</a><a>Themes</a><a class="on">Reviews<span class="badge">1</span></a><span class="spacer"></span><span class="search">Search companies</span><span class="btn">Start research</span></div>
+<div class="screen decide-pad">
+  <p class="back">← Reviews</p>
+  <div class="decidebar"><span>Your decision on SoFi</span><span class="btn">Decide ↓</span></div>
+  <div class="hero">
+    <div class="who"><div class="logo" style="width:60px;height:60px">SoFi</div><div><strong>SoFi Technologies, Inc.</strong><div class="heroMeta"><span class="ticker">SOFI</span>Final decision on the full initiation report of 18 Nov 2026 <span class="status wait">Needs your decision</span></div></div></div>
+    <span class="rowact">Read the full memo</span>
+  </div>
+  <div class="grid">
+    <div class="col">
+      <section class="block v">
+        <p class="eyebrow">What the report concludes</p>
+        <p class="vline">At $14.28, the base-case value of $8.80 is 38% below the price. Weighted across all three cases it's $7.70, 46% below.</p>
+        <div class="facts">
+          <div class="fact"><span>Value per share</span><strong>$8.80</strong><span>base case, 18 Nov report</span></div>
+          <div class="fact"><span>Weighted value</span><strong>$7.70</strong><span>all three cases</span></div>
+          <div class="fact"><span>Market price</span><strong>$14.28</strong><span>17 Nov close, 6 days old · unverified</span></div>
+          <div class="fact"><span>Range across cases</span><strong>$1.04 to $14.92</strong><span>bear to bull</span></div>
+        </div>
+        <svg class="scale" width="100%" viewBox="0 0 800 86" role="img" aria-label="Bear 1.04, base 8.80, weighted 7.70, bull 14.92, price 14.28">
+          <rect x="20" y="30" width="760" height="8" rx="4" fill="#F1F3F6"/><rect x="67" y="28" width="709" height="12" rx="4" fill="#B9C7D9"/>
+          <circle cx="67" cy="34" r="6" fill="#6B8CB5"/><circle cx="452" cy="34" r="8" fill="#1E3A5F" stroke="#fff" stroke-width="2"/><circle cx="776" cy="34" r="6" fill="#6B8CB5"/>
+          <rect x="398" y="24" width="2" height="20" fill="#1E3A5F" opacity=".5"/>
+          <rect x="745" y="14" width="3" height="30" fill="#111827"/>
+          <text x="742" y="10" font-size="12" text-anchor="end" fill="#111827" font-weight="600">Price $14.28</text>
+          <text x="67" y="62" font-size="12" text-anchor="middle" fill="#4B5563">Bear $1.04</text><rect x="398" y="44" width="1" height="22" fill="#6B8CB5"/><text x="399" y="80" font-size="12" text-anchor="middle" fill="#4B5563">Weighted $7.70</text>
+          <text x="452" y="62" font-size="12" text-anchor="middle" fill="#111827" font-weight="600">Base $8.80</text><text x="780" y="62" font-size="12" text-anchor="end" fill="#4B5563">Bull $14.92</text>
+        </svg>
+        <p class="scale-text">Bear <b>$1.04</b> · weighted <b>$7.70</b> · base <b>$8.80</b> · bull <b>$14.92</b> · price <b>$14.28</b></p>
+        <p class="scale-cap">Even the bull case only just reaches today's price.</p>
+        <p class="foot"><b>Base case</b> is the middle of three scenarios; bear and bull are the low and high ends. <b>Unverified</b>: the pipeline couldn't confirm the price against a second source.</p>
+        <div class="quote"><b>What the report recommends (its own words)</b>Decision withheld. Approval should wait until the bank capital tie-out, the deposit beta, the Technology Platform third-party split and the reconciliation of the 2026 operating model are complete.</div>
+      </section>
+      <section class="block">
+        <p class="eyebrow">Why</p>
+        <h2 style="font-size:18px;font-weight:650">The case against</h2>
+        <p class="note" style="margin-top:2px">This run was written before plain-language key reasons, so its reasons are folded below in the report's own wording. Newer runs show three plain reasons here.</p>
+        <div class="other" style="margin-top:12px"><h3>The strongest point against the report's view</h3>The earnings line is genuinely improving: GAAP net income rose to 564.3 million USD for nine months, net interest margin reached 6.14% and the net charge-off ratio fell to 1.62%. The discounted values show that capital needed to grow absorbs those earnings through 2030 in every case.</div>
+        <div class="foldrow" style="margin:12px -26px -22px;border-radius:0 0 16px 16px"><span>The report's three reasons (its own wording)</span><span class="small">Central question · Decisive insight hypothesis · Falsifier scorecard</span></div>
+      </section>
+      <section class="tile">
+        <div class="tileHead"><h2>What the AI reviewer found</h2><span class="status">AI review: 16 serious findings · position blocked</span></div>
+        <div class="tileBody" style="display:grid;gap:12px">
+          <p>62 findings, 16 of them serious, across 19 parts of the report. 1 of 19 depth checks is missing. The reviewer's own verdict was "pass with conditions", which is why tracking is still allowed.</p>
+          <div class="blocked"><strong>Approving a position is blocked</strong>
+            <ul><li>The value rests almost entirely on what the business is worth after 2030; the years before it add nothing (they cost more than they earn).</li><li>The check of what today's price already assumes was never done.</li><li>The report itself withholds a conclusion because of material research gaps.</li></ul>
+            You can still approve it for tracking, put it on the watchlist, send it back or reject it. <span class="link">Show the reviewer's exact wording</span></div>
+        </div>
+        <div class="foldrow"><span>The reviewer's summary</span><span></span></div>
+        <div class="foldrow"><span>Valuation: Equity Cash Flow Method, Tangible Book Cross-Check and Reverse Expectations</span><span class="sev"><span class="status crit">5 high</span></span></div>
+        <div class="foldrow"><span>Downside: Permanent Impairment and No-Rerating Returns</span><span class="sev"><span class="status crit">2 high</span><span class="status">1 medium</span></span></div>
+        <div class="foldrow"><span>What the Holder Owns and How Value Reaches It</span><span class="sev"><span class="status crit">1 high</span><span class="status">3 medium</span></span></div>
+        <div class="foldrow"><span>Credit Quality, Reserves and Card Mix Shift</span><span class="sev"><span class="status crit">1 high</span><span class="status">1 medium</span></span></div>
+        <div class="foldrow"><span style="color:var(--ink-3)">15 more chapters</span><span class="small">7 high · 40 medium · 1 low</span></div>
+        <div class="foldrow"><span>Depth checks</span><span class="sev"><span class="status">1 missing of 19</span></span></div>
+        <p class="tileBody dnote" style="margin:12px 18px">Each finding shows the issue and the suggested fix, with field names turned into words. The plain reasons in the red box come from a code per reason (for example the depth-check id "reverse valuation" or the terminal-value check), not from matching text; the gate returns codes beside its messages, and an unknown code shows the message as written. A one-line "what this means for you" per finding would need the AI reviewer to write it <span class="flag">pipeline change</span></p>
+      </section>
+    </div>
+    <div class="col sticky">
+      <section class="tile">
+        <div class="tileHead"><h2>Record your decision</h2><span class="flag hide-phone">example: tracking chosen</span></div>
+        <div class="form">
+          <div class="choice dis" aria-disabled="true"><i style="border:0;display:grid;place-items:center;font-size:12px">&#128274;</i><div><strong>Approve for a position</strong><span style="color:var(--ink-2)">Not available: see "Approving a position is blocked".</span></div></div>
+          <div class="choice on"><i></i><div><strong>Approve for tracking</strong><span>Accept the research; follow it with the monitored signals. No position yet.</span></div></div>
+          <div class="choice"><i></i><div><strong>Watchlist</strong><span>Not convinced; revisit when the price or the facts change.</span></div></div>
+          <div class="choice"><i></i><div><strong>Send back for more work</strong><span>The report is rewritten to address the findings. A rewrite would cost about $3.46, based on this report.</span></div></div>
+          <div class="choice"><i></i><div><strong>Reject</strong><span>Close it; no further work.</span></div></div>
+          <p class="help" style="margin:-2px 2px 0">Approving for tracking is the only approval available while these findings stay open.</p>
+          <div class="check"><span class="box"></span><span>I've read the 16 serious findings. <span class="link">Show them</span> <span class="small">(opens only the serious ones). Shown because tracking is an approval.</span></span></div>
+          <div class="field">What would change your mind? <span class="help">optional</span><div class="textarea" style="min-height:64px"></div></div>
+          <div class="foldrow" style="padding:0;border-top:0"><span>Conviction, depth ratings and notes</span><span class="small">optional</span></div>
+        </div>
+        <div class="actions"><span class="small">Tick the acknowledgement to record.</span><span class="btn primary off" aria-disabled="true">Record decision</span></div>
+      </section>
+      <p class="dnote">On tablets and phones the form sits below the findings and a navy "Decide" bar stays pinned to the bottom of the screen. Shown mid-choice: "Approve for tracking" is selected and the acknowledgement appears. Before a choice, no option is selected and the checkbox is hidden. Allowed choices come from the same checks the server runs (review gate and withheld conclusion); the queue returns which approvals are allowed. If the research inputs changed since the report was built, approval is refused and the form says "Regenerate the report first".</p>
+    </div>
+  </div>
+</div>
+<p class="gone"><strong>What goes away:</strong> the 8-tile number strip, run IDs, the made-up "Medium" priority, the research brief at the top (it's on the run page), the risk ranking (it's in the memo), the full report printed below the findings, and a verdict menu that started on "Approved for tracking". <strong>Wording:</strong> "needs more work" now means only your verdict; the AI's outcome is "passed with conditions" or "didn't pass".</p>
+</body></html>

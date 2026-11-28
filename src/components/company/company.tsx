@@ -6,6 +6,7 @@ import { SLOW_LOOKUP_NOTE, useCompanyProfile, type CompanyPerson, type ProfileSu
 import styles from "./company.module.css";
 import { logoBox } from "./logo-box";
 import ui from "@/components/research-ui.module.css";
+import { WatchStar } from "@/components/watchlist/watch-star";
 
 const initials = (name: string) => name.replace(/\(.*?\)/g, "").replace(/,?\s+(inc|corp|ltd|plc|llc)\.?$/i, "").split(/\s+/).filter(Boolean)
   .slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "?";
@@ -71,8 +72,10 @@ export function Leadership({ subject, title = "Leadership", compact = false, cla
 }
 
 /** The page header for an asset: logo, name, ticker, kind and sector, a status chip and the page's actions. */
-export function AssetHero({ assetId, name, ticker, meta, status, actions, eyebrow }: {
+export function AssetHero({ assetId, name, ticker, meta, status, actions, eyebrow, watch }: {
   assetId: string; name: string; ticker?: string | null; meta?: (string | null | undefined)[]; status?: ReactNode; actions?: ReactNode; eyebrow?: ReactNode;
+  /** Show the watchlist star (needs a ticker). */
+  watch?: boolean;
 }) {
   const details = (meta ?? []).filter((item): item is string => !!item);
   return <header className={styles.hero}>
@@ -88,6 +91,6 @@ export function AssetHero({ assetId, name, ticker, meta, status, actions, eyebro
         </div>
       </div>
     </div>
-    {actions && <div className={styles.heroActions}>{actions}</div>}
+    {(actions || (watch && ticker)) && <div className={styles.heroActions}>{watch && ticker && <WatchStar ticker={ticker} name={name} assetId={assetId} />}{actions}</div>}
   </header>;
 }

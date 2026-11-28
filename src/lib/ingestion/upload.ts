@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { mkdir, writeFile, readFile } from "fs/promises";
 import { join } from "path";
 import { pipelineSql } from "@/db/pipeline-sql";
+import { readStoredFile, readStoredText } from "@/lib/storage/stored-file";
 
 const STORAGE_ROOT = join(process.cwd(), "storage", "sources");
 
@@ -128,5 +129,5 @@ export async function getSourceDocument(id: string) {
  * Read the raw file content for a source document.
  */
 export async function readSourceFile(storagePath: string): Promise<Buffer> {
-  return readFile(join(process.cwd(), storagePath));
+  return readStoredFile(join(process.cwd(), storagePath));
 }

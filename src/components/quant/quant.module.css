@@ -210,6 +210,7 @@ button.contextBadge:hover { box-shadow: 0 0 0 4px var(--navy-soft); }
 .rMove[data-tone="good"] { color: var(--positive); }
 .rMove[data-tone="bad"] { color: var(--critical); }
 .verdict { display: grid; gap: 6px; padding: 14px; border-radius: 16px; background: var(--g-bg, var(--soft)); }
+.verdictHead { margin: 0; font-size: 13px; font-weight: 700; color: var(--g-ink, var(--ink-2)); }
 .verdictTop { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; margin-bottom: 8px; }
 .verdictLetter { font-family: var(--font-display); font-size: 36px; font-weight: 800; line-height: 1; letter-spacing: -0.03em; color: var(--g-ink, var(--ink)); }
 .verdictText { display: grid; gap: 1px; min-width: 0; }
@@ -230,3 +231,42 @@ button.contextBadge:hover { box-shadow: 0 0 0 4px var(--navy-soft); }
 .rResearch { display: grid; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
 .rResearchRow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 12.5px; color: var(--ink-3); }
 .rResearchRow b { font-weight: 600; color: var(--ink); text-align: right; }
+
+/* Tab bar with the compact search (workshop quant-intl-round S1); the rail's watchlist star. */
+.viewBar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.rHead { position: relative; padding-right: 40px; }
+.rStar { position: absolute; top: 0; right: 0; }
+.aboutLink { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--navy); white-space: nowrap; }
+.aboutLink:hover { text-decoration: underline; }
+.context[data-open] .aboutLink { opacity: 0; }
+
+/* Adjust growth (workshop quant-intl-round G1). */
+.growth { background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); border-radius: 20px; box-shadow: var(--shadow-card); padding: 10px 18px; }
+.growthHead { display: flex; align-items: center; gap: 12px; min-height: 36px; }
+.growthToggle { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--ink); }
+.growthToggle svg { color: var(--ink-3); }
+.growth[data-open] .growthToggle svg { transform: rotate(90deg); }
+.growthBadge { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: var(--radius-pill); background: var(--navy-soft); color: var(--navy); }
+.growthHead .growthBadge + button { margin-left: auto; }
+.growthBody { display: grid; grid-template-rows: 0fr; }
+.growthBody > div { overflow: hidden; display: grid; gap: 6px; }
+.growth[data-open] .growthBody { grid-template-rows: 1fr; padding: 4px 0 8px; }
+.growthRow { display: grid; grid-template-columns: 56px minmax(0, 1fr) 64px; grid-template-areas: "name range out" ". model ."; align-items: center; column-gap: 12px; }
+.growthRow label { grid-area: name; font-size: 13px; font-weight: 700; color: var(--case-color); }
+.growthRow input { grid-area: range; width: 100%; accent-color: var(--case-color); }
+.growthRow output { grid-area: out; text-align: right; font-family: var(--font-display); font-size: 15px; font-weight: 700; }
+.growthRow small { grid-area: model; font-size: 11.5px; color: var(--ink-3); }
+@media (prefers-reduced-motion: no-preference) {
+  .growthBody { transition: grid-template-rows var(--dur-slide) var(--ease-out), padding var(--dur-slide) var(--ease-out); }
+  .growthToggle svg { transition: transform var(--dur-base) var(--ease-spring); }
+}
+
+/* "Did you mean" under a ticker that didn't resolve. */
+.suggest { display: grid; gap: 8px; width: min(520px, 100%); text-align: left; }
+.suggest p { margin: 0; font-size: 13px; color: var(--ink-3); }
+.suggest ul { list-style: none; margin: 0; padding: 6px; display: grid; gap: 2px; background: var(--tile); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow-card); }
+.suggest a { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 10px; border-radius: 12px; color: var(--ink); }
+.suggest a:hover { background: var(--hover); }
+.suggest a span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.suggest a b { font-size: 12px; color: var(--ink-3); }
+.state { display: grid; gap: 14px; justify-items: start; }

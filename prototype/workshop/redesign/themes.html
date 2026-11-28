@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Themes redesign</title>
+<link rel="stylesheet" href="redesign.css">
+<style>
+.form{display:grid;gap:18px;padding:16px 18px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:10px;overflow:hidden}
+.seg span{padding:7px 14px;color:var(--ink-2);font-weight:500;border-left:1px solid var(--line-strong)}.seg span:first-child{border-left:0}
+.seg .on{background:var(--navy);color:#fff;font-weight:600}
+.weights{display:grid;gap:10px}
+.w{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;font-weight:400}
+.w strong{display:block;font-weight:600}.w span.help{display:block}
+.box{display:flex;gap:12px;align-items:center;font-weight:400;min-height:40px}.box i{width:20px;height:20px;border:1px solid var(--line-strong);border-radius:4px;margin-top:2px;flex-shrink:0}
+.box i.on{background:var(--navy);border-color:var(--navy)}
+.box strong{display:block;font-weight:600}
+.steps{display:grid;gap:10px;padding:14px 18px}
+.steps li{display:grid;grid-template-columns:24px 1fr;gap:10px;color:var(--ink-2);line-height:1.5}
+.steps li b{width:22px;height:22px;border-radius:50%;background:var(--navy-soft);color:var(--navy);display:grid;place-items:center;font-size:12px}
+</style></head><body>
+
+<p class="label">Themes<span>The same form, in plain words. Weights become "how much it matters" choices, the exposure minimum says what it does, and the side panel explains what you get back. No themes are stored yet, so the results page wasn't reviewed.</span></p>
+<div class="nav"><span class="brand">Pragma Research</span><a>Home</a><a>Research</a><a class="on">Themes</a><a>Reviews<span class="badge">1</span></a><span class="spacer"></span><span class="search">Search companies</span><span class="btn">Start research</span></div>
+<div class="screen">
+  <h1>Theme research</h1><p class="sub">Start from a trend, get a shortlist of four companies to research, with the reasons each one made it or didn't.</p>
+  <div class="grid">
+    <section class="tile">
+      <div class="tileHead"><h2>New theme</h2></div>
+      <div class="form">
+        <div class="field">The trend<div class="input ph">e.g. The future of electricity</div><span class="help">A demand trend that could run for years, in a few words.</span></div>
+        <div class="two">
+          <div class="field">Time horizon<div class="input">15 years</div><span class="help">How far ahead to look when judging which businesses benefit.</span></div>
+          <div class="field">Minimum exposure<div class="input">50%</div><span class="help">Leave out companies with less than this share of their business tied to the trend.</span></div>
+        </div>
+        <div class="field">Which companies
+          <label class="box"><i class="on"></i><span><strong>Suppliers</strong><span class="help">Sell the picks and shovels the trend needs</span></span></label>
+          <label class="box"><i></i><span><strong>Operators</strong><span class="help">Run the businesses the trend creates</span></span></label>
+          <label class="box"><i></i><span><strong>Others</strong><span class="help">Anything else tied to the trend</span></span></label>
+          </div>
+        <div class="field">Where they're listed
+          <label class="box"><i class="on"></i><span><strong>US-listed only</strong><span class="help">Leave out companies not listed in the US</span></span></label>
+        </div>
+        <div class="field">What matters when ranking them
+          <div class="weights">
+            <div class="w"><div><strong>Growth</strong><span class="help">Revenue growth</span></div><span class="seg"><span>Not at all</span><span>Some</span><span class="on">A lot</span></span></div>
+            <div class="w"><div><strong>Quality</strong><span class="help">Margins</span></div><span class="seg"><span>Not at all</span><span class="on">Some</span><span>A lot</span></span></div>
+            <div class="w"><div><strong>Value</strong><span class="help">Earnings yield</span></div><span class="seg"><span>Not at all</span><span class="on">Some</span><span>A lot</span></span></div>
+            <div class="w"><div><strong>Balance sheet</strong><span class="help">How fast debt could be paid back</span></div><span class="seg"><span>Not at all</span><span class="on">Some</span><span>A lot</span></span></div>
+          </div></div>
+        <div class="field">Tickers to include (optional)<div class="textarea" style="min-height:56px;color:var(--ink-4)">e.g. an ETF's holdings: PWR, HUBB, ETN</div></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-top:1px solid var(--line-soft)"><span class="small">Name the trend to continue.</span><span class="btn primary off">Create theme</span></div>
+    </section>
+    <div class="col">
+      <section class="tile">
+        <div class="tileHead"><h2>What you get back</h2></div>
+        <ol class="steps">
+          <li><b>1</b>Candidate companies, each counted by how many independent sources name it.</li>
+          <li><b>2</b>The ones left out, each with its reason (too little exposure, not US-listed, wrong role).</li>
+          <li><b>3</b>A scorecard ranked by what you said matters.</li>
+          <li><b>4</b>A shortlist of four, each one click from a full research run.</li>
+          <li><b>→</b>Results open on the theme's own page and stay under "Past themes".</li>
+        </ol>
+        <p class="tileBody note" style="border-top:1px solid var(--line-soft)">Costs at most $2 in model calls (the theme budget) and reads SEC data. Nothing is bought or traded.</p>
+      </section>
+      <section class="tile"><div class="tileHead"><h2>Past themes</h2><span class="small">0</span></div><p class="tileBody note">Your themes will appear here.</p></section>
+    </div>
+  </div>
+</div>
+<p class="gone"><strong>What goes away:</strong> the jargon subtitle, decimal weight sliders (1.00, 0.50), and an unexplained "Minimum exposure (%)". The weights still map to the same numbers the ranking uses today (not at all 0, some 0.5, a lot 1).</p>
+</body></html>

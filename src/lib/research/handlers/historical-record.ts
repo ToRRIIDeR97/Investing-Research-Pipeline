@@ -25,6 +25,7 @@ import { pipelineDb, pipelineSql } from "@/db/pipeline-sql";
 import { CURRENT_PIPELINE_VERSION } from "../version";
 import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
+import { readStoredFile, readStoredText } from "@/lib/storage/stored-file";
 
 /** persistMetrics keeps at most this many model rows. */
 const MAX_NORMALIZED_OBSERVATIONS = 60;
@@ -146,7 +147,7 @@ export const historicalRecordHandler: StageHandler<Record<string, unknown>> = {
     const sourceRoot = resolve(process.cwd(), "storage", "sources");
     const sourcePath = resolve(process.cwd(), String(primaryDoc[0].storage_path));
     if (!sourcePath.startsWith(sourceRoot + sep)) throw new Error("Invalid primary source path");
-    const secContext = JSON.parse(await readFile(sourcePath, "utf8"));
+    const secContext = JSON.parse(await readStoredText(sourcePath));
     const secFacts = secQuarterlyObservations(secContext.companyFacts, ctx.marketDataCutoffAt || ctx.cutoffAt);
     const [planRow] = await sql`
       SELECT content_json->'required_historical_metrics' AS metrics

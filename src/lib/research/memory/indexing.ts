@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { resolve, sep } from "node:path";
 import { parseDocument } from "./passages";
 import { EMBEDDING_BATCH_SIZE, embedTexts, passageEmbeddingText, type EmbeddingProvider } from "./embeddings";
+import { readStoredFile, readStoredText } from "@/lib/storage/stored-file";
 
 type Sql = postgres.Sql | postgres.TransactionSql;
 
@@ -139,7 +140,7 @@ async function indexStoredDocument(sql: postgres.Sql, sourceId: string): Promise
   }
   let content: string;
   try {
-    content = await readFile(path, "utf8");
+    content = await readStoredText(path);
   } catch (error) {
     return recordUnreadable(sql, sourceId, `The stored file could not be read: ${(error as NodeJS.ErrnoException).code || (error as Error).message}.`);
   }

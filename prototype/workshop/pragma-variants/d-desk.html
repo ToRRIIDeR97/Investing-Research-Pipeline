@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D · Research Desk</title>
+<link rel="stylesheet" href="base.css">
+<style>
+body{background:#f4f5f2}
+.app{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh}
+.side{background:var(--navy-deep);color:#cbd5e1;padding:20px 14px;display:flex;flex-direction:column;gap:4px}
+.side .brand{display:flex;align-items:center;gap:10px;font-family:var(--fd);font-size:19px;color:#fff;padding:0 8px 18px}
+.side .brand img{width:28px}
+.side .grp{font-size:10.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:rgba(255,255,255,.35);padding:16px 10px 6px}
+.side a{display:flex;align-items:center;justify-content:space-between;padding:9px 10px;border-radius:10px;font-size:13.5px;font-weight:500}
+.side a.on{background:rgba(117,147,125,.18);color:#fff;box-shadow:inset 3px 0 0 var(--sage)}
+.side .ct{font-family:var(--fm);font-size:11px;background:var(--amber);color:#fff;border-radius:6px;padding:1px 6px}
+.side .co{display:flex;gap:10px;align-items:center;padding:8px 10px;font-size:13px}
+.side .co i{width:8px;height:8px;border-radius:50%}
+.side .foot{margin-top:auto;font-family:var(--fm);font-size:11px;color:rgba(255,255,255,.35);padding:10px}
+main{padding:0 0 60px}
+.top{display:flex;align-items:center;gap:16px;padding:14px 32px;background:#fff;border-bottom:1px solid #e7e8e3}
+.top .crumb{font-size:13px;color:#78716c}.top .crumb b{color:var(--navy-ink)}
+.top .sp{flex:1}
+.top .search{width:280px;height:34px;border:1px solid #e7e8e3;border-radius:10px;display:flex;align-items:center;padding:0 12px;color:#a8a29e;font-size:13px;font-family:var(--fm)}
+.top kbd{margin-left:auto;font-family:var(--fm);font-size:11px;border:1px solid #e7e8e3;border-radius:5px;padding:0 5px}
+.body{padding:22px 32px;display:grid;gap:18px}
+.idbar{display:flex;align-items:center;gap:16px}
+.idbar h1{font-family:var(--fd);font-weight:400;font-size:34px;color:var(--navy-ink);line-height:1}
+.idbar .tk{font-family:var(--fm);font-size:13px;color:#78716c}
+.idbar .sp{flex:1}
+.strip{display:grid;grid-template-columns:repeat(6,1fr);background:#fff;border:1px solid #e7e8e3;border-radius:14px;overflow:hidden}
+.strip div{padding:13px 16px;border-left:1px solid #f0f1ec}.strip div:first-child{border-left:0}
+.strip span{display:block;font-size:10.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#78716c}
+.strip b{display:block;font-family:var(--fm);font-weight:600;font-size:19px;color:var(--navy-ink);margin-top:2px}
+.strip em{font-style:normal;font-family:var(--fm);font-size:11px;color:#a8a29e}
+.sig{display:inline-block;padding:2px 8px;border-radius:6px;font-family:var(--fm);font-size:11.5px;font-weight:600}
+.sig.neg{background:#fee2e2;color:#991b1b}.sig.warn{background:#fef9c3;color:#854d0e}.sig.pos{background:#dcfce7;color:#166534}.sig.neu{background:#f1f5f9;color:#334155}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 300px;gap:18px;align-items:start}
+.pn{background:#fff;border:1px solid #e7e8e3;border-radius:14px}
+.pn .h{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #f0f1ec}
+.pn .h b{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--navy)}
+.pn .c{padding:14px 16px;line-height:1.6;color:#3f3f46}
+.chart{padding:16px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td{padding:9px 16px;border-top:1px solid #f0f1ec}
+td.r{text-align:right;font-family:var(--fm)}
+tr:first-child td{border-top:0}
+.q{font-family:var(--fd);font-size:17px;line-height:1.45;color:var(--navy-ink)}
+.blk{margin:0 16px 14px;padding:10px 12px;border-radius:10px;background:#fff5f5;border:1px solid #fbd5d5;font-size:13px}
+.blk b{color:#991b1b;display:block;margin-bottom:4px}.blk li{margin-left:16px}
+.dec{position:sticky;top:16px}
+.seg{display:grid;gap:6px;padding:14px 16px}
+.seg div{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;border:1px solid #e7e8e3;border-radius:10px;font-size:13.5px}
+.seg .sel{border-color:var(--navy);background:var(--navy);color:#fff}
+.seg .dis{color:#a8a29e;background:#fafaf9}
+.seg kbd{font-family:var(--fm);font-size:11px;opacity:.6}
+.ack{display:flex;gap:10px;align-items:center;margin:0 16px 12px;font-size:13px}.ack i{width:16px;height:16px;border-radius:4px;border:1.5px solid #cbd5e1}
+</style></head><body>
+<p class="label"><b>D · Research desk</b>The app as a working tool: a dark navy sidebar with sage highlights and a watchlist, one dense number strip, three columns, Pragma's sigma-style chips for status, and the decision as keyboard-friendly segments. Densest of the four.</p>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><img src="logo-white.svg" alt="">Pragma</div>
+    <a>Home</a><a>Research</a><a>Themes</a><a class="on">Reviews <span class="ct">1</span></a>
+    <div class="grp">Companies</div>
+    <div class="co"><i style="background:var(--amber)"></i>SoFi</div>
+    <div class="co"><i style="background:var(--sage)"></i>MercadoLibre</div>
+    <div class="co"><i style="background:var(--sage)"></i>Meta</div>
+    <div class="co"><i style="background:#64748b"></i>Nvidia</div>
+    <div class="foot">worker online · 23 Nov 09:40</div>
+  </aside>
+  <main>
+    <div class="top"><span class="crumb">Reviews / <b>SoFi</b></span><span class="sp"></span><span class="search">Search companies <kbd>/</kbd></span><span class="btn primary" style="height:34px;border-radius:10px">Start research</span></div>
+    <div class="body">
+      <div class="idbar"><h1>SoFi Technologies</h1><span class="tk">SOFI · NASDAQ · report 18 Nov</span><span class="sig warn">needs your decision</span><span class="sp"></span><span class="btn" style="height:34px">Open report</span></div>
+      <div class="strip">
+        <div><span>Value / share</span><b>$8.80</b><em>base</em></div>
+        <div><span>Price</span><b>$14.28</b><em>17 Nov · 6d old</em></div>
+        <div><span>Value vs price</span><b style="color:var(--red)">−38.4%</b><em>below price</em></div>
+        <div><span>Range</span><b>$1.04–14.92</b><em>bear–bull</em></div>
+        <div><span>AI review</span><b style="color:var(--red)">16 / 62</b><em>serious / all</em></div>
+        <div><span>Cost</span><b>$4.86</b><em>budget $10</em></div>
+      </div>
+      <div class="cols">
+        <section class="pn">
+          <div class="h"><b>Value vs price</b><span class="sig neg">−38.4%</span></div>
+          <div class="chart"><svg viewBox="0 0 360 150" width="100%">
+            <line x1="20" x2="340" y1="120" y2="120" stroke="#e7e8e3"/>
+            <rect x="40" y="114" width="60" height="6" fill="#C9302C" rx="2"/><text x="70" y="106" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#991b1b">$1.04</text><text x="70" y="138" text-anchor="middle" font-size="10.5" fill="#78716c" font-family="Inter">BEAR</text>
+            <rect x="150" y="62" width="60" height="58" fill="#0A2642" rx="2"/><text x="180" y="54" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#0A2642">$8.80</text><text x="180" y="138" text-anchor="middle" font-size="10.5" fill="#78716c" font-family="Inter">BASE</text>
+            <rect x="260" y="21" width="60" height="99" fill="#2D7D46" rx="2"/><text x="290" y="15" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#166534">$14.92</text><text x="290" y="138" text-anchor="middle" font-size="10.5" fill="#78716c" font-family="Inter">BULL</text>
+            <line x1="20" x2="340" y1="26" y2="26" stroke="#B8860B" stroke-dasharray="4 3"/><text x="22" y="20" font-family="JetBrains Mono" font-size="11" fill="#854d0e">price $14.28</text>
+          </svg></div>
+          <div class="c" style="border-top:1px solid #f0f1ec"><span style="font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:#78716c">Report recommends</span><p class="q" style="margin-top:6px">“Decision withheld until the bank capital tie-out, deposit beta, platform split and 2026 model are reconciled.”</p></div>
+        </section>
+        <section class="pn">
+          <div class="h"><b>AI review</b><span class="sig neg">position blocked</span></div>
+          <div class="blk" style="margin-top:14px"><b>Blocks a position</b><ul><li>Value rests on years after 2030</li><li>Price-implied check never done</li><li>Report withholds a conclusion</li></ul></div>
+          <table>
+            <tr><td>Valuation and cross-checks</td><td class="r"><span class="sig neg">5 high</span></td></tr>
+            <tr><td>Downside, no-rerating</td><td class="r"><span class="sig neg">2</span> <span class="sig warn">1</span></td></tr>
+            <tr><td>What the holder owns</td><td class="r"><span class="sig neg">1</span> <span class="sig warn">3</span></td></tr>
+            <tr><td>Credit quality, reserves</td><td class="r"><span class="sig neg">1</span> <span class="sig warn">1</span></td></tr>
+            <tr><td style="color:var(--navy);font-weight:600">15 more chapters</td><td class="r" style="color:#a8a29e">7 · 40 · 1</td></tr>
+          </table>
+        </section>
+        <section class="pn dec">
+          <div class="h"><b>Decision</b><span style="font-family:var(--fm);font-size:11px;color:#a8a29e">keys 1–5</span></div>
+          <div class="seg">
+            <div class="dis">Approve for a position <kbd>blocked</kbd></div>
+            <div class="sel">Approve for tracking <kbd>2</kbd></div>
+            <div>Watchlist <kbd>3</kbd></div>
+            <div>Send back · ~$3.46 <kbd>4</kbd></div>
+            <div>Reject <kbd>5</kbd></div>
+          </div>
+          <div class="ack"><i></i>I've read the 16 serious findings</div>
+          <div style="padding:0 16px 16px"><span class="btn primary" style="width:100%;border-radius:10px">Record decision <span style="font-family:var(--fm);font-size:11px;opacity:.6">⌘↵</span></span></div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+</body></html>

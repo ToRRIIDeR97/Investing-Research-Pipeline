@@ -9,6 +9,7 @@ import styles from "./assets.module.css";
 import { AssetCard, AssetRow, stageOf, type AssetOverview } from "@/components/asset-cards";
 import { currentReviews } from "@/lib/review/queue-rules";
 import { Card, Segmented, Tag } from "@/components/ui/primitives";
+import { PageLoading } from "@/components/ui/loading";
 
 const kinds = [["", "All"], ["equity", "Equity"], ["crypto_asset", "Crypto"], ["commodity", "Commodity"]];
 const KIND_LABELS = kinds.map(([, label]) => label);
@@ -64,7 +65,7 @@ export default function AssetsPage() {
       </div>
     </div>
 
-    {loading ? <p className={ui.muted} role="status">Loading assets…</p> : error ? <p className={ui.error} role="alert">{error}<button onClick={() => void load()}>Try again</button></p>
+    {loading ? <PageLoading shape="cards" label="Loading your companies" /> : error ? <p className={ui.error} role="alert">{error}<button onClick={() => void load()}>Try again</button></p>
       : !visible.length ? <Card><p className={ui.empty}>{query || kind || stage ? "No assets match your filters." : "No assets yet."}</p></Card>
       : layout === "cards" ? <div className={cards.cards}>{visible.map((asset) => <AssetCard key={asset.id} asset={asset} reviewing={reviewing} />)}</div>
       : <Card><div className={cards.list}>{visible.map((asset) => <AssetRow key={asset.id} asset={asset} reviewing={reviewing} />)}</div></Card>}

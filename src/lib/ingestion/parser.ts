@@ -139,9 +139,9 @@ export async function invokeDoclingParser(filePath: string): Promise<ParseResult
  * Basic text extraction fallback when Docling is not available.
  */
 async function basicTextExtraction(filePath: string): Promise<ParseResult> {
-  const { readFile } = await import("fs/promises");
+  const { readStoredText } = await import("@/lib/storage/stored-file");
 
-  const content = await readFile(filePath, "utf-8");
+  const content = await readStoredText(filePath);
 
   // Split into chunks of ~2000 characters
   const chunkSize = 2000;

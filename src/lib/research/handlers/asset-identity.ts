@@ -1,20 +1,35 @@
 import type { ResearchRunContext, StageHandler, ValidationResult } from "../run-context";
 import { makeValidationResult } from "../run-context";
 import { pipelineSql } from "@/db/pipeline-sql";
+import { defaultProfileKeyFor, profileIdForKey } from "../asset-profile";
 
 export const assetIdentityHandler: StageHandler<Record<string, unknown>> = {
   stageKey: "asset_identity",
   async execute(ctx: ResearchRunContext): Promise<Record<string, unknown>> {
     const sql = pipelineSql();
     const assetRows = await sql`
-      SELECT primary_profile_id FROM assets WHERE id = ${ctx.assetId}
+      SELECT primary_profile_id, asset_kind, sector, slug FROM assets WHERE id = ${ctx.assetId}
     `;
     if (assetRows.length === 0) {
       throw new Error(`Asset not found: ${ctx.assetId}`);
     }
-    const profileId = assetRows[0].primary_profile_id;
+    // An asset added before profiles were assigned on creation has none: use the run's profile, else the default
+    // for its kind, and keep it on the asset so later runs start from it.
+    let profileId = assetRows[0].primary_profile_id as string | null;
     if (!profileId) {
-      throw new Error(`Asset has no primary profile: ${ctx.assetId}`);
+      const a = assetRows[0];
+      profileId = ctx.profileId ?? await profileIdForKey(sql, defaultProfileKeyFor(a.asset_kind, a.sector, a.slug));
+      if (!profileId) {
+        throw new Error(`Asset has no primary profile and no default profile fits its kind (${a.asset_kind}): ${ctx.assetId}`);
+      }
+      await sql`UPDATE assets SET primary_profile_id = ${profileId}, updated_at = NOW() WHERE id = ${ctx.assetId} AND primary_profile_id IS NULL`;
+    }
+    // Later stages read the run's profile (indicator design needs one); each stage reloads the context from the row.
+    if (!ctx.profileId) {
+      await sql`
+        UPDATE research_runs SET profile_id = ${profileId},
+          profile_version = COALESCE(profile_version, (SELECT version FROM research_profiles WHERE id = ${profileId})), updated_at = NOW()
+        WHERE id = ${ctx.runId} AND profile_id IS NULL`;
     }
 
     // Ensure run-scoped profile assignment exists

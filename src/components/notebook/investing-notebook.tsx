@@ -13,6 +13,7 @@ import { isFilingNote, kpiReading, kpiSnapshot, pinViews, placeAnnotations, repo
 import type { NotebookApi } from "./use-notebook";
 import { ChecklistPanel } from "./checklist-panel";
 import { Card, Tag } from "@/components/ui/primitives";
+import { PageLoading } from "@/components/ui/loading";
 
 type Row = Record<string, any>;
 const statusText = { healthy: "Healthy", caution: "Caution", danger: "In danger" } as const;
@@ -35,7 +36,7 @@ export function InvestingNotebook({ api, assetId, artifacts, document, runId, ru
   const { notebook, loaded, error } = api;
   const observations = useMemo(() => researchObservations(artifacts), [artifacts]);
   const readings = useMemo(() => notebook.kpis.map((k) => kpiReading(k, observations)), [notebook.kpis, observations]);
-  if (!loaded && !error) return <p className={ui.muted} role="status">Loading your notebook…</p>;
+  if (!loaded && !error) return <PageLoading shape="panel" label="Loading your notebook" />;
   return <div className={styles.stack}>
     <p className={ui.muted}>{runDate ? `Values are drawn from the latest research run (${runDate}). Your notes and lines are kept across runs.` : "No research run yet: values appear once a run completes."}</p>
     {error && <p className={styles.error} role="alert">{error}</p>}

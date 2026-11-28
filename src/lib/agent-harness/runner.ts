@@ -8,6 +8,7 @@ import { parseStructuredOutput } from "./output-parser";
 import { getProvider } from "./providers/provider";
 import { getAgentConfig, normalizeModelEnvValue, resolveAgentModel, type ResearchAgentName } from "./registry";
 import { calculateCost } from "./telemetry";
+import { resolveModels } from "./latest-model";
 import type {
   AgentAttempt, AgentPassTelemetry, AgentRequest, AgentResult, AgentUsage, ExecutionPolicy, ModelEvent, ModelProvider,
 } from "./types";
@@ -470,7 +471,8 @@ export async function runResearchAgent<TStructured = unknown>(input: AgentReques
   const keys = requiredKeys(effectiveOutputFormat);
   // Sent unchanged on generation and repair; only anthropic-direct turns it into output_config.
   const outputSchema = isPlainObject(effectiveOutputFormat.schema) ? effectiveOutputFormat.schema : undefined;
-  const candidates = modelCandidates(input.agentName as ResearchAgentName, policy.maxAttempts, provider.id, input);
+  // latest:<family> aliases become the newest model the provider lists in that family (cached; see latest-model.ts).
+  const candidates = await resolveModels(modelCandidates(input.agentName as ResearchAgentName, policy.maxAttempts, provider.id, input), provider);
   const primaryModel = candidates[0];
   const originalPromptBytes = Buffer.byteLength(promptText, "utf8");
   const cacheScope = input.cacheScope || `agent:${input.agentName}`;

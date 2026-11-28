@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Home redesign</title>
+<link rel="stylesheet" href="redesign.css">
+<style>
+.wait-card{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:28px;align-items:center}
+.wait-card .acts{display:flex;gap:14px;align-items:center;margin-top:16px}
+.mini{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:12px}
+.mini div{background:#fff;padding:10px 14px}
+@media (max-width:640px){.mini{grid-template-columns:1fr 1fr}.mini div:last-child{grid-column:span 2}}.mini span{display:block;font-size:12px;color:var(--ink-3)}.mini strong{font-size:18px;font-weight:650}
+.stat{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line-soft)}
+.stat div{background:#fff;padding:12px 18px}.stat strong{display:block;font-size:20px;font-weight:650}.stat span{color:var(--ink-3);font-size:12px}
+@media (max-width:1000px){.wait-card{grid-template-columns:1fr}}
+</style></head><body>
+
+<p class="label">Home<span>Opens on the one thing that needs you, with its numbers. Problems get their own banner. Every company appears once with one status, and the count matches the Reviews page.</span></p>
+<div class="nav"><span class="brand">Pragma Research</span><a class="on">Home</a><a>Research</a><a>Themes</a><a>Reviews<span class="badge">1</span></a><span class="spacer"></span><span class="search">Search companies</span><span class="btn">Start research</span></div>
+<div class="screen">
+  <p class="eyebrow">Monday, 23 November</p>
+  <h1>Good morning. 1 report needs your decision.</h1>
+  <p class="sub">A later SoFi run also stopped before finishing.</p>
+
+  <section class="tile" style="margin-bottom:16px">
+    <div class="tileHead"><h2>Waiting on you</h2><span class="rowact">All reviews</span></div>
+    <div class="tileBody wait-card">
+      <div>
+        <div class="who"><div class="logo">SoFi</div><div><strong>SoFi Technologies, Inc.</strong><span>Full initiation report · 18 Nov 2026 &nbsp;<span class="status wait">Needs your decision</span></span></div></div>
+        <p class="vline" style="margin-top:14px;font-size:20px">At $14.28, the base-case value of $8.80 is 38% below the price.</p>
+        <p class="summary">AI review: 16 serious findings. Approving a position is blocked; tracking is allowed.</p>
+        <div class="acts"><span class="btn primary">Decide</span><span class="rowact">Read the memo</span></div>
+      </div>
+      <div>
+        <svg class="scale" width="100%" viewBox="0 0 520 74" role="img" aria-label="Bear 1.04, base 8.80, bull 14.92, price 14.28">
+          <rect x="10" y="30" width="500" height="8" rx="4" fill="#F1F3F6"/><rect x="40" y="28" width="465" height="12" rx="4" fill="#B9C7D9"/>
+          <circle cx="40" cy="34" r="6" fill="#6B8CB5"/><circle cx="292" cy="34" r="8" fill="#1E3A5F" stroke="#fff" stroke-width="2"/><circle cx="505" cy="34" r="6" fill="#6B8CB5"/>
+          <rect x="484" y="14" width="3" height="30" fill="#111827"/>
+          <text x="481" y="10" font-size="12" text-anchor="end" font-weight="600" fill="#111827">Price $14.28</text>
+          <text x="40" y="66" font-size="12" text-anchor="middle" fill="#4B5563">Bear $1.04</text><text x="292" y="66" font-size="12" text-anchor="middle" font-weight="600" fill="#111827">Base $8.80</text>
+          <text x="510" y="66" font-size="12" text-anchor="end" fill="#4B5563">Bull $14.92</text>
+        </svg>
+        <p class="scale-text">Bear <b>$1.04</b> · base <b>$8.80</b> · bull <b>$14.92</b> · price <b>$14.28</b></p>
+        <div class="mini"><div><span>Value per share</span><strong>$8.80</strong></div><div><span>Price, 17 Nov · unverified</span><strong>$14.28</strong><span>6 days old</span></div><div><span>Value vs price</span><strong class="down">38% below</strong></div></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="banner danger"><div><strong>A later SoFi run stopped before finishing</strong><p>Started 18 Nov at 21:12, it went over its $10 budget while checking its own report. Its draft was never reviewed, so don't rely on the value it shows; the report above is the one waiting for you.</p></div><div class="acts"><span class="btn">See what happened</span></div></div>
+
+  <div class="grid">
+    <section class="tile">
+      <div class="tileHead"><h2>Your research</h2><span class="small">1 test company hidden · <span class="link">Show</span></span></div>
+      <table class="t stack">
+        <thead><tr><th>Company</th><th>Where it stands</th><th>Value vs price</th><th class="hide-md">Latest report</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><div class="who"><div class="logo" style="width:34px;height:34px">SoFi</div><div><strong>SoFi Technologies</strong><span>SOFI · Equity</span></div></div></td>
+            <td><span class="status wait">Needs your decision</span></td>
+            <td><strong>$8.80</strong> vs $14.28 <span class="down">38% below</span></td>
+            <td class="hide-md">18 Nov 2026</td><td class="num"><span class="small">Waiting above</span></td></tr>
+          <tr><td><div class="who"><div class="logo apple" style="width:34px;height:34px">AAPL</div><div><strong>Apple</strong><span>AAPL · Technology</span></div></div></td>
+            <td><span class="status">Not started</span></td><td class="muted hide-sm">—</td><td class="muted hide-md">—</td><td class="num"><span class="rowact">Start research</span></td></tr>
+          <tr><td><div class="who"><div class="logo btc" style="width:34px;height:34px">₿</div><div><strong>Bitcoin</strong><span>Crypto</span></div></div></td>
+            <td><span class="status">Not started</span></td><td class="muted hide-sm">—</td><td class="muted hide-md">—</td><td class="num"><span class="rowact">Start research</span></td></tr>
+        </tbody>
+      </table>
+    </section>
+    <section class="tile">
+      <div class="tileHead"><h2>This month</h2><span class="small">November</span></div>
+      <div class="stat"><div><strong>4</strong><span>runs started</span></div><div><strong>$23.93</strong><span>spent</span></div><div><strong>3</strong><span>runs stopped</span></div></div>
+      <div class="tileBody note">$19.07 of it went to the three runs that stopped: not enough founding-history evidence ($0.12), the report writer failed validation ($9.21), and over budget ($9.74). One run produced the report waiting for you ($4.86).</div>
+    </section>
+  </div>
+</div>
+<p class="gone"><strong>What goes away:</strong> the 8-tile number strip, leadership photos on Home, run IDs, the made-up "Medium" priority, a second navy Start research button, and the test company (behind a toggle). <strong>What changes:</strong> "3 reports need your decision" becomes 1 (older versions don't count), and SoFi no longer shows "Needs more work" in one place and "Needs your decision" in another. The greeting follows your local time. On a phone, table rows become two-line blocks. Empty and edge states are on the edge-cases page.</p>
+</body></html>

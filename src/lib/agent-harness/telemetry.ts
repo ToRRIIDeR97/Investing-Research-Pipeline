@@ -1,3 +1,5 @@
+import { latestAliasWords, modelTokens, pickLatest } from "./model-family";
+
 export interface ModelPricing {
   inputCostPerMillion: number;
   outputCostPerMillion: number;
@@ -43,12 +45,34 @@ export interface CacheTokenUsage {
 const warnedModels = new Set<string>();
 
 /**
- * The model's rate card, scaled for a long prompt. An unknown Claude model falls back to DEFAULT_PRICING, which is far
- * below any Claude list price, so it is warned about once per process: the budget guard would undercount its spend.
+ * The newest priced model in the same family: a `latest:<family>` alias, or a release newer than this table
+ * (`claude-haiku-6-0` is priced as `claude-haiku-5-5`). Null when no family member is priced.
+ */
+export function familyPricedModel(model: string): string | null {
+  const words = latestAliasWords(model) ?? modelTokens(model).words;
+  if (!words.length) return null;
+  return pickLatest(words, Object.keys(PRICING_DB).map((id) => ({ id })))?.id ?? null;
+}
+
+/**
+ * The model's rate card, scaled for a long prompt. A model missing from the table is priced as its family's newest
+ * priced model (warned once per process). An unknown Claude model with no priced family falls back to
+ * DEFAULT_PRICING, which is far below any Claude list price, so it is warned about too: the budget guard would
+ * undercount its spend.
  */
 function pricingFor(model: string, promptTokens = 0): ModelPricing {
   const normalized = model.toLowerCase();
-  const found = Object.entries(PRICING_DB).find(([key]) => normalized.includes(key))?.[1];
+  let found = Object.entries(PRICING_DB).find(([key]) => normalized.includes(key))?.[1];
+  if (!found) {
+    const relative = familyPricedModel(normalized);
+    if (relative) {
+      found = PRICING_DB[relative];
+      if (!warnedModels.has(normalized) && !latestAliasWords(normalized)) {
+        warnedModels.add(normalized);
+        console.warn(`[telemetry] No pricing for ${model}; its cost is estimated at ${relative}'s rates.`);
+      }
+    }
+  }
   if (!found && normalized.includes("claude-") && !warnedModels.has(normalized)) {
     warnedModels.add(normalized);
     console.warn(`[telemetry] No pricing for ${model}; its cost is estimated at the default rate and is likely understated.`);

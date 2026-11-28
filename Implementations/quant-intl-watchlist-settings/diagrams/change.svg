@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 560" font-family="Inter, sans-serif" font-size="12">
+  <title>Quant international, watchlist, settings, storage: current and proposed</title>
+  <rect width="980" height="560" fill="#F8F8F4"/>
+  <text x="20" y="28" font-size="16" font-weight="700" fill="#0D1B2A">Proposed system (new pieces in navy outline; changed pieces dashed)</text>
+
+  <!-- Quant path -->
+  <g>
+    <rect x="20" y="50" width="200" height="56" rx="12" fill="#fff" stroke="#3D5A78" stroke-dasharray="5 4"/>
+    <text x="32" y="72" font-weight="600">/quant, /quant/[ticker]</text>
+    <text x="32" y="90" fill="#78716C">QuantSearch · growth drawer · star</text>
+
+    <rect x="260" y="50" width="200" height="56" rx="12" fill="#fff" stroke="#3D5A78" stroke-dasharray="5 4"/>
+    <text x="272" y="72" font-weight="600">/api/quant-finder</text>
+    <text x="272" y="90" fill="#78716C">SEC directory + Yahoo search</text>
+
+    <rect x="260" y="122" width="200" height="56" rx="12" fill="#fff" stroke="#3D5A78" stroke-dasharray="5 4"/>
+    <text x="272" y="144" font-weight="600">loadQuantInputs</text>
+    <text x="272" y="162" fill="#78716C">SEC filer? else Yahoo path</text>
+
+    <rect x="500" y="100" width="210" height="44" rx="12" fill="#fff" stroke="#0A2642" stroke-width="2"/>
+    <text x="512" y="127" font-weight="600">yahoo-fundamentals.ts</text>
+    <rect x="500" y="152" width="210" height="44" rx="12" fill="#fff" stroke="#0A2642" stroke-width="2"/>
+    <text x="512" y="179" font-weight="600">benchmarks.ts (^JKSE, ^FTSE…)</text>
+    <rect x="740" y="122" width="220" height="56" rx="12" fill="#fff" stroke="#3D5A78" stroke-dasharray="5 4"/>
+    <text x="752" y="144" font-weight="600">quant_snapshots</text>
+    <text x="752" y="162" fill="#78716C">+currency, benchmark; newest day only</text>
+    <rect x="20" y="122" width="200" height="44" rx="12" fill="#fff" stroke="#0A2642" stroke-width="2"/>
+    <text x="32" y="149" font-weight="600">rescale.ts (browser DCF rerun)</text>
+    <path d="M220 78 H260 M220 90 L260 150 M460 150 H500 M460 150 L500 174 M460 150 H740 M120 106 V122" stroke="#78716C" fill="none"/>
+  </g>
+
+  <!-- Watchlist -->
+  <g>
+    <rect x="20" y="230" width="200" height="56" rx="12" fill="#fff" stroke="#0A2642" stroke-width="2"/>
+    <text x="32" y="252" font-weight="600">WatchStar / WatchlistSection</text>
+    <text x="32" y="270" fill="#78716C">Quant rail, research header, Home</text>
+    <rect x="260" y="230" width="200" height="56" rx="12" fill="#fff" stroke="#0A2642" stroke-width="2"/>
+    <text x="272" y="252" font-weight="600">/api/watchlist</text>
+    <text x="272" y="270" fill="#78716C">GET · POST · DELETE /:ticker</text>
+    <rect x="500" y="230" width="210" height="56" rx="12" fill="#fff" stroke="#0A2642" stroke-width="2"/>
+    <text x="512" y="252" font-weight="600">watchlist_items (0026)</text>
+    <text x="512" y="270" fill="#78716C">joins newest quant_snapshots</text>
+    <path d="M220 258 H260 M460 258 H500" stroke="#78716C"/>
+  </g>
+
+  <!-- Settings -->
+  <g>
+    <rect x="20" y="320" width="200" height="56" rx="12" fill="#fff" stroke="#0A2642" stroke-width="2"/>
+    <text x="32" y="342" font-weight="600">/settings</text>
+    <text x="32" y="360" fill="#78716C">Providers · Models</text>
+    <rect x="260" y="320" width="200" height="56" rx="12" fill="#fff" stroke="#0A2642" stroke-width="2"/>
+    <text x="272" y="342" font-weight="600">/api/settings/models</text>
+    <text x="272" y="360" fill="#78716C">whitelist · secrets write-only</text>
+    <rect x="500" y="320" width="210" height="56" rx="12" fill="#fff" stroke="#0A2642" stroke-width="2"/>
+    <text x="512" y="342" font-weight="600">.env.settings.local</text>
+    <text x="512" y="360" fill="#78716C">gitignored, 0600, atomic</text>
+    <rect x="740" y="320" width="220" height="56" rx="12" fill="#fff" stroke="#3D5A78" stroke-dasharray="5 4"/>
+    <text x="752" y="342" font-weight="600">worker: before each job</text>
+    <text x="752" y="360" fill="#78716C">refreshProcessSettings (not on mock)</text>
+    <path d="M220 348 H260 M460 348 H500 M710 348 H740" stroke="#78716C"/>
+  </g>
+
+  <!-- Apple / assets -->
+  <g>
+    <rect x="20" y="410" width="200" height="56" rx="12" fill="#fff" stroke="#3D5A78" stroke-dasharray="5 4"/>
+    <text x="32" y="432" font-weight="600">Start research search</text>
+    <text x="32" y="450" fill="#78716C">match by listing symbols</text>
+    <rect x="260" y="410" width="200" height="56" rx="12" fill="#fff" stroke="#3D5A78" stroke-dasharray="5 4"/>
+    <text x="272" y="432" font-weight="600">POST /api/assets</text>
+    <text x="272" y="450" fill="#78716C">profile by kind · 409 DUPLICATE_LISTING</text>
+    <rect x="500" y="410" width="210" height="56" rx="12" fill="#fff" stroke="#3D5A78" stroke-dasharray="5 4"/>
+    <text x="512" y="432" font-weight="600">asset_identity stage</text>
+    <text x="512" y="450" fill="#78716C">fallback: run profile, then default</text>
+    <path d="M220 438 H260 M460 438 H500" stroke="#78716C"/>
+  </g>
+
+  <!-- Storage -->
+  <g>
+    <rect x="20" y="490" width="200" height="56" rx="12" fill="#fff" stroke="#0A2642" stroke-width="2"/>
+    <text x="32" y="512" font-weight="600">storage:compact (gzip)</text>
+    <text x="32" y="530" fill="#78716C">verified round trip</text>
+    <rect x="260" y="490" width="200" height="56" rx="12" fill="#fff" stroke="#0A2642" stroke-width="2"/>
+    <text x="272" y="512" font-weight="600">readStoredFile</text>
+    <text x="272" y="530" fill="#78716C">plain, else .gz (all readers)</text>
+    <rect x="500" y="490" width="210" height="56" rx="12" fill="#fff" stroke="#3D5A78" stroke-dasharray="5 4"/>
+    <text x="512" y="512" font-weight="600">storage-gc · research-store</text>
+    <text x="512" y="530" fill="#78716C">.gz counts as referenced / travels</text>
+    <rect x="740" y="490" width="220" height="56" rx="12" fill="#fff" stroke="#0A2642" stroke-width="2"/>
+    <text x="752" y="512" font-weight="600">clean:next</text>
+    <text x="752" y="530" fill="#78716C">.next/cache + .next/dev</text>
+    <path d="M220 518 H260 M460 518 H500" stroke="#78716C"/>
+  </g>
+</svg>

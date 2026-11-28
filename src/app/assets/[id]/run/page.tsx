@@ -14,6 +14,7 @@ import { Card, Tag } from "@/components/ui/primitives";
 import { runStatusWord, stateTone, statusTone } from "@/lib/research/run-status";
 import { flowStep, formatEstimate, phaseProgress, runFeed, runNow, type RunEstimate } from "@/lib/research/run-flow";
 import { DepthPicker, FlowStepper, PhaseTrack, RunFeed } from "@/components/run-flow";
+import { PageLoading } from "@/components/ui/loading";
 
 interface Message {
   role: "user" | "assistant" | "system";
@@ -835,7 +836,7 @@ export default function RunResearchPage() {
     }
   }
 
-  if (loading) return <div className={ui.page} role="status">Loading research…</div>;
+  if (loading) return <div className={ui.page}><PageLoading shape="detail" label="Loading the research run" /></div>;
   const finalReviewWaiting = progress?.stages.some((stage) => stage.key === "human_review" && stage.status === "waiting_for_human");
   const lastMessage = messages[messages.length - 1];
   const startNew = () => { activeRunRef.current = null; window.history.replaceState(null, "", `/assets/${assetId}/run?new=1`); setRunId(null); setProgress(null); setQuality(null); setResearchPlan(null); setPhase("intake"); setMessages([]); setTheater({ sources: [], traces: [], modelCalls: [], backtests: [] }); setLoadError(""); };
