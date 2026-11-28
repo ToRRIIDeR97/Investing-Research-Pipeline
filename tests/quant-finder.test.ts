@@ -56,8 +56,8 @@ test("finderSnapshot summarises a stored snapshot and tolerates partial JSON", (
     value: { pulse_grade: { grade: "B", label: "x" }, pq_grade: { grade: "A-", label: "y" } },
     trend: { conditions: { score_label: "6/8 conditions met" }, stage: { stage_number: 2 }, charts: { sparkline: [{ close: 60 }, { close: "x" }, { close: 61.2 }] } },
   });
-  assert.deepEqual(s, { ticker: "KO", name: "Coca-Cola Co", price: 61.2, as_of: "2026-11-24", pq_grade: "A-", trend_label: "6/8 conditions met", stage: 2, sparkline: [60, 61.2] });
-  assert.deepEqual(finderSnapshot({ ticker: "X", value: null, trend: {} }), { ticker: "X", name: "X", price: null, as_of: null, pq_grade: null, trend_label: null, stage: null, sparkline: [] });
+  assert.deepEqual(s, { ticker: "KO", name: "Coca-Cola Co", price: 61.2, currency: null, as_of: "2026-11-24", pq_grade: "A-", trend_label: "6/8 conditions met", stage: 2, sparkline: [60, 61.2] });
+  assert.deepEqual(finderSnapshot({ ticker: "X", value: null, trend: {} }), { ticker: "X", name: "X", price: null, currency: null, as_of: null, pq_grade: null, trend_label: null, stage: null, sparkline: [] });
   assert.equal(finderSnapshot({ name: "no ticker" }), null);
   assert.equal(finderSnapshot(null), null);
 });

@@ -12,6 +12,8 @@ const HUMAN_GATES = new Set(["research_plan", "human_review"]);
 import { createResearchRunWithStages } from "@/lib/research/run-service";
 import { CURRENT_PIPELINE_VERSION } from "@/lib/research/version";
 import { PriorRunError } from "@/lib/research/lineage/runs";
+import { pipelineSql } from "@/db/pipeline-sql";
+import { defaultProfileKeyFor, profileIdForKey } from "@/lib/research/asset-profile";
 
 export async function GET(
   _request: NextRequest,
@@ -61,7 +63,7 @@ export async function POST(
 
     // Verify the asset exists
     const [asset] = await db
-      .select({ id: assets.id, primary_profile_id: assets.primary_profile_id })
+      .select({ id: assets.id, primary_profile_id: assets.primary_profile_id, asset_kind: assets.asset_kind, sector: assets.sector, slug: assets.slug })
       .from(assets)
       .where(eq(assets.id, assetId))
       .limit(1);
@@ -72,8 +74,10 @@ export async function POST(
 
     const body = await request.json();
     const parsed = createResearchRunSchema.parse(body);
+    // An asset added before profiles were set on creation has none: the run starts from its kind's default.
     const profileId =
-      parsed.profile_id ?? asset.primary_profile_id ?? (await resolveActiveProfileId(assetId));
+      parsed.profile_id ?? asset.primary_profile_id ?? (await resolveActiveProfileId(assetId))
+        ?? (await profileIdForKey(pipelineSql(), defaultProfileKeyFor(asset.asset_kind, asset.sector, asset.slug)));
     const profileVersion = profileId ? await resolveProfileVersion(profileId) : null;
 
     const run = await createResearchRunWithStages({

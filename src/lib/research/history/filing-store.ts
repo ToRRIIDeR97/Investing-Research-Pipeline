@@ -7,6 +7,7 @@ import {HistoricalObservation} from './contracts';
 import {needsStatementRepair,repairStatements,type ModuleWriter,type RepairFiling} from '../repair/statement-repair';
 import {extractHeadcount,filingPlainText,headcountObservations,type FiscalPeriod,type HeadcountSource} from './headcount';
 import {extractReleaseStatements,depositaryRatioFromText} from './press-release';
+import { readStoredFile, readStoredText } from "@/lib/storage/stored-file";
 
 /**
  * Capture primary statements from the run's stored filings. With a module writer, filings the
@@ -18,7 +19,7 @@ export async function captureFilingStatements(sql:Sql,ctx:Pick<ResearchRunContex
   const sources=rows.map(r=>({...r,published_at:new Date(r.published_at).toISOString(),period_end:String(r.period_end??'')})) as unknown as (FilingSource&{storage_path:string})[];
   const filings:RepairFiling[]=[];const failures:string[]=[];
   const root=resolve(process.cwd(),'storage','sources');
-  for(const source of sources){try{const path=resolve(process.cwd(),source.storage_path);if(!path.startsWith(root+sep))throw new Error('Source path outside stored corpus');filings.push({source,html:await readFile(path,'utf8')});}catch{failures.push(source.id);}}
+  for(const source of sources){try{const path=resolve(process.cwd(),source.storage_path);if(!path.startsWith(root+sep))throw new Error('Source path outside stored corpus');filings.push({source,html:await readStoredText(path)});}catch{failures.push(source.id);}}
   let tables:FilingTable[]=filings.flatMap(f=>extractFilingStatements(f.html,f.source));
   const releases=await captureReleaseStatements(sql,ctx,sources);
   let repair:{status:string;attempts:number;last_errors:string[]}|undefined;
@@ -70,7 +71,7 @@ async function captureReleaseStatements(sql:Sql,ctx:Pick<ResearchRunContext,'run
   for(const r of rows){
     const source={...r,id:String(r.id),url:String(r.url??''),published_at:new Date(r.published_at).toISOString(),period_end:String(r.period_end??''),metadata_json:r.metadata_json} as FilingSource;
     try{const path=resolve(process.cwd(),String(r.storage_path));if(!path.startsWith(root+sep))continue;
-      const html=await readFile(path,'utf8');
+      const html=await readStoredText(path);
       const found=extractReleaseStatements(html,source,{yearEndMonth});
       tables.push(...found);documents.push(source.id);
       if(!depositary){const ratio=depositaryRatioFromText(html);if(ratio)depositary={value:ratio,source_document_id:source.id,source_url:source.url};}
@@ -91,7 +92,7 @@ async function captureHeadcount(sql:Sql,ctx:Pick<ResearchRunContext,'runId'|'cut
   const rows=await sql`SELECT d.id,d.url,d.published_at,d.storage_path,d.metadata_json->>'form' AS form FROM source_documents d JOIN research_run_sources r ON r.source_document_id=d.id WHERE r.research_run_id=${ctx.runId} AND d.metadata_json->>'form' IN ('8-K','8-K/A') AND d.published_at<=${ctx.cutoffAt.toISOString()} ORDER BY d.published_at DESC`;
   const root=resolve(process.cwd(),'storage','sources');
   const documents:{source:HeadcountSource;html:string}[]=periodic.map(f=>({source:{id:f.source.id,url:f.source.url,published_at:f.source.published_at,form:f.source.metadata_json.form||''},html:f.html}));
-  for(const r of rows){try{const path=resolve(process.cwd(),String(r.storage_path));if(!path.startsWith(root+sep))continue;documents.push({source:{id:String(r.id),url:String(r.url??''),published_at:new Date(r.published_at).toISOString(),form:String(r.form)},html:await readFile(path,'utf8')});}catch{/* skip unreadable release */}}
+  for(const r of rows){try{const path=resolve(process.cwd(),String(r.storage_path));if(!path.startsWith(root+sep))continue;documents.push({source:{id:String(r.id),url:String(r.url??''),published_at:new Date(r.published_at).toISOString(),form:String(r.form)},html:await readStoredText(path)});}catch{/* skip unreadable release */}}
   const periods=new Map<string,FiscalPeriod>();
   for(const t of tables)for(const row of t.rows)for(const cell of row.cells)for(const f of cell.facts)
     if(f.end&&f.fiscal_year!==null&&f.fiscal_quarter!==null&&!periods.has(f.end))periods.set(f.end,{end:f.end,fiscal_year:f.fiscal_year,fiscal_quarter:f.fiscal_quarter});

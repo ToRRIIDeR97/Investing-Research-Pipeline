@@ -6,6 +6,7 @@ import { CASES, DRIVER_FIELDS, SET_FIELDS, draftChange, draftFromChange, draftFr
 import type { WhatIfResult, WorkbenchChange } from "@/lib/research/valuation/whatif";
 import { RESEARCH_CHAT_ANSWERED } from "@/components/research-chat";
 import { Card, Tag } from "@/components/ui/primitives";
+import { PageLoading } from "@/components/ui/loading";
 
 type Case = (typeof CASES)[number];
 type Summary = Pick<WhatIfResult, "value_today" | "return_today" | "anchors" | "probabilities">;
@@ -145,7 +146,7 @@ export function ValuationWorkbench({ runId, proposalRef }: { runId: string; prop
   }
 
   if (loadError) return <Card flush><div className={ui.tileBody}><p role="alert">{loadError}</p><button type="button" className={ui.secondary} onClick={() => void load()}>Try again</button></div></Card>;
-  if (!workbench) return <p className={ui.empty} role="status">Loading the workbench…</p>;
+  if (!workbench) return <PageLoading shape="panel" label="Loading the workbench" />;
   if (!workbench.available) return <Card flush aria-labelledby="wb-unavailable" title="Workbench" titleId="wb-unavailable">
     <div className={ui.tileBody}><p>{workbench.reason}</p><NewerValuation source={workbench} /></div>
   </Card>;

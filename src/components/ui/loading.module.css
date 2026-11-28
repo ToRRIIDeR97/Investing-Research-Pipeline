@@ -1,0 +1,45 @@
+/* Loading states (src/components/ui/loading.tsx; workshop prototype/workshop/quant-intl-round, L1). */
+.loading { position: relative; display: grid; gap: 16px; min-height: 120px; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.sk { display: block; flex: none; border-radius: 8px; background: var(--soft); }
+@media (prefers-reduced-motion: no-preference) {
+  .sk { background: linear-gradient(90deg, var(--soft) 0%, var(--hover) 40%, var(--soft) 80%); background-size: 300% 100%; animation: sk-shimmer 1.6s ease-in-out infinite; }
+  .float { animation: sk-pop var(--dur-base) var(--ease-spring) both; }
+  .steps li[data-state="now"] .mark { animation: sk-spin .9s linear infinite; }
+}
+@keyframes sk-shimmer { from { background-position: 100% 0; } to { background-position: -50% 0; } }
+@keyframes sk-pop { from { opacity: 0; transform: translate(-50%, 6px) scale(.98); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes sk-spin { to { transform: rotate(360deg); } }
+
+.cardBox { display: grid; gap: 12px; align-content: start; padding: 20px 22px; border-radius: var(--radius-card); background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); box-shadow: var(--shadow-card); }
+.head { display: flex; align-items: center; gap: 12px; }
+.lines { display: grid; gap: 8px; flex: 1; min-width: 0; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.listRow { display: flex; align-items: center; gap: 12px; padding: 4px 0; }
+.detail { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.cols { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; }
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.quant { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 20px; align-items: start; }
+.inline { display: grid; gap: 8px; padding: 4px 0; }
+
+.float { position: absolute; top: 40px; left: 50%; transform: translateX(-50%); width: min(380px, calc(100% - 32px)); z-index: 1; }
+.steps { display: grid; gap: 12px; padding: 18px 20px; border-radius: 20px; background: var(--tile); border: 1px solid rgb(0 0 0 / 3.5%); box-shadow: var(--shadow-pop); }
+.stepsHead { display: flex; align-items: center; gap: 12px; }
+.stepsHead > div { display: grid; gap: 1px; min-width: 0; }
+.stepsHead strong { font-size: 14px; font-weight: 700; }
+.stepsHead span { font-size: 12px; color: var(--ink-3); }
+.steps ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.steps li { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; gap: 10px; color: var(--ink-3); font-size: 13px; }
+.steps li[data-state="done"] { color: var(--ink-2); }
+.steps li[data-state="now"] { color: var(--ink); font-weight: 600; }
+.mark { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line-strong); display: grid; place-items: center; font-size: 10px; line-height: 1; color: var(--tile); }
+.steps li[data-state="done"] .mark { background: var(--positive); border-color: var(--positive); }
+.steps li[data-state="now"] .mark { border-color: var(--navy); border-top-color: transparent; }
+.elapsed { margin: 0; font-size: 12px; color: var(--ink-3); text-align: right; }
+
+@media (max-width: 760px) {
+  .quant, .cols { grid-template-columns: 1fr; }
+  .tiles { grid-template-columns: 1fr; }
+  .float { top: 16px; }
+}

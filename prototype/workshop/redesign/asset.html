@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Company page redesign</title>
+<link rel="stylesheet" href="redesign.css">
+<style>
+.people{display:grid;gap:10px;padding:12px 18px}
+.person{display:flex;align-items:center;gap:10px}.av{width:32px;height:32px;border-radius:50%;background:var(--navy-soft);color:var(--navy);display:grid;place-items:center;font-weight:700;font-size:12px}
+.person strong{display:block;font-size:13px}.person span{font-size:12px;color:var(--ink-3)}
+.links{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
+.links div{border:1px solid var(--line);border-radius:12px;padding:12px 14px}.links strong{display:block;color:var(--navy)}.links span{font-size:12px;color:var(--ink-3)}
+.total{display:flex;justify-content:space-between;gap:4px 12px;flex-wrap:wrap;padding:12px 18px;border-top:1px solid var(--line-soft);color:var(--ink-2)}
+@media (max-width:640px){.links{grid-template-columns:1fr}.total .runs{flex-basis:100%}}
+</style></head><body>
+
+<p class="label">Company page (SoFi)<span>Answers "what is it worth and where does the research stand" first. Runs are listed by date with what actually happened, in words. Charts that showed nothing are gone; metrics, backtests and sources live in the report's tabs.</span></p>
+<div class="nav"><span class="brand">Pragma Research</span><a>Home</a><a class="on">Research</a><a>Themes</a><a>Reviews<span class="badge">1</span></a><span class="spacer"></span><span class="search">Search companies</span><span class="btn">Start research</span></div>
+<div class="screen">
+  <p class="back">← Research</p>
+  <div class="hero">
+    <div class="who"><div class="logo" style="width:60px;height:60px">SoFi</div><div><strong>SoFi Technologies, Inc.</strong><div class="heroMeta"><span class="ticker">SOFI</span>Equity · NASDAQ · USD <span class="status wait">Needs your decision</span></div></div></div>
+    <span class="btn">Start new research</span>
+  </div>
+
+  <div class="banner caution"><div><strong>The 18 Nov report is waiting for your decision.</strong><p>A later run the same day stopped over budget before its report was reviewed; don't rely on its draft. No decision has been recorded for SoFi yet.</p></div><div class="acts"><span class="rowact">See the stopped run</span><span class="btn primary">Decide</span></div></div>
+
+  <div class="grid">
+    <div class="col">
+      <section class="block v">
+        <p class="eyebrow">Latest report · 18 Nov 2026 · full initiation report</p>
+        <p class="vline">At $14.28, the base-case value of $8.80 is 38% below the price.</p>
+        <p class="summary"><span class="small">The report's own words:</span> Decision withheld until the bank capital tie-out, the deposit beta, the Technology Platform split and the 2026 operating model are reconciled.</p>
+        <div class="facts">
+          <div class="fact"><span>Value per share</span><strong>$8.80</strong><span>base case · weighted $7.70</span></div>
+          <div class="fact"><span>Market price</span><strong>$14.28</strong><span>17 Nov close, 6 days old · unverified</span></div>
+          <div class="fact"><span>Price vs value</span><strong class="down">38% below</strong><span>value below price</span></div>
+          <div class="fact"><span>Range across cases</span><strong>$1.04 to $14.92</strong><span>bear to bull</span></div>
+        </div>
+        <div class="links"><div><strong>Memo →</strong><span>The verdict, reasons and risks</span></div><div><strong>Model →</strong><span>The scenarios and numbers behind the value</span></div><div><strong>Audit →</strong><span>The full report, sources and checks</span></div></div>
+      </section>
+
+      <section class="tile">
+        <div class="tileHead"><h2>Reports and runs</h2><span class="small">newest first</span></div>
+        <table class="t stack">
+          <thead><tr><th>Started</th><th>What happened</th><th class="num hide-sm">Cost</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><strong>18 Nov, 21:12</strong></td><td><span class="status crit">Stopped</span> Went over its $10 budget while checking its report. The draft was never reviewed.</td><td class="num hide-sm">$9.74</td><td class="num"><span class="rowact">Open</span></td></tr>
+            <tr><td><strong>18 Nov, 19:05</strong></td><td><span class="status wait">Needs your decision</span> Report ready: $8.80 a share. This is the report the banner asks about.</td><td class="num hide-sm">$4.86</td><td class="num"><span class="rowact">Open</span></td></tr>
+            <tr><td><strong>18 Nov, 13:49</strong></td><td><span class="status crit">Stopped</span> The report writer's output failed validation after every retry.</td><td class="num hide-sm">$9.21</td><td class="num"><span class="rowact">Open</span></td></tr>
+            <tr><td><strong>18 Nov, 13:27</strong></td><td><span class="status crit">Stopped</span> Not enough evidence on the company's founding history.</td><td class="num hide-sm">$0.12</td><td class="num"><span class="rowact">Open</span></td></tr>
+            <tr><td><strong>27 Sep</strong></td><td><span class="status crit">Stopped</span> Ended without a report ready to decide; no reason was recorded.</td><td class="num hide-sm">$5.07</td><td class="num"><span class="rowact">Open</span></td></tr>
+            <tr><td><strong>25 Sep</strong></td><td><span class="status">Superseded</span> An older version of the 18 Nov report; no decision needed.</td><td class="num hide-sm">$1.42</td><td class="num"><span class="rowact">Open</span></td></tr>
+            <tr><td><strong>24 Sep</strong></td><td><span class="status ok">Completed</span> Finished and exported; no decision was recorded.</td><td class="num hide-sm">$2.68</td><td class="num"><span class="rowact">Open</span></td></tr>
+            <tr><td><strong>23 Sep</strong></td><td><span class="status">Superseded</span> An older version of the 18 Nov report; no decision needed.</td><td class="num hide-sm">$0.52</td><td class="num"><span class="rowact">Open</span></td></tr>
+          </tbody>
+        </table>
+        <div class="total"><span class="runs">8 runs</span><span><strong style="color:var(--ink)">$33.62</strong> spent on SoFi research since 23 Sep</span></div>
+      </section>
+    </div>
+    <div class="col">
+      <section class="tile">
+        <div class="tileHead"><h2>Company</h2><span class="link">Website ↗</span></div>
+        <dl class="kv"><dt>Ticker</dt><dd>SOFI</dd><dt>Exchange</dt><dd>NASDAQ</dd><dt>Currency</dt><dd>USD</dd><dt>Researched since</dt><dd>23 Sep 2026</dd></dl>
+        <p class="tileBody note" style="border-top:1px solid var(--line-soft)">Sector, industry and country aren't set. <span class="link">Add them</span></p>
+      </section>
+      <section class="tile">
+        <div class="tileHead"><h2>Leadership</h2><span class="small">from Wikipedia</span></div>
+        <div class="people">
+          <div class="person"><div class="av">AN</div><div><strong>Anthony Noto</strong><span>CEO</span></div></div>
+          <div class="person"><div class="av">CL</div><div><strong>Chris Lapointe</strong><span>CFO</span></div></div>
+          <div class="person"><div class="av">MC</div><div><strong>Mike Cagney</strong><span>Co-founder</span></div></div>
+          <div class="person"><span class="small">+ 3 more co-founders</span></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<p class="gone"><strong>What goes away:</strong> the 25-bar pipeline chart (almost every bar full), the empty "Valuation signals" chart, "Not set" rows, the large leadership cards, the research-cost donut (now one total), run IDs, and the 50-row backtest table (it moves to the report's Audit tab). <strong>Times</strong> are shown in your time zone, as the run page already does.</p>
+</body></html>

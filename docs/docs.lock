@@ -4,7 +4,7 @@ AGENTS.md	docs/generators.json	4bcbf7e48786
 
 AGENTS.md	eslint.config.mjs	6c7f3c5976ae
 
-AGENTS.md	package.json	4fab903f08a0
+AGENTS.md	package.json	6e47fa68e9e9
 
 AGENTS.md	scripts/test-db.cjs	2a818ba6ffc1
 
@@ -15,6 +15,10 @@ AGENTS.md	tsconfig.json	e5e7b035732c
 DESIGN.md	src/app/globals.css	1d990ae98c9f
 
 DESIGN.md	src/components/research-ui.module.css	05c95db27a2e
+
+DESIGN.md	src/components/ui/loading.module.css	f096c8a86935
+
+DESIGN.md	src/components/ui/loading.tsx	7ee1ab9cb78f
 
 DESIGN.md	src/components/ui/palette.ts	ac8785638429
 
@@ -76,6 +80,8 @@ docs/architecture.md	drizzle/0024_company_profiles.sql	9cab11b59944
 
 docs/architecture.md	drizzle/0025_quant_snapshots.sql	a525a33e0974
 
+docs/architecture.md	drizzle/0026_watchlist.sql	92157212821e
+
 docs/architecture.md	src/db/schema/ai.ts	39ec5023abcb
 
 docs/architecture.md	src/db/schema/backtesting.ts	ceef43c8556c
@@ -100,7 +106,7 @@ docs/architecture.md	src/db/schema/notebook.ts	948d024baa75
 
 docs/architecture.md	src/db/schema/profiles.ts	806bbcc27282
 
-docs/architecture.md	src/db/schema/quant.ts	6bdf98f97a41
+docs/architecture.md	src/db/schema/quant.ts	b03882452019
 
 docs/architecture.md	src/db/schema/research-artifacts.ts	6b756269b2b5
 
@@ -134,19 +140,19 @@ docs/architecture.md	tools/gen_routes.py	d1075262e83d
 
 docs/architecture.md	tools/gen_stages.py	41f42ecb38bb
 
-docs/local-agent-harness.md	.env.example	e53beb778926
+docs/local-agent-harness.md	.env.example	2ac27571431e
 
 docs/local-agent-harness.md	src/lib/agent-harness/providers/anthropic-cache.ts	5dfffef8481b
 
-docs/local-agent-harness.md	src/lib/agent-harness/providers/anthropic-compatible.ts	4ed6c94592c3
+docs/local-agent-harness.md	src/lib/agent-harness/providers/anthropic-compatible.ts	99f93aa6590a
 
 docs/local-agent-harness.md	src/lib/agent-harness/providers/anthropic-schema.ts	e8bbe2b5d644
 
 docs/local-agent-harness.md	src/lib/agent-harness/providers/mock.ts	dbb904ed8c84
 
-docs/local-agent-harness.md	src/lib/agent-harness/providers/openai-compatible.ts	30369de0cef2
+docs/local-agent-harness.md	src/lib/agent-harness/providers/openai-compatible.ts	4260e70e2927
 
-docs/local-agent-harness.md	src/lib/agent-harness/providers/opencode-go.ts	2133512b5ca9
+docs/local-agent-harness.md	src/lib/agent-harness/providers/opencode-go.ts	09e8d291ca28
 
 docs/local-agent-harness.md	src/lib/agent-harness/providers/provider.ts	23df3bedee3e
 
@@ -154,11 +160,13 @@ docs/local-agent-harness.md	src/lib/agent-harness/registry.ts	217ef6b6ad1d
 
 docs/local-development.md	docker-compose.yml	9a3084f7dd01
 
-docs/local-development.md	package.json	4fab903f08a0
+docs/local-development.md	package.json	6e47fa68e9e9
 
 docs/local-development.md	scripts/dev-with-db.cjs	7ea83c0b857c
 
 docs/local-development.md	scripts/test-db.cjs	2a818ba6ffc1
+
+docs/local-development.md	scripts/worker-with-db.cjs	11980d77975a
 
 docs/local-development.md	src/db/migrate.ts	6d96ed068348
 
@@ -168,9 +176,11 @@ docs/operations.md	scripts/research-store.ts	aea78a10f3a9
 
 docs/operations.md	scripts/storage-gc.ts	2b57a48132a8
 
-docs/operations.md	src/lib/maintenance/research-store.ts	6f8b1ed88d76
+docs/operations.md	src/lib/maintenance/research-store.ts	d86ba2c31392
 
-docs/operations.md	src/lib/maintenance/storage-gc.ts	44ade35fd127
+docs/operations.md	src/lib/maintenance/storage-compact.ts	b468be3ede86
+
+docs/operations.md	src/lib/maintenance/storage-gc.ts	50bd5e80dd1f
 
 docs/operations.md	src/lib/research/monitoring/monitor-check.ts	901bd09c8203
 
@@ -182,7 +192,7 @@ docs/report-visual-guidelines.md	src/lib/research/reporting/contracts.ts	6daf07f
 
 docs/report-visual-guidelines.md	src/lib/research/reporting/exhibits.ts	325fdbdb6bf3
 
-docs/security.md	.env.example	e53beb778926
+docs/security.md	.env.example	2ac27571431e
 
 docs/security.md	.gitignore	8ba09d1efc94
 
@@ -194,7 +204,7 @@ docs/security.md	src/lib/api/auth.ts	8eaefe01719e
 
 docs/security.md	src/lib/html-scan.ts	d594627bc88c
 
-docs/security.md	src/lib/maintenance/research-store.ts	6f8b1ed88d76
+docs/security.md	src/lib/maintenance/research-store.ts	d86ba2c31392
 
 docs/security.md	src/lib/net.ts	55a642f3e099
 
@@ -203,6 +213,8 @@ docs/security.md	src/lib/research/repair/sandbox.ts	95a517bbb6d8
 docs/security.md	src/proxy.ts	674fb3d1fa1b
 
 docs/system.md	src/lib/research/asset-overview.ts	a636f3c65b7d
+
+docs/system.md	src/lib/research/asset-profile.ts	f684146883c5
 
 docs/system.md	src/lib/research/asset-snapshot.ts	e1bb4e2dcc18
 
@@ -280,4 +292,4 @@ docs/system.md	src/lib/workflow/validators.ts	efff95eaefcb
 
 docs/system.md	src/workers/poll-loop.ts	f97c656085f5
 
-docs/system.md	src/workers/research-worker.ts	a363921f3725
+docs/system.md	src/workers/research-worker.ts	b74265c9afd1

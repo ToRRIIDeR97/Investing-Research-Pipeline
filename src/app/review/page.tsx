@@ -18,11 +18,12 @@ import { currentReviews, reviewCount } from "@/lib/review/queue-rules";
 import type { ReviewQueueItem, ReviewSummary } from "@/lib/review/review-queue";
 import { decisionOptions, groupFindingsByChapter, refusalWords, reviewBody, reviewOutcomeLabel, withReportCheck, type ReviewChoice } from "@/lib/review/review-view";
 import { formatGap } from "@/lib/ui/chart-math";
+import { InlineLoading, PageLoading } from "@/components/ui/loading";
 
 type Row = Record<string, any>;
 
 export default function ReviewsPage() {
-  return <Suspense fallback={<div className={ui.page} role="status">Loading reviews…</div>}><Reviews /></Suspense>;
+  return <Suspense fallback={<div className={ui.page}><PageLoading shape="list" label="Loading reviews" /></div>}><Reviews /></Suspense>;
 }
 
 /** The AI review's outcome in words, from the summary's gate: its actual verdict, since the verdict is advisory. */
@@ -57,7 +58,7 @@ function Reviews() {
       <Link href="/review" className={ui.back}><ArrowLeft size={14} />Reviews</Link>
       <p className={ui.banner}>This run isn&apos;t waiting for a decision any more.</p>
     </div>;
-    if (!item) return <div className={ui.page} role="status">{error || "Loading the review…"}</div>;
+    if (!item) return <div className={ui.page}>{error ? <p className={ui.error} role="alert">{error}</p> : <PageLoading shape="report" label="Loading the review" />}</div>;
     return <ReviewRun key={item.run_id} item={item} onDecided={(message) => { setDecided(message); void load(); router.push("/review"); }} />;
   }
 
@@ -66,7 +67,7 @@ function Reviews() {
     <header className={ui.heading}><div className={ui.titleGroup}><h1>Reviews</h1>{items && reviewCount(items) > 0 && <Tag tone="waiting">{reviewCount(items)} waiting</Tag>}</div></header>
     {decided && <p className={ui.banner} role="status">{decided}</p>}
     {error ? <p className={ui.error} role="alert">{error}<button type="button" onClick={() => void load()}>Try again</button></p>
-      : !items ? <p className={ui.empty} role="status">Loading reviews…</p>
+      : !items ? <PageLoading shape="list" label="Loading reviews" />
       : !current.length ? <Card><p className={styles.empty}>No reviews waiting.</p></Card>
       : <div className={styles.queue}>{current.map((item) => {
         const s = item.summary;
@@ -181,7 +182,7 @@ function ReviewRun({ item, onDecided }: { item: ReviewQueueItem; onDecided: (mes
     <div className={styles.layout}>
       <div className={styles.main}>
         <Card title="What it's worth">
-          {!report && !loadError ? <p className={styles.empty} role="status">Loading…</p>
+          {!report && !loadError ? <InlineLoading label="Loading the valuation" lines={3} />
             : v && !v.valuationComplete ? <p className={styles.empty}>{v.withheldReason ?? "The valuation was withheld."}</p>
             : <>
               <ValueMeter price={price} values={values} selected={values[selected] == null ? "base" : selected} currency={currency} />
@@ -199,12 +200,12 @@ function ReviewRun({ item, onDecided }: { item: ReviewQueueItem; onDecided: (mes
               <ul>{options.position.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
             </div>}
             <ReviewFindings review={report.review} sections={sections} />
-          </> : !loadError && <p className={styles.empty} role="status">Loading…</p>}
+          </> : !loadError && <InlineLoading label="Loading the AI review" lines={3} />}
         </section>
 
         <Card title="The report says">
           {memo?.verdict.summary ? <blockquote className={styles.quote}>“{memo.verdict.summary}”</blockquote>
-            : <p className={styles.empty}>{report ? "The report gives no conclusion to quote." : "Loading…"}</p>}
+            : report ? <p className={styles.empty}>The report gives no conclusion to quote.</p> : <InlineLoading label="Loading the report" />}
           {memo?.otherSide && <div className={styles.otherSide}><h3>The other side</h3><p>{memo.otherSide}</p></div>}
         </Card>
       </div>

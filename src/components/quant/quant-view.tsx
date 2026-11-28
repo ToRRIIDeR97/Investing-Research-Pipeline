@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { Card, Segmented } from "@/components/ui/primitives";
 import ui from "@/components/research-ui.module.css";
 import type { QuantSnapshot } from "@/lib/api/quant";
@@ -14,6 +15,10 @@ import { caseMeter, gradeTone } from "./tones";
 import { explainEngine, parseEngineNote } from "./engine-note";
 import { HowItWasBuilt } from "./how-built";
 import { CompanyLogo } from "@/components/company/company";
+import { QuantCurrency, useMoney } from "./money";
+import { QuantExplainer } from "./quant-explainer";
+import { forwardProjection, GROWTH_MAX, GROWTH_MIN, rescaleDcf, type Growth } from "@/lib/quant/value/rescale";
+import { WatchStar } from "@/components/watchlist/watchlist";
 import styles from "./quant.module.css";
 
 export type QuantTab = "value" | "trend";
@@ -23,8 +28,6 @@ export function parseQuantTab(raw: string | null | undefined): QuantTab {
 }
 const pct = (v: number | null | undefined, digits = 1) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v * 100).toFixed(digits)}%`);
 const rate = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `${(v * 100).toFixed(1)}%`);
-/** Two decimals in text (chart labels round to whole dollars above $100); negatives as −$x. */
-const money = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : `${v < 0 ? "−" : ""}$${Math.abs(v).toFixed(2)}`);
 const weeks = (n: number) => `${n} week${n === 1 ? "" : "s"}`;
 
 export function researchHref(s: QuantSnapshot): string {
@@ -43,7 +46,11 @@ function trendTone(passed: number, evaluated: number): "good" | "caution" | "bad
  * `explain` sentence the badge is a button: clicking it grows its navy across the whole card and shows that one plain
  * sentence in place of the line and figures. Clicking it again, pressing Escape or clicking elsewhere closes it.
  */
-function ContextStrip({ label, badge, title, line, figures, explain }: { label: string; badge: string; title: string; line: string; figures: { label: string; value: string }[]; explain?: string | null }) {
+function ContextStrip({ label, badge, title, line, figures, explain, about }: {
+  label: string; badge: string; title: string; line: string; figures: { label: string; value: string }[]; explain?: string | null;
+  /** "About PragValue" / "About PragTrend": a text button that opens the explainer card under the strip. */
+  about?: { name: string; open: boolean; onToggle: () => void; controls: string };
+}) {
   const id = `ctx-${label.replace(/\W+/g, "-").toLowerCase()}`;
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLElement>(null);
@@ -62,8 +69,17 @@ function ContextStrip({ label, badge, title, line, figures, explain }: { label: 
       : <span className={styles.contextBadge}>{badge}</span>}
     <div className={styles.contextText}><strong>{title}</strong><span>{line}</span></div>
     {figures.length > 0 && <dl className={styles.contextFigures}>{figures.map((f) => <div key={f.label}><dt>{f.label}</dt><dd>{f.value}</dd></div>)}</dl>}
+    {about && <button type="button" className={styles.aboutLink} aria-expanded={about.open} aria-controls={about.controls} onClick={about.onToggle}>About {about.name}</button>}
     {explain && <p className={styles.contextExplain} id={id} aria-hidden={!open}>{explain}</p>}
   </section>;
+}
+
+/** The explainer opened by a strip's "About" button, with a close button. */
+function AboutCard({ kind, id, onClose }: { kind: "value" | "trend"; id: string; onClose: () => void }) {
+  return <Card title={kind === "value" ? "About PragValue" : "About PragTrend"} titleId={`${id}-title`}
+    action={<button type="button" className={ui.textLink} onClick={onClose}>Close</button>}>
+    <div id={id}><QuantExplainer kind={kind} /></div>
+  </Card>;
 }
 
 /** "2026-11-23" → "23 Nov 2026". */
@@ -78,6 +94,7 @@ const longDay = (d: string) => {
  * shares the rail's left edge; label and value pairs share a baseline.
  */
 function Rail({ s }: { s: QuantSnapshot }) {
+  const money = useMoney();
   const v = s.value, t = s.trend;
   const pulse = v?.pulse_score ?? null;
   const spark = t.charts.sparkline;
@@ -94,6 +111,7 @@ function Rail({ s }: { s: QuantSnapshot }) {
         <h1>{s.name}</h1>
         <span>{[s.ticker, industry].filter(Boolean).join(" · ")}</span>
       </div>
+      <WatchStar ticker={s.ticker} name={s.name} assetId={s.research?.asset_id ?? null} className={styles.rStar} />
     </div>
 
     <div className={styles.rPrice}>
@@ -106,9 +124,10 @@ function Rail({ s }: { s: QuantSnapshot }) {
     <Sparkline points={spark} />
 
     {v ? <div className={styles.verdict} data-grade={gradeTone(v.pq_grade.grade)}>
+      <h2 className={styles.verdictHead}>PQ Grade</h2>
       <div className={styles.verdictTop}>
         <b className={styles.verdictLetter}>{v.pq_grade.grade}</b>
-        <div className={styles.verdictText}><strong>{v.pq_grade.label}</strong><span>PQ-Grade · value gap and upside versus downside</span></div>
+        <div className={styles.verdictText}><strong>{v.pq_grade.label}</strong></div>
       </div>
       <div className={styles.verdictScore}>
         <span>PulseScore</span>
@@ -179,11 +198,50 @@ function ExitMultiples({ s }: { s: QuantSnapshot }) {
   </Card>;
 }
 
-function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick: (c: Case) => void }) {
+/**
+ * Adjust growth (workshop quant-intl-round, G1): a drawer under the scenario tiles with one slider per case, the
+ * model's rate marked under each, and Reset. Values recompute in the browser with the model's own DCF arithmetic.
+ */
+function GrowthDrawer({ model, growth, onChange }: { model: Growth; growth: Growth | null; onChange: (g: Growth | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const g = growth ?? model;
+  const cases = ["bear", "base", "bull"] as const;
+  const lo = Math.max(GROWTH_MIN, Math.min(-0.1, ...cases.map((k) => model[k] - 0.1)));
+  const hi = Math.min(GROWTH_MAX, Math.max(0.4, ...cases.map((k) => model[k] + 0.15)));
+  const name: Record<Case, string> = { bear: "Bear", base: "Base", bull: "Bull" };
+  return <section className={styles.growth} data-open={open ? "" : undefined} aria-label="Adjust growth">
+    <div className={styles.growthHead}>
+      <button type="button" className={styles.growthToggle} aria-expanded={open} aria-controls="growth-body" onClick={() => setOpen((o) => !o)}>
+        <ChevronRight size={15} aria-hidden="true" />Adjust growth
+      </button>
+      {growth && <span className={styles.growthBadge}>Your growth</span>}
+      {growth && <button type="button" className={ui.textLink} onClick={() => onChange(null)}>Reset to model</button>}
+    </div>
+    <div id="growth-body" className={styles.growthBody} inert={!open}><div>
+      <p className={styles.caption}>Yearly growth for each case. Values, the chart and the table update as you move them; exit multiples, the discount rate and the share count stay the model&apos;s, and so do PQ Grade and PulseScore.</p>
+      {cases.map((k) => <div key={k} className={styles.growthRow} data-case={k}>
+        <label htmlFor={`growth-${k}`}>{name[k]}</label>
+        <input id={`growth-${k}`} type="range" min={(lo * 100).toFixed(1)} max={(hi * 100).toFixed(1)} step="0.5" value={(g[k] * 100).toFixed(1)}
+          aria-valuetext={`${pct(g[k])} a year`}
+          onChange={(e) => onChange({ ...g, [k]: Number(e.target.value) / 100 })} />
+        <output htmlFor={`growth-${k}`}>{pct(g[k])}</output>
+        <small>Model {pct(model[k])}</small>
+      </div>)}
+    </div></div>
+  </section>;
+}
+
+function ValueTab({ s, pick, setPick, growth, setGrowth }: { s: QuantSnapshot; pick: Case; setPick: (c: Case) => void; growth: Growth | null; setGrowth: (g: Growth | null) => void }) {
+  const money = useMoney();
+  const [about, setAbout] = useState(false);
   const v = s.value;
   if (!v) return <Card title="PragValue"><p className={styles.unavailable}>{s.value_reason}</p></Card>;
-  const d = v.dcf, y5 = d.price_targets[d.price_targets.length - 1];
-  const fwd = v.charts.projection[v.charts.projection.length - 1];
+  const model: Growth = { bear: v.dcf.growth_rate_bear, base: v.dcf.growth_rate_base, bull: v.dcf.growth_rate_bull };
+  // With growth of your own, the DCF reruns on the model's other inputs (rescale.ts); otherwise the model's figures.
+  const adjusted = growth && !v.dcf.dcf_skipped ? rescaleDcf(v.dcf, growth, s.price) : null;
+  const d = adjusted ? { ...v.dcf, ...adjusted } : v.dcf, y5 = d.price_targets[d.price_targets.length - 1];
+  const projection = adjusted ? forwardProjection(adjusted.price_targets, v.dcf.discount_rate, s.price) : v.charts.projection;
+  const fwd = projection[projection.length - 1];
   const caseLabel: Record<Case, string> = { bear: "Bear", base: "Base", bull: "Bull" };
   const rows = (["bear", "base", "bull"] as const).map((k) => ({
     k, growth: d[`growth_rate_${k}`], exit: d[`exit_multiple_${k}`], value: d[`intrinsic_value_${k}`],
@@ -192,8 +250,10 @@ function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick:
   return <>
     {(() => {
       const e = parseEngineNote(v.engine_result.engine_note);
-      return <ContextStrip label="Valuation engine" badge={e.code ? `Engine ${e.code}` : "Engine"} title={e.audience ?? "Valuation engine"} line={e.method} figures={e.figures} explain={explainEngine(e.code)} />;
+      return <ContextStrip label="Valuation engine" badge={e.code ? `Engine ${e.code}` : "Engine"} title={e.audience ?? "Valuation engine"} line={e.method} figures={e.figures} explain={explainEngine(e.code)}
+        about={{ name: "PragValue", open: about, onToggle: () => setAbout((o) => !o), controls: "about-value" }} />;
     })()}
+    {about && <AboutCard kind="value" id="about-value" onClose={() => setAbout(false)} />}
     {/* The scenarios as upside-first tiles (workshop V6, door D3): the upside leads, a meter runs from today's price
         to the case value, and growth and exit multiple slide in from the left on hover or keyboard focus. */}
     <div className={styles.cases} role="group" aria-label="Scenario">
@@ -219,8 +279,9 @@ function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick:
         </button>;
       })}
     </div>
+    {!v.dcf.dcf_skipped && <GrowthDrawer model={model} growth={growth} onChange={setGrowth} />}
     <Card title="Price and value paths" action={<span className={styles.caseKey} data-case={pick}>{caseLabel[pick]} case</span>}>
-      <ValuePathChart history={s.price_history_5y} projection={v.charts.projection} selected={pick} current={s.price} />
+      <ValuePathChart history={s.price_history_5y} projection={projection} selected={pick} current={s.price} />
       {/* How to read the chart, and the two DCF settings behind it. The case values themselves are in the tiles above. */}
       <div className={styles.chartFoot}>
         <p>The line is the case&apos;s value in each year, before discounting. The tiles above show it discounted to today.</p>
@@ -236,7 +297,7 @@ function ValueTab({ s, pick, setPick }: { s: QuantSnapshot; pick: Case; setPick:
       <Card className={styles.fillCard} title={v.charts.value_build ? `From cash flows to ${money(v.charts.value_build.per_share)} a share` : "Value build"}>
         {v.charts.value_build ? <>
           <Fill className={styles.fillChart}>{(w, h) => <ValueBuild build={v.charts.value_build!} width={w} height={h} />}</Fill>
-          <p className={styles.caption}>Base case on {v.charts.value_build.metric}; terminal value is {(v.charts.value_build.terminal_share * 100).toFixed(0)}% of the total.</p>
+          <p className={styles.caption}>Base case on {v.charts.value_build.metric}{adjusted ? " at the model's growth" : ""}; terminal value is {(v.charts.value_build.terminal_share * 100).toFixed(0)}% of the total.</p>
         </> : <p className={styles.unavailable}>{d.dcf_skipped ? d.dcf_skip_reason : "No metric-level DCF to break down."}</p>}
       </Card>
       <ExitMultiples s={s} />
@@ -284,6 +345,11 @@ function Segments({ count, on, only }: { count: number; on: number; only?: numbe
 }
 
 function TrendTab({ s }: { s: QuantSnapshot }) {
+  const money = useMoney();
+  const [about, setAbout] = useState(false);
+  const bench = s.benchmark?.name ?? "S&P 500";
+  // The trend rules name the S&P 500; outside the US the benchmark is the exchange's index.
+  const benched = (text: string) => (bench === "S&P 500" ? text : text.replace(/S&P 500/g, bench));
   const t = s.trend;
   const pivots = t.pocket_pivots.events.map((e) => e.day);
   const tone = trendTone(t.conditions.passed, t.conditions.evaluated);
@@ -298,8 +364,10 @@ function TrendTab({ s }: { s: QuantSnapshot }) {
   const pivotCount = t.pocket_pivots.events.length;
   return <>
     <ContextStrip label="Price data" badge="Daily" title={`Daily closes to ${s.as_of}`} line="Split-adjusted, from stored daily bars"
-      figures={[{ label: "Benchmark", value: "S&P 500" }, ...(s.sector_etf ? [{ label: "Sector", value: s.sector_etf }] : [])]}
-      explain={`Every trend signal below uses each day's closing price, adjusted for splits, compared with the S&P 500${s.sector_etf ? ` and the ${s.sector_etf} sector fund` : ""}.`} />
+      figures={[{ label: "Benchmark", value: bench }, ...(s.sector_etf ? [{ label: "Sector", value: s.sector_etf }] : [])]}
+      explain={`Every trend signal below uses each day's closing price, adjusted for splits, compared with the ${bench}${s.sector_etf ? ` and the ${s.sector_etf} sector fund` : ""}.`}
+      about={{ name: "PragTrend", open: about, onToggle: () => setAbout((o) => !o), controls: "about-trend" }} />
+    {about && <AboutCard kind="trend" id="about-trend" onClose={() => setAbout(false)} />}
 
     {/* The three signals as tiles, like the Value tab's scenarios: trend template, Weinstein stage, relative strength. */}
     <div className={styles.cases}>
@@ -316,8 +384,8 @@ function TrendTab({ s }: { s: QuantSnapshot }) {
         side={<>of 99<small>{rs !== null && rs > 70 ? "above 70" : "70 to pass"}</small></>}
         meter={<span className={styles.caseMeter}><span style={{ left: 0, width: `${rs === null ? 0 : Math.min(100, (rs / 99) * 100)}%` }} /><i style={{ left: `${(70 / 99) * 100}%` }} /></span>}
         scale={["1", "99"]}
-        door={[{ k: "vs S&P 500", v: t.rs.vs_spx === null ? "—" : String(t.rs.vs_spx) }, ...(t.rs.sector_symbol ? [{ k: `vs ${t.rs.sector_symbol}`, v: t.rs.vs_sector === null ? "—" : String(t.rs.vs_sector) }] : [])]}
-        label={`RS rating ${rs ?? "unavailable"} of 99: S&P 500 ${t.rs.vs_spx ?? "—"}${t.rs.sector_symbol ? `, ${t.rs.sector_symbol} ${t.rs.vs_sector ?? "—"}` : ""}`} />
+        door={[{ k: `vs ${bench}`, v: t.rs.vs_spx === null ? "—" : String(t.rs.vs_spx) }, ...(t.rs.sector_symbol ? [{ k: `vs ${t.rs.sector_symbol}`, v: t.rs.vs_sector === null ? "—" : String(t.rs.vs_sector) }] : [])]}
+        label={`RS rating ${rs ?? "unavailable"} of 99: ${bench} ${t.rs.vs_spx ?? "—"}${t.rs.sector_symbol ? `, ${t.rs.sector_symbol} ${t.rs.vs_sector ?? "—"}` : ""}`} />
     </div>
 
     <Card title="Price, averages and volume">
@@ -333,7 +401,7 @@ function TrendTab({ s }: { s: QuantSnapshot }) {
     </Card>
     <div className={styles.cardGrid}>
       <Card title="Rebased to 100 a year ago">
-        <RebasedChart stock={t.charts.rebased.stock} spx={t.charts.rebased.spx} sector={t.charts.rebased.sector} sectorSymbol={t.rs.sector_symbol} />
+        <RebasedChart stock={t.charts.rebased.stock} spx={t.charts.rebased.spx} sector={t.charts.rebased.sector} sectorSymbol={t.rs.sector_symbol} benchmarkName={bench} />
         <div className={styles.chartFoot}>
           <p>Above 100 means up over the year; above the benchmark lines means it did better than them.</p>
           <dl className={styles.footStats}>
@@ -356,7 +424,7 @@ function TrendTab({ s }: { s: QuantSnapshot }) {
     <Card title={t.conditions.score_label} action={<span style={{ ["--case-color" as string]: toneColor }}><Segments count={Math.max(1, t.conditions.evaluated)} on={t.conditions.passed} /></span>}>
       <div className={styles.rules}>{t.conditions.rules.map((r) => <div key={r.key} className={styles.rule} data-rule={r.status}>
         <span className={styles.mark} data-status={r.status} aria-hidden="true">{r.status === "pass" ? "✓" : r.status === "fail" ? "×" : "–"}</span>
-        <span><span className={styles.srOnly}>{r.status === "pass" ? "Met: " : r.status === "fail" ? "Not met: " : "Not enough history: "}</span>{r.label}{r.reason ? ` (${r.reason})` : ""}</span>
+        <span><span className={styles.srOnly}>{r.status === "pass" ? "Met: " : r.status === "fail" ? "Not met: " : "Not enough history: "}</span>{benched(r.label)}{r.reason ? ` (${benched(r.reason)})` : ""}</span>
       </div>)}</div>
     </Card>
     <div className={styles.cardGrid}>
@@ -389,16 +457,20 @@ function TrendTab({ s }: { s: QuantSnapshot }) {
 }
 
 /** The Quant view for a loaded snapshot. */
-export function QuantView({ snapshot, tab, onTab, refreshError, onDismissError }: {
+export function QuantView({ snapshot, tab, onTab, refreshError, onDismissError, search }: {
   snapshot: QuantSnapshot; tab: QuantTab; onTab: (tab: QuantTab) => void; onRefresh?: () => void; refreshing?: boolean;
   refreshError?: string; onDismissError?: () => void;
+  /** The tab bar's search (the page passes QuantSearch, which needs the app router; the view itself doesn't). */
+  search?: ReactNode;
 }) {
   // Held here, not in the Value tab, so the chosen scenario survives a switch to Trend and back.
   const [pick, setPick] = useState<Case>("base");
+  const [growth, setGrowth] = useState<Growth | null>(null);
   // The tabs sit above both columns, so the rail and the first card of the tab start at the same height.
-  return <>
+  return <QuantCurrency.Provider value={snapshot.currency ?? "USD"}>
     <div className={styles.viewBar}>
       <Segmented label="Quant tab" options={["Value", "Trend"] as const} value={tab === "value" ? "Value" : "Trend"} onChange={(o) => onTab(o === "Value" ? "value" : "trend")} />
+      {search}
     </div>
     <div className={styles.layout}>
     <Rail s={snapshot} />
@@ -407,8 +479,8 @@ export function QuantView({ snapshot, tab, onTab, refreshError, onDismissError }
         <p className={styles.unavailable}>Refresh failed ({refreshError.replace(/[.\s]+$/, "")}). The figures below are from the last snapshot.</p>
         {onDismissError && <button type="button" className={ui.secondary} onClick={onDismissError}>Dismiss</button>}
       </div>}
-      {tab === "value" ? <ValueTab s={snapshot} pick={pick} setPick={setPick} /> : <TrendTab s={snapshot} />}
+      {tab === "value" ? <ValueTab s={snapshot} pick={pick} setPick={setPick} growth={growth} setGrowth={setGrowth} /> : <TrendTab s={snapshot} />}
     </main>
     </div>
-  </>;
+  </QuantCurrency.Provider>;
 }

@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { runProgressIsLive } from "@/lib/research/run-polling";
-import { ChevronRight, RefreshCw, Search } from "lucide-react";
+import { ChevronRight, Search } from "lucide-react";
 
 import styles from "./page.module.css";
 import ui from "@/components/research-ui.module.css";
@@ -29,6 +29,7 @@ import { ModelView } from "@/components/memo/model-view";
 import { backtestLines, metricName, metricValue, providerLabel, sourceTypeLabel, words } from "@/lib/research/reporting/audit-format";
 import type { ResearchMemo } from "@/lib/research/reporting/research-memo";
 import { REPORT_TABS, VIEW_LABELS, tabOf, viewFromQuery, viewQuery, type ReportView } from "@/lib/research/report-tabs";
+import { PageLoading } from "@/components/ui/loading";
 
 type JsonRecord = Record<string, unknown>;
 type ResearchRecord = Record<string, any>;
@@ -92,7 +93,7 @@ const fullReportTabs: readonly TabId[] = ["thesis", "financials", "kpis", "noteb
 
 
 export default function ViewResearchPage() {
-  return <Suspense fallback={<div className={styles.message}>Loading research…</div>}><ViewResearch /></Suspense>;
+  return <Suspense fallback={<div className={ui.page}><PageLoading shape="report" label="Loading research" /></div>}><ViewResearch /></Suspense>;
 }
 
 function ViewResearch() {
@@ -253,7 +254,7 @@ function ViewResearch() {
     return `/assets/${assetId}/view?${query}`;
   }
 
-  if (loading || (!error && needsFullReport) || (!error && data.asset && (data.asset.id !== assetId || (requestedRunId && data.activeRun?.id !== requestedRunId)))) return <div className={styles.message} role="status"><RefreshCw size={16} className="animate-spin" />Loading research…</div>;
+  if (loading || (!error && needsFullReport) || (!error && data.asset && (data.asset.id !== assetId || (requestedRunId && data.activeRun?.id !== requestedRunId)))) return <div className={ui.page}><PageLoading shape="report" label="Loading research" /></div>;
   if (error || !data.asset) return <div className={styles.message} role="alert">{error ?? "Asset not found."}<button onClick={()=>void loadResearch()}>Try again</button></div>;
 
   const asset = data.asset;
@@ -262,7 +263,7 @@ function ViewResearch() {
   // A run waiting at the final review wins over a later stopped run; otherwise the shown run's own state.
   const heroLabel = companyStatusWord(data.runs.map((r) => ({ status: String(r.status), created_at: r.created_at, waiting_stage_key: r.waiting_stage_key ?? null, latest_decision: r.latest_decision ?? null }))) === "Needs your decision" ? "Needs your decision" : action.label;
   const header = <>
-    <AssetHero assetId={assetId} name={asset.canonical_name} ticker={ticker}
+    <AssetHero assetId={assetId} name={asset.canonical_name} ticker={ticker} watch
       meta={[cleanWords(asset.asset_kind.replace(/_asset/g, "")), asset.sector, asset.industry]}
       // On Overview a waiting decision has its own strip, so the header tag would repeat it.
       status={activeTab !== "thesis" && activeTab !== "memo" && !(activeTab === "overview" && heroLabel === "Needs your decision") ? <Tag tone={heroStatus(heroLabel)[1]}>{heroStatus(heroLabel)[0]}</Tag> : undefined}

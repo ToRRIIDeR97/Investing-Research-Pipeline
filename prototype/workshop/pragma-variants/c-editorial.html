@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>C · Research Note</title>
+<link rel="stylesheet" href="base.css">
+<style>
+body{background:#fff}
+header{border-bottom:1px solid #ecebe4;background:#fff}
+.hd{max-width:1280px;margin:0 auto;padding:14px 40px;display:flex;align-items:center;gap:28px}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--fd);font-size:19px;color:var(--logo)}.brand img{width:30px}
+nav{display:flex;gap:22px;font-size:14px;color:#57534e}nav a.on{color:var(--navy-ink);font-weight:600;box-shadow:0 2px 0 var(--sage)}
+nav .ct{font-family:var(--fm);font-size:11px;color:var(--amber);margin-left:4px}
+.sp{flex:1}
+.wrap{max-width:1180px;margin:0 auto;padding:44px 40px 72px;display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:64px}
+.kicker{display:flex;gap:10px;align-items:center;font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--sage)}
+.kicker .pill{letter-spacing:.06em}
+h1{font-family:var(--fd);font-weight:400;font-size:46px;line-height:1.1;color:var(--navy-ink);margin:14px 0 16px;max-width:20ch}
+.byline{display:flex;gap:14px;align-items:center;font-family:var(--fm);font-size:12px;color:#78716c;padding-bottom:22px;border-bottom:1px solid #ecebe4}
+.av{width:30px;height:30px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-family:var(--ff);font-size:11px;font-weight:700}
+.lede{font-size:18px;line-height:1.7;color:#3f3f46;margin:24px 0}
+.lede:first-letter{font-family:var(--fd);float:left;font-size:58px;line-height:.9;margin:6px 10px 0 0;color:var(--navy-ink)}
+h2{font-family:var(--fd);font-weight:400;font-size:27px;color:var(--navy-ink);margin:38px 0 12px}
+p.body{font-size:16px;line-height:1.75;color:#3f3f46;max-width:68ch}
+.pull{margin:26px 0;padding:6px 0 6px 22px;border-left:3px solid var(--sage);font-family:var(--fd);font-size:23px;line-height:1.4;color:var(--navy-ink)}
+.pull cite{display:block;font-family:var(--fm);font-style:normal;font-size:11.5px;color:#a8a29e;margin-top:8px}
+.ladder{margin:18px 0 6px;border:1px solid #ecebe4;border-radius:16px;padding:8px 22px}
+.rung{display:grid;grid-template-columns:110px 1fr 120px;gap:16px;align-items:center;padding:13px 0;border-top:1px dashed #e7e5df}
+.rung:first-child{border-top:0}
+.rung .k{font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase}
+.rung .ln{position:relative;height:6px;background:#f5f5f4;border-radius:3px}
+.rung .ln i{position:absolute;left:0;top:0;bottom:0;border-radius:3px}
+.rung .v{text-align:right;font-family:var(--fd);font-size:24px}
+.rung.price{background:linear-gradient(90deg,transparent,#fbf7ea 30%,#fbf7ea 70%,transparent)}
+.foot{counter-reset:f;list-style:none;margin-top:6px}
+.foot li{counter-increment:f;display:grid;grid-template-columns:28px 1fr;gap:10px;padding:12px 0;border-top:1px solid #f0efe9;font-size:15px;line-height:1.6;color:#3f3f46}
+.foot li:before{content:counter(f);font-family:var(--fd);font-size:20px;color:var(--red-deep);line-height:1.2}
+aside{position:relative}
+.rail{position:sticky;top:24px;display:grid;gap:18px}
+.box{border:1px solid #ecebe4;border-radius:16px;padding:18px 20px;background:#fff}
+.box.ink{background:var(--navy-ink);color:#fff;border-color:var(--navy-ink)}
+.box h3{font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#78716c;margin-bottom:10px}
+.box.ink h3{color:rgba(255,255,255,.55)}
+.num{display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;border-top:1px solid rgba(255,255,255,.1)}
+.num:first-of-type{border-top:0}
+.num span{font-size:13px;color:rgba(255,255,255,.7)}.num b{font-family:var(--fm);font-weight:600;font-size:17px}
+.opt{display:flex;gap:10px;padding:9px 0;border-top:1px solid #f0efe9;font-size:13.5px;align-items:flex-start}
+.opt:first-of-type{border-top:0}
+.opt i{flex:none;width:16px;height:16px;border-radius:50%;border:1.5px solid #cbd5e1;margin-top:2px}
+.opt.sel i{border:5px solid var(--navy)}.opt.sel{font-weight:600;color:var(--navy-ink)}
+.opt.dis{color:#a8a29e}.opt small{display:block;font-weight:400;color:#a8a29e;font-size:12px}
+.ack{display:flex;gap:10px;align-items:center;margin:12px 0;font-size:13px}.ack i{width:16px;height:16px;border-radius:4px;border:1.5px solid #cbd5e1}
+.related{display:grid;gap:10px}
+.rel{display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-top:1px solid #f0efe9}.rel:first-of-type{border-top:0}
+.rel span{font-family:var(--fm);font-size:11.5px;color:#a8a29e}
+</style></head><body>
+<p class="label"><b>C · Research note</b>Reads like one of Pragma's articles: the answer as a serif headline, a byline in mono, a drop-cap lede, a pull quote for the report's own words, a price-target ladder and the review findings as numbered notes. Numbers and the decision sit in a narrow right rail.</p>
+<header><div class="hd">
+  <a class="brand"><img src="logo.svg" alt="">Pragma Research</a>
+  <nav><a>Home</a><a>Research</a><a>Themes</a><a class="on">Reviews<span class="ct">1</span></a></nav>
+  <span class="sp"></span><span class="btn primary caps" style="height:36px;border-radius:999px">Start research</span>
+</div></header>
+<div class="wrap">
+  <article>
+    <div class="kicker">Equity · SoFi Technologies (SOFI)<span class="pill amber">Needs your decision</span></div>
+    <h1>The research values SoFi 38% below its share price</h1>
+    <div class="byline"><span class="av">PR</span><span>Full initiation report</span><span>·</span><span>18 Nov 2026</span><span>·</span><span>41 sources</span><span>·</span><span>$4.86 to research</span></div>
+    <p class="lede">At $14.28 a share, SoFi trades well above the report's base-case value of $8.80. Even the bull case, $14.92, is barely above today's price. The report itself stops short of a conclusion, and the AI reviewer found 16 serious issues, so only tracking can be approved today.</p>
+
+    <h2>What a share is worth</h2>
+    <div class="ladder">
+      <div class="rung"><span class="k" style="color:var(--green-deep)">Bull</span><span class="ln"><i style="width:100%;background:var(--green)"></i></span><span class="v" style="color:var(--green-deep)">$14.92</span></div>
+      <div class="rung price"><span class="k" style="color:var(--amber-deep)">Price</span><span class="ln"><i style="width:95.7%;background:var(--amber)"></i></span><span class="v" style="color:var(--amber-deep)">$14.28</span></div>
+      <div class="rung"><span class="k" style="color:var(--navy)">Base</span><span class="ln"><i style="width:59%;background:var(--navy)"></i></span><span class="v" style="color:var(--navy)">$8.80</span></div>
+      <div class="rung"><span class="k" style="color:var(--red-deep)">Bear</span><span class="ln"><i style="width:7%;background:var(--red)"></i></span><span class="v" style="color:var(--red-deep)">$1.04</span></div>
+    </div>
+    <p style="font-family:var(--fm);font-size:11.5px;color:#a8a29e">Price is the 17 Nov close, 6 days old and not confirmed against a second source.</p>
+
+    <div class="pull">“Decision withheld. Approval should wait until the bank capital tie-out, the deposit beta, the Technology Platform split and the 2026 operating model are reconciled.”<cite>The report's recommendation, in its own words</cite></div>
+
+    <h2>The case against</h2>
+    <p class="body">The earnings line is genuinely improving: net income reached $564.3M for nine months, net interest margin hit 6.14% and the charge-off ratio fell to 1.62%. The discounted values show that the capital needed to grow absorbs those earnings through 2030 in every case.</p>
+
+    <h2>Why a position is blocked</h2>
+    <ol class="foot">
+      <li>The value rests almost entirely on what the business is worth after 2030; the years before add nothing.</li>
+      <li>The check of what today's price already assumes was never done.</li>
+      <li>The report itself withholds a conclusion because of material research gaps.</li>
+    </ol>
+    <p class="body" style="margin-top:12px;font-size:14px;color:#78716c">62 findings in all, 16 serious, across 19 chapters. <a style="color:var(--navy);font-weight:600;border-bottom:1px solid var(--sage)">Read them by chapter →</a></p>
+  </article>
+
+  <aside><div class="rail">
+    <div class="box ink"><h3>The numbers</h3>
+      <div class="num"><span>Value per share</span><b>$8.80</b></div>
+      <div class="num"><span>Market price</span><b>$14.28</b></div>
+      <div class="num"><span>Value vs price</span><b style="color:#fca5a5">−38%</b></div>
+      <div class="num"><span>AI review</span><b style="color:#fca5a5">16 serious</b></div>
+    </div>
+    <div class="box"><h3>Your decision</h3>
+      <div class="opt dis"><i></i><div>Approve for a position<small>Blocked; see the notes</small></div></div>
+      <div class="opt sel"><i></i><div>Approve for tracking<small>Monitor it. No position.</small></div></div>
+      <div class="opt"><i></i><div>Watchlist</div></div>
+      <div class="opt"><i></i><div>Send back for more work<small>About $3.46</small></div></div>
+      <div class="opt"><i></i><div>Reject</div></div>
+      <div class="ack"><i></i>I've read the 16 serious findings</div>
+      <span class="btn primary caps" style="width:100%;border-radius:999px">Record decision</span>
+    </div>
+    <div class="box"><h3>Earlier on SoFi</h3><div class="related">
+      <div class="rel">Stopped over budget<span>18 Nov · $9.74</span></div>
+      <div class="rel">Completed, no decision<span>24 Sep · $2.68</span></div>
+      <div class="rel" style="color:var(--navy);font-weight:600">All 8 runs →<span></span></div>
+    </div></div>
+  </div></aside>
+</div>
+</body></html>

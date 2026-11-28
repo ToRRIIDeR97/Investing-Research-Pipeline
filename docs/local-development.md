@@ -3,6 +3,7 @@ covers:
   - docker-compose.yml
   - package.json
   - scripts/dev-with-db.cjs
+  - scripts/worker-with-db.cjs
   - scripts/test-db.cjs
   - src/db/migrate.ts
 ---
@@ -69,11 +70,13 @@ DATABASE_URL=postgresql://research_os:research_os_dev@localhost:5432/research_os
 
 On this Windows checkout, PostgreSQL 18 is available as the `postgresql-x64-18` service on port 5433. Docker is not running, and the local `.env` contains entries Docker Compose cannot parse. Use the configured `WINDOWS_DATABASE_ADMIN_URL` to create a separate `research_os` database, then point `DATABASE_URL` at that database before running migrations, seed, or tests, including `npm run test:sofi-v3`. The mock acceptance test passes without `SKIP_V3_CONTENT_VALIDATORS`.
 
+On this checkout, start the worker with `npm run worker:dev` (`scripts/worker-with-db.cjs`). Like `scripts/dev-with-db.cjs` for the dev server, it derives `DATABASE_URL` for the `research_os` database from `WINDOWS_DATABASE_ADMIN_URL` in `.env`, unless `DATABASE_URL` is already set. Arguments pass through, so `npm run worker:dev -- --once` works too. The worker reads the provider and model settings when it starts, so restart it after changing `.env` or `.env.local`. Settings-page changes don't need a restart.
+
 Run all database-backed suites one file at a time with `npm run test:db`. The suites share one database, so parallel runs let their runs, jobs and cleanup interfere. The command forces the mock provider and reads only `DATABASE_URL` from `.env.local`, and refuses a database with a live worker, as above. Suites that need a SoFi asset create their own under a unique slug and remove it afterwards, so a database may keep the real SoFi asset. Tests for research-memory features that are not built yet (AC-13, AC-15, AC-16) sit in `Implementations/research-memory/pending/`, outside the `test:db` glob; its README says how to run them.
 
 For a live run, `scripts/new-equity-run.ts` requires `RUN_PAID_RESEARCH=1` and respects `RESEARCH_ACCEPTANCE_BUDGET_USD`. It stops at the research-plan gate. Review and explicitly approve that persisted plan before resuming paid work.
 
-Keep credentials and provider settings in `.env.local`; do not commit them.
+Keep credentials and provider settings in `.env.local`; do not commit them. The Settings page (`/settings`) writes its choices to the gitignored `.env.settings.local`, which overrides `.env.local` and `.env` for the keys it sets (see [local-agent-harness.md](local-agent-harness.md#settings-page)).
 
 ## npm scripts
 
@@ -83,6 +86,7 @@ Generated from `package.json`; paid scripts still need their flag (see [AGENTS.m
 | Command | Runs |
 | --- | --- |
 | `npm run build` | `next build` |
+| `npm run clean:next` | `node scripts/clean-next-cache.cjs` |
 | `npm run db:generate` | `drizzle-kit generate` |
 | `npm run db:migrate` | `tsx src/db/migrate.ts` |
 | `npm run db:push` | `drizzle-kit push` |
@@ -96,6 +100,8 @@ Generated from `package.json`; paid scripts still need their flag (see [AGENTS.m
 | `npm run run:meli-direct` | `RESEARCH_ACCEPTANCE_PROVIDER=direct-openai-compatible tsx scripts/new-meli-run.ts` |
 | `npm run run:research:resume` | `tsx scripts/resume-research-run.ts` |
 | `npm run start` | `next start -H 127.0.0.1` |
+| `npm run storage:compact` | `tsx scripts/storage-compact.ts` |
+| `npm run storage:gc` | `tsx scripts/storage-gc.ts` |
 | `npm run store:export` | `tsx scripts/research-store.ts export` |
 | `npm run store:import` | `tsx scripts/research-store.ts import` |
 | `npm run store:sync` | `tsx scripts/research-store.ts sync` |
@@ -111,6 +117,7 @@ Generated from `package.json`; paid scripts still need their flag (see [AGENTS.m
 | `npm run test:sofi-v3` | `node scripts/test-db.cjs tests/sofi-research-e2e.test.ts` |
 | `npm run test:source-reader-smoke` | `tsx scripts/source-reader-smoke.ts` |
 | `npm run test:unit` | `tsx --test tests/*.test.ts` |
+| `npm run worker:dev` | `node scripts/worker-with-db.cjs` |
 | `npm run worker:research` | `tsx src/workers/research-worker.ts` |
 | `npm run xbrl:compose` | `docker compose -f services/xbrl/sec-xbrl-warehouse/docker-compose.yml --project-directory services/xbrl/sec-xbrl-warehouse` |
 <!-- END GENERATED -->

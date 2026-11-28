@@ -25,6 +25,10 @@ export type QuantSnapshot = {
   sector_etf: string | null;
   as_of: string;
   price: number;
+  /** The listing's trading currency (prices and per-share values are in it). Older snapshots lack it: USD. */
+  currency?: string;
+  /** The market index trend and RS are measured against (the S&P 500 for US listings). */
+  benchmark?: { symbol: string; name: string };
   /** Weekly closes (last close of each week) over the last five years, for the Value tab's price-and-value chart. */
   price_history_5y: { day: string; close: number }[];
   value: PragValue | null;
@@ -52,8 +56,19 @@ export function sqlSnapshotStore(sql: Sql): SnapshotStore {
         INSERT INTO quant_snapshots (ticker, as_of_day, status, snapshot_json, computed_at)
         VALUES (${snapshot.ticker}, ${day}, ${status}, ${sql.json(snapshot as never)}, NOW())
         ON CONFLICT (ticker, as_of_day) DO UPDATE SET status = EXCLUDED.status, snapshot_json = EXCLUDED.snapshot_json, computed_at = NOW()`;
+      // Only the newest day is ever read (the finder and a same-day cache hit), so older days of this ticker go.
+      await pruneQuantSnapshots(sql, snapshot.ticker);
     },
   };
+}
+
+/** Deletes every snapshot older than its ticker's newest day (one ticker, or all). Returns the rows removed. */
+export async function pruneQuantSnapshots(sql: Sql, ticker?: string): Promise<number> {
+  const rows = ticker
+    ? await sql`DELETE FROM quant_snapshots s WHERE s.ticker = ${ticker}
+        AND s.as_of_day < (SELECT max(as_of_day) FROM quant_snapshots WHERE ticker = ${ticker}) RETURNING 1`
+    : await sql`DELETE FROM quant_snapshots s WHERE s.as_of_day < (SELECT max(n.as_of_day) FROM quant_snapshots n WHERE n.ticker = s.ticker) RETURNING 1`;
+  return rows.length;
 }
 
 /** The snapshot from loaded inputs. Pure: no I/O. */
@@ -84,12 +99,13 @@ export function buildQuantSnapshot(inputs: QuantInputs, research: QuantSnapshot[
     ticker: inputs.ticker, name: inputs.name, cik: inputs.cik, sic: inputs.sic, sic_description: inputs.sic_description,
     sector: inputs.sector.sector, industry: inputs.sector.industry, sector_etf: inputs.sector.etf,
     as_of: inputs.as_of, price: inputs.bars[inputs.bars.length - 1].close,
+    currency: inputs.currency, benchmark: inputs.benchmark_index,
     // Weeks are keyed by their Friday; the current week is labelled with its last real trading day, not a future date.
     price_history_5y: weeklyCloses(inputs.bars.slice(-1260)).map((w) => ({ day: w.week > inputs.as_of ? inputs.as_of : w.week, close: w.close })),
     value, value_reason: value ? null : valueReason ?? "PragValue unavailable.", trend,
     fundamentals: inputs.fundamentals ? {
       years: inputs.fundamentals.years.map((y) => y.period_end), currency: inputs.fundamentals.currency,
-      origin: inputs.company_facts_origin?.provider ?? null, missing: Object.keys(inputs.fundamentals.missing),
+      origin: inputs.fundamentals_origin ?? inputs.company_facts_origin?.provider ?? null, missing: Object.keys(inputs.fundamentals.missing),
     } : null,
     research, notes, computed_at: now.toISOString(),
   };

@@ -136,7 +136,14 @@ leading search icon, and a results popover of 48px rows with a logo or monogram,
 Keyboard: arrows move, Enter opens, Escape closes; `/` focuses the page's main search.
 
 Empty, loading and error states are sentences, not icons: "Nothing checked yet. Search above or try one of the quick
-picks." Loading lists show neutral skeleton cards; errors say what failed and offer "Try again".
+picks." Errors say what failed and offer "Try again".
+
+Loading (workshop `prototype/workshop/quant-intl-round`, L1) uses `src/components/ui/loading.tsx`: `PageLoading` shows a
+skeleton shaped like the page being loaded (`cards`, `list`, `detail`, `report`, `quant`, `panel`) after 300 ms, so
+fast loads don't flash; `InlineLoading` is a few skeleton lines inside a card; slow work (a first Quant look-up) floats a
+`StepProgress` card over the skeleton, whose steps follow typical timings and whose last step stays current until the
+result arrives. Each is a `role="status"` region with a plain sentence for screen readers; the shimmer is the one
+looping animation and stops under reduced motion. Never a bare "Loading…" line.
 
 ## Financials
 

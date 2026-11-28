@@ -5,6 +5,7 @@ import notes from "./notebook.module.css";
 import styles from "./checklist.module.css";
 import { Tag } from "@/components/ui/primitives";
 import { MEASURES, MEASURE_KEYS, type ChecklistItem, type ItemResult, type MeasureKey } from "@/lib/research/checklist";
+import { InlineLoading } from "@/components/ui/loading";
 
 type Stored = { id: string; name: string; items: ChecklistItem[]; is_default: boolean };
 type Evaluation = { id: string; research_run_id: string | null; checklist_id: string | null; checklist: { name: string }; results: ItemResult[];
@@ -71,7 +72,7 @@ export function ChecklistPanel({ assetId, runId, compact = false }: { assetId: s
     try { await call(`/api/checklists/${list.id}`, { method: "DELETE" }); await load(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   }
 
-  if (!checklists) return error ? <p className={notes.error} role="alert">{error}</p> : <p className={notes.meta} role="status">Loading checklists…</p>;
+  if (!checklists) return error ? <p className={notes.error} role="alert">{error}</p> : <InlineLoading label="Loading checklists" lines={3} />;
   if (editing) return <ChecklistEditor initial={editing === "new" ? null : editing} onCancel={() => setEditing(null)}
     onSaved={async (saved) => { setEditing(null); await load(); setSelected(saved.id); }} />;
 

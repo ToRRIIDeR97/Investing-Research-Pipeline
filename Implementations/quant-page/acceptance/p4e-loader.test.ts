@@ -99,9 +99,10 @@ test("AC-9: SEC submissions down after the CIK resolved is 503 before any price 
 });
 
 test("AC-1: a non-filer is partial (Value unavailable) and an ETF listing is refused before any storage call", async () => {
-  const foreign = await load({}, [[/company_tickers/, { 0: { cik_str: 1, ticker: "OTHER" } }]]);
+  // Since quant-intl-watchlist-settings P3 a non-filer's statements come from Yahoo Finance; here Yahoo has none.
+  const foreign = await load({}, [[/company_tickers/, { 0: { cik_str: 1, ticker: "OTHER" } }], [/finance\/search/, { quotes: [] }], [/fundamentals-timeseries/, { timeseries: { result: [] } }]]);
   assert.equal(foreign.inputs.cik, null);
-  assert.equal(foreign.inputs.fundamentals_reason, "Not an SEC filer.");
+  assert.equal(foreign.inputs.fundamentals_reason, "Yahoo Finance has no annual statements for this listing.");
   assert.deepEqual(foreign.inputs.transient, []);
   const { loadQuantInputs, QuantInputError } = await import("../../../src/lib/quant/inputs");
   const { io, calls } = fakeIo({});

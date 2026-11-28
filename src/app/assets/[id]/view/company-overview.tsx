@@ -13,6 +13,7 @@ import { blendValue } from "@/lib/ui/chart-math";
 import type { MemoSignal, ResearchMemo } from "@/lib/research/reporting/research-memo";
 import type { PricePoint } from "@/lib/market-data/price-series";
 import { runBars, type RunRow } from "@/lib/research/run-bars";
+import { InlineLoading } from "@/components/ui/loading";
 
 const RANGES = ["1M", "3M", "6M", "1Y"] as const;
 type Range = (typeof RANGES)[number];
@@ -222,7 +223,7 @@ export function CompanyOverview({ assetId, snapshot, memo, runs, fallbackStateme
           </>}
       </Card>
       <Card className={`${styles.priceCard} ${styles.fill}`}>
-        {prices.state === "loading" ? <><h2 className={styles.cardTitle}>Price</h2><p className={styles.quiet} role="status">Loading prices…</p></>
+        {prices.state === "loading" ? <><h2 className={styles.cardTitle}>Price</h2><InlineLoading label="Loading prices" lines={3} /></>
           : prices.state === "error" ? <>
             <div className={styles.priceHead}><h2 className={styles.cardTitle}>Price</h2><Segmented label="Price range" options={RANGES} value={range} onChange={setRange} /></div>
             <p className={styles.quiet} role="alert">Prices couldn&apos;t be loaded. <button type="button" className={styles.link} onClick={() => setAttempt((n) => n + 1)}>Try again</button></p>

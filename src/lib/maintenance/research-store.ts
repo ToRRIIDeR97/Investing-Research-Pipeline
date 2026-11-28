@@ -6,6 +6,7 @@ import { createHash } from "node:crypto";
 import { constants, createReadStream } from "node:fs";
 import { appendFile, copyFile, lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { GZ_SUFFIX } from "../storage/stored-file";
 
 type Sql = postgres.Sql;
 
@@ -266,7 +267,7 @@ export async function mirrorFiles(referenced: Iterable<string>, options: { store
   const links: string[] = [];
   const roots = new Map<string, Promise<string | null>>();
   for (const ref of referenced) {
-    const source = resolve(options.projectRoot, ref);
+    let source = resolve(options.projectRoot, ref);
     if (!source.startsWith(storageDir + sep)) continue;
     const [first, ...rest] = relative(storageDir, source).split(sep);
     if (!rest.length) { skipped.set(ref, "not inside a storage/ folder"); continue; }
@@ -274,7 +275,10 @@ export async function mirrorFiles(referenced: Iterable<string>, options: { store
     const root = await roots.get(first);
     if (!root) continue;
     let info;
-    try { info = await stat(source); } catch { continue; }
+    // A compacted source (scripts/storage-compact.ts) is stored as <path>.gz and travels that way.
+    try { info = await stat(source); } catch {
+      try { info = await stat(source + GZ_SUFFIX); source += GZ_SUFFIX; } catch { continue; }
+    }
     for (const file of info.isDirectory() ? await listFiles(source, links) : [source]) {
       const rel = posix(relative(options.projectRoot, file));
       const real = await realpath(file).catch(() => null);

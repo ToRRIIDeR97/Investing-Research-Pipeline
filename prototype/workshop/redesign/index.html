@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Page redesign mockups</title>
+<link rel="stylesheet" href="redesign.css">
+<style>.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin:16px 0 24px}.cards a{display:block;background:var(--tile);border:1px solid var(--line);border-radius:14px;padding:16px 18px;color:var(--ink);text-decoration:none}.cards a:hover{border-color:var(--navy-2)}.cards strong{display:block;font-size:15px;color:var(--navy);margin-bottom:4px}.cards span{color:var(--ink-2);line-height:1.5}
+h2.s{font-size:18px;font-weight:650;margin:8px 0 10px}</style>
+</head><body><div class="screen">
+<h1>Page redesign mockups</h1>
+<p class="sub">Real data from the local database (SoFi, 18 Nov 2026) unless marked illustrative. Static mockups: nothing here is wired up. Out of scope for this set: the theme results page (no theme has been run, so there's nothing real to design from) and the report page, redesigned earlier as the memo.</p>
+<div class="cards">
+  <a href="reviews.html"><strong>Reviews</strong><span>One row per company; the decision page opens with the report's numbers and described choices.</span></a>
+  <a href="home.html"><strong>Home</strong><span>What needs you, with numbers; problems in their own banner.</span></a>
+  <a href="research-list.html"><strong>Research list</strong><span>A table with value vs price and next step; filters with counts.</span></a>
+  <a href="asset.html"><strong>Company page</strong><span>Latest verdict first; runs by date with what happened.</span></a>
+  <a href="run.html"><strong>Run page</strong><span>What happened, decide first, start over only with a confirmed budget.</span></a>
+  <a href="start-research.html"><strong>Start research</strong><span>Tickers, type descriptions, a suggested budget, default cutoffs.</span></a>
+  <a href="themes.html"><strong>Themes</strong><span>Plain-language form, cost cap and what you get back.</span></a>
+  <a href="edge-cases.html"><strong>Edge cases</strong><span>Empty states, every status, withheld and missing values, negative bear, paging, interaction states, phone width.</span></a>
+  <a href="run-states.html"><strong>Run page, other states</strong><span>A run in progress (with Cancel) and a run waiting for plan approval.</span></a>
+</div>
+
+<h2 class="s">One status per company</h2>
+<section class="tile">
+  <table class="t">
+    <thead><tr><th>Order</th><th>Status</th><th>When</th><th>Next step shown</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><span class="status wait">Needs your decision</span></td><td>A run is waiting at the final decision. The newest one counts; older waiting runs of the company are "superseded" and don't count.</td><td>Decide</td></tr>
+      <tr><td>2</td><td><span class="status wait">Needs plan approval</span></td><td>A run is waiting at the plan gate.</td><td>Review the plan</td></tr>
+      <tr><td>3</td><td><span class="status run">Researching</span></td><td>A run is queued or running (including a report being rewritten after "send back").</td><td>Watch progress</td></tr>
+      <tr><td>4</td><td><span class="status ok">Decided: tracking</span> etc.</td><td>Your latest decision, when no newer run is waiting or running. Shows the verdict.</td><td>Open memo</td></tr>
+      <tr><td>5</td><td><span class="status ok">Completed</span></td><td>The latest finished run was exported with no decision recorded (older runs), and nothing above applies.</td><td>Open memo</td></tr>
+      <tr><td>6</td><td><span class="status crit">Stopped</span></td><td>The latest run failed or was cancelled and nothing above applies.</td><td>See what happened</td></tr>
+      <tr><td>7</td><td><span class="status">Not started</span></td><td>No runs. Companies with only test runs are hidden unless you show them.</td><td>Start research</td></tr>
+    </tbody>
+  </table>
+  <p class="tileBody note" style="border-top:1px solid var(--line-soft)">The first rule that applies wins. A newer stopped run never hides a waiting report or a decision; it's mentioned beside the status ("Decided: tracking · a later run stopped"). Home, the Research list, Reviews and the nav badge all use this one function.</p>
+</section>
+
+<h2 class="s" style="margin-top:24px">Run states (company page rows)</h2>
+<section class="tile">
+  <table class="t">
+    <thead><tr><th>Label</th><th>When</th><th>Stored data behind it</th></tr></thead>
+    <tbody>
+      <tr><td><span class="status wait">Needs your decision</span></td><td>The newest run of the company waiting at the final decision (same words as the company status).</td><td>run status and human_review stage = waiting_for_human; newest created_at</td></tr>
+      <tr><td><span class="status">Superseded</span></td><td>An older run of the same company also waiting at the final decision.</td><td>as above, with a newer waiting run (review-queue.ts groupReviewQueue)</td></tr>
+      <tr><td><span class="status">Dismissed</span></td><td>A superseded run you dismissed. Report stays readable.</td><td>cancelled, plus a new "dismissed" marker <span class="flag">new</span></td></tr>
+      <tr><td><span class="status wait">Needs plan approval</span></td><td>Waiting at the plan gate.</td><td>research_plan stage = waiting_for_human; "plan drafted" date from that stage's updated_at</td></tr>
+      <tr><td><span class="status run">Researching</span></td><td>Queued or running.</td><td>run status queued / running; step count from stage rows; cost from actual_cost_usd</td></tr>
+      <tr><td><span class="status crit">Stopped</span></td><td>Failed, ran out of budget, or was cancelled (not dismissed). The reason is shown when known.</td><td>failed stage + a stored stop reason <span class="flag">new</span>; "no reason was recorded" when none</td></tr>
+      <tr><td><span class="status ok">Decided: tracking</span> etc.</td><td>You recorded a decision.</td><td>latest review_decisions row</td></tr>
+      <tr><td><span class="status ok">Completed</span></td><td>Finished and exported with no decision recorded (older runs).</td><td>run status completed, no review_decisions row</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<h2 class="s" style="margin-top:24px">Back-end work these designs need</h2>
+<section class="tile"><ul class="tileBody" style="display:grid;gap:8px;list-style:disc;padding-left:36px;color:var(--ink-2);line-height:1.55">
+  <li>The status function above, returned per company by the overview endpoint (with its waiting run, plan-gate run and progress), plus filter counts and paging for the Research list. The review queue gets paging too (it stops at 50 today).</li>
+  <li>Cost totals per company (all time) and per month, summed from each run's recorded cost.</li>
+  <li>A "dismissed" marker so a dismissed report reads "Dismissed", not "Failed", in its memo. Interim shortcut: the cancel action already writes "Cancelled by &lt;actor&gt;", so dismissing could pass actor "dismiss"; the proper design is a stored marker, like the stop reason.</li>
+  <li>The review queue returns the allowed approvals from the same checks the route runs: tracking = the review gate's "trackable"; position = "positionable" and the report's conclusion not withheld. The gate also returns a code per blocking reason so the page can show plain sentences.</li>
+  <li>Any decision on the newest report (including "send back", which rewrites that same run) dismisses the company's older waiting runs in the same transaction, so superseded versions never resurface.</li>
+  <li>Cost hints count only runs on the current model setup (stored per model call): the September SoFi runs used DeepSeek and cost far less than the November runs on Claude Haiku. Reader copy says "a cheaper setup" and never names models.</li>
+  <li>A stored stop reason for failed runs (budget, error, cancelled) instead of reading the failure text.</li>
+  <li>Dismissing an older version reuses the cancel action, with a check that refuses the newest waiting run.</li>
+  <li>Plain-language "what this means for you" lines per AI finding would need the reviewer to write them <span class="flag">pipeline change, optional</span></li>
+  <li>Resuming a stopped run from the failed step <span class="flag">not proposed</span>: the designs offer "start over" with a confirmed budget.</li>
+</ul></section>
+</div></body></html>

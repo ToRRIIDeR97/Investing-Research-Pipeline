@@ -3,8 +3,9 @@
 // Planning only reads. applyStorageGc changes rows and deletes files; scripts/storage-gc.ts runs it only with --apply.
 import postgres from "postgres";
 import { createHash } from "node:crypto";
-import { readdir, readFile, rm, stat } from "node:fs/promises";
+import { readdir, rm, stat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { GZ_SUFFIX, readStoredFile, readStoredText } from "../storage/stored-file";
 
 type Sql = postgres.Sql;
 
@@ -64,7 +65,14 @@ async function newestMtime(path: string): Promise<number> {
 }
 
 async function fileHash(path: string): Promise<string | null> {
-  try { return createHash("sha256").update(await readFile(path)).digest("hex"); } catch { return null; }
+  try { return createHash("sha256").update(await readStoredFile(path)).digest("hex"); } catch { return null; }
+}
+
+/** Referenced paths plus their compacted `.gz` twins (scripts/storage-compact.ts), which rows name by the plain path. */
+export function referencedWithGz(paths: Set<string>): Set<string> {
+  const out = new Set(paths);
+  for (const p of paths) out.add(p + GZ_SUFFIX);
+  return out;
 }
 
 /**
@@ -86,11 +94,11 @@ async function planSecRepoints(db: GcDatabase, projectRoot: string, plan: GcPlan
       if (await fileHash(resolve(projectRoot, String(row.storage_path))) === row.file_hash) { canonical = row; break; }
     }
     if (!canonical) continue;
-    const canonicalText = normalizedSecHtml(await readFile(resolve(projectRoot, String(canonical.storage_path)), "utf8"));
+    const canonicalText = normalizedSecHtml(await readStoredText(resolve(projectRoot, String(canonical.storage_path))));
     for (const row of group) {
       if (row === canonical || row.storage_path === canonical.storage_path) continue;
       let text: string;
-      try { text = await readFile(resolve(projectRoot, String(row.storage_path)), "utf8"); } catch {
+      try { text = await readStoredText(resolve(projectRoot, String(row.storage_path))); } catch {
         plan.skippedDuplicates.push({ database: db.name, sourceId: String(row.id), reason: "file missing" });
         continue;
       }
@@ -128,7 +136,7 @@ async function references(dbs: GcDatabase[], projectRoot: string, plan: Pick<GcP
   // A directory is in use when it holds a referenced path.
   const holders = new Set<string>();
   for (const path of paths) for (let dir = dirname(path); dir !== dirname(dir) && !holders.has(dir); dir = dirname(dir)) holders.add(dir);
-  return { paths, holders, runIds };
+  return { paths: referencedWithGz(paths), holders, runIds };
 }
 
 async function candidates(storageRoot: string, minAgeMs: number, refs: Awaited<ReturnType<typeof references>>) {

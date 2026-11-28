@@ -4,16 +4,14 @@
  * that states what it shows in numbers, and every chart degrades to a sentence when its data is too thin to draw.
  */
 import { C } from "@/components/ui/palette";
+import { formatMoney, useMoney } from "./money";
 import styles from "./quant.module.css";
 
 type Pt = { x: number; y: number };
 const path = (pts: Pt[]) => pts.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
 const finite = (v: number | null | undefined): v is number => typeof v === "number" && Number.isFinite(v);
-export const money = (v: number | null | undefined) => {
-  if (!finite(v)) return "—";
-  const a = Math.abs(v);
-  return `${v < 0 ? "−" : ""}$${a >= 100 ? a.toFixed(0) : a.toFixed(2)}`;
-};
+/** Chart-label money in USD (charts inside the Quant view use `useMoney`, which follows the snapshot currency). */
+export const money = (v: number | null | undefined) => formatMoney(v, "USD", true);
 
 /** 1st, 2nd, 3rd, 4th … 11th, 12th, 13th, 21st, 22nd. */
 export function ordinal(n: number): string {
@@ -59,6 +57,7 @@ export function ValuePathChart({ history, projection, selected, current }: {
   projection: { year: number; bear: number; base: number; bull: number }[];
   selected: Case; current: number;
 }) {
+  const money = useMoney(true);
   const W = 880, H = 270, left = 52, split = 540, right = W - 74, top = 16, bottom = 236;
   const proj = projection.filter((p) => finite(p.bear) && finite(p.base) && finite(p.bull));
   const values = [...history.map((h) => h.close), ...proj.flatMap((p) => [p.bear, p.base, p.bull])].filter(finite);
@@ -107,6 +106,7 @@ export function ValuePathChart({ history, projection, selected, current }: {
  * drawing size in pixels (the card measures its free space and passes it, so the chart fills the card).
  */
 export function ValueBuild({ build, width = 420, height = 210 }: { build: { pv_cash_flows: number; pv_terminal: number; net_debt_per_share: number; per_share: number; metric: string; terminal_share: number }; width?: number; height?: number }) {
+  const money = useMoney(true);
   const W = Math.max(260, Math.round(width)), H = Math.max(180, Math.round(height)), top = 22, bottom = H - 30;
   const slot = (W - 10) / 4, barW = Math.min(slot - 18, 120);
   const a = build.pv_cash_flows, b = a + build.pv_terminal, c = b - build.net_debt_per_share;
@@ -168,6 +168,7 @@ export function PriceVolumeChart({ series, pivots }: {
   series: { day: string; close: number; volume: number | null; sma50: number | null; sma150: number | null; sma200: number | null }[];
   pivots: string[];
 }) {
+  const money = useMoney(true);
   const rows = series.filter((s) => finite(s.close));
   if (rows.length < 2) return <p className={styles.unavailable}>Not enough stored prices to draw the chart.</p>;
   const W = 880, H = 316, left = 52, right = W - 8, top = 12, priceBottom = 222, volTop = 236, volBottom = 290;
@@ -205,8 +206,8 @@ export function PriceVolumeChart({ series, pivots }: {
 }
 
 /** Performance rebased to 100 a year ago: the stock, the S&P 500 and the sector ETF, aligned by day. */
-export function RebasedChart({ stock, spx, sector, sectorSymbol }: {
-  stock: { day: string; value: number }[]; spx: { day: string; value: number }[]; sector: { day: string; value: number }[]; sectorSymbol: string | null;
+export function RebasedChart({ stock, spx, sector, sectorSymbol, benchmarkName = "S&P 500" }: {
+  stock: { day: string; value: number }[]; spx: { day: string; value: number }[]; sector: { day: string; value: number }[]; sectorSymbol: string | null; benchmarkName?: string;
 }) {
   const clean = (s: { day: string; value: number }[]) => s.filter((p) => finite(p.value) && finite(dayMs(p.day)));
   const st = clean(stock), sp = clean(spx), se = clean(sector);
@@ -225,10 +226,10 @@ export function RebasedChart({ stock, spx, sector, sectorSymbol }: {
   const series = [
     { name: "Stock", s: st, color: C.navy, show: true },
     { name: sectorSymbol ?? "Sector", s: seW, color: C.navy3, show: seW.length > 1 && !!sectorSymbol },
-    { name: "S&P", s: spW, color: C.ink3, show: spW.length > 1 },
+    { name: benchmarkName === "S&P 500" ? "S&P" : benchmarkName.split(" ")[0], s: spW, color: C.ink3, show: spW.length > 1 },
   ].filter((r) => r.show);
   const labelY = spreadLabels(series.map((r) => y(last(r.s) ?? 100) + 4), 14, top + 8, bottom);
-  const aria = `Rebased to 100 a year ago (${st[0].day}): stock ${fmt(last(st))}, S&P 500 ${fmt(last(spW))}${sectorSymbol ? `, ${sectorSymbol} ${fmt(last(seW))}` : ""} on ${st[st.length - 1].day}.`;
+  const aria = `Rebased to 100 a year ago (${st[0].day}): stock ${fmt(last(st))}, ${benchmarkName} ${fmt(last(spW))}${sectorSymbol ? `, ${sectorSymbol} ${fmt(last(seW))}` : ""} on ${st[st.length - 1].day}.`;
   return <svg viewBox={`0 0 ${W} ${H}`} className={styles.chart} role="img" aria-label={aria}>
     <text x={0} y={y(100) + 4} fontSize="11" fill={C.ink3}>100</text>
     <line x1={left} y1={y(100)} x2={plotRight} y2={y(100)} stroke={C.lineStrong} />
@@ -284,6 +285,7 @@ export function VcpDepths({ contractions }: { contractions: { high_day: string; 
 
 /** A small three-month sparkline for the rail. */
 export function Sparkline({ points }: { points: { close: number }[] }) {
+  const money = useMoney(true);
   const pts = points.filter((p) => finite(p.close));
   if (pts.length < 2) return null;
   const W = 220, H = 50;

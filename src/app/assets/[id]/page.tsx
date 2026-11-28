@@ -12,6 +12,7 @@ import {
   ResearchCostChart,
   PipelineProgressChart,
 } from "@/components/charts";
+import { PageLoading } from "@/components/ui/loading";
 
 interface AssetDetail {
   id: string;
@@ -177,14 +178,14 @@ export default function AssetDetailPage() {
     load();
   }, [assetId]);
 
-  if (loading) return <div className={ui.page} role="status">Loading asset…</div>;
+  if (loading) return <div className={ui.page}><PageLoading shape="detail" label="Loading the company" /></div>;
   if (!asset) return <div className={ui.page}><p className={ui.error} role="alert">{error || "Asset not found."}</p><Link href="/assets" className={ui.textLink}>Back to research</Link></div>;
   const listing = asset.listings?.find((item) => item.is_primary) || asset.listings?.[0];
   const words = (value: string) => value.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
   return <div className={`${ui.page} ${ui.withBack}`}>
     <Link href={`/assets/${assetId}/view`} className={ui.back}><ArrowLeft size={14} />Research brief</Link>
-    <AssetHero assetId={assetId} name={asset.canonical_name} ticker={asset.asset_kind === "equity" ? listing?.symbol : null}
+    <AssetHero assetId={assetId} name={asset.canonical_name} ticker={asset.asset_kind === "equity" ? listing?.symbol : null} watch
       meta={[words(asset.asset_kind.replace(/_asset/g, "")), asset.sector, listing?.exchange ?? null]}
       status={<span className={ui.status} data-status={asset.status}>{words(asset.status || "active")}</span>}
       actions={<>

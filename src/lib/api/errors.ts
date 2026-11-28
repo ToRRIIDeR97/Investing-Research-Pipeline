@@ -6,7 +6,9 @@ export class ApiError extends Error {
   constructor(
     public message: string,
     public statusCode: number = 500,
-    public code?: string
+    public code?: string,
+    /** Extra fields returned beside `error` and `code` (for example the existing record's id on a conflict). */
+    public details?: Record<string, unknown>
   ) {
     super(message);
     this.name = "ApiError";
@@ -16,7 +18,7 @@ export class ApiError extends Error {
 export function handleApiError(error: unknown) {
   if (error instanceof ApiError) {
     return NextResponse.json(
-      { error: error.message, code: error.code },
+      { ...error.details, error: error.message, code: error.code },
       { status: error.statusCode }
     );
   }

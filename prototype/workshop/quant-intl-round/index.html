@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workshop: loading, search, growth, watchlist, settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --page:#F8F8F4;--tile:#fff;--soft:#F5F4EF;--hover:#F3F2EC;--line:#E7E5DF;--line-soft:#EEEDE7;--line-strong:#D6D3CC;
+  --ink:#0D1B2A;--ink-2:#44403C;--ink-3:#78716C;--ink-4:#A8A29E;
+  --navy:#0A2642;--navy-soft:#EEF1F5;--navy-2:#B4C0CC;--navy-3:#3D5A78;
+  --positive:#2D7D46;--critical:#C9302C;--caution:#B8860B;--caution-ink:#7A5300;
+  --grade-a-ink:#1F6A38;--grade-a-bg:#E5F1E8;--grade-c-ink:#7A5300;--grade-c-bg:#FAF0D9;
+  --case-bear:#C9302C;--case-base:#3D5A78;--case-bull:#2D7D46;
+  --shadow-card:0 1px 2px rgb(13 27 42/4%),0 8px 24px rgb(13 27 42/5%);
+  --shadow-pop:0 12px 36px rgb(13 27 42/14%);
+  --ease-spring:cubic-bezier(.3,1.35,.5,1);
+  --font-display:"Plus Jakarta Sans",Inter,system-ui,sans-serif;--font-sans:Inter,system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:400 13px/1.55 var(--font-sans);-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--navy);outline-offset:2px}
+.wrap{max-width:1240px;margin:0 auto;padding:28px 24px 80px}
+h1{font:700 30px/1.15 var(--font-display);letter-spacing:-.03em;margin:0 0 6px}
+.lede{color:var(--ink-2);max-width:760px;margin:0 0 24px;font-size:14px}
+.toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 28px}
+.toc a{padding:6px 12px;border-radius:999px;background:var(--tile);border:1px solid var(--line);color:var(--ink);text-decoration:none;font-weight:500}
+section.q{margin:0 0 44px}
+section.q>h2{font:700 20px/1.2 var(--font-display);margin:0 0 4px}
+section.q>p.why{margin:0 0 14px;color:var(--ink-2);max-width:820px}
+.variants{display:grid;gap:18px}
+.variant{background:var(--tile);border-radius:24px;box-shadow:var(--shadow-card);border:1px solid rgb(0 0 0/3.5%);padding:20px 22px}
+.vhead{display:flex;align-items:baseline;gap:10px;margin:0 0 12px}
+.vhead b{font:700 15px var(--font-display);background:var(--navy);color:#fff;border-radius:999px;padding:2px 10px}
+.vhead strong{font-size:15px}
+.vhead span{color:var(--ink-3)}
+.stage{background:var(--page);border-radius:18px;padding:18px;border:1px solid var(--line-soft);overflow:hidden}
+.note{color:var(--ink-3);font-size:12px;margin:10px 0 0}
+.card{background:var(--tile);border-radius:20px;box-shadow:var(--shadow-card);border:1px solid rgb(0 0 0/3.5%);padding:16px 18px}
+.card h3{margin:0 0 10px;font:600 14px var(--font-sans)}
+.row{display:flex;align-items:center;gap:12px}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:6px 12px;background:var(--soft);border:1px solid var(--line)}
+.btn{border:0;border-radius:999px;background:var(--navy);color:#fff;padding:9px 16px;font-weight:600}
+.btn2{border:1px solid var(--line-strong);border-radius:999px;background:var(--tile);padding:8px 14px;font-weight:500}
+.muted{color:var(--ink-3)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media (max-width:820px){.grid2,.grid3{grid-template-columns:1fr}}
+/* skeleton */
+.sk{background:linear-gradient(90deg,var(--soft) 0%,#fbfaf6 40%,var(--soft) 80%);background-size:300% 100%;border-radius:10px;animation:sh 1.6s ease-in-out infinite}
+@keyframes sh{0%{background-position:100% 0}100%{background-position:-50% 0}}
+@media (prefers-reduced-motion:reduce){.sk,.spin,.draw path{animation:none!important}}
+.logo{width:44px;height:44px;border-radius:12px;background:var(--navy-soft);color:var(--navy);display:grid;place-items:center;font:700 13px var(--font-display);flex:none}
+.steps{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.steps li{display:grid;grid-template-columns:20px 1fr auto;gap:10px;align-items:center;color:var(--ink-3)}
+.steps li[data-s=done]{color:var(--ink-2)}
+.steps li[data-s=now]{color:var(--ink);font-weight:600}
+.dot{width:18px;height:18px;border-radius:50%;border:2px solid var(--line-strong);display:grid;place-items:center;font-size:11px}
+li[data-s=done] .dot{background:var(--positive);border-color:var(--positive);color:#fff}
+li[data-s=now] .dot{border-color:var(--navy);border-top-color:transparent;animation:spin .9s linear infinite}
+.spin{animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.track{height:6px;border-radius:99px;background:var(--hover);overflow:hidden}
+.track i{display:block;height:100%;background:var(--navy);border-radius:99px;transition:width .6s var(--ease-spring)}
+.draw path{stroke-dasharray:600;stroke-dashoffset:600;animation:draw 2.4s ease-in-out infinite}
+@keyframes draw{0%{stroke-dashoffset:600}60%{stroke-dashoffset:0}100%{stroke-dashoffset:0;opacity:.0}}
+/* quant mini */
+.qbar{display:flex;align-items:center;gap:12px;margin:0 0 12px}
+.seg{display:inline-flex;background:var(--hover);border-radius:999px;padding:3px}
+.seg span{padding:6px 16px;border-radius:999px;font-weight:600;color:var(--ink-2)}
+.seg span.on{background:var(--tile);color:var(--navy);box-shadow:0 1px 3px rgb(0 0 0/10%)}
+.search{display:flex;align-items:center;gap:8px;background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:7px 12px;min-width:240px;color:var(--ink-3)}
+.search kbd{margin-left:auto;font:600 11px var(--font-sans);border:1px solid var(--line-strong);border-radius:6px;padding:0 6px;color:var(--ink-3);background:var(--tile)}
+.qlay{display:grid;grid-template-columns:240px 1fr;gap:14px}
+.rail{background:var(--tile);border-radius:20px;box-shadow:var(--shadow-card);padding:16px;display:grid;gap:10px;align-content:start}
+.who{display:flex;gap:10px;align-items:center}
+.who h4{margin:0;font:700 15px var(--font-display)}
+.who span{font-size:11px;color:var(--ink-3)}
+.price{font:700 26px var(--font-display);letter-spacing:-.02em}
+.verdict{background:var(--grade-a-bg);border-radius:14px;padding:12px}
+.verdict .vh{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--grade-a-ink)}
+.verdict .vl{display:flex;gap:10px;align-items:center;margin-top:4px}
+.verdict .vl b{font:800 32px/1 var(--font-display);color:var(--grade-a-ink)}
+.verdict .vl strong{color:var(--grade-a-ink)}
+.star{border:1px solid var(--line-strong);background:var(--tile);border-radius:999px;width:34px;height:34px;display:grid;place-items:center;font-size:16px;color:var(--ink-3)}
+.star[aria-pressed=true]{color:#B8860B;border-color:#e8d39a;background:#fdf8ea}
+.chip{display:inline-flex;gap:6px;align-items:center;padding:4px 10px;border-radius:999px;background:var(--tile);border:1px solid var(--line);font-weight:500}
+.chip small{color:var(--ink-3)}
+/* cases */
+.cases{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.case{background:var(--tile);border-radius:16px;padding:12px;border:1px solid var(--line-soft)}
+.case .n{font-weight:700;font-size:12px}
+.case[data-c=bear] .n{color:var(--case-bear)}.case[data-c=base] .n{color:var(--case-base)}.case[data-c=bull] .n{color:var(--case-bull)}
+.case .up{font:700 22px var(--font-display)}
+.case .v{color:var(--ink-3);font-size:12px}
+input[type=range]{width:100%;accent-color:var(--navy)}
+.slider{display:grid;grid-template-columns:70px 1fr 64px;gap:10px;align-items:center;margin:6px 0}
+.slider .lab{font-weight:600}
+.slider output{font-weight:700;text-align:right}
+.modeltick{font-size:11px;color:var(--ink-3)}
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--navy-soft);color:var(--navy)}
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line-soft)}
+th{font-size:11px;color:var(--ink-3);font-weight:600}
+.step{display:inline-flex;align-items:center;border:1px solid var(--line-strong);border-radius:999px;overflow:hidden}
+.step button{border:0;background:var(--tile);width:26px;height:26px}
+.step span{padding:0 8px;font-weight:700}
+.wl{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.wlc{background:var(--tile);border-radius:16px;padding:12px;box-shadow:var(--shadow-card)}
+.wlc .t{display:flex;justify-content:space-between;align-items:center}
+.wlc b{font:700 16px var(--font-display)}
+.g{display:inline-flex;gap:4px;align-items:baseline;border-radius:999px;padding:2px 8px;background:var(--grade-a-bg);color:var(--grade-a-ink);font-weight:700}
+.g.c{background:var(--grade-c-bg);color:var(--grade-c-ink)}
+.g small{font-size:9px;font-weight:600}
+.up{color:var(--positive)}.dn{color:var(--critical)}
+.nav{background:var(--tile);border-radius:18px;padding:12px;display:grid;gap:4px;width:220px}
+.nav a{display:flex;justify-content:space-between;padding:6px 8px;border-radius:10px;color:var(--ink);text-decoration:none}
+.nav a:hover{background:var(--hover)}
+.nav h5{margin:8px 8px 4px;font-size:11px;color:var(--ink-3);font-weight:600}
+.field{display:grid;gap:4px;margin:0 0 10px}
+.field label{font-weight:600;font-size:12px}
+.field input,.field select{border:1px solid var(--line);background:var(--soft);border-radius:12px;padding:8px 10px}
+.field small{color:var(--ink-3)}
+.prov{display:grid;grid-template-columns:18px 1fr auto;gap:10px;align-items:center;padding:10px;border-radius:12px;border:1px solid var(--line-soft);margin:0 0 6px}
+.prov[data-on]{border-color:var(--navy);background:var(--navy-soft)}
+.tabs{display:grid;grid-template-columns:180px 1fr;gap:14px}
+.tablist{display:grid;gap:4px;align-content:start}
+.tablist span{padding:8px 12px;border-radius:12px;font-weight:500}
+.tablist span.on{background:var(--tile);box-shadow:var(--shadow-card);color:var(--navy);font-weight:600}
+.explain h4{margin:10px 0 4px;font-size:12px;color:var(--ink-2)}
+.explain p{margin:0 0 6px;color:var(--ink-2)}
+.terms{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.terms span{font-size:11px;padding:3px 8px;border-radius:999px;background:var(--navy-soft);color:var(--navy)}
+.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:8px 0}
+.flow div{background:var(--soft);border-radius:12px;padding:10px;font-size:12px}
+.flow b{display:block;font-size:12px;margin-bottom:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Workshop: loading, search, growth, watchlist, settings</h1>
+  <p class="lede">Pick one variant per question. Mock data (BBCA.JK, AAPL). Everything uses the current tokens; motion respects reduced-motion. The PQ Grade header (item 6) is already built: it shows in the rails below.</p>
+  <nav class="toc">
+    <a href="#loading">1 · Loading</a><a href="#search">2 · Quant search</a><a href="#growth">3 · Growth</a><a href="#watch">4 · Watchlist</a><a href="#settings">5 · Settings</a><a href="#explain">6 · Descriptions</a>
+  </nav>
+
+  <!-- ============ 1 LOADING ============ -->
+  <section class="q" id="loading">
+    <h2>1 · Loading screens</h2>
+    <p class="why">Every page gets the same system: a skeleton shaped like the page it is loading, and for slow work (a first Quant look-up, 20 to 60 s) a progress view that says what is happening. The steps advance on typical timings and the last one waits for the result, so it never claims to be done early.</p>
+    <div class="variants">
+      <div class="variant">
+        <div class="vhead"><b>L1</b><strong>Skeleton of the page, steps on top</strong><span>the page's own shape shimmers; a small step card floats over it</span></div>
+        <div class="stage" style="position:relative">
+          <div class="qlay">
+            <div class="rail"><div class="row"><div class="sk" style="width:44px;height:44px"></div><div style="flex:1;display:grid;gap:6px"><div class="sk" style="height:14px;width:80%"></div><div class="sk" style="height:10px;width:50%"></div></div></div>
+              <div class="sk" style="height:28px;width:60%"></div><div class="sk" style="height:46px"></div><div class="sk" style="height:96px;border-radius:14px"></div><div class="sk" style="height:70px"></div></div>
+            <div style="display:grid;gap:12px"><div class="sk" style="height:62px;border-radius:18px"></div><div class="grid3"><div class="sk" style="height:96px;border-radius:16px"></div><div class="sk" style="height:96px;border-radius:16px"></div><div class="sk" style="height:96px;border-radius:16px"></div></div><div class="sk" style="height:180px;border-radius:18px"></div></div>
+          </div>
+          <div class="card" style="position:absolute;top:34px;left:50%;transform:translateX(-30%);width:340px;box-shadow:var(--shadow-pop)">
+            <div class="row" style="margin-bottom:10px"><div class="logo">BB</div><div><strong>BBCA.JK</strong><div class="muted" style="font-size:12px">First look-up · usually 20–40 s</div></div></div>
+            <ul class="steps" data-steps></ul>
+          </div>
+        </div>
+        <p class="note">Other pages: the same skeleton idea without the step card (Home shows skeleton asset cards, a report shows skeleton sections). Short loads (&lt; 300 ms) show nothing, so fast pages don't flash.</p>
+      </div>
+
+      <div class="variant">
+        <div class="vhead"><b>L2</b><strong>Progress card</strong><span>one centred card with the company, a progress bar and the steps</span></div>
+        <div class="stage" style="display:grid;place-items:center;min-height:320px">
+          <div class="card" style="width:420px">
+            <div class="row" style="margin-bottom:14px"><div class="logo" style="width:52px;height:52px">BB</div><div><div style="font:700 18px var(--font-display)">PT Bank Central Asia Tbk</div><div class="muted">BBCA.JK · Jakarta</div></div></div>
+            <div class="track" style="margin-bottom:8px"><i data-bar style="width:10%"></i></div>
+            <div class="row muted" style="justify-content:space-between;font-size:12px;margin-bottom:12px"><span data-now>Finding the company</span><span data-secs>0 s</span></div>
+            <ul class="steps" data-steps></ul>
+            <p class="note" style="margin-top:12px">This is the first time anyone looked it up today. Next time it opens instantly.</p>
+          </div>
+        </div>
+        <p class="note">Other pages: a compact version (title + bar, no steps) for anything that takes over a second; skeletons for lists.</p>
+      </div>
+
+      <div class="variant">
+        <div class="vhead"><b>L3</b><strong>Drawing line</strong><span>a price line draws itself; one caption names the current step</span></div>
+        <div class="stage" style="display:grid;place-items:center;min-height:280px;text-align:center">
+          <div>
+            <svg class="draw" width="320" height="90" viewBox="0 0 320 90" aria-hidden="true"><path d="M4 70 C40 60 60 74 90 52 S140 58 170 36 S220 48 250 26 S300 22 316 12" fill="none" stroke="var(--navy)" stroke-width="3" stroke-linecap="round"/></svg>
+            <div style="font:700 18px var(--font-display);margin-top:8px">Computing PragValue and PragTrend for BBCA.JK</div>
+            <div class="muted" data-now style="margin-top:4px">Finding the company</div>
+            <div class="row" style="justify-content:center;gap:6px;margin-top:10px" data-pips></div>
+          </div>
+        </div>
+        <p class="note">Other pages: the same drawing line, small, beside a one-line caption ("Loading your research").</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 2 SEARCH ============ -->
+  <section class="q" id="search">
+    <h2>2 · Search on the Quant ticker page</h2>
+    <p class="why">Same search as the finder (SEC and Yahoo, so "BBCA" finds BBCA.JK). Where it sits:</p>
+    <div class="variants">
+      <div class="variant">
+        <div class="vhead"><b>S1</b><strong>In the tab bar</strong><span>right of Value / Trend, a compact pill; "/" focuses it</span></div>
+        <div class="stage">
+          <div class="qbar"><div class="seg"><span class="on">Value</span><span>Trend</span></div><div style="flex:1"></div><div class="search">⌕ Search another stock <kbd>/</kbd></div></div>
+          <div class="qlay"><div class="rail" data-rail></div><div style="display:grid;gap:10px"><div class="card" style="height:62px"></div><div class="card" style="height:150px"></div></div></div>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="vhead"><b>S2</b><strong>Header strip with recents</strong><span>a full-width strip: search, then the last few tickers as chips</span></div>
+        <div class="stage">
+          <div class="card row" style="margin-bottom:12px;padding:10px 12px"><div class="search" style="min-width:320px">⌕ Search a company or ticker <kbd>/</kbd></div><span class="muted">Recent</span><span class="chip">AAPL <small>C-</small></span><span class="chip">NVDA <small>B</small></span><span class="chip">BBCA.JK <small>A-</small></span></div>
+          <div class="qbar"><div class="seg"><span class="on">Value</span><span>Trend</span></div></div>
+          <div class="qlay"><div class="rail" data-rail></div><div style="display:grid;gap:10px"><div class="card" style="height:62px"></div><div class="card" style="height:150px"></div></div></div>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="vhead"><b>S3</b><strong>Top of the rail</strong><span>the search leads the summary rail, above the company</span></div>
+        <div class="stage">
+          <div class="qbar"><div class="seg"><span class="on">Value</span><span>Trend</span></div></div>
+          <div class="qlay"><div class="rail"><div class="search" style="min-width:0">⌕ Another stock <kbd>/</kbd></div><div data-rail-inner></div></div><div style="display:grid;gap:10px"><div class="card" style="height:62px"></div><div class="card" style="height:150px"></div></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3 GROWTH ============ -->
+  <section class="q" id="growth">
+    <h2>3 · Adjusting growth</h2>
+    <p class="why">You set the yearly growth for each case; values, the chart and the table recompute instantly with the same DCF (exit multiples, discount rate and shares unchanged). A badge says the figures are yours, with Reset. The PQ Grade and PulseScore stay the model's.</p>
+    <div class="variants">
+      <div class="variant">
+        <div class="vhead"><b>G1</b><strong>Growth drawer under the tiles</strong><span>"Adjust growth" opens three sliders; the model's rate is a tick on each</span></div>
+        <div class="stage">
+          <div class="cases" data-cases="g1"></div>
+          <div class="card" style="margin-top:10px">
+            <div class="row" style="justify-content:space-between"><strong>Adjust growth</strong><span><span class="badge" data-badge="g1" hidden>Your growth</span> <button class="btn2" data-reset="g1">Reset to model</button></span></div>
+            <div data-sliders="g1"></div>
+          </div>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="vhead"><b>G2</b><strong>Steppers in the scenarios table</strong><span>the Growth column becomes ±0.5-point steppers</span></div>
+        <div class="stage">
+          <div class="card"><table><thead><tr><th>Case</th><th>Growth a year</th><th>Exit multiple</th><th>Intrinsic value</th><th>vs price</th></tr></thead><tbody data-table="g2"></tbody></table>
+          <p class="note"><span class="badge" data-badge="g2" hidden>Your growth</span> <a href="#" data-reset="g2">Reset to model</a></p></div>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="vhead"><b>G3</b><strong>One lever, fine-tune per case</strong><span>a single "growth outlook" slider shifts all three cases; "Per case" opens three</span></div>
+        <div class="stage">
+          <div class="cases" data-cases="g3"></div>
+          <div class="card" style="margin-top:10px">
+            <div class="slider" style="grid-template-columns:120px 1fr 80px"><span class="lab">Growth outlook</span><input type="range" min="-10" max="10" step="0.5" value="0" data-lever><output data-lever-out>model</output></div>
+            <div class="row muted" style="justify-content:space-between;font-size:12px"><span>More cautious</span><span>Model</span><span>More optimistic</span></div>
+            <details style="margin-top:8px"><summary>Per case</summary><div data-sliders="g3"></div></details>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 4 WATCHLIST ============ -->
+  <section class="q" id="watch">
+    <h2>4 · Watchlist</h2>
+    <p class="why">A star on the Quant rail and on a company's research page adds it. Where the list lives:</p>
+    <div class="variants">
+      <div class="variant">
+        <div class="vhead"><b>W1</b><strong>Cards on Home and the Quant finder</strong><span>star beside the name; a "Watchlist" row of cards</span></div>
+        <div class="stage" style="display:grid;gap:14px">
+          <div class="card" style="width:320px"><div class="who"><div class="logo">BB</div><div style="flex:1"><h4>PT Bank Central Asia Tbk</h4><span>BBCA.JK · Banks—Regional</span></div><button class="star" aria-pressed="true" data-star>★</button></div></div>
+          <div><div style="font:700 18px var(--font-display);margin:0 0 8px">Watchlist <span class="muted" style="font:500 13px var(--font-sans)">4 stocks</span></div><div class="wl" data-wl></div></div>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="vhead"><b>W2</b><strong>In the sidebar</strong><span>a "Watchlist" group under the main nav, price and 3-month move per ticker</span></div>
+        <div class="stage row" style="align-items:flex-start">
+          <div class="nav"><a>Home</a><a>Research</a><a>Quant</a><a>Themes</a><h5>Watchlist</h5><div data-wl-nav></div></div>
+          <div class="card" style="flex:1;height:240px"><span class="muted">Page content</span></div>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="vhead"><b>W3</b><strong>A Watchlist page, summary on Home</strong><span>/watchlist as a sortable table; Home shows the top movers</span></div>
+        <div class="stage"><div class="card"><table><thead><tr><th>Stock</th><th>Price</th><th>3 months</th><th>PQ Grade</th><th>Trend</th><th>Research</th><th></th></tr></thead><tbody data-wl-table></tbody></table></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 5 SETTINGS ============ -->
+  <section class="q" id="settings">
+    <h2>5 · Settings: providers and models</h2>
+    <p class="why">Saved to a local, gitignored file next to <code>.env.local</code>. Keys are write-only: the page shows "set · …3456", never the key. A field left empty uses the value from your env files, shown as a hint. Applies from the next research job; no restart.</p>
+    <div class="variants">
+      <div class="variant">
+        <div class="vhead"><b>T1</b><strong>One page, two cards</strong><span>Providers (saved list, one active, add form) and Models (per tier, per agent in a drawer)</span></div>
+        <div class="stage grid2">
+          <div class="card"><h3>Providers</h3>
+            <div class="prov" data-on><span>◉</span><div><strong>OpenCode Go</strong><div class="muted" style="font-size:12px">opencode.ai · key set · …9f2a</div></div><button class="btn2">Edit</button></div>
+            <div class="prov"><span>○</span><div><strong>Anthropic</strong><div class="muted" style="font-size:12px">api.anthropic.com · key set · …K3qz</div></div><button class="btn2">Use</button></div>
+            <button class="btn2" style="margin-top:6px">+ Add provider</button>
+          </div>
+          <div class="card"><h3>Models</h3>
+            <table><thead><tr><th>Tier</th><th>Model</th><th>Effort</th></tr></thead><tbody>
+              <tr><td>Cheap</td><td><span class="pill">deepseek-v4.1-flash</span></td><td>low</td></tr>
+              <tr><td>Mid</td><td><span class="pill">deepseek-v4.1-flash</span></td><td>medium</td></tr>
+              <tr><td>Premium</td><td><span class="pill muted">from .env: none</span></td><td>high</td></tr></tbody></table>
+            <details style="margin-top:8px"><summary>Per agent (18)</summary><p class="muted">asset-analyst · valuation-analyst · research-reviewer …</p></details>
+          </div>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="vhead"><b>T2</b><strong>Sections on the left</strong><span>Providers · Models · Per agent · Advanced, one pane at a time</span></div>
+        <div class="stage tabs">
+          <div class="tablist"><span class="on">Providers</span><span>Models</span><span>Per agent</span><span>Advanced</span></div>
+          <div class="card">
+            <h3>Add a provider</h3>
+            <div class="grid2"><div class="field"><label>Name</label><input value="My OpenRouter"></div><div class="field"><label>Type</label><select><option>OpenAI-compatible</option><option>Anthropic</option><option>OpenCode Go</option><option>Local (OpenAI-compatible)</option></select></div></div>
+            <div class="field"><label>Base URL</label><input value="https://openrouter.ai/api/v1"><small>Its host is added to the allowed hosts.</small></div>
+            <div class="field"><label>API key</label><input value="••••••••••••" type="password"><small>Stored in .env.settings.local; never shown again.</small></div>
+            <div class="row"><button class="btn">Save and use</button><button class="btn2">Save</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 6 DESCRIPTIONS ============ -->
+  <section class="q" id="explain">
+    <h2>6 · PragValue and PragTrend descriptions</h2>
+    <p class="why">Today each is one sentence on the finder and nothing on the ticker page.</p>
+    <div class="variants">
+      <div class="variant">
+        <div class="vhead"><b>D1</b><strong>What · How · How to read</strong><span>finder cards in three short parts with key terms; the ticker page gets the same text behind an "About PragValue" link in each tab's first card</span></div>
+        <div class="stage grid2">
+          <div class="card explain"><h3>PragValue</h3>
+            <h4>What it is</h4><p>An estimate of what one share is worth, in three cases (bear, base, bull), and a grade for how cheap the stock is against that.</p>
+            <h4>How it's built</h4><p>The company is routed to one of eight valuation engines by what it does (banks on book value and returns, miners across the cycle, growers on sales). Each engine runs a five-year DCF on its metrics, ending at exit multiples from the company's own history, and takes the weighted median.</p>
+            <h4>How to read it</h4><p>The tiles show each case's value against today's price. PQ Grade (A to F) weighs that gap with how much it could gain against how much it could lose; PulseScore runs −3 (expensive) to +3 (cheap).</p>
+            <div class="terms"><span>DCF</span><span>Exit multiple</span><span>PQ Grade</span><span>PulseScore</span></div></div>
+          <div class="card explain"><h3>PragTrend</h3>
+            <h4>What it is</h4><p>Whether the price is in a healthy uptrend, from daily closes only, measured against the market's index.</p>
+            <h4>How it's built</h4><p>Nine trend-template rules (price above its 50, 150 and 200-day averages, the 200-day rising, near its high), the Weinstein stage from the 30-week average, and relative strength against the S&amp;P 500 (or the local index abroad) and the sector fund.</p>
+            <h4>How to read it</h4><p>More rules met is stronger; stage 2 is advancing, stage 4 declining; an RS rating above 70 means it beat most of the market over the year.</p>
+            <div class="terms"><span>Trend template</span><span>Weinstein stage</span><span>RS rating</span><span>Pocket pivot</span></div></div>
+        </div>
+      </div>
+      <div class="variant">
+        <div class="vhead"><b>D2</b><strong>Four-step flow</strong><span>each card shows the pipeline as four steps, then one "how to read" line; the ticker page gets a "How to read this tab" drawer</span></div>
+        <div class="stage grid2">
+          <div class="card"><h3>PragValue</h3><div class="flow"><div><b>1 · Route</b>Pick one of 8 engines by industry</div><div><b>2 · Measure</b>Its metrics from 5 years of statements</div><div><b>3 · Project</b>Bear, base, bull DCF to year 5</div><div><b>4 · Grade</b>PQ Grade and PulseScore</div></div><p class="muted">Read it: a green upside on the base tile means the model's value is above today's price.</p></div>
+          <div class="card"><h3>PragTrend</h3><div class="flow"><div><b>1 · Averages</b>50, 150, 200-day</div><div><b>2 · Template</b>9 rules met or not</div><div><b>3 · Stage</b>Weinstein 1 to 4</div><div><b>4 · Strength</b>RS vs index and sector</div></div><p class="muted">Read it: stage 2 with most rules met and RS above 70 is a strong uptrend.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+// ---- loading steps (shared) ----
+const STEPS=[["Finding the company",2],["Reading its statements",6],["Fetching five years of prices",6],["Computing PragValue and PragTrend",8]];
+let t0=Date.now();
+function stepState(i,el){const cum=STEPS.slice(0,i).reduce((a,s)=>a+s[1],0);return el<cum?"todo":(i===STEPS.length-1||el<cum+STEPS[i][1])?"now":"done";}
+function renderLoad(){
+  const el=((Date.now()-t0)/1000)%26;
+  let nowIdx=0;
+  document.querySelectorAll("[data-steps]").forEach(ul=>{ul.innerHTML=STEPS.map((s,i)=>{const st=stepState(i,el);if(st==="now")nowIdx=i;return `<li data-s="${st}"><span class="dot">${st==="done"?"✓":""}</span><span>${s[0]}</span><span class="muted" style="font-size:11px">${st==="done"?"done":""}</span></li>`}).join("")});
+  STEPS.forEach((s,i)=>{if(stepState(i,el)==="now")nowIdx=i});
+  document.querySelectorAll("[data-now]").forEach(n=>n.textContent=STEPS[nowIdx][0]);
+  document.querySelectorAll("[data-secs]").forEach(n=>n.textContent=`${Math.floor(el)} s`);
+  document.querySelectorAll("[data-bar]").forEach(b=>b.style.width=`${Math.min(92,8+el*3.4)}%`);
+  document.querySelectorAll("[data-pips]").forEach(p=>p.innerHTML=STEPS.map((s,i)=>`<span style="width:${i===nowIdx?22:8}px;height:8px;border-radius:9px;background:${i<=nowIdx?"var(--navy)":"var(--line-strong)"};transition:width .3s"></span>`).join(""));
+}
+renderLoad();setInterval(renderLoad,500);
+
+// ---- rail ----
+const railInner=`<div class="who"><div class="logo">BB</div><div style="flex:1"><h4>Bank Central Asia</h4><span>BBCA.JK · Banks—Regional</span></div><button class="star" aria-pressed="false" data-star>☆</button></div>
+<div><div class="price">Rp6,000</div><div class="muted" style="font-size:12px"><span class="up">+4.2% 3m</span> · Close 27 Nov 2026</div></div>
+<div class="verdict"><div class="vh">PQ Grade</div><div class="vl"><b>A-</b><strong>Moderate discount</strong></div></div>`;
+document.querySelectorAll("[data-rail]").forEach(r=>r.innerHTML=railInner);
+document.querySelectorAll("[data-rail-inner]").forEach(r=>{r.outerHTML=railInner});
+document.addEventListener("click",e=>{const s=e.target.closest("[data-star]");if(!s)return;const on=s.getAttribute("aria-pressed")!=="true";s.setAttribute("aria-pressed",on);s.textContent=on?"★":"☆";});
+
+// ---- growth (toy DCF that mirrors the shape of the real one) ----
+const PRICE=6000, MODEL={bear:.063,base:.09,bull:.117}, EXIT={bear:2.9,base:3.6,bull:4.1}, CF=548, R=.10, SH=123.3;
+function value(g,exit){let cf=CF,pv=0;for(let y=1;y<=5;y++){cf*=1+(.03+(g-.03)*Math.exp(-.25*(y-1)));pv+=cf/(1+R)**y}return Math.max((pv+cf*exit/(1+R)**5)/SH*10,0)}
+const state={g1:{...MODEL},g2:{...MODEL},g3:{...MODEL}};
+const fmt=v=>`Rp${Math.round(v).toLocaleString("en-US")}`, pc=v=>`${v>0?"+":v<0?"−":""}${Math.abs(v*100).toFixed(1)}%`;
+function paint(k){
+  const g=state[k];
+  document.querySelectorAll(`[data-cases="${k}"]`).forEach(c=>c.innerHTML=["bear","base","bull"].map(x=>{const v=value(g[x],EXIT[x]);const vs=v/PRICE-1;return `<div class="case" data-c="${x}"><div class="n">${x[0].toUpperCase()+x.slice(1)} case</div><div class="up ${vs>=0?"up":"dn"}" style="color:${vs>=0?"var(--positive)":"var(--critical)"}">${pc(vs)}</div><div class="v">${fmt(v)} a share · growth ${pc(g[x])}</div></div>`}).join(""));
+  document.querySelectorAll(`[data-sliders="${k}"]`).forEach(c=>{if(c.dataset.built)return;c.dataset.built=1;c.innerHTML=["bear","base","bull"].map(x=>`<div class="slider"><span class="lab">${x[0].toUpperCase()+x.slice(1)}</span><input type="range" min="-10" max="40" step="0.5" value="${(g[x]*100).toFixed(1)}" data-k="${k}" data-x="${x}"><output data-o="${k}-${x}">${pc(g[x])}</output></div><div class="modeltick" style="margin-left:80px">Model ${pc(MODEL[x])}</div>`).join("")});
+  ["bear","base","bull"].forEach(x=>{const o=document.querySelector(`[data-o="${k}-${x}"]`);if(o)o.textContent=pc(g[x]);const i=document.querySelector(`input[data-k="${k}"][data-x="${x}"]`);if(i)i.value=(g[x]*100).toFixed(1)});
+  const changed=["bear","base","bull"].some(x=>Math.abs(g[x]-MODEL[x])>1e-9);
+  document.querySelectorAll(`[data-badge="${k}"]`).forEach(b=>b.hidden=!changed);
+  document.querySelectorAll(`[data-table="${k}"]`).forEach(tb=>tb.innerHTML=["bear","base","bull"].map(x=>{const v=value(g[x],EXIT[x]);const vs=v/PRICE-1;return `<tr><th style="color:var(--case-${x})">${x[0].toUpperCase()+x.slice(1)}</th><td><span class="step"><button data-step="${k}" data-x="${x}" data-d="-0.005">−</button><span>${pc(g[x])}</span><button data-step="${k}" data-x="${x}" data-d="0.005">+</button></span></td><td>${EXIT[x]}x</td><td>${fmt(v)}</td><td style="color:${vs>=0?"var(--positive)":"var(--critical)"}">${pc(vs)}</td></tr>`}).join(""));
+}
+["g1","g2","g3"].forEach(paint);
+document.addEventListener("input",e=>{const i=e.target;if(i.dataset.k){state[i.dataset.k][i.dataset.x]=Number(i.value)/100;paint(i.dataset.k)}if(i.matches("[data-lever]")){const d=Number(i.value)/100;["bear","base","bull"].forEach(x=>state.g3[x]=MODEL[x]+d);document.querySelector("[data-lever-out]").textContent=d?`${d>0?"+":"−"}${Math.abs(d*100).toFixed(1)} pts`:"model";paint("g3")}});
+document.addEventListener("click",e=>{const b=e.target.closest("[data-step]");if(b){state[b.dataset.step][b.dataset.x]=Math.round((state[b.dataset.step][b.dataset.x]+Number(b.dataset.d))*1000)/1000;paint(b.dataset.step)}const r=e.target.closest("[data-reset]");if(r){e.preventDefault();state[r.dataset.reset]={...MODEL};paint(r.dataset.reset)}});
+
+// ---- watchlist mock ----
+const WL=[["BBCA.JK","Bank Central Asia","Rp6,000","+4.2%","A-","Stage 3","—"],["AAPL","Apple","$212.40","+6.1%","C-","Stage 2","Needs work"],["NVDA","NVIDIA","$141.10","−3.4%","B","Stage 2","Approved"],["KO","Coca-Cola","$70.12","+1.0%","C","Stage 1","—"]];
+document.querySelector("[data-wl]").innerHTML=WL.map(w=>`<div class="wlc"><div class="t"><span class="row" style="gap:8px"><span class="logo" style="width:30px;height:30px;font-size:10px">${w[0].slice(0,2)}</span><strong>${w[1]}</strong></span><span style="color:#B8860B">★</span></div><div class="row" style="justify-content:space-between;margin-top:8px"><b>${w[2]}</b><span class="${w[3][0]==="+"?"up":"dn"}">${w[3]} 3m</span></div><svg width="100%" height="26" viewBox="0 0 100 26" preserveAspectRatio="none"><path d="M0 20 L20 16 L40 18 L60 10 L80 12 L100 ${w[3][0]==="+"?4:22}" fill="none" stroke="var(--navy)" stroke-width="1.6"/></svg><div class="row" style="justify-content:space-between"><span class="g ${w[4][0]==="C"?"c":""}"><small>PQ</small>${w[4]}</span><span class="muted">${w[5]}</span></div></div>`).join("");
+document.querySelector("[data-wl-nav]").innerHTML=WL.map(w=>`<a><span>${w[0]}</span><span class="${w[3][0]==="+"?"up":"dn"}">${w[3]}</span></a>`).join("");
+document.querySelector("[data-wl-table]").innerHTML=WL.map(w=>`<tr><td><strong>${w[1]}</strong> <span class="muted">${w[0]}</span></td><td>${w[2]}</td><td class="${w[3][0]==="+"?"up":"dn"}">${w[3]}</td><td><span class="g ${w[4][0]==="C"?"c":""}"><small>PQ</small>${w[4]}</span></td><td>${w[5]}</td><td>${w[6]}</td><td><button class="star" aria-pressed="true" data-star>★</button></td></tr>`).join("");
+</script>
+</body>
+</html>

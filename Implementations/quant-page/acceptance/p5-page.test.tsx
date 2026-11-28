@@ -17,10 +17,10 @@ test("AC-10: the rail shows price, both grades, PulseScore, trend, stage and the
   const s = await snapshotOf();
   const html = renderToStaticMarkup(<QuantView snapshot={s} tab="value" onTab={noop} />);
   assert.match(html, /Fixture Software/);
-  // One grade since the design pass: PQ-Grade only (PulseGrade is still computed, see p2-value).
-  assert.match(html, /PQ-Grade/);
+  // One grade since the design pass: PQ Grade only, as the verdict header since quant-intl-watchlist-settings P2.
+  assert.match(html, /PQ Grade/);
   assert.doesNotMatch(html, /PulseGrade/);
-  assert.match(html, /PQ-Grade/);
+  assert.match(html, /PQ Grade<\/h2>/);
   assert.match(html, new RegExp(`>${s.value!.pq_grade.grade.replace("+", "\\+")}<`));
   assert.match(html, /PulseScore/);
   assert.match(html, /conditions met/);
@@ -53,7 +53,7 @@ test("AC-10: a partial snapshot shows why Value is missing; Trend still renders"
   const s = await snapshotOf({ fundamentals: null, fundamentals_reason: "Not an SEC filer.", cik: null });
   const value = renderToStaticMarkup(<QuantView snapshot={s} tab="value" onTab={noop} />);
   assert.match(value, /Not an SEC filer\./);
-  assert.doesNotMatch(value, /PQ-Grade/);
+  assert.doesNotMatch(value, /PQ.Grade/);
   assert.match(renderToStaticMarkup(<QuantView snapshot={s} tab="trend" onTab={noop} />), /One year of daily closes/);
 });
 

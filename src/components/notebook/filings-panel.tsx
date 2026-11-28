@@ -8,6 +8,7 @@ import { safeUrl } from "@/lib/research/reporting/presentation.mjs";
 import { filingNotes } from "@/lib/research/notebook/readings";
 import type { NotebookApi } from "./use-notebook";
 import type { Highlight } from "./notebook-drawer";
+import { InlineLoading } from "@/components/ui/loading";
 
 type Filing = { id: string; form: string; title: string; url: string | null; published_at: string | null; period_end: string | null; has_text: boolean };
 type Outline = { filing: Omit<Filing, "has_text">; has_text: boolean; truncated: boolean; total_chars: number; preview_chars: number;
@@ -59,7 +60,7 @@ export function FilingsPanel({ assetId, api, highlight, onNote }: {
   }
 
   if (error && !outline) return <p className={notes.error} role="alert">{error}</p>;
-  if (!filings) return <p className={notes.meta} role="status">Loading filings…</p>;
+  if (!filings) return <InlineLoading label="Loading filings" lines={4} />;
 
   if (!outline) return <section aria-label="Filings">
     {filings.length ? <div className={ui.list}>{filings.map((f) => <button key={f.id} type="button" className={ui.row} onClick={() => void open(f)}>

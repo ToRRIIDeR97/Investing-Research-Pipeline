@@ -104,7 +104,8 @@ test("AC-10: the Quant UI uses palette tokens only (no raw hex colours)", () => 
 test("AC-10: the ticker page wraps useSearchParams in Suspense and announces loading", () => {
   const page = read("src/app/quant/[ticker]/page.tsx");
   assert.match(page, /<Suspense/);
-  assert.match(page, /role="status"/);
+  // Loading is announced by PageLoading (role="status", src/components/ui/loading.tsx) since quant-intl-watchlist-settings P8.
+  assert.match(page, /role="status"|<PageLoading/);
   assert.match(page, /parseQuantTab\(params\.get\("tab"\)\)/);
 });
 

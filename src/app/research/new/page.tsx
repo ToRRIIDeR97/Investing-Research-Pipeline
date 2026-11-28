@@ -11,7 +11,7 @@ export default function NewResearchPage() {
   return <Suspense fallback={null}><NewResearch /></Suspense>;
 }
 
-type Asset = { id: string; canonical_name: string; slug: string; asset_kind?: string };
+type Asset = { id: string; canonical_name: string; slug: string; asset_kind?: string; symbols?: string[] };
 type Listed = { symbol: string; name: string; exchange: string | null; sector: string | null; industry: string | null; price: number | null; change_pct: number | null; currency: string | null };
 type Hit = { kind: "mine"; asset: Asset } | { kind: "yahoo"; listed: Listed };
 type Remote = { state: "idle" | "ok" | "down"; query: string; results: Listed[] };
@@ -62,11 +62,16 @@ function NewResearch() {
   const hits = useMemo<{ mine: Asset[]; yahoo: Listed[] }>(() => {
     if (!q) return { mine: [], yahoo: [] };
     const lower = q.toLowerCase();
-    const bySlug = new Map(assets.map((a) => [a.slug, a]));
-    const mine = assets.filter((a) => a.canonical_name.toLowerCase().includes(lower) || a.slug.includes(lower));
+    // A Yahoo result is yours when its symbol is one of your companies' slugs or listing symbols (seeded Apple is
+    // slug "apple", listing AAPL).
+    const bySymbol = new Map<string, Asset>();
+    // Listing symbols win over slugs, so a ticker maps to the company that actually lists it.
+    for (const a of assets) bySymbol.set(a.slug.toUpperCase(), a);
+    for (const a of assets) for (const s of a.symbols ?? []) bySymbol.set(s.toUpperCase(), a);
+    const mine = assets.filter((a) => a.canonical_name.toLowerCase().includes(lower) || a.slug.includes(lower) || (a.symbols ?? []).some((s) => s.toLowerCase().includes(lower)));
     const yahoo: Listed[] = [];
     for (const listed of remote.query === q ? remote.results : []) {
-      const owned = bySlug.get(listed.symbol.toLowerCase());
+      const owned = bySymbol.get(listed.symbol.toUpperCase());
       if (owned) { if (!mine.includes(owned)) mine.push(owned); } else yahoo.push(listed);
     }
     return { mine, yahoo };
@@ -80,7 +85,8 @@ function NewResearch() {
       const response = await fetch("/api/assets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, asset_kind: "equity", sector: body.sector ?? undefined, industry: body.industry ?? undefined }) });
       const data = await response.json();
       if (response.status === 409) {
-        // Already added (another tab, or a name that didn't match the search): open that company.
+        // Already added (another tab, or the same ticker under another slug): open that company.
+        if (typeof data.existing_id === "string") { router.push(`/assets/${data.existing_id}/run?new=1`); return; }
         const all: Asset[] = await fetch("/api/assets").then((r) => r.json());
         const existing = all.find((a) => a.slug === body.slug);
         if (existing) { router.push(`/assets/${existing.id}/run?new=1`); return; }
@@ -119,7 +125,7 @@ function NewResearch() {
       const a = hit.asset;
       return <button type="button" key={key} {...common}>
         <CompanyLogo subject={{ asset_id: a.id }} name={a.canonical_name} size={38} />
-        <span className={styles.hitName}><strong>{a.canonical_name}</strong><span>{a.asset_kind === "equity" ? a.slug.toUpperCase() : "Your company"}</span></span>
+        <span className={styles.hitName}><strong>{a.canonical_name}</strong><span>{a.asset_kind === "equity" ? (a.symbols?.[0] ?? a.slug.toUpperCase()) : "Your company"}</span></span>
         {isTheme && <Tag tone="neutral">From your theme</Tag>}
         <span className={styles.hitGo}>Open →</span>
       </button>;

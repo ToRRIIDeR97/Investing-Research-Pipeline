@@ -19,6 +19,7 @@ import {
 } from "@/lib/research/run-queue";
 import type { ResearchTask } from "@/lib/workflow/task-queue";
 import { pollUntilStopped, withRetries } from "./poll-loop";
+import { refreshProcessSettings } from "@/lib/settings/model-settings";
 
 function loadEnvFile(fileName: string) {
   const path = resolve(process.cwd(), fileName);
@@ -75,6 +76,9 @@ export async function processNextResearchRunJob(options: { runId?: string; signa
   await reconcileOrphanedResearchRuns({ runId: options.runId });
   const job = await claimNextResearchRun(workerId, undefined, { runId: options.runId });
   if (!job) return false;
+  // Provider and model choices from the Settings page (.env.settings.local) apply from the next job on.
+  const settings = await refreshProcessSettings();
+  if (settings.error) console.warn(`model settings not applied: ${settings.error}`);
 
   console.log(`claimed research run job ${job.id} for run ${job.research_run_id}`);
   // Aborts on shutdown, or once the lease is gone: taken over after expiry, or closed by a cancellation.

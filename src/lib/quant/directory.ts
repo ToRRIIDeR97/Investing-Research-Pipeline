@@ -10,13 +10,15 @@ import { TICKER_PATTERN } from "./ticker";
 type Sql = ReturnType<typeof postgres>;
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
-export type DirectoryEntry = { ticker: string; name: string };
+export type DirectoryEntry = { ticker: string; name: string; exchange?: string | null };
 
 /** A computed snapshot as the finder shows it: enough for a result row or a recent card. */
 export type FinderSnapshot = {
   ticker: string;
   name: string;
   price: number | null;
+  /** The listing currency (older snapshots: null, read as USD). */
+  currency: string | null;
   as_of: string | null;
   /** The one grade shown (PQ-Grade); PulseGrade is still computed by the engine but not shown. */
   pq_grade: string | null;
@@ -70,6 +72,24 @@ export function searchDirectory(entries: readonly DirectoryEntry[], query: strin
   return scored.slice(0, Math.max(1, Math.min(limit, 20))).map((s) => s.entry);
 }
 
+/**
+ * SEC matches (US filers, best first) and Yahoo's non-US listings that SEC doesn't have. A Yahoo listing whose symbol
+ * is the query, with or without its exchange suffix (BBCA or BBCA.JK → BBCA.JK), goes first, so a bare ticker finds
+ * its home listing; other Yahoo listings follow the SEC matches. Pure.
+ */
+export function mergeFinderMatches(query: string, sec: readonly DirectoryEntry[], yahoo: readonly { symbol: string; name: string; exchange: string | null }[], limit = 10): DirectoryEntry[] {
+  const q = query.trim().toUpperCase();
+  const seen = new Set(sec.map((e) => e.ticker));
+  const exact: DirectoryEntry[] = [], rest: DirectoryEntry[] = [];
+  for (const y of yahoo) {
+    if (seen.has(y.symbol) || !/\.[A-Z]{1,3}$/.test(y.symbol) || !TICKER_PATTERN.test(y.symbol)) continue;
+    seen.add(y.symbol);
+    const entry = { ticker: y.symbol, name: y.name.slice(0, NAME_MAX), exchange: y.exchange };
+    (y.symbol === q || y.symbol.replace(/\.[A-Z]{1,3}$/, "") === q ? exact : rest).push(entry);
+  }
+  return [...exact, ...sec, ...rest].slice(0, limit);
+}
+
 let cache: { at: number; entries: DirectoryEntry[] } | null = null;
 let inflight: Promise<DirectoryEntry[]> | null = null;
 
@@ -111,6 +131,7 @@ export function finderSnapshot(json: unknown): FinderSnapshot | null {
     ticker,
     name: str(s.name) ?? ticker,
     price: num(s.price),
+    currency: str(s.currency),
     as_of: str(s.as_of),
     pq_grade: str(s.value?.pq_grade?.grade),
     trend_label: str(s.trend?.conditions?.score_label),

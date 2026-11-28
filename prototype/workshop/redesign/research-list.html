@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Research list redesign</title>
+<link rel="stylesheet" href="redesign.css">
+<style>
+.tools{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line-soft)}
+.filter{display:flex;gap:6px;flex-wrap:wrap}
+.filter .chip b{margin-left:6px;color:inherit;opacity:.7}
+.searchbox{width:280px;height:34px;border:1px solid var(--line-strong);border-radius:10px;display:flex;align-items:center;padding:0 12px;color:var(--ink-4)}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}.seg span{padding:6px 12px;color:var(--ink-2);font-weight:500}.seg .on{background:var(--navy-soft);color:var(--navy);font-weight:600}
+.bar{position:relative;height:8px;border-radius:4px;background:var(--soft);width:140px;display:inline-block;vertical-align:middle}
+.bar i{position:absolute;top:-2px;height:12px;border-radius:4px;background:var(--navy-2)}
+.bar b{position:absolute;top:-4px;width:2px;height:16px;background:var(--ink)}
+.bar em{position:absolute;top:-2px;width:12px;height:12px;border-radius:50%;background:var(--navy);margin-left:-6px;border:2px solid #fff}
+.range{font-size:12px;color:var(--ink-3);margin-top:4px}
+</style></head><body>
+
+<p class="label">Research list<span>A table by default: one row per company with where it stands, value against price, the range across cases, when the latest report was written and the next step. The five count tiles become filters with counts; empty filters are hidden. Names never get cut off.</span></p>
+<div class="nav"><span class="brand">Pragma Research</span><a>Home</a><a class="on">Research</a><a>Themes</a><a>Reviews<span class="badge">1</span></a><span class="spacer"></span><span class="search">Search companies</span><span class="btn">Start research</span></div>
+<div class="screen">
+  <div class="head"><div><h1>Research</h1><p class="sub">3 companies, from idea to decision</p></div></div>
+  <section class="tile">
+    <div class="tools">
+      <div class="filter"><span class="chip on">All<b>3</b></span><span class="chip">Needs your decision<b>1</b></span><span class="chip">Not started<b>2</b></span></div>
+      <div style="display:flex;gap:10px;align-items:center"><span class="searchbox">Filter by name, ticker or sector</span><span class="seg"><span class="on">Table</span><span>Cards</span></span></div>
+    </div>
+    <table class="t stack">
+      <thead><tr><th>Company</th><th>Where it stands</th><th class="hide-sm">Value per share vs price</th><th class="hide-md">Bear to bull</th><th class="hide-sm">Latest report</th><th class="num">Next step</th></tr></thead>
+      <tbody>
+        <tr><td><div class="who"><div class="logo">SoFi</div><div><strong>SoFi Technologies, Inc.</strong><span>SOFI · Equity</span></div></div></td>
+          <td><span class="status wait">Needs your decision</span><div class="range">A later run stopped; see the company page</div></td>
+          <td class="hide-sm"><strong>$8.80</strong> vs $14.28 <span class="down">38% below</span><div class="range">price 17 Nov (6 days old) · unverified</div></td>
+          <td class="hide-md"><span class="bar"><i style="left:6%;width:93%"></i><em style="left:56%"></em><b style="left:95%"></b></span><div class="range">$1.04 to $14.92</div></td>
+          <td class="hide-sm">18 Nov 2026<div class="range">Full initiation report</div></td><td class="num"><span class="rowact">Decide</span></td></tr>
+        <tr><td><div class="who"><div class="logo apple">AAPL</div><div><strong>Apple Inc.</strong><span>AAPL · Equity · Technology</span></div></div></td>
+          <td><span class="status">Not started</span></td><td class="hide-sm muted">No research yet</td><td class="hide-md muted">—</td><td class="hide-sm muted">—</td><td class="num"><span class="rowact">Start research</span></td></tr>
+        <tr><td><div class="who"><div class="logo btc">₿</div><div><strong>Bitcoin</strong><span>Crypto</span></div></div></td>
+          <td><span class="status">Not started</span></td><td class="hide-sm muted">No research yet</td><td class="hide-md muted">—</td><td class="hide-sm muted">—</td><td class="num"><span class="rowact">Start research</span></td></tr>
+      </tbody>
+    </table>
+    <div class="tileBody small" style="border-top:1px solid var(--line-soft)">1 test company hidden · <span class="link">Show it</span></div>
+  </section>
+</div>
+<p class="gone"><strong>What goes away:</strong> the five count tiles with progress bars (now the filter chips), truncated names ("SoFi T…"), and the test company in the main list. <strong>Status rule:</strong> see the index page. <strong>Kept:</strong> the card view, one click away, using the same statuses and numbers as the table.</p>
+</body></html>

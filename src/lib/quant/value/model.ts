@@ -423,7 +423,7 @@ export function operatingLeverageProfile(income: Statement, quarterly: Statement
   return [trend, Math.abs(sd)];
 }
 
-function weightedMedian(values: number[], weights: number[]): number {
+export function weightedMedian(values: number[], weights: number[]): number {
   if (!values.length) return 0;
   if (!weights.length || weights.length !== values.length) return median(values);
   const total = pySum(weights);
@@ -454,12 +454,17 @@ export type DcfResult = {
   exit_multiple_bear: number; exit_multiple_base: number; exit_multiple_bull: number;
   dcf_base_cf_y0: number; dcf_base_cf_label: string;
   dcf_skipped: boolean; dcf_skip_reason: string;
+  /** Shares the per-share values divide by (not in Pragma's output; lets the page rerun the DCF at other growth rates). */
+  dcf_shares?: number;
+  /** Unrounded growth and discount (growth_rate_* and discount_rate are rounded to 4 places), for an exact rerun. */
+  dcf_growth_raw?: { bear: number; base: number; bull: number };
+  dcf_discount_raw?: number;
   /** Per metric, the inputs and values behind the weighted median (not in Pragma's output; used for the value build). */
   metrics: { label: string; weight: number; cf_y0: number; is_flow: boolean; net_debt: number; exits: [number, number, number]; iv: [number, number, number] }[];
 };
 type Scenario = [growth: number, exit: number];
 
-function targetsFor(flow: boolean, cfY0: number, sc: Record<"bear" | "base" | "bull", Scenario>, netDebt: number, sharesIn: number, price: number, discount: number) {
+export function targetsFor(flow: boolean, cfY0: number, sc: Record<"bear" | "base" | "bull", Scenario>, netDebt: number, sharesIn: number, price: number, discount: number) {
   const shares = sharesIn <= 0 ? 1 : sharesIn;
   const cf0 = cfY0 <= 0 ? Math.max(cfY0, 0.01) : cfY0;
   const valueAt = (g: number, exit: number, n: number) => {
@@ -554,7 +559,8 @@ export function computeDcf(engine: Engine, data: PragmaData, er: EngineResult, i
       growth_base_input: pyRound(baseCagr, 4), growth_quality_adjustment: pyRound(qAdj, 4), growth_base_adjusted: pyRound(adjusted, 4),
       growth_reversion_speed: GROWTH_REVERSION_SPEED, terminal_growth_rate: TERMINAL_GROWTH,
       operating_leverage_trend: trend, operating_margin_std: pyRound(marginStd, 4), discount_rate: pyRound(discount, 4),
-      dcf_skipped: false, dcf_skip_reason: "",
+      dcf_skipped: false, dcf_skip_reason: "", dcf_shares: shares <= 0 ? 1 : shares,
+      dcf_growth_raw: { bear: bearG, base: baseG, bull: bullG }, dcf_discount_raw: discount,
     };
     if (!bases.length) {
       let cf = inputs.base_cf;

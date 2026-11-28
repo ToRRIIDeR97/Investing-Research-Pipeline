@@ -8,16 +8,16 @@
       ".env.example": "allow"
     },
     "edit": {
-      "*": "deny",
+      "*": "ask",
       "storage/backtests/**": "allow"
     },
     "bash": {
-      "*": "deny",
+      "*": "ask",
       "python*": "allow",
       "python3*": "allow"
     },
     "external_directory": {
-      "*": "deny"
+      "*": "ask"
     }
   }
 }

@@ -30,6 +30,7 @@ import {
   BANK_METHOD_RULES, CET1_KEY, bankAssumptionsFormat, bankCapitalBase, buildBankValuation, currentCet1Ratio, defaultBankAssumptions,
   isDepositFundedBank, type BankAssumptions, type BankAssumptionsOutput, type ScenarioInput,
 } from "../valuation/bank";
+import { readStoredFile, readStoredText } from "@/lib/storage/stored-file";
 
 /** Shared by both valuation prompts: anchor discount rates on the sourced beta and equity risk premium. */
 const COST_OF_CAPITAL_RULE = "cost_of_capital_inputs holds a regression beta against the S&P 500 (beta), a dated implied equity risk premium (equity_risk_premium) and the CAPM cost of equity they give with risk_free_rate (capm_cost_of_equity). Build each discount rate from them, cite their values and as-of dates in rationale, and explain any departure from the CAPM rate. Flag an input marked unverified or stale; when one is null, say so and state the assumption used instead.";
@@ -339,7 +340,7 @@ export const assetValuationHandler: StageHandler<Record<string, unknown>> = {
       const sourceRoot = resolve(process.cwd(), "storage", "sources");
       const sourcePath = resolve(process.cwd(), String(primaryDoc.storage_path));
       if (!sourcePath.startsWith(sourceRoot + sep)) throw new Error("Invalid primary source path");
-      const fileText = await readFile(sourcePath, "utf8");
+      const fileText = await readStoredText(sourcePath);
       const companyFacts = JSON.parse(fileText).companyFacts;
       const bookCurrency = dominantCurrency(companyFacts);
       companyFactsDoc = { facts: companyFacts, currency: bookCurrency };

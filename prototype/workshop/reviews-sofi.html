@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reviews redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--page:#F5F6F8;--tile:#FFFFFF;--soft:#F1F3F6;--hover:#F7F8FA;--line:#E2E5EA;--line-soft:#EEF0F3;--line-strong:#D1D5DB;--ink:#111827;--ink-2:#4B5563;--ink-3:#6B7280;--ink-4:#9CA3AF;--navy:#1E3A5F;--navy-soft:#EDF0F4;--navy-2:#B9C7D9;--navy-3:#6B8CB5;--positive:#166534;--positive-bg:#E6F4EA;--positive-line:#B7DFC3;--critical:#B42318;--critical-bg:#FDECEC;--critical-line:#F3C1BC;--caution:#7A5300;--caution-bg:#FFF4D6;--caution-line:#F0D9A0}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--page);font-family:Inter,system-ui,sans-serif;color:var(--ink);font-size:13px}
+ul,ol{list-style:none}
+.nav{height:60px;background:var(--tile);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:28px;padding:0 64px}
+.brand{font-weight:700;font-size:16px}.nav a{color:var(--ink-2);font-weight:500}.nav a.on{background:var(--navy-soft);color:var(--navy);padding:6px 12px;border-radius:8px;font-weight:600}
+.badge{display:inline-grid;place-items:center;min-width:18px;height:18px;border-radius:9px;background:var(--caution-bg);color:var(--caution);font-size:11px;font-weight:700;margin-left:6px}
+.screen{max-width:1312px;margin:0 auto;padding:24px 24px 40px}
+.label{margin:28px auto 0;max-width:1312px;padding:0 24px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--navy-3)}
+.label span{display:block;font-weight:500;letter-spacing:0;text-transform:none;color:var(--ink-3);font-size:13px;margin-top:4px}
+h1{font-size:26px;font-weight:700;letter-spacing:-.01em}
+.sub{color:var(--ink-2);font-size:14px;margin:4px 0 18px}
+.status{display:inline-flex;align-items:center;gap:6px;height:22px;padding:0 9px;border-radius:999px;background:var(--soft);font-size:12px;font-weight:600;color:var(--ink-2);white-space:nowrap}
+.status:before{content:'';width:6px;height:6px;border-radius:50%;background:var(--ink-4)}
+.wait{background:var(--caution-bg);color:var(--caution)}.wait:before{background:var(--caution)}
+.crit{background:var(--critical-bg);color:var(--critical)}.crit:before{background:var(--critical)}
+.ok{background:var(--positive-bg);color:var(--positive)}.ok:before{background:var(--positive)}
+.logo{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);display:grid;place-items:center;font-weight:800;color:#1aa0c8;font-size:12px;background:#fff;flex-shrink:0}
+.item{background:var(--tile);border:1px solid var(--line);border-radius:16px}
+.itemMain{display:grid;grid-template-columns:1.3fr 1fr 1.25fr auto;gap:20px;align-items:center;padding:16px 18px}
+.who{display:flex;gap:12px;align-items:center}.who strong{display:block;font-size:15px}.who span{display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px}
+.cell{font-size:13px;line-height:1.5;color:var(--ink-2)}.cell .k{display:block;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-4);margin-bottom:2px}
+.cell strong{font-size:15px;color:var(--ink)}.down{color:var(--critical);font-weight:600}
+.btn{display:inline-flex;align-items:center;height:36px;padding:0 16px;border-radius:10px;font-weight:600;font-size:13px;border:1px solid var(--line-strong);background:var(--tile);color:var(--ink)}
+.primary{background:var(--navy);border-color:var(--navy);color:#fff}
+.older{border-top:1px solid var(--line-soft);padding:0 18px 6px;color:var(--ink-2)}
+.older .sum{padding:10px 0;font-weight:500}
+.olderNote{color:var(--ink-3);font-size:12.5px;margin-bottom:8px}
+.olderRow{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--line-soft)}
+.olderRow div{display:flex;gap:16px}.link{color:var(--navy);font-weight:600}
+.hero{display:flex;justify-content:space-between;align-items:center;margin:6px 0 18px}
+.hero .who strong{font-size:24px;font-weight:700}.eyebrow{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.grid{display:grid;grid-template-columns:minmax(0,8fr) minmax(0,4fr);gap:16px;align-items:start}
+.col{display:grid;gap:16px}
+.block{background:var(--tile);border:1px solid var(--line);border-radius:16px;padding:22px 26px}
+.block.v{border-color:var(--navy-2)}
+.blockEyebrow{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-4);margin-bottom:6px}
+.vline{font-size:22px;font-weight:650;line-height:1.3;max-width:40ch;margin-bottom:10px}
+.summary{font-size:14px;line-height:1.6;color:var(--ink-2);max-width:72ch}
+.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin:18px 0 8px}
+.fact{background:#fff;padding:12px 16px}.fact span{display:block;font-size:12px;color:var(--ink-3)}.fact strong{display:block;font-size:20px;font-weight:650;line-height:1.3}
+.reasons{display:grid;gap:10px;margin-top:12px}
+.reason{display:grid;grid-template-columns:28px 1fr;gap:12px;padding:14px 16px;border:1px solid var(--line);border-radius:12px}
+.n{width:26px;height:26px;border-radius:50%;background:var(--navy-soft);color:var(--navy);display:grid;place-items:center;font-weight:650}
+.reason h3{font-size:14.5px;font-weight:650;margin:2px 0 4px}.reason p{font-size:13.5px;line-height:1.6;color:var(--ink-2)}
+.cite{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:5px;background:var(--navy-soft);color:var(--navy);font-size:11px;font-weight:700;margin-left:4px;vertical-align:2px}
+.other{margin-top:12px;padding:14px 16px;border-radius:12px;background:var(--positive-bg);border:1px solid var(--positive-line);font-size:13.5px;line-height:1.6;color:var(--ink-2)}
+.other h3{font-size:13.5px;color:var(--positive);margin-bottom:4px}
+.tile{background:var(--tile);border:1px solid var(--line);border-radius:16px}
+.tileHead{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line-soft);min-height:48px}
+.tileHead h2{font-size:14px;font-weight:600}
+.reviewTop{padding:14px 18px;display:grid;gap:12px}
+.lead{font-size:14px;line-height:1.55}
+.blocked{padding:12px 14px;border-radius:12px;background:var(--critical-bg);border:1px solid var(--critical-line);line-height:1.55;color:var(--ink-2)}
+.blocked strong{display:block;color:var(--critical)}.blocked ul{list-style:disc;padding-left:18px;margin:6px 0;color:var(--ink)}
+.fold{color:var(--navy);font-weight:600}
+.group{border-top:1px solid var(--line-soft)}
+.groupHead{display:flex;justify-content:space-between;align-items:center;padding:11px 18px;gap:12px}
+.groupHead .t{font-weight:600;font-size:13.5px}.groupHead .t:before{content:'▸';color:var(--ink-4);margin-right:8px}
+.group.open .groupHead .t:before{content:'▾'}
+.counts{display:flex;gap:6px}
+.findings{display:grid;gap:10px;padding:2px 18px 16px}
+.finding{padding:12px 14px;border:1px solid var(--line);border-radius:10px}
+.fh{display:flex;gap:10px;align-items:center;font-size:12.5px;color:var(--ink-3)}
+.finding p{margin-top:6px;line-height:1.6;max-width:80ch}.fix{color:var(--ink-2)}.fix b{color:var(--ink);font-weight:600}
+.form{padding:14px 18px;display:grid;gap:14px}
+.field{display:grid;gap:6px;font-weight:500}
+.select,.input{height:38px;border:1px solid var(--line-strong);border-radius:10px;padding:0 12px;display:flex;align-items:center;justify-content:space-between;color:var(--ink-3);background:#fff}
+.textarea{height:70px;border:1px solid var(--line-strong);border-radius:10px}
+.menu{border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgb(17 24 39/10%);overflow:hidden;margin-top:-8px}
+.menu div{padding:8px 12px;border-top:1px solid var(--line-soft)}.menu div:first-child{border-top:0;color:var(--ink-4)}
+.menu .dis{color:var(--ink-4)}.menu .dis small{display:block;font-size:11.5px}
+.check{display:flex;gap:8px;line-height:1.5;color:var(--ink-2)}.box{width:15px;height:15px;border:1px solid var(--line-strong);border-radius:4px;margin-top:2px;flex-shrink:0}
+.actions{display:flex;justify-content:space-between;padding:12px 14px;border-top:1px solid var(--line-soft)}
+.primary.off{opacity:.45}
+.hint{font-size:12px;color:var(--ink-3);padding:0 18px 14px;line-height:1.5}
+.ask{display:grid;gap:6px;padding:12px 18px;color:var(--ink-2);line-height:1.55}
+.callout{display:inline-block;background:var(--navy);color:#fff;font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;margin-left:8px;vertical-align:3px}
+svg text{font-family:Inter,system-ui,sans-serif}
+</style>
+</head>
+<body>
+
+<p class="label">Screen 1 · Reviews queue<span>One row per company: what's being decided, value against price and what the AI reviewer said. Older waiting reports fold underneath.</span></p>
+<div class="nav"><span class="brand">Pragma Research</span><a>Home</a><a>Research</a><a>Themes</a><a class="on">Reviews<span class="badge">1</span></a></div>
+<div class="screen">
+  <h1>Reviews</h1>
+  <p class="sub">1 report waiting for your decision</p>
+  <article class="item">
+    <div class="itemMain">
+      <div class="who"><div class="logo">SoFi</div><div><strong>SoFi Technologies, Inc.</strong><span>Full initiation report · 18 Nov 2026</span></div></div>
+      <div class="cell"><span class="k">Value vs price</span><strong>$8.80</strong> vs $14.28 price (unverified) · <span class="down">−38%</span></div>
+      <div class="cell"><span class="k">AI review</span><strong>Needs more work</strong> · 16 serious findings<br>Position approval blocked</div>
+      <span class="btn primary">Decide</span>
+    </div>
+    <div class="older">
+      <p class="sum">▾ 2 older reports for this company are also waiting</p>
+      <p class="olderNote">The 18 Nov report replaces these. Closing one cancels its run: the report stays readable, but it can't be decided or resumed.</p>
+      <div class="olderRow"><span>Full initiation report · 25 Sep 2026</span><div><span class="link">Read</span><span class="link">Close</span></div></div>
+      <div class="olderRow"><span>Full initiation report · 23 Sep 2026</span><div><span class="link">Read</span><span class="link">Close</span></div></div>
+    </div>
+  </article>
+</div>
+
+<p class="label">Screen 2 · The decision page<span>Opens with the memo's verdict and reasons, then what the AI reviewer found (grouped by chapter, collapsed), then the form. No verdict is chosen for you.</span></p>
+<div class="nav"><span class="brand">Pragma Research</span><a>Home</a><a>Research</a><a>Themes</a><a class="on">Reviews<span class="badge">1</span></a></div>
+<div class="screen">
+  <p style="color:var(--ink-2);margin-bottom:8px">← Reviews</p>
+  <div class="hero">
+    <div class="who"><div class="logo" style="width:60px;height:60px">SoFi</div><div><p class="eyebrow">Final decision</p><strong>SoFi Technologies, Inc.</strong><span>Full initiation report · 18 Nov 2026 &nbsp;<span class="status wait">Needs your decision</span></span></div></div>
+    <span class="btn">Read the full memo ↗</span>
+  </div>
+  <div class="grid">
+    <div class="col">
+      <section class="block v">
+        <p class="blockEyebrow">What you're deciding on</p>
+        <p class="vline">At $14.28, the base-case value of $8.80 is 38% below the price.</p>
+        <p class="summary">Decision withheld. On present evidence the probability-weighted value of 7.70 USD per share sits 46 percent below the 14.28 USD price, and the bull case alone reaches the market price. Approval should wait until the bank capital tie-out, the deposit beta, the Technology Platform third-party split and the reconciliation of the 2026 operating model are complete.</p>
+        <div class="facts">
+          <div class="fact"><span>Value per share today</span><strong>$8.80</strong><span>base case</span></div>
+          <div class="fact"><span>Market price</span><strong>$14.28</strong><span>unverified, 2026-11-17</span></div>
+          <div class="fact"><span>Price vs value</span><strong style="color:var(--critical)">−38%</strong><span>value below price</span></div>
+          <div class="fact"><span>Range across cases</span><strong>$1.04 to $14.92</strong><span>bear to bull, weighted $7.70</span></div>
+        </div>
+        <svg width="100%" viewBox="0 0 800 70" role="img" aria-label="Bear 1.04, base 8.80, bull 14.92, price 14.28">
+          <rect x="20" y="28" width="760" height="8" rx="4" fill="#F1F3F6"/>
+          <rect x="67" y="26" width="709" height="12" rx="4" fill="#B9C7D9"/>
+          <circle cx="67" cy="32" r="6" fill="#6B8CB5"/><circle cx="452" cy="32" r="8" fill="#1E3A5F" stroke="#fff" stroke-width="2"/><circle cx="776" cy="32" r="6" fill="#6B8CB5"/>
+          <rect x="745" y="12" width="3" height="40" fill="#111827"/>
+          <text x="67" y="60" font-size="12" text-anchor="middle" fill="#4B5563">Bear $1.04</text>
+          <text x="452" y="60" font-size="12" text-anchor="middle" fill="#111827" font-weight="600">Base $8.80</text>
+          <text x="776" y="60" font-size="12" text-anchor="end" fill="#4B5563">Bull $14.92</text>
+          <text x="746" y="9" font-size="12" text-anchor="end" fill="#111827" font-weight="600">Price $14.28</text>
+        </svg>
+      </section>
+      <section class="block">
+        <p class="blockEyebrow">Why <span style="text-transform:none;letter-spacing:0;font-weight:500">· stored text from this 18 Nov run, written before the plain-language key reasons; newer runs read better</span></p>
+        <h2 style="font-size:18px;font-weight:650">The main reasons</h2>
+        <div class="reasons">
+          <div class="reason"><span class="n">1</span><div><h3>Central question: will the economics of the bank-funded lending and deposit franchise reach shareholders, or will growth spending and the platform keep consuming them?<span class="cite">1</span><span class="cite">2</span><span class="cite">+5</span></h3><p>On the reported figures the earnings line has turned clearly positive. GAAP net income was 564.3 million USD for the nine months to September 2026, against 307.8 million a year earlier.</p></div></div>
+          <div class="reason"><span class="n">2</span><div><h3>Decisive insight hypothesis: partly held.<span class="cite">1</span><span class="cite">2</span></h3><p>The hypothesis said value depends on whether the deposit-funded lending franchise earns above its cost of equity after credit losses, capital needs and stock pay, with Galileo and Technisys as a cash-consuming option.</p></div></div>
+          <div class="reason"><span class="n">3</span><div><h3>Falsifier scorecard for the research framing.<span class="cite">1</span><span class="cite">2</span><span class="cite">3</span></h3><p>Q1 (return on tangible equity above 8 percent): unresolved, because segment allocated equity and NOPAT are not disclosed. Q2 (deposit beta above 0.7): unresolved, because no deposit cost series is in the evidence.</p></div></div>
+        </div>
+        <div class="other"><h3>The other side</h3>The earnings line is genuinely improving: GAAP net income rose to 564.3 million USD for nine months, net interest margin reached 6.14% and the net charge-off ratio fell to 1.62%. The discounted values show that capital needed to grow absorbs those earnings through 2030 in every case.</div>
+      </section>
+      <section class="tile">
+        <div class="tileHead"><h2>What the AI reviewer found</h2><span class="status wait">Needs more work</span></div>
+        <div class="reviewTop">
+          <p class="lead">62 findings, 16 of them serious (high or critical), across 19 parts of the report. 1 of 19 depth checks is missing.</p>
+          <div class="blocked"><strong>Approval for a position is blocked</strong>
+            <ul><li>A high calculation finding confirmed by code: terminal value is 301% (bear), 137% (base) and 125% (bull) of enterprise value.</li><li>The reverse valuation is missing.</li></ul>
+            You can still approve it for tracking, put it on the watchlist, reject it or send it back for more work.</div>
+          <p class="fold">▸ The reviewer's summary</p>
+        </div>
+        <div class="group open">
+          <div class="groupHead"><span class="t">Valuation: Equity Cash Flow Method, Tangible Book Cross-Check and Reverse Expectations</span><span class="counts"><span class="status crit">5 high</span></span></div>
+          <div class="findings">
+            <div class="finding"><div class="fh"><span class="status crit">High</span>Calculation</div>
+              <p>Terminal-value share is restated as a share of equity value (301%, 137%, 125%), but report facts defines tv share of ev over enterprise value and the stored values are 3.01, 1.37 and 1.25. The chapter labels them as share of equity value without explaining the equivalence.</p>
+              <p class="fix"><b>Suggested fix:</b> State the terminal-value share as stored, define it over enterprise value (equal to equity value here), and say that it exceeds 100% because explicit cash flows are negative.</p></div>
+            <div class="finding"><div class="fh"><span class="status crit">High</span>Calculation</div><p>Probability-weighted value is reported as 7.70 USD in one place and the undiscounted weighted terminal anchor of 19.81 USD is said to produce a 38.7% expected return…</p></div>
+          </div>
+        </div>
+        <div class="group"><div class="groupHead"><span class="t">Downside: Permanent Impairment and No-Rerating Returns</span><span class="counts"><span class="status crit">2 high</span><span class="status wait">1 medium</span></span></div></div>
+        <div class="group"><div class="groupHead"><span class="t">What the Holder Owns and How Value Reaches It</span><span class="counts"><span class="status crit">1 high</span><span class="status wait">3 medium</span></span></div></div>
+        <div class="group"><div class="groupHead"><span class="t">Credit Quality, Reserves and Card Mix Shift</span><span class="counts"><span class="status crit">1 high</span><span class="status wait">1 medium</span></span></div></div>
+        <div class="group"><div class="groupHead"><span class="t" style="color:var(--ink-3)">… 15 more chapters</span><span></span></div></div>
+        <div class="group"><div class="groupHead"><span class="t">Depth checks</span><span class="counts"><span class="status wait">1 missing of 19</span></span></div></div>
+      </section>
+      <section class="tile"><div class="ask"><span class="fold">▸ What was asked</span></div></section>
+    </div>
+    <div class="col">
+      <section class="tile">
+        <div class="tileHead"><h2>Your decision</h2></div>
+        <div class="form">
+          <div class="field">Verdict<div class="select">Choose a verdict <span>▾</span></div></div>
+          <div class="menu">
+            <div>Choose a verdict</div>
+            <div class="dis">Approve for a position<small>Blocked by the AI review</small></div>
+            <div>Approve for tracking</div>
+            <div>Watchlist</div>
+            <div>Needs more work</div>
+            <div>Reject</div>
+          </div>
+          <div class="field">Conviction<div class="select">Not set <span>▾</span></div></div>
+          <div class="field">What would change your mind?<div class="textarea"></div></div>
+          <div class="check"><span class="box"></span><span>I've read the <span class="link">16 serious findings</span>. Approval needs this.</span></div>
+          <p class="fold">▸ Depth ratings (optional)</p>
+          <p class="fold">▸ More notes (optional)</p>
+        </div>
+        <div class="actions"><span class="btn">Cancel</span><span class="btn primary off">Record decision</span></div>
+        <p class="hint">Choose a verdict to record your decision.</p>
+      </section>
+    </div>
+  </div>
+</div>
+
+<p class="label">What goes away<span>The 8-tile number strip with cut-off labels, the run IDs, the made-up "Medium" priority, the research brief at the top, the risk heat (it's in the memo), and the full report printed under the findings (one click away via "Read the full memo").</span></p>
+<div style="height:40px"></div>
+</body>
+</html>

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B · Ultra Report</title>
+<link rel="stylesheet" href="base.css">
+<style>
+body{background:#f1f5f9}
+header{background:#fff;border-bottom:1px solid var(--s2)}
+.hd{max-width:1280px;margin:0 auto;padding:12px 40px;display:flex;align-items:center;gap:28px}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--fd);font-size:19px;color:var(--logo)}.brand img{width:30px}
+nav{display:flex;gap:4px}nav a{padding:6px 16px;border-radius:12px;font-size:14px;font-weight:500;color:#475569}
+nav a.on{background:#f1f5f9;color:var(--navy)}
+nav .ct{display:inline-grid;place-items:center;min-width:18px;height:18px;margin-left:6px;border-radius:9px;background:var(--amber);color:#fff;font-size:10.5px;font-weight:700}
+.sp{flex:1}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 40px 64px}
+.hero{position:relative;background:linear-gradient(135deg,#0A2642,#16395a 50%,#0f172a);color:#fff;border-radius:24px;padding:44px 48px 36px;display:grid;grid-template-columns:1fr auto;gap:28px 40px;align-items:center;overflow:hidden;box-shadow:0 10px 30px -10px rgba(10,38,66,.45)}
+.hero:after{content:"";position:absolute;inset:0;background-image:linear-gradient(45deg,rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(-45deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:40px 40px;pointer-events:none}
+.tag{font-family:var(--fm);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.65);border:1px solid rgba(255,255,255,.14);display:inline-block;padding:4px 10px;border-radius:4px;margin-bottom:14px}
+.hero h1{font-family:var(--fd);font-weight:400;font-size:54px;line-height:1.05}
+.hero .sub{font-family:var(--fm);font-size:13px;color:rgba(255,255,255,.6);margin-top:8px}
+.grade{width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 0 40px rgba(201,48,44,.25)}
+.grade b{font-family:var(--fd);font-weight:400;font-size:46px;line-height:1}
+.grade span{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.7);margin-top:6px;text-align:center;line-height:1.4}
+.range{grid-column:1/-1;position:relative;z-index:1}
+.range .row{display:flex;justify-content:space-between;font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,255,255,.55);margin-bottom:10px}
+.track{position:relative;height:12px;background:rgba(255,255,255,.1);border-radius:6px}
+.track .fill{position:absolute;left:0;right:0;top:0;bottom:0;border-radius:6px;background:linear-gradient(90deg,#ef4444,#f59e0b 55%,#22c55e)}
+.mk{position:absolute;top:-6px;width:3px;height:24px;border-radius:2px;background:#fff}
+.mk span{position:absolute;top:28px;left:50%;transform:translateX(-50%);white-space:nowrap;font-family:var(--fm);font-size:11.5px;color:#fff}
+.mk.price{background:#fbbf24}.mk.price span{color:#fbbf24}
+.thesis{grid-column:1/-1;font-size:16.5px;font-style:italic;line-height:1.6;color:rgba(255,255,255,.85);border-left:2px solid rgba(255,255,255,.25);padding-left:16px;margin-top:22px;position:relative;z-index:1}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:22px 0}
+.kpi{background:#fff;border:1px solid var(--s2);border-radius:16px;padding:16px 18px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.kpi span{display:block;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--s6)}
+.kpi strong{display:block;font-family:var(--fm);font-size:24px;font-weight:600;color:var(--navy);margin-top:4px}
+.kpi em{font-style:normal;font-size:12px;color:#94a3b8}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:22px;align-items:start}
+details{background:#fff;border:1px solid var(--s2);border-radius:16px;margin-bottom:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+summary{padding:17px 24px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.2em;color:var(--navy);cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;border-left:3px solid transparent}
+summary::-webkit-details-marker{display:none}
+summary .r{display:flex;gap:10px;align-items:center;letter-spacing:.04em;text-transform:none;font-weight:600}
+summary:after{content:'▾';font-size:15px;color:var(--s3);margin-left:10px}
+details[open] summary{border-bottom:1px solid var(--s2);background:var(--s1);border-left-color:var(--navy)}
+details[open] summary:after{transform:rotate(180deg)}
+.inner{padding:22px 24px;line-height:1.65;color:#334155}
+.inner .q{font-family:var(--fd);font-size:19px;line-height:1.45;color:var(--navy)}
+.bar{display:flex;align-items:center;gap:14px;margin:9px 0}
+.bar .dl{width:230px;font-size:13px;font-weight:600}
+.bar .bw{flex:1;height:22px;background:var(--s1);border:1px solid var(--s2);border-radius:6px;overflow:hidden;display:flex}
+.bar .h{background:#ef4444}.bar .m{background:#fbbf24}
+.bar .n{font-family:var(--fm);font-size:12px;width:130px;white-space:nowrap;text-align:right;color:var(--s6)}
+.blk{padding:14px 16px;border-radius:12px;background:#fef2f2;border:1px solid #fecaca;margin-bottom:14px}
+.blk b{color:#991b1b}.blk li{margin-left:18px}
+.panel{position:sticky;top:20px;background:#fff;border:1px solid var(--s2);border-radius:20px;overflow:hidden;box-shadow:0 10px 30px -12px rgba(10,38,66,.25)}
+.panel .ph{background:var(--navy);color:#fff;padding:16px 20px}
+.panel .ph b{font-family:var(--fd);font-weight:400;font-size:21px;display:block}
+.panel .ph span{font-size:12px;color:rgba(255,255,255,.65)}
+.panel .pb{padding:16px 18px}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border-radius:12px;border:1px solid var(--s2);margin-bottom:8px}
+.opt i{flex:none;width:18px;height:18px;border-radius:50%;border:1.5px solid var(--s3);margin-top:1px}
+.opt strong{display:block;font-size:13.5px}.opt span{font-size:12px;color:#64748b}
+.opt.sel{border-color:var(--navy);background:#f1f5f9}.opt.sel i{border:5px solid var(--navy)}
+.opt.dis{opacity:.45}
+.ack{display:flex;gap:10px;align-items:center;margin:12px 2px;font-size:13px}.ack i{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--s3)}
+</style></head><body>
+<p class="label"><b>B · Ultra Report</b>Built from your PragValue Ultra template: a navy gradient hero with the company in large serif, a grade circle, a gradient range bar with the price marked, the thesis in italics, and collapsible section cards with a navy edge when open. The decision lives in a pinned panel.</p>
+<header><div class="hd">
+  <a class="brand"><img src="logo.svg" alt="">Pragma Research</a>
+  <nav><a>Home</a><a>Research</a><a>Themes</a><a class="on">Reviews<span class="ct">1</span></a></nav>
+  <span class="sp"></span><span class="btn primary" style="height:36px">Start research</span>
+</div></header>
+<div class="wrap">
+  <section class="hero">
+    <div style="position:relative;z-index:1"><span class="tag">Full initiation · 18 Nov 2026 · needs your decision</span>
+      <h1>SoFi Technologies</h1><div class="sub">SOFI · NASDAQ · price $14.28 on 17 Nov (6 days old, unverified)</div></div>
+    <div class="grade" style="position:relative;z-index:1"><b>−38%</b><span>value below<br>price</span></div>
+    <div class="range">
+      <div class="row"><span>Bear $1.04</span><span>Value range per share</span><span>Bull $14.92</span></div>
+      <div class="track"><div class="fill"></div>
+        <div class="mk" style="left:0%"></div>
+        <div class="mk" style="left:55%"><span>Base $8.80</span></div>
+        <div class="mk price" style="left:95.3%"><span>Price $14.28</span></div>
+        <div class="mk" style="left:calc(100% - 3px)"></div>
+      </div>
+    </div>
+    <p class="thesis">“Decision withheld. Approval should wait until the bank capital tie-out, the deposit beta, the Technology Platform split and the 2026 operating model are reconciled.”</p>
+  </section>
+
+  <div class="kpis">
+    <div class="kpi"><span>Value per share</span><strong>$8.80</strong><em>base · weighted $7.70</em></div>
+    <div class="kpi"><span>Market price</span><strong>$14.28</strong><em>17 Nov close</em></div>
+    <div class="kpi"><span>AI review</span><strong style="color:var(--red)">16 serious</strong><em>of 62 findings</em></div>
+    <div class="kpi"><span>Research cost</span><strong>$4.86</strong><em>this run</em></div>
+  </div>
+
+  <div class="cols">
+    <div>
+      <details open><summary>AI review<span class="r"><span class="pill red">Position blocked</span></span></summary>
+        <div class="inner">
+          <div class="blk"><b>Why a position can't be approved</b><ul><li>The value rests almost entirely on the years after 2030.</li><li>The check of what today's price already assumes was never done.</li><li>The report itself withholds a conclusion.</li></ul></div>
+          <div class="bar"><span class="dl">Valuation and cross-checks</span><span class="bw"><i class="h" style="width:62%"></i></span><span class="n">5 high</span></div>
+          <div class="bar"><span class="dl">Downside and no-rerating</span><span class="bw"><i class="h" style="width:25%"></i><i class="m" style="width:12%"></i></span><span class="n">2 high · 1 med</span></div>
+          <div class="bar"><span class="dl">What the holder owns</span><span class="bw"><i class="h" style="width:12%"></i><i class="m" style="width:37%"></i></span><span class="n">1 high · 3 med</span></div>
+          <div class="bar"><span class="dl">Credit quality and reserves</span><span class="bw"><i class="h" style="width:12%"></i><i class="m" style="width:12%"></i></span><span class="n">1 high · 1 med</span></div>
+          <p style="margin-top:10px;font-weight:600;color:var(--navy)">15 more chapters →</p>
+        </div></details>
+      <details open><summary>The case against<span class="r" style="color:#64748b">strongest counter-point</span></summary>
+        <div class="inner"><p class="q">The earnings line is genuinely improving: net income reached $564.3M for nine months and the charge-off ratio fell to 1.62%.</p><p style="margin-top:10px">The discounted values show the capital needed to grow absorbs those earnings through 2030 in every case.</p></div></details>
+      <details><summary>Scenarios<span class="r" style="color:#64748b">bear · base · bull</span></summary></details>
+      <details><summary>Key reasons<span class="r" style="color:#64748b">3, in the report's wording</span></summary></details>
+      <details><summary>Sources and checks<span class="r" style="color:#64748b">41 sources</span></summary></details>
+    </div>
+    <aside class="panel">
+      <div class="ph"><b>Your decision</b><span>Only tracking can be approved while the findings stay open.</span></div>
+      <div class="pb">
+        <div class="opt dis"><i></i><div><strong>Approve for a position</strong><span>Blocked</span></div></div>
+        <div class="opt sel"><i></i><div><strong>Approve for tracking</strong><span>Monitor it. No position.</span></div></div>
+        <div class="opt"><i></i><div><strong>Watchlist</strong><span>Revisit later</span></div></div>
+        <div class="opt"><i></i><div><strong>Send back</strong><span>Rewrite · about $3.46</span></div></div>
+        <div class="opt"><i></i><div><strong>Reject</strong><span>Close it</span></div></div>
+        <div class="ack"><i></i>I've read the 16 serious findings</div>
+        <span class="btn primary caps" style="width:100%">Record decision</span>
+      </div>
+    </aside>
+  </div>
+</div>
+</body></html>

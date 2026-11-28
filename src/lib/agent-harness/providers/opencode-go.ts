@@ -19,6 +19,13 @@ export class OpenCodeGoProvider implements ModelProvider {
     return this.openai.healthCheck();
   }
 
+  get endpoint() { return this.openai.endpoint; }
+
+  /** OpenCode Go lists every model it serves, both protocols, on its OpenAI-style /models. */
+  listModels() {
+    return this.openai.listModels();
+  }
+
   stream(request: ModelRequest, signal: AbortSignal): AsyncIterable<ModelEvent> {
     // The session header is OpenCode's cache affinity signal, as in the Codetonomy harness:
     // requests that share a prompt prefix carry the same opaque value. A fresh one per call defeats reuse.

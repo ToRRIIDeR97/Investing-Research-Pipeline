@@ -37,6 +37,23 @@
       "port": 3100
     },
     {
+      "name": "research-os-nvda",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/sense/AppData/Local/Temp/claude/8d81828da683946c/2e53d3fc-2e50-43f4-b4e8-8458d3bbb376/scratchpad/run-app.cjs"
+      ],
+      "port": 3137
+    },
+    {
+      "name": "design-motion-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--env-file=.env",
+        "C:/Users/sense/AppData/Local/Temp/claude/e01580c5abc4668c/03c27129-407f-494b-a61f-ac67ddb59cad/scratchpad/preview-run.cjs"
+      ],
+      "port": 3120
+    },
+    {
       "name": "ui-workshop",
       "runtimeExecutable": "python3",
       "runtimeArgs": [
@@ -49,6 +66,23 @@
         "prototype/workshop"
       ],
       "port": 4410
+    },
+    {
+      "name": "pragma-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/sense/AppData/Local/Temp/claude/8d81828da683946c/7a7b8fd1-9816-4c62-b964-19c2569e9f6e/scratchpad/app-preview-main.cjs"
+      ],
+      "port": 3110
+    },
+    {
+      "name": "research-os-prod-3006",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "--env-file=.env",
+        "C:/Users/sense/AppData/Local/Temp/claude/7e632e8cc091aa7e/b936891e-e178-4821-acbf-d3d2ff1eb22e/scratchpad/prod-3006.cjs"
+      ],
+      "port": 3006
     }
   ]
 }

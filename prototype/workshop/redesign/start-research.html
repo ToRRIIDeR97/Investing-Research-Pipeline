@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Start research redesign</title>
+<link rel="stylesheet" href="redesign.css">
+<style>
+.pick{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 18px;border-top:1px solid var(--line-soft)}
+.pick .state{font-size:12.5px;color:var(--ink-3)}
+.types{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.type{border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-weight:400;color:var(--ink-2);line-height:1.5}
+.type strong{display:block;color:var(--ink);font-size:13.5px;margin-bottom:2px}
+.type.on{border-color:var(--navy);box-shadow:0 0 0 1px var(--navy) inset;background:var(--navy-soft)}
+.form{display:grid;gap:16px;padding:16px 18px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.actions{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 18px;border-top:1px solid var(--line-soft)}
+.why{font-size:12.5px;color:var(--ink-3)}
+@media (max-width:640px){.pick{flex-wrap:wrap}.pick .who{flex:1 1 100%}.pick .state{flex:1 1 auto}.types{grid-template-columns:1fr}.two{grid-template-columns:1fr}}
+</style></head><body>
+
+<p class="label">Start research · step 1, pick the company<span>Shows tickers instead of internal slugs and where each company's research stands, and nudges you to decide on a waiting report before paying for another. Test companies are hidden.</span></p>
+<div class="nav nobtn"><span class="brand">Pragma Research</span><a>Home</a><a>Research</a><a>Themes</a><a>Reviews<span class="badge">1</span></a><span class="spacer"></span><span class="search">Search companies</span></div>
+<div class="screen">
+  <h1>Start research</h1><p class="sub">Pick a company, set the question and budget, then approve the plan before the main research runs.</p>
+  <ol class="stepper" aria-label="Steps"><li class="on" aria-current="step" data-of="· step 1 of 4"><b>1</b>Company</li><li><b>2</b>Question and budget</li><li><b>3</b>You approve the plan</li><li><b>4</b>You decide on the report</li></ol>
+  <div class="grid">
+    <section class="tile">
+      <div class="tileHead"><h2>Your companies</h2><span class="input ph" style="width:280px;height:34px">Search by name or ticker</span></div>
+      <div class="pick" style="border-top:0"><div class="who"><div class="logo">SoFi</div><div><strong>SoFi Technologies, Inc.</strong><span>SOFI · Equity</span></div></div><span class="state">A report from 18 Nov is waiting for your decision. <span class="rowact">Decide first</span></span><span class="btn">New run</span></div>
+      <div class="pick"><div class="who"><div class="logo apple">AAPL</div><div><strong>Apple Inc.</strong><span>AAPL · Equity · Technology</span></div></div><span class="state">Not researched yet</span><span class="btn">Start</span></div>
+      <div class="pick"><div class="who"><div class="logo btc">₿</div><div><strong>Bitcoin</strong><span>Crypto</span></div></div><span class="state">Not researched yet</span><span class="btn">Start</span></div>
+      <div class="tileBody small" style="border-top:1px solid var(--line-soft)">1 test company hidden · <span class="link">Show it</span></div>
+    </section>
+    <section class="tile">
+      <div class="tileHead"><h2>Add a listed company</h2></div>
+      <div class="form">
+        <div class="field">Ticker<div class="input ph">e.g. HOOD</div></div>
+        <div class="field">Company name<div class="input ph">e.g. Robinhood Markets, Inc.</div></div>
+        <span class="btn primary off" style="justify-self:start">Continue</span>
+        <p class="help">Enter a ticker and a name to continue.</p>
+      </div>
+    </section>
+  </div>
+</div>
+
+<p class="label">Start research · step 2, question and budget<span>Each research type says what it includes. The budget comes with a suggestion from your past runs, the cutoffs default to today, and the button says what's missing.</span></p>
+<div class="nav nobtn"><span class="brand">Pragma Research</span><a>Home</a><a>Research</a><a>Themes</a><a>Reviews<span class="badge">1</span></a><span class="spacer"></span><span class="search">Search companies</span></div>
+<div class="screen">
+  <p class="back">← Start research</p>
+  <div class="hero"><div class="who"><div class="logo" style="width:60px;height:60px">SoFi</div><div><strong>SoFi Technologies, Inc.</strong><div class="heroMeta">New research run</div></div></div></div>
+  <ol class="stepper" aria-label="Steps"><li class="done"><b>✓</b>Company</li><li class="on" aria-current="step" data-of="· step 2 of 4"><b>2</b>Question and budget</li><li><b>3</b>You approve the plan</li><li><b>4</b>You decide on the report</li></ol>
+  <div class="grid">
+    <section class="tile">
+      <div class="tileHead"><h2>What should the research answer?</h2></div>
+      <div class="form">
+        <div class="field"><div class="textarea" style="color:var(--ink-4)">What would you like to understand about SoFi?</div>
+          <div class="chips" style="margin-top:4px"><span class="chip">Long-term investment thesis</span><span class="chip">Update the valuation</span><span class="chip">Reuse the last question</span></div><span class="help">These fill in the question box; the research type is chosen below.</span></div>
+        <div class="field">Research type
+          <div class="types">
+            <div class="type"><strong>Quick scan</strong>A light pass: at least 1 source and 5 pieces of evidence. No valuation, no final review.<br><span class="small">No runs of this type yet, so no cost guide.</span></div>
+            <div class="type"><strong>Thesis investigation</strong>Tests one thesis: at least 2 sources and 8 pieces of evidence. No valuation; you review the result.<br><span class="small">No runs of this type yet, so no cost guide.</span></div>
+            <div class="type"><strong>Deep dive</strong>Like the full report with a lower bar: at least 5 sources and 25 pieces of evidence, with a valuation. You review the result; refreshes every 90 days.<br><span class="small">No runs of this type yet, so no cost guide.</span></div>
+            <div class="type on"><strong>Full initiation report <span class="flag">default</span></strong>The full report: at least 8 sources and 40 pieces of evidence, with a valuation. You review it; refreshes every 90 days. The most thorough type, and the one you've run before.<br><span class="small">Your November SoFi runs cost $4.86 to $9.74.</span></div>
+          </div></div>
+      </div>
+    </section>
+    <section class="tile">
+      <div class="tileHead"><h2>Budget and data cutoffs</h2></div>
+      <div class="form">
+        <div class="field">Budget (USD)<div class="input">15.00</div>
+          <div class="callout"><b>Suggested: $15, an estimate.</b> Your November SoFi runs cost $4.86 to $9.74, and the latest stopped on the $10 cap. September runs used a cheaper setup, so they aren't counted. Adjust as you like.</div></div>
+        <div class="two">
+          <div class="field">Sources up to<div class="input">Today, 23 Nov 2026</div></div>
+          <div class="field">Market data up to<div class="input">Today, 23 Nov 2026</div></div>
+        </div>
+        <p class="help">Set an earlier date only to rebuild research as of a past day; nothing published after it is used.</p>
+        <p class="help">The budget covers the whole run, including drafting the plan before you approve it. For a company with no past runs (Apple, say), the hint uses your full reports on other companies. Only runs on the current setup count.</p>
+      </div>
+      <div class="actions"><span class="why">Write a question to continue.</span><span class="btn primary off">Draft the research plan</span></div>
+      <p class="tileBody note" style="border-top:1px solid var(--line-soft)">The run drafts a plan, then waits for your approval before the main research starts.</p>
+    </section>
+  </div>
+</div>
+<p class="gone"><strong>What goes away:</strong> slugs like "sofi-e2e-10e0e85c" under company names, the test company, a blank budget with no guidance, blank date pickers, a greyed-out button with no reason, and "Stops first at the plan gate". The research-type descriptions come from the requirements each type has to meet in the code today.</p>
+</body></html>

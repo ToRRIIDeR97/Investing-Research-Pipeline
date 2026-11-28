@@ -28,7 +28,7 @@ covers:
 | Master UML views and coverage index | [docs/architecture.md](docs/architecture.md) |
 | Database setup, worker, test databases | [docs/local-development.md](docs/local-development.md) |
 | Provider configuration and limits | [docs/local-agent-harness.md](docs/local-agent-harness.md) |
-| Storage cleanup (dry run by default), research sync between machines (`npm run store:sync`), the free refresh check (`npm run monitor:check`) | [docs/operations.md](docs/operations.md) |
+| Storage cleanup and compaction (`npm run storage:gc`, `npm run storage:compact`, `npm run clean:next`; dry run by default), research sync between machines (`npm run store:sync`), the free refresh check (`npm run monitor:check`) | [docs/operations.md](docs/operations.md) |
 | XBRL warehouse: data contract, run, validate | [services/xbrl/AGENTS.md](services/xbrl/AGENTS.md), [services/xbrl/sec-xbrl-warehouse/AGENTS.md](services/xbrl/sec-xbrl-warehouse/AGENTS.md) |
 | Original target-state proposal (not the current system) | [architecture.md](architecture.md) |
 
@@ -73,7 +73,7 @@ Docs declare the code they describe in a `covers` frontmatter list; `docs/docs.l
 | `DESIGN.md` | `src/app/globals.css`, `src/components/ui/**`, `src/components/research-ui.module.css` |
 | `docs/architecture.md` | `src/db/schema/**`, `drizzle/*.sql`, `src/lib/workflow/stages.ts`, `src/lib/research/team-plan.ts`, `src/lib/workflow/orchestrator.ts`, `src/lib/research/run-queue.ts`, `docker-compose.yml`, `docs/diagrams/_source/make_diagrams.py`, `tools/gen_*.py` |
 | `docs/local-agent-harness.md` | `src/lib/agent-harness/providers/**`, `src/lib/agent-harness/registry.ts`, `.env.example` |
-| `docs/local-development.md` | `docker-compose.yml`, `package.json`, `scripts/dev-with-db.cjs`, `scripts/test-db.cjs`, `src/db/migrate.ts` |
+| `docs/local-development.md` | `docker-compose.yml`, `package.json`, `scripts/dev-with-db.cjs`, `scripts/worker-with-db.cjs`, `scripts/test-db.cjs`, `src/db/migrate.ts` |
 | `docs/operations.md` | `src/lib/maintenance/**`, `scripts/storage-gc.ts`, `scripts/research-store.ts`, `scripts/monitor-check.ts`, `src/lib/research/monitoring/**` |
 | `docs/report-visual-guidelines.md` | `src/lib/research/reporting/exhibits.ts`, `src/lib/research/reporting/contracts.ts`, `src/components/report/exhibit-tile.tsx` |
 | `docs/security.md` | `src/proxy.ts`, `src/lib/api/auth.ts`, `src/app/api/session/**`, `src/lib/net.ts`, `src/lib/html-scan.ts`, `src/lib/research/repair/sandbox.ts`, `next.config.ts`, `.env.example`, `.gitignore`, `src/lib/maintenance/research-store.ts` |

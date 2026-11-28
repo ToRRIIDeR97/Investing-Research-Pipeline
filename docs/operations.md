@@ -19,7 +19,7 @@ Nothing deletes files under `storage/` during normal work. Over time three kinds
 - Copies of SEC filings stored before `storedSecFiling` reused Archives documents (audit RMEM3). SEC appends a random `<script>` tag before `</body>` on every response, so each run stored another full copy. Older copies have no tag at all.
 - `storage/parses/*.txt`: a normalized-text copy of each research-memory parse. Nothing ever read these files, and new parses no longer write them (audit M5).
 
-`scripts/storage-gc.ts` finds all three. It changes nothing unless you pass `--apply`.
+`scripts/storage-gc.ts` (`npm run storage:gc`) finds all three. It changes nothing unless you pass `--apply`. It reads compacted (`.gz`) sources transparently and counts a `.gz` as referenced by its plain path.
 
 ```bash
 npx tsx scripts/storage-gc.ts                      # dry run: counts, bytes, 5 sample paths per category
@@ -66,6 +66,21 @@ Dry run on 2026-10-14, main checkout `storage/`, 10 databases:
 The duplicate rows' raw chunks and passages (about 62,000 `document_chunks` rows in the audit) stay. Citations point at them, so deleting them would break evidence locations.
 
 The database also has three tables that no schema file or migration defines: `agent_sessions` (2 MB), `agent_session_messages` (10 MB, last written 2026-09-01) and `model_budget_reservations` (0.3 MB). The script leaves them alone. Dropping them needs a decision and a Drizzle migration.
+
+## Storage compaction and cache clean-up
+
+Fetched sources are text (SEC filings as HTML, companyfacts as JSON) and compress 5–10×. `scripts/storage-compact.ts` (`npm run storage:compact`, logic in `src/lib/maintenance/storage-compact.ts`) gzips files in `storage/sources` and `storage/parses` that are text-like, at least 4 KB and older than `--min-age-days` (default 7) to `<path>.gz`. It changes nothing without `--apply`. Each gzip is written to a temporary name, read back and compared byte for byte before it replaces the original. Rows keep the plain `storage_path` and `file_hash`: every reader goes through `readStoredFile` (`src/lib/storage/stored-file.ts`), which falls back to `<path>.gz`; storage GC counts a `.gz` as referenced by its plain path, and the research-store export carries the `.gz`. Writers keep writing plain files.
+
+```bash
+npm run storage:compact                   # dry run: file count and bytes
+npm run storage:compact -- --apply        # gzip them
+```
+
+`npm run clean:next` reports the size of `.next/cache` and `.next/dev` (Turbopack's dev cache, which grows with every edit; 1.9 GB on 2026-11-28); `npm run clean:next -- --apply` deletes them. Stop `npm run dev` first; the next start rebuilds what it needs.
+
+The Quant page keeps one `quant_snapshots` row per ticker: writing a day's snapshot deletes that ticker's older days.
+
+Applied on 2026-11-28 (main checkout, backup first): storage GC repointed 150 duplicate rows and deleted 754 entries (445 MB); compaction gzipped 213 files, 242.8 MB to 17.7 MB; `clean:next` freed 1.9 GB. `storage/` went from 741 MB to 67 MB and `.next` from 1.9 GB to 54 MB; all 267 referenced sources still read (214 from `.gz`).
 
 ## Sync research between machines
 

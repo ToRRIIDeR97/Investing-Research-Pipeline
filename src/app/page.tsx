@@ -12,6 +12,8 @@ import { BigNumber, Card, Tag } from "@/components/ui/primitives";
 import { formatGap } from "@/lib/ui/chart-math";
 import { currentReviews } from "@/lib/review/queue-rules";
 import { waitingOnYou } from "@/lib/research/run-flow";
+import { PageLoading } from "@/components/ui/loading";
+import { WatchlistSection } from "@/components/watchlist/watchlist";
 
 interface ReviewItem { run_id: string; asset_id: string; asset_name: string; run_type: string; priority?: string | null; research_question?: string | null }
 
@@ -61,7 +63,7 @@ export default function HomePage() {
       <Link href="/research/new" className={ui.primary}>Start research</Link>
     </header>
 
-    {loading ? <p className={ui.muted} role="status">Loading research…</p> : error ? <p className={ui.error} role="alert">{error}<button onClick={() => void load()}>Try again</button></p> : <>
+    {loading ? <PageLoading shape="cards" label="Loading your research" /> : error ? <p className={ui.error} role="alert">{error}<button onClick={() => void load()}>Try again</button></p> : <>
       {featured && fs && <Card className={styles.featured}>
         <div className={styles.featuredHead}>
           <CompanyLogo subject={{ asset_id: featured.id }} name={featured.canonical_name} ticker={featured.ticker} size={64} />
@@ -79,6 +81,8 @@ export default function HomePage() {
             : <Link className={ui.secondary} href={`/assets/${featured.id}/view?view=valuation&run=${featured.snapshot_run?.id}`}>Valuation details</Link>}
         </div>
       </Card>}
+
+      <WatchlistSection showEmpty headClass={styles.sectionHead} />
 
       <div className={styles.layout}>
         <section aria-labelledby="research-title" className={styles.main}>

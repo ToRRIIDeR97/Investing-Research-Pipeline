@@ -18,6 +18,7 @@ import { loadCompanyFacts } from "@/lib/research/history/xbrl-warehouse";
 import { fxSeriesFor } from "@/lib/research/valuation/v2";
 import { SourceRole } from "@/lib/research/sources/roles";
 import { syncAssetPriceHistory, syncBenchmarkPriceHistory, type PriceHistorySync } from "@/lib/market-data/price-history";
+import { readStoredFile, readStoredText } from "@/lib/storage/stored-file";
 
 type Sql = ReturnType<typeof postgres>;
 export interface RunContext {
@@ -992,7 +993,7 @@ export async function storedSecFiling(sql: Sql, url: string): Promise<string | n
     ORDER BY created_at, id`;
   for (const row of rows) {
     try {
-      const bytes = await readFile(join(process.cwd(), String(row.storage_path)));
+      const bytes = await readStoredFile(join(process.cwd(), String(row.storage_path)));
       // A missing or truncated file falls through to the next copy, then to a download.
       if (createHash("sha256").update(bytes).digest("hex") === row.file_hash) return bytes.toString("utf8");
     } catch {

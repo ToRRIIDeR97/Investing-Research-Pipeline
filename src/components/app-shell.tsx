@@ -9,6 +9,7 @@ import { PragmaMark } from "@/components/brand/logo";
 import { CompanyLogo } from "@/components/company/company";
 import { reviewCount } from "@/lib/review/queue-rules";
 import styles from "./app-shell.module.css";
+import { InlineLoading } from "@/components/ui/loading";
 
 interface Asset { id: string; canonical_name: string; slug: string; }
 
@@ -72,6 +73,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link href="/assets" aria-current={current("/assets")}>Research</Link>
             <Link href="/themes" aria-current={current("/themes")}>Themes</Link>
             <Link href="/review" aria-current={current("/review")}>Reviews{pendingReviews ? <span className={styles.count}>{pendingReviews}</span> : null}</Link>
+            <Link href="/settings" aria-current={current("/settings")}>Settings</Link>
           </nav>
           <div className={styles.tools}>
             <div className={styles.search} ref={box}>
@@ -88,7 +90,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 }} />
               {open && <div id="asset-search-results" role="listbox" aria-label="Assets" className={styles.results}>
                 {searchError ? <p role="alert">Search is unavailable. <button type="button" onClick={() => void loadAssets()}>Try again</button></p>
-                  : !assets ? <p role="status">Loading assets…</p>
+                  : !assets ? <InlineLoading label="Loading assets" />
                   : !matches.length ? <p>No assets found.</p>
                   : matches.map((asset, index) => <button type="button" role="option" aria-selected={index === active} key={asset.id} onMouseEnter={() => setActive(index)} onClick={() => go(asset)}>
                     <CompanyLogo subject={{ asset_id: asset.id }} name={asset.canonical_name} size={26} /><span className={styles.resultName}>{asset.canonical_name}</span><span className={styles.ticker}>{asset.slug}</span>

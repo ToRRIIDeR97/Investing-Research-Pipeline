@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Run page redesign</title>
+<link rel="stylesheet" href="redesign.css">
+<style>
+.phases{display:grid;gap:0}
+.phase{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:12px;align-items:start;padding:12px 18px;border-top:1px solid var(--line-soft)}
+.phase:first-child{border-top:0}
+.dot{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700}
+.done .dot{background:var(--positive-bg);color:var(--positive)}.fail .dot{background:var(--critical-bg);color:var(--critical)}.todo .dot{background:var(--soft);color:var(--ink-4)}
+.phase strong{display:block;font-size:13.5px}.phase span{font-size:12.5px;color:var(--ink-3)}
+.todo strong{color:var(--ink-3)}
+.steps{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px}
+.steps i{font-style:normal;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--soft);color:var(--ink-2)}
+.steps i.x{background:var(--critical-bg);color:var(--critical)}
+.progress{height:8px;border-radius:4px;background:var(--soft);margin:2px 18px 14px;overflow:hidden}.progress i{display:block;height:100%;width:84%;background:var(--navy-3)}
+.gaps{display:grid;gap:8px;padding:12px 18px}
+.gaps li{display:flex;justify-content:space-between;gap:12px;color:var(--ink)}.gaps li span{color:var(--ink-3)}
+</style></head><body>
+
+<p class="label">Run page (the SoFi run that stopped)<span>Says what happened and what you can do, at the top. The 25 steps are grouped into seven phases. Quality checks are in words and grouped. The technical log (activity, model calls, sources) is folded away instead of filling the page.</span></p>
+<div class="nav"><span class="brand">Pragma Research</span><a>Home</a><a class="on">Research</a><a>Themes</a><a>Reviews<span class="badge">1</span></a><span class="spacer"></span><span class="search">Search companies</span><span class="btn">Start research</span></div>
+<div class="screen">
+  <p class="back">← SoFi Technologies</p>
+  <div class="hero">
+    <div class="who"><div class="logo" style="width:60px;height:60px">SoFi</div><div><strong>SoFi Technologies, Inc.</strong><div class="heroMeta">Full initiation report · started 18 Nov 2026, 21:12 <span class="status crit">Stopped</span></div></div></div>
+    <span class="rowact">Read the unreviewed draft</span>
+  </div>
+
+  <div class="banner danger"><div><strong>Stopped while checking its report: it would have gone over the $10 budget.</strong><p>21 of 25 steps finished; the run had spent $9.74 and the next step would have taken it to $10.06. Its draft values a share at $1.13, against $8.80 in the earlier 18 Nov report that is complete and waiting for your decision. The draft was never checked or reviewed, and nothing was exported.</p></div>
+    <div class="acts"><span class="btn">Start over…</span><span class="btn primary">Decide on the 18 Nov report</span></div></div>
+  <div class="demo-open" style="display:flex;gap:16px;align-items:flex-start;justify-content:flex-end;margin:-8px 0 16px;flex-wrap:wrap-reverse">
+    <div class="dialog popover"><strong>Start a new SoFi run?</strong><p>All 25 steps run again from the start; nothing from this run is reused. This run needed more than $10, so set the budget higher. Your November SoFi runs cost $4.86 to $9.74.</p><div class="field" style="margin-bottom:4px">Budget (USD)<div class="input">15.00</div></div><p class="help">You approve the research plan before the main research starts.</p><div class="acts"><span class="btn">Cancel</span><span class="btn primary">Start new run</span></div></div>
+    <p class="dnote" style="max-width:420px">A popover that opens under "Start over…" and floats over the page; it's drawn open here only to show it. In the app the banner's navy button and the popover's never show at once. The stop reason ("budget") comes from the step that failed plus the budget message our own code writes; the build would store it as a field instead of reading text <span class="flag">small back-end change</span></p>
+  </div>
+
+  <div class="grid">
+    <div class="col">
+      <section class="tile">
+        <div class="tileHead"><h2>Progress</h2><span class="small">21 of 25 steps</span></div>
+        <div class="progress"><i></i></div>
+        <div class="phases">
+          <div class="phase done"><span class="dot">✓</span><div><strong>Plan</strong><span>Intake, identity, research plan (you approved it)</span></div><span class="small">4 steps</span></div>
+          <div class="phase done"><span class="dot">✓</span><div><strong>Gather evidence</strong><span>76 sources read, 170 pieces of evidence</span></div><span class="small">3 steps</span></div>
+          <div class="phase done"><span class="dot">✓</span><div><strong>Understand the business</strong><span>History, founding, business model, moat</span></div><span class="small">5 steps</span></div>
+          <div class="phase done"><span class="dot">✓</span><div><strong>Model and value</strong><span>Operating model, scenarios, valuation</span></div><span class="small">3 steps</span></div>
+          <div class="phase done"><span class="dot">✓</span><div><strong>Test signals</strong><span>Indicators, 50 backtested strategies, backtest review</span></div><span class="small">4 steps</span></div>
+          <div class="phase fail"><span class="dot">✕</span><div><strong>Write and review</strong><span>The report check stopped on the budget limit</span>
+            <div class="steps"><i>Conclusion ✓</i><i>Draft ✓</i><i class="x">Report check: stopped</i></div></div><span class="small">2 of 3</span></div>
+          <div class="phase todo"><span class="dot">·</span><div><strong>Your decision and export</strong><span>Not reached</span></div><span class="small">3 steps</span></div>
+        </div>
+      </section>
+
+      <section class="tile">
+        <div class="tileHead"><h2>What the draft is missing</h2></div>
+        <div class="tileBody" style="color:var(--ink-2);line-height:1.55">Five reported figures (six periods) were left out of the draft because their period or source couldn't be confirmed before the cutoff. They're segment figures (lending, financial services, technology platform and corporate).</div>
+        <div class="foldrow"><span>Which figures</span><span class="small">5 figures, 6 periods</span></div>
+        <ul class="gaps" style="display:none">
+          <li>Lending contribution profit (GAAP)<span>Q2 2026 and FY 2025</span></li>
+          <li>Lending net interest income<span>FY 2025</span></li>
+          <li>Financial Services contribution profit<span>FY 2025</span></li>
+          <li>Corporate and other net interest expense<span>FY 2025</span></li>
+          <li>Technology Platform net revenue<span>FY 2025</span></li>
+        </ul>
+        <div class="tileBody note" style="border-top:1px solid var(--line-soft)">Also open: 54 evidence gaps (listed in the report) and your decision.</div>
+      </section>
+
+      <section class="tile">
+        <div class="tileHead"><h2>Technical log</h2><span class="small">for debugging</span></div>
+        <div class="foldrow"><span>Activity</span><span class="small">36 events · last: report review stopped on budget, 23:23</span></div>
+        <div class="foldrow"><span>Model calls</span><span class="small">143 calls · $9.74 · 2 failed</span></div>
+        <div class="foldrow"><span>Sources</span><span class="small">76 · attach a link or file</span></div>
+      </section>
+    </div>
+    <div class="col">
+      <section class="tile">
+        <div class="tileHead"><h2>This run</h2></div>
+        <dl class="kv"><dt>Started</dt><dd>18 Nov, 21:12</dd><dt>Stopped</dt><dd>18 Nov, 23:23</dd><dt>Budget</dt><dd>$10.00</dd><dt>Spent</dt><dd>$9.74</dd><dt>Data up to</dt><dd>18 Nov 2026</dd><dt>Exports</dt><dd>None</dd></dl>
+      </section>
+      <section class="tile">
+        <div class="tileHead"><h2>The question</h2></div>
+        <p class="tileBody" style="color:var(--ink-2);line-height:1.55">Explain why SoFi was founded and how its strategic identity evolved from student-loan refinancing into a diversified financial-services and technology-platform company… <span class="link">More</span></p>
+      </section>
+    </div>
+  </div>
+</div>
+<p class="gone"><strong>What goes away:</strong> "Needs more work" as the headline for a run that ran out of budget, the "Cancel run" button on a run that already stopped, "Now: Report review (failed)", "Readiness: research scaffold", raw figure names listed without their periods (so they looked duplicated), internal IDs in the activity feed, model names, "Job: unknown", and the 50-row backtest list (it's in the report's Audit tab). <strong>Open question:</strong> resuming this run from the review step (instead of starting over) would need a new back-end action; the mockup only offers what exists today. <strong>Primary action</strong> is deciding on the finished report, not paying for another run.</p>
+</body></html>
